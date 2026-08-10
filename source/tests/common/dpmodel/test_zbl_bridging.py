@@ -629,3 +629,107 @@ class TestCompositionForwardsStatCapabilities:
         assert bridged.atomic_model.get_compute_stats_distinguish_types() == any(
             c.get_compute_stats_distinguish_types() for c in children
         )
+
+
+def _canonical_config() -> dict:
+    """``ZBL_CONFIG`` spelled canonically (issue #5948): an explicit
+    ``linear_ener`` composition with an ``inner_potential`` sub-model.
+    """
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["fitting_net"]["seed"] = 7
+    return {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": cfg["type_map"],
+        "models": [
+            {
+                "type": "standard",
+                "descriptor": cfg["descriptor"],
+                "fitting_net": cfg["fitting_net"],
+            },
+            {
+                "type": "inner_potential",
+                "mode": "ZBL",
+                "r_inner": 0.8,
+                "r_outer": 1.2,
+            },
+        ],
+    }
+
+
+class TestCanonicalComposition:
+    """The canonical ``linear_ener`` + ``inner_potential`` spelling."""
+
+    def test_canonical_config_composes(self) -> None:
+        model = get_model(_canonical_config())
+        assert type(model) is LinearEnergyModel
+        am = model.atomic_model
+        assert isinstance(am, LinearEnergyAtomicModel)
+        assert am.weights == "sum"
+        assert isinstance(am.models[1], InnerPotentialAtomicModel)
+        # the composition derives the learned sibling's clamp window from
+        # the inner_potential child: one source of truth for the radii
+        dp_child = am.models[0]
+        assert dp_child.descriptor.inner_clamp is not None
+        assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
+        assert dp_child.descriptor.bridging_switch is not None
+
+    def test_canonical_matches_sugar_energy(self) -> None:
+        """Same seeds, both spellings: bit-identical construction, so the
+        energies must be exactly equal.
+        """
+        sugar = copy.deepcopy(ZBL_CONFIG)
+        sugar["fitting_net"]["seed"] = 7
+        m_sugar = get_model(sugar)
+        m_canon = get_model(_canonical_config())
+        coord, atype, box = _close_pair_inputs()
+        e_sugar = m_sugar.call_common(
+            coord, atype, box=box, neighbor_graph_method="dense"
+        )["energy_redu"]
+        e_canon = m_canon.call_common(
+            coord, atype, box=box, neighbor_graph_method="dense"
+        )["energy_redu"]
+        np.testing.assert_array_equal(e_canon, e_sugar)
+
+    def test_canonical_serialize_matches_sugar(self) -> None:
+        """Both spellings serialize to the same wire dict: the flag is
+        sugar, not a different model.
+        """
+        sugar = copy.deepcopy(ZBL_CONFIG)
+        sugar["fitting_net"]["seed"] = 7
+        d_sugar = get_model(sugar).serialize()
+        d_canon = get_model(_canonical_config()).serialize()
+
+        def _strip_arrays(obj):
+            if isinstance(obj, dict):
+                return {k: _strip_arrays(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_strip_arrays(v) for v in obj]
+            if isinstance(obj, np.ndarray):
+                return ("ndarray", obj.shape)
+            return obj
+
+        assert _strip_arrays(d_canon) == _strip_arrays(d_sugar)
+
+    def test_two_inner_children_raise(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"].append(dict(cfg["models"][1]))
+        with pytest.raises(ValueError, match="at most one"):
+            get_model(cfg)
+
+    def test_inner_without_learned_sibling_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"] = [cfg["models"][1]]
+        with pytest.raises(ValueError, match="exactly one learned"):
+            get_model(cfg)
+
+    def test_standard_builder_rejects_the_flag(self) -> None:
+        """Direct standard construction with the flag fails fast instead of
+        silently dropping the analytical term.
+        """
+        from deepmd.dpmodel.model.model import (
+            get_standard_model,
+        )
+
+        with pytest.raises(ValueError, match="bridging_method"):
+            get_standard_model(copy.deepcopy(ZBL_CONFIG))

@@ -322,23 +322,45 @@ learned energy in a protected region:
 E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{ZBL}}.
 ```
 
-Below `bridging_r_inner` the distance seen by the descriptor is clamped, with a
-smooth transition back to the true distance up to `bridging_r_outer`; a source
+Below `r_inner` the distance seen by the descriptor is clamped, with a
+smooth transition back to the true distance up to `r_outer`; a source
 gate additionally blocks the learned model from leaking information about the
-frozen short-range pairs. Enable it with:
+frozen short-range pairs.
+
+A bridged model is a linear composition: the learned model plus the
+analytical `inner_potential` term, summed by `linear_ener`. Spell it as:
 
 ```json
 {
   "model": {
-    "bridging_method": "zbl",
-    "bridging_r_inner": 0.5,
-    "bridging_r_outer": 0.8
+    "type": "linear_ener",
+    "weights": "sum",
+    "type_map": ["O", "H"],
+    "models": [
+      {
+        "type": "dpa4",
+        "descriptor": { "...": "..." },
+        "fitting_net": { "...": "..." }
+      },
+      {
+        "type": "inner_potential",
+        "mode": "zbl",
+        "r_inner": 0.5,
+        "r_outer": 0.8
+      }
+    ]
   }
 }
 ```
 
+The composition derives the learned descriptor's clamping window from the
+`inner_potential` child, so the radii are written once. The legacy
+spelling -- a `bridging_method` / `bridging_r_inner` / `bridging_r_outer`
+flag set on the `dpa4` (or `standard`) model type -- is kept as sugar and
+expands to exactly the composition above.
+
 When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
-same value as `bridging_r_inner` so frames with shorter atom pairs are excluded
+same value as `r_inner` so frames with shorter atom pairs are excluded
 from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
 
 ## Performance and precision

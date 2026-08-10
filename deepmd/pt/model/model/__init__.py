@@ -36,6 +36,9 @@ from deepmd.pt.model.task.sezm_ener import (
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
+from deepmd.utils.bridging import (
+    expand_bridging_method,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -193,7 +196,11 @@ def get_spin_model(model_params: dict) -> SpinModel:
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
 
 
-def get_linear_model(model_params: dict) -> LinearEnergyModel:
+def get_linear_model(model_params: dict) -> BaseModel:
+    if any(
+        sub.get("type") == "inner_potential" for sub in model_params.get("models", [])
+    ):
+        return _get_bridged_linear_model(model_params)
     model_params = copy.deepcopy(model_params)
     weights = model_params.get("weights", "mean")
     shared_links = None
@@ -265,6 +272,73 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
     return model
 
 
+def _get_bridged_linear_model(model_params: dict) -> BaseModel:
+    """Realize a bridged ``linear_ener`` composition in the pt backend.
+
+    The pt backend implements analytical bridging inside ``SeZMModel``
+    (the ``InnerPotential`` term is a sub-module of the learned model),
+    so a canonical ``linear_ener`` composition over
+    ``[learned, inner_potential]`` maps onto the ``SeZMModel``
+    constructor arguments. The physics and the checkpoint format are
+    identical to the legacy ``bridging_method`` flag form.
+
+    Parameters
+    ----------
+    model_params : dict
+        A ``linear_ener`` config with exactly one ``inner_potential``
+        sub-model and exactly one learned (descriptor-bearing) sub-model.
+
+    Raises
+    ------
+    ValueError
+        If the composition shape is not the bridging one (child counts,
+        ``weights``, ``shared_dict``).
+    NotImplementedError
+        If the learned sibling is not of the DPA4/SeZM family: the pt
+        backend has no bridging implementation for other descriptors.
+    """
+    model_params = copy.deepcopy(model_params)
+    children = model_params.get("models", [])
+    inner_cfgs = [sub for sub in children if sub.get("type") == "inner_potential"]
+    learned_cfgs = [sub for sub in children if "descriptor" in sub]
+    if len(inner_cfgs) > 1:
+        raise ValueError(
+            "A linear_ener composition supports at most one "
+            "`inner_potential` sub-model."
+        )
+    if len(learned_cfgs) != 1 or len(children) != 2:
+        raise ValueError(
+            "An `inner_potential` sub-model bridges exactly one learned "
+            "sibling: expected a linear_ener composition over "
+            "[learned, inner_potential]."
+        )
+    if str(model_params.get("weights", "mean")) != "sum":
+        raise ValueError('A bridged linear_ener composition requires `weights: "sum"`.')
+    if model_params.get("shared_dict"):
+        raise NotImplementedError(
+            "`shared_dict` is not supported with an `inner_potential` sub-model."
+        )
+    learned = copy.deepcopy(learned_cfgs[0])
+    descriptor_type = str(learned.get("descriptor", {}).get("type", "dpa4"))
+    if descriptor_type not in ("dpa4", "DPA4", "sezm", "SeZM"):
+        raise NotImplementedError(
+            "The pt backend implements `inner_potential` bridging only for "
+            f"the DPA4/SeZM descriptor family, but got {descriptor_type!r}."
+        )
+    inner_cfg = inner_cfgs[0]
+    learned["type"] = "dpa4"
+    learned["type_map"] = copy.deepcopy(model_params["type_map"])
+    learned["atom_exclude_types"] = model_params.get("atom_exclude_types", [])
+    learned["pair_exclude_types"] = model_params.get("pair_exclude_types", [])
+    learned["bridging_method"] = inner_cfg.get("mode", "zbl")
+    learned["bridging_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
+    learned["bridging_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
+    if "spin" in model_params:
+        learned["spin"] = model_params["spin"]
+        return get_sezm_spin_model(learned)
+    return get_sezm_model(learned)
+
+
 def get_zbl_model(model_params: dict) -> DPZBLModel:
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
@@ -331,6 +405,15 @@ def _convert_preset_out_bias_to_array(
 
 
 def get_standard_model(model_params: dict) -> BaseModel:
+    bridging_method = str(model_params.get("bridging_method", "none"))
+    if bridging_method.lower() not in ("none", ""):
+        raise ValueError(
+            "`bridging_method` is not supported for a standard model: "
+            "analytical bridging builds a linear composition, not a "
+            "standard model. Route the config through `get_model` (which "
+            "expands the flag), or spell the composition explicitly with "
+            '`type: "linear_ener"` and an `inner_potential` sub-model.'
+        )
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
@@ -657,6 +740,7 @@ def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
 
 
 def get_model(model_params: dict) -> Any:
+    model_params = expand_bridging_method(model_params)
     model_type = model_params.get("type", "standard")
     if model_type == "standard":
         if "spin" in model_params:

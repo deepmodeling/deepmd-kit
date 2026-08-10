@@ -3488,7 +3488,10 @@ def sezm_model_args() -> Argument:
     )
     doc_bridging_method = (
         "Short-range bridging method. Currently supports 'ZBL'. "
-        "The value is case-insensitive; set it to 'None' to disable bridging."
+        "The value is case-insensitive; set it to 'None' to disable bridging. "
+        "This flag is sugar: it expands to the canonical `linear_ener` "
+        "composition over the learned model and an `inner_potential` "
+        "sub-model."
     )
     doc_bridging_r_inner = (
         "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
@@ -3700,6 +3703,41 @@ def pairtab_model_args() -> Argument:
             Argument("sel", [int, list[int], str], optional=False, doc=doc_sel),
         ],
         doc=supported_backends("tf") + "Pairwise tabulation energy model.",
+    )
+    return ca
+
+
+@model_args_plugin.register("inner_potential")
+def inner_potential_model_args() -> Argument:
+    doc_mode = (
+        "The analytical pair-potential formula. Currently supports 'zbl' "
+        "(case-insensitive)."
+    )
+    doc_r_inner = (
+        "Inner clamping radius in Å, applied to the learned sibling's "
+        "descriptor: ML descriptor distances below this radius are frozen. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the "
+        "same value so frames with atom pairs closer than `r_inner` are "
+        "skipped during training."
+    )
+    doc_r_outer = (
+        "Outer clamping radius in Å, applied to the learned sibling's "
+        "descriptor. The transition zone `[r_inner, r_outer]` uses a "
+        "C^3-continuous septic Hermite polynomial."
+    )
+    ca = Argument(
+        "inner_potential",
+        dict,
+        [
+            Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
+            Argument("r_inner", float, optional=True, default=0.5, doc=doc_r_inner),
+            Argument("r_outer", float, optional=True, default=0.8, doc=doc_r_outer),
+        ],
+        doc=supported_backends("pt", "pt_expt")
+        + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
+        "only as a sub-model of a `linear_ener` composition; the clamping "
+        "radii are derived onto the learned sibling's descriptor at build "
+        "time.",
     )
     return ca
 
