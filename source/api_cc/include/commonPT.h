@@ -19,6 +19,17 @@
 
 namespace deepmd {
 
+// This definition is supplied by CMake for DeePMD's PyTorch backend targets.
+// Default to false for external consumers that include this internal helper.
+#ifndef DEEPMD_TORCH_HAS_GPU
+#define DEEPMD_TORCH_HAS_GPU 0
+#endif
+
+/** @brief Whether the linked LibTorch build provides a GPU runtime. */
+inline constexpr bool torch_has_gpu_support() {
+  return DEEPMD_TORCH_HAS_GPU != 0;
+}
+
 /**
  * @brief Select the per-rank GPU before PyTorch can create a default context.
  *
@@ -34,7 +45,8 @@ namespace deepmd {
 inline void preselect_torch_device(const int& gpu_rank,
                                    int& gpu_id,
                                    bool& gpu_enabled) {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if (defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)) && \
+    DEEPMD_TORCH_HAS_GPU
   int gpu_num = 0;
   DPGetDeviceCount(gpu_num);
   gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
@@ -44,7 +56,7 @@ inline void preselect_torch_device(const int& gpu_rank,
 #else
   int gpu_num = torch::cuda::device_count();
   gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // DeePMD toolkit and LibTorch GPU support
   gpu_enabled = torch::cuda::is_available();
 }
 

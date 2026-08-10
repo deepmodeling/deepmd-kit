@@ -227,6 +227,12 @@ void DeepPotPTExpt::init(const std::string& model,
     return;
   }
 
+  if (!file_content.empty()) {
+    throw deepmd::deepmd_exception(
+        "In-memory file_content loading is not supported for .pt2 models. "
+        "Please provide a file path instead.");
+  }
+
   preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
 
   // Load libdeepmd_op_pt.so so its TORCH_LIBRARY_FRAGMENT entries
@@ -235,12 +241,6 @@ void DeepPotPTExpt::init(const std::string& model,
   // .pt2 archives fail at pair_style time with
   // ``Could not find schema for deepmd_export::border_op``.
   deepmd::load_op_library(deepmd::DPBackend::PyTorchExportable);
-
-  if (!file_content.empty()) {
-    throw deepmd::deepmd_exception(
-        "In-memory file_content loading is not supported for .pt2 models. "
-        "Please provide a file path instead.");
-  }
 
   std::string device_str;
   if (!gpu_enabled) {

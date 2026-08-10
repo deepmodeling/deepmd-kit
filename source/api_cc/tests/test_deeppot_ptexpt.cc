@@ -874,6 +874,21 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
 
 // ========== Parser / metadata coverage tests ==========
 
+TEST(TestDeepPotPTExptParser, rejects_in_memory_file_content) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  deepmd::DeepPot dp;
+  try {
+    dp.init("unused.pt2", 0, "unsupported in-memory model");
+    FAIL() << "Expected in-memory .pt2 loading to be rejected.";
+  } catch (const deepmd::deepmd_exception& error) {
+    EXPECT_NE(std::string(error.what())
+                  .find("In-memory file_content loading is not supported"),
+              std::string::npos);
+  }
+}
+
 TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";

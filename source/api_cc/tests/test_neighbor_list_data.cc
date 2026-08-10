@@ -139,6 +139,17 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
 }
 
 #ifdef BUILD_PYTORCH
+TEST(TestTorchDeviceSelection, CpuLibTorchUsesTorchFallback) {
+  if (torch_has_gpu_support()) {
+    GTEST_SKIP() << "This regression requires a CPU-only LibTorch build.";
+  }
+  int gpu_id = -1;
+  bool gpu_enabled = true;
+  ASSERT_NO_THROW(preselect_torch_device(/*gpu_rank=*/7, gpu_id, gpu_enabled));
+  EXPECT_EQ(gpu_id, 0);
+  EXPECT_FALSE(gpu_enabled);
+}
+
 TEST(TestNeighborListData, CompactCanonicalGraphDropsMaskedGuards) {
   GraphTensorPack graph;
   graph.atype = torch::tensor({0}, torch::kInt64);

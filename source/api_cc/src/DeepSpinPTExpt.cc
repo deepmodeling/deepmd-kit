@@ -64,18 +64,18 @@ void DeepSpinPTExpt::init(const std::string& model,
     return;
   }
 
+  if (!file_content.empty()) {
+    throw deepmd::deepmd_exception(
+        "In-memory file_content loading is not supported for .pt2 models. "
+        "Please provide a file path instead.");
+  }
+
   preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
 
   // Load libdeepmd_op_pt.so so deepmd_export::* schemas are visible
   // to torch's dispatcher before the AOTI module loads. See
   // DeepPotPTExpt::init for the full rationale.
   deepmd::load_op_library(deepmd::DPBackend::PyTorchExportable);
-
-  if (!file_content.empty()) {
-    throw deepmd::deepmd_exception(
-        "In-memory file_content loading is not supported for .pt2 models. "
-        "Please provide a file path instead.");
-  }
 
   std::string device_str;
   if (!gpu_enabled) {
