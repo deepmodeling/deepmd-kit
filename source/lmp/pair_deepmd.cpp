@@ -136,6 +136,7 @@ PairDeepMD::PairDeepMD(LAMMPS* lmp)
       compact_packing_disabled_(
           std::getenv("DP_LAMMPS_DISABLE_COMPACT_PACKING") != nullptr),
       compact_packing_valid_(false),
+      deep_pot_cache_representation_(-1),
       compact_packing_nlocal_(0),
       compact_packing_nghost_(0),
       commdata_(nullptr) {
@@ -380,11 +381,25 @@ bool PairDeepMD::apply_compact_selection(std::vector<int>& model_types) {
 bool PairDeepMD::can_use_compact_packing() const {
   // MPI communication metadata must be remapped together with the atom and
   // neighbor indices.  Keep the optimized path deliberately single-rank for
-  // now; all unsupported configurations retain the backend's generic compact
-  // selection implementation.
+  // now; computed or TTM atom parameters also require atom-wise remapping,
+  // while a uniform aparam can simply be regenerated for the packed local
+  // count. All unsupported configurations retain the backend's generic
+  // compact selection implementation.
   return compact_selection_enabled_ && !compact_packing_disabled_ && list &&
-         comm->nprocs == 1 && dim_aparam == 0 && !do_compute_aparam &&
-         aparam.empty() && !do_ttm;
+         comm->nprocs == 1 && !do_compute_aparam && !do_ttm &&
+         (dim_aparam == 0 || !aparam.empty());
+}
+
+void PairDeepMD::update_deep_pot_cache_representation(
+    bool compact_packing, int& ago) {
+  const int representation = compact_packing ? 1 : 0;
+  if (deep_pot_cache_representation_ != representation) {
+    // The same DeepPot instance serves packed force evaluations and generic
+    // auxiliary energy evaluations. Their atom indices are incompatible even
+    // when the compact membership and LAMMPS neighbor list are unchanged.
+    ago = 0;
+    deep_pot_cache_representation_ = representation;
+  }
 }
 
 void PairDeepMD::rebuild_compact_packing() {
@@ -580,6 +595,12 @@ void PairDeepMD::init_style() {
                "include_molecule yes requires an atom style with molecule "
                "IDs");
   }
+  for (int ii = 0; ii < modify->nfix; ++ii) {
+    if (strcmp(modify->fix[ii]->style, "dplr") == 0) {
+      error->all(FLERR,
+                 "compact pair_style deepmd does not support fix dplr");
+    }
+  }
   refresh_compact_center_tags();
 }
 
@@ -678,6 +699,7 @@ double PairDeepMD::eval_energy_with_fparam(
   if (compact_selection_changed) {
     ago = 0;
   }
+  update_deep_pot_cache_representation(false, ago);
 
   if (do_ghost) {
     if (!list) {
@@ -809,7 +831,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
     make_aparam_from_compute(daparam);
   } else if (aparam.size() > 0) {
     // uniform aparam
-    make_uniform_aparam(daparam, aparam, nlocal);
+    const int aparam_nlocal =
+        compact_packing ? compact_packing_nlocal_ : nlocal;
+    make_uniform_aparam(daparam, aparam, aparam_nlocal);
   } else if (do_ttm) {
 #ifdef USE_TTM
     if (dim_aparam > 0) {
@@ -838,6 +862,9 @@ void PairDeepMD::compute(int eflag, int vflag) {
                (out_freq == 0 || update->ntimestep % out_freq != 0)) {
       ago = 0;
     }
+  }
+  if (numb_models == 1) {
+    update_deep_pot_cache_representation(compact_packing, ago);
   }
   // compute
   single_model = (numb_models == 1);

@@ -22,6 +22,9 @@ from model_convert import (
 
 pbtxt_file = Path(__file__).parents[2] / "tests" / "infer" / "deeppot.pbtxt"
 pbtxt_file2 = Path(__file__).parents[2] / "tests" / "infer" / "deeppot-1.pbtxt"
+fparam_pbtxt_file = (
+    Path(__file__).parents[2] / "tests" / "infer" / "fparam_aparam.pbtxt"
+)
 
 
 def setup_module() -> None:
@@ -37,6 +40,15 @@ def compact_models(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path
     ensure_converted_pb(pbtxt_file, model)
     ensure_converted_pb(pbtxt_file2, model2)
     return model, model2
+
+
+@pytest.fixture(scope="module")
+def compact_fparam_model(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Convert the frame-parameter model used for cache-switch coverage."""
+    model_dir = tmp_path_factory.mktemp("lammps_compact_fparam")
+    model = model_dir / "fparam.pb"
+    ensure_converted_pb(fparam_pbtxt_file, model)
+    return model
 
 
 def _make_system(
@@ -253,6 +265,38 @@ def _make_selection_transition_system(
     return lammps
 
 
+def _make_fparam_cache_system(model: Path) -> PyLammps:
+    """Create a compact system that also evaluates generic fparam energies."""
+    lammps = PyLammps()
+    if plugin := os.environ.get("DEEPMD_TEST_PLUGIN"):
+        lammps.lmp.command(f"plugin load {plugin}")
+    lammps.lmp.commands_list(
+        [
+            "units metal",
+            "boundary p p p",
+            "atom_style atomic",
+            "atom_modify map array",
+            "region box block 0 20 0 20 0 20 units box",
+            "create_box 1 box",
+            "create_atoms 1 single 5 5 5 units box",
+            "create_atoms 1 single 6 5 5 units box",
+            "create_atoms 1 single 15 15 15 units box",
+            "group qm id 1",
+            "mass 1 16",
+            "neighbor 2.0 bin",
+            "neigh_modify every 10 delay 0 check no",
+            "variable fp equal 0.25852028",
+            f"pair_style deepmd {model.resolve()} fparam 0.25852028 "
+            "aparam 0.25852028 center_group qm environment_cutoff 1.5 "
+            "include_molecule no",
+            "pair_coeff * *",
+            "compute dedn all deepmd/fparam/dedn v_fp",
+            "run 0",
+        ]
+    )
+    return lammps
+
+
 def _make_special_bond_system(model: Path, *, compact: bool) -> PyLammps:
     """Create a bonded center/environment pair excluded from its neighbor list."""
     lammps = PyLammps()
@@ -281,7 +325,7 @@ def _make_special_bond_system(model: Path, *, compact: bool) -> PyLammps:
             "create_bonds single/bond 1 1 2",
             "special_bonds lj 0 0 0 coul 0 0 0",
             "neighbor 2.0 bin",
-            style,
+            f"pair_style {style}",
             "pair_coeff * *",
             "compute peatom all pe/atom pair",
             "variable peatom atom c_peatom",
@@ -406,6 +450,35 @@ def test_compact_selection_change_rebuilds_backend_cache(
     finally:
         moving_lmp.close()
         reference_lmp.close()
+
+
+def test_auxiliary_fparam_evaluation_invalidates_packed_backend_cache(
+    compact_fparam_model: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Packed and generic calls must not reuse each other's atom indexing."""
+    monkeypatch.delenv("DP_LAMMPS_DISABLE_COMPACT_PACKING", raising=False)
+    packed_lmp = _make_fparam_cache_system(compact_fparam_model)
+    monkeypatch.setenv("DP_LAMMPS_DISABLE_COMPACT_PACKING", "1")
+    generic_lmp = _make_fparam_cache_system(compact_fparam_model)
+    try:
+        results = []
+        for lammps in (packed_lmp, generic_lmp):
+            lammps.run(1)
+            dedn = float(lammps.eval("c_dedn"))
+            # This force evaluation switches the packed instance back from the
+            # generic auxiliary representation without a neighbor rebuild.
+            lammps.run(1)
+            force = np.array(
+                lammps.lmp.numpy.extract_atom("f")[:3], dtype=np.float64, copy=True
+            )
+            results.append((dedn, float(lammps.eval("pe")), force))
+
+        assert results[0][0] == pytest.approx(results[1][0])
+        assert results[0][1] == pytest.approx(results[1][1])
+        assert results[0][2] == pytest.approx(results[1][2])
+    finally:
+        packed_lmp.close()
+        generic_lmp.close()
 
 
 def test_compact_selection_recovers_special_bonds_excluded_from_neighbor_list(

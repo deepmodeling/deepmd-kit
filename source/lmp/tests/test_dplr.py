@@ -388,6 +388,25 @@ def test_pair_deepmd_hybrid_long_range(lammps) -> None:
     assert np.isfinite(lammps.eval("pe"))
 
 
+def test_compact_pair_deepmd_rejects_fix_dplr(lammps) -> None:
+    """DPLR must not apply full-system corrections to a compact potential."""
+    lammps.neigh_modify("exclude none")
+    lammps.group("qm id 1")
+    lammps.pair_style(
+        f"deepmd {pb_file.resolve()} center_group qm "
+        "environment_cutoff 1.5 include_molecule no"
+    )
+    lammps.pair_coeff("* *")
+    lammps.bond_style("zero")
+    lammps.bond_coeff("*")
+    lammps.fix(f"0 all dplr model {pb_file.resolve()} type_associate 1 3 bond_type 1")
+
+    with pytest.raises(
+        Exception, match=r"compact pair_style deepmd does not support fix dplr"
+    ):
+        lammps.run(0)
+
+
 def test_pair_deepmd_sr_virial(lammps) -> None:
     lammps.group("real_atom type 1 2")
     lammps.pair_style(f"deepmd {pb_file.resolve()}")

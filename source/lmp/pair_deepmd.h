@@ -87,6 +87,10 @@ class PairDeepMD : public PairDeepBaseModel {
   // compact coordinate buffer must be refreshed on ordinary MD steps.
   bool compact_packing_disabled_;
   bool compact_packing_valid_;
+  // DeepPot caches native neighbor data when ``ago`` is nonzero. Track
+  // whether that cache was built from full LAMMPS indices or compact packed
+  // indices so callers that share ``deep_pot`` cannot cross-reuse it.
+  int deep_pot_cache_representation_;
   int compact_packing_nlocal_;
   int compact_packing_nghost_;
   std::vector<int> compact_packing_old_to_new_;
@@ -102,6 +106,7 @@ class PairDeepMD : public PairDeepBaseModel {
   void refresh_compact_center_tags();
   bool apply_compact_selection(std::vector<int>& model_types);
   bool can_use_compact_packing() const;
+  void update_deep_pot_cache_representation(bool compact_packing, int& ago);
   void rebuild_compact_packing();
   void pack_compact_inputs(const std::vector<int>& full_types,
                            std::vector<int>& packed_types,
