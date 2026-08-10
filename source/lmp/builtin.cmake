@@ -64,34 +64,84 @@ function(_deepmd_lammps_link_torch target_name)
     return()
   endif()
 
-  if(DeePMD_PYTORCH_CMAKE_PREFIX_PATH)
-    list(APPEND CMAKE_PREFIX_PATH ${DeePMD_PYTORCH_CMAKE_PREFIX_PATH})
-  endif()
-
-  find_package(Torch QUIET)
+  set(_deepmd_torch_from_recorded_dir FALSE)
   if(Torch_FOUND)
-    target_link_libraries(${target_name} PUBLIC ${TORCH_LIBRARIES})
-    return()
+    # A parent project may already have loaded Torch. Validate it below rather
+    # than attempting to redefine its imported targets from another package.
+  elseif(DeePMD_TORCH_DIR)
+    find_package(
+      Torch
+      CONFIG
+      QUIET
+      PATHS "${DeePMD_TORCH_DIR}"
+      NO_DEFAULT_PATH)
+    if(Torch_FOUND)
+      set(_deepmd_torch_from_recorded_dir TRUE)
+    endif()
   endif()
 
-  set(_deepmd_torch_libraries)
-  foreach(_deepmd_torch_library IN LISTS DeePMD_TORCH_LIBRARIES)
-    if(TARGET "${_deepmd_torch_library}"
-       OR EXISTS "${_deepmd_torch_library}"
-       OR "${_deepmd_torch_library}" MATCHES "^-")
-      list(APPEND _deepmd_torch_libraries "${_deepmd_torch_library}")
-    endif()
-  endforeach()
-  if(_deepmd_torch_libraries)
-    target_link_libraries(${target_name} PUBLIC ${_deepmd_torch_libraries})
-  else()
+  if(NOT Torch_FOUND)
+    # The recorded package may have moved or been removed. A caller-provided
+    # installation is acceptable only after the compatibility checks below.
+    unset(Torch_DIR CACHE)
+    unset(Torch_DIR)
+    find_package(Torch CONFIG QUIET)
+  endif()
+
+  if(NOT Torch_FOUND)
     message(
       WARNING
         "DeePMD-kit was built with the PyTorch backend, but Torch was not "
-        "found while configuring LAMMPS. Set CMAKE_PREFIX_PATH to PyTorch's "
-        "CMake prefix path if linking lmp reports unresolved torch/c10 "
-        "symbols.")
+        "found while configuring LAMMPS. Install the same Torch package or "
+        "set Torch_DIR to its CMake configuration directory.")
+    return()
   endif()
+
+  string(REGEX MATCH "_GLIBCXX_USE_CXX11_ABI=([0-9]+)"
+               _deepmd_torch_abi_match "${TORCH_CXX_FLAGS}")
+  set(_deepmd_torch_abi "")
+  if(_deepmd_torch_abi_match)
+    set(_deepmd_torch_abi "${CMAKE_MATCH_1}")
+  elseif(UNIX AND NOT APPLE AND Torch_VERSION VERSION_GREATER_EQUAL "2.8.0")
+    # Recent Linux Torch packages no longer publish the ABI in
+    # TORCH_CXX_FLAGS and use the C++11 ABI unconditionally.
+    set(_deepmd_torch_abi "1")
+  else()
+    # Match DeePMD's build-time fallback for platforms and older packages that
+    # do not expose a libstdc++ ABI flag.
+    set(_deepmd_torch_abi "0")
+  endif()
+
+  if(NOT _deepmd_torch_from_recorded_dir
+     AND ("${DeePMD_TORCH_VERSION}" STREQUAL ""
+          OR "${DeePMD_TORCH_CXX11_ABI}" STREQUAL ""))
+    message(
+      WARNING
+        "DeePMD-kit did not record enough Torch compatibility metadata to "
+        "validate a different installation; refusing to link it into LAMMPS.")
+    return()
+  endif()
+  if(NOT "${DeePMD_TORCH_VERSION}" STREQUAL ""
+     AND NOT "${Torch_VERSION}" STREQUAL "${DeePMD_TORCH_VERSION}")
+    message(
+      FATAL_ERROR
+        "Torch version mismatch: DeePMD-kit was built with "
+        "${DeePMD_TORCH_VERSION}, but LAMMPS found ${Torch_VERSION}.")
+  endif()
+  if(NOT "${DeePMD_TORCH_CXX11_ABI}" STREQUAL ""
+     AND NOT "${_deepmd_torch_abi}" STREQUAL "${DeePMD_TORCH_CXX11_ABI}")
+    message(
+      FATAL_ERROR
+        "Torch C++ ABI mismatch: DeePMD-kit was built with "
+        "_GLIBCXX_USE_CXX11_ABI=${DeePMD_TORCH_CXX11_ABI}, but LAMMPS found "
+        "${_deepmd_torch_abi}.")
+  endif()
+
+  # LAMMPS exports this target as LAMMPS::lammps. Torch is needed to resolve
+  # the in-tree executable's transitive DeePMD symbols, but must not leak
+  # imported targets or absolute paths into the installed LAMMPS interface.
+  target_link_libraries(${target_name}
+                        PUBLIC "$<BUILD_INTERFACE:${TORCH_LIBRARIES}>")
 endfunction()
 
 target_sources(
