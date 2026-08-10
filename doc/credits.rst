@@ -15,6 +15,24 @@ Cite DeePMD-kit and methods
    Zeng_JChemPhys_2023_v159_p054801
    Zeng_JChemTheoryComput_2025_v21_p4375
 
+.. _cite-deep-potential:
+
+- If the original Deep Potential model is used,
+
+.. bibliography::
+   :filter: False
+
+   Han_CommunComputPhys_2018_v23_p629
+
+.. _cite-deepcg:
+
+- If the DeePCG coarse-grained model is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_JChemPhys_2018_v149_p34101
+
 - If GPU version is used,
 
 .. bibliography::
@@ -57,6 +75,24 @@ Cite DeePMD-kit and methods
 
    Zhang_npjComputMater_2024_v10_p293
 
+.. _cite-dpa3:
+
+- If DPA-3 descriptor (`dpa3`) is used,
+
+.. bibliography::
+   :filter: False
+
+   Zhang_2025_DPA3
+
+.. _cite-dpa4:
+
+- If DPA-4 descriptor (`dpa4`, `sezm`) is used,
+
+.. bibliography::
+   :filter: False
+
+   Li_2026_DPA4
+
 - If frame-specific parameters (`fparam`, e.g. electronic temperature) is used,
 
 .. bibliography::
@@ -84,6 +120,15 @@ Cite DeePMD-kit and methods
    :filter: False
 
    Sommers_PhysChemChemPhys_2020_v22_p10592
+
+.. _cite-deeppopulation:
+
+- If fitting atomic charge populations with DeepPopulation,
+
+.. bibliography::
+   :filter: False
+
+   Ahart_2026_DeepPolaron
 
 - If fitting density of states,
 

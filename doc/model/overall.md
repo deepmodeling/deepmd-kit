@@ -1,5 +1,8 @@
 # Overall
 
+The original Deep Potential formulation is listed in the
+{ref}`canonical citation guide <cite-deep-potential>`.
+
 ## Theory
 
 A Deep Potential (DP) model, denoted by $\mathcal{M}$, can be generally represented as

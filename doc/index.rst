@@ -239,6 +239,33 @@ New and noteworthy
       Give AI agents reproducible guidance for training, fine-tuning,
       inference, and LAMMPS workflows.
 
+Documentation map
+=================
+
+* **Getting Started:** :doc:`Installation and first model
+  <getting-started/index>`.
+* **User Guide:** :doc:`Backends <backend>` · :doc:`Installation
+  <install/index>` · :doc:`Data <data/index>` · :doc:`Models <model/index>` ·
+  :doc:`Training <train/index>` · :doc:`Freeze <freeze/index>` · :doc:`Test
+  <test/index>` · :doc:`Inference <inference/index>` · :doc:`DPA-ADAPT
+  <dpa_adapt/index>` · :doc:`CLI <cli>` · :doc:`Integrations
+  <third-party/index>` · :doc:`Agent Skills <agent-skills>` · :doc:`NVNMD
+  <nvnmd/index>` · :doc:`Environment <env>` · :doc:`Troubleshooting
+  <troubleshooting/index>`.
+* **Tutorials and Publications:** `Tutorials
+  <https://tutorials.deepmodeling.com/>`_ · `Publications
+  <https://blogs.deepmodeling.com/papers/deepmd-kit/>`_.
+* **Developer Guide:** :doc:`CMake <development/cmake>` · :doc:`TensorFlow
+  models <development/create-a-model-tf>` · :doc:`PyTorch models
+  <development/create-a-model-pt>` · :doc:`Type embedding
+  <development/type-embedding>` · :doc:`Coding conventions
+  <development/coding-conventions>` · :doc:`CI/CD <development/cicd>` ·
+  :doc:`Python API <autoapi/deepmd/index>` · :doc:`Custom operators <api_op>` ·
+  :doc:`C++ API <API_CC/api_cc>` · :doc:`C API <api_c/api_c>` · :doc:`Core API
+  <api_core/api_core>`.
+* **Project Details:** :doc:`License <license>` · :doc:`Authors and credits
+  <credits>` · :doc:`Logo <logo>`.
+
 Citation
 ========
 
@@ -287,6 +314,7 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 3
    :caption: Getting Started
+   :hidden:
 
    getting-started/index
 
@@ -296,6 +324,7 @@ required by the models and features used in your work.
    :maxdepth: 3
    :numbered:
    :caption: User Guide
+   :hidden:
 
    backend
    install/index
@@ -318,6 +347,7 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 2
    :caption: Tutorials and Publications
+   :hidden:
 
    Tutorials <https://tutorials.deepmodeling.com/>
    Publications <https://blogs.deepmodeling.com/papers/deepmd-kit/>
@@ -327,6 +357,7 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 5
    :caption: Developer Guide
+   :hidden:
 
    development/cmake
    development/create-a-model-tf
@@ -345,6 +376,7 @@ required by the models and features used in your work.
 .. toctree::
    :maxdepth: 3
    :caption: Project Details
+   :hidden:
 
    license
    credits

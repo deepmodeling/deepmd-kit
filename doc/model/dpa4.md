@@ -13,7 +13,7 @@ and defaults to the `dpa4_ener` energy fitting network, so `descriptor.type` and
 `fitting_net.type` may be omitted for energy training. A new energy input then
 needs only the model type, `type_map`, and a few descriptor options.
 
-Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
+Reference: {ref}`DPA4 paper <cite-dpa4>` in the canonical citation guide.
 
 ## Quick start
 
@@ -744,20 +744,5 @@ closed over the one-hop neighbor shell.
 
 ## Citation
 
-If you use DPA4/SeZM, please cite the [DPA4 paper](https://arxiv.org/abs/2606.02419):
-
-```bibtex
-@article{li2026dpa4,
-  title = {{DPA4}: Pushing the Accuracy-Cost Frontier of Interatomic
-           Potentials with {EMFA} {SO(2)} Convolution},
-  author = {Li, Tiancheng and Li, Wentao and Peng, Anyang and Xue, Jianming
-            and Zhang, Linfeng and Zhang, Duo and Wang, Han},
-  journal = {arXiv preprint arXiv:2606.02419},
-  year = {2026},
-  eprint = {2606.02419},
-  archivePrefix = {arXiv},
-  primaryClass = {physics.chem-ph},
-  doi = {10.48550/arXiv.2606.02419},
-  url = {https://arxiv.org/abs/2606.02419}
-}
-```
+If you use DPA4/SeZM, cite the {ref}`DPA4 paper <cite-dpa4>` from the
+canonical citation guide. Its BibTeX record is maintained in `CITATIONS.bib`.
