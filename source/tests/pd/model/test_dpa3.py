@@ -116,6 +116,48 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ]
         self.assertEqual([], parameters_with_grad)
 
+    def test_share_params_rejects_mismatched_trainable(self) -> None:
+        """Sharing must not let one descriptor rewrite another's gradients."""
+        repflow = RepFlowArgs(
+            n_dim=4,
+            e_dim=4,
+            a_dim=4,
+            nlayers=1,
+            e_sel=2,
+            a_sel=1,
+            axis_neuron=2,
+        )
+        for shared_level in (0, 1):
+            with self.subTest(shared_level=shared_level):
+                trainable_descriptor = DescrptDPA3(
+                    self.nt,
+                    repflow=repflow,
+                    trainable=True,
+                    seed=GLOBAL_SEED,
+                )
+                frozen_descriptor = DescrptDPA3(
+                    self.nt,
+                    repflow=repflow,
+                    trainable=False,
+                    seed=GLOBAL_SEED,
+                )
+
+                with self.assertRaisesRegex(ValueError, "same trainable setting"):
+                    trainable_descriptor.share_params(
+                        frozen_descriptor, shared_level=shared_level
+                    )
+
+                # Validation happens before either the embedding or repflow
+                # layers can be aliased to the other descriptor.
+                self.assertIsNot(
+                    trainable_descriptor.type_embedding,
+                    frozen_descriptor.type_embedding,
+                )
+                self.assertIsNot(
+                    trainable_descriptor.repflows,
+                    frozen_descriptor.repflows,
+                )
+
     def test_consistency(
         self,
     ) -> None:

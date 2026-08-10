@@ -360,6 +360,11 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         assert self.__class__ == base_class.__class__, (
             "Only descriptors of the same type can share params!"
         )
+        if self.trainable != base_class.trainable:
+            raise ValueError(
+                "DPA3 descriptors must use the same trainable setting before "
+                "sharing parameters."
+            )
         # For DPA3 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in type_embedding, repflow
