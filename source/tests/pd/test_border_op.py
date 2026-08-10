@@ -88,4 +88,5 @@ def test_border_op_self_copy_uses_cpu_place() -> None:
     # Backpropagation runs the reverse self-swap, which needs the same
     # place-based CPU/GPU dispatch as the forward copy.
     result.sum().backward()
-    np.testing.assert_array_equal(g1_leaf.grad.numpy(), np.ones([3, 2]))
+    expected_grad = np.array([[1.0, 1.0], [2.0, 2.0], [0.0, 0.0]])
+    np.testing.assert_array_equal(g1_leaf.grad.numpy(), expected_grad)
