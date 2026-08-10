@@ -30,6 +30,15 @@ void CheckTabulateDataTensor(const torch::Tensor& tensor,
   TORCH_CHECK(tensor.is_contiguous(), name, " must be contiguous");
 }
 
+// The native SE-A kernels assume that every non-empty local-atom dimension
+// has at least one neighbor. Reject the degenerate shape before calculating
+// raw buffer offsets in either public or autograd-internal entry points.
+void CheckTabulateSeANeighborCount(const torch::Tensor& em_tensor) {
+  TORCH_CHECK(em_tensor.dim() == 3, "em must be rank 3");
+  TORCH_CHECK(em_tensor.size(0) == 0 || em_tensor.size(1) > 0,
+              "em must contain at least one neighbor when nloc is positive");
+}
+
 template <typename FPTYPE>
 void CheckTabulateTable(const torch::Tensor& table_tensor,
                         const torch::Tensor& table_info_tensor,
@@ -78,6 +87,7 @@ void CheckTabulateSeAInputs(const torch::Tensor& table_tensor,
                              false);
   TORCH_CHECK(em_tensor.dim() == 3 && em_tensor.size(2) == 4,
               "em must have shape [nloc, nnei, 4]");
+  CheckTabulateSeANeighborCount(em_tensor);
   const int64_t neighbor_count = em_tensor.numel() / 4;
   TORCH_CHECK(em_x_tensor.dim() == 2 && em_x_tensor.numel() == neighbor_count,
               "em_x must be rank 2 and contain nloc * nnei values");
@@ -144,6 +154,7 @@ void TabulateFusionSeAForward(const torch::Tensor& table_tensor,
   if (two_embed_tensor.defined() && two_embed_tensor.dim() != 2) {
     throw std::invalid_argument("Dim of input should be 2");
   }
+  CheckTabulateSeANeighborCount(em_tensor);
   // get the device
   std::string device;
   GetTensorDevice(table_tensor, device);
@@ -192,6 +203,7 @@ void TabulateFusionSeAGradForward(const torch::Tensor& table_tensor,
   if (dy_tensor.dim() != 3) {
     throw std::invalid_argument("Dim of dy_tensor should be 3");
   }
+  CheckTabulateSeANeighborCount(em_tensor);
   std::string device;
   GetTensorDevice(table_tensor, device);
   // flat the tensors
@@ -250,6 +262,7 @@ void TabulateFusionSeAGradGradForward(const torch::Tensor& table_tensor,
   if (dz_dy_dem_tensor.dim() != 3) {
     throw std::invalid_argument("Dim of dz_dy_dem should be 3");
   }
+  CheckTabulateSeANeighborCount(em_tensor);
   // get the device
   std::string device;
   GetTensorDevice(table_tensor, device);

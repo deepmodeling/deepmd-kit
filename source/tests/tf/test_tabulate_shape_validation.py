@@ -61,6 +61,34 @@ class TestTabulateShapeValidation(unittest.TestCase):
         ):
             sess.run(descriptor)
 
+    def test_rejects_zero_neighbors_for_nonempty_atoms(self) -> None:
+        empty_em_x = tf.zeros((1, 0), dtype=tf.float64)
+        empty_em = tf.zeros((1, 0, 4), dtype=tf.float64)
+        descriptor = op_module.tabulate_fusion_se_a(
+            self.table,
+            self.table_info,
+            empty_em_x,
+            empty_em,
+            last_layer_size=2,
+        )
+        gradients = op_module.tabulate_fusion_se_a_grad(
+            self.table,
+            self.table_info,
+            empty_em_x,
+            empty_em,
+            tf.zeros((1, 4, 2), dtype=tf.float64),
+            tf.zeros((1, 4, 2), dtype=tf.float64),
+        )
+        for operation in (descriptor, gradients):
+            with (
+                self.subTest(operation=operation),
+                self.assertRaisesRegex(
+                    tf.errors.InvalidArgumentError, "at least one neighbor"
+                ),
+                tf.Session() as sess,
+            ):
+                sess.run(operation)
+
     def test_rejects_mismatched_gradient_shape(self) -> None:
         gradients = op_module.tabulate_fusion_se_a_grad(
             self.table,
@@ -109,6 +137,64 @@ class TestTabulateShapeValidation(unittest.TestCase):
             tf.Session() as sess,
         ):
             sess.run(descriptor)
+
+    def test_fractional_regions_require_every_reachable_row(self) -> None:
+        table_info = tf.constant([0, 1.2, 2.4, 1, 1, -1], dtype=tf.float64)
+        em_x = tf.constant([[2.4, 3.0]], dtype=tf.float64)
+        em = tf.zeros((1, 2, 4), dtype=tf.float64)
+        short_descriptor = op_module.tabulate_fusion_se_a(
+            tf.zeros((2, 12), dtype=tf.float64),
+            table_info,
+            em_x,
+            em,
+            last_layer_size=2,
+        )
+        with (
+            self.assertRaisesRegex(
+                tf.errors.InvalidArgumentError, "table does not contain enough"
+            ),
+            tf.Session() as sess,
+        ):
+            sess.run(short_descriptor)
+
+        descriptor = op_module.tabulate_fusion_se_a(
+            tf.zeros((3, 12), dtype=tf.float64),
+            table_info,
+            em_x,
+            em,
+            last_layer_size=2,
+        )
+        with tf.Session() as sess:
+            self.assertEqual(sess.run(descriptor).shape, (1, 4, 2))
+
+    def test_max_equal_to_upper_requires_high_tail_row(self) -> None:
+        table_info = tf.constant([0, 1, 1, 1, 1, -1], dtype=tf.float64)
+        em_x = tf.constant([[1.0, 2.0]], dtype=tf.float64)
+        em = tf.zeros((1, 2, 4), dtype=tf.float64)
+        short_descriptor = op_module.tabulate_fusion_se_a(
+            tf.zeros((1, 12), dtype=tf.float64),
+            table_info,
+            em_x,
+            em,
+            last_layer_size=2,
+        )
+        with (
+            self.assertRaisesRegex(
+                tf.errors.InvalidArgumentError, "table does not contain enough"
+            ),
+            tf.Session() as sess,
+        ):
+            sess.run(short_descriptor)
+
+        descriptor = op_module.tabulate_fusion_se_a(
+            tf.zeros((2, 12), dtype=tf.float64),
+            table_info,
+            em_x,
+            em,
+            last_layer_size=2,
+        )
+        with tf.Session() as sess:
+            self.assertEqual(sess.run(descriptor).shape, (1, 4, 2))
 
 
 if __name__ == "__main__":

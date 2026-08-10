@@ -216,6 +216,10 @@ deepmd::tf_compat::Status ValidateTabulateSeAInputs(
     return deepmd::tf_compat::InvalidArgument(
         "em must have shape [nloc, nnei, 4]");
   }
+  if (em_tensor.dim_size(0) > 0 && em_tensor.dim_size(1) == 0) {
+    return deepmd::tf_compat::InvalidArgument(
+        "em must contain at least one neighbor when nloc is positive");
+  }
   const int64_t neighbor_count = em_tensor.NumElements() / 4;
   if (em_x_tensor.dims() != 2 || em_x_tensor.NumElements() != neighbor_count) {
     return deepmd::tf_compat::InvalidArgument(

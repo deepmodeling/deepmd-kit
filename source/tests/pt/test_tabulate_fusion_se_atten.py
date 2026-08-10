@@ -1680,6 +1680,73 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                     self.is_sorted,
                 )
 
+    def test_rejects_zero_neighbors_for_nonempty_atoms(self) -> None:
+        empty_em_x = torch.empty(
+            (1, 0), dtype=self.table_tensor.dtype, device=env.DEVICE
+        )
+        empty_em = torch.empty(
+            (1, 0, 4), dtype=self.table_tensor.dtype, device=env.DEVICE
+        )
+        empty_two_embed = torch.empty(
+            (1, 0), dtype=self.table_tensor.dtype, device=env.DEVICE
+        )
+        operations = (
+            lambda: torch.ops.deepmd.tabulate_fusion_se_a(
+                self.table_tensor,
+                self.table_info_tensor,
+                empty_em_x,
+                empty_em,
+                self.last_layer_size,
+            ),
+            lambda: torch.ops.deepmd.tabulate_fusion_se_atten(
+                self.table_tensor,
+                self.table_info_tensor,
+                empty_em_x,
+                empty_em,
+                empty_two_embed,
+                self.last_layer_size,
+                self.is_sorted,
+            ),
+        )
+        for operation in operations:
+            with (
+                self.subTest(operation=operation),
+                self.assertRaisesRegex(RuntimeError, "at least one neighbor"),
+            ):
+                operation()
+
+    def test_backward_rejects_zero_neighbor_saved_tensors(self) -> None:
+        em_x_pointer = self.em_x_tensor.data_ptr()
+        em_pointer = self.em_tensor.data_ptr()
+
+        def pack_hook(tensor: torch.Tensor) -> tuple[str, torch.Tensor]:
+            if tensor.data_ptr() == em_x_pointer:
+                return ("em_x", tensor)
+            if tensor.data_ptr() == em_pointer:
+                return ("em", tensor)
+            return ("unchanged", tensor)
+
+        def unpack_hook(packed: tuple[str, torch.Tensor]) -> torch.Tensor:
+            name, tensor = packed
+            if name == "em_x":
+                return tensor.new_empty((self.nloc, 0))
+            if name == "em":
+                return tensor.new_empty((self.nloc, 0, 4))
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
+            descriptor = torch.ops.deepmd.tabulate_fusion_se_atten(
+                self.table_tensor,
+                self.table_info_tensor,
+                self.em_x_tensor,
+                self.em_tensor,
+                self.two_embed_tensor,
+                self.last_layer_size,
+                self.is_sorted,
+            )[0]
+            with self.assertRaisesRegex(RuntimeError, "at least one neighbor"):
+                descriptor.sum().backward()
+
     def test_accepts_flattened_em_x_layout(self) -> None:
         result = torch.ops.deepmd.tabulate_fusion_se_atten(
             self.table_tensor,
@@ -1715,6 +1782,65 @@ class TestTabulateFusionSeAttenOp(unittest.TestCase):
                 self.last_layer_size,
                 self.is_sorted,
             )
+
+    def test_fractional_regions_require_every_reachable_row(self) -> None:
+        self._assert_table_row_boundary(
+            [0, 1.2, 2.4, 1, 1, -1], short_rows=2, required_rows=3
+        )
+
+    def test_max_equal_to_upper_requires_high_tail_row(self) -> None:
+        self._assert_table_row_boundary(
+            [0, 1, 1, 1, 1, -1], short_rows=1, required_rows=2
+        )
+
+    def _assert_table_row_boundary(
+        self, table_info: list[float], short_rows: int, required_rows: int
+    ) -> None:
+        last_layer_size = 2
+        coefficients_per_row = last_layer_size * 6
+        table_info_tensor = torch.tensor(
+            table_info, dtype=self.table_tensor.dtype, device="cpu"
+        )
+        em_x = torch.tensor(
+            [[table_info[2], table_info[2] + 1]],
+            dtype=self.table_tensor.dtype,
+            device=env.DEVICE,
+        )
+        em = torch.zeros((1, 2, 4), dtype=self.table_tensor.dtype, device=env.DEVICE)
+        two_embed = torch.zeros(
+            (1, 2 * last_layer_size),
+            dtype=self.table_tensor.dtype,
+            device=env.DEVICE,
+        )
+        with self.assertRaisesRegex(RuntimeError, "table does not contain enough"):
+            torch.ops.deepmd.tabulate_fusion_se_atten(
+                torch.zeros(
+                    (short_rows, coefficients_per_row),
+                    dtype=self.table_tensor.dtype,
+                    device=env.DEVICE,
+                ),
+                table_info_tensor,
+                em_x,
+                em,
+                two_embed,
+                last_layer_size,
+                self.is_sorted,
+            )
+
+        descriptor = torch.ops.deepmd.tabulate_fusion_se_atten(
+            torch.zeros(
+                (required_rows, coefficients_per_row),
+                dtype=self.table_tensor.dtype,
+                device=env.DEVICE,
+            ),
+            table_info_tensor,
+            em_x,
+            em,
+            two_embed,
+            last_layer_size,
+            self.is_sorted,
+        )[0]
+        self.assertEqual(descriptor.shape, (1, 4, last_layer_size))
 
 
 if __name__ == "__main__":
