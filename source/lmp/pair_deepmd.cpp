@@ -390,8 +390,8 @@ bool PairDeepMD::can_use_compact_packing() const {
          (dim_aparam == 0 || !aparam.empty());
 }
 
-void PairDeepMD::update_deep_pot_cache_representation(
-    bool compact_packing, int& ago) {
+void PairDeepMD::update_deep_pot_cache_representation(bool compact_packing,
+                                                      int& ago) {
   const int representation = compact_packing ? 1 : 0;
   if (deep_pot_cache_representation_ != representation) {
     // The same DeepPot instance serves packed force evaluations and generic
@@ -597,8 +597,7 @@ void PairDeepMD::init_style() {
   }
   for (int ii = 0; ii < modify->nfix; ++ii) {
     if (strcmp(modify->fix[ii]->style, "dplr") == 0) {
-      error->all(FLERR,
-                 "compact pair_style deepmd does not support fix dplr");
+      error->all(FLERR, "compact pair_style deepmd does not support fix dplr");
     }
   }
   refresh_compact_center_tags();
