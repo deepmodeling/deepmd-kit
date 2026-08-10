@@ -369,37 +369,52 @@ def _cal_hessian_ext_graph(
     """Graph twin of :func:`_cal_hessian_ext`.
 
     Computes the Hessian of the reduced output w.r.t. the LOCAL coordinates on
-    the carry-all graph route. Returns shape ``[nf, *vdef.shape, nloc*3,
-    nloc*3]`` -- the local-only counterpart of the dense extended Hessian,
-    already in the same final layout the dense route reaches after
+    the carry-all graph route. Each frame is differentiated only over its real
+    nodes; phantom rows are restored as zero rows and columns at the public
+    rectangular boundary. Returns shape ``[nf, *vdef.shape, nloc*3, nloc*3]``
+    -- the local-only counterpart of the dense extended Hessian, already in
+    the same final layout the dense route reaches after
     ``communicate_extended_output`` folds ``nall -> nloc`` (the graph route
     reduces over owned nodes, so no fold is needed). Node axis is
     atom-major/xyz-minor, matching the dense final reshape.
     """
     nf, nloc, _ = coord.shape
     vsize = math.prod(vdef.shape)
-    coord_flat = coord.reshape(nf, nloc * 3)
     hessians = []
     for ii in range(nf):
+        node_index = torch.nonzero(atype[ii] >= 0, as_tuple=False).reshape(-1)
+        n_real = node_index.shape[0]
+        coord_flat = coord[ii, node_index].reshape(n_real * 3)
+        atype_frame = atype[ii : ii + 1, node_index]
+        aparam_frame = aparam[ii : ii + 1, node_index] if aparam is not None else None
         for ci in range(vsize):
             wrapper = _WrapperForwardEnergyGraph(
                 model,
                 kk,
                 ci,
-                nloc,
-                atype[ii : ii + 1],
+                n_real,
+                atype_frame,
                 box[ii : ii + 1] if box is not None else None,
                 method,
                 pair_excl,
                 rcut,
                 fparam[ii : ii + 1] if fparam is not None else None,
-                aparam[ii : ii + 1] if aparam is not None else None,
+                aparam_frame,
             )
             hess = torch.autograd.functional.hessian(
                 wrapper,
-                coord_flat[ii],
+                coord_flat,
                 create_graph=create_graph,
-            )  # (nloc*3, nloc*3)
+            )  # (n_real*3, n_real*3)
+            if n_real != nloc:
+                component_index = (
+                    node_index[:, None] * 3
+                    + torch.arange(3, dtype=node_index.dtype, device=node_index.device)
+                ).reshape(-1)
+                hess = expand_node_values(hess, component_index, nloc * 3)
+                hess = expand_node_values(
+                    hess.transpose(0, 1), component_index, nloc * 3
+                ).transpose(0, 1)
             hessians.append(hess)
     return torch.stack(hessians).reshape(nf, *vdef.shape, nloc * 3, nloc * 3)
 
@@ -947,9 +962,11 @@ def make_model(
                         v, node_index, n_padded
                     ).reshape(nf, nloc, *v.shape[1:])
             # Graph-native Hessian (parallel to the dense ``forward_common_atomic``
-            # loop): differentiate the reduced output w.r.t. the LOCAL coords by
-            # rebuilding the graph inside the wrapper. Added AFTER the unravel so
-            # its ``(nf, *def, nloc, 3, nloc, 3)`` shape is returned as-is.
+            # loop): differentiate the reduced output w.r.t. the compact LOCAL
+            # coordinates by rebuilding the graph inside the wrapper, then restore
+            # phantom rows and columns at the public rectangular boundary. Added
+            # AFTER the unravel so its ``(nf, *def, nloc, 3, nloc, 3)`` shape is
+            # returned as-is.
             # Eager-only, like the dense Hessian (autograd.functional.hessian
             # does not export/compile).
             aod = self.atomic_output_def()

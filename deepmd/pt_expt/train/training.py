@@ -2199,12 +2199,13 @@ class Trainer(AbstractTrainer):
     def _configure_batch_layout(self, *data_maps: Any) -> None:
         """Ask each LMDB data system for the layout its own model can consume.
 
-        A model whose descriptor reads a flat node axis takes the frames of a
-        batch concatenated, which spares it the padding that frames of unequal
-        atom count would otherwise need. Every other model reads an
-        ``(nf, nloc, ...)`` axis and needs them padded to a common width. Only
-        the trainer sees both sides, and it settles the question here, once,
-        before any batch is drawn.
+        Under ``mix:N``, a model whose descriptor reads a flat node axis takes
+        the frames of a batch concatenated, which spares it the padding that
+        frames of unequal atom count would otherwise need. Every other model
+        reads an ``(nf, nloc, ...)`` axis and needs them padded to a common
+        width. Non-mixing batch rules retain their established rectangular
+        layout. Only the trainer sees both sides, and it settles the question
+        here, once, before any batch is drawn.
 
         A graph lower is necessary but not sufficient: the model must also
         expose an entry that takes the flat axis, which the composed models

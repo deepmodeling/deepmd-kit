@@ -24,6 +24,10 @@ many labels:
   frame. Pooling and averaging over frames coincide there, so
   :func:`per_frame_component_mean` reduces per frame and leaves the frame axis
   to the caller, which applies the extensive ``1 / natoms`` weighting.
+- **Pair terms** (Hessian) describe one response matrix per frame. Their
+  component count grows quadratically with atom count, so
+  :func:`masked_pair_mean` normalizes each matrix before averaging frames;
+  otherwise a large structure would dominate a batch quadratically.
 
 Pooling is what keeps a frame's weight independent of the company it keeps.
 The alternative -- averaging each frame's own per-label mean -- gives every
@@ -80,11 +84,14 @@ def masked_atom_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
     Parameters
     ----------
     elem : Array
-        Non-negative per-element contribution of shape ``[nf, nloc, ncomp]``
-        (already squared or abs'd, and pre-multiplied by any per-atom weight
-        such as ``atom_pref``). NOT yet multiplied by the mask.
+        Non-negative per-element contribution of shape
+        ``[*node_shape, ncomp]`` (already squared or abs'd, and pre-multiplied
+        by any per-atom weight such as ``atom_pref``). NOT yet multiplied by
+        the mask. ``node_shape`` may be rectangular ``(nf, nloc)`` or a flat
+        ragged node axis ``(N,)``.
     maskf : Array
-        Per-atom real/ghost mask of shape ``[nf, nloc]`` (1.0 real, 0.0 ghost).
+        Per-atom inclusion mask of shape ``node_shape`` (1.0 included,
+        0.0 excluded).
     ncomp : int
         Number of components per atom (force: 3, atom energy: 1,
         dos: ``numb_dos``, tensor: ``tensor_size``).
@@ -97,8 +104,10 @@ def masked_atom_mean(elem: Array, maskf: Array, ncomp: int) -> Array:
         ``0/0 = NaN``.
     """
     xp = array_api_compat.array_namespace(elem, maskf)
-    total = xp.sum(elem * maskf[:, :, None])
-    total_dof = xp.sum(maskf) * ncomp
+    node_elem = xp.reshape(elem, (-1, ncomp))
+    node_mask = xp.reshape(maskf, (-1, 1))
+    total = xp.sum(node_elem * node_mask)
+    total_dof = xp.sum(node_mask) * ncomp
     # A batch of nothing but padding has no label to average over, and the
     # ratio would be 0/0 = NaN -- poisoning the whole batch loss and, under
     # autograd, its gradient. The division still runs on a safe denominator so

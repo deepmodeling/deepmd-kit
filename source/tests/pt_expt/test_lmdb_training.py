@@ -873,6 +873,23 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         # Frame-level fields keep their frame axis.
         self.assertEqual(batch["energy"].shape[0], batch["n_node"].shape[0])
 
+    def test_non_mixing_rule_keeps_the_rectangular_layout(self) -> None:
+        """Model capability alone does not change established LMDB batches."""
+        config = self._config(self._dpa1())
+        config["training"]["training_data"]["batch_size"] = 2
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            batch = trainer.training_data.get_batch()
+        finally:
+            os.chdir(cwd)
+
+        self.assertFalse(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 3)
+        self.assertEqual(batch["atype"].ndim, 2)
+        self.assertNotIn("n_node", batch)
+
     def test_compiled_graph_model_trains_on_a_flat_node_axis(self) -> None:
         """The compiled lower reads the flat axis too, so compiling changes nothing.
 

@@ -16,6 +16,12 @@ from deepmd.dpmodel.loss.reduction import (
     masked_pair_mean,
     per_frame_component_mean,
 )
+from deepmd.dpmodel.utils.neighbor_graph.graph import (
+    frame_id_from_n_node,
+)
+from deepmd.dpmodel.utils.neighbor_graph.segment import (
+    segment_sum,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -282,20 +288,34 @@ class EnergyLoss(Loss):
         # Two things about a batch decide how its terms reduce, and the node
         # axis states them differently.
         #
-        # ``inv``, the reciprocal real atom count of each frame, is what the
-        # extensive frame-level terms (energy, virial) divide by. ``maskf``
-        # marks the padded rows the per-atom terms must skip. A rectangular
-        # batch carries both in its mask: summing it gives the counts, and its
-        # zeros are the padding. A ragged batch pads nothing, so it states the
-        # counts alone and its per-atom terms reduce over their whole axis.
-        maskf = None
+        # ``inv``, the reciprocal included-atom count of each frame, is what
+        # the extensive frame-level terms (energy, virial) divide by.
+        # ``maskf`` marks both padded rows and model-excluded atom types for
+        # the per-atom terms. A rectangular batch carries a two-dimensional
+        # mask whose row sums give the counts. A ragged batch carries the same
+        # information on its flat node axis, with ``n_node`` defining the
+        # frame segments.
+        maskf = (
+            xp.astype(model_dict["mask"], energy.dtype)
+            if "mask" in model_dict
+            else None
+        )
+        is_ragged = "n_node" in model_dict
         inv = None
-        if "n_node" in model_dict:
-            inv = 1.0 / xp.astype(model_dict["n_node"], energy.dtype)  # [nf]
-        elif "mask" in model_dict:
-            maskf = xp.astype(model_dict["mask"], energy.dtype)  # [nf, nloc]
+        if is_ragged:
+            n_node = model_dict["n_node"]
+            _nf = n_node.shape[0]
+            if maskf is None:
+                included_n_node = xp.astype(n_node, energy.dtype)
+            else:
+                frame_id = frame_id_from_n_node(n_node, n_total=maskf.shape[0])
+                included_n_node = segment_sum(xp.reshape(maskf, (-1,)), frame_id, _nf)
+            inv = 1.0 / included_n_node
+        elif maskf is not None:
             inv = xp.reshape(1.0 / xp.sum(maskf, axis=-1), (-1,))  # [nf]
             _nloc = maskf.shape[1]
+        if maskf is not None:
+            _node_shape = maskf.shape
         if inv is not None:
             _nf = inv.shape[0]
 
@@ -432,7 +452,7 @@ class EnergyLoss(Loss):
                 l2_force_loss = xp.mean(xp.square(diff_f))
                 if maskf is not None:
                     # Idiom 1 (per-atom masked mean, ncomp=3).
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))  # [nf, nloc, 3]
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
                     # Masked MSE computed for rmse_f display regardless of use_huber.
                     l2_force_masked = masked_atom_mean(xp.square(diff_f_3d), maskf, 3)
                     if not self.use_huber:
@@ -454,12 +474,12 @@ class EnergyLoss(Loss):
                             )  # [nf, nloc, 3]
                             huber_ncomp = 3
                         else:
-                            diff_3 = xp.reshape(force_hat - force, (_nf, _nloc, 3))
+                            diff_3 = xp.reshape(force_hat - force, (*_node_shape, 3))
                             norm_2d = xp.reshape(
                                 xp.linalg.vector_norm(
                                     xp.reshape(diff_3, (-1, 3)), axis=1
                                 ),
-                                (_nf, _nloc),
+                                _node_shape,
                             )
                             abs_n = norm_2d
                             quad_n = 0.5 * xp.square(norm_2d)
@@ -470,7 +490,7 @@ class EnergyLoss(Loss):
                                 xp.where(
                                     abs_n <= self._huber_delta_force, quad_n, lin_n
                                 ),
-                                (_nf, _nloc, 1),
+                                (*_node_shape, 1),
                             )
                             huber_ncomp = 1
                         l_huber_masked = masked_atom_mean(
@@ -506,18 +526,18 @@ class EnergyLoss(Loss):
                     )
             elif self.loss_func == "mae":
                 if maskf is not None:
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
                     if not self.f_use_norm:
                         l1_force_masked = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                     else:
-                        diff_3 = xp.reshape(force_hat - force, (_nf, _nloc, 3))
+                        diff_3 = xp.reshape(force_hat - force, (*_node_shape, 3))
                         norm_2d = xp.reshape(
                             xp.linalg.vector_norm(xp.reshape(diff_3, (-1, 3)), axis=1),
-                            (_nf, _nloc),
+                            _node_shape,
                         )
                         # One L2 norm per atom, hence one label per atom.
                         l1_force_masked = masked_atom_mean(
-                            xp.reshape(norm_2d, (_nf, _nloc, 1)), maskf, 1
+                            xp.reshape(norm_2d, (*_node_shape, 1)), maskf, 1
                         )
                     loss += pref_f * l1_force_masked
                     more_loss["mae_f"] = self.display_if_exist(
@@ -541,7 +561,7 @@ class EnergyLoss(Loss):
                 )
             if mae:
                 if maskf is not None:
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
                     mae_f = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                 else:
                     mae_f = xp.mean(xp.abs(diff_f))
@@ -627,10 +647,10 @@ class EnergyLoss(Loss):
                 )
                 if maskf is not None:
                     # Idiom 1 (per-atom masked mean, ncomp=1).
-                    ae_2d = xp.reshape(atom_ener, (_nf, _nloc))
-                    ae_hat_2d = xp.reshape(atom_ener_hat, (_nf, _nloc))
+                    ae_2d = xp.reshape(atom_ener, _node_shape)
+                    ae_hat_2d = xp.reshape(atom_ener_hat, _node_shape)
                     l2_ae_masked = masked_atom_mean(
-                        xp.square(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                        xp.square(ae_hat_2d - ae_2d)[..., None], maskf, 1
                     )
                     if not self.use_huber:
                         loss += pref_ae * l2_ae_masked
@@ -646,7 +666,7 @@ class EnergyLoss(Loss):
                             abs_ae <= self._huber_delta_energy, quad_ae, lin_ae
                         )
                         l_huber_ae_masked = masked_atom_mean(
-                            huber_ae[:, :, None], maskf, 1
+                            huber_ae[..., None], maskf, 1
                         )
                         loss += pref_ae * l_huber_ae_masked
                     more_loss["rmse_ae"] = self.display_if_exist(
@@ -670,10 +690,10 @@ class EnergyLoss(Loss):
                     xp.abs(atom_ener_hat_reshape - atom_ener_reshape)
                 )
                 if maskf is not None:
-                    ae_2d = xp.reshape(atom_ener, (_nf, _nloc))
-                    ae_hat_2d = xp.reshape(atom_ener_hat, (_nf, _nloc))
+                    ae_2d = xp.reshape(atom_ener, _node_shape)
+                    ae_hat_2d = xp.reshape(atom_ener_hat, _node_shape)
                     l1_ae_masked = masked_atom_mean(
-                        xp.abs(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                        xp.abs(ae_hat_2d - ae_2d)[..., None], maskf, 1
                     )
                     loss += pref_ae * l1_ae_masked
                     more_loss["mae_ae"] = self.display_if_exist(
@@ -697,8 +717,8 @@ class EnergyLoss(Loss):
                 )
                 if maskf is not None:
                     # Idiom 1 with pref weight (ncomp=3).
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
-                    pf_3d = xp.reshape(atom_pref, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
+                    pf_3d = xp.reshape(atom_pref, (*_node_shape, 3))
                     l2_pf_masked = masked_atom_mean(
                         xp.square(diff_f_3d) * pf_3d, maskf, 3
                     )
@@ -716,8 +736,8 @@ class EnergyLoss(Loss):
                     xp.multiply(xp.abs(diff_f), atom_pref_reshape)
                 )
                 if maskf is not None:
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
-                    pf_3d = xp.reshape(atom_pref, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
+                    pf_3d = xp.reshape(atom_pref, (*_node_shape, 3))
                     l1_pf_masked = masked_atom_mean(xp.abs(diff_f_3d) * pf_3d, maskf, 3)
                     loss += pref_pf * l1_pf_masked
                     more_loss["mae_pf"] = self.display_if_exist(
@@ -733,7 +753,7 @@ class EnergyLoss(Loss):
                     f"Loss type {self.loss_func} is not implemented for atom prefactor force loss."
                 )
         if self.has_gf:
-            if maskf is None and inv is not None:
+            if is_ragged:
                 # ``natoms`` below is one number for the whole batch, which a
                 # padded batch can honour and a concatenated one cannot: its
                 # frames differ in atom count, so ``drdq``, stored per frame
@@ -787,6 +807,10 @@ class EnergyLoss(Loss):
             )
         hessian = model_dict.get("hessian", model_dict.get("energy_derv_r_derv_r"))
         if self.has_h and hessian is not None and "hessian" in label_dict:
+            if is_ragged:
+                raise NotImplementedError(
+                    "the hessian loss requires a rectangular atom axis"
+                )
             find_hessian = label_dict.get("find_hessian", 0.0)
             if maskf is not None:
                 hessian_shape = (_nf, _nloc * 3, _nloc * 3)

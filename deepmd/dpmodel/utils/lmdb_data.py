@@ -2327,12 +2327,15 @@ class LmdbDataReader:
         return self._ragged_batches
 
     def use_ragged_batches(self, ragged: bool) -> None:
-        """Select the layout training batches are delivered in.
+        """Select the layout mixed-nloc training batches are delivered in.
 
-        The choice belongs to whichever model will consume them: one reading a
-        flat node axis takes the frames concatenated, one reading an
-        ``(nf, nloc, ...)`` axis needs them padded to a common width. Only the
-        trainer sees both the model and the data, so it makes the call, once,
+        The choice belongs to both the batching rule and the model. Only
+        ``mix:N`` may place different atom counts in one batch and therefore
+        needs a layout choice: a model reading a flat node axis takes those
+        frames concatenated, while one reading an ``(nf, nloc, ...)`` axis
+        needs them padded to a common width. Every other batching rule keeps
+        the established rectangular layout. Only the trainer sees both the
+        model and the data, so it requests the model-compatible layout once,
         before training starts. Consumers with a layout of their own --
         statistics, validation -- name theirs at the point of use and are
         unaffected.
@@ -2343,9 +2346,9 @@ class LmdbDataReader:
         Parameters
         ----------
         ragged : bool
-            Whether to concatenate frames instead of padding them.
+            Whether the consumer accepts concatenated mixed-nloc frames.
         """
-        self._ragged_batches = ragged
+        self._ragged_batches = ragged and self.mixed_nloc
 
     def per_atom_strides(self) -> dict[str, int]:
         """Return the leading-axis entries per atom of each per-atom field.

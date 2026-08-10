@@ -568,35 +568,77 @@ class TestPerFrameCountSource:
         if use_huber and loss_func != "mse":
             pytest.skip("huber replaces the mse branch only")
         rng = np.random.default_rng(3)
-        nf, nloc = 3, 5
+        nf, nloc = 2, 3
+        n_node = np.array([2, 3], dtype=np.int64)
+        physical = np.arange(nloc)[None, :] < n_node[:, None]
+        mask = physical.astype(np.float64)
+        # The second physical node is excluded by the model, independently of
+        # the padding slot at the end of the first frame.
+        mask[0, 1] = 0.0
         pred, label = _full_ener_dicts(
             nf,
             nloc,
             rng.normal(size=(nf, 1)),
             rng.normal(size=(nf, 1)),
-            mask=np.ones((nf, nloc), dtype=np.float64),
+            mask=mask,
+            force=rng.normal(size=(nf, nloc, 3)),
             virial=rng.normal(size=(nf, 9)),
+            atom_energy=rng.normal(size=(nf, nloc, 1)),
+            atom_ener=rng.normal(size=(nf, nloc, 1)),
+            atom_pref=rng.random(size=(nf, nloc * 3)),
+            find_force=1.0,
             find_virial=1.0,
+            find_atom_ener=1.0,
+            find_atom_pref=1.0,
         )
-        loss_obj = self._loss(
+        label["force"] = rng.normal(size=(nf, nloc, 3))
+        pref_pf = 0.0 if use_huber else 1.0
+        loss_obj = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            start_pref_pf=pref_pf,
+            limit_pref_pf=pref_pf,
             loss_func=loss_func,
             intensive_ener_virial=intensive,
             use_huber=use_huber,
         )
         from_mask, more_mask = loss_obj.call(1.0, nloc, pred, label)
 
-        # The same batch, described by its counts instead of by a mask.
-        by_count = {k: v for k, v in pred.items() if k != "mask"}
-        by_count["n_node"] = np.full(nf, nloc, dtype=np.int64)
-        from_counts, more_counts = loss_obj.call(1.0, nloc, by_count, label)
+        # The same physical nodes on a flat ragged axis. ``n_node`` retains the
+        # frame boundaries while the flat mask retains the model exclusion.
+        by_count = {
+            **pred,
+            "force": pred["force"][physical],
+            "atom_energy": pred["atom_energy"][physical],
+            "mask": mask[physical],
+            "n_node": n_node,
+        }
+        ragged_label = {
+            **label,
+            "force": label["force"][physical],
+            "atom_ener": label["atom_ener"][physical],
+            "atom_pref": label["atom_pref"].reshape(nf, nloc, 3)[physical],
+        }
+        from_counts, more_counts = loss_obj.call(
+            1.0, int(n_node.sum()), by_count, ragged_label
+        )
 
-        np.testing.assert_allclose(float(from_counts), float(from_mask), rtol=0, atol=0)
+        np.testing.assert_allclose(
+            float(from_counts), float(from_mask), rtol=1e-14, atol=0
+        )
         assert sorted(more_counts) == sorted(more_mask)
         for key, value in more_mask.items():
             np.testing.assert_allclose(
                 np.asarray(more_counts[key], dtype=np.float64),
                 np.asarray(value, dtype=np.float64),
-                rtol=0,
+                rtol=1e-14,
                 atol=0,
                 err_msg=key,
             )
