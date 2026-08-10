@@ -20,7 +20,7 @@ build:
         # concurrently without multiplying backend import memory excessively.
         - >-
           cd doc &&
-          timeout --signal=TERM --kill-after=30s 45m
+          timeout --signal=TERM --kill-after=30s 30m
           python -m sphinx -T -j 2 -b html -d _build/doctrees
           -D language=en . $READTHEDOCS_OUTPUT/html
   apt_packages:
