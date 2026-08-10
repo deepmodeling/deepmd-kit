@@ -13,6 +13,7 @@ from deepmd.pt.cxx_op import (
 )
 
 ERROR_MESSAGE = "last_layer_size must be between 1 and 1024"
+POSITIVE_ERROR_MESSAGE = "last_layer_size must be positive"
 
 
 @unittest.skipIf(not ENABLE_CUSTOMIZED_OP, "PyTorch customized OPs are not built")
@@ -60,15 +61,26 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
             ),
         }
 
-    def _assert_rejected(self, last_layer_size: int) -> None:
-        for name, call in self._forward_calls(last_layer_size).items():
+    def _assert_rejected(
+        self,
+        last_layer_size: int,
+        *,
+        include_se_t_tebd: bool = True,
+    ) -> None:
+        calls = self._forward_calls(last_layer_size)
+        if not include_se_t_tebd:
+            calls.pop("se_t_tebd")
+        for name, call in calls.items():
             with self.subTest(op=name, last_layer_size=last_layer_size):
-                with self.assertRaisesRegex(RuntimeError, ERROR_MESSAGE):
+                error_message = (
+                    POSITIVE_ERROR_MESSAGE if name == "se_t_tebd" else ERROR_MESSAGE
+                )
+                with self.assertRaisesRegex(RuntimeError, error_message):
                     call()
 
     def test_rejects_oversized_width(self) -> None:
         """A width past the maximum block dimension must be refused."""
-        self._assert_rejected(1025)
+        self._assert_rejected(1025, include_se_t_tebd=False)
 
     def test_rejects_nonpositive_width(self) -> None:
         """Zero and negative widths are invalid launch dimensions."""
@@ -76,7 +88,7 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
         self._assert_rejected(-1)
 
     def _gradient_cases(
-        self,
+        self, last_layer_size: int = 2
     ) -> dict[
         str,
         tuple[
@@ -86,7 +98,6 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
         ],
     ]:
         """Build valid forwards whose saved descriptors can test grad guards."""
-        last_layer_size = 2
         table = self._table(last_layer_size)
         table_info = self._table_info()
         em_x = self._zeros(1, 1).requires_grad_(True)
@@ -164,6 +175,8 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
     def test_first_gradient_wrappers_reject_oversized_width(self) -> None:
         """Every first-gradient wrapper validates its saved descriptor width."""
         for name, (forward, inputs, descriptor_shape) in self._gradient_cases().items():
+            if name == "se_t_tebd":
+                continue
             with self.subTest(op=name):
                 pack = self._oversized_saved_descriptor(descriptor_shape)
                 with torch.autograd.graph.saved_tensors_hooks(
@@ -176,6 +189,8 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
     def test_second_gradient_wrappers_reject_oversized_width(self) -> None:
         """Every grad-grad wrapper validates the descriptor before launching."""
         for name, (forward, inputs, descriptor_shape) in self._gradient_cases().items():
+            if name == "se_t_tebd":
+                continue
             with self.subTest(op=name):
                 descriptor = forward()
                 pack = self._oversized_saved_descriptor(descriptor_shape)
@@ -192,6 +207,22 @@ class TestTabulateGpuSizeValidation(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(RuntimeError, ERROR_MESSAGE):
                     torch.autograd.grad(differentiable_sum, inputs)
+
+    def test_se_t_tebd_accepts_oversized_width(self) -> None:
+        """SE-T-TEBD uses fixed-size GPU blocks for forward and gradients."""
+        last_layer_size = 1025
+        forward, inputs, _ = self._gradient_cases(last_layer_size)["se_t_tebd"]
+        descriptor = forward()
+        self.assertEqual(descriptor.shape[-1], last_layer_size)
+
+        first_gradients = torch.autograd.grad(
+            descriptor.sum(), inputs, create_graph=True
+        )
+        differentiable_sum = sum(
+            gradient.sum() for gradient in first_gradients if gradient.requires_grad
+        )
+        second_gradients = torch.autograd.grad(differentiable_sum, inputs)
+        self.assertEqual(len(second_gradients), len(inputs))
 
 
 if __name__ == "__main__":
