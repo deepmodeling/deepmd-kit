@@ -4,37 +4,57 @@ DeePMD-kit
 
 .. rst-class:: lead
 
-   From first-principles data to scalable molecular dynamics—through one open
-   framework.
+   Start from a pretrained Deep Potential model, fine-tune it for your system,
+   and deploy it at simulation scale.
+
+.. important::
+
+   **A pretrained model can be your starting point, not just your end result.**
+   Download a built-in DPA checkpoint, fine-tune the full model or a LoRA
+   adapter on system-specific data, then test, export, and deploy it through
+   the same DeePMD-kit workflow.
 
 DeePMD-kit turns quantum-mechanical reference data into fast, scalable
-interatomic potentials. It combines modern Deep Potential architectures,
-multiple machine-learning backends, adaptation workflows, and
-simulation-ready deployment in one open-source toolkit.
+interatomic potentials. Use it across molecular and materials science—from
+finite molecules and covalent systems to periodic solids and metals—and scale
+from laptop fine-tuning to distributed training and MPI-parallel molecular
+dynamics.
 
-Use it across molecular and materials science—from finite molecules and
-covalent systems to periodic solids and metals—and scale from laptop
-experiments to distributed training and MPI-parallel molecular dynamics.
-
-.. figure:: _static/dpa4-performance.webp
-   :alt: DPA4 delivers competitive energy and force accuracy at high throughput
+.. figure:: _static/dpa4-cps-throughput.webp
+   :alt: DPA4 model family Pareto frontier for Matbench Discovery CPS and saturated inference throughput
    :width: 100%
    :align: center
 
-   DPA4 delivers competitive energy and force accuracy at high throughput.
+   The DPA4 model family traces a Pareto frontier across Matbench Discovery CPS
+   and saturated inference throughput.
 
 Choose your path
 ================
 
-.. grid:: 1 2 2 4
+.. grid:: 1 2 3 3
    :gutter: 3
 
-   .. grid-item-card:: 🚀 Install and start
-      :link: getting-started/index
+   .. grid-item-card:: 🧬 Start from pretrained
+      :link: model/pretrained
       :link-type: doc
       :shadow: md
 
-      Install DeePMD-kit, prepare a small dataset, and train your first model.
+      Download a built-in DPA checkpoint or resolve its model name directly.
+
+   .. grid-item-card:: 🎯 Fine-tune to your data
+      :link: train/finetuning
+      :link-type: doc
+      :shadow: md
+
+      Adapt a full pretrained model or LoRA adapters to your target system.
+
+   .. grid-item-card:: 🏗️ Train from scratch
+      :link: train/index
+      :link-type: doc
+      :shadow: md
+
+      Build a new potential with single-task, multi-task, or distributed
+      training.
 
    .. grid-item-card:: 🧠 Choose a model
       :link: model/index
@@ -43,14 +63,6 @@ Choose your path
 
       Compare DeepPot-SE, DPA-1, DPA-2, DPA-3, DPA-4, and specialized
       physics models.
-
-   .. grid-item-card:: 🧬 Train and adapt
-      :link: train/index
-      :link-type: doc
-      :shadow: md
-
-      Run single-task or multi-task training, fine-tuning, LoRA, and
-      pretrained-model workflows.
 
    .. grid-item-card:: 🔌 Deploy and integrate
       :link: third-party/index
@@ -66,6 +78,20 @@ Why DeePMD-kit
 .. grid:: 1 2 2 3
    :gutter: 3
 
+   .. grid-item-card:: Pretrained-first adaptation
+      :shadow: sm
+
+      Start from built-in DPA checkpoints, fine-tune full models or LoRA
+      adapters, and reuse learned representations with DPA-ADAPT.
+
+   .. grid-item-card:: Training from scratch
+      :link: train/index
+      :link-type: doc
+      :shadow: sm
+
+      Configure new architectures and physical targets, then train with
+      single-task, multi-task, or distributed workflows.
+
    .. grid-item-card:: Modern potential architectures
       :shadow: sm
 
@@ -78,13 +104,6 @@ Why DeePMD-kit
       Learn energies, forces, virials, Hessians, spin, dipoles,
       polarizabilities, density of states, atomic populations, and custom
       properties.
-
-   .. grid-item-card:: Foundation-model workflows
-      :shadow: sm
-
-      Download built-in DPA models, share representations across tasks,
-      fine-tune full models or LoRA adapters, and use DPA-ADAPT for downstream
-      prediction.
 
    .. grid-item-card:: Multi-backend framework
       :link: backend
@@ -115,29 +134,35 @@ Why DeePMD-kit
    **10× inference speedup** and reduce memory usage by as much as **20×**.
    Actual gains depend on the model, system, and hardware.
 
-From data to dynamics
-=====================
+Two starting points, one path to dynamics
+=========================================
 
-.. grid:: 1 2 3 5
+.. grid:: 1 2 3 3
    :gutter: 2
 
-   .. grid-item-card:: 1 · Prepare
+   .. grid-item-card:: 1 · Pretrained
+      :link: model/pretrained
+      :link-type: doc
+
+      Select a built-in DPA model or a compatible checkpoint.
+
+   .. grid-item-card:: 2 · Prepare
       :link: data/index
       :link-type: doc
 
-      Convert reference structures and labels into DeePMD data.
+      Convert target structures and labels into DeePMD data.
 
-   .. grid-item-card:: 2 · Model
-      :link: model/index
+   .. grid-item-card:: 3 · Fine-tune
+      :link: train/finetuning
       :link-type: doc
 
-      Select a descriptor, physical target, and backend.
+      Adapt the full model or LoRA adapters to your system.
 
    .. grid-item-card:: 3 · Train
       :link: train/index
       :link-type: doc
 
-      Train from scratch or adapt a pretrained model.
+      Build a new model from scratch when adaptation is not the right fit.
 
    .. grid-item-card:: 4 · Validate
       :link: test/index
@@ -150,6 +175,9 @@ From data to dynamics
       :link-type: doc
 
       Run inference directly or deploy into molecular dynamics.
+
+Fine-tuning and from-scratch training converge on the same validation, export,
+and deployment toolchain.
 
 Choose a model family
 =====================
@@ -174,6 +202,14 @@ Choose a model family
    * - :doc:`DPA-4 <model/dpa4>`
      - SO(3)-equivariant learning, LoRA fine-tuning, optional ZBL bridging,
        spin support, and compiled ``.pt2`` deployment.
+
+.. figure:: _static/dpa4-performance.webp
+   :alt: DPA4 energy and force accuracy versus saturated throughput
+   :width: 100%
+   :align: center
+
+   DPA4 provides a family of accuracy–throughput trade-offs for different
+   deployment budgets.
 
 More than conventional force fields
 ===================================
@@ -207,14 +243,6 @@ New and noteworthy
 .. grid:: 1 2 2 4
    :gutter: 3
 
-   .. grid-item-card:: DPA-4
-      :link: model/dpa4
-      :link-type: doc
-      :shadow: sm
-
-      Equivariant message passing, LoRA, ZBL, spin, compiled inference, and
-      LAMMPS deployment.
-
    .. grid-item-card:: Pretrained DPA models
       :link: model/pretrained
       :link-type: doc
@@ -222,6 +250,14 @@ New and noteworthy
 
       Resolve built-in model names directly or download checkpoints to a local
       cache.
+
+   .. grid-item-card:: DPA-4
+      :link: model/dpa4
+      :link-type: doc
+      :shadow: sm
+
+      Equivariant message passing, LoRA, ZBL, spin, compiled inference, and
+      LAMMPS deployment.
 
    .. grid-item-card:: DPA-ADAPT
       :link: dpa_adapt/index
