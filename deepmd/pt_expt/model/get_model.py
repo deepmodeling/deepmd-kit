@@ -297,7 +297,13 @@ def _dpa4_family_child_builder(sub: dict) -> "BaseModel | None":
         The sub-model config (``type_map`` and any derived clamp radii
         already injected by the shared linear builder).
     """
-    if str(sub.get("type", "standard")) not in ("dpa4", "DPA4", "sezm", "SeZM"):
+    family_types = ("dpa4", "sezm")
+    model_type = str(sub.get("type", "standard")).lower()
+    descriptor = sub.get("descriptor")
+    descriptor_type = (
+        str(descriptor.get("type", "")).lower() if isinstance(descriptor, dict) else ""
+    )
+    if model_type not in family_types and descriptor_type not in family_types:
         return None
     return get_sezm_model(sub).atomic_model
 

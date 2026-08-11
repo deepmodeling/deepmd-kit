@@ -303,3 +303,15 @@ def test_update_sel_skips_inner_potential_child(monkeypatch) -> None:
     assert len(seen) == 1  # only the learned child
     assert "descriptor" in seen[0]
     assert updated["models"][1]["type"] == "inner_potential"
+
+
+def test_descriptor_typed_child_routes_through_family_builder() -> None:
+    """A child of `type: "standard"` with a DPA4 descriptor is a DPA4-family
+    child (the sugar on `type: "standard"` expands to this shape), so it must
+    get the family builder's rejections, not the silent generic path.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["type"] = "standard"
+    cfg["models"][0]["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)
