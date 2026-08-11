@@ -177,33 +177,43 @@ class TestIsBridgedSezmConfig:
         }
 
     def test_canonical_shape_is_recognized(self) -> None:
-        from deepmd.utils.bridging import is_bridged_sezm_config
+        from deepmd.utils.bridging import (
+            is_bridged_sezm_config,
+        )
 
         assert is_bridged_sezm_config(self._canonical())
 
     def test_descriptor_type_alone_is_recognized(self) -> None:
-        from deepmd.utils.bridging import is_bridged_sezm_config
+        from deepmd.utils.bridging import (
+            is_bridged_sezm_config,
+        )
 
         cfg = self._canonical()
         cfg["models"][0] = {"type": "standard", "descriptor": {"type": "dpa4"}}
         assert is_bridged_sezm_config(cfg)
 
     def test_non_linear_type_is_not(self) -> None:
-        from deepmd.utils.bridging import is_bridged_sezm_config
+        from deepmd.utils.bridging import (
+            is_bridged_sezm_config,
+        )
 
         cfg = self._canonical()
         cfg["type"] = "dpa4"
         assert not is_bridged_sezm_config(cfg)
 
     def test_linear_without_inner_child_is_not(self) -> None:
-        from deepmd.utils.bridging import is_bridged_sezm_config
+        from deepmd.utils.bridging import (
+            is_bridged_sezm_config,
+        )
 
         cfg = self._canonical()
         cfg["models"] = [cfg["models"][0]]
         assert not is_bridged_sezm_config(cfg)
 
     def test_non_dpa4_learned_child_is_not(self) -> None:
-        from deepmd.utils.bridging import is_bridged_sezm_config
+        from deepmd.utils.bridging import (
+            is_bridged_sezm_config,
+        )
 
         cfg = self._canonical()
         cfg["models"][0] = {"type": "standard", "descriptor": {"type": "se_e2_a"}}
