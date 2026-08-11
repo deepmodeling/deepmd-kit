@@ -48,6 +48,15 @@ def make_base_descriptor(
     class BD(ABC, PluginVariant, make_plugin_registry("descriptor")):
         """Base descriptor provides the interfaces of descriptor."""
 
+        # Stat-behavior flags with concrete defaults so stat machinery (e.g.
+        # ``merge_env_stat``, which accepts either a ``Descriptor`` or a
+        # ``DescriptorBlock``) can read them on any descriptor without
+        # getattr probes; descriptors that configure them assign instance
+        # attributes in __init__ (issue #5897). Mirrors the same defaults on
+        # ``DescriptorBlock``.
+        set_davg_zero: bool = False
+        set_stddev_constant: bool = False
+
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
