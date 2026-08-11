@@ -125,6 +125,27 @@ def make_base_model() -> type[object]:
             """
             return None
 
+        def get_var_name(self) -> str | None:
+            """Return the fitted property's variable name, or ``None`` if
+            this is not a property model. ``is not None`` is the support
+            predicate.
+            """
+            return None
+
+        def get_task_dim(self) -> int:
+            """Return the property output dimension (property models only).
+
+            Raises
+            ------
+            NotImplementedError
+                If the model is not a property model.
+            """
+            raise NotImplementedError("get_task_dim: property models only")
+
+        def get_intensive(self) -> bool:
+            """Return whether the fitted property is intensive."""
+            return False
+
         @abstractmethod
         def serialize(self) -> dict:
             """Serialize the model.

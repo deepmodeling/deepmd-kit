@@ -978,7 +978,7 @@ class DeepEval(DeepEvalBackend):
             return DeepWFC
         elif (
             self._dpmodel is not None
-            and hasattr(self._dpmodel, "get_var_name")
+            and self._dpmodel.get_var_name() is not None
             and self._dpmodel.get_var_name() in model_output_type
         ):
             return DeepProperty
@@ -1005,7 +1005,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+        if self._dpmodel is not None and self._dpmodel.get_var_name() is not None:
             return self._dpmodel.get_var_name()
         raise NotImplementedError(
             "get_var_name is only available for property models with the "
@@ -1014,7 +1014,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_task_dim(self) -> int:
         """Get the output dimension of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_task_dim()
         raise NotImplementedError(
             "get_task_dim is only available for property models with the "
@@ -1023,7 +1023,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_intensive(self) -> bool:
         """Whether the property is intensive (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_intensive()
         raise NotImplementedError(
             "get_intensive is only available for property models with the "

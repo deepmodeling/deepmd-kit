@@ -441,6 +441,7 @@ class DeepEvalBackend(ABC):
     def get_var_name(self) -> str:
         """Get the name of the fitting property (property models only)."""
         model = self.get_model()
+        # artifact boundary: get_model() may return a loaded SavedModel
         if hasattr(model, "get_var_name"):
             return model.get_var_name()
         raise NotImplementedError
@@ -448,6 +449,7 @@ class DeepEvalBackend(ABC):
     def get_task_dim(self) -> int:
         """Get the output dimension of the property (property models only)."""
         model = self.get_model()
+        # artifact boundary: get_model() may return a loaded SavedModel
         if hasattr(model, "get_task_dim"):
             return model.get_task_dim()
         raise NotImplementedError
@@ -455,6 +457,7 @@ class DeepEvalBackend(ABC):
     def get_intensive(self) -> bool:
         """Whether the property is intensive (property models only)."""
         model = self.get_model()
+        # artifact boundary: get_model() may return a loaded SavedModel
         if hasattr(model, "get_intensive"):
             return model.get_intensive()
         raise NotImplementedError

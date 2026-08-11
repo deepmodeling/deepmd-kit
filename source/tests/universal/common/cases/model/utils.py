@@ -141,6 +141,21 @@ class ModelTestCase:
         assert dcs is None or isinstance(dcs, (list, tuple))
         assert not hasattr(type(self.module), "has_default_chg_spin")
 
+    def test_property_capability_contract(self) -> None:
+        """Property queries are declared on the base model with concrete
+        defaults: ``get_var_name`` returns ``None`` for non-property models
+        (the support predicate), ``get_intensive`` defaults ``False``,
+        ``get_task_dim`` raises for non-property models.
+        """
+        vn = self.module.get_var_name()
+        assert vn is None or isinstance(vn, str)
+        assert isinstance(self.module.get_intensive(), bool)
+        if vn is None:
+            with self.assertRaises(NotImplementedError):
+                self.module.get_task_dim()
+        else:
+            assert isinstance(self.module.get_task_dim(), int)
+
     def test_forward(self) -> None:
         """Test forward and forward_lower."""
         test_spin = getattr(self, "test_spin", False)
