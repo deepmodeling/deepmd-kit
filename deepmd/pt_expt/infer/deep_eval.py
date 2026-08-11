@@ -2410,7 +2410,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         if self._dpmodel is not None:
-            pe = getattr(self._dpmodel.atomic_model, "pair_excl", None)
+            pe = self._dpmodel.atomic_model.pair_excl
             pet = pe.get_exclude_types() if pe is not None else []
         else:
             pet = self.metadata.get("pair_exclude_types", [])

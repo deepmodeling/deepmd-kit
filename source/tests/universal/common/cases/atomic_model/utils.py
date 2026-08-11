@@ -97,6 +97,16 @@ class AtomicModelTestCase:
                 module.has_message_passing(), self.expected_has_message_passing
             )
 
+    def test_pair_exclude_contract(self) -> None:
+        """``pair_exclude_types``/``pair_excl`` are set by
+        ``BaseAtomicModel.__init__`` on every construction path; the
+        accessor is the public surface, the mask attribute is internal.
+        """
+        pet = self.module.get_pair_exclude_types()
+        assert isinstance(pet, list)
+        # invariant pinned by reinit_pair_exclude:
+        assert (self.module.pair_excl is None) == (len(pet) == 0)
+
     def test_forward(self) -> None:
         """Test forward."""
         nf = 1

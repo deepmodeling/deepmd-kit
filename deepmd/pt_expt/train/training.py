@@ -1088,7 +1088,7 @@ class _CompiledModel(torch.nn.Module):
             distinguish_types=False,
             # model-level pair exclusion is a nlist-BUILD transform (decision
             # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
-            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
+            pair_excl=self.original_model.atomic_model.pair_excl,
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
 
@@ -1309,7 +1309,7 @@ class _CompiledModel(torch.nn.Module):
         # level pair_exclude is a graph-BUILD transform (decision #18): fold it
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
-        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        pair_excl = _model.atomic_model.pair_excl
         ng = build_neighbor_graph_for_method(
             getattr(_model, "neighbor_graph_method", "dense"),
             coord_3d,

@@ -264,6 +264,10 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
                 aparam: tf.Tensor | None = None,
                 charge_spin: tf.Tensor | None = None,
             ) -> dict[str, tf.Tensor]:
+                # exclusion is a nlist-BUILD transform (decision #18/A4); the
+                # traced lower consumes a pre-excluded nlist. Guard
+                # atomic_model too: test doubles (DummyModel) lack it.
+                am = getattr(model, "atomic_model", None)
                 return model_call_from_call_lower(
                     call_lower=call_lower,
                     rcut=model.get_rcut(),
@@ -277,12 +281,7 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
                     aparam=aparam,
                     charge_spin=charge_spin,
                     do_atomic_virial=do_atomic_virial,
-                    # exclusion is a nlist-BUILD transform (decision #18/A4);
-                    # the traced lower consumes a pre-excluded nlist. Guard
-                    # atomic_model too: test doubles (DummyModel) lack it.
-                    pair_excl=getattr(
-                        getattr(model, "atomic_model", None), "pair_excl", None
-                    ),
+                    pair_excl=am.pair_excl if am is not None else None,
                 )
 
             return call
@@ -418,9 +417,8 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
             # the LAMMPS nlist before the traced call_lower_* consumes it
             # (decision #18/A4). The upper ``call`` already pre-excludes its
             # freshly built nlist. Guard atomic_model: test doubles may lack it.
-            pet = getattr(
-                getattr(model, "atomic_model", None), "pair_exclude_types", []
-            )
+            am = getattr(model, "atomic_model", None)
+            pet = am.get_pair_exclude_types() if am is not None else []
             flat = [int(t) for pair in (pet or []) for t in pair]
             return tf.constant(flat, dtype=tf.int64)
 

@@ -428,7 +428,7 @@ def make_model(
                     charge_spin=cs,
                     neighbor_list=neighbor_list,
                     # exclusion is a nlist-BUILD transform (decision #18/A4)
-                    pair_excl=getattr(self.atomic_model, "pair_excl", None),
+                    pair_excl=self.atomic_model.pair_excl,
                 )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -527,7 +527,7 @@ def make_model(
             # is constructed, so the graph lower / exported ``.pt2`` consumes an
             # already-excluded ``edge_mask`` and never re-applies it. Mirrors the
             # pt_expt eager path and the C++ ``applyPairExclusion`` at build.
-            pair_excl = getattr(self.atomic_model, "pair_excl", None)
+            pair_excl = self.atomic_model.pair_excl
             if method == "dense":
                 ng = build_neighbor_graph(
                     cc, atype, bb, self.get_rcut(), pair_excl=pair_excl

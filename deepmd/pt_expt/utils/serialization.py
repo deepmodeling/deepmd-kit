@@ -1128,12 +1128,19 @@ def _collect_metadata(
     # feeders (C++ ``DeepPotPTExpt::init``, metadata-only DeepEval) rebuild
     # the mask.  Descriptor-level ``exclude_types`` needs NO metadata: it is
     # fully inside the compiled artifact.
+    from deepmd.dpmodel.atomic_model.base_atomic_model import (
+        BaseAtomicModel,
+    )
+
     pair_exclude_types: list[list[int]] = []
     for obj in (
         getattr(model, "atomic_model", None),
         model,
     ):
-        pet = getattr(obj, "pair_exclude_types", None)
+        # `obj` may be the atomic model (the owner of pair_exclude_types) or
+        # the full model (e.g. the ``model`` fallback above); only the former
+        # implements the accessor, so gate on it instead of getattr-probing.
+        pet = obj.get_pair_exclude_types() if isinstance(obj, BaseAtomicModel) else None
         if pet:
             pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
             break
