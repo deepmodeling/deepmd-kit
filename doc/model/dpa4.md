@@ -352,12 +352,19 @@ form above expands to exactly this equivalent explicit form:
   "model": {
     "type": "linear_ener",
     "weights": "sum",
-    "type_map": ["O", "H"],
+    "type_map": [
+      "O",
+      "H"
+    ],
     "models": [
       {
         "type": "dpa4",
-        "descriptor": { "...": "..." },
-        "fitting_net": { "...": "..." }
+        "descriptor": {
+          "...": "..."
+        },
+        "fitting_net": {
+          "...": "..."
+        }
       },
       {
         "type": "inner_potential",
