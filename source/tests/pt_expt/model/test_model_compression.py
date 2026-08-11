@@ -187,6 +187,35 @@ class TestModelCompression(unittest.TestCase):
         finally:
             os.unlink(frozen_path)
 
+    def test_compress_min_nbor_dist_from_variables(self) -> None:
+        """Test that compress recovers min_nbor_dist from @variables and keeps it.
+
+        ``dp convert-backend`` stores the value under ``@variables``. Compress
+        must read it from there — without a training script it would otherwise
+        raise — and carry it into the compressed archive.
+        """
+        from deepmd.pt_expt.entrypoints.compress import (
+            enable_compression,
+        )
+
+        md = self._make_model()
+        md.eval()
+
+        model_data = {"model": md.serialize(), "@variables": {"min_nbor_dist": 0.5}}
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+            frozen_path = f.name
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+            compressed_path = f.name
+        try:
+            deserialize_to_file(frozen_path, model_data)
+            enable_compression(input_file=frozen_path, output=compressed_path)
+            compressed_data = serialize_from_file(compressed_path)
+            self.assertAlmostEqual(compressed_data["min_nbor_dist"], 0.5)
+        finally:
+            os.unlink(frozen_path)
+            if os.path.exists(compressed_path):
+                os.unlink(compressed_path)
+
     def test_compress_state_serialized(self) -> None:
         """Test that compression state persists through serialize/deserialize.
 

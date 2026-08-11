@@ -84,3 +84,44 @@ def test_auto_batch_size_follows_the_selected_device() -> None:
     )
 
     assert AutoBatchSize().is_gpu_available() == (DEVICE.type == "cuda")
+
+
+def test_graph_lower_output_keeps_min_nbor_dist(monkeypatch: Any) -> None:
+    """The graph-lower branch carries the value into the exported archive.
+
+    ``model.serialize()`` does not include the runtime buffer, so without this
+    the compressed artifact loses a value that was just recovered.
+    """
+    import deepmd.pt_expt.entrypoints.compress as compress_mod
+    import deepmd.pt_expt.model.graph_lower as graph_lower_mod
+    import deepmd.pt_expt.model.model as model_mod
+    import deepmd.pt_expt.utils.tabulate_ops as tabulate_ops_mod
+
+    class _Model(_FakeModel):
+        def enable_compression(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def serialize(self) -> dict:
+            return {"type": "compressed"}
+
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        compress_mod,
+        "serialize_from_file",
+        lambda _: {"model": {}, "@variables": {"min_nbor_dist": 1.25}},
+    )
+    monkeypatch.setattr(
+        model_mod.BaseModel, "deserialize", staticmethod(lambda _: _Model(None))
+    )
+    monkeypatch.setattr(tabulate_ops_mod, "ensure_fake_registered", lambda: None)
+    monkeypatch.setattr(graph_lower_mod, "model_uses_graph_lower", lambda _: True)
+    monkeypatch.setattr(
+        compress_mod,
+        "deserialize_to_file",
+        lambda output, data, **kwargs: captured.update(data=data),
+    )
+
+    compress_mod.enable_compression(input_file="in.pt2", output="out.pt2")
+
+    assert captured["data"]["min_nbor_dist"] == 1.25

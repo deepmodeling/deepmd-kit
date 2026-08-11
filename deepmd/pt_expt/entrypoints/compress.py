@@ -174,7 +174,11 @@ def enable_compression(
         log.info("Re-exporting compressed graph...")
         deserialize_to_file(
             output,
-            {"model": compressed_model_dict, "model_def_script": model_def_script},
+            {
+                "model": compressed_model_dict,
+                "model_def_script": model_def_script,
+                "min_nbor_dist": float(min_nbor_dist),
+            },
             lower_kind="auto",
         )
     else:
