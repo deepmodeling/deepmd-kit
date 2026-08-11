@@ -2225,9 +2225,7 @@ class TestSeZMModelBridging(unittest.TestCase):
             dtype=torch.float64,
             device=self.device,
         )
-        box = (
-            torch.eye(3, dtype=torch.float64, device=self.device).reshape(1, 9) * 8.0
-        )
+        box = torch.eye(3, dtype=torch.float64, device=self.device).reshape(1, 9) * 8.0
         samples, labels, counts_rows = [], [], []
         for types in ([[0, 0, 1, 1]], [[0, 1, 1, 1]]):
             counts = np.bincount(np.asarray(types[0]), minlength=2)
