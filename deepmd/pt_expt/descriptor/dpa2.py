@@ -21,6 +21,7 @@ from deepmd.dpmodel.utils.type_embed import (
     remap_atype_to_padding,
 )
 from deepmd.pt_expt.common import (
+    register_buffer_replacing_slot,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -284,7 +285,7 @@ class DescrptDPA2(DescrptDPA2DP):
                     self.repinit.embeddings_strip[0].call(two_side_embd).detach()
                 )
 
-            torch.nn.Module.register_buffer(self, "type_embd_data", embd_tensor)
+            register_buffer_replacing_slot(self, "type_embd_data", embd_tensor)
 
     @cast_precision
     def call(
