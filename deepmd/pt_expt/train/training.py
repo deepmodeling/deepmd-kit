@@ -371,9 +371,9 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         )
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
+        default_cs = _model.get_default_chg_spin()
+        has_default_cs = default_cs is not None
         if has_default_cs:
-            default_cs = _model.get_default_chg_spin()
             if hasattr(default_cs, "cpu"):
                 default_cs = default_cs.cpu().numpy()
             else:
@@ -1125,9 +1125,7 @@ class _CompiledModel(torch.nn.Module):
                     .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = (
-            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = _model.get_dim_chg_spin()
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
@@ -1294,9 +1292,7 @@ class _CompiledModel(torch.nn.Module):
                     .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = (
-            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = _model.get_dim_chg_spin()
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:

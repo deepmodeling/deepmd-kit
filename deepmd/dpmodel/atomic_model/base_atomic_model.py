@@ -250,10 +250,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Get the dimension of charge_spin input."""
         return 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        return False
-
     def get_default_chg_spin(self) -> list[float] | None:
         """Get the default charge_spin values."""
         return None

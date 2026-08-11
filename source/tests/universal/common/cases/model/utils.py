@@ -131,6 +131,16 @@ class ModelTestCase:
         expected = getattr(self, "test_spin", False)
         self.assertEqual(self.module.has_spin(), expected)
 
+    def test_chg_spin_capability_contract(self) -> None:
+        """chg-spin queries are declared on the base model with concrete
+        defaults (False/0/None) -- direct calls, never ``hasattr`` probes.
+        """
+        assert isinstance(self.module.has_chg_spin_ebd(), bool)
+        assert isinstance(self.module.get_dim_chg_spin(), int)
+        dcs = self.module.get_default_chg_spin()
+        assert dcs is None or isinstance(dcs, (list, tuple))
+        assert not hasattr(type(self.module), "has_default_chg_spin")
+
     def test_forward(self) -> None:
         """Test forward and forward_lower."""
         test_spin = getattr(self, "test_spin", False)

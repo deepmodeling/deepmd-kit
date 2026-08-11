@@ -164,9 +164,10 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         )
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
+        default_chg_spin = _model.get_default_chg_spin()
+        has_default_cs = default_chg_spin is not None
         default_cs = (
-            np.asarray(to_tf_tensor(_model.get_default_chg_spin()).numpy())
+            np.asarray(to_tf_tensor(default_chg_spin).numpy())
             if has_default_cs
             else 0.0
         )

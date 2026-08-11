@@ -394,7 +394,7 @@ def _make_sample_inputs(
     else:
         aparam = None
 
-    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    dim_chg_spin = model.get_dim_chg_spin()
     if dim_chg_spin > 0:
         charge_spin = torch.zeros(
             nframes, dim_chg_spin, dtype=torch.float64, device=_env.DEVICE
@@ -515,7 +515,7 @@ def build_synthetic_graph_inputs(
     ntypes = len(model.get_type_map())
     dim_fparam = model.get_dim_fparam()
     dim_aparam = model.get_dim_aparam()
-    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    dim_chg_spin = model.get_dim_chg_spin()
 
     # Box large enough to avoid PBC degeneracy; centered coords.
     box_size = rcut * 3.0
@@ -1054,25 +1054,13 @@ def _collect_metadata(
         "nnei": sum(model.get_sel()),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
-        "dim_chg_spin": (
-            model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
-        ),
+        "dim_chg_spin": model.get_dim_chg_spin(),
         "mixed_types": model.mixed_types(),
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
-        "has_chg_spin_ebd": (
-            model.has_chg_spin_ebd() if hasattr(model, "has_chg_spin_ebd") else False
-        ),
-        "has_default_chg_spin": (
-            model.has_default_chg_spin()
-            if hasattr(model, "has_default_chg_spin")
-            else False
-        ),
-        "default_chg_spin": (
-            _metadata_value_to_json(model.get_default_chg_spin())
-            if hasattr(model, "get_default_chg_spin")
-            else None
-        ),
+        "has_chg_spin_ebd": model.has_chg_spin_ebd(),
+        "has_default_chg_spin": model.get_default_chg_spin() is not None,
+        "default_chg_spin": _metadata_value_to_json(model.get_default_chg_spin()),
         "fitting_output_defs": fitting_output_defs,
         # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
         # round-trip; required for dipole/polar/wfc models in metadata-only
@@ -1542,7 +1530,7 @@ def _trace_and_export(
         )
 
         _forbidden = forbidden_dims_from_model(model)
-        _dim_cs = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+        _dim_cs = model.get_dim_chg_spin()
         if _dim_cs > 1:
             _forbidden.add(int(_dim_cs))
         nframes_sample = next_safe_prime(5, _forbidden)

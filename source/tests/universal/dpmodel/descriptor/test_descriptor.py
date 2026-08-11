@@ -999,17 +999,15 @@ class TestHybridChgSpinDefaultDP(unittest.TestCase):
         shared_default = DescrptHybrid(
             list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([5.0, 1.0])]
         )
-        self.assertTrue(shared_default.has_default_chg_spin())
+        self.assertIsNotNone(shared_default.get_default_chg_spin())
         self.assertEqual(shared_default.get_default_chg_spin(), [5.0, 1.0])
 
         missing_default = DescrptHybrid(
             list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3(None)]
         )
-        self.assertFalse(missing_default.has_default_chg_spin())
         self.assertIsNone(missing_default.get_default_chg_spin())
 
         mismatched_default = DescrptHybrid(
             list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([6.0, 1.0])]
         )
-        self.assertFalse(mismatched_default.has_default_chg_spin())
         self.assertIsNone(mismatched_default.get_default_chg_spin())

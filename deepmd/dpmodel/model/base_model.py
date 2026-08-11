@@ -107,6 +107,24 @@ def make_base_model() -> type[object]:
             """
             return False
 
+        def has_chg_spin_ebd(self) -> bool:
+            """Return whether the model conditions on charge/spin embedding.
+
+            Concrete default ``False``; models wrapping an atomic model
+            override to delegate.
+            """
+            return False
+
+        def get_dim_chg_spin(self) -> int:
+            """Return the charge/spin condition width (0 if unsupported)."""
+            return 0
+
+        def get_default_chg_spin(self) -> list | None:
+            """Return default charge/spin conditions, or ``None`` if none
+            are configured. ``is not None`` is the support predicate.
+            """
+            return None
+
         @abstractmethod
         def serialize(self) -> dict:
             """Serialize the model.

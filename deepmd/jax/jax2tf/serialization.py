@@ -470,7 +470,7 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
 
         @tf.function
         def has_default_chg_spin() -> tf.Tensor:
-            return tf.constant(model.has_default_chg_spin(), dtype=tf.bool)
+            return tf.constant(model.get_default_chg_spin() is not None, dtype=tf.bool)
 
         tf_model.has_default_chg_spin = has_default_chg_spin
 

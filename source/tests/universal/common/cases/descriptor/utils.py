@@ -48,6 +48,13 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
         # off -- a no-op on descriptors without one.
         self.module.disable_graph_lower()
         assert self.module.uses_graph_lower() is False
+        # chg-spin family: concrete base defaults, never probed (issue #5897).
+        assert isinstance(self.module.get_dim_chg_spin(), int)
+        dcs = self.module.get_default_chg_spin()
+        assert dcs is None or isinstance(dcs, (list, tuple))
+        # has_default_chg_spin was merged into get_default_chg_spin: the
+        # predicate is ``get_default_chg_spin() is not None``.
+        assert not hasattr(type(self.module), "has_default_chg_spin")
 
     def test_forward_consistency(self) -> None:
         ret = []

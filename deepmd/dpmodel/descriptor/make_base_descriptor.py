@@ -100,10 +100,6 @@ def make_base_descriptor(
             """Returns the dimension of charge_spin input (0 if not supported)."""
             return 0
 
-        def has_default_chg_spin(self) -> bool:
-            """Returns whether the descriptor has a default charge_spin value."""
-            return False
-
         def get_default_chg_spin(self) -> Any:
             """Returns the default charge_spin value, or None."""
             return None

@@ -1131,10 +1131,6 @@ def make_model(
             """Get the dimension of charge_spin input."""
             return self.atomic_model.get_dim_chg_spin()
 
-        def has_default_chg_spin(self) -> bool:
-            """Check if the model has default charge_spin values."""
-            return self.atomic_model.has_default_chg_spin()
-
         def get_default_chg_spin(self) -> list[float] | None:
             """Get the default charge_spin values."""
             return self.atomic_model.get_default_chg_spin()

@@ -691,27 +691,13 @@ class DeepEval(DeepEvalBackend):
             "sel": model.get_sel(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
-            "dim_chg_spin": model.get_dim_chg_spin()
-            if hasattr(model, "get_dim_chg_spin")
-            else 0,
+            "dim_chg_spin": model.get_dim_chg_spin(),
             "mixed_types": model.mixed_types(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
-            "has_chg_spin_ebd": (
-                model.has_chg_spin_ebd()
-                if hasattr(model, "has_chg_spin_ebd")
-                else False
-            ),
-            "has_default_chg_spin": (
-                model.has_default_chg_spin()
-                if hasattr(model, "has_default_chg_spin")
-                else False
-            ),
-            "default_chg_spin": (
-                model.get_default_chg_spin()
-                if hasattr(model, "get_default_chg_spin")
-                else None
-            ),
+            "has_chg_spin_ebd": model.has_chg_spin_ebd(),
+            "has_default_chg_spin": model.get_default_chg_spin() is not None,
+            "default_chg_spin": model.get_default_chg_spin(),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
@@ -909,14 +895,19 @@ class DeepEval(DeepEvalBackend):
 
     def has_chg_spin_ebd(self) -> bool:
         """Check whether the model uses a dedicated charge_spin input."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_chg_spin_ebd"):
+        if self._dpmodel is not None:
             return bool(self._dpmodel.has_chg_spin_ebd())
         return bool(self.metadata.get("has_chg_spin_ebd", self.get_dim_chg_spin() > 0))
 
     def has_default_chg_spin(self) -> bool:
-        """Check whether the model has a default charge_spin fallback."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_default_chg_spin"):
-            return bool(self._dpmodel.has_default_chg_spin())
+        """Check whether the model has a default charge_spin fallback.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin`` on
+        the live-model interfaces; this DeepEval wrapper method is kept for
+        API stability and computes the predicate directly.
+        """
+        if self._dpmodel is not None:
+            return self._dpmodel.get_default_chg_spin() is not None
         return bool(
             self.metadata.get(
                 "has_default_chg_spin",
@@ -926,7 +917,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_chg_spin(self) -> int:
         """Get the width of charge/spin condition inputs."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_dim_chg_spin"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
@@ -2613,9 +2604,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
         return descriptor.detach().cpu().numpy()
 
@@ -2684,9 +2673,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
             atype = ext_atype_t[:, :natoms]
             fitting_net = dp_am.fitting_net
