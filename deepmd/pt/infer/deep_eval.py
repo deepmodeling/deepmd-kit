@@ -84,11 +84,11 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 from deepmd.utils.batch_size import (
     RetrySignal,
 )
-from deepmd.utils.econf_embd import (
-    sort_element_type,
-)
 from deepmd.utils.bridging import (
     is_bridged_sezm_config,
+)
+from deepmd.utils.econf_embd import (
+    sort_element_type,
 )
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
