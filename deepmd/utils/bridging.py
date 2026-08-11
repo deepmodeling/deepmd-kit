@@ -14,9 +14,10 @@ config spelling is therefore::
         ]
     }
 
-The legacy spelling -- a ``bridging_method`` flag on a non-composite model
-type -- is kept as sugar. This module is the ONE owner of that expansion
-(issue #5948): every backend's ``get_model`` entry point calls
+The concise spelling -- a ``bridging_method`` flag on the ``dpa4`` (or
+``standard``) model type -- is the recommended user interface; it is pure
+sugar over the canonical form. This module is the ONE owner of that
+expansion (issue #5948): every backend's ``get_model`` entry point calls
 :func:`expand_bridging_method` before dispatch, so no per-builder flag
 handling can drift.
 """

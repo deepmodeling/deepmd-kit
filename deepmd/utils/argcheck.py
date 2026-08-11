@@ -3489,9 +3489,9 @@ def sezm_model_args() -> Argument:
     doc_bridging_method = (
         "Short-range bridging method. Currently supports 'ZBL'. "
         "The value is case-insensitive; set it to 'None' to disable bridging. "
-        "This flag is sugar: it expands to the canonical `linear_ener` "
-        "composition over the learned model and an `inner_potential` "
-        "sub-model."
+        "This concise form is the recommended interface; it expands to the "
+        "equivalent explicit `linear_ener` composition over the learned "
+        "model and an `inner_potential` sub-model."
     )
     doc_bridging_r_inner = (
         "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "

@@ -322,13 +322,30 @@ learned energy in a protected region:
 E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{ZBL}}.
 ```
 
-Below `r_inner` the distance seen by the descriptor is clamped, with a
-smooth transition back to the true distance up to `r_outer`; a source
+Below `bridging_r_inner` the distance seen by the descriptor is clamped, with a
+smooth transition back to the true distance up to `bridging_r_outer`; a source
 gate additionally blocks the learned model from leaking information about the
-frozen short-range pairs.
+frozen short-range pairs. The recommended way to enable it is the concise
+form, set directly on the `dpa4` model:
 
-A bridged model is a linear composition: the learned model plus the
-analytical `inner_potential` term, summed by `linear_ener`. Spell it as:
+```json
+{
+  "model": {
+    "type": "dpa4",
+    "bridging_method": "zbl",
+    "bridging_r_inner": 0.5,
+    "bridging_r_outer": 0.8
+  }
+}
+```
+
+When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
+same value as `bridging_r_inner` so frames with shorter atom pairs are excluded
+from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
+
+Internally, a bridged model is a linear composition: the learned model plus
+the analytical `inner_potential` term, summed by `linear_ener`. The concise
+form above expands to exactly this equivalent explicit form:
 
 ```json
 {
@@ -353,15 +370,11 @@ analytical `inner_potential` term, summed by `linear_ener`. Spell it as:
 }
 ```
 
-The composition derives the learned descriptor's clamping window from the
-`inner_potential` child, so the radii are written once. The legacy
-spelling -- a `bridging_method` / `bridging_r_inner` / `bridging_r_outer`
-flag set on the `dpa4` (or `standard`) model type -- is kept as sugar and
-expands to exactly the composition above.
-
-When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
-same value as `r_inner` so frames with shorter atom pairs are excluded
-from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
+Both spellings build the same model (one shared normalizer defines the
+equivalence). The explicit form exposes the composition machinery directly:
+use it when you combine models beyond the standard bridged pair. In either
+form, the composition derives the learned descriptor's clamping window from
+the analytical term, so the radii are written once.
 
 ## Performance and precision
 
