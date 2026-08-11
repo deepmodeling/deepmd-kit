@@ -7,11 +7,11 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils.neighbor_stat import NeighborStatOP as NeighborStatOPDP
-from deepmd.pt.utils.auto_batch_size import (
-    AutoBatchSize,
-)
 from deepmd.pt_expt.common import (
     torch_module,
+)
+from deepmd.pt_expt.utils.auto_batch_size import (
+    AutoBatchSize,
 )
 from deepmd.pt_expt.utils.env import (
     DEVICE,

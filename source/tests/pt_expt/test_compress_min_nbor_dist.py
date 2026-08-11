@@ -68,3 +68,19 @@ def test_recompute_min_nbor_dist_flag_defaults_to_false() -> None:
     args = ["--pt-expt", "compress", "-i", "in.pt2", "-o", "out.pt2"]
     assert parse_args(args).recompute_min_nbor_dist is False
     assert parse_args([*args, "--recompute-min-nbor-dist"]).recompute_min_nbor_dist
+
+
+def test_auto_batch_size_follows_the_selected_device() -> None:
+    """Growth is allowed only when pt_expt actually runs on a GPU.
+
+    ``DEVICE`` is CPU whenever ``DEVICE=cpu`` is set, even on a CUDA host,
+    where an expanding batch would risk an unrecoverable host OOM.
+    """
+    from deepmd.pt_expt.utils.auto_batch_size import (
+        AutoBatchSize,
+    )
+    from deepmd.pt_expt.utils.env import (
+        DEVICE,
+    )
+
+    assert AutoBatchSize().is_gpu_available() == (DEVICE.type == "cuda")
