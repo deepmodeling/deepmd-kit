@@ -1089,15 +1089,21 @@ def _collect_metadata(
     # ``atomic_model.has_message_passing()`` is important for composite
     # atomic models (e.g. ``LinearAtomicModel`` in DP-ZBL) which don't
     # expose a single ``.descriptor`` but do aggregate the flag across
-    # their sub-models.  ``descriptor.has_message_passing()`` is the
-    # fallback for any future wrapper that lacks the higher-level
-    # methods.
+    # their sub-models.  ``has_message_passing`` is declared on the base
+    # model/atomic-model/descriptor classes, so every concrete object at
+    # each level implements it; ``descriptor.has_message_passing()`` only
+    # matters as a fallback when an upstream level raises
+    # ``NotImplementedError`` (e.g. an atomic model that intentionally
+    # opts out), never for a missing method.
     def _probe_has_message_passing(obj: object) -> bool | None:
-        if obj is None or not hasattr(obj, "has_message_passing"):
+        # has_message_passing is @abstractmethod on the base descriptor, so
+        # every concrete descriptor implements it; a wrapper lacking it is a
+        # construction bug that must raise, not degrade silently.
+        if obj is None:
             return None
         try:
             return bool(obj.has_message_passing())
-        except (AttributeError, NotImplementedError):
+        except NotImplementedError:
             return None
 
     result: bool | None = None

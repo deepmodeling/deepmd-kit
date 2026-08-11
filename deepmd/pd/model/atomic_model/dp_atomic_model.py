@@ -83,13 +83,12 @@ class DPAtomicModel(BaseAtomicModel):
                 ),
             )
             self.buffer_type_map.name = "buffer_type_map"
-        if hasattr(self.descriptor, "has_message_passing"):
-            # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
-            self.register_buffer(
-                "buffer_has_message_passing",
-                paddle.to_tensor(self.descriptor.has_message_passing(), dtype="int32"),
-            )
-            self.buffer_has_message_passing.name = "buffer_has_message_passing"
+        # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
+        self.register_buffer(
+            "buffer_has_message_passing",
+            paddle.to_tensor(self.descriptor.has_message_passing(), dtype="int32"),
+        )
+        self.buffer_has_message_passing.name = "buffer_has_message_passing"
         # register 'ntypes' as buffer
         self.register_buffer(
             "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int32")
