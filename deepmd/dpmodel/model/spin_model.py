@@ -210,12 +210,10 @@ class SpinModel(NativeOP):
         # pair exclusion in here (decision #18/A4 — the lower consumes a
         # pre-excluded nlist and never re-applies it). No-op when the backbone
         # has no pair_exclude_types.
-        pair_excl = getattr(
-            self.backbone_model.atomic_model
+        pair_excl = (
+            self.backbone_model.atomic_model.pair_excl
             if hasattr(self.backbone_model, "atomic_model")
-            else self.backbone_model,
-            "pair_excl",
-            None,
+            else getattr(self.backbone_model, "pair_excl", None)
         )
         if pair_excl is not None:
             from deepmd.dpmodel.utils.nlist import (
