@@ -117,8 +117,7 @@ class DPAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         self.descriptor = descriptor
         self.fitting_net = fitting
-        if hasattr(self.fitting_net, "reinit_exclude"):
-            self.fitting_net.reinit_exclude(self.atom_exclude_types)
+        self.fitting_net.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
         self.add_chg_spin_ebd: bool = self.descriptor.get_dim_chg_spin() > 0
         # Structural capability: only descriptors with a native spin

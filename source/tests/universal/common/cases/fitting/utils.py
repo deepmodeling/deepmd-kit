@@ -104,6 +104,16 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             )[var_name]
             np.testing.assert_allclose(rd, rd_ex)
 
+    def test_reinit_exclude_contract(self) -> None:
+        """``reinit_exclude`` is declared on the base fitting: empty input
+        is always accepted; fittings with exclusion support apply it.
+        """
+        self.module.reinit_exclude([])  # must never raise
+        if hasattr(self.module, "emask"):  # override branch
+            self.module.reinit_exclude([0])
+            assert self.module.exclude_types == [0]
+            self.module.reinit_exclude([])
+
     def test_change_type_map(self) -> None:
         if not self.module.mixed_types:
             # skip if not mixed_types
