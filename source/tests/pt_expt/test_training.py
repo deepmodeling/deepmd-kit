@@ -760,6 +760,7 @@ class TestCompiledConsistency(unittest.TestCase):
                 config["model"]["fitting_net"]["activation_function"] = activation
             if enable_compile:
                 config["training"]["enable_compile"] = True
+                config["validating"] = {"compiled_infer": True}
             config = update_deepmd_input(config, warning=False)
             return normalize(config)
 
