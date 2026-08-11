@@ -1113,6 +1113,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
                 stacklevel=2,
             )
 
+    def get_geo_compress(self) -> bool:
+        """Return whether geometric tabulated compression is active."""
+        return self.geo_compress
+
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
         obj = self.se_atten

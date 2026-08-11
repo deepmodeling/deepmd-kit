@@ -55,6 +55,9 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
         # has_default_chg_spin was merged into get_default_chg_spin: the
         # predicate is ``get_default_chg_spin() is not None``.
         assert not hasattr(type(self.module), "has_default_chg_spin")
+        # Geometric-compression state query: base default False, the
+        # dpa1/dpa2 families override from their ``geo_compress`` attribute.
+        assert isinstance(self.module.get_geo_compress(), bool)
 
     def test_forward_consistency(self) -> None:
         ret = []

@@ -34,7 +34,7 @@ def canonical_model_eligible(model: Any) -> bool:
     fitting = getattr(atomic_model, "fitting_net", None)
     if descriptor is None or fitting is None:
         return False
-    if not bool(getattr(descriptor, "geo_compress", False)):
+    if not descriptor.get_geo_compress():
         return False
     eligible = getattr(descriptor, "_fused_eligible", None)
     if not callable(eligible) or not bool(eligible("cuda")):

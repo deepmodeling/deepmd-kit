@@ -104,6 +104,14 @@ def make_base_descriptor(
             """Returns the default charge_spin value, or None."""
             return None
 
+        def get_geo_compress(self) -> bool:
+            """Return whether geometric tabulated compression is active.
+
+            Concrete default ``False``; descriptor families with a
+            geometric compression path override from their own state.
+            """
+            return False
+
         @abstractmethod
         def mixed_types(self) -> bool:
             """Returns if the descriptor requires a neighbor list that distinguish different
