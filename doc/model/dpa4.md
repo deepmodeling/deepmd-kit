@@ -341,6 +341,17 @@ When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
 same value as `bridging_r_inner` so frames with shorter atom pairs are excluded
 from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
 
+> [!NOTE]
+> Output-bias statistics and bridging: the model energy is
+> `E = E_model + E_bias`, and the ZBL term belongs to `E_model`. The
+> `set-by-statistic` bias mode (initial statistics, finetune with a
+> random fitting, `dp change-bias --mode set`) fits `E_bias` to the raw
+> data labels and by definition ignores `E_model` — the analytical ZBL
+> contribution included. For a self-consistent calibration of a bridged
+> model use `change-by-statistic`, which subtracts the complete bridged
+> prediction. See [change-bias](change-bias.md) for the precise
+> definitions.
+
 ## Performance and precision
 
 ### Training-time settings
