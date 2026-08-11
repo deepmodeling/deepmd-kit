@@ -5941,13 +5941,12 @@ def validating_args() -> Argument:
     )
     doc_compiled_infer = (
         "Whether to route eval-time forwards (including full validation) "
-        "through the DPA4/SeZM `torch.compile` path instead of eager. When `true`, "
-        "this flag is translated into `DP_COMPILE_INFER=1` at trainer "
-        "startup before any model is constructed, which is the env var SeZM "
-        "samples inside `SeZMModel.__init__`. A manually exported "
-        "`DP_COMPILE_INFER` takes precedence over this option. Only "
-        "meaningful when `model.use_compile=true`; has no effect on models "
-        "that do not implement the SeZM-style eval compile path."
+        "through `torch.compile` instead of eager. When `true`, this flag is "
+        "translated into `DP_COMPILE_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_COMPILE_INFER` takes "
+        "precedence over this option. In the PyTorch backend it applies when "
+        "`model.use_compile=true`; in the PyTorch Exportable backend it applies "
+        "when `training.enable_compile=true`."
     )
     doc_tf32_infer = (
         "Whether to enable TF32 `high` matmul precision for eval-time forwards "
@@ -6044,7 +6043,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_compiled_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",

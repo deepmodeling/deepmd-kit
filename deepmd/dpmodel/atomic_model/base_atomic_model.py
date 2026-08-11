@@ -943,6 +943,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                     for kk, vv in atomic_ret.items()
                 }
             else:
+                if spin is not None:
+                    raise NotImplementedError(
+                        "native-spin output-bias calibration requires the "
+                        "NeighborGraph lower"
+                    )
                 (
                     extended_coord,
                     extended_atype,

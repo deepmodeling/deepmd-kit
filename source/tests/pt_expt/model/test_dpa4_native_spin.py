@@ -730,6 +730,70 @@ class TestDPA4NativeSpinGraphLowerExportable:
         )
 
 
+class TestDPA4NativeSpinCompiledTraining:
+    """Native-spin data flow through the compiled training lower."""
+
+    def test_eager_eval_and_compiled_magnetic_force_backward(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep eval eager while retaining compiled magnetic gradients."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+            _get_model_structure_key,
+        )
+
+        # ``make_fx`` and the rebuilt graph exercise the compile boundary. The
+        # identity backend keeps this regression independent of platform
+        # toolchains while preserving the traced forward and double backward.
+        monkeypatch.setattr(torch, "compile", lambda model, **_: model)
+
+        model = _build_native_spin_model_cpu()
+        compiled = _CompiledModel(
+            model,
+            _get_model_structure_key(model),
+            compile_eval=False,
+        )
+        coord = torch.tensor(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 1.0, 0.0],
+                    [1.0, 0.0, 1.0],
+                ]
+            ],
+            dtype=torch.float64,
+        )
+        atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64)
+        spin = torch.arange(18, dtype=torch.float64).reshape(1, 6, 3) / 20.0 + 0.1
+        box = (8.0 * torch.eye(3, dtype=torch.float64)).reshape(1, 9)
+
+        eager_result = compiled.eval()(coord, atype, box=box, spin=spin)
+        assert compiled._compiled_lower_by_mode == {}
+        assert eager_result["force_mag"].shape == (1, 6, 3)
+
+        result = compiled.train()(coord, atype, box=box, spin=spin)
+
+        assert result["force"].shape == (1, 6, 3)
+        assert result["force_mag"].shape == (1, 6, 3)
+        assert result["mask_mag"].shape == (1, 6, 1)
+        assert set(compiled._compiled_lower_by_mode) == {True}
+        result["force_mag"].square().sum().backward()
+
+        spin_parameters = [
+            parameter
+            for name, parameter in model.named_parameters()
+            if "spin_embedding" in name
+        ]
+        assert spin_parameters
+        assert any(
+            parameter.grad is not None and torch.any(parameter.grad != 0)
+            for parameter in spin_parameters
+        )
+
+
 # =============================================================================
 # Task 11: training smoke -- native-spin DPA4 through the real pt_expt
 # trainer (data loading, ``ener_spin`` loss dispatch, ``ModelWrapper``,

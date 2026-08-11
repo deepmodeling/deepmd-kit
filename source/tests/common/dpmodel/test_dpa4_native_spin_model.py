@@ -113,6 +113,18 @@ class TestDPA4NativeSpinModel:
                 neighbor_graph_method="legacy",
             )
 
+    def test_output_bias_predictor_rejects_dense_spin_route(self):
+        self.model.atomic_model.descriptor.disable_graph_lower()
+        model_forward = self.model.atomic_model._get_forward_wrapper_func()
+
+        with pytest.raises(NotImplementedError, match="NeighborGraph"):
+            model_forward(
+                self.coord,
+                self.atype,
+                self.box,
+                spin=self.spin,
+            )
+
     def test_deepspin_scheme_with_dpa4_raises(self):
         cfg = {**NATIVE_SPIN_CONFIG, "spin": {"use_spin": [True, False]}}
         with pytest.raises(NotImplementedError):

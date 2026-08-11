@@ -937,6 +937,7 @@ def build_full_validators(
     checkpoint_dir: Path,
     ensure_supported: Callable[[], None],
     model_ema: Any | None = None,
+    ema_weight_model: torch.nn.Module | dict[str, torch.nn.Module] | None = None,
     sharding: ShardingPolicy | None = None,
     matmul_precision: MatmulPrecisionPolicy | None = None,
 ) -> tuple[FullValidator | None, FullValidator | None]:
@@ -977,6 +978,9 @@ def build_full_validators(
         The EMA state of the run. Without it the EMA flow stays inactive, so
         that ``ema_full_validation`` is ignored rather than rejected when EMA
         itself is disabled.
+    ema_weight_model : torch.nn.Module or dict, optional
+        The parameter owner tracked by ``model_ema`` when it differs from the
+        module used for evaluation. Defaults to ``model``.
     sharding : ShardingPolicy, optional
         The distribution strategy of the run, which decides whether checkpoint
         collection is a collective operation. Defaults to no sharding.
@@ -1039,6 +1043,8 @@ def build_full_validators(
         ),
         best_checkpoint_prefix=EMA_BEST_CKPT_PREFIX,
         emit_best_save_log=False,
-        model_eval_context=lambda: model_ema.apply_shadow(model),
+        model_eval_context=lambda: model_ema.apply_shadow(
+            model if ema_weight_model is None else ema_weight_model
+        ),
     )
     return live_validator, ema_validator

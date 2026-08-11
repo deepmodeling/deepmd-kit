@@ -26,6 +26,16 @@ if TYPE_CHECKING:
 
 #: Accepted ``DP_TF32_INFER`` values and the matmul precision each selects.
 _TF32_INFER_PRECISIONS = {"0": "highest", "1": "high", "2": "medium"}
+_BOOL_ENV_VALUES = {
+    "1": True,
+    "true": True,
+    "yes": True,
+    "on": True,
+    "0": False,
+    "false": False,
+    "no": False,
+    "off": False,
+}
 
 
 def count_parameters(module: torch.nn.Module) -> tuple[int, int]:
@@ -111,6 +121,27 @@ def infer_matmul_precision() -> str:
     if value not in _TF32_INFER_PRECISIONS:
         raise ValueError(f"DP_TF32_INFER must be one of 0/1/2, got {value!r}")
     return _TF32_INFER_PRECISIONS[value]
+
+
+def infer_compile_enabled() -> bool:
+    """
+    Resolve whether evaluation forwards use the compiled model.
+
+    Returns
+    -------
+    bool
+        Whether ``DP_COMPILE_INFER`` enables compiled evaluation.
+
+    Raises
+    ------
+    ValueError
+        If ``DP_COMPILE_INFER`` is not a supported boolean value.
+    """
+    value = os.environ.get("DP_COMPILE_INFER", "0").strip().lower()
+    if value not in _BOOL_ENV_VALUES:
+        choices = "/".join(_BOOL_ENV_VALUES)
+        raise ValueError(f"DP_COMPILE_INFER must be one of {choices}, got {value!r}")
+    return _BOOL_ENV_VALUES[value]
 
 
 class MatmulPrecisionPolicy:

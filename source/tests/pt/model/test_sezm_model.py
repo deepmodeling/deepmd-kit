@@ -1711,6 +1711,14 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         self.assertTrue(torch.all(env_seed_embedding.spin_scale == 0.0))
 
     def test_migrated_spin_routes_are_trainable_after_activation(self) -> None:
+        """Mirror the production two-stage native-spin fine-tune load.
+
+        The trainer first rebuilds the pretrained all-false model and loads the
+        legacy checkpoint into it, allowing version migration to canonicalize
+        dormant spin routes. It then transfers that migrated state into the
+        magnetic target. Loading directly into the target would lose the source
+        configuration needed to distinguish dormant routes from trained ones.
+        """
         legacy = self._build_model(use_spin=[False, False], randomize=True)
         legacy_state = legacy.state_dict()
         version_key = "atomic_model.descriptor.version_tensor"
