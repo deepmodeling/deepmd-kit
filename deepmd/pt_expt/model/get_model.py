@@ -296,10 +296,6 @@ def get_linear_model(model_params: dict) -> BaseModel:
     model_params : dict
         The model parameters.
     """
-    from deepmd.dpmodel.model.model import (
-        _build_linear_atomic_model,
-    )
-
     from .dp_linear_model import (
         LinearEnergyModel,
     )
@@ -324,12 +320,7 @@ def get_linear_model(model_params: dict) -> BaseModel:
         for sub in model_params["models"]:
             if "descriptor" in sub:
                 sub["descriptor"]["use_spin"] = use_spin
-    composed = _build_linear_atomic_model(
-        model_params,
-        model_components_factory=_model_factory.get_model_components,
-        dp_atomic_model=DPAtomicModel,
-        pairtab_atomic_model=PairTabAtomicModel,
-    )
+    composed = _model_factory.get_linear_atomic_model(model_params)
     if spin is not None:
         if not composed.supports_native_spin():
             raise NotImplementedError(

@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
-from typing import (
-    Any,
-)
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
@@ -117,12 +114,7 @@ def get_linear_model(data: dict) -> BaseModel:
         for sub in data["models"]:
             if "descriptor" in sub:
                 sub["descriptor"]["use_spin"] = use_spin
-    composed = _build_linear_atomic_model(
-        data,
-        model_components_factory=_model_factory.get_model_components,
-        dp_atomic_model=DPAtomicModel,
-        pairtab_atomic_model=PairTabAtomicModel,
-    )
+    composed = _model_factory.get_linear_atomic_model(data)
     if spin is not None:
         if not composed.supports_native_spin():
             raise NotImplementedError(
@@ -131,106 +123,6 @@ def get_linear_model(data: dict) -> BaseModel:
             )
         return NativeSpinEnergyModel(atomic_model_=composed, spin=spin)
     return LinearEnergyModel(atomic_model_=composed)
-
-
-def _build_linear_atomic_model(
-    data: dict,
-    *,
-    model_components_factory: Any,
-    dp_atomic_model: type,
-    pairtab_atomic_model: type,
-) -> Any:
-    """Build the ``LinearEnergyAtomicModel`` composition from a config.
-
-    Shared between the dpmodel and pt_expt linear builders: the caller
-    supplies its backend's component factory and atomic-model classes.
-    ``data`` is mutated (callers pass a private deep copy).
-
-    Parameters
-    ----------
-    data : dict
-        The ``linear_ener`` model configuration.
-    model_components_factory : callable
-        Backend factory building (descriptor, fitting, type_map) from a
-        standard sub-model config.
-    dp_atomic_model : type
-        Backend learned atomic-model class.
-    pairtab_atomic_model : type
-        Backend pair-tabulation atomic-model class.
-    """
-    from deepmd.dpmodel.atomic_model.inner_potential import (
-        InnerPotentialAtomicModel,
-    )
-    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-        LinearEnergyAtomicModel,
-    )
-
-    type_map = data["type_map"]
-    ntypes = len(type_map)
-    children = data["models"]
-    inner_indices = [
-        i for i, sub in enumerate(children) if sub.get("type") == "inner_potential"
-    ]
-    learned_indices = [i for i, sub in enumerate(children) if "descriptor" in sub]
-    if inner_indices:
-        if len(inner_indices) > 1:
-            raise ValueError(
-                "A linear_ener composition supports at most one "
-                "`inner_potential` sub-model."
-            )
-        if len(learned_indices) != 1:
-            raise ValueError(
-                "An `inner_potential` sub-model bridges exactly one learned "
-                f"sibling, but got {len(learned_indices)} sub-models with a "
-                "descriptor."
-            )
-        # The composition derives the sibling descriptor's clamp window from
-        # the inner_potential child: one source of truth for the radii.
-        inner_cfg = children[inner_indices[0]]
-        learned_descriptor = children[learned_indices[0]]["descriptor"]
-        learned_descriptor["inner_clamp_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
-        learned_descriptor["inner_clamp_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
-
-    built: dict[int, Any] = {}
-    for i, sub in enumerate(children):
-        if i in inner_indices:
-            continue
-        if "type_map" not in sub:
-            sub["type_map"] = copy.deepcopy(type_map)
-        if "descriptor" in sub:
-            sub["descriptor"]["ntypes"] = ntypes
-            descriptor, fitting, _ = model_components_factory(sub)
-            built[i] = dp_atomic_model(descriptor, fitting, type_map=sub["type_map"])
-        else:
-            if sub.get("type") != "pairtab":
-                raise ValueError(
-                    "Sub-models in LinearEnergyModel must be a standard model, "
-                    "a pairtab model, or an inner_potential model, but got "
-                    f"type {sub.get('type')!r}."
-                )
-            built[i] = pairtab_atomic_model(
-                sub["tab_file"],
-                sub["rcut"],
-                sub["sel"],
-                type_map=copy.deepcopy(type_map),
-            )
-    for i in inner_indices:
-        learned_descriptor_obj = built[learned_indices[0]].descriptor
-        built[i] = InnerPotentialAtomicModel(
-            type_map=copy.deepcopy(type_map),
-            mode=children[i].get("mode", "zbl"),
-            rcut=learned_descriptor_obj.get_rcut(),
-            sel=learned_descriptor_obj.get_sel(),
-        )
-    return LinearEnergyAtomicModel(
-        models=[built[i] for i in range(len(children))],
-        type_map=type_map,
-        weights=data.get("weights", "mean"),
-        # Both exclusions belong to the composition: its children share one
-        # graph, so "excluded" must cover the analytical term too.
-        atom_exclude_types=data.get("atom_exclude_types", []),
-        pair_exclude_types=data.get("pair_exclude_types", []),
-    )
 
 
 def get_spin_model(data: dict) -> SpinModel:
