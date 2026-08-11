@@ -477,6 +477,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        # tebd-compression slots: declared here so presence is a class
+        # property, not a runtime accident (issue #5897); populated by
+        # enable_compression()/deserialize().
+        self.type_embd_data = None
         self.tebd_compress = False
         self.geo_compress = False
         self.compress = False
@@ -1176,7 +1180,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         if self.compress:
             type_embd_data = (
                 self.type_embd_data
-                if hasattr(self, "type_embd_data")
+                if self.type_embd_data is not None
                 else obj.type_embd_data
             )
             compress_dict: dict = {
@@ -1518,6 +1522,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.mean = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.stddev = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
+        # tebd-compression slots: declared here so presence is a class
+        # property, not a runtime accident (issue #5897); populated by
+        # type_embedding_compression()/enable_compression().
         self.tebd_compress = False
         self.geo_compress = False
         self.is_sorted = len(self.exclude_types) == 0

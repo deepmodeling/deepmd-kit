@@ -329,6 +329,35 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     return False, value
 
 
+def register_buffer_replacing_slot(
+    obj: torch.nn.Module, name: str, tensor: torch.Tensor
+) -> None:
+    """Register a buffer, replacing a same-named plain attribute if present.
+
+    Some dpmodel base ``__init__``s declare a capability slot such as
+    ``self.type_embd_data = None`` so its presence is a class property
+    rather than a runtime accident (issue #5897). A torch-native
+    compression path may later want to store the real value as a
+    persistent buffer via ``torch.nn.Module.register_buffer`` directly
+    (bypassing ``__setattr__``/``dpmodel_setattr``, e.g. because the
+    value is already a computed ``torch.Tensor`` rather than a
+    ``np.ndarray``). ``register_buffer`` raises ``KeyError`` if the name
+    already exists as a plain (non-buffer) attribute, so remove it first.
+
+    Parameters
+    ----------
+    obj : torch.nn.Module
+        The pt_expt wrapper object to register the buffer on.
+    name : str
+        The buffer name.
+    tensor : torch.Tensor
+        The tensor value to store as a buffer.
+    """
+    if hasattr(obj, name) and name not in obj._buffers:
+        delattr(obj, name)
+    torch.nn.Module.register_buffer(obj, name, tensor)
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------

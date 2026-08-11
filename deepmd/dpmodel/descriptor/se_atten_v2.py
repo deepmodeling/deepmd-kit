@@ -259,7 +259,7 @@ class DescrptSeAttenV2(DescrptDPA1):
         if self.compress:
             type_embd_data = (
                 self.type_embd_data
-                if hasattr(self, "type_embd_data")
+                if self.type_embd_data is not None
                 else obj.type_embd_data
             )
             compress_dict: dict = {
