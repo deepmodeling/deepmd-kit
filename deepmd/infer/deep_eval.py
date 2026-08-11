@@ -390,10 +390,11 @@ class DeepEvalBackend(ABC):
         """Return the property variable name of ``model``, or ``None``.
 
         Used by every backend's ``model_type`` to detect a property model.
-        ``get_var_name`` may be absent (dpmodel/pt live models expose it only on
-        property models) or present-but-unimplemented (jax/tf2 artifacts always
-        define it and raise ``NotImplementedError`` otherwise), so probe
-        defensively.
+        Live dpmodel-family models always expose ``get_var_name`` (the base
+        class's concrete default returns ``None`` for non-property models);
+        ``get_var_name`` is only absent on frozen pt legacy models, and only
+        present-but-unimplemented -- raising ``NotImplementedError`` -- on
+        jax/tf2 artifacts, so probe defensively.
         """
         if not hasattr(model, "get_var_name"):
             return None

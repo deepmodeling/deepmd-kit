@@ -485,7 +485,8 @@ def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> N
 
         # property models: persist the output name/dimension/intensiveness so
         # the evaluator can dispatch to DeepProperty and reshape the output.
-        if hasattr(model, "get_var_name"):
+        is_property_model = model.get_var_name() is not None
+        if is_property_model:
 
             @tf.function
             def get_var_name() -> tf.Tensor:
