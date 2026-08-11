@@ -240,6 +240,11 @@ class EnergyLoss(Loss):
         if self.use_huber and self.has_h:
             raise RuntimeError("Huber loss is not implemented for hessian.")
 
+    @property
+    def supports_ragged_batches(self) -> bool:
+        """Whether the configured terms accept a flat per-node batch axis."""
+        return not (self.has_gf or self.has_h)
+
     def call(
         self,
         learning_rate: float,
@@ -301,6 +306,8 @@ class EnergyLoss(Loss):
             else None
         )
         is_ragged = "n_node" in model_dict
+        frame_id = None
+        included_n_node = None
         inv = None
         if is_ragged:
             n_node = model_dict["n_node"]
@@ -310,10 +317,21 @@ class EnergyLoss(Loss):
             else:
                 frame_id = frame_id_from_n_node(n_node, n_total=maskf.shape[0])
                 included_n_node = segment_sum(xp.reshape(maskf, (-1,)), frame_id, _nf)
-            inv = 1.0 / included_n_node
         elif maskf is not None:
-            inv = xp.reshape(1.0 / xp.sum(maskf, axis=-1), (-1,))  # [nf]
+            included_n_node = xp.reshape(xp.sum(maskf, axis=-1), (-1,))
             _nloc = maskf.shape[1]
+        if included_n_node is not None:
+            has_included_node = included_n_node > 0
+            safe_included_n_node = xp.where(
+                has_included_node,
+                included_n_node,
+                xp.ones_like(included_n_node),
+            )
+            inv = xp.where(
+                has_included_node,
+                1.0 / safe_included_n_node,
+                xp.zeros_like(included_n_node),
+            )
         if maskf is not None:
             _node_shape = maskf.shape
         if inv is not None:
@@ -331,7 +349,13 @@ class EnergyLoss(Loss):
             atom_ener = model_dict["atom_energy"]
             atom_ener_coeff = label_dict["atom_ener_coeff"]
             atom_ener_coeff = xp.reshape(atom_ener_coeff, atom_ener.shape)
-            energy = xp.sum(atom_ener_coeff * atom_ener, axis=1)
+            weighted_atom_ener = atom_ener_coeff * atom_ener
+            if is_ragged:
+                if frame_id is None:
+                    frame_id = frame_id_from_n_node(n_node, n_total=atom_ener.shape[0])
+                energy = segment_sum(weighted_atom_ener, frame_id, _nf)
+            else:
+                energy = xp.sum(weighted_atom_ener, axis=1)
         if force_required:
             force_reshape = xp.reshape(force, (-1,))
             force_hat_reshape = xp.reshape(force_hat, (-1,))

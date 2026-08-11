@@ -154,6 +154,32 @@ class TestEnergyLossAecoeff(TestEnergyLossBase):
         loss, more_loss = loss_fn.call(1.0, natoms, model_dict, label_dict)
         self.assertIsNotNone(loss)
 
+    def test_ragged_frames_are_reduced_independently(self) -> None:
+        """Atomic coefficients retain the frame boundaries of a flat node axis."""
+        loss_fn = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            enable_atom_ener_coeff=True,
+        )
+        n_node = np.array([2, 3], dtype=np.int64)
+        model_dict = {
+            "energy": np.array([[3.0], [12.0]]),
+            "atom_energy": np.arange(1.0, 6.0).reshape(-1, 1),
+            "n_node": n_node,
+        }
+        label_dict = {
+            "energy": np.array([[3.0], [12.0]]),
+            "find_energy": 1.0,
+            "atom_ener_coeff": np.ones((5, 1)),
+        }
+
+        loss, _ = loss_fn.call(1.0, int(n_node.sum()), model_dict, label_dict)
+
+        self.assertEqual(float(loss), 0.0)
+
 
 class TestEnergyLossGeneralizedForce(TestEnergyLossBase):
     """Test energy loss with generalized force (numb_generalized_coord > 0).

@@ -2207,12 +2207,14 @@ class Trainer(AbstractTrainer):
         layout. Only the trainer sees both sides, and it settles the question
         here, once, before any batch is drawn.
 
-        A graph lower is necessary but not sufficient: the model must also
-        expose an entry that takes the flat axis, which the composed models
-        (linear, ZBL bridging) do not. Native-spin models also stay rectangular:
-        their public output translation needs the spin-specific force and mask,
-        while this generic ragged entry translates energy-model outputs only.
-        Requiring these capabilities keeps each model on the layout it can read.
+        A graph lower is necessary but not sufficient: the model must expose an
+        entry that takes the flat axis, and the configured loss must accept that
+        representation. Composed models (linear, ZBL bridging) have no such
+        model entry. Generalized-force and Hessian losses require rectangular
+        label axes. Native-spin models also stay rectangular because their
+        public output translation needs the spin-specific force and mask.
+        Requiring both capabilities keeps the complete objective on a layout it
+        can evaluate.
 
         Each task has its own data system and its own model, so the answer is
         each task's own: a multi-task run pairing a graph model with a dense
@@ -2232,10 +2234,12 @@ class Trainer(AbstractTrainer):
         """
         for task_key in self.model_keys:
             model = self.models[task_key]
+            loss = self.losses[task_key]
             ragged = (
                 not model.has_spin()
                 and model_uses_graph_lower(model)
                 and hasattr(model, "forward_ragged")
+                and loss.supports_ragged_batches
             )
             for data_map in data_maps:
                 data = (

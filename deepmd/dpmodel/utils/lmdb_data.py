@@ -288,17 +288,19 @@ def _decode_frame(
     return result
 
 
+def _canonical_lmdb_key(key: str) -> str:
+    """Return one LMDB field name in the in-memory DeePMD convention."""
+    key = _KEY_REMAP.get(key, key)
+    if key.startswith("find_atomic_"):
+        return "find_atom_" + key.removeprefix("find_atomic_")
+    if key.startswith("atomic_"):
+        return "atom_" + key.removeprefix("atomic_")
+    return key
+
+
 def _remap_keys(frame: dict[str, Any]) -> dict[str, Any]:
     """Remap LMDB key names to the canonical in-memory DeePMD convention."""
-    out = {}
-    for k, v in frame.items():
-        key = _KEY_REMAP.get(k, k)
-        if key.startswith("find_atomic_"):
-            key = "find_atom_" + key.removeprefix("find_atomic_")
-        elif key.startswith("atomic_"):
-            key = "atom_" + key.removeprefix("atomic_")
-        out[key] = v
-    return out
+    return {_canonical_lmdb_key(key): value for key, value in frame.items()}
 
 
 def _requirement_value(requirement: Any, key: str, default: Any) -> Any:
@@ -381,7 +383,7 @@ def _raw_frame_availability(
     explicit_known = 0
     explicit_true = 0
     for key, value in frame.items():
-        name = _KEY_REMAP.get(key, key)
+        name = _canonical_lmdb_key(key)
         if name.startswith("find_"):
             label = name.removeprefix("find_")
             bit = key_bits.get(label)

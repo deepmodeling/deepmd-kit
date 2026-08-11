@@ -190,6 +190,24 @@ class TestGraphForceMag:
             atol=1e-6,
         )
 
+    def test_hessian_uses_spin_conditioning(self) -> None:
+        """Coordinate Hessians retain the spin input of the energy surface."""
+        self.model.enable_hessian()
+        hessian = self.model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.box,
+            spin=self.spin,
+        )["energy_derv_r_derv_r"]
+        scaled_hessian = self.model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.box,
+            spin=2.0 * self.spin,
+        )["energy_derv_r_derv_r"]
+
+        assert torch.max(torch.abs(scaled_hessian - hessian)).item() > 1e-6
+
     def test_force_unchanged_by_spin_leaf_wiring(self) -> None:
         """``call_common`` WITHOUT ``spin`` has no ``energy_derv_r_mag`` key,
         and the spin-less forward is deterministic (the new ``spin is not

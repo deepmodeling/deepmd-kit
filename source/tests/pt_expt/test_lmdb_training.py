@@ -873,6 +873,31 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         # Frame-level fields keep their frame axis.
         self.assertEqual(batch["energy"].shape[0], batch["n_node"].shape[0])
 
+    def test_loss_contract_can_require_rectangular_batches(self) -> None:
+        """Generalized-force and Hessian labels keep their rectangular axes."""
+        cases = {
+            "generalized force": {
+                "start_pref_gf": 1.0,
+                "limit_pref_gf": 1.0,
+                "numb_generalized_coord": 2,
+            },
+            "Hessian": {
+                "start_pref_h": 1.0,
+                "limit_pref_h": 1.0,
+            },
+        }
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            for name, loss_params in cases.items():
+                with self.subTest(loss=name):
+                    config = self._config(self._dpa1())
+                    config["loss"].update(loss_params)
+                    trainer = get_trainer(config)
+                    self.assertFalse(trainer.training_data._reader.ragged_batches)
+        finally:
+            os.chdir(cwd)
+
     def test_non_mixing_rule_keeps_the_rectangular_layout(self) -> None:
         """Model capability alone does not change established LMDB batches."""
         config = self._config(self._dpa1())

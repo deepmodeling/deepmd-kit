@@ -643,6 +643,33 @@ class TestPerFrameCountSource:
                 err_msg=key,
             )
 
+    @pytest.mark.parametrize("ragged", [False, True])
+    def test_fully_excluded_frame_is_neutral(self, ragged):
+        """A frame without an included atom contributes no extensive label."""
+        loss_obj = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+        )
+        mask_shape = (1,) if ragged else (1, 1)
+        model = {
+            "energy": np.ones((1, 1), dtype=np.float64),
+            "mask": np.zeros(mask_shape, dtype=np.float64),
+        }
+        if ragged:
+            model["n_node"] = np.ones(1, dtype=np.int64)
+        label = {
+            "energy": np.zeros((1, 1), dtype=np.float64),
+            "find_energy": 1.0,
+        }
+
+        loss, more_loss = loss_obj.call(1.0, 1, model, label)
+
+        assert float(loss) == 0.0
+        assert float(more_loss["rmse_e"]) == 0.0
+
     def test_generalized_force_refuses_a_concatenated_batch(self):
         """``drdq`` is stored against a common atom axis, which is gone."""
         rng = np.random.default_rng(5)

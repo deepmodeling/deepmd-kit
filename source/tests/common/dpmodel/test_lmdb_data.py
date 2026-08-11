@@ -722,6 +722,20 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(sorted(collated), sorted(batch))
         np.testing.assert_allclose(collated["custom"], batch["custom"])
 
+    def test_availability_scan_normalizes_atomic_label_prefix(self):
+        """Availability and frame decoding share the atomic-label aliases."""
+        raw = msgpack.packb(
+            {
+                "atomic_dipole": np.ones(3).tolist(),
+                "find_atomic_dipole": 1.0,
+            },
+            use_bin_type=True,
+        )
+
+        availability = lmdb_data_module._raw_frame_availability(raw, {"atom_dipole": 1})
+
+        self.assertEqual(availability, 1)
+
     def test_availability_probe_is_deferred_until_requirements_are_registered(self):
         """Reader construction must not inspect labels before their use is known.
 

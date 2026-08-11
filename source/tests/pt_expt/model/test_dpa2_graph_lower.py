@@ -335,6 +335,21 @@ class TestDpa2GraphLower:
         h = graph_out["hessian"][0]
         torch.testing.assert_close(h, h.transpose(-1, -2), rtol=1e-9, atol=1e-9)
 
+    def test_hessian_model_rejects_a_ragged_axis(self) -> None:
+        """A flat node axis cannot encode per-frame Hessian pair dimensions."""
+        model = self._make_model().eval()
+        model.enable_hessian()
+        box = self.cell.reshape(1, 9)
+        n_node = torch.tensor([self.natoms], dtype=torch.int64, device=self.device)
+
+        with pytest.raises(NotImplementedError, match="rectangular atom axis"):
+            model.forward_ragged(
+                self.coord.reshape(-1, 3).requires_grad_(True),
+                self.atype.reshape(-1),
+                n_node,
+                box=box,
+            )
+
     def test_disable_graph_lower_escape_hatch(self) -> None:
         """``descriptor.disable_graph_lower()`` is the documented legacy-dense
         escape hatch: it flips ``uses_graph_lower()`` to ``False`` so the

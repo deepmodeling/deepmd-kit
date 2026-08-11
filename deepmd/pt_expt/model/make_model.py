@@ -317,7 +317,9 @@ class _WrapperForwardEnergyGraph:
         pair_excl: Any,
         rcut: float,
         fparam: torch.Tensor | None,  # (1, ndf) or None
-        aparam: torch.Tensor | None,  # (1, nloc, nda) or None
+        aparam: torch.Tensor | None,  # (nloc, nda) or None
+        spin: torch.Tensor | None,  # (nloc, 3) or None
+        charge_spin: torch.Tensor | None,  # (1, 2) or None
     ) -> None:
         self.model = model
         self.kk = kk
@@ -330,6 +332,8 @@ class _WrapperForwardEnergyGraph:
         self.rcut = rcut
         self.fparam = fparam
         self.aparam = aparam
+        self.spin = spin
+        self.charge_spin = charge_spin
 
     def __call__(self, coord_flat: torch.Tensor) -> torch.Tensor:
         cc = coord_flat.reshape(1, self.nloc, 3)
@@ -340,11 +344,9 @@ class _WrapperForwardEnergyGraph:
             ng,
             self.atype.reshape(-1),
             fparam=self.fparam,
-            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
-            # (N == nloc for the single-frame carry-all graph).
-            aparam=(
-                self.aparam.reshape(self.nloc, -1) if self.aparam is not None else None
-            ),
+            aparam=self.aparam,
+            spin=self.spin,
+            charge_spin=self.charge_spin,
         )
         # atomic_ret[kk]: flat (N, *def), N == nloc for a single-frame carry-all
         # graph (all nodes owned); reduced output = sum over the node axis.
@@ -361,6 +363,8 @@ def _cal_hessian_ext_graph(
     box: torch.Tensor | None,
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
+    spin: torch.Tensor | None,
+    charge_spin: torch.Tensor | None,
     method: str,
     pair_excl: Any,
     rcut: float,
@@ -380,26 +384,42 @@ def _cal_hessian_ext_graph(
     """
     nf, nloc, _ = coord.shape
     vsize = math.prod(vdef.shape)
+    aparam_by_node = aparam.reshape(nf, nloc, -1) if aparam is not None else None
+    spin_by_node = spin.reshape(nf, nloc, 3) if spin is not None else None
+    charge_spin_by_frame = (
+        charge_spin.reshape(1, -1)
+        if charge_spin is not None and charge_spin.ndim == 1
+        else charge_spin
+    )
     hessians = []
     for ii in range(nf):
         node_index = torch.nonzero(atype[ii] >= 0, as_tuple=False).reshape(-1)
         n_real = node_index.shape[0]
         coord_flat = coord[ii, node_index].reshape(n_real * 3)
         atype_frame = atype[ii : ii + 1, node_index]
-        aparam_frame = aparam[ii : ii + 1, node_index] if aparam is not None else None
+        aparam_frame = (
+            aparam_by_node[ii, node_index] if aparam_by_node is not None else None
+        )
+        spin_frame = spin_by_node[ii, node_index] if spin_by_node is not None else None
+        charge_spin_frame = None
+        if charge_spin_by_frame is not None:
+            frame_index = 0 if charge_spin_by_frame.shape[0] == 1 else ii
+            charge_spin_frame = charge_spin_by_frame[frame_index : frame_index + 1]
         for ci in range(vsize):
             wrapper = _WrapperForwardEnergyGraph(
-                model,
-                kk,
-                ci,
-                n_real,
-                atype_frame,
-                box[ii : ii + 1] if box is not None else None,
-                method,
-                pair_excl,
-                rcut,
-                fparam[ii : ii + 1] if fparam is not None else None,
-                aparam_frame,
+                model=model,
+                kk=kk,
+                ci=ci,
+                nloc=n_real,
+                atype=atype_frame,
+                box=box[ii : ii + 1] if box is not None else None,
+                method=method,
+                pair_excl=pair_excl,
+                rcut=rcut,
+                fparam=fparam[ii : ii + 1] if fparam is not None else None,
+                aparam=aparam_frame,
+                spin=spin_frame,
+                charge_spin=charge_spin_frame,
             )
             hess = torch.autograd.functional.hessian(
                 wrapper,
@@ -780,13 +800,22 @@ def make_model(
             Raises
             ------
             NotImplementedError
-                If the model has no graph lower to read a flat node axis with.
+                If the model has no graph lower to read a flat node axis with,
+                or if its outputs require a rectangular pair axis.
             """
             if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
                 raise NotImplementedError(
                     "a flat node axis requires a mixed_types descriptor with a "
                     "graph lower; this model reads a rectangular one, so its "
                     "batches must be padded to a common atom count"
+                )
+            if any(
+                vdef.reducible and vdef.r_hessian
+                for vdef in self.atomic_output_def().get_data().values()
+            ):
+                raise NotImplementedError(
+                    "Hessian outputs require a rectangular atom axis; a flat "
+                    "node axis cannot represent their per-frame pair dimensions"
                 )
             # The trainer resolves ``auto`` once and installs the concrete
             # builder on the model. A model reached outside it has none, and
@@ -974,17 +1003,19 @@ def make_model(
                 vdef = aod[kk]
                 if vdef.reducible and vdef.r_hessian:
                     model_predict[get_hessian_name(kk)] = _cal_hessian_ext_graph(
-                        self,
-                        kk,
-                        vdef,
-                        cc,
-                        atype,
-                        bb,
-                        fp,
-                        ap,
-                        method,
-                        pair_excl,
-                        rcut,
+                        model=self,
+                        kk=kk,
+                        vdef=vdef,
+                        coord=cc,
+                        atype=atype,
+                        box=bb,
+                        fparam=fp,
+                        aparam=ap,
+                        spin=spin,
+                        charge_spin=charge_spin,
+                        method=method,
+                        pair_excl=pair_excl,
+                        rcut=rcut,
                         create_graph=self.training,
                     )
             return model_predict
