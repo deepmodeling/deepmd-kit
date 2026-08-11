@@ -13,13 +13,13 @@ import torch.nn.functional as torch_func
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.triton.dpa1.activation import (
+from deepmd.pt_expt.kernels.triton.dpa1.activation import (
     ACT_CODES,
 )
-from deepmd.kernels.triton.dpa1.se_conv import (
+from deepmd.pt_expt.kernels.triton.dpa1.se_conv import (
     se_atten_conv,
 )
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     triton_infer_level,
 )
 from deepmd.pt.model.descriptor.descriptor import (

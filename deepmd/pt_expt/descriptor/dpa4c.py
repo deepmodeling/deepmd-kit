@@ -16,7 +16,7 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
 )
@@ -172,7 +172,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
             and graph.destination_order is not None
             and graph.destination_row_ptr is not None
         ):
-            from deepmd.kernels.cuda.dpa4c.graph_compress import (
+            from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
                 dpa4c_graph_compress,
                 mega_eligible,
                 op_available,
@@ -478,7 +478,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
                 "This DPA4C was not built with `add_chg_spin_ebd`, so it has "
                 "no charge state to apply."
             )
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
             build_charge_state_artifacts,
         )
 
@@ -571,7 +571,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         del min_nbor_dist, table_extrapolate, table_stride_2, check_frequency
         if self.compress:
             raise ValueError("Compression is already enabled.")
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
             build_compression_artifacts,
         )
 
@@ -614,12 +614,12 @@ class DescrptDPA4C(DescrptDPA4CDP):
             or graph.source_row_ptr is None
         ):
             return None
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
             dpa4c_graph_compress_energy_force,
             ef_op_available,
             mega_eligible,
         )
-        from deepmd.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
             fitting_eligible,
         )
 

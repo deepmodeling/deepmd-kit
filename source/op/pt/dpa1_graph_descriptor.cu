@@ -99,7 +99,7 @@
 
 namespace {
 
-// Activation codes follow deepmd.kernels.triton.dpa1.activation.ACT_CODES:
+// Activation codes follow deepmd.pt_expt.kernels.triton.dpa1.activation.ACT_CODES:
 // 0 = tanh, 1 = silu. Forward and backward share this helper so energy and
 // its analytic force gradient stay consistent (the potential-energy surface
 // remains smooth).
@@ -1280,7 +1280,7 @@ void launch_backward_portable(const LaunchArgs& a,
 
 // Forward: (grrg, rot_mat) plus the tensors the backward consumes. See the
 // file header for the layout invariants and the applicability gate; the
-// Python wrapper (deepmd.kernels.cuda.dpa1.graph_descriptor) documents the
+// Python wrapper (deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor) documents the
 // argument contract. An empty gate_table selects concat mode; a populated
 // one ((T or T^2, NG), the strip embedding of the type pairs) selects strip.
 std::tuple<torch::Tensor,

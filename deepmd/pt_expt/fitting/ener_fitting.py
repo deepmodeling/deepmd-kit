@@ -6,12 +6,12 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
-from deepmd.kernels.cuda.graph_fitting import (
+from deepmd.pt_expt.kernels.cuda.graph_fitting import (
     fitting_eligible,
     graph_fitting,
 )
-from deepmd.kernels.cuda.graph_fitting import op_available as cuda_fitting_available
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.cuda.graph_fitting import op_available as cuda_fitting_available
+from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
 )
 from deepmd.pt_expt.common import (
@@ -47,7 +47,7 @@ class EnergyFittingNet(EnergyFittingNetDP):
 
         At ``DP_CUDA_INFER >= 1`` an inference-mode call on an eligible
         network (see
-        :func:`~deepmd.kernels.cuda.graph_fitting.fitting_eligible`)
+        :func:`~deepmd.pt_expt.kernels.cuda.graph_fitting.fitting_eligible`)
         routes through the fused cuBLAS operator; anything else keeps the
         dpmodel reference. Routing is device-free, so a CPU ``make_fx`` trace
         bakes the operator into the exported graph.

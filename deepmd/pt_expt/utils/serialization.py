@@ -1302,7 +1302,7 @@ def _cuda_infer_at_least_2() -> Iterator[None]:
     operator is unavailable or ineligible, so it is a safe floor for graph
     export.
     """
-    from deepmd.kernels.utils import (
+    from deepmd.pt_expt.kernels.utils import (
         cuda_infer_level,
     )
 
@@ -1340,10 +1340,10 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
 
     model = BaseModel.deserialize(data["model"])
     if model_uses_graph_lower(model) and _supports_graph_export(model):
-        from deepmd.kernels.cuda.dpa1.canonical import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             canonical_model_eligible as dpa1_canonical_eligible,
         )
-        from deepmd.kernels.cuda.dpa4c.canonical import (
+        from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
             canonical_model_eligible as dpa4c_canonical_eligible,
         )
 
@@ -1536,7 +1536,7 @@ def _trace_and_export(
 
     # Autotune checkpoint-specific custom-kernel launch tables on the target
     # GPU before tracing. The model itself remains on CPU for tracing.
-    from deepmd.kernels.autotune import (
+    from deepmd.pt_expt.kernels.autotune import (
         run_autotune,
     )
 
@@ -1608,11 +1608,11 @@ def _trace_and_export(
             )
         if canonical:
             if lower_kind == "dpa4c_canonical":
-                from deepmd.kernels.cuda.dpa4c.canonical import (
+                from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
                     canonical_model_eligible,
                 )
             else:
-                from deepmd.kernels.cuda.dpa1.canonical import (
+                from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
                     canonical_model_eligible,
                 )
 
@@ -2147,7 +2147,7 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
     RuntimeError
         If an artifact does not match exactly one lifted constant.
     """
-    from deepmd.kernels.cuda.dpa4c.graph_compress import (
+    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
         CHARGE_STATE_ARTIFACTS,
     )
 
@@ -2212,7 +2212,7 @@ def _compile_charge_state_fold(
     )
 
     import deepmd.pt_expt.utils.env as _env
-    from deepmd.kernels.cuda.dpa4c.graph_compress import (
+    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
         ChargeStateFold,
     )
 

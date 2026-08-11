@@ -9,11 +9,13 @@ from deepmd.dpmodel import (
     get_deriv_name,
     get_reduce_name,
 )
-from deepmd.kernels.utils import (
-    triton_infer_level,
-)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    triton_infer_level,
+    use_cutile_infer,
 )
 
 
@@ -212,8 +214,7 @@ def fit_output_to_model_output(
 def edge_energy_deriv(
     energy_redu: torch.Tensor,
     edge_vec: torch.Tensor,
-    src_ext: torch.Tensor,
-    dst_ext: torch.Tensor,
+    edge_scatter_index: torch.Tensor,
     edge_mask: torch.Tensor,
     nf: int,
     nall: int,
@@ -236,7 +237,7 @@ def edge_energy_deriv(
         F_k = sum_{dst(e)=k} g_e - sum_{src(e)=k} g_e
         W   = - sum_e g_e (x) edge_vec_e
 
-    ``src_ext`` and ``dst_ext`` index the flattened extended space
+    ``edge_scatter_index`` indexes the flattened extended space
     ``[0, nf * nall)``, so the scatter produces per-ghost extended tensors
     consumed by ``communicate_extended_output`` and the lower interface.
 
@@ -252,9 +253,9 @@ def edge_energy_deriv(
         Reduced per-frame energy with shape ``(nf, 1)``.
     edge_vec
         Per-edge displacement leaf with shape ``(E, 3)`` carrying ``requires_grad``.
-    src_ext, dst_ext
-        Sender / receiver indices into the flattened extended space, each with
-        shape ``(E,)``.
+    edge_scatter_index
+        Sender / receiver indices into the flattened extended space with shape
+        ``(2, E)``.
     edge_mask
         Boolean validity mask with shape ``(E,)``.
     nf, nall
@@ -276,8 +277,8 @@ def edge_energy_deriv(
     energy_derv_r
         Extended force with shape ``(nf, nall, 1, 3)``.
     energy_derv_c
-        Extended per-atom virial with shape ``(nf, nall, 1, 9)``, split
-        symmetrically between the two endpoints of each edge.
+        Extended per-atom virial with shape ``(nf, nall, 1, 9)``, attributed
+        in full to the source endpoint of each edge.
     energy_derv_c_redu
         Reduced global virial with shape ``(nf, 1, 9)``.
     energy_derv_r_mag
@@ -298,30 +299,72 @@ def edge_energy_deriv(
     g = torch.where(edge_mask.unsqueeze(-1), g, torch.zeros_like(g))
 
     n_ext = nf * nall
-    if triton_infer_level() >= 1 and not create_graph and g.is_cuda:
+    src_ext = edge_scatter_index[0]
+    dst_ext = edge_scatter_index[1]
+    frame_virial: torch.Tensor | None = None
+    use_fused_cuda = False
+    if cuda_infer_level() >= 1 and not create_graph and g.is_cuda:
+        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+            edge_force_virial as fused_edge_force_virial,
+        )
+        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+            op_available as fused_scatter_available,
+        )
+
+        use_fused_cuda = fused_scatter_available()
+    if (
+        (triton_infer_level() >= 1 or use_cutile_infer() or use_fused_cuda)
+        and not create_graph
+        and g.is_cuda
+    ):
         # Inference: assemble force and per-atom virial with two CSR segment
         # reductions instead of four ``index_add`` scatters (which serialize
         # on the colliding edges of each atom) and a materialized ``(E, 9)``
         # outer product. The extended indices carry no ordering guarantee, so
         # the topology is sorted here; these integer ops trace as ordinary
         # aten nodes under ``make_fx``.
-        from deepmd.kernels.triton.sezm.force_assembly import (
-            edge_force_assembly,
-        )
-
         dst_order = torch.argsort(dst_ext)
         src_order = torch.argsort(src_ext)
         boundaries = torch.arange(n_ext + 1, device=g.device, dtype=dst_ext.dtype)
         dst_row_ptr = torch.searchsorted(dst_ext.index_select(0, dst_order), boundaries)
         src_row_ptr = torch.searchsorted(src_ext.index_select(0, src_order), boundaries)
-        force_flat, av_flat = edge_force_assembly(
-            g.contiguous(),
-            edge_vec.detach().contiguous(),
-            dst_order,
-            dst_row_ptr,
-            src_order,
-            src_row_ptr,
-        )
+        if use_fused_cuda:
+            n_node_per_frame = torch.full(
+                (nf,), nall, dtype=torch.long, device=g.device
+            )
+            force_flat, av_flat, frame_virial, _ = fused_edge_force_virial(
+                g.contiguous(),
+                edge_vec.detach().contiguous(),
+                edge_scatter_index,
+                edge_mask,
+                dst_order,
+                dst_row_ptr,
+                src_order,
+                src_row_ptr,
+                n_node_per_frame,
+                edge_vec.new_empty(0, 3),
+                n_ext,
+                True,
+            )
+            av_flat = av_flat.view(n_ext, 9)
+        else:
+            if use_cutile_infer():
+                from deepmd.pt_expt.kernels.cutile.sezm.force_assembly import (
+                    edge_force_assembly,
+                )
+            else:
+                from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
+                    edge_force_assembly,
+                )
+
+            force_flat, av_flat = edge_force_assembly(
+                g.contiguous(),
+                edge_vec.detach().contiguous(),
+                dst_order,
+                dst_row_ptr,
+                src_order,
+                src_row_ptr,
+            )
         extended_force = force_flat.view(nf, nall, 3)
         extended_virial = av_flat.view(nf, nall, 9)
     else:
@@ -335,12 +378,10 @@ def edge_energy_deriv(
         # flattened to 9 with (force component k, coordinate component j)
         # ordering.
         w_edge = -torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
-        # Atomic virial: split each per-edge tensor symmetrically between
-        # endpoints.
-        half_w = 0.5 * w_edge
+        # Atomic virial follows the canonical DeePMD convention: each edge
+        # contribution is attributed in full to its source atom.
         av_flat = torch.zeros(n_ext, 9, dtype=g.dtype, device=g.device)
-        av_flat = av_flat.index_add(0, dst_ext, half_w)
-        av_flat = av_flat.index_add(0, src_ext, half_w)
+        av_flat = av_flat.index_add(0, src_ext, w_edge)
         extended_virial = av_flat.view(nf, nall, 9)
 
     if extended_coord_corr is not None:
@@ -353,7 +394,14 @@ def edge_energy_deriv(
 
     energy_derv_r = extended_force.unsqueeze(-2)
     energy_derv_c = extended_virial.unsqueeze(-2)
-    energy_derv_c_redu = energy_derv_c.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).sum(dim=1)
+    if frame_virial is not None and extended_coord_corr is None:
+        energy_derv_c_redu = frame_virial.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).view(
+            nf, 1, 9
+        )
+    else:
+        energy_derv_c_redu = energy_derv_c.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).sum(
+            dim=1
+        )
 
     # Magnetic force is the negative spin gradient, matching the dataset
     # ``force_mag = -dE/dspin`` convention (the virtual-atom scheme reaches the

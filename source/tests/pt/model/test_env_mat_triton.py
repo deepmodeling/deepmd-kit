@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Unit tests for the fused Triton environment-matrix kernel.
 
-The kernel (:mod:`deepmd.kernels.triton.env_mat`) is a drop-in for the
+The kernel (:mod:`deepmd.pt_expt.kernels.triton.env_mat`) is a drop-in for the
 descriptors' ``prod_env_mat`` front end under ``DP_TRITON_INFER >= 1`` on CUDA.
 These tests check, against the eager reference path (level 0):
 
@@ -19,7 +19,7 @@ import unittest
 
 import torch
 
-from deepmd.kernels.triton.env_mat import (
+from deepmd.pt_expt.kernels.triton.env_mat import (
     TRITON_AVAILABLE,
     env_mat,
 )

@@ -7,7 +7,7 @@ option(
 # headers and link libtorch_cuda, so they build only against a CUDA-enabled
 # PyTorch (DEEPMD_TORCH_HAS_CUDA); against a CPU-only torch they are omitted and
 # the Python dispatch falls back to the reference path (see
-# deepmd.kernels.cuda.*.op_available). The CUDA language is scoped per
+# deepmd.pt_expt.kernels.cuda.*.op_available). The CUDA language is scoped per
 # directory, so it must be enabled here: the sibling GPU library turns it on
 # only within its own subtree, which does not cover this target.
 if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
@@ -25,6 +25,34 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     endif()
   endif()
   enable_language(CUDA)
+  # One translation unit per (degree, focus width) so the twelve specializations
+  # of the fused SO(2) convolution compile in parallel; a single unit per width
+  # serializes six degrees behind one nvcc invocation.
+  set(DPA4_SO2_CONV_KERNEL_SRC
+      dpa4/so2_conv_fwd_c32_l1.cu
+      dpa4/so2_conv_fwd_c32_l2.cu
+      dpa4/so2_conv_fwd_c32_l3.cu
+      dpa4/so2_conv_fwd_c32_l4.cu
+      dpa4/so2_conv_fwd_c32_l5.cu
+      dpa4/so2_conv_fwd_c32_l6.cu
+      dpa4/so2_conv_fwd_c64_l1.cu
+      dpa4/so2_conv_fwd_c64_l2.cu
+      dpa4/so2_conv_fwd_c64_l3.cu
+      dpa4/so2_conv_fwd_c64_l4.cu
+      dpa4/so2_conv_fwd_c64_l5.cu
+      dpa4/so2_conv_fwd_c64_l6.cu
+      dpa4/so2_conv_bwd_c32_l1.cu
+      dpa4/so2_conv_bwd_c32_l2.cu
+      dpa4/so2_conv_bwd_c32_l3.cu
+      dpa4/so2_conv_bwd_c32_l4.cu
+      dpa4/so2_conv_bwd_c32_l5.cu
+      dpa4/so2_conv_bwd_c32_l6.cu
+      dpa4/so2_conv_bwd_c64_l1.cu
+      dpa4/so2_conv_bwd_c64_l2.cu
+      dpa4/so2_conv_bwd_c64_l3.cu
+      dpa4/so2_conv_bwd_c64_l4.cu
+      dpa4/so2_conv_bwd_c64_l5.cu
+      dpa4/so2_conv_bwd_c64_l6.cu)
   set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
       dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
       dpa1_graph_compress_c32.cu dpa1_graph_compress_c64.cu
@@ -43,7 +71,13 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     dpa4c_graph_compress_c128.cu
     graph_fitting.cu
     edge_force_virial.cu
-    dpa1_graph_energy_force.cu)
+    dpa1_graph_energy_force.cu
+    dpa4/so2_conv.cu
+    ${DPA4_SO2_CONV_KERNEL_SRC}
+    dpa4/grid_pair.cu
+    dpa4/zonal_scatter.cu
+    dpa4/edge_radial.cu
+    dpa4/wigner_dense.cu)
 endif()
 
 add_library(deepmd_op_pt MODULE ${OP_SRC})
@@ -77,6 +111,8 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   # The compressed DPA1 and DPA4C kernels are instantiated one translation unit
   # per channel width so their angular-degree and topology specializations
   # compile in parallel.
+  set_source_files_properties(${DPA4_SO2_CONV_KERNEL_SRC}
+                              PROPERTIES COMPILE_OPTIONS "--threads=2")
   set_source_files_properties(
     ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} dpa4c_graph_compress_c8.cu
     dpa4c_graph_compress_c16.cu dpa4c_graph_compress_c32.cu

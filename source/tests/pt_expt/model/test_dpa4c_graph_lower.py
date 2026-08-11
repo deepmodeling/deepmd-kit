@@ -562,7 +562,7 @@ def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
 
 
 def test_compact_canonical_eligibility_rejects_other_descriptors() -> None:
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
         canonical_model_eligible,
     )
 

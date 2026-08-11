@@ -102,7 +102,7 @@ __device__ __forceinline__ float sigmoid(float z) {
   return 0.5f * (1.f + tanhf(0.5f * z));
 }
 
-// Activation codes follow deepmd.kernels.triton.dpa1.activation.ACT_CODES
+// Activation codes follow deepmd.pt_expt.kernels.triton.dpa1.activation.ACT_CODES
 // (0 = tanh, 1 = silu). Value and derivative are separate because the forward
 // needs only the former and the backward only the latter.
 template <int ACT>

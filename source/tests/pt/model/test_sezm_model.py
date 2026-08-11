@@ -1422,13 +1422,54 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
     (``edge_energy_deriv``), then scattered back onto atoms.  These eager,
     float64 finite-difference checks pin the conservative-force guarantee
     ``F = -dE/dx`` and the PBC-correct virial ``W = -dE/deps``, and confirm
-    the half-split per-atom virial sums back to the global virial.  The ZBL
-    cases additionally drive ``InnerPotential`` (edge form) through the
-    same single backward.
+    the canonical full-to-source per-atom virial sums back to the global
+    virial. The ZBL cases additionally drive ``InnerPotential`` (edge form)
+    through the same single backward.
     """
 
     def setUp(self) -> None:
         self.device = env.DEVICE
+
+    def test_atom_virial_is_attributed_full_to_source(self) -> None:
+        """Each edge contributes its complete virial tensor to its source."""
+        from deepmd.pt.model.model.transform_output import (
+            edge_energy_deriv,
+        )
+
+        edge_vec = torch.tensor(
+            [[0.4, -0.7, 1.2]],
+            dtype=torch.float64,
+            device=self.device,
+            requires_grad=True,
+        )
+        edge_gradient = torch.tensor(
+            [[1.5, -2.0, 0.25]], dtype=torch.float64, device=self.device
+        )
+        energy = (edge_vec * edge_gradient).sum().view(1, 1)
+        edge_scatter_index = torch.tensor(
+            [[0], [1]], dtype=torch.long, device=self.device
+        )
+
+        force, atom_virial, virial, _ = edge_energy_deriv(
+            energy,
+            edge_vec,
+            edge_scatter_index,
+            torch.ones(1, dtype=torch.bool, device=self.device),
+            nf=1,
+            nall=2,
+            create_graph=False,
+        )
+
+        edge_virial = -(edge_gradient[:, :, None] * edge_vec[:, None, :])
+        expected_atom_virial = torch.cat(
+            [edge_virial, torch.zeros_like(edge_virial)], dim=0
+        ).view(1, 2, 1, 9)
+        expected_force = torch.stack((-edge_gradient[0], edge_gradient[0])).view(
+            1, 2, 1, 3
+        )
+        torch.testing.assert_close(force, expected_force)
+        torch.testing.assert_close(atom_virial, expected_atom_virial)
+        torch.testing.assert_close(virial, edge_virial.view(1, 1, 9))
 
     def _build_model(self, *, bridging_method: str = "none") -> SeZMModel:
         """Build a tiny float64 SeZM model with randomized parameters."""
@@ -1581,7 +1622,7 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
         torch.testing.assert_close(lhs, rhs, atol=1.0e-8, rtol=1.0e-4)
 
     def test_atom_virial_sums_to_global_virial(self) -> None:
-        """Half-split per-atom virial reduces to the global virial."""
+        """Full-to-source per-atom virial reduces to the global virial."""
         for bridging_method in ("none", "ZBL"):
             model = self._build_model(bridging_method=bridging_method)
             coord, atype, box = self._frame()

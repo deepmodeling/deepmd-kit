@@ -24,13 +24,13 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     frame_id_from_n_node,
     segment_sum,
 )
-from deepmd.kernels.cuda.edge_force_virial import (
+from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
     edge_force_virial as fused_edge_force_virial,
 )
-from deepmd.kernels.cuda.edge_force_virial import (
+from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
     op_available as fused_scatter_available,
 )
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
 )
 from deepmd.pt.utils import (

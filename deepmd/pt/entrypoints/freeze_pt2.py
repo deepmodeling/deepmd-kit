@@ -46,9 +46,6 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
-from deepmd.kernels.utils import (
-    triton_infer_level,
-)
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     SO2Convolution,
     SO2Linear,
@@ -64,6 +61,9 @@ from deepmd.pt.utils.compile_compat import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
+)
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
 )
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
@@ -315,7 +315,7 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     """Tune the shape-keyed Triton launch tables for this checkpoint's shapes.
 
     At ``DP_TRITON_INFER >= 2`` the traced graph bakes launch configurations
-    resolved from the tables in ``deepmd.kernels.triton.sezm.tile_configs``.  Shape keys
+    resolved from the tables in ``deepmd.pt_expt.kernels.triton.sezm.tile_configs``.  Shape keys
     absent from the built-in tables (an untuned GPU model, or an untuned
     width/degree) are swept here on the local GPU -- the exact hardware the
     ``.pt2`` will run on, since AOTInductor artifacts are not portable across
@@ -330,19 +330,16 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
         return
     if target_device.type != "cuda" or not torch.cuda.is_available():
         return
-    from deepmd.kernels.triton.sezm.so2_value_path import (
+    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
         SO2_VALUE_PATH_TRITON_AVAILABLE,
         make_triton_value_path,
     )
 
     if not SO2_VALUE_PATH_TRITON_AVAILABLE:
         return
-    from deepmd.kernels.triton.sezm.sweep_tile_configs import (
+    from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
         collect_model_shape_keys,
         tune_missing_configs,
-    )
-    from deepmd.kernels.triton.sezm.tile_configs import (
-        _builtin_tables,
     )
 
     # The built-in tables and the sweep both resolve against the current
@@ -350,7 +347,6 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     # tunes and looks up the right hardware (mixed-model hosts).
     if target_device.index is not None:
         torch.cuda.set_device(target_device)
-        _builtin_tables.cache_clear()
 
     shape_keys = collect_model_shape_keys(model)
     registered = tune_missing_configs(
@@ -836,6 +832,48 @@ def _export_with_comm_artifact(
             return fh.read()
 
 
+# Kernel levels the archive is built against when the caller expresses no
+# preference. Both are baked into the exported graph, so the default is the
+# combination that is fastest without trading accuracy for it.
+#
+# ``DP_CUDA_INFER=1`` rather than 2: level 1 holds the operators whose profit is
+# memory traffic and is faster on every part and every checkpoint measured,
+# while level 2 also replaces the mixing stack with float32 SIMT arithmetic.
+# That substitution wins on narrow checkpoints and on parts with a large
+# float32 peak, and loses as the arithmetic per edge grows -- measured from
+# 1.8x down to 0.7x across the model zoo on one part -- so it is left to an
+# explicit choice.
+#
+# ``DP_TRITON_INFER=2`` rather than 3: level 3 adds fp16x3 split-compensated
+# GEMMs to the mixing stack. For DPA4 that is their only site, so they matter
+# exactly while the mixing stack is still Triton's -- that is, below
+# ``DP_CUDA_INFER=2``, which the default above is. Where they do run they
+# perturb the forces by up to 4e-1 eV/Å on the wider checkpoints against the
+# float32 reference, and a frozen archive is what runs molecular dynamics, so
+# it defaults to exact float32.
+_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
+
+
+def _apply_kernel_level_defaults() -> None:
+    """Pin the inference kernel levels this archive is compiled against.
+
+    The levels are read once at model construction time and baked into the
+    exported graph, so they are fixed here, before the checkpoint is loaded. An
+    explicit setting in the environment always wins.
+    """
+    chosen = {}
+    for name, default in _FREEZE_KERNEL_LEVELS.items():
+        explicit = os.environ.get(name)
+        if explicit is None:
+            os.environ[name] = default
+        chosen[name] = (explicit, "environment") if explicit else (default, "default")
+    log.info(
+        "Freezing against %s; set them before freezing to override, since the "
+        "selected kernels are baked into the .pt2 archive.",
+        ", ".join(f"{k}={v} ({how})" for k, (v, how) in chosen.items()),
+    )
+
+
 def freeze_sezm_to_pt2(
     ckpt_path: str,
     out_path: str,
@@ -864,11 +902,15 @@ def freeze_sezm_to_pt2(
         default: the edge-force scatter assembles the per-atom virial as a
         free by-product of the single backward, so exporting it carries no
         compute cost.
+
+    Notes
+    -----
+    The accelerated kernel levels are baked into the archive. Without an
+    explicit ``DP_TRITON_INFER`` or ``DP_CUDA_INFER`` in the environment the
+    archive is built at ``DP_TRITON_INFER=2`` and ``DP_CUDA_INFER=1``, which is
+    the fastest combination that keeps every operator in exact float32.
     """
-    log.info(
-        "Set DP_TRITON_INFER to the desired level (0-3) before freezing; "
-        "the selected Triton inference kernels are baked into the .pt2 archive."
-    )
+    _apply_kernel_level_defaults()
 
     from torch._inductor import (
         aoti_compile_and_package,

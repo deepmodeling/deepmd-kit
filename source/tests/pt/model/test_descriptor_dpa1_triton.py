@@ -2,7 +2,7 @@
 """Unit tests for the opt-in Triton inference kernel of the DPA1 descriptor
 (``se_atten`` with ``attn_layer == 0``, in either ``strip`` or ``concat``
 tebd-input mode), enabled via the ``DP_TRITON_INFER`` level (see
-:func:`deepmd.kernels.utils.triton_infer_level`).
+:func:`deepmd.pt_expt.kernels.utils.triton_infer_level`).
 
 Three properties are covered:
 
@@ -32,22 +32,22 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
-from deepmd.kernels.triton.dpa1.activation import (
+from deepmd.pt_expt.kernels.triton.dpa1.activation import (
     TRITON_AVAILABLE,
 )
-from deepmd.kernels.triton.dpa1.edge_conv import (
+from deepmd.pt_expt.kernels.triton.dpa1.edge_conv import (
     _edge_conv_reference,
     _edge_conv_reference_backward,
     edge_conv,
 )
-from deepmd.kernels.triton.dpa1.gemm_fp16x3 import (
+from deepmd.pt_expt.kernels.triton.dpa1.gemm_fp16x3 import (
     embed_gemm_fp16x3,
 )
-from deepmd.kernels.triton.dpa1.se_conv import (
+from deepmd.pt_expt.kernels.triton.dpa1.se_conv import (
     _se_conv_reference,
     se_conv,
 )
-from deepmd.kernels.triton.dpa1.tile_configs import (
+from deepmd.pt_expt.kernels.triton.dpa1.tile_configs import (
     DEFAULT_CONFIG,
     resolve_conv_config,
 )

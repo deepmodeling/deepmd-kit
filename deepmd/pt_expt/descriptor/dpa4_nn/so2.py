@@ -9,9 +9,9 @@ reference pt opt-in Triton inference path around three hot paths, mirroring
 - the two rotation hot paths of :class:`SO2Convolution`, and
 - the low-rank branch of :class:`DynamicRadialDegreeMixer`.
 
-The kernels are sourced from the central :mod:`deepmd.kernels.triton.sezm`
+The kernels are sourced from the central :mod:`deepmd.pt_expt.kernels.triton.sezm`
 package and gated by the integer inference level ``DP_TRITON_INFER`` (see
-:func:`deepmd.kernels.utils.triton_infer_level`); every kernel path requires
+:func:`deepmd.pt_expt.kernels.utils.triton_infer_level`); every kernel path requires
 level ``>= 1``.  The kernels run only during inference (``not self.training``),
 and each kernel self-guards Triton availability and falls back to an eager
 reference off CUDA / on fp64, so importing this module is safe on CPU-only
@@ -37,7 +37,7 @@ from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as SO2ConvolutionDP
 from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as SO2LinearDP
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     triton_infer_level,
     use_cute_infer,
 )
@@ -66,7 +66,7 @@ class SO2Linear(SO2LinearDP):
         # traced (``make_fx``) graph, and it only takes effect during inference.
         self._block_diag_gemm = None
         if triton_infer_level() >= 1:
-            from deepmd.kernels.triton.sezm.so2_block_gemm import (
+            from deepmd.pt_expt.kernels.triton.sezm.so2_block_gemm import (
                 SO2_BLOCK_GEMM_TRITON_AVAILABLE,
                 block_diag_gemm,
                 slices_supported,
@@ -110,7 +110,7 @@ class DynamicRadialDegreeMixer(DynamicRadialDegreeMixerDP):
             and self.rank > 0
             and self.mmax == 1
         ):
-            from deepmd.kernels.triton.sezm.radial_mix import (
+            from deepmd.pt_expt.kernels.triton.sezm.radial_mix import (
                 radial_mix_block,
             )
 
@@ -141,7 +141,7 @@ class SO2Convolution(SO2ConvolutionDP):
         self._rotate_to_local_fn = None
         self._rotate_back_fn = None
         if self.use_triton_infer:
-            from deepmd.kernels.triton.sezm.so2_rotation import (
+            from deepmd.pt_expt.kernels.triton.sezm.so2_rotation import (
                 rotate_back_block_so2,
                 rotate_back_dense,
                 rotate_to_local_block,
@@ -183,7 +183,7 @@ class SO2Convolution(SO2ConvolutionDP):
         # flash by ANDing that layout predicate with the Triton-availability gate.
         self.use_flash_atten = self.use_triton_infer and self._flash_atten_layout_ok
         if self.use_flash_atten:
-            from deepmd.kernels.triton.sezm.flash_atten import (
+            from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
                 build_row_ptr,
                 flash_atten_aggregate,
             )
@@ -218,7 +218,7 @@ class SO2Convolution(SO2ConvolutionDP):
         # operator on shapes whose configuration passed the fp64 validation
         # sweep.
         if self.triton_infer_level >= 2:
-            from deepmd.kernels.triton.sezm.so2_value_path import (
+            from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
                 make_triton_value_path,
             )
 
@@ -227,7 +227,7 @@ class SO2Convolution(SO2ConvolutionDP):
         # Experimental alternative backend; mutually exclusive with the Triton
         # flag (enforced above).
         elif use_cute_infer():
-            from deepmd.kernels.cute.sezm import (
+            from deepmd.pt_expt.kernels.cute.sezm import (
                 make_cute_value_path,
             )
 

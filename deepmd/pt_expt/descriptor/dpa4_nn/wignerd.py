@@ -8,9 +8,9 @@ monomial hot paths -- the shared ``l >= 3`` kernel and the ``l = 2`` degree-4
 contraction -- mirroring ``deepmd.pt.model.descriptor.sezm_nn.wignerd``.
 
 The fused monomial operator is sourced from the central
-:mod:`deepmd.kernels.triton.sezm.wigner_monomials` package and gated by the
+:mod:`deepmd.pt_expt.kernels.triton.sezm.wigner_monomials` package and gated by the
 integer inference level ``DP_TRITON_INFER`` (see
-:func:`deepmd.kernels.utils.triton_infer_level`); the fast path requires level
+:func:`deepmd.pt_expt.kernels.utils.triton_infer_level`); the fast path requires level
 ``>= 1``.  It runs only during inference (``not self.training``) on CUDA, and
 the operator self-guards Triton availability and falls back to an eager
 reference off CUDA / on fp64, so importing this module is safe on CPU-only
@@ -37,7 +37,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     triton_infer_level,
 )
 from deepmd.pt_expt.common import (
@@ -109,7 +109,7 @@ class WignerDCalculator(WignerDCalculatorDP):
 
         On the CUDA inference path the fused operator evaluates the monomials
         in registers with the exponent table baked in at compile time (see
-        :mod:`deepmd.kernels.triton.sezm.wigner_monomials`); construction-time
+        :mod:`deepmd.pt_expt.kernels.triton.sezm.wigner_monomials`); construction-time
         solves and CPU targets keep the dense power-table chain.
         """
         exps = self._monomial_exponents_flat.get(exp_name)
@@ -119,7 +119,7 @@ class WignerDCalculator(WignerDCalculatorDP):
             and edge_quaternion.is_cuda
             and not self.training
         ):
-            from deepmd.kernels.triton.sezm.wigner_monomials import (
+            from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
                 wigner_monomials,
             )
 
@@ -141,7 +141,7 @@ class WignerDCalculator(WignerDCalculatorDP):
             and edge_quaternion.is_cuda
             and not self.training
         ):
-            from deepmd.kernels.triton.sezm.wigner_monomials import (
+            from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
                 wigner_monomials,
             )
 

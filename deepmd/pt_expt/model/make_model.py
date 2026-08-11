@@ -24,7 +24,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     compact_nodes,
     expand_node_values,
 )
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
 )
 from deepmd.pt_expt.common import (

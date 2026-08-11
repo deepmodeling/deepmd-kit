@@ -1592,12 +1592,13 @@ class SO2Convolution(NativeOP):
         self.use_flash_atten = False
         self._flash_atten_fn = None
         self._build_row_ptr_fn = None
-        # Layout-support half of pt's ``use_flash_atten`` predicate -- everything
-        # except the ``use_triton_infer`` gate. The fused kernel only engages for
-        # the ``mmax == 1`` attention layout without the optional focus-mix /
-        # value / output projections (the deployed DPA4 configuration). Stored so
-        # ``pt_expt`` can re-enable flash by ANDing this with its own
-        # Triton-availability check, without duplicating the long predicate.
+        # Layout-support half of the fused-aggregation predicate -- everything
+        # except the backend gate, and the name the ``pt`` backend uses for it as
+        # well. The fused kernel only engages for the ``mmax == 1`` attention
+        # layout without the optional focus-mix / value / output projections (the
+        # deployed DPA4 configuration). Stored so ``pt_expt`` can re-enable flash
+        # by ANDing this with its own Triton-availability check, without
+        # duplicating the long predicate.
         self._flash_atten_layout_ok = (
             self.n_atten_head > 0
             and self.mmax == 1

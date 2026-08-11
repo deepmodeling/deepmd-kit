@@ -13,7 +13,7 @@ from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
-from deepmd.kernels.utils import (
+from deepmd.pt_expt.kernels.utils import (
     use_amp_infer,
 )
 from deepmd.pt_expt.common import (

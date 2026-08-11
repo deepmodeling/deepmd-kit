@@ -52,9 +52,6 @@ from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.utils import (
-    use_amp_infer,
-)
 from deepmd.pt.utils import (
     env,
 )
@@ -67,6 +64,10 @@ from deepmd.pt.utils.exclude_mask import (
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    use_amp_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -1039,6 +1040,41 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         self.blocks = nn.ModuleList(blocks)
 
+        # The fused CUDA convolution rebuilds the packed Wigner rows from the
+        # edge quaternions inside its operator, so the dense per-edge matrices
+        # are only needed when some block falls back to another value path.
+        # Cross-focus competition still reads the dense rows for its scalar
+        # gate, and training always uses the reference path.
+        self._wigner_free_conv = bool(self.blocks) and all(
+            getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
+            and not block.so2_conv._cuda_conv_fn._compete
+            for block in self.blocks
+        )
+
+        # The envelope and the radial basis are both functions of the pair
+        # distance and are cheap enough that the compiler inlines them into
+        # every consumer and re-evaluates them there. Behind an operator
+        # boundary the chain runs once per step.
+        self._cuda_radial_fn = None
+        self._cuda_wigner_fn = None
+        if cuda_infer_level() >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+            from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
+                make_cuda_wigner_dense,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
+            # The dense Wigner pair otherwise costs five full-size passes
+            # over the (E, D, D) tensors; the fused build pays only the
+            # output writes.
+            self._cuda_wigner_fn = make_cuda_wigner_dense(
+                self.mp_init_lmax, self.compute_dtype
+            )
+
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
         if self.use_full_attn_res:
@@ -1282,7 +1318,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                build_wigner=self._need_full_wigner,
+                build_wigner=self._need_full_wigner
+                and (self.training or not self._wigner_free_conv),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1535,13 +1572,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 bridging_switch=self.bridging_switch,
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
+                fused_radial=(None if self.training else self._cuda_radial_fn),
+                fused_wigner=(None if self.training else self._cuda_wigner_fn),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                build_wigner=self._need_full_wigner,
+                build_wigner=self._need_full_wigner
+                and (self.training or not self._wigner_free_conv),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -1835,6 +1875,42 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         return edge_quat
 
+    def _shared_wigner_runs(
+        self,
+        edge_cache: EdgeFeatureCache,
+        lmax: int,
+    ) -> torch.Tensor | None:
+        """
+        Zonal coupling taken from the packed runs the convolution already builds.
+
+        The fused convolution stages a packed block-diagonal Wigner run per
+        edge whose degree-``l`` ``m = 0`` row occupies entries ``l ** 2`` to
+        ``(l + 1) ** 2``. That is the same quantity as
+        ``Dt_full[:, row(l, m), col(l, 0)]``, so degrees ``1..lmax`` are one
+        contiguous slice and the rotation algebra runs once per step instead of
+        twice. The runs are cached on the edge cache, so whichever consumer
+        comes first pays for them.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            The step's edge feature cache.
+        lmax : int
+            Highest degree the coupling must cover.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
+            no convolution supplies runs of at least this degree.
+        """
+        if not self._wigner_free_conv or edge_cache.csr_cache is None:
+            return None
+        fused = self.blocks[0].so2_conv._cuda_conv_fn
+        if fused is None or lmax > self.lmax:
+            return None
+        return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
+
     def _build_gie_zonal_coupling(
         self,
         edge_cache: EdgeFeatureCache,
@@ -1853,6 +1929,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         """
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            shared = self._shared_wigner_runs(edge_cache, calc.lmax)
+            if shared is not None:
+                return shared
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None

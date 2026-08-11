@@ -1658,8 +1658,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             edge_energy_deriv(
                 energy_redu,
                 edge_vec,
-                edge_scatter_index[0],
-                edge_scatter_index[1],
+                edge_scatter_index,
                 edge_mask,
                 nf,
                 nscatter,

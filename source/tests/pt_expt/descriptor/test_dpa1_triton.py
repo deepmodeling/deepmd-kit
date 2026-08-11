@@ -4,7 +4,7 @@
 The graph lower (``--lower-kind graph``) represents the neighbor list as a flat
 edge stream. When ``DP_TRITON_INFER >= 1`` the attention-free block routes
 ``call_graph`` through the fused edge-parallel
-:func:`~deepmd.kernels.triton.dpa1.edge_conv.edge_conv` operator, for both
+:func:`~deepmd.pt_expt.kernels.triton.dpa1.edge_conv.edge_conv` operator, for both
 tebd-input modes: ``concat`` (the type feature enters the embedding input, no
 gate) and ``strip`` (the type feature factorizes into the type-pair gate
 ``gg = gg_s * (1 + tt[idx] * sw)``, fed by the per-edge switch from
@@ -31,7 +31,7 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
-from deepmd.kernels.triton.dpa1.activation import (
+from deepmd.pt_expt.kernels.triton.dpa1.activation import (
     TRITON_AVAILABLE,
 )
 from deepmd.pt.utils.nlist import (
@@ -286,8 +286,8 @@ class TestDpa1DenseRouting(unittest.TestCase):
     """Dense-lower parity and make_fx bake of the fused env_mat + se_conv route.
 
     The dense ``call`` routes ``prod_env_mat`` through the fused
-    :func:`~deepmd.kernels.triton.env_mat.env_mat` operator (and the embedding
-    through :func:`~deepmd.kernels.triton.dpa1.se_conv.se_conv`) at
+    :func:`~deepmd.pt_expt.kernels.triton.env_mat.env_mat` operator (and the embedding
+    through :func:`~deepmd.pt_expt.kernels.triton.dpa1.se_conv.se_conv`) at
     ``DP_TRITON_INFER >= 1``; this checks the operator wiring (parameters, atype
     slicing) reproduces the dpmodel reference and bakes into the traced graph.
     """

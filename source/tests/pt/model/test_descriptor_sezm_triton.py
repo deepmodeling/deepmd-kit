@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Unit tests for the opt-in Triton inference kernels of the SeZM descriptor
 (enabled via the ``DP_TRITON_INFER`` level, see
-:func:`deepmd.kernels.utils.triton_infer_level`): the
+:func:`deepmd.pt_expt.kernels.utils.triton_infer_level`): the
 block-diagonal SO(2)/Wigner rotation, the fused dynamic radial degree mixer,
 the fused value path with its table-routed edge-block backwards, and the
 level-3 fp16x3 mixing stack.
@@ -31,14 +31,21 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
-from deepmd.kernels.triton.sezm import (
+from deepmd.pt.model.descriptor.sezm_nn.indexing import (
+    build_m_major_index,
+    get_so3_dim_of_lmax,
+)
+from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    DynamicRadialDegreeMixer,
+)
+from deepmd.pt_expt.kernels.triton.sezm import (
     TRITON_AVAILABLE,
 )
-from deepmd.kernels.triton.sezm.radial_mix import (
+from deepmd.pt_expt.kernels.triton.sezm.radial_mix import (
     radial_mix_block,
     radial_mix_reference,
 )
-from deepmd.kernels.triton.sezm.so2_rotation import (
+from deepmd.pt_expt.kernels.triton.sezm.so2_rotation import (
     rotate_back_block,
     rotate_back_block_so2,
     rotate_back_dense,
@@ -46,13 +53,6 @@ from deepmd.kernels.triton.sezm.so2_rotation import (
     rotate_to_local_block,
     rotate_to_local_dense,
     rotate_to_local_reference,
-)
-from deepmd.pt.model.descriptor.sezm_nn.indexing import (
-    build_m_major_index,
-    get_so3_dim_of_lmax,
-)
-from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-    DynamicRadialDegreeMixer,
 )
 
 _CUDA = torch.cuda.is_available()
@@ -691,7 +691,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         return x, cache, radial
 
     def test_forward_backward_matches_reference_across_family(self):
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
         )
 
@@ -748,7 +748,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
                     )
 
     def test_factory_rejects_unsupported_layouts(self):
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
         )
 
@@ -771,7 +771,7 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
         return exps
 
     def test_forward_backward_matches_reference(self):
-        from deepmd.kernels.triton.sezm.wigner_monomials import (
+        from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
             _monomials_reference,
             wigner_monomials,
         )
@@ -841,7 +841,7 @@ class TestSeZMTritonForceAssembly(unittest.TestCase):
         return dst, src, dst_order, dst_row_ptr, src_order, src_row_ptr
 
     def test_matches_index_add_assembly(self):
-        from deepmd.kernels.triton.sezm.force_assembly import (
+        from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
             edge_force_assembly,
         )
 
@@ -860,10 +860,9 @@ class TestSeZMTritonForceAssembly(unittest.TestCase):
         force_ref = torch.zeros(n_ext, 3, device="cuda")
         force_ref.index_add_(0, dst, g)
         force_ref.index_add_(0, src, -g)
-        half_w = -0.5 * torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
+        w_edge = -torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
         virial_ref = torch.zeros(n_ext, 9, device="cuda")
-        virial_ref.index_add_(0, dst, half_w)
-        virial_ref.index_add_(0, src, half_w)
+        virial_ref.index_add_(0, src, w_edge)
 
         torch.testing.assert_close(force, force_ref, atol=1e-4, rtol=1e-5)
         torch.testing.assert_close(virial, virial_ref, atol=1e-4, rtol=1e-5)
@@ -874,14 +873,14 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
     """Check the destination-segmented flash forward against the reference.
 
     Destinations are deliberately unsorted: the traced SeZM graph keeps
-    masked padding edges in arbitrary destination order, so the operator must
-    build its own sorted CSR topology (a sorted-input-only regression once
-    produced silently wrong aggregates on the compiled path).
+    masked padding edges in arbitrary destination order, so the CSR view the
+    caller supplies is what establishes the segment order (a
+    sorted-input-only regression once produced silently wrong aggregates on
+    the compiled path).
     """
 
     def test_forward_matches_reference_on_unsorted_destinations(self):
-        from deepmd.kernels.triton.sezm.flash_atten import (
-            build_row_ptr,
+        from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
             flash_atten_aggregate,
             flash_atten_aggregate_reference,
         )
@@ -901,10 +900,13 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
         rescale = torch.rand(dim, device="cuda", generator=generator) + 0.5
         alpha = torch.rand(n_edge, n_focus, n_head, device="cuda", generator=generator)
         dst = torch.randint(0, n_node, (n_edge,), device="cuda", generator=generator)
-        row_ptr = build_row_ptr(torch.sort(dst).values, n_node)
+        # The destination CSR view the step would build once and share.
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_node)
+        row_ptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
 
         got = flash_atten_aggregate(
-            x_local, wigner_dt, rescale, alpha, row_ptr, dst, lmax, n_head
+            x_local, wigner_dt, rescale, alpha, order, row_ptr, dst, lmax, n_head
         )
         want = flash_atten_aggregate_reference(
             x_local, wigner_dt, rescale, alpha, dst, n_node, lmax, n_head
@@ -919,10 +921,10 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
         ``None`` for the wide one) so the test exercises both kernels
         regardless of the built-in coverage of the running GPU.
         """
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             tile_configs,
         )
-        from deepmd.kernels.triton.sezm.flash_atten import (
+        from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
             _flash_atten_backward_reference,
             _flash_bwd_op,
         )
@@ -1003,7 +1005,7 @@ class TestTritonInferLevel(unittest.TestCase):
             mock,
         )
 
-        from deepmd.kernels.utils import (
+        from deepmd.pt_expt.kernels.utils import (
             triton_infer_level,
         )
 
@@ -1050,7 +1052,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         against, and the fp64 comparisons of this class independently verify
         the numerics on whatever device runs the suite.
         """
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             tile_configs,
         )
 
@@ -1092,7 +1094,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         return u0, alpha, w0_all, w1_all, gw_all
 
     def _errors_against_fp64(self, op, u0, alpha, w0_all, w1_all, gw_all, grad_seed):
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_reference,
         )
 
@@ -1126,10 +1128,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         return relerr(x_run, x_ref), relerr(gu_run, gu_ref)
 
     def test_matches_fp64_within_fp32_error_budget(self):
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_op,
         )
 
@@ -1157,10 +1159,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         pins the ``2^11`` tail scaling (small magnitudes) and the ``2^-4``
         activation prescale (large magnitudes).
         """
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_op,
         )
 
@@ -1207,7 +1209,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             make_fx,
         )
 
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
 
@@ -1256,10 +1258,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         """
         if torch.cuda.get_device_properties(0).total_memory < 60 * 2**30:
             self.skipTest("requires ~40 GB of free device memory")
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_op,
         )
 
@@ -1314,15 +1316,15 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             mock,
         )
 
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
-            mixing_stack_fp16x3,
-        )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
-            _mixing_stack_op,
-            make_triton_value_path,
-        )
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
             SO2Convolution,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
+            mixing_stack_fp16x3,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+            make_triton_value_path,
         )
 
         def build_conv():
@@ -1350,10 +1352,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         self.assertIs(entry._stack_op, _mixing_stack_op)
 
     def test_unswept_shape_has_no_config_and_operator_refuses_it(self):
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.tile_configs import (
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
             stack_fp16x3_configs,
         )
 
@@ -1372,7 +1374,7 @@ class _TileConfigRuntimeIsolation(unittest.TestCase):
     """Base fixture: snapshot and restore the process-local runtime tables."""
 
     def setUp(self) -> None:
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             tile_configs,
         )
 
@@ -1431,14 +1433,13 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         )
 
         tc = self.tile_configs
-        tc._builtin_tables.cache_clear()
-        self.addCleanup(tc._builtin_tables.cache_clear)
-        with mock.patch.object(
-            torch.cuda, "get_device_name", return_value="NVIDIA Imaginary GPU"
-        ):
+        with mock.patch.object(tc, "_builtin_tables", return_value={}):
             self.assertEqual(tc.gate_config(32, 3), (16, 8, 2))
             self.assertEqual(tc.rotate_mix_fwd_config(64, 3), (2, 2))
             self.assertIsNone(tc.flash_bwd_block_config(64, 3))
+            self.assertIsNone(tc.flash_bwd_edge_config(64, 3))
+            self.assertIsNone(tc.stack_m0_gate_config(32, 3))
+            self.assertEqual(tc.stack_fp32_configs(32, 3), ((64, 64, 32, 4, 2),) * 3)
             self.assertIsNone(tc.stack_fp16x3_configs(32, 3))
             self.assertFalse(tc.has_tile_config("gate", (32, 3)))
             # Runtime registrations still resolve on an untuned GPU.
@@ -1446,14 +1447,13 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
                 "stack_fp16x3", {(32, 3): ((64, 64, 32, 4, 1),) * 4}
             )
             self.assertIsNotNone(tc.stack_fp16x3_configs(32, 3))
-        tc._builtin_tables.cache_clear()
 
     def test_collect_model_shape_keys_reports_supported_convolutions(self):
-        from deepmd.kernels.triton.sezm.sweep_tile_configs import (
-            collect_model_shape_keys,
-        )
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
             SO2Convolution,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
+            collect_model_shape_keys,
         )
 
         def build_conv(**overrides):
@@ -1484,17 +1484,20 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         self.assertEqual(collect_model_shape_keys(model), [(32, 3, 2, 1)])
 
     def test_tune_missing_configs_sweeps_only_uncovered_groups(self):
+        from dataclasses import (
+            replace,
+        )
         from unittest import (
             mock,
         )
 
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             sweep_tile_configs,
         )
 
         tc = self.tile_configs
-        # Cover the pointwise and fp16x3 groups; leave the (C_wide, lmax)
-        # groups uncovered so only they should be swept at level 2.
+        # Cover the base pointwise and fp16x3 groups; leave the independent
+        # point-recompute, fp32 and (C_wide, lmax) groups uncovered.
         tc.register_tile_configs("gate", {(48, 2): (16, 4, 1)})
         tc.register_tile_configs("stack_fp16x3", {(48, 2): None})
         calls: list[str] = []
@@ -1506,28 +1509,61 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
             return run
 
+        def fake_flash_sweep(cf, lmax, **kwargs):
+            calls.append("flash_bwd")
+            return {
+                "flash_bwd_edge": {(96, 2): (1, 1)},
+                "flash_bwd_block": {(96, 2): None},
+            }
+
         fake_sweeps = {
             "pointwise": fake_sweep("pointwise", "gate", (48, 2)),
+            "point_recompute": fake_sweep(
+                "point_recompute", "point_recompute", (48, 2)
+            ),
             "rotate_fwd": fake_sweep("rotate_fwd", "rotate_mix_fwd", (96, 2)),
             "rotate_bwd": fake_sweep("rotate_bwd", "rotate_mix_bwd_block", (96, 2)),
-            "flash_bwd": fake_sweep("flash_bwd", "flash_bwd_block", (96, 2)),
+            "flash_bwd": fake_flash_sweep,
+            "fp32": fake_sweep("fp32", "stack_fp32", (48, 2)),
+            "m0_gate": fake_sweep("m0_gate", "stack_m0_gate", (48, 2)),
             "fp16x3": fake_sweep("fp16x3", "stack_fp16x3", (48, 2)),
         }
+        fake_specs = {
+            name: replace(spec, sweep=fake_sweeps[name])
+            for name, spec in sweep_tile_configs._SWEEP_SPECS.items()
+        }
         shape_keys = [(48, 2, 2, 1)]
-        with mock.patch.dict(sweep_tile_configs._SWEEPS, fake_sweeps):
+        with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             registered = sweep_tile_configs.tune_missing_configs(
                 shape_keys, level=2, device="cuda"
             )
-        self.assertEqual(sorted(calls), ["flash_bwd", "rotate_bwd", "rotate_fwd"])
+        self.assertEqual(
+            sorted(calls),
+            [
+                "flash_bwd",
+                "fp32",
+                "m0_gate",
+                "point_recompute",
+                "rotate_bwd",
+                "rotate_fwd",
+            ],
+        )
         self.assertEqual(
             sorted(registered),
-            ["flash_bwd_block", "rotate_mix_bwd_block", "rotate_mix_fwd"],
+            [
+                "flash_bwd_block",
+                "flash_bwd_edge",
+                "point_recompute",
+                "rotate_mix_bwd_block",
+                "rotate_mix_fwd",
+                "stack_fp32",
+                "stack_m0_gate",
+            ],
         )
-        # The registrations are now covered: a second tune is a no-op, and
-        # level 3 adds only the fp16x3 group (whose key was pre-covered by
-        # the explicit None above).
+        # Every level-2 group is covered, while the pre-registered fp16x3 key
+        # covers the only additional level-3 group.
         calls.clear()
-        with mock.patch.dict(sweep_tile_configs._SWEEPS, fake_sweeps):
+        with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             self.assertEqual(
                 sweep_tile_configs.tune_missing_configs(
                     shape_keys, level=3, device="cuda"
@@ -1536,7 +1572,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             )
         self.assertEqual(calls, [])
         # Levels below 2 never sweep.
-        with mock.patch.dict(sweep_tile_configs._SWEEPS, fake_sweeps):
+        with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             self.assertEqual(
                 sweep_tile_configs.tune_missing_configs(
                     [(64, 5, 2, 1)], level=1, device="cuda"

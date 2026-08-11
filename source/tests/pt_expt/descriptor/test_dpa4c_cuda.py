@@ -15,7 +15,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     attach_edge_csr,
     graph_from_dense_quartet,
 )
-from deepmd.kernels.cuda.dpa4c.graph_compress import (
+from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
     _cpu_descriptor,
     _cpu_forward,
     _table_lookup,
@@ -918,7 +918,7 @@ def test_compact_canonical_parity(
     channels: int,
     index_dtype: torch.dtype,
 ) -> None:
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
@@ -968,7 +968,7 @@ def test_compact_canonical_parity(
 @_GPU
 @pytest.mark.parametrize("channels", [8, 128])
 def test_compact_inplace_backward_reuses_state(channels: int) -> None:
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
@@ -1014,7 +1014,7 @@ def test_fused_energy_force_parity(
     fitting_width: int,
     fitting_depth: int,
 ) -> None:
-    from deepmd.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
         edge_force_virial,
     )
     from deepmd.pt_expt.fitting.ener_fitting import (
@@ -1163,7 +1163,7 @@ def test_compact_canonical_tiling_is_equivalent(
     Every node tile owns a contiguous span of the destination-sorted edge
     axis, so the runs partition the work rather than splitting any reduction.
     """
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
         dpa4c_canonical_compress_energy_force,
     )
     from deepmd.pt_expt.fitting.ener_fitting import (

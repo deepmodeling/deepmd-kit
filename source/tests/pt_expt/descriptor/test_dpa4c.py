@@ -631,7 +631,7 @@ class TestDPA4CSpin:
         structural set as a spin-free one and its frozen tables are built
         alongside the geometric caches.
         """
-        from deepmd.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
             mega_eligible,
         )
 
