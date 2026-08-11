@@ -125,3 +125,29 @@ def test_graph_lower_output_keeps_min_nbor_dist(monkeypatch: Any) -> None:
     compress_mod.enable_compression(input_file="in.pt2", output="out.pt2")
 
     assert captured["data"]["min_nbor_dist"] == 1.25
+
+
+def test_spin_model_min_nbor_dist_reaches_the_backbone() -> None:
+    """Assigning on the wrapper must reach the model that gets compressed.
+
+    ``SpinModel.__getattr__`` only delegates reads, while both
+    ``get_min_nbor_dist`` and ``enable_compression`` run on the backbone.
+    """
+    from deepmd.pt_expt.model.spin_model import (
+        SpinModel,
+    )
+
+    class _Backbone:
+        min_nbor_dist: float | None = None
+
+    class _Wrapper:
+        # the property under test, on a stand-in that needs no torch module
+        min_nbor_dist = SpinModel.min_nbor_dist
+
+        def __init__(self) -> None:
+            self.backbone_model = _Backbone()
+
+    wrapper = _Wrapper()
+    wrapper.min_nbor_dist = 1.25
+    assert wrapper.backbone_model.min_nbor_dist == 1.25
+    assert wrapper.min_nbor_dist == 1.25
