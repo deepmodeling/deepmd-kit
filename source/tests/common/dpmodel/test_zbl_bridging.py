@@ -733,3 +733,31 @@ class TestCanonicalComposition:
 
         with pytest.raises(ValueError, match="bridging_method"):
             get_standard_model(copy.deepcopy(ZBL_CONFIG))
+
+
+class TestCanonicalCompositionGuards:
+    """Fail-fast guards of the shared linear builder."""
+
+    def test_mean_weights_with_inner_child_raise(self) -> None:
+        """`weights: "mean"` would silently halve both energy terms."""
+        cfg = _canonical_config()
+        cfg["weights"] = "mean"
+        with pytest.raises(ValueError, match="sum"):
+            get_model(cfg)
+
+    def test_nested_bridging_flag_on_child_raises(self) -> None:
+        """A `bridging_method` flag on a linear child must not be dropped."""
+        cfg = _canonical_config()
+        cfg["models"] = [cfg["models"][0]]
+        cfg["models"][0]["bridging_method"] = "ZBL"
+        with pytest.raises(ValueError, match="sub-model"):
+            get_model(cfg)
+
+    def test_inner_child_with_descriptor_raises_cleanly(self) -> None:
+        """A child carrying both `type: inner_potential` and a descriptor is
+        a configuration error, not a KeyError.
+        """
+        cfg = _canonical_config()
+        cfg["models"][1]["descriptor"] = {"type": "dpa4"}
+        with pytest.raises(ValueError, match="must not carry"):
+            get_model(cfg)

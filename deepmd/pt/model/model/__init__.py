@@ -197,6 +197,13 @@ def get_spin_model(model_params: dict) -> SpinModel:
 
 
 def get_linear_model(model_params: dict) -> BaseModel:
+    for sub in model_params.get("models", []):
+        if str(sub.get("bridging_method", "none")).lower() not in ("none", ""):
+            raise ValueError(
+                "`bridging_method` is not supported on a linear_ener "
+                "sub-model: add an `inner_potential` sub-model to the "
+                "composition instead."
+            )
     if any(
         sub.get("type") == "inner_potential" for sub in model_params.get("models", [])
     ):
@@ -324,6 +331,20 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
         raise NotImplementedError(
             "The pt backend implements `inner_potential` bridging only for "
             f"the DPA4/SeZM descriptor family, but got {descriptor_type!r}."
+        )
+    if learned.get("lora") is not None:
+        raise NotImplementedError(
+            "`lora` on the learned child of a bridged linear_ener "
+            "composition is not supported: the pt trainer reads `lora` "
+            "from the top-level model section only. Use the concise "
+            '`type: "dpa4"` form with top-level `lora` and '
+            "`bridging_method` instead."
+        )
+    learned_type_map = learned.get("type_map", model_params["type_map"])
+    if learned_type_map != model_params["type_map"]:
+        raise NotImplementedError(
+            "The pt backend requires the learned child's `type_map` to "
+            "match the bridged linear_ener composition's `type_map`."
         )
     inner_cfg = inner_cfgs[0]
     learned["type"] = "dpa4"

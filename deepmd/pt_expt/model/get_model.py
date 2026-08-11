@@ -280,6 +280,28 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     return NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin)
 
 
+def _dpa4_family_child_builder(sub: dict) -> "BaseModel | None":
+    """Route DPA4/SeZM linear children through the family builder.
+
+    A ``linear_ener`` child of the DPA4/SeZM model type must get exactly
+    the semantics of a standalone ``type: "dpa4"`` model -- the
+    descriptor/fitting type defaults, the exclusion consistency check, and
+    the loud rejections of unsupported options (``lora``, ``use_compile``,
+    ``preset_out_bias``) -- instead of the generic component build that
+    would silently ignore them. Returns ``None`` for non-DPA4-family
+    children so the shared builder uses its generic path.
+
+    Parameters
+    ----------
+    sub : dict
+        The sub-model config (``type_map`` and any derived clamp radii
+        already injected by the shared linear builder).
+    """
+    if str(sub.get("type", "standard")) not in ("dpa4", "DPA4", "sezm", "SeZM"):
+        return None
+    return get_sezm_model(sub).atomic_model
+
+
 def get_linear_model(model_params: dict) -> BaseModel:
     """Get a linear energy model from a ``linear_ener`` config dictionary.
 
@@ -320,7 +342,10 @@ def get_linear_model(model_params: dict) -> BaseModel:
         for sub in model_params["models"]:
             if "descriptor" in sub:
                 sub["descriptor"]["use_spin"] = use_spin
-    composed = _model_factory.get_linear_atomic_model(model_params)
+    composed = _model_factory.get_linear_atomic_model(
+        model_params,
+        descriptor_child_builder=_dpa4_family_child_builder,
+    )
     if spin is not None:
         if not composed.supports_native_spin():
             raise NotImplementedError(

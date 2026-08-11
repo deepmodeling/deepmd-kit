@@ -3245,7 +3245,10 @@ model_args_plugin = ArgsPlugin()
 hybrid_model_args_plugin = ArgsPlugin()
 
 
-def model_args(exclude_hybrid: bool = False) -> list[Argument]:
+def model_args(
+    exclude_hybrid: bool = False,
+    extra_model_types: "list[Argument] | None" = None,
+) -> list[Argument]:
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
@@ -3387,6 +3390,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [
                     *model_args_plugin.get_all_argument(),
                     *hybrid_models,
+                    *(extra_model_types or []),
                 ],
                 optional=True,
                 default_tag="standard",
@@ -3443,11 +3447,59 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
         + "Standard model, which contains a descriptor and a fitting.",
     )
     return ca
+
+
+def _bridging_method_args() -> list[Argument]:
+    """The concise analytical-bridging arguments, shared by the model types
+    that accept the ``bridging_method`` sugar (``dpa4`` and ``standard``).
+    """
+    doc_bridging_method = (
+        "Short-range bridging method. Currently supports 'ZBL'. "
+        "The value is case-insensitive; set it to 'None' to disable bridging. "
+        "This concise form is the recommended interface; it expands to the "
+        "equivalent explicit `linear_ener` composition over the learned "
+        "model and an `inner_potential` sub-model."
+    )
+    doc_bridging_r_inner = (
+        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
+        "Only used when `bridging_method` is enabled. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
+        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
+    )
+    doc_bridging_r_outer = (
+        "Outer clamping radius in Å. The transition zone "
+        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
+        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
+    )
+    return [
+        Argument(
+            "bridging_method",
+            str,
+            optional=True,
+            default="None",
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
+        ),
+        Argument(
+            "bridging_r_inner",
+            float,
+            optional=True,
+            default=0.5,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
+        ),
+        Argument(
+            "bridging_r_outer",
+            float,
+            optional=True,
+            default=0.8,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
+        ),
+    ]
 
 
 @model_args_plugin.register(
@@ -3485,24 +3537,6 @@ def sezm_model_args() -> Argument:
         "This training-time setting is independent of `use_compile`; eval-time "
         "TF32 is controlled separately by `validating.tf32_infer` or "
         "`DP_TF32_INFER`."
-    )
-    doc_bridging_method = (
-        "Short-range bridging method. Currently supports 'ZBL'. "
-        "The value is case-insensitive; set it to 'None' to disable bridging. "
-        "This concise form is the recommended interface; it expands to the "
-        "equivalent explicit `linear_ener` composition over the learned "
-        "model and an `inner_potential` sub-model."
-    )
-    doc_bridging_r_inner = (
-        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
-        "Only used when `bridging_method` is enabled. "
-        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
-        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
-    )
-    doc_bridging_r_outer = (
-        "Outer clamping radius in Å. The transition zone "
-        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
-        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
     )
     doc_lora_rank = "LoRA rank; adapters are injected on every SO3Linear and SO2Linear."
     doc_lora_alpha = (
@@ -3603,27 +3637,7 @@ def sezm_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "pt_expt") + doc_info,
             ),
-            Argument(
-                "bridging_method",
-                str,
-                optional=True,
-                default="None",
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
-            ),
-            Argument(
-                "bridging_r_inner",
-                float,
-                optional=True,
-                default=0.5,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
-            ),
-            Argument(
-                "bridging_r_outer",
-                float,
-                optional=True,
-                default=0.8,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
-            ),
+            *_bridging_method_args(),
             Argument(
                 "lora",
                 dict,
@@ -3707,8 +3721,11 @@ def pairtab_model_args() -> Argument:
     return ca
 
 
-@model_args_plugin.register("inner_potential")
 def inner_potential_model_args() -> Argument:
+    """Child-only model type: NOT registered in ``model_args_plugin``, so
+    ``model.type: "inner_potential"`` is rejected at the top level; it is
+    injected only into the ``linear_ener`` ``models`` variant.
+    """
     doc_mode = (
         "The analytical pair-potential formula. Currently supports 'zbl' "
         "(case-insensitive)."
@@ -3750,7 +3767,11 @@ def linear_ener_model_args() -> Argument:
         'If "sum", the weights are set to be 1.'
     )
     doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
-    models_args = model_args(exclude_hybrid=True)
+    models_args = model_args(
+        exclude_hybrid=True,
+        # child-only model type: valid inside `models`, rejected at top level
+        extra_model_types=[inner_potential_model_args()],
+    )
     models_args.name = "models"
     models_args.fold_subdoc = True
     models_args.set_dtype(list)

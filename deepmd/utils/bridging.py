@@ -26,7 +26,45 @@ import copy
 
 __all__ = [
     "expand_bridging_method",
+    "is_bridged_sezm_config",
 ]
+
+_DPA4_FAMILY_TYPES = ("dpa4", "sezm")
+
+
+def is_bridged_sezm_config(data: dict) -> bool:
+    """Return whether a config is a bridged DPA4/SeZM linear composition.
+
+    True for a ``linear_ener`` config whose children contain an
+    ``inner_potential`` sub-model and a DPA4/SeZM-family learned
+    sub-model -- the canonical form the ``bridging_method`` sugar expands
+    to. Checkpoint consumers that route DPA4/SeZM models specially (e.g.
+    the ``.pt2`` freeze path) must recognize this shape too, because the
+    persisted model params keep the canonical spelling while the pt
+    backend realizes it as a ``SeZMModel``.
+
+    Parameters
+    ----------
+    data : dict
+        The model section of a training config.
+    """
+    if str(data.get("type", "standard")).lower() != "linear_ener":
+        return False
+    children = [sub for sub in (data.get("models") or []) if isinstance(sub, dict)]
+    if not any(sub.get("type") == "inner_potential" for sub in children):
+        return False
+
+    def _is_dpa4_family(sub: dict) -> bool:
+        if str(sub.get("type", "standard")).lower() in _DPA4_FAMILY_TYPES:
+            return True
+        descriptor = sub.get("descriptor")
+        return (
+            isinstance(descriptor, dict)
+            and str(descriptor.get("type", "")).lower() in _DPA4_FAMILY_TYPES
+        )
+
+    return any(_is_dpa4_family(sub) for sub in children)
+
 
 # Top-level keys that belong to the composition, not to the learned child.
 _COMPOSITION_KEYS = (

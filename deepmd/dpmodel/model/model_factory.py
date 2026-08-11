@@ -132,6 +132,7 @@ def get_linear_atomic_model(
     backend_name: str,
     atomic_model: type,
     pairtab_model: type,
+    descriptor_child_builder: "Callable[[dict], Any | None] | None" = None,
 ) -> Any:
     """Build the ``LinearEnergyAtomicModel`` composition from a config.
 
@@ -158,13 +159,22 @@ def get_linear_atomic_model(
         Backend learned atomic-model class.
     pairtab_model : type
         Backend pair-tabulation atomic-model class.
+    descriptor_child_builder : callable, optional
+        Backend hook for descriptor-bearing children: called with the
+        child config (``type_map`` and derived clamp radii already
+        injected) and returns the child atomic model, or ``None`` to fall
+        back to the generic registry build. Backends use it to route
+        family-specific model types (e.g. DPA4/SeZM) through their
+        validated builders.
 
     Raises
     ------
     ValueError
         If more than one ``inner_potential`` child is given, if an
-        ``inner_potential`` child has no unique learned sibling, or if a
-        child is of an unsupported kind.
+        ``inner_potential`` child has no unique learned sibling, if a
+        bridged composition does not use ``weights: "sum"``, if a child
+        carries a ``bridging_method`` flag, or if a child is of an
+        unsupported kind.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotentialAtomicModel,
@@ -179,7 +189,25 @@ def get_linear_atomic_model(
     inner_indices = [
         i for i, sub in enumerate(children) if sub.get("type") == "inner_potential"
     ]
-    learned_indices = [i for i, sub in enumerate(children) if "descriptor" in sub]
+    learned_indices = [
+        i
+        for i, sub in enumerate(children)
+        if "descriptor" in sub and i not in inner_indices
+    ]
+    for i in inner_indices:
+        if "descriptor" in children[i]:
+            raise ValueError(
+                "An `inner_potential` sub-model must not carry a "
+                "`descriptor`: the analytical term has no learned "
+                "component."
+            )
+    for sub in children:
+        if str(sub.get("bridging_method", "none")).lower() not in ("none", ""):
+            raise ValueError(
+                "`bridging_method` is not supported on a linear_ener "
+                "sub-model: add an `inner_potential` sub-model to the "
+                "composition instead."
+            )
     if inner_indices:
         if len(inner_indices) > 1:
             raise ValueError(
@@ -191,6 +219,10 @@ def get_linear_atomic_model(
                 "An `inner_potential` sub-model bridges exactly one learned "
                 f"sibling, but got {len(learned_indices)} sub-models with a "
                 "descriptor."
+            )
+        if str(data.get("weights", "mean")) != "sum":
+            raise ValueError(
+                'A bridged linear_ener composition requires `weights: "sum"`.'
             )
         # The composition derives the sibling descriptor's clamp window from
         # the inner_potential child: one source of truth for the radii.
@@ -206,13 +238,18 @@ def get_linear_atomic_model(
         if "type_map" not in sub:
             sub["type_map"] = copy.deepcopy(type_map)
         if "descriptor" in sub:
-            descriptor, fitting, _ = get_model_components(
-                sub,
-                descriptor_base=descriptor_base,
-                fitting_base=fitting_base,
-                backend_name=backend_name,
-            )
-            built[i] = atomic_model(descriptor, fitting, type_map=sub["type_map"])
+            child = None
+            if descriptor_child_builder is not None:
+                child = descriptor_child_builder(sub)
+            if child is None:
+                descriptor, fitting, _ = get_model_components(
+                    sub,
+                    descriptor_base=descriptor_base,
+                    fitting_base=fitting_base,
+                    backend_name=backend_name,
+                )
+                child = atomic_model(descriptor, fitting, type_map=sub["type_map"])
+            built[i] = child
         else:
             if sub.get("type") != "pairtab":
                 raise ValueError(
@@ -378,7 +415,12 @@ class BackendModelFactory:
             backend_name=self.backend_name,
         )
 
-    def get_linear_atomic_model(self, data: dict) -> Any:
+    def get_linear_atomic_model(
+        self,
+        data: dict,
+        *,
+        descriptor_child_builder: "Callable[[dict], Any | None] | None" = None,
+    ) -> Any:
         """Construct the linear atomic-model composition for this backend."""
         if self.atomic_model is None or self.pairtab_model is None:
             raise NotImplementedError("Linear model is not implemented yet.")
@@ -389,6 +431,7 @@ class BackendModelFactory:
             backend_name=self.backend_name,
             atomic_model=self.atomic_model,
             pairtab_model=self.pairtab_model,
+            descriptor_child_builder=descriptor_child_builder,
         )
 
     def get_zbl_model(self, data: dict) -> Any:

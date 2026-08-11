@@ -174,3 +174,105 @@ def test_plain_linear_ener_is_unaffected() -> None:
     }
     model = get_model(cfg)
     assert not isinstance(model, SeZMModel)
+
+
+def test_canonical_rejects_lora_on_child() -> None:
+    """The pt trainer reads `lora` from the top level only; a child-level
+    `lora` must fail fast instead of silently training without adapters.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)
+
+
+def test_canonical_rejects_mismatched_child_type_map() -> None:
+    """An explicit child type_map that differs from the composition's must
+    not be silently overwritten.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["type_map"] = ["O", "Ni"]
+    with pytest.raises(NotImplementedError, match="type_map"):
+        get_model(cfg)
+
+
+def test_nested_bridging_flag_on_child_raises() -> None:
+    """A `bridging_method` flag on a linear child must not be dropped."""
+    cfg = _canonical_config()
+    cfg["models"] = [cfg["models"][0]]
+    cfg["models"][0]["bridging_method"] = "ZBL"
+    with pytest.raises(ValueError, match="sub-model"):
+        get_model(cfg)
+
+
+def test_deep_eval_recognizes_canonical_params() -> None:
+    """`_is_sezm_model_params` must route the canonical bridged spelling
+    like the flag spelling (both realize a SeZMModel).
+    """
+    from deepmd.pt.infer.deep_eval import (
+        _is_sezm_model_params,
+    )
+
+    assert _is_sezm_model_params(_canonical_config())
+    assert not _is_sezm_model_params(
+        {
+            "type": "linear_ener",
+            "models": [
+                {"descriptor": {"type": "se_atten"}},
+                {"descriptor": {"type": "se_atten"}},
+            ],
+        }
+    )
+
+
+def test_is_sezm_checkpoint_recognizes_canonical_params(tmp_path) -> None:
+    """The `.pt2` freeze router must recognize a checkpoint whose persisted
+    model params keep the canonical bridged spelling.
+    """
+    import torch
+
+    from deepmd.pt.entrypoints.freeze_pt2 import (
+        is_sezm_checkpoint,
+    )
+
+    ckpt = str(tmp_path / "canonical.pt")
+    torch.save({"model": {"_extra_state": {"model_params": _canonical_config()}}}, ckpt)
+    assert is_sezm_checkpoint(ckpt)
+    ckpt2 = str(tmp_path / "multitask.pt")
+    torch.save(
+        {
+            "model": {
+                "_extra_state": {
+                    "model_params": {"model_dict": {"branch": _canonical_config()}}
+                }
+            }
+        },
+        ckpt2,
+    )
+    assert is_sezm_checkpoint(ckpt2)
+
+
+def test_update_sel_skips_inner_potential_child(monkeypatch) -> None:
+    """Neighbor-stat selection must skip the analytical child instead of
+    crashing on its missing descriptor.
+    """
+    from deepmd.pt.model.model import (
+        LinearEnergyModel,
+    )
+    from deepmd.pt.model.model.dp_model import (
+        DPModelCommon,
+    )
+
+    seen = []
+
+    def _fake_update_sel(train_data, type_map, sub):
+        seen.append(copy.deepcopy(sub))
+        return sub, 0.9
+
+    monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+    cfg = _canonical_config()
+    updated, min_dist = LinearEnergyModel.update_sel(None, cfg["type_map"], cfg)
+    assert min_dist == 0.9
+    assert len(seen) == 1  # only the learned child
+    assert "descriptor" in seen[0]
+    assert updated["models"][1]["type"] == "inner_potential"

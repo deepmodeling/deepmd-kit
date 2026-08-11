@@ -238,3 +238,68 @@ def test_canonical_native_spin_composition() -> None:
     model = get_model(cfg)
     assert isinstance(model, NativeSpinEnergyModel)
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+
+
+def test_canonical_requires_sum_weights() -> None:
+    """`weights: "mean"` would silently halve both energy terms."""
+    cfg = _canonical_config()
+    cfg["weights"] = "mean"
+    with pytest.raises(ValueError, match="sum"):
+        get_model(cfg)
+
+
+def test_canonical_rejects_lora_on_child() -> None:
+    """The DPA4-family child routes through get_sezm_model, so unsupported
+    options are rejected loudly instead of silently ignored.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)
+
+
+def test_canonical_child_gets_dpa4_defaults() -> None:
+    """A dpa4-family child may omit the descriptor/fitting `type` keys; the
+    family builder fills them like a standalone `type: "dpa4"` model.
+    """
+    cfg = _canonical_config()
+    del cfg["models"][0]["descriptor"]["type"]
+    del cfg["models"][0]["fitting_net"]["type"]
+    model = get_model(cfg)
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
+
+
+def test_nested_bridging_flag_on_child_raises() -> None:
+    """A `bridging_method` flag on a linear child must not be dropped."""
+    cfg = _canonical_config()
+    cfg["models"] = [cfg["models"][0]]
+    cfg["models"][0]["bridging_method"] = "ZBL"
+    with pytest.raises(ValueError, match="sub-model"):
+        get_model(cfg)
+
+
+def test_update_sel_skips_inner_potential_child(monkeypatch) -> None:
+    """Neighbor-stat selection must skip the analytical child instead of
+    crashing on its missing descriptor.
+    """
+    from deepmd.dpmodel.model.dp_model import (
+        DPModelCommon,
+    )
+    from deepmd.pt_expt.model.dp_linear_model import (
+        LinearEnergyModel,
+    )
+
+    seen = []
+
+    def _fake_update_sel(train_data, type_map, sub):
+        seen.append(copy.deepcopy(sub))
+        return sub, 0.9
+
+    monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+    cfg = _canonical_config()
+    updated, min_dist = LinearEnergyModel.update_sel(None, cfg["type_map"], cfg)
+    assert min_dist == 0.9
+    assert len(seen) == 1  # only the learned child
+    assert "descriptor" in seen[0]
+    assert updated["models"][1]["type"] == "inner_potential"
