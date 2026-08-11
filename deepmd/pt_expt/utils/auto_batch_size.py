@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from deepmd.pt.utils.auto_batch_size import (
-    AutoBatchSize as AutoBatchSizeBase,
-)
+from deepmd.pt.utils.auto_batch_size import AutoBatchSize as AutoBatchSizeBase
 from deepmd.pt_expt.utils.env import (
     DEVICE,
 )
