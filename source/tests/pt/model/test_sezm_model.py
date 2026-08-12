@@ -2244,12 +2244,20 @@ class TestSeZMModelBridging(unittest.TestCase):
             )
             labels.append(label)
             counts_rows.append(counts)
+        # Seed a nonzero bias: `set` must DISCARD it (an accidental
+        # additive implementation would shift the result by the seed).
+        model.set_out_bias(torch.ones_like(model.get_out_bias()))
         model.change_out_bias(samples, bias_adjust_mode="set-by-statistic")
         bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
         raw_fit = np.linalg.solve(
             np.array(counts_rows, dtype=np.float64), np.array(labels)
         )
         np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+        # Idempotence: repeating the call from the fitted state must land
+        # on the same raw-label fit again.
+        model.change_out_bias(samples, bias_adjust_mode="set-by-statistic")
+        repeated_bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
+        np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
 
     def test_zbl_respects_exclusions(self) -> None:
         """Excluded atoms and pairs contribute neither learned nor ZBL energy."""

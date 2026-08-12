@@ -22,8 +22,9 @@ per-type output bias.
   ignores a trained network, and it equally ignores an analytical
   contribution such as the ZBL term of a bridged model. The result is
   reproducible and idempotent for a given dataset, but it contains **no
-  compensation for `E_model`**: after `set`, predictions on the calibration
-  data are offset by the data mean of `E_model`.
+  compensation for `E_model`**: after `set`, the remaining error on the
+  calibration data is the configuration-dependent `E_model` itself, plus
+  any residual of the raw-label least-squares fit.
 - **`change` (`change-by-statistic`)** assigns `E_bias` from the residual:
   the per-type statistic of the labels **minus the complete model
   prediction** (including any analytical bridging term), added to the
@@ -31,9 +32,10 @@ per-type output bias.
   trained (or bridged) model.
 
 For a bridged model — or any model whose `E_model` is significantly nonzero
-on the calibration data — `set` therefore yields a bias that double-counts
-nothing and compensates nothing; if you want the model predictions to match
-the calibration labels, use `change`.
+on the calibration data — `set` leaves `E_model` uncompensated and can absorb
+its composition-correlated component into `E_bias`, so the forward pass may add
+that component again. Use `change` to fit the residual against the complete
+model prediction.
 
 The `dp change-bias` command supports the following methods for adjusting the bias:
 

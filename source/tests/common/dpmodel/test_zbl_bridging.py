@@ -662,7 +662,16 @@ def test_set_by_statistic_fits_raw_labels_by_definition():
         )
         labels.append(label)
         counts_rows.append(counts)
+    # Seed a nonzero bias: `set` must DISCARD it (an accidental additive
+    # implementation would shift the result by the seed). The dpmodel bias
+    # storage is separate from pt's, so the pin is mirrored here.
+    model.atomic_model.out_bias = np.ones_like(model.atomic_model.out_bias)
     model.atomic_model.compute_or_load_out_stat(samples)
     bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
     raw_fit = np.linalg.solve(np.array(counts_rows, dtype=np.float64), np.array(labels))
     np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+    # Idempotence: repeating the call from the fitted state must land on
+    # the same raw-label fit again.
+    model.atomic_model.compute_or_load_out_stat(samples)
+    repeated_bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
