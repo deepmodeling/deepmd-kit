@@ -66,17 +66,57 @@ def is_bridged_sezm_config(data: dict) -> bool:
     return any(_is_dpa4_family(sub) for sub in children)
 
 
-# Top-level keys that belong to the composition, not to the learned child.
+# Routing of the concise-form top-level keys during sugar expansion. Every
+# key the `standard`/`dpa4` argcheck schemas declare must appear in exactly
+# one tuple below: a schema-coverage test derives the key universe from
+# `deepmd.utils.argcheck` and fails when a new key is left unrouted, so
+# adding a model key forces an explicit routing decision here.
+
+# Keys that belong to the composition, not to the learned child.
 _COMPOSITION_KEYS = (
     "type",
     "type_map",
     "spin",
     "atom_exclude_types",
     "pair_exclude_types",
+)
+# Keys consumed by the expansion itself; they appear in neither the
+# composition nor the learned child.
+_CONSUMED_KEYS = (
     "bridging_method",
     "bridging_r_inner",
     "bridging_r_outer",
 )
+# Training-owned keys: the trainer reads them from the top level of the
+# model section, so they stay at the composition level and must never be
+# forwarded to a sub-model.
+_TRAINER_KEYS = ("lora",)
+# Keys that configure the learned model and are forwarded to the learned
+# child. This tuple is not consulted at expansion time (the child receives
+# every key not routed above); it exists so the schema-coverage test can
+# assert that every argcheck key has an explicit routing decision.
+_LEARNED_CHILD_KEYS = (
+    "descriptor",
+    "fitting_net",
+    "model_branch_alias",
+    "info",
+    "use_compile",
+    "enable_tf32",
+    "data_stat_nbatch",
+    "data_stat_protect",
+    "data_bias_nsample",
+    "use_srtab",
+    "smin_alpha",
+    "sw_rmin",
+    "sw_rmax",
+    "preset_out_bias",
+    "srtab_add_bias",
+    "type_embedding",
+    "modifier",
+    "compress",
+    "finetune_head",
+)
+_NON_CHILD_KEYS = _COMPOSITION_KEYS + _CONSUMED_KEYS + _TRAINER_KEYS
 
 
 def expand_bridging_method(data: dict) -> dict:
@@ -87,8 +127,9 @@ def expand_bridging_method(data: dict) -> dict:
     deep-copied and rewritten to the canonical composition form: a
     ``linear_ener`` model with ``weights: "sum"`` over the learned
     sub-model and an ``inner_potential`` sub-model. The exclusion lists
-    move to the composition level; a top-level ``spin`` section stays at
-    the top level; every other key stays on the learned child.
+    move to the composition level; a top-level ``spin`` section and the
+    training-owned keys (``lora``) stay at the top level; every other key
+    stays on the learned child.
 
     For backward compatibility with the legacy pt ``type: "dpa4"``
     builder, ``descriptor.exclude_types`` is promoted to the composition's
@@ -142,9 +183,7 @@ def expand_bridging_method(data: dict) -> dict:
     else:
         pair_exclude_types = descriptor_exclude_types
 
-    learned = {
-        key: value for key, value in data.items() if key not in _COMPOSITION_KEYS
-    }
+    learned = {key: value for key, value in data.items() if key not in _NON_CHILD_KEYS}
     learned["type"] = model_type
     learned["type_map"] = copy.deepcopy(data["type_map"])
     canonical = {
@@ -165,4 +204,7 @@ def expand_bridging_method(data: dict) -> dict:
     }
     if "spin" in data:
         canonical["spin"] = data["spin"]
+    for key in _TRAINER_KEYS:
+        if key in data:
+            canonical[key] = data[key]
     return canonical

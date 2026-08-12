@@ -214,11 +214,14 @@ def get_linear_atomic_model(
                 "A linear_ener composition supports at most one "
                 "`inner_potential` sub-model."
             )
-        if len(learned_indices) != 1:
+        if len(learned_indices) != 1 or len(children) != 2:
+            # A third child (e.g. pairtab) has no common execution route
+            # with the graph-only bridged pair; reject at construction
+            # like the pt builder does.
             raise ValueError(
                 "An `inner_potential` sub-model bridges exactly one learned "
-                f"sibling, but got {len(learned_indices)} sub-models with a "
-                "descriptor."
+                "sibling: expected a linear_ener composition over "
+                "[learned, inner_potential]."
             )
         if str(data.get("weights", "mean")) != "sum":
             raise ValueError(

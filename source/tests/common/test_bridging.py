@@ -103,6 +103,60 @@ def test_other_model_keys_stay_on_learned_child() -> None:
     assert "preset_out_bias" not in out
 
 
+def test_lora_stays_top_level() -> None:
+    """`lora` is training-owned: the pt trainer reads it from the top
+    level of the model section, so the expansion must keep it there and
+    never forward it to the learned child (which the pt bridge builder
+    rejects).
+    """
+    data = _flag_config()
+    data["lora"] = {"rank": 2, "alpha": None}
+    out = expand_bridging_method(data)
+    assert out["lora"] == {"rank": 2, "alpha": None}
+    assert "lora" not in out["models"][0]
+
+
+def test_routing_covers_the_argcheck_schema() -> None:
+    """Every key the `standard`/`dpa4` argcheck schemas declare must have
+    an explicit routing decision in the expansion. Adding a model key to
+    argcheck without deciding its routing fails here instead of silently
+    landing on the learned child (how top-level `lora` once broke).
+    """
+    from deepmd.utils.argcheck import (
+        model_args,
+        sezm_model_args,
+        standard_model_args,
+    )
+    from deepmd.utils.bridging import (
+        _COMPOSITION_KEYS,
+        _CONSUMED_KEYS,
+        _LEARNED_CHILD_KEYS,
+        _TRAINER_KEYS,
+    )
+
+    schema_keys = {"type"}
+    schema_keys |= set(model_args(exclude_hybrid=True).sub_fields)
+    schema_keys |= set(standard_model_args().sub_fields)
+    schema_keys |= set(sezm_model_args().sub_fields)
+
+    routing = [
+        set(_COMPOSITION_KEYS),
+        set(_CONSUMED_KEYS),
+        set(_TRAINER_KEYS),
+        set(_LEARNED_CHILD_KEYS),
+    ]
+    routed = set().union(*routing)
+    assert sum(len(s) for s in routing) == len(routed), (
+        "a key is routed to more than one destination"
+    )
+    assert schema_keys == routed, (
+        f"unrouted argcheck keys: {sorted(schema_keys - routed)}; "
+        f"routed keys absent from the schema: {sorted(routed - schema_keys)}. "
+        "Decide the routing in deepmd.utils.bridging and update the "
+        "corresponding tuple."
+    )
+
+
 def test_exclusions_move_to_composition_level() -> None:
     data = _flag_config()
     data["pair_exclude_types"] = [[0, 1]]

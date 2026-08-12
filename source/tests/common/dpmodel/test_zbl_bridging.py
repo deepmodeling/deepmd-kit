@@ -76,6 +76,29 @@ def test_builder_composes_linear_model():
     assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
 
 
+def test_third_child_without_common_route_raises():
+    """[learned, inner_potential, pairtab] has no common execution route
+    (pairtab is dense-only, the bridged pair is graph-only): the builder
+    must reject it at construction like the pt backend does.
+    """
+    cfg = {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": ["Ni", "O"],
+        "models": [
+            {
+                "type": "dpa4",
+                "descriptor": copy.deepcopy(ZBL_CONFIG["descriptor"]),
+                "fitting_net": copy.deepcopy(ZBL_CONFIG["fitting_net"]),
+            },
+            {"type": "inner_potential", "mode": "ZBL"},
+            {"type": "pairtab", "tab_file": "unused.txt", "rcut": 4.0, "sel": 8},
+        ],
+    }
+    with pytest.raises(ValueError, match="exactly one learned"):
+        get_model(cfg)
+
+
 def test_zbl_child_equals_composition_minus_learned():
     """Composition energy == learned child + analytical child (exact sum)."""
     model = get_model(copy.deepcopy(ZBL_CONFIG))

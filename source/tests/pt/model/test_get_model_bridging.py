@@ -252,6 +252,57 @@ def test_is_sezm_checkpoint_recognizes_canonical_params(tmp_path) -> None:
     assert is_sezm_checkpoint(ckpt2)
 
 
+def test_sugar_with_top_level_lora_builds() -> None:
+    """The concise dpa4+bridging form with trainer-owned top-level `lora`
+    must keep building: the expansion routes `lora` to the composition
+    level, so the bridge builder never sees it on the learned child.
+    """
+    from deepmd.pt.train.training import (
+        get_model_for_wrapper,
+    )
+
+    cfg = _sugar_config()
+    cfg["lora"] = {"rank": 2, "alpha": None}
+    model = get_model_for_wrapper(copy.deepcopy(cfg))
+    assert isinstance(model, SeZMModel)
+    # The trainer injects the adapters later by reading the top level of
+    # its own (unexpanded) config; expansion must not have mutated it.
+    assert cfg["lora"] == {"rank": 2, "alpha": None}
+
+
+def test_update_sel_normalized_config_skips_inner_potential_child(
+    monkeypatch,
+) -> None:
+    """The default CLI path hands `update_sel` a NORMALIZED config, where
+    argcheck always inserts `shared_dict: {}`. Both the update loop and
+    the shared-config reconstruction loop must skip the analytical child.
+    """
+    from deepmd.pt.model.model import (
+        LinearEnergyModel,
+    )
+    from deepmd.pt.model.model.dp_model import (
+        DPModelCommon,
+    )
+    from deepmd.utils.argcheck import (
+        model_args,
+    )
+
+    seen = []
+
+    def _fake_update_sel(train_data, type_map, sub):
+        seen.append(copy.deepcopy(sub))
+        return sub, 0.9
+
+    monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+    cfg = model_args().normalize_value(_canonical_config(), trim_pattern="_*")
+    assert cfg["shared_dict"] == {}  # inserted by normalization
+    updated, min_dist = LinearEnergyModel.update_sel(None, cfg["type_map"], cfg)
+    assert min_dist == 0.9
+    assert len(seen) == 1  # only the learned child
+    assert "descriptor" in seen[0]
+    assert updated["models"][1]["type"] == "inner_potential"
+
+
 def test_update_sel_skips_inner_potential_child(monkeypatch) -> None:
     """Neighbor-stat selection must skip the analytical child instead of
     crashing on its missing descriptor.

@@ -370,6 +370,9 @@ class LinearEnergyModel(DPLinearModel_):
         if "type_map" not in ret_jdata:
             ret_jdata["type_map"] = deepcopy(type_map)
         for idx, original_sub_model in enumerate(original_models):
+            if original_sub_model.get("type") == "inner_potential":
+                # analytical child: no descriptor to write back
+                continue
             if "tab_file" in original_sub_model:
                 continue
             updated_sub_model = local_jdata_cpy["models"][idx]

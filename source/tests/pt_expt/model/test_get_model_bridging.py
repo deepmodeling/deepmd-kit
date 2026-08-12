@@ -194,6 +194,19 @@ def _canonical_config() -> dict:
     }
 
 
+def test_third_child_without_common_route_raises() -> None:
+    """[learned, inner_potential, pairtab] has no common execution route
+    (pairtab is dense-only, the bridged pair is graph-only): the shared
+    builder must reject it at construction like the pt backend does.
+    """
+    cfg = _canonical_config()
+    cfg["models"].append(
+        {"type": "pairtab", "tab_file": "unused.txt", "rcut": 4.0, "sel": 8}
+    )
+    with pytest.raises(ValueError, match="exactly one learned"):
+        get_model(cfg)
+
+
 def test_canonical_composition_builds() -> None:
     """The canonical spelling composes [learned, InnerPotential] with the
     clamp radii derived onto the learned child's descriptor.
