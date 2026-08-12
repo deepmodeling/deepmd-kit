@@ -485,14 +485,8 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_dim_chg_spin()
         return 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        if self.add_chg_spin_ebd:
-            return self.descriptor.has_default_chg_spin()
-        return False
-
     def get_default_chg_spin(self) -> paddle.Tensor | None:
         """Get the default charge_spin values as a tensor."""
-        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+        if self.add_chg_spin_ebd:
             return self.descriptor.get_default_chg_spin()
         return None
