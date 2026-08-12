@@ -396,9 +396,7 @@ class TestCompositionForwardsConditioningCapabilities:
         """``has_default_*`` must not fall through to the base either."""
         bridged = self._model(bridging=True)
         plain = self._model(bridging=False)
-        assert (bridged.get_default_chg_spin() is not None) == (
-            plain.get_default_chg_spin() is not None
-        )
+        assert bridged.get_default_chg_spin() == plain.get_default_chg_spin()
         assert bridged.has_default_fparam() == plain.has_default_fparam()
         assert bridged.get_default_fparam() == plain.get_default_fparam()
 

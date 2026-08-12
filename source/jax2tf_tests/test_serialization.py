@@ -28,6 +28,22 @@ def _saved_model_ops(model_dir: Path) -> set[str]:
     return ops
 
 
+def test_decode_default_chg_spin_preserves_the_no_default_marker() -> None:
+    """The exporter writes an EMPTY tensor when the model has no default
+    charge-spin; the wrapper must decode it back to ``None`` so the
+    live-model invariant ``get_default_chg_spin() is None == no default``
+    holds at the artifact boundary too.
+    """
+    pytest.importorskip("jax")
+
+    from deepmd.jax.jax2tf.tfmodel import (
+        _decode_default_chg_spin,
+    )
+
+    assert _decode_default_chg_spin(False, []) is None
+    assert _decode_default_chg_spin(True, [2.0, 1.0]) == [2.0, 1.0]
+
+
 def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> None:
     pytest.importorskip("jax")
     pytest.importorskip("flax")

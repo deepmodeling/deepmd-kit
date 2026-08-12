@@ -113,6 +113,7 @@ class FittingTestCase(TestCaseSingleFrameWithNlist):
             self.module.reinit_exclude([0])
             assert self.module.exclude_types == [0]
             self.module.reinit_exclude([])
+            assert self.module.exclude_types == []
 
     def test_change_type_map(self) -> None:
         if not self.module.mixed_types:

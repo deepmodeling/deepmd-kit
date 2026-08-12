@@ -106,6 +106,16 @@ class AtomicModelTestCase:
         assert isinstance(pet, list)
         # invariant pinned by reinit_pair_exclude:
         assert (self.module.pair_excl is None) == (len(pet) == 0)
+        if self.module.pair_excl is not None:
+            # the mask must hold exactly the SYMMETRIC CLOSURE of the
+            # accessor's pairs (both backends symmetrize on reinit;
+            # compare as sets of tuples: pt stores a set, dpmodel a list)
+            symmetrized = {
+                pair for i, j in map(tuple, pet) for pair in ((i, j), (j, i))
+            }
+            assert {
+                tuple(p) for p in self.module.pair_excl.get_exclude_types()
+            } == symmetrized
 
     def test_forward(self) -> None:
         """Test forward."""

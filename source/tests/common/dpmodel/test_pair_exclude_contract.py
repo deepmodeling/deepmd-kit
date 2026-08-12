@@ -50,6 +50,8 @@ def test_pair_excl_exists_after_init_and_deserialize() -> None:
     md0 = _make_minimal_atomic_model(pair_exclude_types=[(0, 1)])
     assert md0.get_pair_exclude_types() == [(0, 1)]
     assert md0.pair_excl is not None
+    # the mask holds the SYMMETRIC CLOSURE of the accessor's pairs
+    assert {tuple(p) for p in md0.pair_excl.get_exclude_types()} == {(0, 1), (1, 0)}
     md1 = type(md0).deserialize(md0.serialize())
     assert md1.get_pair_exclude_types() == [(0, 1)]
     assert md1.pair_excl is not None
