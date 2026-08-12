@@ -2259,6 +2259,64 @@ class TestSeZMModelBridging(unittest.TestCase):
             )
         )
 
+    def test_set_by_statistic_fits_raw_labels_by_definition(self) -> None:
+        """Semantic pin (issue #5927): ``set-by-statistic`` is E_model-blind.
+
+        The model energy decomposes as ``E = E_model + E_bias``. The set
+        mode DEFINES ``E_bias`` as the per-type statistic of the raw data
+        labels (or a user-given value), independent of ``E_model`` -- it
+        ignores a trained network and it equally ignores the analytical
+        ZBL term of a bridged model. Do NOT "fix" this by subtracting the
+        analytical contribution: that would silently turn the mode into a
+        third, model-dependent behavior. For a calibration that
+        compensates ``E_model``, use ``change-by-statistic`` (which since
+        #5910 uses the complete bridged predictor).
+        """
+        params = self._build_model_params(bridging_method="ZBL")
+        params["descriptor"]["precision"] = "float64"
+        params["fitting_net"]["precision"] = "float64"
+        model = get_sezm_model(params).to(self.device)
+
+        rng = np.random.default_rng(5)
+        coord = torch.tensor(
+            rng.uniform(1.0, 2.5, size=(1, 4, 3)),
+            dtype=torch.float64,
+            device=self.device,
+        )
+        box = torch.eye(3, dtype=torch.float64, device=self.device).reshape(1, 9) * 8.0
+        samples, labels, counts_rows = [], [], []
+        for types in ([[0, 0, 1, 1]], [[0, 1, 1, 1]]):
+            counts = np.bincount(np.asarray(types[0]), minlength=2)
+            label = float(rng.normal())
+            samples.append(
+                {
+                    "coord": coord,
+                    "atype": torch.tensor(types, device=self.device),
+                    "box": box,
+                    "energy": torch.tensor(
+                        [[label]], dtype=torch.float64, device=self.device
+                    ),
+                    "find_energy": np.float32(1.0),
+                    "natoms": torch.tensor([[4, 4, *counts]], device=self.device),
+                }
+            )
+            labels.append(label)
+            counts_rows.append(counts)
+        # Seed a nonzero bias: `set` must DISCARD it (an accidental
+        # additive implementation would shift the result by the seed).
+        model.set_out_bias(torch.ones_like(model.get_out_bias()))
+        model.change_out_bias(samples, bias_adjust_mode="set-by-statistic")
+        bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
+        raw_fit = np.linalg.solve(
+            np.array(counts_rows, dtype=np.float64), np.array(labels)
+        )
+        np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+        # Idempotence: repeating the call from the fitted state must land
+        # on the same raw-label fit again.
+        model.change_out_bias(samples, bias_adjust_mode="set-by-statistic")
+        repeated_bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
+        np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
+
     def test_zbl_respects_exclusions(self) -> None:
         """Excluded atoms and pairs contribute neither learned nor ZBL energy."""
         coord = torch.tensor(

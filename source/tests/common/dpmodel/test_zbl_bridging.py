@@ -629,3 +629,49 @@ class TestCompositionForwardsStatCapabilities:
         assert bridged.atomic_model.get_compute_stats_distinguish_types() == any(
             c.get_compute_stats_distinguish_types() for c in children
         )
+
+
+def test_set_by_statistic_fits_raw_labels_by_definition():
+    """Semantic pin (issue #5927): ``set-by-statistic`` is E_model-blind.
+
+    ``E = E_model + E_bias``; the set mode defines ``E_bias`` as the
+    per-type statistic of the raw labels, independent of ``E_model`` --
+    the composition-level fit ignores the learned child and equally
+    ignores the analytical ZBL child. Children compute no output
+    statistics of their own (the composition is the one owner). Use
+    ``change-by-statistic`` for a calibration that compensates
+    ``E_model``.
+    """
+    model = get_model(copy.deepcopy(ZBL_CONFIG))
+    rng = np.random.default_rng(5)
+    coord = rng.uniform(1.0, 2.5, size=(1, 4, 3))
+    box = (np.eye(3) * 8.0).reshape(1, 9)
+    samples, labels, counts_rows = [], [], []
+    for types in ([[0, 0, 1, 1]], [[0, 1, 1, 1]]):
+        counts = np.bincount(np.asarray(types[0]), minlength=2)
+        label = float(rng.normal())
+        samples.append(
+            {
+                "coord": coord,
+                "atype": np.array(types),
+                "box": box,
+                "energy": np.array([[label]]),
+                "find_energy": np.float32(1.0),
+                "natoms": np.array([[4, 4, *counts]]),
+            }
+        )
+        labels.append(label)
+        counts_rows.append(counts)
+    # Seed a nonzero bias: `set` must DISCARD it (an accidental additive
+    # implementation would shift the result by the seed). The dpmodel bias
+    # storage is separate from pt's, so the pin is mirrored here.
+    model.atomic_model.out_bias = np.ones_like(model.atomic_model.out_bias)
+    model.atomic_model.compute_or_load_out_stat(samples)
+    bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    raw_fit = np.linalg.solve(np.array(counts_rows, dtype=np.float64), np.array(labels))
+    np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+    # Idempotence: repeating the call from the fitted state must land on
+    # the same raw-label fit again.
+    model.atomic_model.compute_or_load_out_stat(samples)
+    repeated_bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
