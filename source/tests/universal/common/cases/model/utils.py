@@ -134,12 +134,17 @@ class ModelTestCase:
     def test_chg_spin_capability_contract(self) -> None:
         """chg-spin queries are declared on the base model with concrete
         defaults (False/0/None) -- direct calls, never ``hasattr`` probes.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin``
+        (predicate: ``get_default_chg_spin() is not None``). Its absence on
+        the dpmodel side is pinned in
+        source/tests/universal/dpmodel/model/test_model.py -- pt is frozen
+        and still declares the (now-redundant) method.
         """
         assert isinstance(self.module.has_chg_spin_ebd(), bool)
         assert isinstance(self.module.get_dim_chg_spin(), int)
         dcs = self.module.get_default_chg_spin()
         assert dcs is None or isinstance(dcs, (list, tuple))
-        assert not hasattr(type(self.module), "has_default_chg_spin")
 
     def test_property_capability_contract(self) -> None:
         """Property queries are declared on the base model with concrete

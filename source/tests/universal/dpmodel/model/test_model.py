@@ -18,6 +18,10 @@ from deepmd.dpmodel.model import (
     EnergyModel,
     SpinModel,
 )
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
+    make_base_model,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -271,3 +275,24 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
         cls.expected_dim_fparam = ft.get_dim_fparam()
         cls.expected_dim_aparam = ft.get_dim_aparam()
         cls.skip_test_autodiff = True
+
+
+class TestHasDefaultChgSpinAbsentDP(unittest.TestCase):
+    """Pin the dpmodel-side half of the ``has_default_chg_spin`` merge.
+
+    ``has_default_chg_spin`` was merged into ``get_default_chg_spin``
+    (issue #5897): the predicate is ``get_default_chg_spin() is not None``.
+    The shared universal model case only asserts the concrete replacement
+    (``get_default_chg_spin``), since the frozen pt backend still declares
+    the (now-redundant) ``has_default_chg_spin`` method on ``make_model``.
+    This test pins that the method is gone from the dpmodel base-model
+    family, where the merge is authoritative.
+    """
+
+    def test_absent_from_base_model(self) -> None:
+        assert not hasattr(BaseModel, "has_default_chg_spin")
+        assert not hasattr(make_base_model(), "has_default_chg_spin")
+
+    def test_absent_from_concrete_models(self) -> None:
+        for cls in (EnergyModel, SpinModel):
+            assert not hasattr(cls, "has_default_chg_spin")
