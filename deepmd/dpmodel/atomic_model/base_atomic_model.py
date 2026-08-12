@@ -274,14 +274,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
-    def get_pair_exclude_types(self) -> list[tuple[int, int]]:
-        """Return the excluded atom-type pairs of this atomic model.
-
-        Always set by ``__init__`` (empty list when no exclusion is
-        configured); an empty return means the pair-exclusion mask is off.
-        """
-        return self.pair_exclude_types
-
     def atomic_output_def(self) -> FittingOutputDef:
         old_def = self.fitting_output_def()
         old_list = list(old_def.get_data().values())
