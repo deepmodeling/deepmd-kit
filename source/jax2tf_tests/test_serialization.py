@@ -122,6 +122,10 @@ def test_savedmodel_export_contains_xla_call_module(tmp_path, monkeypatch) -> No
         def get_default_chg_spin(self) -> None:
             return None
 
+        def get_var_name(self) -> None:
+            # non-property model, matching the make_base_model default
+            return None
+
     class DummyChargeSpinModel(DummyModel):
         dim_chg_spin = 2
 
