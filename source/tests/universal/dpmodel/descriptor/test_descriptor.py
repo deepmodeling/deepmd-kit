@@ -22,15 +22,15 @@ from deepmd.dpmodel.descriptor import (
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
-from deepmd.dpmodel.descriptor.make_base_descriptor import (
-    make_base_descriptor,
-)
 from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
 )
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
+)
+from deepmd.dpmodel.descriptor.make_base_descriptor import (
+    make_base_descriptor,
 )
 from deepmd.dpmodel.descriptor.repflows import (
     DescrptBlockRepflows,
