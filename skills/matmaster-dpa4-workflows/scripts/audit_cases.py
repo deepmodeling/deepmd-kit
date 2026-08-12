@@ -147,6 +147,8 @@ def audit_case(case: Path, root: Path, mode: str, required: list[str]) -> dict:
     reasons: list[str] = []
     if not logs:
         reasons.append("missing_log")
+    elif not log_text.strip():
+        reasons.append("empty_log")
     if fatal:
         reasons.extend(fatal)
     if logs and inferred_mode in ("md", "minimize") and not complete:

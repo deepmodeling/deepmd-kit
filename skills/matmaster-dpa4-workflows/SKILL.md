@@ -73,8 +73,17 @@ python scripts/make_job_spec.py CASE_DIR \
     --project-id PROJECT_ID \
     --image FULL_IMAGE_ADDRESS \
     --machine MACHINE_TYPE \
-    --name JOB_NAME
+    --name JOB_NAME \
+    --max-run-time MAX_RUN_TIME_MINUTES \
+    --backward run.log \
+    --backward CHECKPOINT_OR_RESTART_PATH \
+    --backward RESULT_PATH \
+    --result-path DURABLE_OUTPUT_DESTINATION
 ```
+
+Replace each output placeholder with a path declared by the owning skill and
+repeat `--backward` for every log, checkpoint/restart, result, and provenance
+artifact that must survive the temporary workspace.
 
 Preview submission, then use the installed platform tool or the native Bohrium
 CLI dry run. Submit only after validation and explicit authorization. Stop if

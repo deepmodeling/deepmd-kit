@@ -126,6 +126,15 @@ Run:
 dp --pt train lora_ft.json --finetune pretrained.pt
 ```
 
+When `pretrained.pt` is multi-task, preserve the selected fitting head:
+
+```bash
+dp --pt train lora_ft.json --finetune pretrained.pt \
+    --model-branch SELECTED_BRANCH
+```
+
+Use the shorter command only for a single-task source checkpoint.
+
 The JSON fragment above is not a complete training input. Adapt the full public
 example at `../../examples/water/dpa4/lora_ft.json`, but copy the exact
 architecture from the source checkpoint before adding `model.lora`. Do not add

@@ -121,6 +121,16 @@ def main() -> int:
             "required": {name: (case / name).is_file() for name in required},
         }
     failures = []
+    if args.model and not report["model"]["exists"]:
+        failures.append("model_missing")
+    if args.case_dir:
+        if not report["case"]["exists"]:
+            failures.append("case_dir_missing")
+        failures.extend(
+            f"required_file_missing:{name}"
+            for name, present in report["case"]["required"].items()
+            if not present
+        )
     if args.require_bohr and not commands["bohr"]["available"]:
         failures.append("bohr_cli_missing")
     if (args.require_deepmd or args.require_runtime) and not commands["dp"][
