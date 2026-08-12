@@ -730,6 +730,70 @@ class TestDPA4NativeSpinGraphLowerExportable:
         )
 
 
+class TestDPA4NativeSpinCompiledTraining:
+    """Native-spin data flow through the compiled training lower."""
+
+    def test_eager_eval_and_compiled_magnetic_force_backward(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Keep eval eager while retaining compiled magnetic gradients."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+            _get_model_structure_key,
+        )
+
+        # ``make_fx`` and the rebuilt graph exercise the compile boundary. The
+        # identity backend keeps this regression independent of platform
+        # toolchains while preserving the traced forward and double backward.
+        monkeypatch.setattr(torch, "compile", lambda model, **_: model)
+
+        model = _build_native_spin_model_cpu()
+        compiled = _CompiledModel(
+            model,
+            _get_model_structure_key(model),
+            compile_eval=False,
+        )
+        coord = torch.tensor(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 1.0, 0.0],
+                    [1.0, 0.0, 1.0],
+                ]
+            ],
+            dtype=torch.float64,
+        )
+        atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64)
+        spin = torch.arange(18, dtype=torch.float64).reshape(1, 6, 3) / 20.0 + 0.1
+        box = (8.0 * torch.eye(3, dtype=torch.float64)).reshape(1, 9)
+
+        eager_result = compiled.eval()(coord, atype, box=box, spin=spin)
+        assert compiled._compiled_lower_by_mode == {}
+        assert eager_result["force_mag"].shape == (1, 6, 3)
+
+        result = compiled.train()(coord, atype, box=box, spin=spin)
+
+        assert result["force"].shape == (1, 6, 3)
+        assert result["force_mag"].shape == (1, 6, 3)
+        assert result["mask_mag"].shape == (1, 6, 1)
+        assert set(compiled._compiled_lower_by_mode) == {True}
+        result["force_mag"].square().sum().backward()
+
+        spin_parameters = [
+            parameter
+            for name, parameter in model.named_parameters()
+            if "spin_embedding" in name
+        ]
+        assert spin_parameters
+        assert any(
+            parameter.grad is not None and torch.any(parameter.grad != 0)
+            for parameter in spin_parameters
+        )
+
+
 # =============================================================================
 # Task 11: training smoke -- native-spin DPA4 through the real pt_expt
 # trainer (data loading, ``ener_spin`` loss dispatch, ``ModelWrapper``,
@@ -906,6 +970,182 @@ class TestDPA4NativeSpinTrainingSmoke:
             )
         finally:
             os.chdir(old_cwd)
+
+
+class TestDPA4NativeSpinFinetuneFromSpinFreePretrain:
+    """Fine-tune a native-spin DPA4 on top of a pretraining with no magnetic type.
+
+    The production workflow is a large corpus that declares no magnetic species
+    followed by a small magnetic one. Both stages are native-spin, so the
+    parameter trees agree and transfer wholesale, while ``use_spin`` differs --
+    and the per-type spin gate it produces must be rebuilt by the fine-tuned
+    model rather than inherited, since the pretraining gate is all zero.
+    Fine-tuning also recomputes the output bias from statistics, which evaluates
+    the model and therefore requires the spin input to reach it.
+
+    The assertion is the symptom a dead gate produces: a magnetic-force error of
+    exactly zero, reported for every step of an otherwise healthy run.
+    """
+
+    def setup_method(self) -> None:
+        self.data_dir = os.path.join(
+            os.path.dirname(__file__), "..", "..", "pt", "NiO", "data", "single"
+        )
+        if not os.path.isdir(self.data_dir):
+            pytest.skip(f"NiO spin data not found: {self.data_dir}")
+
+    def _normalized(self, config: dict) -> dict:
+        return normalize(update_deepmd_input(copy.deepcopy(config), warning=False))
+
+    def test_magnetic_force_is_live_after_finetune(self, tmp_path) -> None:
+        from deepmd.pt_expt.utils.finetune import (
+            get_finetune_rules,
+        )
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            # Phase 1: pretrain with no type declared magnetic, then checkpoint.
+            pretrain_config = _make_train_config(self.data_dir, numb_steps=1)
+            pretrain_config["model"]["spin"]["use_spin"] = [False, False]
+            get_trainer(self._normalized(pretrain_config)).run()
+            checkpoint = tmp_path / "model.ckpt.pt"
+            assert checkpoint.is_file(), "pretraining wrote no checkpoint"
+            checkpoint_data = torch.load(
+                checkpoint,
+                map_location="cpu",
+                weights_only=True,
+            )
+            checkpoint_state = checkpoint_data["model"]
+            dormant_keys = [
+                key
+                for key, value in checkpoint_state.items()
+                if torch.is_tensor(value)
+                and (
+                    "spin_embedding.mag_layer2." in key
+                    or "spin_embedding.adam_spin_" in key
+                    or "env_seed_embedding.spin_scale" in key
+                )
+            ]
+            assert dormant_keys, "checkpoint exposes no dormant spin parameters"
+            for key in dormant_keys:
+                checkpoint_state[key] = torch.randn_like(checkpoint_state[key])
+            version_keys = [
+                key
+                for key in checkpoint_state
+                if key.endswith("descriptor.version_tensor")
+            ]
+            assert len(version_keys) == 1
+            version_key = version_keys[0]
+            checkpoint_state[version_key] = torch.full_like(
+                checkpoint_state[version_key], 1.1
+            )
+            torch.save(checkpoint_data, checkpoint)
+
+            # Phase 2: fine-tune with Ni magnetic, through the production rules.
+            finetune_config = self._normalized(
+                _make_train_config(self.data_dir, numb_steps=1)
+            )
+            finetune_config["model"], finetune_links = get_finetune_rules(
+                str(checkpoint), finetune_config["model"]
+            )
+            trainer = get_trainer(
+                finetune_config,
+                finetune_model=str(checkpoint),
+                finetune_links=finetune_links,
+            )
+            descriptor = trainer.models["Default"].atomic_model.descriptor
+            assert torch.all(descriptor.spin_embedding.mag_layer2.w == 0.0)
+            assert torch.all(descriptor.spin_embedding.adam_spin_vec_weight == 0.0)
+            assert torch.all(descriptor.spin_embedding.adam_spin_nbr_weight == 0.0)
+            assert torch.all(descriptor.env_seed_embedding.spin_scale == 0.0)
+
+            task = trainer.select_task(trainer._make_training_tasks())
+            more_loss = trainer.train_step(task, 0).payload["more_loss"]
+            assert "rmse_fm" in more_loss
+            magnetic_error = float(torch.as_tensor(more_loss["rmse_fm"]).detach())
+            assert magnetic_error > 0.0, (
+                "the magnetic force error is exactly zero after fine-tuning: the "
+                "per-type spin gate was inherited from the spin-free pretraining "
+                "instead of being rebuilt from `use_spin`"
+            )
+        finally:
+            os.chdir(old_cwd)
+
+
+class TestDPA4DescriptorVersionPersistence:
+    """pt_expt persists the descriptor version so migrations still fire.
+
+    The backend rebuilds a module from its config before loading, so a
+    version kept only as a python attribute would come back claiming the
+    semantics of the running code and every checkpoint would silently skip
+    ``_migrate_variables``.
+    """
+
+    def _descriptor(self, use_spin: list[bool] | None = None) -> DescrptDPA4:
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        if use_spin is not None:
+            config["spin"]["use_spin"] = use_spin
+        return get_model(config).atomic_model.descriptor
+
+    def test_version_rides_the_state_dict(self) -> None:
+        descriptor = self._descriptor()
+        assert "version_tensor" in descriptor.state_dict()
+        assert float(descriptor.version_tensor.item()) == DescrptDPA4.LATEST_VERSION
+
+    def test_legacy_state_squares_the_env_seed_spin_gate(self) -> None:
+        """Version 1.2 stores the gate after the environment quadratic form.
+
+        The gate is a child parameter, so the rewrite has to land on the
+        incoming state: torch restores a module's own buffers before
+        descending into its children.
+        """
+        state = self._descriptor().state_dict()
+        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
+        gate_key = "env_seed_embedding.spin_scale"
+        state[gate_key] = torch.full_like(state[gate_key], 2.0)
+
+        target = self._descriptor()
+        target.load_state_dict(state)
+        assert torch.all(target.env_seed_embedding.spin_scale == 4.0)
+        assert target.version == 1.2
+        assert float(target.version_tensor.item()) == 1.2
+
+    def test_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
+        state = self._descriptor([False, False]).state_dict()
+        state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
+        dormant_keys = (
+            "spin_embedding.mag_layer2.w",
+            "spin_embedding.adam_spin_vec_weight",
+            "spin_embedding.adam_spin_nbr_weight",
+            "env_seed_embedding.spin_scale",
+        )
+        for key in dormant_keys:
+            state[key] = torch.full_like(state[key], 3.0)
+        state["spin_embedding.mag_layer1.w"] = torch.full_like(
+            state["spin_embedding.mag_layer1.w"], 5.0
+        )
+
+        target = self._descriptor([False, False])
+        target.load_state_dict(state)
+
+        migrated = target.state_dict()
+        for key in dormant_keys:
+            assert torch.all(migrated[key] == 0.0)
+        assert torch.all(migrated["spin_embedding.mag_layer1.w"] == 5.0)
+        assert target.version == 1.2
+
+    def test_state_without_a_version_is_read_as_the_last_untagged_one(self) -> None:
+        """Checkpoints predating the buffer were written under version 1.1."""
+        state = self._descriptor().state_dict()
+        del state["version_tensor"]
+        gate_key = "env_seed_embedding.spin_scale"
+        state[gate_key] = torch.full_like(state[gate_key], 3.0)
+
+        target = self._descriptor()
+        target.load_state_dict(state)
+        assert torch.all(target.env_seed_embedding.spin_scale == 9.0)
+        assert target.version == 1.2
 
 
 class TestNativeSpinConfigFormsPtExpt:

@@ -612,12 +612,13 @@ class DeepEval(DeepEvalBackend):
         model = get_model(deepcopy(model_params)).to(DEVICE)
 
         # Strip the `_CompiledModel` wrapper that pt_expt training applies
-        # after compilation (training.py:996).  The saved state_dict has
-        # `model.Default.original_model.X` keys (the real weights) plus
+        # after compilation.  The saved state_dict has
+        # `model.Default.original_model.X` keys (the real weights).  Some
+        # checkpoints additionally carry
         # `model.Default.compiled_forward_lower._orig_mod._param_constant*`
-        # / `_tensor_constant*` keys (graph constants baked into the
-        # compiled forward — duplicates of the real weights, useless for
-        # eager inference).  Drop the latter and unwrap the former.
+        # / `_tensor_constant*` keys (graph constants baked into a compiled
+        # forward — duplicates of the real weights, useless for eager
+        # inference).  Drop the latter and unwrap the former.
         cleaned: dict[str, Any] = {}
         compiled_marker = ".compiled_forward_lower."
         # Per-task buffer copies registered on _CompiledModel (bias_atom_e,

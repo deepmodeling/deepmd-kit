@@ -445,6 +445,8 @@ class EnvironmentInitialEmbedding(NativeOP):
         Random seed for reproducibility.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
     def __init__(
         self,
         *,
@@ -488,7 +490,10 @@ class EnvironmentInitialEmbedding(NativeOP):
         # plus, for the native spin scheme, the 3 envelope-gated neighbor-spin
         # components, so the inner product ``D = M^T M`` yields the neighbor
         # spin-spin invariants alongside the geometric ones.
-        self.coord_dim = 4 + (3 if self.spin_flags is not None else 0)
+        self.geometry_coord_dim = 4
+        self.coord_dim = self.geometry_coord_dim + (
+            3 if self.spin_flags is not None else 0
+        )
 
         # === RBF projection: n_radial -> rbf_out_dim (two-layer MLP) ===
         # rbf_out_dim = max(32, embed_dim - 2*type_dim) to align G-network width to embed_dim
@@ -566,19 +571,18 @@ class EnvironmentInitialEmbedding(NativeOP):
             dtype=PRECISION_DICT[self.precision.lower()],
         )
 
-        # === Native spin: per-type mask and isotropic channel scale ===
+        # === Native spin: per-type mask and post-quadratic activation gate ===
         # The mask gates the neighbor-spin channel by source type, so a
         # non-magnetic neighbor contributes zero and (critically) carries zero
-        # magnetic force ``-dE/ds``. The single scalar scale (shared across
-        # x/y/z) keeps the spin coordinates transforming with the geometry, so
-        # the env-matrix invariant stays SO(3)-invariant; ``output_proj`` is
-        # zero-initialized, so the spin contribution starts neutral regardless.
+        # magnetic force ``-dE/ds``. ``spin_scale`` multiplies the spin-only
+        # contribution after the environment quadratic form, providing a
+        # linear gate that can start from exactly zero.
         if self.spin_flags is not None:
             self.spin_mask = np.array(
                 [1.0 if flag else 0.0 for flag in self.spin_flags],
                 dtype=PRECISION_DICT[self.precision.lower()],
             )
-            self.spin_scale = np.ones(
+            self.spin_scale = np.zeros(
                 (1,), dtype=PRECISION_DICT[self.precision.lower()]
             )
 
@@ -648,11 +652,7 @@ class EnvironmentInitialEmbedding(NativeOP):
                     xp.take(xp.astype(atype_flat, xp.int64), src_i, axis=0),
                     axis=0,
                 )[:, None]  # (E, 1)
-                spin_scale = xp.astype(
-                    xp_asarray_nodetach(xp, self.spin_scale[...], device=device),
-                    r_tilde.dtype,
-                )
-                spin_chan = edge_env * spin_scale * spin_src * mask  # (E, 3)
+                spin_chan = edge_env * spin_src * mask  # (E, 3)
             else:
                 spin_chan = xp.zeros(
                     (r_tilde.shape[0], 3), dtype=r_tilde.dtype, device=device
@@ -720,9 +720,26 @@ class EnvironmentInitialEmbedding(NativeOP):
         # Summing over the coordinate axis makes D invariant to a joint rotation
         # of the geometry and the spin channels; with the spin channels present,
         # D additionally carries the neighbor spin-spin invariants.
-        env_agg_t = xp.permute_dims(env_agg, (0, 2, 1))  # (N, embed_dim, coord_dim)
-        env_agg_axis = env_agg[:, :, : self.axis_dim]  # (N, coord_dim, axis_dim)
-        D = xp.matmul(env_agg_t, env_agg_axis)  # (N, embed_dim, axis_dim)
+        if self.spin_flags is None:
+            env_agg_t = xp.permute_dims(env_agg, (0, 2, 1))
+            env_agg_axis = env_agg[:, :, : self.axis_dim]
+            D = xp.matmul(env_agg_t, env_agg_axis)
+        else:
+            geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
+            spin_agg = env_agg[:, self.geometry_coord_dim :, :]
+            D_geometry = xp.matmul(
+                xp.permute_dims(geometry_agg, (0, 2, 1)),
+                geometry_agg[:, :, : self.axis_dim],
+            )
+            D_spin = xp.matmul(
+                xp.permute_dims(spin_agg, (0, 2, 1)),
+                spin_agg[:, :, : self.axis_dim],
+            )
+            spin_scale = xp.astype(
+                xp_asarray_nodetach(xp, self.spin_scale[...], device=device),
+                D_spin.dtype,
+            )
+            D = D_geometry + spin_scale * D_spin
 
         # === Step 6. Output projection for FiLM logits ===
         D_flat = xp.reshape(
@@ -994,6 +1011,8 @@ class SpinEmbedding(NativeOP):
         Whether parameters are trainable.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
     def __init__(
         self,
         *,
@@ -1020,8 +1039,9 @@ class SpinEmbedding(NativeOP):
         self.spin_flags = [bool(flag) for flag in use_spin]
 
         # === Per-type spin gate ===
-        # Non-persistent: rebuilt from config on construction and moved with the
-        # module, so the deterministic mask never enters the serialized state.
+        # Configuration-derived (hence ``CONFIG_DERIVED_ARRAYS``): rebuilt on
+        # construction and moved with the module, so the deterministic mask
+        # never enters the serialized state.
         self.spin_mask = np.array(
             [1.0 if bool(flag) else 0.0 for flag in use_spin], dtype=prec
         )
@@ -1053,23 +1073,26 @@ class SpinEmbedding(NativeOP):
             seed=child_seed(seed_scalar, 1),
             trainable=self.trainable,
         )
+        self.mag_layer2.w = np.zeros(
+            (self.channels, self.channels),
+            dtype=prec,
+        )
 
         # === l=1 per-type per-channel weight ===
         # ``adam_`` prefix routes the table to Adam in HybridMuon, matching the
         # type-embedding treatment for per-type lookup parameters.
-        init_std = 1.0 / math.sqrt(float(self.ntypes + self.channels))
-        rng_vec = np.random.default_rng(child_seed(seed, 1))
-        self.adam_spin_vec_weight = rng_vec.normal(
-            0.0, init_std, size=(self.ntypes, self.channels)
-        ).astype(prec)
+        self.adam_spin_vec_weight = np.zeros(
+            (self.ntypes, self.channels),
+            dtype=prec,
+        )
 
         # === l=1 per-source-type per-channel weight for neighbor aggregation ===
         # Separate from the on-site weight: this scales the neighbor's spin
         # direction before it is aggregated into the center node's l=1 seed.
-        rng_nbr = np.random.default_rng(child_seed(seed, 2))
-        self.adam_spin_nbr_weight = rng_nbr.normal(
-            0.0, init_std, size=(self.ntypes, self.channels)
-        ).astype(prec)
+        self.adam_spin_nbr_weight = np.zeros(
+            (self.ntypes, self.channels),
+            dtype=prec,
+        )
 
     def call(self, spin: Any, atype: Any) -> tuple[Any, Any]:
         """

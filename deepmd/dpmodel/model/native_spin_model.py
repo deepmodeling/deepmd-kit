@@ -74,11 +74,14 @@ def make_native_spin_model(T_Model: type) -> type:
     class NSM(T_Model, NativeSpinModelKind):
         """Native-spin variant of ``T_Model`` (see ``make_native_spin_model``)."""
 
+        CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
         def __init__(self, *args: Any, spin: Spin, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self.spin = spin
             self.ntypes_real = self.spin.ntypes_real
-            # Per-real-type 0/1 spin gate.
+            # Per-real-type 0/1 spin gate, derived from ``use_spin`` and hence
+            # rebuilt here rather than adopted from a checkpoint.
             self.spin_mask = self.spin.get_spin_mask()
 
         @staticmethod

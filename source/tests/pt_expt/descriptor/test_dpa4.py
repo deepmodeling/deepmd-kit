@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import os
+from contextlib import (
+    nullcontext,
+)
 from unittest import (
     mock,
 )
@@ -102,6 +106,44 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             atol=atol,
             err_msg=err_msg,
         )
+
+    def test_train_and_eval_amp_switches_are_independent(self) -> None:
+        """Training follows ``use_amp``, evaluation follows ``DP_AMP_INFER``.
+
+        The block implementation is stubbed so a CUDA-device test double can
+        exercise the policy on CPU without constructing or executing a CUDA
+        tensor. Neither switch may leak into the other's mode.
+        """
+        block_input = mock.Mock(device=mock.Mock(type="cuda"))
+        block_output = object()
+
+        for amp_infer in (False, True):
+            with mock.patch.dict(
+                os.environ, {"DP_AMP_INFER": "1" if amp_infer else "0"}, clear=False
+            ):
+                for use_amp in (False, True):
+                    dd = make_descriptor(
+                        self.nt, self.sel_mix, self.rcut, use_amp=use_amp
+                    )
+                    for training in (False, True):
+                        dd.train(training)
+                        expected = use_amp if training else amp_infer
+                        with (
+                            mock.patch.object(
+                                DPDescrptDPA4,
+                                "_forward_blocks",
+                                return_value=block_output,
+                            ),
+                            mock.patch(
+                                "torch.autocast", return_value=nullcontext()
+                            ) as autocast_mock,
+                        ):
+                            actual = dd._forward_blocks(block_input)
+                        assert actual is block_output
+                        assert autocast_mock.called is expected, (
+                            f"amp_infer={amp_infer} use_amp={use_amp} "
+                            f"training={training}"
+                        )
 
     def test_random_gamma_train_eval_gate(self) -> None:
         """``random_gamma`` mirrors pt: rolled in train mode, fixed otherwise.

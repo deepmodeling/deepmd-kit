@@ -44,6 +44,9 @@ from deepmd.pt.utils.utils import (
 from deepmd.pt_expt.train.ema import (
     get_ema_validation_log_path,
 )
+from deepmd.pt_expt.train.utils import (
+    MatmulPrecisionPolicy,
+)
 from deepmd.pt_expt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
@@ -216,9 +219,15 @@ class FullValidator:
         stale_state_keys: tuple[str, ...] = STALE_FULL_VALIDATION_INFO_KEYS,
         emit_best_save_log: bool = True,
         model_eval_context: Callable[[], Any] | None = None,
+        matmul_precision: MatmulPrecisionPolicy | None = None,
     ) -> None:
         self.validation_data = validation_data
         self.model = model
+        self.matmul_precision = (
+            matmul_precision
+            if matmul_precision is not None
+            else MatmulPrecisionPolicy(enable_tf32=False)
+        )
         self.profile = select_metric_profile(model)
         self.state_store = state_store
         self.rank = rank
@@ -380,7 +389,10 @@ class FullValidator:
         was_training = bool(getattr(self.model, "training", True))
         self.model.eval()
         try:
-            with self.model_eval_context():
+            with (
+                self.matmul_precision.applied(training=False),
+                self.model_eval_context(),
+            ):
                 # === Step 2. Evaluate All Systems ===
                 metrics = self.evaluate_all_systems()
         finally:
@@ -925,7 +937,9 @@ def build_full_validators(
     checkpoint_dir: Path,
     ensure_supported: Callable[[], None],
     model_ema: Any | None = None,
+    ema_weight_model: torch.nn.Module | dict[str, torch.nn.Module] | None = None,
     sharding: ShardingPolicy | None = None,
+    matmul_precision: MatmulPrecisionPolicy | None = None,
 ) -> tuple[FullValidator | None, FullValidator | None]:
     """Build the full validators of a training run.
 
@@ -964,9 +978,15 @@ def build_full_validators(
         The EMA state of the run. Without it the EMA flow stays inactive, so
         that ``ema_full_validation`` is ignored rather than rejected when EMA
         itself is disabled.
+    ema_weight_model : torch.nn.Module or dict, optional
+        The parameter owner tracked by ``model_ema`` when it differs from the
+        module used for evaluation. Defaults to ``model``.
     sharding : ShardingPolicy, optional
         The distribution strategy of the run, which decides whether checkpoint
         collection is a collective operation. Defaults to no sharding.
+    matmul_precision : MatmulPrecisionPolicy, optional
+        The precision policy of the run, of which both flows use the eval
+        level. Defaults to full precision.
 
     Returns
     -------
@@ -1000,6 +1020,7 @@ def build_full_validators(
             sharding=ShardingPolicy() if sharding is None else sharding,
             restart_training=restart_training,
             checkpoint_dir=checkpoint_dir,
+            matmul_precision=matmul_precision,
             **overrides,
         )
 
@@ -1022,6 +1043,8 @@ def build_full_validators(
         ),
         best_checkpoint_prefix=EMA_BEST_CKPT_PREFIX,
         emit_best_save_log=False,
-        model_eval_context=lambda: model_ema.apply_shadow(model),
+        model_eval_context=lambda: model_ema.apply_shadow(
+            model if ema_weight_model is None else ema_weight_model
+        ),
     )
     return live_validator, ema_validator

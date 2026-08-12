@@ -5742,6 +5742,19 @@ def training_args(
             "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
         ),
+        Argument(
+            "enable_tf32",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt")
+            + "Enable TF32 matmul precision for CUDA training forwards. "
+            "Independent of `enable_compile`; eval-time TF32 is controlled "
+            "separately by `validating.tf32_infer` or `DP_TF32_INFER`. The "
+            "PyTorch backend takes the same switch as `model.enable_tf32`, "
+            "because there only the SeZM model implements the compile and "
+            "precision path, while here it applies to every model.",
+        ),
     ]
 
     def _validate_stat_file_mode(data: dict[str, Any], scope: str) -> None:
@@ -5928,13 +5941,12 @@ def validating_args() -> Argument:
     )
     doc_compiled_infer = (
         "Whether to route eval-time forwards (including full validation) "
-        "through the DPA4/SeZM `torch.compile` path instead of eager. When `true`, "
-        "this flag is translated into `DP_COMPILE_INFER=1` at trainer "
-        "startup before any model is constructed, which is the env var SeZM "
-        "samples inside `SeZMModel.__init__`. A manually exported "
-        "`DP_COMPILE_INFER` takes precedence over this option. Only "
-        "meaningful when `model.use_compile=true`; has no effect on models "
-        "that do not implement the SeZM-style eval compile path."
+        "through `torch.compile` instead of eager. When `true`, this flag is "
+        "translated into `DP_COMPILE_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_COMPILE_INFER` takes "
+        "precedence over this option. In the PyTorch backend it applies when "
+        "`model.use_compile=true`; in the PyTorch Exportable backend it applies "
+        "when `training.enable_compile=true`."
     )
     doc_tf32_infer = (
         "Whether to enable TF32 `high` matmul precision for eval-time forwards "
@@ -5942,18 +5954,17 @@ def validating_args() -> Argument:
         "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_TF32_INFER` takes "
         "precedence over this option. This does not affect training forwards, "
-        "which are controlled by `model.enable_tf32`. The PyTorch Exportable "
-        "backend always runs at full ('highest') matmul precision, so the "
-        "option has no effect there."
+        "which are controlled by `model.enable_tf32` (PyTorch) or "
+        "`training.enable_tf32` (PyTorch Exportable)."
     )
     doc_amp_infer = (
         "Whether to enable bf16 automatic mixed precision for eval-time forwards "
         "(including regular validation and full validation). When `true`, this "
         "flag is translated into `DP_AMP_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_AMP_INFER` takes "
-        "precedence over this option. This only affects SeZM/DPA4 descriptors "
-        "with `descriptor.use_amp=true`; training AMP remains controlled by "
-        "`descriptor.use_amp`."
+        "precedence over this option. This controls SeZM/DPA4 inference "
+        "independently of `descriptor.use_amp`; training AMP remains controlled "
+        "by `descriptor.use_amp`."
     )
     args = [
         Argument(
@@ -6032,14 +6043,14 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_compiled_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_tf32_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_tf32_infer,
         ),
         Argument(
             "amp_infer",
