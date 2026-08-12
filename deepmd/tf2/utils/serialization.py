@@ -555,7 +555,12 @@ def deserialize_to_savedmodel(
 
     # property models: persist the output name/dimension/intensiveness so the
     # evaluator can dispatch to DeepProperty and reshape the output.
-    if hasattr(model, "get_var_name"):
+    # ``get_var_name`` is declared on every model with a concrete default
+    # of ``None`` for non-property models (issue #5897), so a bare
+    # ``hasattr`` check is always true; gate on the actual return value
+    # instead, mirroring deepmd/jax/jax2tf/serialization.py.
+    is_property_model = model.get_var_name() is not None
+    if is_property_model:
 
         @tf.function
         def get_var_name() -> tf.Tensor:
