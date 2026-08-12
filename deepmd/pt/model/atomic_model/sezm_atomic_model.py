@@ -38,6 +38,9 @@ from deepmd.pt.model.task.sezm_ener import (
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
+from deepmd.utils.stat_file import (
+    load_required_items,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -185,11 +188,9 @@ class SeZMAtomicModel(DPAtomicModel):
         ValueError
             If force labels are unavailable for SeZM `dens` statistics.
         """
-        force_stat_path = (
-            None if stat_file_path is None else stat_file_path / "rmsd_dforce"
-        )
-        if force_stat_path is not None and force_stat_path.is_file():
-            force_rmsd = float(np.asarray(force_stat_path.load_numpy()).reshape(-1)[0])
+        cached = load_required_items(stat_file_path, ["rmsd_dforce"])
+        if cached is not None:
+            force_rmsd = float(np.asarray(cached["rmsd_dforce"]).reshape(-1)[0])
         else:
             sampled = sampled_func() if callable(sampled_func) else sampled_func
             force_square_sum = 0.0
@@ -240,7 +241,8 @@ class SeZMAtomicModel(DPAtomicModel):
                     "the global direct-force RMSD can be computed."
                 )
             force_rmsd = math.sqrt(force_square_sum / force_atom_count)
-            if force_stat_path is not None:
+            if stat_file_path is not None:
+                force_stat_path = stat_file_path / "rmsd_dforce"
                 force_stat_path.save_numpy(np.asarray([force_rmsd], dtype=np.float64))
 
         if force_rmsd <= 0.0:

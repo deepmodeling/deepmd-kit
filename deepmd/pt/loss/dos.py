@@ -5,6 +5,10 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.loss.reduction import (
+    masked_atom_mean,
+    masked_atom_num,
+)
 from deepmd.pt.loss.loss import (
     TaskLoss,
 )
@@ -154,12 +158,10 @@ class DOSLoss(TaskLoss):
             )  # [nf, natoms, numb_dos]
             if "mask" in model_pred:
                 # idiom 1: per-frame masked mean, then average over frames
-                nf = diff.shape[0]
                 maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
-                sq = torch.square(diff) * maskf.reshape(nf, natoms, 1)
-                per_frame_sum = sq.reshape(nf, -1).sum(dim=-1)  # [nf]
-                per_frame_dof = maskf.sum(dim=-1) * self.numb_dos  # [nf]
-                l2_local_loss_dos = (per_frame_sum / per_frame_dof).mean()
+                l2_local_loss_dos = masked_atom_mean(
+                    torch.square(diff), maskf, self.numb_dos
+                )
             else:
                 l2_local_loss_dos = torch.mean(torch.square(diff))
             if not self.inference:
@@ -185,12 +187,10 @@ class DOSLoss(TaskLoss):
             )  # [nf, natoms, numb_dos]
             if "mask" in model_pred:
                 # idiom 1: per-frame masked mean, then average over frames
-                nf = diff.shape[0]
                 maskf = model_pred["mask"].to(diff.dtype)  # [nf, natoms]
-                sq = torch.square(diff) * maskf.reshape(nf, natoms, 1)
-                per_frame_sum = sq.reshape(nf, -1).sum(dim=-1)  # [nf]
-                per_frame_dof = maskf.sum(dim=-1) * self.numb_dos  # [nf]
-                l2_local_loss_cdf = (per_frame_sum / per_frame_dof).mean()
+                l2_local_loss_cdf = masked_atom_mean(
+                    torch.square(diff), maskf, self.numb_dos
+                )
             else:
                 l2_local_loss_cdf = torch.mean(torch.square(diff))
             if not self.inference:
@@ -210,10 +210,7 @@ class DOSLoss(TaskLoss):
             diff = global_tensor_pred_dos - global_tensor_label_dos
             # idiom 3: global dos is already padding-invariant; plain mean suffices
             l2_global_loss_dos = torch.mean(torch.square(diff))
-            if "mask" in model_pred:
-                atom_num = model_pred["mask"].sum(-1).float().mean()
-            else:
-                atom_num = natoms
+            atom_num = masked_atom_num(model_pred.get("mask"), natoms, torch.float32)
             if not self.inference:
                 more_loss["l2_global_dos_loss"] = self.display_if_exist(
                     l2_global_loss_dos.detach(), find_global
@@ -235,10 +232,7 @@ class DOSLoss(TaskLoss):
             diff = global_tensor_pred_cdf - global_tensor_label_cdf
             # idiom 3: global cdf is already padding-invariant; plain mean suffices
             l2_global_loss_cdf = torch.mean(torch.square(diff))
-            if "mask" in model_pred:
-                atom_num = model_pred["mask"].sum(-1).float().mean()
-            else:
-                atom_num = natoms
+            atom_num = masked_atom_num(model_pred.get("mask"), natoms, torch.float32)
             if not self.inference:
                 more_loss["l2_global_cdf_loss"] = self.display_if_exist(
                     l2_global_loss_cdf.detach(), find_global

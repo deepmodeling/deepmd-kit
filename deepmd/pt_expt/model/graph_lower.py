@@ -6,6 +6,33 @@ from typing import (
 )
 
 
+def graph_edge_dtype(model: Any, lower_kind: str) -> str:
+    """Return the graph edge-vector dtype encoded by a deployment artifact.
+
+    The dtype itself is the atomic model's capability, so compositions
+    answer by aggregation instead of by a reach-in through a single
+    ``.descriptor`` (a ``LinearEnergyAtomicModel`` has none). Only the
+    lower-kind applicability -- which artifact kinds carry edge geometry at
+    all -- is decided here.
+
+    Parameters
+    ----------
+    model : Any
+        Model exposing the atomic-model capability interface.
+    lower_kind : str
+        Concrete lower-forward schema.
+
+    Returns
+    -------
+    str
+        ``"float32"`` for eligible geometrically compressed DPA1 graph
+        lowers, otherwise ``"float64"``.
+    """
+    if lower_kind not in ("graph", "dpa1_canonical"):
+        return "float64"
+    return str(model.atomic_model.graph_edge_dtype())
+
+
 def model_uses_graph_lower(model: Any) -> bool:
     """Return whether a model's default lower uses ``NeighborGraph``.
 
@@ -29,11 +56,18 @@ def model_uses_graph_lower(model: Any) -> bool:
     except (AttributeError, NotImplementedError):
         return False
 
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    uses_graph_lower = getattr(descriptor, "uses_graph_lower", None)
-    if uses_graph_lower is None:
-        return False
+    # ENERGY-output models only, mirroring ``_resolve_graph_method``'s
+    # default-flip gate: the compiled-training graph trace is
+    # energy-specific (``do_grad_r("energy")``, ``_translate_energy_keys``),
+    # so a non-energy model (property/dos/dipole/polar) on this path raises
+    # ``KeyError('energy')`` at its first compiled batch.
     try:
-        return bool(uses_graph_lower())
+        if "energy" not in model.atomic_output_def().keys():
+            return False
     except (AttributeError, NotImplementedError):
         return False
+
+    atomic_model = getattr(model, "atomic_model", None)
+    if atomic_model is None:
+        return False
+    return bool(atomic_model.uses_graph_lower())

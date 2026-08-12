@@ -23,20 +23,23 @@ from dargs.dargs import (
 from deepmd.pt.model.model import (
     get_model,
 )
-from deepmd.pt.train.validation import (
-    BEST_METRIC_NAME_INFO_KEY,
-    TOPK_RECORDS_INFO_KEY,
-    FullValidator,
-    resolve_full_validation_start_step,
-)
 from deepmd.pt.utils.env import (
     DEVICE,
 )
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
 )
+from deepmd.pt_expt.train.validation import (
+    BEST_METRIC_NAME_INFO_KEY,
+    TOPK_RECORDS_INFO_KEY,
+    FullValidator,
+    resolve_full_validation_start_step,
+)
 from deepmd.utils.argcheck import (
     normalize,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 from deepmd.utils.eval_metrics import (
     SPIN_FULL_VALIDATION_PROFILE,
@@ -148,6 +151,65 @@ def _create_mixed_nloc_lmdb(path: str) -> str:
     return path
 
 
+def _create_partially_labeled_lmdb(path: str) -> str:
+    """Create same-nloc validation frames with complementary labels."""
+    nframes = 4
+    natoms = 6
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": nframes,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [2, 4]},
+            "frame_nlocs": [natoms] * nframes,
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for frame_idx in range(nframes):
+            frame = _make_lmdb_frame(natoms=natoms, seed=frame_idx)
+            if frame_idx % 2 == 0:
+                frame.pop("forces")
+                frame["energies"]["data"] = np.array([2.0], dtype=np.float64).tobytes()
+            else:
+                frame.pop("energies")
+                frame["forces"]["data"] = np.ones(
+                    (natoms, 3), dtype=np.float64
+                ).tobytes()
+            txn.put(
+                format(frame_idx, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+    return path
+
+
+def _create_mixed_nloc_partially_labeled_lmdb(path: str) -> str:
+    """Create frames varying atom count and complementary label availability."""
+    frame_specs = [(6, True), (6, False), (9, True), (9, False)]
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": len(frame_specs),
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {"natoms": [2, 4]},
+            "frame_nlocs": [natoms for natoms, _ in frame_specs],
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        for frame_idx, (natoms, has_energy) in enumerate(frame_specs):
+            frame = _make_lmdb_frame(natoms=natoms, seed=frame_idx)
+            if has_energy:
+                frame.pop("forces")
+            else:
+                frame.pop("energies")
+            txn.put(
+                format(frame_idx, "012d").encode(),
+                msgpack.packb(frame, use_bin_type=True),
+            )
+    env.close()
+    return path
+
+
 def _make_single_task_config() -> dict:
     return {
         "model": deepcopy(model_se_e2_a),
@@ -229,7 +291,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                 )
                 new_best_path = validator._update_best_state(
@@ -299,7 +360,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=True,
                 )
             finally:
@@ -332,7 +392,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                     checkpoint_dir=best_dir,
                 )
@@ -368,7 +427,6 @@ class TestValidationHelpers(unittest.TestCase):
                     state_store=train_infos,
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
@@ -424,7 +482,6 @@ class TestValidationHelpers(unittest.TestCase):
                 state_store={},
                 num_steps=10,
                 rank=0,
-                zero_stage=0,
                 restart_training=False,
             )
             observed_natoms = []
@@ -451,6 +508,135 @@ class TestValidationHelpers(unittest.TestCase):
         self.assertAlmostEqual(metrics["mae_e_per_atom"], 8.4)
         self.assertAlmostEqual(metrics["rmse_e_per_atom"], np.sqrt(75.6))
 
+    def test_full_validator_lmdb_excludes_default_filled_partial_labels(self) -> None:
+        """Each optional-label metric must see only frames that provide it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lmdb_path = _create_partially_labeled_lmdb(f"{tmpdir}/partial.lmdb")
+            validation_data = LmdbDataset(
+                lmdb_path,
+                type_map=["O", "H"],
+                batch_size=2,
+            )
+            validation_data.add_data_requirement(
+                [
+                    DataRequirementItem(
+                        "energy", 1, atomic=False, must=False, default=7.0
+                    ),
+                    DataRequirementItem(
+                        "force", 3, atomic=True, must=False, default=11.0
+                    ),
+                ]
+            )
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": False,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": "val.log",
+                    "full_val_start": 0.0,
+                },
+                validation_data=validation_data,
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+            )
+            observed_flags = []
+
+            def evaluate_label_group(data_system):
+                test_data = data_system.get_test()
+                natoms = int(test_data["type"].shape[1])
+                nframes = int(test_data["coord"].shape[0])
+                observed_flags.append(
+                    (
+                        float(test_data["find_energy"]),
+                        float(test_data["find_force"]),
+                        nframes,
+                    )
+                )
+                prediction = {
+                    "energy": np.zeros((nframes, 1)),
+                    "force": np.zeros((nframes, natoms, 3)),
+                }
+                return validator.profile.compute_system_metrics(
+                    prediction, test_data, natoms, True
+                )
+
+            with patch.object(
+                validator,
+                "_evaluate_system",
+                side_effect=evaluate_label_group,
+            ):
+                metrics = validator.evaluate_all_systems()
+
+        self.assertCountEqual(observed_flags, [(1.0, 0.0, 2), (0.0, 1.0, 2)])
+        self.assertAlmostEqual(metrics["mae_e_per_atom"], 2.0 / 6.0)
+        self.assertAlmostEqual(metrics["rmse_e_per_atom"], 2.0 / 6.0)
+        self.assertAlmostEqual(metrics["mae_f"], 1.0)
+        self.assertAlmostEqual(metrics["rmse_f"], 1.0)
+
+    def test_full_validator_lmdb_groups_nloc_and_label_availability(self) -> None:
+        """Full validation must preserve both dimensions of its tuple key."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lmdb_path = _create_mixed_nloc_partially_labeled_lmdb(
+                f"{tmpdir}/mixed-partial.lmdb"
+            )
+            validation_data = LmdbDataset(
+                lmdb_path,
+                type_map=["O", "H"],
+                batch_size=2,
+            )
+            validation_data.add_data_requirement(
+                [
+                    DataRequirementItem(
+                        "energy", 1, atomic=False, must=False, default=7.0
+                    ),
+                    DataRequirementItem(
+                        "force", 3, atomic=True, must=False, default=11.0
+                    ),
+                ]
+            )
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": False,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": "val.log",
+                    "full_val_start": 0.0,
+                },
+                validation_data=validation_data,
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+            )
+            observed_groups = []
+
+            def record_group(data_system):
+                test_data = data_system.get_test()
+                observed_groups.append(
+                    (
+                        int(test_data["type"].shape[1]),
+                        float(test_data["find_energy"]),
+                        float(test_data["find_force"]),
+                    )
+                )
+                return {}
+
+            with patch.object(validator, "_evaluate_system", side_effect=record_group):
+                validator.evaluate_all_systems()
+
+        self.assertCountEqual(
+            observed_groups,
+            [(6, 1.0, 0.0), (6, 0.0, 1.0), (9, 1.0, 0.0), (9, 0.0, 1.0)],
+        )
+
     def test_full_validator_lmdb_snapshot_requires_type_map(self) -> None:
         validator = FullValidator(
             validating_params={
@@ -467,7 +653,6 @@ class TestValidationHelpers(unittest.TestCase):
             state_store={},
             num_steps=10,
             rank=0,
-            zero_stage=0,
             restart_training=False,
         )
 
@@ -632,7 +817,6 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
                     state_store={},
                     num_steps=10,
                     rank=0,
-                    zero_stage=0,
                     restart_training=False,
                 )
                 self.assertIs(validator.profile, SPIN_FULL_VALIDATION_PROFILE)

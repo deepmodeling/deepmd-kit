@@ -63,6 +63,14 @@ _GPU = unittest.skipUnless(
     "CUDA and the compiled deepmd op library are required",
 )
 
+# Instantiating the lmax 2/3/4 CUDA specializations dominates build time, so
+# they sit behind the DEEPMD_ENABLE_DPA1_HIGH_LMAX CMake option, which is off by
+# default, and `DescrptDPA1._fused_eligible` correspondingly serves only lmax=1.
+# The tests below are verified locally against a build with that option enabled;
+# they cannot run against a default build and are therefore not exercised in
+# continuous integration.
+_HIGH_LMAX = unittest.skip("requires a build with DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON")
+
 
 class _CudaLevel:
     """Context manager pinning ``DP_CUDA_INFER`` and restoring it on exit."""
@@ -93,6 +101,7 @@ def _build_dpa1_expt(
     ntypes=2,
     axis_neuron=4,
     tebd_dim=8,
+    lmax=1,
 ):
     from deepmd.pt_expt.descriptor.dpa1 import (
         DescrptDPA1,
@@ -114,6 +123,7 @@ def _build_dpa1_expt(
         smooth_type_embedding=smooth,
         precision="float32",
         seed=1,
+        lmax=lmax,
     ).to(device)
     des.eval()
     return des
@@ -184,6 +194,27 @@ class TestDpa1GraphCudaDescriptor(unittest.TestCase):
 
     def test_parity_two_side_tanh(self) -> None:
         self._assert_parity(_build_dpa1_expt(self.device, [32, 64, 128]))
+
+    @_HIGH_LMAX
+    def test_parity_lmax_two(self) -> None:
+        descriptor = _build_dpa1_expt(self.device, [16, 32, 64], lmax=2)
+        assert descriptor.se_atten.adam_degree_gain_raw is not None
+        descriptor.se_atten.adam_degree_gain_raw.data.fill_(0.7)
+        self._assert_parity(descriptor)
+
+    @_HIGH_LMAX
+    def test_parity_lmax_two_wide(self) -> None:
+        self._assert_parity(_build_dpa1_expt(self.device, [32, 64, 128], lmax=2))
+
+    def test_lmax_four_declines_uncompressed_cuda(self) -> None:
+        descriptor = _build_dpa1_expt(
+            self.device,
+            [16, 16, 16],
+            act="silu",
+            tebd_input_mode="strip",
+            lmax=4,
+        )
+        self.assertFalse(descriptor._fused_eligible("cuda"))
 
     def test_parity_one_side_silu_resnet_dt(self) -> None:
         self._assert_parity(
@@ -305,6 +336,17 @@ class TestDpa1GraphCudaDescriptor(unittest.TestCase):
             _build_dpa1_expt(self.device, [32, 64, 128], tebd_input_mode="strip")
         )
 
+    @_HIGH_LMAX
+    def test_parity_strip_lmax_two(self) -> None:
+        self._assert_strip_parity(
+            _build_dpa1_expt(
+                self.device,
+                [16, 32, 64],
+                tebd_input_mode="strip",
+                lmax=2,
+            )
+        )
+
     def test_parity_strip_smooth_one_side_silu(self) -> None:
         self._assert_strip_parity(
             _build_dpa1_expt(
@@ -383,6 +425,7 @@ def _build_compressed_dpa1(
     ntypes=2,
     axis_neuron=4,
     tebd_dim=8,
+    lmax=1,
 ):
     """Strip DPA1 with the geometric embedding tabulated (``geo_compress``)."""
     des = _build_dpa1_expt(
@@ -396,6 +439,7 @@ def _build_compressed_dpa1(
         ntypes=ntypes,
         axis_neuron=axis_neuron,
         tebd_dim=tebd_dim,
+        lmax=lmax,
     )
     des.enable_compression(min_nbor_dist)
     des.to(device)
@@ -490,6 +534,31 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         # NG = 64: eight warps active in the moment backward.
         self._assert_parity(_build_compressed_dpa1(self.device, [16, 32, 64]))
 
+    @_HIGH_LMAX
+    def test_parity_lmax_two(self) -> None:
+        descriptor = _build_compressed_dpa1(self.device, [16, 32, 64], lmax=2)
+        assert descriptor.se_atten.adam_degree_gain_raw is not None
+        descriptor.se_atten.adam_degree_gain_raw.data.fill_(0.7)
+        self._assert_parity(descriptor)
+
+    @_HIGH_LMAX
+    def test_parity_high_degrees(self) -> None:
+        for lmax in (3, 4):
+            with self.subTest(lmax=lmax):
+                descriptor = _build_compressed_dpa1(
+                    self.device,
+                    [16, 32, 64],
+                    lmax=lmax,
+                )
+                assert descriptor.se_atten.adam_degree_gain_raw is not None
+                descriptor.se_atten.adam_degree_gain_raw.data.copy_(
+                    torch.tensor(
+                        [0.7, -0.5, 0.9][: lmax - 1],
+                        device=self.device,
+                    )
+                )
+                self._assert_parity(descriptor)
+
     def test_parity_wide_two_side(self) -> None:
         # NG = 128: the moment backward covers the table in two channel blocks.
         self._assert_parity(_build_compressed_dpa1(self.device, [32, 64, 128]))
@@ -568,7 +637,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         for output32, output64 in zip(outputs32, outputs64, strict=True):
             torch.testing.assert_close(output32, output64, atol=1e-6, rtol=1e-6)
 
-    def test_compact_canonical_descriptor_parity(self) -> None:
+    def _assert_compact_canonical_descriptor_parity(self, lmax: int) -> None:
         """Source-only topology matches the generic canonical operator."""
         from deepmd.dpmodel.utils.neighbor_graph import (
             canonicalize_neighbor_graph,
@@ -583,7 +652,11 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             canonical_graph_from_neighbor_graph,
         )
 
-        des = _build_compressed_dpa1(self.device, [16, 32, 64])
+        des = _build_compressed_dpa1(
+            self.device,
+            [16, 32, 64],
+            lmax=lmax,
+        )
         graph, atype, _ = self._graph_and_dense(des)
         graph = canonicalize_neighbor_graph(
             dataclasses.replace(graph, n_local=graph.n_node),
@@ -593,6 +666,11 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         type_embedding = des.type_embedding.call()
         se = des.se_atten
         inverse_stddev = torch.reciprocal(se.stddev[:, 0, :]).contiguous()
+        degree_gain = (
+            se.adam_degree_gain_raw.to(torch.float32).contiguous()
+            if se.adam_degree_gain_raw is not None
+            else des.compress_data[0].new_empty(0)
+        )
         lower, upper, table_max, stride0, stride1 = (
             float(value) for value in des.compress_info[0].tolist()[:5]
         )
@@ -612,6 +690,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             type_embedding,
             se.mean[:, 0, :].contiguous(),
             inverse_stddev,
+            degree_gain,
             des.compress_data[0].contiguous(),
             des.type_embd_data.contiguous(),
             int(se.type_one_side),
@@ -628,6 +707,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             float(se.rcut_smth),
             float(se.env_protection),
             float(se.nnei),
+            (int(se.lmax) + 1) ** 2,
         )
         torch.testing.assert_close(descriptor, generic_descriptor)
 
@@ -660,6 +740,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             atype,
             se.mean[:, 0, :].contiguous(),
             inverse_stddev,
+            degree_gain,
             des.compress_data[0].contiguous(),
             des.type_embd_data.contiguous(),
             int(se.type_one_side),
@@ -686,6 +767,13 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
             compact_gradient[physical_edge_count:],
             torch.zeros_like(compact_gradient[physical_edge_count:]),
         )
+
+    def test_compact_canonical_descriptor_parity(self) -> None:
+        self._assert_compact_canonical_descriptor_parity(1)
+
+    @_HIGH_LMAX
+    def test_compact_canonical_descriptor_parity_lmax_four(self) -> None:
+        self._assert_compact_canonical_descriptor_parity(4)
 
     def test_adaptive_resource_selection_large_graph(self) -> None:
         """First-use tuning preserves the reference on a non-trivial graph."""
@@ -1141,7 +1229,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         graph = from_dense_quartet(ec, nl, mp, compact=True, canonicalize=True)
         return graph, self.atype.reshape(-1).to(self.device)
 
-    def test_parity_vs_separate_ops(self) -> None:
+    def _assert_parity_vs_separate_ops(self, lmax: int) -> None:
         from deepmd.kernels.cuda.dpa1.graph_energy_force import (
             dpa1_graph_energy_force,
         )
@@ -1150,7 +1238,14 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         )
 
         # A doubling stack exercises the retiled backward inside the fusion.
-        des = _build_dpa1_expt(self.device, [8, 16, 32], act="silu")
+        des = _build_dpa1_expt(
+            self.device,
+            [8, 16, 32],
+            act="silu",
+            lmax=lmax,
+        )
+        if des.se_atten.adam_degree_gain_raw is not None:
+            des.se_atten.adam_degree_gain_raw.data.fill_(0.7)
         fit = self._build_fitting(des.get_dim_out())
         graph, atype = self._graph(des)
         tebd = des.type_embedding.call()
@@ -1202,6 +1297,37 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         torch.testing.assert_close(force, r_force, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(virial, r_virial, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(atom_vir, r_atom_vir, atol=1e-4, rtol=1e-4)
+
+    def test_parity_vs_separate_ops(self) -> None:
+        self._assert_parity_vs_separate_ops(1)
+
+    @_HIGH_LMAX
+    def test_parity_vs_separate_ops_lmax_two(self) -> None:
+        self._assert_parity_vs_separate_ops(2)
+
+    def test_level_two_graph_export(self) -> None:
+        """The fused energy-force CPU implementation preserves its operator ABI."""
+        from deepmd.pt_expt.model import (
+            EnergyModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            _trace_and_export,
+        )
+
+        cpu = torch.device("cpu")
+        des = _build_dpa1_expt(cpu, [8, 16, 32], act="silu")
+        original_device = self.device
+        self.device = cpu
+        fit = self._build_fitting(des.get_dim_out())
+        self.device = original_device
+        model = EnergyModel(des, fit, type_map=["A", "B"]).eval()
+        with _CudaLevel("2"):
+            exported, _metadata, _model_json, _output_keys = _trace_and_export(
+                {"model": model.serialize()},
+                do_atomic_virial=True,
+                lower_kind="graph",
+            )
+        self.assertIsInstance(exported, torch.export.ExportedProgram)
 
     def test_missing_csr_declines_energy_force_fusion(self) -> None:
         """The caller can fall back when optional CSR views are absent."""
@@ -1406,7 +1532,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         graph = from_dense_quartet(ec, nl, mp, compact=True, canonicalize=True)
         return graph, self.atype.reshape(-1).to(self.device)
 
-    def test_parity_vs_separate_ops(self) -> None:
+    def _assert_parity_vs_separate_ops(self, lmax: int) -> None:
         from deepmd.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress,
             dpa1_graph_compress_energy_force,
@@ -1428,7 +1554,15 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             act="silu",
             ntypes=4,
             axis_neuron=16,
+            lmax=lmax,
         )
+        if des.se_atten.adam_degree_gain_raw is not None:
+            des.se_atten.adam_degree_gain_raw.data.copy_(
+                torch.tensor(
+                    [0.7, -0.5, 0.9][: lmax - 1],
+                    device=self.device,
+                )
+            )
         self.assertTrue(mega_eligible(des))
         fit = self._build_fitting(des.get_dim_out(), ntypes=4)
         graph, atype = self._graph(des)
@@ -1482,6 +1616,13 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         torch.testing.assert_close(force, r_force, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(virial, r_virial, atol=1e-4, rtol=1e-4)
         torch.testing.assert_close(atom_vir, r_atom_vir, atol=1e-4, rtol=1e-4)
+
+    def test_parity_vs_separate_ops(self) -> None:
+        self._assert_parity_vs_separate_ops(1)
+
+    @_HIGH_LMAX
+    def test_parity_vs_separate_ops_lmax_four(self) -> None:
+        self._assert_parity_vs_separate_ops(4)
 
     def test_compact_canonical_model_trace(self) -> None:
         """The eight-tensor deployment forward composes under symbolic make_fx."""

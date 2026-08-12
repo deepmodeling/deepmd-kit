@@ -51,6 +51,9 @@ from deepmd.utils.finetune import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.stat_file import (
+    load_required_items,
+)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
@@ -209,13 +212,7 @@ class Fitting(torch.nn.Module, BaseFitting):
         """
         fp = stat_file_path / "fparam"
         arr = fp.load_numpy()
-        assert arr.shape == (self.numb_fparam, 3)
-        _fparam_stat = []
-        for ii in range(self.numb_fparam):
-            _fparam_stat.append(
-                StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
-            )
-        self.stats["fparam"] = _fparam_stat
+        self._restore_param_stats("fparam", arr, self.numb_fparam)
         log.info(f"Load fparam stats from {fp}.")
 
     def restore_aparam_from_file(self, stat_file_path: DPPath) -> None:
@@ -228,14 +225,23 @@ class Fitting(torch.nn.Module, BaseFitting):
         """
         fp = stat_file_path / "aparam"
         arr = fp.load_numpy()
-        assert arr.shape == (self.numb_aparam, 3)
-        _aparam_stat = []
-        for ii in range(self.numb_aparam):
-            _aparam_stat.append(
-                StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
-            )
-        self.stats["aparam"] = _aparam_stat
+        self._restore_param_stats("aparam", arr, self.numb_aparam)
         log.info(f"Load aparam stats from {fp}.")
+
+    def _restore_param_stats(
+        self,
+        name: str,
+        arr: np.ndarray,
+        dimension: int,
+    ) -> None:
+        if arr.shape != (dimension, 3):
+            raise ValueError(
+                f"Invalid {name} statistics shape {arr.shape}; "
+                f"expected ({dimension}, 3)."
+            )
+        self.stats[name] = [
+            StatItem(number=row[0], sum=row[1], squared_sum=row[2]) for row in arr
+        ]
 
     def compute_input_stats(
         self,
@@ -269,12 +275,9 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat fparam
         if self.numb_fparam > 0:
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "fparam").is_file()
-            ):
-                self.restore_fparam_from_file(stat_file_path)
+            cached = load_required_items(stat_file_path, ["fparam"])
+            if cached is not None:
+                self._restore_param_stats("fparam", cached["fparam"], self.numb_fparam)
             else:
                 sampled = merged() if callable(merged) else merged
                 self.stats["fparam"] = []
@@ -307,12 +310,9 @@ class Fitting(torch.nn.Module, BaseFitting):
 
         # stat aparam
         if self.numb_aparam > 0:
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "aparam").is_file()
-            ):
-                self.restore_aparam_from_file(stat_file_path)
+            cached = load_required_items(stat_file_path, ["aparam"])
+            if cached is not None:
+                self._restore_param_stats("aparam", cached["aparam"], self.numb_aparam)
             else:
                 sampled = merged() if callable(merged) else merged
                 self.stats["aparam"] = []

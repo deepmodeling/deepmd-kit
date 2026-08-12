@@ -377,6 +377,10 @@ def deserialize_to_savedmodel(
             fparam: tf.Tensor,
             aparam: tf.Tensor,
         ) -> dict[str, tf.Tensor]:
+            # exclusion is a nlist-BUILD transform (decision #18/A4); the
+            # traced lower consumes a pre-excluded nlist. Guard atomic_model
+            # too: test doubles (DummyModel) lack it.
+            am = getattr(model, "atomic_model", None)
             return unwrap_value(
                 model_call_from_call_lower(
                     call_lower=call_lower,
@@ -390,12 +394,7 @@ def deserialize_to_savedmodel(
                     fparam=fparam,
                     aparam=aparam,
                     do_atomic_virial=do_atomic_virial,
-                    # exclusion is a nlist-BUILD transform (decision #18/A4);
-                    # the traced lower consumes a pre-excluded nlist. Guard
-                    # atomic_model too: test doubles (DummyModel) lack it.
-                    pair_excl=getattr(
-                        getattr(model, "atomic_model", None), "pair_excl", None
-                    ),
+                    pair_excl=am.pair_excl if am is not None else None,
                 )
             )
 
@@ -517,7 +516,8 @@ def deserialize_to_savedmodel(
         # traced call_lower_* consumes it (decision #18/A4). The compiled ``call``
         # already pre-excludes its freshly built nlist. Guard atomic_model: test
         # doubles may lack it.
-        pet = getattr(getattr(model, "atomic_model", None), "pair_exclude_types", [])
+        am = getattr(model, "atomic_model", None)
+        pet = am.get_pair_exclude_types() if am is not None else []
         flat = [int(t) for pair in (pet or []) for t in pair]
         return tf.constant(flat, dtype=tf.int64)
 
@@ -555,7 +555,12 @@ def deserialize_to_savedmodel(
 
     # property models: persist the output name/dimension/intensiveness so the
     # evaluator can dispatch to DeepProperty and reshape the output.
-    if hasattr(model, "get_var_name"):
+    # ``get_var_name`` is declared on every model with a concrete default
+    # of ``None`` for non-property models (issue #5897), so a bare
+    # ``hasattr`` check is always true; gate on the actual return value
+    # instead, mirroring deepmd/jax/jax2tf/serialization.py.
+    is_property_model = model.get_var_name() is not None
+    if is_property_model:
 
         @tf.function
         def get_var_name() -> tf.Tensor:

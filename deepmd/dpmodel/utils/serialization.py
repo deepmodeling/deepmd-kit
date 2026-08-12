@@ -63,6 +63,22 @@ def traverse_model_dict(
     return model_obj
 
 
+def _copy_model_containers(model_obj: Any) -> Any:
+    """Copy only containers that :func:`traverse_model_dict` mutates.
+
+    Arrays and other variable objects can be large or may not support ``deepcopy``.
+    They remain shared because traversal replaces their entries in parent containers
+    without modifying the variable objects themselves.
+    """
+    if isinstance(model_obj, dict):
+        if model_obj.get("@is_variable", False):
+            return model_obj
+        return {key: _copy_model_containers(value) for key, value in model_obj.items()}
+    if isinstance(model_obj, list):
+        return [_copy_model_containers(value) for value in model_obj]
+    return model_obj
+
+
 class Counter:
     """A callable counter.
 
@@ -91,9 +107,12 @@ def save_dp_model(filename: str, model_dict: dict) -> None:
     filename : str
         The filename to save to.
     model_dict : dict
-        The model dict to save.
+        The model dict to save. The caller retains ownership, and this function does
+        not modify it.
     """
-    model_dict = model_dict.copy()
+    # Give traversal an independent container tree while retaining references to
+    # potentially large or non-copyable variable objects.
+    model_dict = _copy_model_containers(model_dict)
     filename_extension = Path(filename).suffix
     extra_dict = {
         "software": "deepmd-kit",

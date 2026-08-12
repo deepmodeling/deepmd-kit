@@ -1,7 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
+
 import datetime
 import logging
 import math
+from typing import (
+    TYPE_CHECKING,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Mapping,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -33,12 +45,45 @@ def _format_estimated_finish_time(
     return finish_time.strftime("%Y-%m-%d %H:%M")
 
 
+def log_parameter_counts(
+    counts: Mapping[str, tuple[int, int]],
+    *,
+    multi_task: bool,
+) -> None:
+    """Log the parameter count of every task.
+
+    Parameters
+    ----------
+    counts : Mapping[str, tuple[int, int]]
+        The ``(trainable, total)`` parameter count of each task, keyed by task
+        key and ordered as the trainer orders its tasks.
+    multi_task : bool
+        Whether the run trains several task branches. Tasks may share
+        parameters, which per-task counts cannot express, so a multi-task run
+        is reported per task and flagged as approximate.
+    """
+    if not multi_task:
+        trainable, total = next(iter(counts.values()))
+        log.info(
+            f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+        )
+        return
+    log.warning(
+        "In multitask mode, parameters may be shared across tasks. "
+        "The following per-task counts may include duplicates."
+    )
+    for task_key, (trainable, total) in counts.items():
+        log.info(
+            f"Model Params [{task_key}]: {total / 1e6:.3f} M   "
+            f"(Trainable: {trainable / 1e6:.3f} M)"
+        )
+
+
 def format_training_message(
     batch: int,
     wall_time: float,
     eta: int | None = None,
     current_time: datetime.datetime | None = None,
-    step_time: float | None = None,
 ) -> str:
     """Format the summary message for one training interval.
 
@@ -53,9 +98,6 @@ def format_training_message(
     current_time : datetime.datetime | None, optional
         Current local time used to estimate the finish timestamp. This is only
         used when ``eta`` is provided.
-    step_time : float | None, optional
-        Average wall-clock time per training step over this interval, in
-        seconds. Shown only when provided.
 
     Returns
     -------
@@ -63,8 +105,6 @@ def format_training_message(
         The formatted training message.
     """
     msg = f"Batch {batch:7d}: total wall time = {wall_time:.2f} s"
-    if step_time is not None:
-        msg += f", avg = {step_time:.4f} s/step"
     if isinstance(eta, int):
         eta_seconds = int(eta)
         msg += (

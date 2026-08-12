@@ -69,9 +69,7 @@ def merge_env_stat(
         or getattr(link_obj, "stats", None) is None
     ):
         return
-    if getattr(base_obj, "set_stddev_constant", False) and getattr(
-        base_obj, "set_davg_zero", False
-    ):
+    if base_obj.set_stddev_constant and base_obj.set_davg_zero:
         return
 
     # Weighted merge of StatItem objects
@@ -89,31 +87,23 @@ def merge_env_stat(
     # Update base_obj stats for chaining
     base_obj.stats = merged_stats
 
-    # Update buffers in-place: davg/dstd (simple) or mean/stddev (blocks)
-    # mean/stddev are numpy arrays; convert to match the buffer's backend
-    if hasattr(base_obj, "davg"):
-        xp = array_api_compat.array_namespace(base_obj.dstd)
-        device = array_api_compat.device(base_obj.dstd)
-        if not getattr(base_obj, "set_davg_zero", False):
-            base_obj.davg[...] = xp.asarray(
-                mean, dtype=base_obj.davg.dtype, device=device
-            )
-        base_obj.dstd[...] = xp.asarray(
-            stddev, dtype=base_obj.dstd.dtype, device=device
-        )
-    elif hasattr(base_obj, "mean"):
-        xp = array_api_compat.array_namespace(base_obj.stddev)
-        device = array_api_compat.device(base_obj.stddev)
-        if not getattr(base_obj, "set_davg_zero", False):
-            base_obj.mean[...] = xp.asarray(
-                mean, dtype=base_obj.mean.dtype, device=device
-            )
-        base_obj.stddev[...] = xp.asarray(
-            stddev, dtype=base_obj.stddev.dtype, device=device
-        )
+    current_mean, current_stddev = base_obj.get_stat_mean_and_stddev()
+    xp = array_api_compat.array_namespace(current_stddev)
+    device = array_api_compat.device(current_stddev)
+    merged_mean = current_mean
+    if not base_obj.set_davg_zero:
+        merged_mean = xp.asarray(mean, dtype=current_mean.dtype, device=device)
+    merged_stddev = xp.asarray(
+        stddev,
+        dtype=current_stddev.dtype,
+        device=device,
+    )
+    base_obj.set_stat_mean_and_stddev(merged_mean, merged_stddev)
 
 
 class EnvMatStat(BaseEnvMatStat):
+    r"""Environment statistics estimating :math:`\mu=\langle R\rangle` and scale."""
+
     def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
 
@@ -274,11 +264,9 @@ class EnvMatStatSe(EnvMatStat):
             device=array_api_compat.device(data[0]["coord"]),
         )
         for system in data:
-            coord, atype, box = (
-                system["coord"],
-                system["atype"],
-                system["box"],
-            )
+            coord = system["coord"]
+            atype = system["atype"]
+            box = system.get("box")
             nframes, nloc = atype.shape[:2]
             pair_excl = None
             if "pair_exclude_types" in system:
@@ -369,6 +357,15 @@ class EnvMatStatSe(EnvMatStat):
                 if self.last_dim == 4:
                     env_mats[f"a_{type_i}"] = dd[:, 1:]
                 yield self.compute_stat(env_mats)
+
+    def get_stat_keys(self) -> list[str]:
+        """Get the dataset names required for a complete statistics cache."""
+        components = ("r", "a") if self.last_dim == 4 else ("r",)
+        return [
+            f"{component}_{type_i}"
+            for type_i in range(self.descriptor.get_ntypes())
+            for component in components
+        ]
 
     def get_hash(self) -> str:
         """Get the hash of the environment matrix.

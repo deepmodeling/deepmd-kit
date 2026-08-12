@@ -8,6 +8,7 @@ from copy import (
     deepcopy,
 )
 
+import pytest
 import torch
 
 from deepmd.pt_expt.entrypoints.main import (
@@ -134,43 +135,62 @@ class TestDPFreezePtExpt(unittest.TestCase):
         self.assertTrue(os.path.exists(expected))
 
     def test_freeze_output_suffix_by_lower_kind(self) -> None:
-        """main() defaults a suffix-less output to .pt2 for --lower-kind graph
-        and .pte for nlist, while preserving an explicit .pte/.pt2 (iProzd
-        review). freeze() is mocked so the suffix logic is checked without the
-        AOTInductor compile cost.
+        """A suffix-less output defaults to .pt2 for lower_kind='graph' and
+        .pte for nlist, while preserving an explicit .pte/.pt2 (iProzd
+        review). The suffix follows the RESOLVED lower kind inside freeze()
+        (native-spin models force 'graph', so the CLI cannot pick it before
+        the model is built); the mapping is checked on the helper freeze()
+        defers to. End-to-end application through main()/freeze() is covered
+        by test_freeze_default_suffix (nlist) and
+        test_native_spin_default_freeze_routes_to_graph in test_dpa4_export
+        (graph).
+        """
+        from deepmd.pt_expt.entrypoints.main import (
+            _default_output_path,
+        )
+
+        cases = [
+            ("graph", "out_g", ".pt2"),  # graph, no suffix -> .pt2
+            ("nlist", "out_n", ".pte"),  # nlist, no suffix -> .pte
+            ("graph", "out_g_explicit.pte", ".pte"),  # explicit .pte kept
+            ("nlist", "out_n_explicit.pt2", ".pt2"),  # explicit .pt2 kept
+        ]
+        for lower_kind, name, expected_suffix in cases:
+            with self.subTest(lower_kind=lower_kind, name=name):
+                resolved = _default_output_path(
+                    os.path.join(self.tmpdir, name), lower_kind
+                )
+                self.assertTrue(resolved.endswith(expected_suffix))
+
+    def test_freeze_main_passes_lower_kind_through(self) -> None:
+        """main() forwards --lower-kind and the raw output path to freeze()
+        (suffix defaulting is owned by freeze(), after native-spin
+        resolution).
         """
         from unittest import (
             mock,
         )
 
-        cases = [
-            ("graph", "out_g", None, ".pt2"),  # graph, no suffix -> .pt2
-            ("nlist", "out_n", None, ".pte"),  # nlist, no suffix -> .pte
-            ("graph", "out_g_explicit", ".pte", ".pte"),  # explicit .pte kept
-            ("nlist", "out_n_explicit", ".pt2", ".pt2"),  # explicit .pt2 kept
-        ]
-        for lower_kind, stem, explicit, expected_suffix in cases:
-            with self.subTest(lower_kind=lower_kind, explicit=explicit):
-                name = stem + (explicit or "")
-                captured: dict = {}
+        captured: dict = {}
 
-                def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
-                    captured["output"] = output
-                    captured["lower_kind"] = lower_kind
+        def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
+            captured["output"] = output
+            captured["lower_kind"] = lower_kind
 
-                flags = argparse.Namespace(
-                    command="freeze",
-                    checkpoint_folder=self.ckpt_file,
-                    output=os.path.join(self.tmpdir, name),
-                    head=None,
-                    lower_kind=lower_kind,
-                    log_level=2,
-                    log_path=None,
-                )
-                with mock.patch("deepmd.pt_expt.entrypoints.main.freeze", _fake_freeze):
-                    main(flags)
-                self.assertTrue(captured["output"].endswith(expected_suffix))
-                self.assertEqual(captured["lower_kind"], lower_kind)
+        raw_output = os.path.join(self.tmpdir, "out_passthrough")
+        flags = argparse.Namespace(
+            command="freeze",
+            checkpoint_folder=self.ckpt_file,
+            output=raw_output,
+            head=None,
+            lower_kind="graph",
+            log_level=2,
+            log_path=None,
+        )
+        with mock.patch("deepmd.pt_expt.entrypoints.main.freeze", _fake_freeze):
+            main(flags)
+        self.assertEqual(captured["output"], raw_output)
+        self.assertEqual(captured["lower_kind"], "graph")
 
     def test_freeze_graph_rejects_ineligible(self) -> None:
         """``--lower-kind graph`` on a non-graph-eligible model (se_e2_a,
@@ -313,6 +333,61 @@ class TestDPFreezePtExpt(unittest.TestCase):
         dp = DeepPot(pt2_path)
         with self.assertRaises(ValueError):
             dp.eval(coord, box, atype, spin=spin)
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+@pytest.mark.parametrize(
+    "add_native_spin",
+    [
+        pytest.param(False, id="zbl"),  # ZBL composition (Linear over [DPA4, ZBL])
+        pytest.param(True, id="native_spin"),  # native-spin variant of the same
+    ],
+)
+def test_dpa4_variant_default_freeze_graph_with_comm(tmp_path, add_native_spin) -> None:
+    """The default ``dp freeze`` invocation on a DPA4 VARIANT yields a
+    with-comm graph ``.pt2`` -- aligned with standard DPA4 (issue #5906
+    Task 12b).
+
+    No ``--lower-kind`` flag means ``freeze()``'s ``lower_kind="nlist"``
+    default, which the nlist->graph auto-override in
+    ``deepmd/pt_expt/entrypoints/main.py`` must resolve to the graph lower
+    for every graph-capable model -- for the ZBL composition and the
+    native-spin variant exactly as for standard DPA4 (the plain native-spin
+    case is already pinned by ``test_native_spin_default_freeze_routes_to_
+    graph`` in ``model/test_dpa4_export.py``; these two cases pin the
+    variants).  Beyond the routing, the frozen archive must carry the nested
+    with-comm artifact (``has_comm_artifact is True``): a variant that
+    silently dropped it would freeze fine, pass every single-rank test, and
+    only fail (or worse, silently mis-answer) on multi-rank LAMMPS.
+    """
+    import json
+    import zipfile
+
+    from .model.test_zbl_bridging import (
+        ZBL_CONFIG,
+    )
+
+    config = deepcopy(ZBL_CONFIG)
+    if add_native_spin:
+        config["spin"] = {"use_spin": [True, False], "scheme": "native"}
+
+    model = get_model(deepcopy(config))
+    wrapper = ModelWrapper(model, model_params=deepcopy(config))
+    ckpt = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, ckpt)
+
+    output = tmp_path / "frozen_dpa4_variant"  # suffixless: default CLI form
+    freeze(model=str(ckpt), output=str(output))
+
+    pt2 = output.with_suffix(".pt2")
+    assert pt2.exists(), "default suffix must follow the resolved graph kind"
+    with zipfile.ZipFile(pt2) as zf:
+        metadata = json.loads(zf.read("model/extra/metadata.json"))
+    assert metadata["lower_input_kind"] == "graph"
+    assert metadata["has_comm_artifact"] is True
 
 
 if __name__ == "__main__":

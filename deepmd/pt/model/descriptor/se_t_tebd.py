@@ -844,15 +844,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         if not self.set_davg_zero:
@@ -932,12 +924,13 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         assert extended_atype_embd is not None
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
+        atype_for_env = atype.clamp_min(0)
         nb = nframes
         nall = extended_coord.view(nb, -1, 3).shape[1]
         dmatrix, diff, sw = prod_env_mat(
             extended_coord,
             nlist,
-            atype,
+            atype_for_env,
             self.mean,
             self.stddev,
             self.rcut,
@@ -1021,6 +1014,11 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nei_type = torch.gather(extended_atype, dim=1, index=nlist_index)
             # nfnl x nnei
             nei_type = nei_type.reshape(nfnl, nnei)
+            nei_type = torch.where(
+                nei_type >= 0,
+                nei_type,
+                torch.full_like(nei_type, ntypes_with_padding - 1),
+            )
             # nfnl x nnei x nnei
             nei_type_i = nei_type.unsqueeze(2).expand([-1, -1, nnei])
             nei_type_j = nei_type.unsqueeze(1).expand([-1, nnei, -1])

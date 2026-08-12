@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -64,6 +65,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
 )
+from deepmd.utils.pt_checkpoint import (
+    detect_pt_checkpoint_backend,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -76,11 +80,11 @@ if TYPE_CHECKING:
     )
 
 
-# Public output keys emitted by the graph-form AOTI forward
-# (``forward_lower_graph_exportable``) keyed by the output-variable category that
-# ``request_defs`` carries.  The graph path is LOCAL-only (``N == sum(n_node)``
-# nodes, no ghosts), so its outputs are already at local-atom resolution -- no
-# ``communicate_extended_output`` fold-back is needed.
+# Public output keys emitted by graph-lower forwards, keyed by the
+# output-variable category that ``request_defs`` carries. The graph path is
+# local-only (``N == sum(n_node)`` nodes, no ghosts), so its outputs are already
+# at local-atom resolution and require no ``communicate_extended_output``
+# fold-back.
 _GRAPH_CATEGORY_TO_KEY = {
     OutputVariableCategory.OUT: "atom_energy",
     OutputVariableCategory.REDU: "energy",
@@ -88,6 +92,34 @@ _GRAPH_CATEGORY_TO_KEY = {
     OutputVariableCategory.DERV_C_REDU: "virial",
     OutputVariableCategory.DERV_C: "atom_virial",
 }
+
+
+def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
+    """Map a native-spin request def to its graph-spin public model key.
+
+    Twin of ``_GRAPH_CATEGORY_TO_KEY`` for
+    ``NativeSpinEnergyModel.forward_lower_graph_exportable``'s output dict
+    (``atom_energy``, ``energy``, ``force``, ``force_mag``, ``virial``,
+    ``mask_mag``, ``atom_virial``).  Category alone
+    is NOT enough here: ``do_derivative`` (``deepmd.dpmodel.output_def``)
+    gives the magnetic derivative def (``energy_derv_r_mag``) the SAME
+    category as the physical one (``energy_derv_r``) -- only ``.magnetic``
+    tells them apart -- so this checks ``magnetic`` before falling back to
+    the category table.  ``mask_mag`` is exported directly by the graph
+    forward (the model owns the derivation -- see
+    ``NativeSpinEnergyModel._spin_active_mask``), so it maps to its own key
+    and is read like any other output.  Returns ``None`` only for ``mask``
+    (the real-atom mask, a virtual-atom-scheme concept the native-spin
+    graph ABI does not produce); that falls back to the NaN-filled
+    placeholder, same as any other unavailable output.
+    """
+    if odef.name == "mask":
+        return None
+    if odef.name == "mask_mag":
+        return "mask_mag"
+    if odef.magnetic and odef.category == OutputVariableCategory.DERV_R:
+        return "force_mag"
+    return _GRAPH_CATEGORY_TO_KEY.get(odef.category)
 
 
 def _reshape_charge_spin(
@@ -103,16 +135,27 @@ def _reshape_charge_spin(
         ) from err
 
 
-def _is_pt_backend_dpa4_params(model_params: dict[str, Any]) -> bool:
-    """Return whether a training checkpoint should be loaded by the pt backend."""
-    model_type = str(model_params.get("type", "")).lower()
-    if model_type in {"sezm", "dpa4", "sezm_spin"}:
-        return True
-    descriptor = model_params.get("descriptor")
-    if isinstance(descriptor, dict):
-        descriptor_type = str(descriptor.get("type", "")).lower()
-        return descriptor_type in {"sezm", "dpa4"}
-    return False
+def _warn_legacy_edge_vec(metadata: dict) -> None:
+    """Warn once per model load when an edge_vec-schema artifact is opened.
+
+    The ``edge_vec`` lower schema is produced only by the pt backend's
+    SeZM/DPA4 freeze and is superseded by the NeighborGraph lower. Support
+    will be removed in a future release; energy SeZM checkpoints can be
+    refrozen through the pt_expt backend (graph schema) instead.
+
+    Parameters
+    ----------
+    metadata
+        The ``metadata.json`` dict of the opened ``.pt2`` archive.
+    """
+    if metadata.get("lower_input_kind") == "edge_vec":
+        warnings.warn(
+            "This .pt2 uses the deprecated edge_vec lower schema (pt-backend "
+            "SeZM/DPA4 freeze). Support will be removed in a future release; "
+            "refreeze the checkpoint with the pt_expt backend (graph schema).",
+            DeprecationWarning,
+            stacklevel=3,
+        )
 
 
 class DeepEval(DeepEvalBackend):
@@ -133,20 +176,30 @@ class DeepEval(DeepEvalBackend):
         If True, automatic batch size will be used. If int, it will be used
         as the initial batch size.
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
-        The ASE neighbor list class to produce the neighbor list. If None, the
-        neighbor list will be built natively in the model.
+        The ASE neighbor list class for nlist-routed artifacts. If None, the
+        neighbor list will be built natively. Explicit neighbor lists are
+        rejected for graph-routed artifacts because switching those models to
+        the nlist lower can change their predictions. Use
+        ``neighbor_graph_method="ase"`` for ASE-based graph construction.
     nlist_backend : str, default: "auto"
-        Neighbor-list builder for the NLIST/extended lower path (``.pte`` and
-        nlist-form ``.pt2``): ``"auto"`` / ``"vesin"`` / ``"native"``. Not
-        used by graph-form ``.pt2`` artifacts.
-    neighbor_graph_method : str, default: "dense"
-        Carry-all graph builder for GRAPH-FORM ``.pt2`` artifacts ONLY
-        (``metadata["lower_input_kind"] == "graph"``): ``"dense"`` / ``"ase"``
-        (backend-agnostic) or ``"vesin"`` / ``"nv"`` (on-device O(N)). A
-        non-default value on any other artifact raises at construction — the
-        knob would silently do nothing there; use ``nlist_backend`` for the
+        Neighbor-list builder for the NLIST/extended lower path (``.pte``,
+        nlist-form ``.pt2``, and dense-routed ``.pt`` checkpoints):
+        ``"auto"`` / ``"vesin"`` / ``"native"``. Explicit non-default values
+        are rejected for graph-routed artifacts.
+    neighbor_graph_method : str, default: "auto"
+        Carry-all graph builder for graph-form ``.pt2`` artifacts and
+        graph-routed ``.pt`` checkpoints
+        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects via
+        :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
+        at each eval call (CUDA: ``nv`` if importable; else ``vesin`` only when
+        ``nf == 1`` and importable; else ``dense``). Explicit
+        ``"dense"`` / ``"ase"`` / ``"vesin"`` / ``"nv"`` choices are preserved.
+        A non-default value on any other artifact raises at construction because
+        the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
-        choice is performance-only. Consolidating the two knobs into a single
+        choice is performance-only. Training keeps a separate auto policy
+        (:func:`~deepmd.pt_expt.utils.graph_builder.resolve_neighbor_graph_method`)
+        that never selects ``vesin``. Consolidating the two knobs into a single
         backend-selection API is deferred to the dense-nlist deprecation.
     **kwargs : dict
         Keyword arguments.
@@ -160,14 +213,14 @@ class DeepEval(DeepEvalBackend):
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         nlist_backend: str = "auto",
-        neighbor_graph_method: str = "dense",
+        neighbor_graph_method: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
-        # World-2 graph-form ``.pt2`` (lower_input_kind == "graph") builder select:
-        # "dense"/"ase" (backend-agnostic) or "vesin"/"nv" (on-device O(N)).
+        # Graph-lower builder selection is resolved once after model metadata
+        # identifies the lower ABI.
         self._neighbor_graph_method = neighbor_graph_method
         self._is_pt2 = model_file.endswith(".pt2")
 
@@ -184,20 +237,25 @@ class DeepEval(DeepEvalBackend):
                 "`.pt` (training checkpoint)."
             )
 
-        # neighbor_graph_method is consumed ONLY by graph-form .pt2 eval
-        # (_eval_model_graph); fail fast instead of silently ignoring it on
-        # nlist-form artifacts (there, the builder knob is nlist_backend).
-        if neighbor_graph_method != "dense" and getattr(self, "metadata", {}).get(
+        # Single choke point: self.metadata is set by all three loaders
+        # above (_load_pt2 / _load_pte / _load_pt), so this is the one
+        # place that sees every model load regardless of archive kind.
+        _warn_legacy_edge_vec(self.metadata)
+
+        # ``neighbor_graph_method`` is consumed only by graph-lower evaluation.
+        # Fail fast instead of silently ignoring it on nlist-form artifacts,
+        # where the corresponding builder knob is ``nlist_backend``.
+        if neighbor_graph_method != "auto" and getattr(self, "metadata", {}).get(
             "lower_input_kind"
         ) not in ("graph", "dpa1_canonical"):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
-                "graph-form .pt2 artifacts (lower_input_kind == 'graph'); this "
+                "graph-routed artifacts (lower_input_kind == 'graph'); this "
                 f"model is not graph-form. Use nlist_backend to select the "
                 "neighbor-list builder for the nlist path."
             )
 
-        self._setup_nlist_backend(nlist_backend)
+        self._setup_neighbor_backend(nlist_backend)
 
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
@@ -211,21 +269,74 @@ class DeepEval(DeepEvalBackend):
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
-    def _setup_nlist_backend(self, nlist_backend: str) -> None:
-        """Resolve the neighbor-list construction strategy from a user choice.
+    @staticmethod
+    def _resolve_neighbor_graph_method(method: str, nf: int | None = None) -> str:
+        """Validate and optionally resolve the graph builder for the active device.
+
+        ``"auto"`` is left unresolved when ``nf`` is omitted so construction-
+        time setup can defer to :meth:`_build_eval_graph`, where the frame
+        count is known and vesin can be gated on ``nf == 1``.
+        """
+        if method not in ("auto", "dense", "ase", "vesin", "nv"):
+            raise ValueError(
+                f"Unknown neighbor_graph_method {method!r}; "
+                "expected 'auto', 'dense', 'ase', 'vesin', or 'nv'."
+            )
+        if method != "auto":
+            return method
+        if nf is None:
+            return "auto"
+
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+        from deepmd.pt_expt.utils.graph_builder import (
+            resolve_auto_graph_builder,
+        )
+
+        return resolve_auto_graph_builder(DEVICE, nf)
+
+    def _setup_neighbor_backend(self, nlist_backend: str) -> None:
+        """Resolve the graph or neighbor-list construction strategy.
 
         ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
         O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
         model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
-        silently falls back to the native builder otherwise.  Results are
-        unchanged either way -- only the neighbor-search cost differs.
+        silently falls back to the native builder otherwise. Graph-routed
+        artifacts use ``neighbor_graph_method`` instead and reject nlist-specific
+        controls rather than silently changing or ignoring the requested lower.
+        Results are unchanged either way; only the neighbor-search cost differs.
         """
         if nlist_backend not in ("auto", "vesin", "native"):
             raise ValueError(
                 f"Unknown nlist_backend '{nlist_backend}'; "
                 "expected 'auto', 'vesin', or 'native'."
             )
+        if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
+            if self.neighbor_list is not None:
+                raise ValueError(
+                    "neighbor_list cannot be used with this graph-routed model: "
+                    "switching to the nlist lower would change its inference "
+                    "semantics. Use neighbor_graph_method='ase' for ASE-based "
+                    "graph construction, or load an explicitly exported "
+                    "nlist-form artifact."
+                )
+            if nlist_backend != "auto":
+                raise ValueError(
+                    f"nlist_backend={nlist_backend!r} only applies to "
+                    "nlist-routed artifacts and cannot be used with this "
+                    "graph-routed model. Use neighbor_graph_method to select "
+                    "the graph builder."
+                )
+            self._neighbor_graph_method = self._resolve_neighbor_graph_method(
+                self._neighbor_graph_method
+            )
+            self._use_vesin = False
+            self._nlist_builder = None
+            return
         is_spin = bool(getattr(self, "_is_spin", False))
+        # Graph-routed artifacts returned above. Any remaining spin model uses
+        # the virtual-atom nlist scheme, which vesin does not support.
         ase_provided = self.neighbor_list is not None
         # reason vesin cannot be used (None means it can)
         unsupported = "spin models" if is_spin else None
@@ -268,7 +379,8 @@ class DeepEval(DeepEvalBackend):
         model_dict = _json_to_numpy(model_dict)
         model_data = model_dict["model"]
 
-        if model_data.get("type") == "spin_ener":
+        model_type = model_data.get("type")
+        if model_type == "spin_ener":
             from deepmd.pt_expt.model.spin_model import (
                 SpinModel,
             )
@@ -276,8 +388,12 @@ class DeepEval(DeepEvalBackend):
             self._dpmodel = SpinModel.deserialize(model_data)
             self._is_spin = True
         else:
+            # Registry-dispatched: wrapper classes registered in the pt_expt
+            # BaseModel registry (e.g. the native-spin models, type
+            # "native_spin") come back as their pt_expt torch classes and
+            # declare spin via the base-model capability method.
             self._dpmodel = BaseModel.deserialize(model_data)
-            self._is_spin = False
+            self._is_spin = self._dpmodel.has_spin()
 
         self._rcut = self._dpmodel.get_rcut()
         self._type_map = self._dpmodel.get_type_map()
@@ -435,9 +551,25 @@ class DeepEval(DeepEvalBackend):
 
         # Match the training resume path (training.py:712) — weights_only=True
         # avoids unpickling arbitrary code from untrusted checkpoints.
-        state_dict = torch.load(model_file, map_location=DEVICE, weights_only=True)
+        checkpoint = torch.load(model_file, map_location=DEVICE, weights_only=True)
+        checkpoint_backend = detect_pt_checkpoint_backend(checkpoint)
+        state_dict = checkpoint
         if isinstance(state_dict, dict) and "model" in state_dict:
             state_dict = state_dict["model"]
+        if checkpoint_backend == "pt":
+            raise ValueError(
+                f"Checkpoint '{model_file}' uses the regular `pt` parameter "
+                "dialect. Load it with `dp --pt`, or export it to `.pt2` / "
+                "`.pte` before loading it with `pt_expt`."
+            )
+        if checkpoint_backend is None:
+            raise ValueError(
+                f"Cannot determine the parameter dialect of checkpoint "
+                f"'{model_file}': its state dictionary is ambiguous or does "
+                "not contain backend-specific parameter names. Load it with "
+                "the backend that produced it, or use an unambiguous "
+                "pt_expt training checkpoint."
+            )
         extra = state_dict.get("_extra_state") if isinstance(state_dict, dict) else None
         if not (isinstance(extra, dict) and "model_params" in extra):
             raise ValueError(
@@ -477,22 +609,16 @@ class DeepEval(DeepEvalBackend):
             state_dict = head_state
             model_params = head_params
 
-        if _is_pt_backend_dpa4_params(model_params):
-            raise ValueError(
-                "DPA4/SeZM `.pt` checkpoints belong to the regular `pt` backend. "
-                "Use the `pt` backend for eager checkpoint inference, or export "
-                "the checkpoint to `.pt2` / `.pte` before loading it with `pt_expt`."
-            )
-
         model = get_model(deepcopy(model_params)).to(DEVICE)
 
         # Strip the `_CompiledModel` wrapper that pt_expt training applies
-        # after compilation (training.py:996).  The saved state_dict has
-        # `model.Default.original_model.X` keys (the real weights) plus
+        # after compilation.  The saved state_dict has
+        # `model.Default.original_model.X` keys (the real weights).  Some
+        # checkpoints additionally carry
         # `model.Default.compiled_forward_lower._orig_mod._param_constant*`
-        # / `_tensor_constant*` keys (graph constants baked into the
-        # compiled forward — duplicates of the real weights, useless for
-        # eager inference).  Drop the latter and unwrap the former.
+        # / `_tensor_constant*` keys (graph constants baked into a compiled
+        # forward — duplicates of the real weights, useless for eager
+        # inference).  Drop the latter and unwrap the former.
         cleaned: dict[str, Any] = {}
         compiled_marker = ".compiled_forward_lower."
         # Per-task buffer copies registered on _CompiledModel (bias_atom_e,
@@ -519,6 +645,11 @@ class DeepEval(DeepEvalBackend):
         wrapper.load_state_dict(state_dict)
         model = wrapper.model["Default"].eval()
 
+        from deepmd.pt_expt.model.graph_lower import (
+            model_uses_graph_lower,
+        )
+
+        use_graph_lower = model_uses_graph_lower(model)
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -551,95 +682,188 @@ class DeepEval(DeepEvalBackend):
         # `_collect_metadata` writes into metadata.json.
         self.metadata = {
             "type_map": model.get_type_map(),
-            "ntypes": model.get_descriptor().get_ntypes(),
+            # via the model API, not the descriptor: compositions
+            # (LinearEnergyAtomicModel) have no single descriptor to reach for
+            "ntypes": len(model.get_type_map()),
             "rcut": model.get_rcut(),
             "sel": model.get_sel(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
-            "dim_chg_spin": model.get_dim_chg_spin()
-            if hasattr(model, "get_dim_chg_spin")
-            else 0,
+            "dim_chg_spin": model.get_dim_chg_spin(),
             "mixed_types": model.mixed_types(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
-            "has_chg_spin_ebd": (
-                model.has_chg_spin_ebd()
-                if hasattr(model, "has_chg_spin_ebd")
-                else False
-            ),
-            "has_default_chg_spin": (
-                model.has_default_chg_spin()
-                if hasattr(model, "has_default_chg_spin")
-                else False
-            ),
-            "default_chg_spin": (
-                model.get_default_chg_spin()
-                if hasattr(model, "get_default_chg_spin")
-                else None
-            ),
+            "has_chg_spin_ebd": model.has_chg_spin_ebd(),
+            "has_default_chg_spin": model.get_default_chg_spin() is not None,
+            "default_chg_spin": model.get_default_chg_spin(),
             "is_spin": self._is_spin,
-            "lower_input_kind": "nlist",
+            "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
+        if use_graph_lower:
+            from deepmd.pt_expt.model.graph_lower import (
+                graph_edge_dtype,
+            )
+
+            self.metadata["graph_edge_dtype"] = graph_edge_dtype(model, "graph")
         if self._is_spin:
             self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
             self.metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
 
-        # Eager runner with the same signature as the .pt2/.pte exported module.
-        # Use forward_common_lower (not forward_lower) to match the export-time
-        # output keys ("energy", "energy_redu", "energy_derv_r", ...) that
-        # communicate_extended_output downstream consumes.
-        # Non-spin: (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
-        # Spin:     (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
-        if self._is_spin:
+        # Eager runners use the same ABI as the corresponding exported lower.
+        # Graph-eligible checkpoints preserve the source model's default
+        # graph-forward semantics; all other checkpoints use the dense lower.
+        # The dense runner emits internal keys consumed by
+        # ``communicate_extended_output``, while the graph runner emits local
+        # public keys consumed directly by ``_eval_model_graph``.
+        #
+        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
+        # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
+        # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        if use_graph_lower:
+            if self._is_spin:
 
-            def _eager_runner_spin(
-                ext_coord: torch.Tensor,
-                ext_atype: torch.Tensor,
-                ext_spin: torch.Tensor,
-                nlist: torch.Tensor,
-                mapping: torch.Tensor | None,
-                fparam: torch.Tensor | None,
-                aparam: torch.Tensor | None,
-                charge_spin: torch.Tensor | None = None,
-            ) -> dict[str, torch.Tensor]:
-                ext_coord = ext_coord.detach().requires_grad_(True)
-                return model.forward_common_lower(
-                    ext_coord,
-                    ext_atype,
-                    ext_spin,
-                    nlist,
-                    mapping,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                    do_atomic_virial=True,
+                def _eager_runner_graph_spin(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    spin: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    model_ret = model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=True,
+                        do_atomic_virial=True,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        spin=spin,
+                    )
+                    return model._translate_eager_call(
+                        model_ret,
+                        atype,
+                        do_atomic_virial=True,
+                    )
+
+                self.exported_module = _eager_runner_graph_spin
+            else:
+                from deepmd.pt_expt.model.ener_model import (
+                    _translate_energy_keys,
                 )
 
-            self.exported_module = _eager_runner_spin
+                do_grad_r = model.do_grad_r("energy")
+                do_grad_c = model.do_grad_c("energy")
+
+                def _eager_runner_graph(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    model_ret = model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=True,
+                        do_atomic_virial=True,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                    )
+                    return _translate_energy_keys(
+                        model_ret,
+                        do_grad_r=do_grad_r,
+                        do_grad_c=do_grad_c,
+                        do_atomic_virial=True,
+                        local=True,
+                    )
+
+                self.exported_module = _eager_runner_graph
         else:
+            if self._is_spin:
 
-            def _eager_runner(
-                ext_coord: torch.Tensor,
-                ext_atype: torch.Tensor,
-                nlist: torch.Tensor,
-                mapping: torch.Tensor | None,
-                fparam: torch.Tensor | None,
-                aparam: torch.Tensor | None,
-                charge_spin: torch.Tensor | None = None,
-            ) -> dict[str, torch.Tensor]:
-                ext_coord = ext_coord.detach().requires_grad_(True)
-                return model.forward_common_lower(
-                    ext_coord,
-                    ext_atype,
-                    nlist,
-                    mapping,
-                    fparam=fparam,
-                    aparam=aparam,
-                    charge_spin=charge_spin,
-                    do_atomic_virial=True,
-                )
+                def _eager_runner_spin(
+                    ext_coord: torch.Tensor,
+                    ext_atype: torch.Tensor,
+                    ext_spin: torch.Tensor,
+                    nlist: torch.Tensor,
+                    mapping: torch.Tensor | None,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    ext_coord = ext_coord.detach().requires_grad_(True)
+                    return model.forward_common_lower(
+                        ext_coord,
+                        ext_atype,
+                        ext_spin,
+                        nlist,
+                        mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        do_atomic_virial=True,
+                    )
 
-            self.exported_module = _eager_runner
+                self.exported_module = _eager_runner_spin
+            else:
+
+                def _eager_runner(
+                    ext_coord: torch.Tensor,
+                    ext_atype: torch.Tensor,
+                    nlist: torch.Tensor,
+                    mapping: torch.Tensor | None,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None = None,
+                ) -> dict[str, torch.Tensor]:
+                    ext_coord = ext_coord.detach().requires_grad_(True)
+                    return model.forward_common_lower(
+                        ext_coord,
+                        ext_atype,
+                        nlist,
+                        mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        do_atomic_virial=True,
+                    )
+
+                self.exported_module = _eager_runner
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -669,14 +893,19 @@ class DeepEval(DeepEvalBackend):
 
     def has_chg_spin_ebd(self) -> bool:
         """Check whether the model uses a dedicated charge_spin input."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_chg_spin_ebd"):
+        if self._dpmodel is not None:
             return bool(self._dpmodel.has_chg_spin_ebd())
         return bool(self.metadata.get("has_chg_spin_ebd", self.get_dim_chg_spin() > 0))
 
     def has_default_chg_spin(self) -> bool:
-        """Check whether the model has a default charge_spin fallback."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_default_chg_spin"):
-            return bool(self._dpmodel.has_default_chg_spin())
+        """Check whether the model has a default charge_spin fallback.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin`` on
+        the live-model interfaces; this DeepEval wrapper method is kept for
+        API stability and computes the predicate directly.
+        """
+        if self._dpmodel is not None:
+            return self._dpmodel.get_default_chg_spin() is not None
         return bool(
             self.metadata.get(
                 "has_default_chg_spin",
@@ -686,7 +915,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_chg_spin(self) -> int:
         """Get the width of charge/spin condition inputs."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_dim_chg_spin"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
@@ -727,6 +956,7 @@ class DeepEval(DeepEvalBackend):
         """The evaluator of the model type."""
         if self._dpmodel is not None:
             model_output_type = self._dpmodel.model_output_type()
+            var_name = self._dpmodel.get_var_name()
         else:
             # Metadata-only mode: derive the output-type set from the
             # fitting_output_defs names.  `model_output_type()` on a
@@ -735,6 +965,7 @@ class DeepEval(DeepEvalBackend):
             model_output_type = [
                 d.name for d in self._model_output_def.def_outp.get_data().values()
             ]
+            var_name = None
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -745,11 +976,7 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif (
-            self._dpmodel is not None
-            and hasattr(self._dpmodel, "get_var_name")
-            and self._dpmodel.get_var_name() in model_output_type
-        ):
+        elif var_name is not None and var_name in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
@@ -774,7 +1001,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+        if self._dpmodel is not None and self._dpmodel.get_var_name() is not None:
             return self._dpmodel.get_var_name()
         raise NotImplementedError(
             "get_var_name is only available for property models with the "
@@ -783,7 +1010,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_task_dim(self) -> int:
         """Get the output dimension of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_task_dim()
         raise NotImplementedError(
             "get_task_dim is only available for property models with the "
@@ -792,7 +1019,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_intensive(self) -> bool:
         """Whether the property is intensive (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_intensive()
         raise NotImplementedError(
             "get_intensive is only available for property models with the "
@@ -1584,6 +1811,22 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
+        if self.metadata.get("lower_input_kind") == "graph":
+            # Native-spin (NeighborGraph route): no virtual atoms and no
+            # extended/nlist ABI at all -- dispatch to the graph-native fast
+            # path (mirrors _eval_model's dispatch to _eval_model_graph for
+            # the non-spin case). charge_spin rides the conditional slot-13
+            # tail (see NativeSpinEnergyModel.forward_lower_graph_exportable).
+            return self._eval_model_graph_spin(
+                coords,
+                cells,
+                atom_types,
+                spins,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin=charge_spin,
+            )
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
             natoms = len(atom_types)
@@ -1751,6 +1994,136 @@ class DeepEval(DeepEvalBackend):
                 )
         return tuple(results)
 
+    def _eval_model_graph_spin(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        spins: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, ...]:
+        """Evaluate a graph-form native-spin ``.pt2`` (``lower_input_kind ==
+        "graph"`` and ``is_spin``).
+
+        Mirrors :meth:`_eval_model_graph`'s carry-all
+        :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
+        construction (SAME builder, SAME positional ABI up through
+        ``source_row_ptr``), then inserts the owned-atom ``spin`` tensor
+        ``(N, 3)`` at positional index 10 of
+        ``NativeSpinEnergyModel.forward_lower_graph_exportable`` -- the node
+        axis IS the owned-local-atom axis for single-rank eval (no ghost
+        nodes), so ``spin`` needs no extension/mapping, unlike the dense
+        spin path's ``ext_spin_t``. ``charge_spin`` rides the conditional
+        slot-13 tail (combined native-spin + charge-spin FiLM models; the
+        slot is dropped from the exported signature otherwise). The forward
+        returns LOCAL public keys directly (``atom_energy``,
+        ``energy``, ``force``, ``force_mag``, ``virial``, ``atom_virial``),
+        so results are reshaped without ``communicate_extended_output``,
+        same as the non-spin graph path.
+        """
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        box_input = cells.reshape(nframes, 9) if cells is not None else None
+        graph = self._build_eval_graph(coord_input, atom_types, box_input, DEVICE)
+
+        atype_t = torch.tensor(
+            np.asarray(atom_types).reshape(-1), dtype=torch.int64, device=DEVICE
+        )
+        n_node_t = torch.as_tensor(graph.n_node, dtype=torch.int64, device=DEVICE)
+        edge_index_t = torch.as_tensor(
+            graph.edge_index, dtype=torch.int64, device=DEVICE
+        )
+        edge_dtype = (
+            torch.float32
+            if self.metadata.get("graph_edge_dtype") == "float32"
+            else torch.float64
+        )
+        edge_vec_t = torch.as_tensor(
+            graph.edge_vec,
+            dtype=edge_dtype,
+            device=DEVICE,
+        )
+        edge_mask_t = torch.as_tensor(graph.edge_mask, dtype=torch.bool, device=DEVICE)
+        destination_order_t = torch.as_tensor(
+            graph.destination_order,
+            device=DEVICE,
+        )
+        destination_row_ptr_t = torch.as_tensor(
+            graph.destination_row_ptr,
+            dtype=torch.int64,
+            device=DEVICE,
+        )
+        source_order_t = torch.as_tensor(
+            graph.source_order,
+            device=DEVICE,
+        )
+        source_row_ptr_t = torch.as_tensor(
+            graph.source_row_ptr,
+            dtype=torch.int64,
+            device=DEVICE,
+        )
+
+        spin_t = torch.tensor(
+            np.asarray(spins).reshape(nframes * natoms, 3),
+            dtype=torch.float64,
+            device=DEVICE,
+        )
+
+        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+            fparam, aparam, nframes, natoms, DEVICE
+        )
+        if aparam_t is not None:
+            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) --
+            # the same axis as ``atype``/``spin`` (mirrors _eval_model_graph).
+            aparam_t = aparam_t.reshape(nframes * natoms, -1)
+
+        model_inputs = (
+            atype_t,
+            n_node_t,
+            n_node_t,
+            edge_index_t,
+            edge_vec_t,
+            edge_mask_t,
+            destination_order_t,
+            destination_row_ptr_t,
+            source_order_t,
+            source_row_ptr_t,
+            spin_t,
+            fparam_t,
+            aparam_t,
+            self._make_charge_spin_input(nframes, charge_spin),
+        )
+        if self._is_pt2:
+            model_ret = self._pt2_runner(*model_inputs)
+        else:
+            model_ret = self.exported_module(*model_inputs)
+
+        results = []
+        for odef in request_defs:
+            shape = self._get_output_shape(odef, nframes, natoms)
+            gkey = _graph_spin_output_key(odef)
+            val = model_ret.get(gkey) if gkey is not None else None
+            if val is not None:
+                results.append(val.detach().cpu().numpy().reshape(shape))
+            else:
+                results.append(
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                )
+        return tuple(results)
+
     def _eval_model_graph(
         self,
         coords: np.ndarray,
@@ -1761,18 +2134,18 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        """Evaluate a graph-form ``.pt2`` (``lower_input_kind == "graph"``).
+        """Evaluate a graph-lower model (``lower_input_kind == "graph"``).
 
         Builds a carry-all :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
         from the eval system at its exact (tight) edge count and feeds the
         positional schema
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
         destination_order, destination_row_ptr, source_order, source_row_ptr,
-        fparam, aparam, charge_spin)`` to the exported forward. The AOTI
-        artifact's edge axis is dynamic, so no ``edge_capacity`` padding is needed. The
-        ``graph_edge_dtype`` metadata selects float32 geometry for compressed
-        DPA1 and float64 for generic graph descriptors. The forward returns the
-        LOCAL public keys directly, so results are reshaped without
+        fparam, aparam, charge_spin)`` to the graph forward. Exported AOTI
+        artifacts use a dynamic edge axis, so no ``edge_capacity`` padding is
+        needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
+        compressed DPA1 and float64 for generic graph descriptors. The forward
+        returns local public keys directly, so results are reshaped without
         ``communicate_extended_output``.
         """
         from deepmd.pt_expt.utils.env import (
@@ -1832,6 +2205,22 @@ class DeepEval(DeepEvalBackend):
         )
 
         if self.metadata.get("lower_input_kind") == "dpa1_canonical":
+            # The canonical ABI has NO fparam/aparam/charge_spin slots; the
+            # export gate (fitting_eligible) rejects such models today, so
+            # this is unreachable -- assert it loudly so a future loosening
+            # of the eligibility fails here instead of silently dropping
+            # conditioning inputs at inference.
+            if (
+                self.get_dim_fparam() > 0
+                or self.get_dim_aparam() > 0
+                or int(self.metadata.get("dim_chg_spin", 0) or 0) > 0
+            ):
+                raise NotImplementedError(
+                    "dpa1_canonical artifacts carry no fparam/aparam/"
+                    "charge_spin inputs; a model requiring them must not be "
+                    "frozen with lower_kind='dpa1_canonical' (the export "
+                    "eligibility gate should have rejected it)."
+                )
             from deepmd.dpmodel.utils.neighbor_graph import (
                 NeighborGraph,
             )
@@ -1866,6 +2255,11 @@ class DeepEval(DeepEvalBackend):
             fparam_t, aparam_t = self._prepare_optional_lower_inputs(
                 fparam, aparam, nframes, natoms, DEVICE
             )
+            if aparam_t is not None:
+                # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
+                # -- the same axis as ``atype`` (the shared helper above
+                # returns the dense rectangular (nf, natoms, nda) layout).
+                aparam_t = aparam_t.reshape(nframes * natoms, -1)
             charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
             model_inputs = (
                 atype_t,
@@ -1907,16 +2301,23 @@ class DeepEval(DeepEvalBackend):
         box_input: np.ndarray | None,
         device: "torch.device",
     ) -> "NeighborGraph":
-        """Build the carry-all NeighborGraph for graph-form ``.pt2`` inference.
+        """Build the carry-all NeighborGraph for graph-lower inference.
 
-        Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
-        backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
-        All backends emit the SAME neighbor set (carry-all, sel-free), so the
-        selection is a pure performance choice and results are unchanged. The
-        result is canonicalized to the destination-major graph-form ``.pt2``
-        ABI after construction.
+        Dispatches on ``self._neighbor_graph_method``: ``auto`` is resolved
+        call-time via
+        :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
+        using the batch frame count (vesin only when ``nf == 1``);
+        ``dense``/``ase`` run backend-agnostic (numpy); ``vesin``/``nv`` run
+        on-device (torch, O(N)). All backends emit the SAME neighbor set
+        (carry-all, sel-free), so the selection is a pure performance choice
+        and results are unchanged. The result is canonicalized to the
+        destination-major graph-form ``.pt2`` ABI after construction.
         """
         method = self._neighbor_graph_method
+        if method == "auto":
+            coord_arr = np.asarray(coord_input)
+            nf = int(coord_arr.shape[0]) if coord_arr.ndim >= 2 else 1
+            method = self._resolve_neighbor_graph_method("auto", nf=nf)
         # Model-level ``pair_exclude_types`` is a graph-BUILD transform
         # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
@@ -1985,7 +2386,7 @@ class DeepEval(DeepEvalBackend):
             )
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
-            "use 'dense', 'ase', 'vesin', or 'nv'"
+            "use 'auto', 'dense', 'ase', 'vesin', or 'nv'"
         )
 
     def _model_pair_excl(self) -> "PairExcludeMask | None":
@@ -2012,7 +2413,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         if self._dpmodel is not None:
-            pe = getattr(self._dpmodel.atomic_model, "pair_excl", None)
+            pe = self._dpmodel.atomic_model.pair_excl
             pet = pe.get_exclude_types() if pe is not None else []
         else:
             pet = self.metadata.get("pair_exclude_types", [])
@@ -2123,9 +2524,14 @@ class DeepEval(DeepEvalBackend):
         self._require_dpmodel("eval_typeebd")
 
         from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
+        from deepmd.pt_expt.model.spin_model import (
+            SpinModel,
+        )
 
         model = self._dpmodel
-        if self._is_spin_model():
+        if isinstance(model, SpinModel):
+            # Virtual-atom wrapper: type-embed nets live on the backbone.
+            # Native-spin models ARE the model (is-a); no unwrap.
             model = model.backbone_model
         out = []
         for mm in model.modules():
@@ -2201,9 +2607,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
         return descriptor.detach().cpu().numpy()
 
@@ -2272,9 +2676,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
             atype = ext_atype_t[:, :natoms]
             fitting_net = dp_am.fitting_net

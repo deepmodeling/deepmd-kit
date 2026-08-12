@@ -1,8 +1,7 @@
 # Parallel training {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 ## TensorFlow Implementation {{ tensorflow_icon }}
 
@@ -93,15 +92,18 @@ optional arguments:
                         master)
 ```
 
-## PyTorch Implementation {{ pytorch_icon }}
+## PyTorch implementations {{ pytorch_icon }}
 
-Currently, parallel training in pytorch version is implemented in the form of PyTorch Distributed Data Parallelism [DDP](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html).
+Parallel training in the PyTorch and PyTorch Exportable backends uses PyTorch
+distributed primitives. Stages 0 and 1 use
+[Distributed Data Parallelism (DDP)](https://pytorch.org/docs/stable/generated/torch.nn.parallel.DistributedDataParallel.html),
+while stages 2 and 3 use FSDP2.
 DeePMD-kit will decide whether to launch the training in parallel (distributed) mode or in serial mode depending on your execution command.
 
 ### Optional ZeRO memory optimization
 
-In PyTorch backend, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer) stages
-to reduce per-GPU memory usage during distributed training.
+In both PyTorch backends, DeePMD-kit supports ZeRO (Zero Redundancy Optimizer)
+stages to reduce per-GPU memory usage during distributed training.
 
 | `zero_stage` | Strategy                      | Communication | Memory saving                                 |
 | ------------ | ----------------------------- | ------------- | --------------------------------------------- |
@@ -138,11 +140,16 @@ Enable it in input config:
 
 Constraints:
 
-- Works only in PyTorch backend.
+- Works in the PyTorch and PyTorch Exportable backends.
 - Requires distributed launch with `torchrun`.
 - Currently single-task only.
 - Not supported with `LKF` optimizer.
-- `change_bias_after_training` must be `false`.
+- `training.change_bias_after_training` must be `false`.
+- Stages 2 and 3 require PyTorch 2.6 or later and are incompatible with
+  `training.enable_ema`, `validating.full_validation`, and
+  `validating.ema_full_validation`.
+- In the PyTorch Exportable backend, stages 2 and 3 are additionally
+  incompatible with `training.enable_compile`.
 
 ### Dataloader and Dataset
 
@@ -282,8 +289,7 @@ Then, run the script on the first node with:
 mpirun run_pp.sh
 ```
 
-:::{note}
-
-If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
-if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.
-:::
+> [!NOTE]
+>
+> If `NUM_WORKERS` is too large, it may cause the program to be terminated by the system;
+> if it is too small, it may slow down data reading. You can try adjusting it to an appropriate size.

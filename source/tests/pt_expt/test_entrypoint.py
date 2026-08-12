@@ -7,7 +7,6 @@ from deepmd.dpmodel.train import (
 from deepmd.pt_expt.entrypoints.main import (
     PTExptTrainEntrypoint,
     _ensure_pt_expt_model_suffix,
-    _ensure_stat_file_path,
     train,
 )
 
@@ -149,85 +148,3 @@ def test_pt_expt_entrypoint_rejects_random_model_key(
             {"model": {"model_dict": {"RANDOM": {}}}},
             TrainEntrypointOptions(input_file="input.json"),
         )
-
-
-def test_pt_expt_checkpoint_cleanup_keeps_newest_steps(tmp_path) -> None:
-    from deepmd.pt_expt.train.training import (
-        Trainer,
-    )
-
-    trainer = Trainer.__new__(Trainer)
-    trainer.save_ckpt = str(tmp_path / "model.ckpt")
-    trainer.max_ckpt_keep = 2
-    for step in (1, 2, 3):
-        (tmp_path / f"model.ckpt-{step}.pt").write_text("")
-    (tmp_path / "model.ckpt.pt").symlink_to("model.ckpt-3.pt")
-
-    trainer._cleanup_old_checkpoints()
-
-    assert not (tmp_path / "model.ckpt-1.pt").exists()
-    assert (tmp_path / "model.ckpt-2.pt").exists()
-    assert (tmp_path / "model.ckpt-3.pt").exists()
-    assert (tmp_path / "model.ckpt.pt").exists()
-
-
-def test_pt_expt_latest_checkpoint_link_uses_relative_target(tmp_path) -> None:
-    from deepmd.pt_expt.train.training import (
-        _replace_latest_checkpoint_link,
-    )
-
-    ckpt_path = tmp_path / "ckpts" / "model-1.pt"
-    ckpt_path.parent.mkdir()
-    ckpt_path.write_text("")
-    latest = tmp_path / "ckpts" / "model.pt"
-
-    _replace_latest_checkpoint_link(latest, ckpt_path)
-
-    assert latest.is_symlink()
-    assert latest.resolve() == ckpt_path
-    assert latest.readlink().as_posix() == "model-1.pt"
-
-
-def test_pt_expt_save_checkpoint_creates_parent_and_latest_link(tmp_path) -> None:
-    from deepmd.pt_expt.train.training import (
-        Trainer,
-    )
-
-    class DummyWrapper:
-        train_infos: dict[str, int]
-        model: dict[str, object]
-
-        def __init__(self) -> None:
-            self.train_infos = {}
-            self.model = {}
-
-        def state_dict(self) -> dict[str, object]:
-            return {}
-
-    class DummyOptimizer:
-        def state_dict(self) -> dict[str, object]:
-            return {}
-
-    trainer = Trainer.__new__(Trainer)
-    trainer.wrapper = DummyWrapper()
-    trainer.optimizer = DummyOptimizer()
-    trainer.save_ckpt = str(tmp_path / "ckpts" / "model")
-    trainer.max_ckpt_keep = 2
-
-    trainer.save_checkpoint(1)
-
-    ckpt_path = tmp_path / "ckpts" / "model-1.pt"
-    latest = tmp_path / "ckpts" / "model.pt"
-    assert ckpt_path.exists()
-    assert latest.is_symlink()
-    assert latest.resolve() == ckpt_path
-    assert latest.readlink().as_posix() == "model-1.pt"
-
-
-def test_pt_expt_stat_file_path_creates_hdf5_parent(tmp_path) -> None:
-    stat_file = tmp_path / "stats" / "model_stat.hdf5"
-
-    stat_path = _ensure_stat_file_path(str(stat_file))
-
-    assert stat_file.exists()
-    assert stat_path is not None

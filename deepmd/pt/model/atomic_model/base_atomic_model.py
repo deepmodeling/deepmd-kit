@@ -232,6 +232,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         @functools.lru_cache
         def wrapped_sampler() -> list[dict]:
             sampled = sampled_func()
+            if not sampled:
+                return sampled
             if self.pair_excl is not None:
                 pair_exclude_types = self.pair_excl.get_exclude_types()
                 for sample in sampled:
@@ -620,7 +622,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             delta_bias, out_std = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
@@ -633,7 +635,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             bias_out, std_out = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
@@ -662,7 +664,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """
         pass
 
-    def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
+    def _get_forward_wrapper_func(
+        self,
+    ) -> Callable[..., dict[str, torch.Tensor]]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(
@@ -672,7 +676,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
+            del spin
             with (
                 torch.no_grad()
             ):  # it's essential for pure torch forward function to use auto_batchsize

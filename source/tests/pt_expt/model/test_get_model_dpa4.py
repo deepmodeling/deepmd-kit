@@ -2,10 +2,8 @@
 """Tests for the DPA4/SeZM model-type dispatch in pt_expt ``get_model``."""
 
 import copy
-import logging
 import unittest
 
-import pytest
 import torch
 
 from deepmd.pt_expt.model import (
@@ -192,12 +190,16 @@ class TestGetModelDPA4(unittest.TestCase):
             get_model(raw)
 
     def test_unsupported_keys_raise(self) -> None:
-        """pt-only SeZM model-level features fail fast with NotImplementedError."""
+        """pt-only SeZM model-level features fail fast with NotImplementedError.
+
+        ``bridging_method`` is no longer in this list: it is supported as an
+        atomic-model composition (see ``test_zbl_bridging.py``). Neither is
+        ``use_compile``, which pt_expt relocated to ``training.enable_compile``
+        and merely warns about.
+        """
         cases = {
             "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
-            "bridging_method": ("ZBL", "`bridging_method` is not supported"),
             "lora": ({"rank": 4}, "`lora` is not supported"),
-            "use_compile": (True, "`use_compile` is not supported"),
             "preset_out_bias": (
                 {"energy": [None, 1.0]},
                 "`preset_out_bias` is not supported",
@@ -208,6 +210,54 @@ class TestGetModelDPA4(unittest.TestCase):
             raw[key] = value
             with self.assertRaisesRegex(NotImplementedError, msg_regex):
                 get_model(raw)
+
+    def test_native_spin_capability_gate_standard_config(self) -> None:
+        """The generic ``supports_native_spin()`` gate rejects a dense descriptor.
+
+        Uses a complete ``type="standard"`` se_e2_a energy config so the
+        DESCRIPTOR-AGNOSTIC capability gate is what fires -- not the
+        dpa4-typed builder's descriptor contract (pinned separately below).
+        """
+        raw = {
+            "type": "standard",
+            "type_map": ["Ni", "O"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "rcut": 4.0,
+                "rcut_smth": 3.5,
+                "sel": [8, 8],
+            },
+            "fitting_net": {"type": "ener", "neuron": [8, 8]},
+            "spin": {"use_spin": [True, False], "scheme": "native"},
+        }
+        with self.assertRaisesRegex(NotImplementedError, "native spin"):
+            get_model(raw)
+
+    def test_native_spin_non_dpa4_descriptor_raises(self) -> None:
+        """A dpa4-typed config rejects a foreign descriptor (family contract).
+
+        The dpa4-typed builder pins its descriptor/fitting contract before
+        the generic capability gate is reached, so the mismatch surfaces as
+        the family builder's ``ValueError``.
+        """
+        raw = _make_raw_model_config()
+        raw["descriptor"] = {"type": "se_e2_a"}
+        raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        with self.assertRaisesRegex(ValueError, "DPA4/SeZM descriptor"):
+            get_model(raw)
+
+    def test_native_spin_add_chg_spin_ebd_combined_builds(self) -> None:
+        """Native-scheme spin combined with charge-spin FiLM is SUPPORTED.
+
+        (Review 3638047227 lifted the old rejection; the combined model's
+        behavior is pinned in ``test_dpa4_native_spin.py``.)
+        """
+        raw = _make_raw_model_config()
+        raw["descriptor"]["add_chg_spin_ebd"] = True
+        raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        model = get_model(raw)
+        self.assertTrue(model.has_chg_spin_ebd())
+        self.assertTrue(model.has_spin())
 
     def test_default_unsupported_values_pass(self) -> None:
         """Normalized defaults (bridging None, lora None, use_compile False) build."""
@@ -220,34 +270,17 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertIsInstance(model, EnergyModel)
 
 
-# `enable_tf32` toggles TF32 matmul precision in pt but is ignored by pt_expt
-# (always "highest" precision); a truthy value must emit a warn-once message.
-@pytest.mark.parametrize("enable_tf32", [True, False])  # truthy warns, falsy silent
-def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
-    import importlib
+class TestNativeSpinErrorTranslation(unittest.TestCase):
+    """Only the unexpected-``use_spin`` TypeError becomes the capability error."""
 
-    # the package __init__ rebinds the name ``get_model`` to the function, so
-    # ``import ...get_model as`` would shadow the submodule; load it explicitly
-    gm_mod = importlib.import_module("deepmd.pt_expt.model.get_model")
-
-    # reset the warn-once set so the assertion is deterministic regardless of
-    # test ordering (other get_sezm_model calls may have already warned)
-    monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
-
-    raw = _make_raw_model_config(enable_tf32=enable_tf32)
-
-    with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
-        gm_mod.get_sezm_model(raw)
-    matches = [r for r in caplog.records if "enable_tf32" in r.getMessage()]
-    if enable_tf32:
-        assert len(matches) == 1, caplog.text
-        # a second call must NOT warn again (warn-once per process)
-        caplog.clear()
-        with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
-            gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
-        assert not [r for r in caplog.records if "enable_tf32" in r.getMessage()]
-    else:
-        assert not matches, caplog.text
+    def test_unrelated_construction_error_propagates(self) -> None:
+        # A bogus fitting kwarg must surface as the REAL TypeError, not be
+        # masked as a native-spin capability failure (review 3644847676).
+        raw = _make_raw_model_config()
+        raw["spin"] = {"use_spin": [True, False], "scheme": "native"}
+        raw["fitting_net"]["bogus_option"] = 1
+        with self.assertRaisesRegex(TypeError, "bogus_option"):
+            get_model(raw)
 
 
 if __name__ == "__main__":

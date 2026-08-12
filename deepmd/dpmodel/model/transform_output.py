@@ -2,7 +2,6 @@
 
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -10,6 +9,8 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     GLOBAL_ENER_FLOAT_PRECISION,
+    RESERVED_PRECISION_DICT,
+    get_xp_precision,
 )
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
@@ -34,6 +35,12 @@ def fit_output_to_model_output(
 
     """
     xp = array_api_compat.get_namespace(coord_ext)
+    # GLOBAL_ENER_FLOAT_PRECISION is a NumPy dtype class.  Array namespaces such
+    # as Torch require their own dtype object even when the precision name is the
+    # same, so resolve it before casting any backend array.
+    energy_dtype = get_xp_precision(
+        xp, RESERVED_PRECISION_DICT[GLOBAL_ENER_FLOAT_PRECISION]
+    )
     model_ret = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
@@ -45,16 +52,14 @@ def fit_output_to_model_output(
             if vdef.intensive:
                 if mask is not None:
                     model_ret[kk_redu] = xp.sum(
-                        vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
-                    ) / np.sum(mask, axis=-1, keepdims=True)
+                        xp.astype(vv, energy_dtype), axis=atom_axis
+                    ) / xp.sum(xp.astype(mask, energy_dtype), axis=-1, keepdims=True)
                 else:
                     model_ret[kk_redu] = xp.mean(
-                        vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
+                        xp.astype(vv, energy_dtype), axis=atom_axis
                     )
             else:
-                model_ret[kk_redu] = xp.sum(
-                    vv.astype(GLOBAL_ENER_FLOAT_PRECISION), axis=atom_axis
-                )
+                model_ret[kk_redu] = xp.sum(xp.astype(vv, energy_dtype), axis=atom_axis)
             if vdef.r_differentiable:
                 kk_derv_r, kk_derv_c = get_deriv_name(kk)
                 # name-holders

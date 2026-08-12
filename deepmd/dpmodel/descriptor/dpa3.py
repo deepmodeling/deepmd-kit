@@ -28,6 +28,7 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -64,21 +65,54 @@ class RepFlowArgs:
     The DPA-3 descriptor uses a repflow architecture that maintains and updates three types
     of representations: node (:math:`\mathbf{n}`), edge (:math:`\mathbf{e}`), and angle (:math:`\mathbf{a}`).
 
-    The update equations for each layer are:
+    DPA3 applies message passing to the first two graphs of the line-graph
+    series.  Writing node, edge, and angle features as
+    :math:`\mathbf n_i^l`, :math:`\mathbf e_{ij}^l`, and
+    :math:`\mathbf a_{ij,ik}^l`, respectively, the default parallel layer with
+    angle updates forms
 
     .. math::
-        \mathbf{n}^{l+1} = \text{UpdateNode}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+
+        \mathbf m_{ij}^{E,\mathrm{self}}=
+        U_E(\mathbf e_{ij}^l,\mathbf n_i^l,\mathbf n_j^l),
+        \qquad
+        \mathbf m_{ij}^{A\to E}=\operatorname{Reduce}_k
+        U_{A\to E}(\mathbf a_{ij,ik}^l,\mathbf n_i^l,
+        \mathbf e_{ij}^l,\mathbf e_{ik}^l),
 
     .. math::
-        \mathbf{e}^{l+1} = \text{UpdateEdge}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+
+        \mathbf e_{ij}^{l+1}=\operatorname{Combine}_E
+        (\mathbf e_{ij}^l,\mathbf m_{ij}^{E,\mathrm{self}},
+        \mathbf m_{ij}^{A\to E}),
 
     .. math::
-        \mathbf{a}^{l+1} = \text{UpdateAngle}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l).
 
-    The final descriptor is obtained by symmetrization:
+        \mathbf a_{ij,ik}^{l+1}=\operatorname{Combine}_A\!\left(
+        \mathbf a_{ij,ik}^l,
+        U_A(\mathbf a_{ij,ik}^l,\mathbf n_i^l,
+        \mathbf e_{ij}^l,\mathbf e_{ik}^l)\right),
 
     .. math::
-        \mathcal{D}^i = \text{Symmetrize}(\mathbf{n}^L, \mathbf{e}^L),
+
+        \mathbf n_i^{l+1}=\operatorname{Combine}_N\!\left(
+        \mathbf n_i^l,U_N^{\mathrm{self}}(\mathbf n_i^l),
+        U_N^{\mathrm{sym}}(\{\mathbf e_{ij}^l,\mathbf n_j^l\}_j),
+        \operatorname{Reduce}_j U_{E\to N}
+        (\mathbf n_i^l,\mathbf n_j^l,\mathbf e_{ij}^l)\right).
+
+    The ``Combine`` operation is selected by ``update_style``; its default
+    ``res_residual`` form adds each message with a learned residual weight.
+    The angle-to-edge reduction is switch-weighted over :math:`k`.  In
+    sequential mode the same dependencies are evaluated with the most recently
+    updated edge and angle features.
+
+    Here the vertices of the second line graph are the edges of the first, so
+    :math:`\mathbf v_{ij}^{(2,l)} \equiv \mathbf e_{ij}^l`.  The invariant
+    atomic descriptor is the final first-graph node representation:
+
+    .. math::
+        \mathcal D^i = \mathbf n_i^L,
 
     where :math:`L` is the number of repflow layers.
 
@@ -509,10 +543,6 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns the dimension of charge_spin input."""
         return 2 if self.add_chg_spin_ebd else 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Returns whether default charge_spin values are set."""
-        return self.default_chg_spin is not None
-
     def get_default_chg_spin(self) -> list[float] | None:
         """Returns the default charge_spin values."""
         return self.default_chg_spin
@@ -707,16 +737,15 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         if self.use_loc_mapping:
             node_ebd_ext = xp.reshape(
-                xp.take(
+                take_type_embedding(
                     type_embedding,
                     xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (-1,)),
-                    axis=0,
                 ),
                 (nframes, nloc, self.tebd_dim),
             )
         else:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+                take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
                 (nframes, nall, self.tebd_dim),
             )
 

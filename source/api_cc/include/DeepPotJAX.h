@@ -242,6 +242,13 @@ class DeepPotJAX : public DeepPotBackend {
                            const bool atomic);
 
  private:
+  /** Release every TensorFlow C API handle owned by this backend.
+   *
+   * This helper is intentionally safe for partially initialized objects so an
+   * exception from init() cannot leak handles or make a later retry unsafe.
+   */
+  void clear_tf_resources() noexcept;
+
   bool inited;
   // device
   std::string device;
@@ -269,6 +276,10 @@ class DeepPotJAX : public DeepPotBackend {
   bool do_message_passing;
   // has default fparam
   bool has_default_fparam_;
+  // Frame parameters embedded in the exported model. The JAX SavedModel
+  // signatures require a concrete tensor, so the C++ API materializes these
+  // values when callers omit fparam.
+  std::vector<double> default_fparam_;
   // Model-level pair-exclusion keep table (flat (ntypes+1)^2), built once in
   // init from the exported ``get_pair_exclude_types``. Empty => no exclusion.
   // The exported ``call_lower_*`` consumes a pre-excluded nlist (decision
@@ -284,12 +295,12 @@ class DeepPotJAX : public DeepPotBackend {
   /**  TF C API objects.
    * @{
    */
-  TF_Graph* graph;
-  TF_Status* status;
-  TF_Session* session;
-  TF_SessionOptions* sessionopts;
-  TFE_ContextOptions* ctx_opts;
-  TFE_Context* ctx;
+  TF_Graph* graph = nullptr;
+  TF_Status* status = nullptr;
+  TF_Session* session = nullptr;
+  TF_SessionOptions* sessionopts = nullptr;
+  TFE_ContextOptions* ctx_opts = nullptr;
+  TFE_Context* ctx = nullptr;
   std::vector<TF_Function*> func_vector;
   /**
    * @}

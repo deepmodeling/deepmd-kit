@@ -15,6 +15,9 @@ import torch
 from deepmd.dpmodel.utils.multi_task import (
     apply_shared_links,
 )
+from deepmd.pt_expt.train.utils import (
+    MatmulPrecisionPolicy,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +72,10 @@ class ModelWrapper(torch.nn.Module):
         Single loss or dict of losses keyed by task name.
     model_params : dict, optional
         Model parameters to store as extra state.
+    matmul_precision : MatmulPrecisionPolicy, optional
+        The fp32 matmul precision each forward mode runs at. Defaults to full
+        precision for training, which leaves a wrapper built outside a trainer
+        (to hold pre-trained weights, say) at the conservative setting.
     """
 
     def __init__(
@@ -76,9 +83,15 @@ class ModelWrapper(torch.nn.Module):
         model: torch.nn.Module | dict,
         loss: torch.nn.Module | dict | None = None,
         model_params: dict[str, Any] | None = None,
+        matmul_precision: MatmulPrecisionPolicy | None = None,
     ) -> None:
         super().__init__()
         self.model_params = model_params if model_params is not None else {}
+        self.matmul_precision = (
+            matmul_precision
+            if matmul_precision is not None
+            else MatmulPrecisionPolicy(enable_tf32=False)
+        )
         self.train_infos: dict[str, Any] = {
             "lr": 0,
             "step": 0,
@@ -139,6 +152,7 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
+        spin: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
@@ -164,24 +178,37 @@ class ModelWrapper(torch.nn.Module):
             "aparam": aparam,
             "charge_spin": charge_spin,
         }
+        # ``spin`` (native or virtual-atom magnetic moment) is only accepted
+        # by spin-capable model forward()s; mirrors
+        # ``deepmd.pt.train.wrapper.ModelWrapper.forward``'s ``has_spin`` gate
+        # so non-spin models (whose forward() has no ``spin`` parameter) are
+        # never called with an unexpected keyword argument.
+        if self.model[task_key].has_spin():
+            input_dict["spin"] = spin
 
-        if self.inference_only:
-            with self._frozen_parameter_context():
-                model_pred = self._forward_without_loss(task_key, input_dict)
-            return model_pred, None, None
+        # The module flag distinguishes a training step from the evaluation the
+        # trainer interleaves with it, which is exactly the split the precision
+        # policy is defined over. A compiled model is traced inside this block
+        # on its first call, so its kernels are selected at the same precision
+        # they later run at.
+        with self.matmul_precision.applied(training=self.training):
+            if self.inference_only:
+                with self._frozen_parameter_context():
+                    model_pred = self._forward_without_loss(task_key, input_dict)
+                return model_pred, None, None
 
-        model_pred = self._forward_without_loss(task_key, input_dict)
-        if label is None:
-            return model_pred, None, None
+            model_pred = self._forward_without_loss(task_key, input_dict)
+            if label is None:
+                return model_pred, None, None
 
-        natoms = atype.shape[-1]
-        loss, more_loss = self.loss[task_key](
-            cur_lr,
-            natoms,
-            model_pred,
-            label,
-        )
-        return model_pred, loss, more_loss
+            natoms = atype.shape[-1]
+            loss, more_loss = self.loss[task_key](
+                cur_lr,
+                natoms,
+                model_pred,
+                label,
+            )
+            return model_pred, loss, more_loss
 
     @contextmanager
     def _frozen_parameter_context(self) -> Generator[None, None, None]:

@@ -5,6 +5,7 @@ import numpy as np
 
 from deepmd.dpmodel.descriptor import (
     DescrptDPA1,
+    DescrptSeA,
 )
 
 from ...seed import (
@@ -43,6 +44,48 @@ class TestDescrptDPA1(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(em0.get_numb_attn_layer(), 0)
         em2 = DescrptDPA1(self.rcut, self.rcut_smth, self.sel, ntypes=2, attn_layer=2)
         self.assertEqual(em2.get_numb_attn_layer(), 2)
+
+    def test_lmax_two_serialization(self) -> None:
+        descriptor = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            ntypes=2,
+            attn_layer=0,
+            lmax=2,
+        )
+        serialized = descriptor.serialize()
+        self.assertEqual(serialized["@version"], 4)
+        self.assertEqual(descriptor.se_atten.serialize()["@version"], 2)
+        restored = DescrptDPA1.deserialize(serialized)
+
+        actual = descriptor.call(self.coord_ext, self.atype_ext, self.nlist)
+        expected = restored.call(self.coord_ext, self.atype_ext, self.nlist)
+
+        self.assertEqual(restored.se_atten.lmax, 2)
+        for index in (0, 1, 4):
+            np.testing.assert_allclose(actual[index], expected[index])
+
+    def test_tebd_compression_slots_declared(self) -> None:
+        """Tebd-compression slots are class properties, not runtime accidents.
+
+        ``type_embd_data``/``tebd_compress`` must be declared (defaulted)
+        in ``__init__`` of tebd-family descriptors so their presence does
+        not depend on whether compression was ever enabled. The jax
+        restore walker (``deepmd/jax/utils/serialization.py``) relies on
+        ``hasattr(obj, "tebd_compress")`` as a family-membership test, so
+        a non-tebd descriptor (e.g. ``DescrptSeA``) must never carry
+        either attribute (see issue #5897).
+        """
+        em0 = DescrptDPA1(self.rcut, self.rcut_smth, self.sel, ntypes=2)
+        self.assertIsNone(em0.type_embd_data)
+        self.assertFalse(em0.tebd_compress)
+        self.assertIsNone(em0.se_atten.type_embd_data)
+        self.assertFalse(em0.se_atten.tebd_compress)
+
+        se_a = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
+        self.assertFalse(hasattr(se_a, "type_embd_data"))
+        self.assertFalse(hasattr(se_a, "tebd_compress"))
 
     def test_multiple_frames(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)

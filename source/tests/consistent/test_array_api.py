@@ -7,9 +7,11 @@ import numpy as np
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_bincount,
+    xp_maximum_at,
     xp_scatter_sum,
     xp_setitem_at,
     xp_sigmoid,
+    xp_uniform,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -53,6 +55,21 @@ class TestArrayConversion(unittest.TestCase):
         )
         self.assertTrue(param.requires_grad)
         self.assertEqual(param.device, DEVICE)
+
+
+class TestXpMaximumAtConsistent(unittest.TestCase):
+    """Test maximum-at identities that differ between backend primitives."""
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow is not installed")
+    def test_tf_preserves_all_negative_infinity_segment(self) -> None:
+        x = tnp.asarray(np.full(2, -np.inf, dtype=np.float64))
+        indices = tnp.asarray(np.array([0, 0], dtype=np.int64))
+        values = tnp.asarray(np.array([-np.inf, -np.inf], dtype=np.float64))
+
+        result = to_numpy_array(xp_maximum_at(x, indices, values))
+
+        self.assertTrue(np.isneginf(result[0]))
+        self.assertTrue(np.isneginf(result[1]))
 
 
 class TestXpScatterSumConsistent(unittest.TestCase):
@@ -370,3 +387,45 @@ class TestXpSetitemAtConsistent(unittest.TestCase):
             tnp.asarray(values_np),
         )
         np.testing.assert_allclose(ref, to_numpy_array(result), atol=1e-10)
+
+
+class TestXpUniform(unittest.TestCase):
+    """Each backend draws with its own generator, on the reference device."""
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_replays_under_torch_seed(self) -> None:
+        like = torch.zeros(7, dtype=torch.float64, device=DEVICE)
+        torch.manual_seed(4321)
+        a = xp_uniform(like, 512, 0.0, 2.0 * np.pi)
+        torch.manual_seed(4321)
+        b = xp_uniform(like, 512, 0.0, 2.0 * np.pi)
+        torch.manual_seed(1234)
+        c = xp_uniform(like, 512, 0.0, 2.0 * np.pi)
+
+        assert a.shape == (512,)
+        assert a.dtype == like.dtype
+        assert a.device.type == like.device.type
+        torch.testing.assert_close(a, b, rtol=0.0, atol=0.0)
+        # anti-vacuity: a constant would satisfy the replay check alone
+        assert not torch.allclose(a, c)
+        assert float(a.min()) >= 0.0
+        assert float(a.max()) < 2.0 * np.pi
+
+    def test_numpy_fallback_replays_under_the_project_seed(self) -> None:
+        """The fallback uses deepmd's seeded generator, not a fresh one."""
+        from deepmd.utils import random as dp_random
+
+        like = np.zeros(3, dtype=np.float64)
+        dp_random.seed(777)
+        a = xp_uniform(like, 64, -1.0, 1.0)
+        dp_random.seed(777)
+        b = xp_uniform(like, 64, -1.0, 1.0)
+        dp_random.seed(778)
+        c = xp_uniform(like, 64, -1.0, 1.0)
+
+        assert a.shape == (64,)
+        assert a.dtype == like.dtype
+        np.testing.assert_array_equal(a, b)
+        assert not np.allclose(a, c)
+        assert a.min() >= -1.0
+        assert a.max() < 1.0

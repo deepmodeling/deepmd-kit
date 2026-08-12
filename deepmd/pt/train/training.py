@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import datetime
 import functools
 import json
 import logging
-import time
 from collections.abc import (
     Callable,
     Generator,
     Iterable,
+    Mapping,
 )
 from contextlib import (
     nullcontext,
@@ -25,26 +24,27 @@ from typing import (
 import numpy as np
 import torch
 
-from deepmd.common import (
-    symlink_prefix_files,
-)
 from deepmd.dpmodel.train import (
+    DEFAULT_TASK_KEY,
+    CheckpointStore,
+    ShardingPolicy,
+    TrainingTimer,
+    build_checkpoint_stores,
     change_model_out_bias,
+    resolve_step_schedule,
 )
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
-    resolve_model_prob,
-    resolve_model_prob_from_epochs,
 )
 from deepmd.loggers.training import (
     format_training_message,
     format_training_message_per_task,
+    log_parameter_counts,
 )
 from deepmd.pt.loss import (
     DenoiseLoss,
     DeNSLoss,
     DOSLoss,
-    EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
     PopulationLoss,
@@ -70,24 +70,6 @@ from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
     LKFOptimizer,
 )
-from deepmd.pt.train.ema import (
-    EMA_CHECKPOINT_KEY,
-    ModelEMA,
-    get_ema_checkpoint_prefix,
-    get_ema_validation_log_path,
-)
-from deepmd.pt.train.utils import (
-    NonFiniteGradGuard,
-    clip_grad_norm_,
-    latest_checkpoint_path,
-    resolve_best_checkpoint_dir,
-    resolve_keep_ckpt_count,
-    scoped_env_defaults,
-)
-from deepmd.pt.train.validation import (
-    FullValidator,
-    resolve_full_validation_start_step,
-)
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -109,18 +91,39 @@ from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
 from deepmd.pt.utils.lmdb_dataset import (
+    LmdbBatchDataLoader,
     LmdbDataset,
-    _collate_lmdb_batch,
-    _SameNlocBatchSamplerTorch,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
+    min_pair_dist_frame_mask,
+    select_batch_frames,
 )
 from deepmd.pt.utils.utils import (
     to_numpy_array,
 )
+from deepmd.pt_expt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+    ModelEMA,
+    get_ema_checkpoint_prefix,
+)
+from deepmd.pt_expt.train.gradient import (
+    NonFiniteGradGuard,
+    clip_grad_norm_,
+)
+from deepmd.pt_expt.train.utils import (
+    count_parameters,
+    infer_env_defaults,
+    resolve_best_checkpoint_dir,
+    scoped_env_defaults,
+)
+from deepmd.pt_expt.train.validation import (
+    FullValidator,
+    build_full_validators,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
+    has_data_requirement,
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
@@ -151,8 +154,11 @@ from torch.utils.data import (
     DataLoader,
 )
 
-from deepmd.utils.path import (
-    DPH5Path,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
 )
 
 log = logging.getLogger(__name__)
@@ -163,7 +169,7 @@ class Trainer:
         self,
         config: dict[str, Any],
         training_data: DpLoaderSet,
-        stat_file_path: str | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DpLoaderSet | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
@@ -187,22 +193,19 @@ class Trainer:
         else:
             resume_model = None
         resuming = resume_model is not None
+        has_initial_state = resuming or init_frz_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
 
         validating_params = config.get("validating") or {}
-        infer_env_defaults = {}
-        if bool(validating_params.get("compiled_infer", False)):
-            infer_env_defaults["DP_COMPILE_INFER"] = "1"
-        if bool(validating_params.get("tf32_infer", False)):
-            infer_env_defaults["DP_TF32_INFER"] = "1"
-        if bool(validating_params.get("amp_infer", False)):
-            infer_env_defaults["DP_AMP_INFER"] = "1"
+        eval_env_defaults = infer_env_defaults(validating_params)
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
-        self.finetune_update_stat = False
+        finetune_updates_statistics = finetune_links is not None and any(
+            rule.get_has_new_type() for rule in finetune_links.values()
+        )
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
@@ -210,44 +213,33 @@ class Trainer:
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
         self.num_model = len(self.model_keys)
-        self.model_prob = None
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
+        )
 
         # Iteration config
-        self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("numb_epoch")
-        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
-        save_dir = training_params.get("save_dir")
-        self.save_dir = Path(save_dir) if save_dir else None
-        if self.save_dir is not None and self.rank == 0:
-            self.save_dir.mkdir(parents=True, exist_ok=True)
         self.save_freq = training_params.get("save_freq", 1000)
-        self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
-        self.ckpt_keep_ratio = training_params.get("ckpt_keep_ratio")
         self.enable_ema = bool(training_params.get("enable_ema", False))
         self.ema_decay = float(training_params.get("ema_decay", 0.999))
-        self.ema_ckpt_keep = int(training_params.get("ema_ckpt_keep", 3))
         self.ema_save_ckpt = get_ema_checkpoint_prefix(self.save_ckpt)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
         self.change_bias_after_training = training_params.get(
             "change_bias_after_training", False
         )
-        self.zero_stage = int(training_params.get("zero_stage", 0))
-        if self.zero_stage not in (0, 1, 2, 3):
-            raise ValueError(
-                f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
-            )
-        if self.enable_ema and self.zero_stage >= 2:
+        self.sharding = ShardingPolicy.from_training_params(
+            training_params, is_distributed=self.is_distributed
+        )
+        if self.enable_ema and self.sharding.shards_parameters:
             raise ValueError(
                 "training.enable_ema currently only supports training.zero_stage < 2."
             )
-        if self.zero_stage > 0 and not self.is_distributed:
-            self.zero_stage = 0
-        if self.zero_stage > 0 and self.change_bias_after_training:
+        if self.sharding.enabled and self.change_bias_after_training:
             raise ValueError(
                 "training.zero_stage does not support change_bias_after_training."
             )
@@ -288,15 +280,15 @@ class Trainer:
             _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
-            DataLoader,
+            DataLoader | LmdbBatchDataLoader,
             Generator[Any, None, None],
-            DataLoader | None,
+            DataLoader | LmdbBatchDataLoader | None,
             Generator[Any, None, None] | None,
             int,
         ]:
             def get_dataloader_and_iter_lmdb(
                 _data: LmdbDataset,
-            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+            ) -> tuple[LmdbBatchDataLoader, Generator[Any, None, None]]:
                 if _data.mixed_batch:
                     # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
                     # RandomSampler(replacement=False) + padding collate_fn.
@@ -339,13 +331,10 @@ class Trainer:
                         block_targets=_block_targets,
                     )
 
-                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
-                _dataloader = DataLoader(
+                _dataloader = LmdbBatchDataLoader(
                     _data,
-                    batch_sampler=_batch_sampler,
-                    num_workers=0,
-                    collate_fn=_collate_lmdb_batch,
-                    pin_memory=(DEVICE != "cpu"),
+                    _inner_sampler,
+                    pin_memory=DEVICE.type != "cpu",
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
@@ -413,7 +402,8 @@ class Trainer:
             _model: Any,
             _data_stat_nbatch: int,
             _training_data: DpLoaderSet,
-            _stat_file_path: str | None,
+            _stat_file_spec: StatFileSpec,
+            _min_pair_dist: float = 0.0,
             finetune_has_new_type: bool = False,
             preset_observed_type: list[str] | None = None,
         ) -> Callable[[], Any]:
@@ -423,17 +413,24 @@ class Trainer:
                     _training_data.systems,
                     _training_data.dataloaders,
                     _data_stat_nbatch,
+                    min_pair_dist=_min_pair_dist,
                 )
                 return sampled
 
-            if (not resuming or finetune_has_new_type) and self.rank == 0:
-                _model.compute_or_load_stat(
-                    sampled_func=get_sample,
-                    stat_file_path=_stat_file_path,
-                    preset_observed_type=preset_observed_type,
+            if not has_initial_state or finetune_has_new_type:
+
+                def initialize_statistics() -> None:
+                    with open_stat_file(_stat_file_spec) as stat_file_path:
+                        _model.compute_or_load_stat(
+                            sampled_func=get_sample,
+                            stat_file_path=stat_file_path,
+                            preset_observed_type=preset_observed_type,
+                        )
+
+                self._run_stat_on_chief(
+                    initialize_statistics,
+                    operation="statistics initialization",
                 )
-                if isinstance(_stat_file_path, DPH5Path):
-                    _stat_file_path.root.close()
             return get_sample
 
         def get_lr(lr_params: dict[str, Any]) -> BaseLR:
@@ -443,19 +440,19 @@ class Trainer:
 
         # Optimizer
         self.opt_type, self.opt_param = get_opt_param(optimizer_params)
-        if self.zero_stage > 0 and self.multi_task:
+        if self.sharding.enabled and self.multi_task:
             raise ValueError(
                 "training.zero_stage is currently only supported in single-task training."
             )
-        if self.zero_stage > 0 and self.opt_type == "LKF":
+        if self.sharding.enabled and self.opt_type == "LKF":
             raise ValueError("training.zero_stage does not support LKF optimizer.")
 
-        # loss_param_tmp for Hessian activation
-        loss_param_tmp = None
+        # Loss parameters are also used to select SeZM/DeNS execution modes.
+        loss_params_for_model = None
         if not self.multi_task:
-            loss_param_tmp = config["loss"]
+            loss_params_for_model = config["loss"]
         else:
-            loss_param_tmp = {
+            loss_params_for_model = {
                 model_key: config["loss_dict"][model_key]
                 for model_key in self.model_keys
             }
@@ -463,14 +460,13 @@ class Trainer:
         # Model
         # SeZMModel samples these eval/inference env vars exactly once inside
         # __init__; keep config-derived defaults scoped to construction.
-        with scoped_env_defaults(infer_env_defaults):
+        with scoped_env_defaults(eval_env_defaults):
             self.model = get_model_for_wrapper(
                 model_params,
                 resuming=resuming,
-                _loss_params=loss_param_tmp,
             )
         # SeZM specific process for DeNS training
-        prepare_model_for_loss(self.model, loss_param_tmp)
+        prepare_model_for_loss(self.model, loss_params_for_model)
 
         # Loss
         if not self.multi_task:
@@ -489,6 +485,22 @@ class Trainer:
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
                 )
+
+        # Losses own the interpretation of their prefactors. The trainer only
+        # consumes their data contract when selecting expensive model outputs.
+        loss_data_requirements = (
+            {
+                model_key: self.loss[model_key].label_requirement
+                for model_key in self.model_keys
+            }
+            if self.multi_task
+            else self.loss.label_requirement
+        )
+        prepare_model_for_data_requirements(
+            self.model,
+            loss_data_requirements,
+            model_params,
+        )
 
         # Data
         if not self.multi_task:
@@ -523,7 +535,8 @@ class Trainer:
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
-                stat_file_path,
+                self.stat_file_specs["Default"],
+                _min_pair_dist=min_pair_dist,
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -571,7 +584,9 @@ class Trainer:
                     self.model[model_key]
                 )
                 min_pair_dist = float(
-                    training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+                    training_params["data_dict"][model_key]
+                    .get("training_data", {})
+                    .get("min_pair_dist", 0.0)
                 )
                 if min_pair_dist > 0.0:
                     data_requirement.append(
@@ -603,7 +618,8 @@ class Trainer:
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
-                    stat_file_path[model_key],
+                    self.stat_file_specs[model_key],
+                    _min_pair_dist=min_pair_dist,
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
@@ -654,119 +670,87 @@ class Trainer:
                     )
 
         # Resolve training steps
-        per_task_total = []
-        if not self.multi_task:
-            if self.num_steps is None:
-                if self.num_epoch is None:
-                    raise ValueError(
-                        "Either training.numb_steps or training.num_epoch must be set."
-                    )
-                if self.num_epoch <= 0:
-                    raise ValueError("training.num_epoch must be positive.")
-                if isinstance(training_data, LmdbDataset):
-                    total_numb_batch = len(self.training_dataloader)
-                else:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader.sampler.weights
-                    )
-                    total_numb_batch = compute_total_numb_batch(
-                        training_data.index,
-                        sampler_weights,
-                    )
-                # Sampler weights carry tiny per-rank floating-point noise, so
-                # the rounded batch count can differ by one unit across ranks.
-                # Pin it to rank 0 before deriving num_steps so every rank
-                # shares the same training and full-validation schedule.
-                total_numb_batch = self._broadcast_value_from_rank0(total_numb_batch)
-                if total_numb_batch <= 0:
-                    raise ValueError(
-                        "Total number of training batches must be positive."
-                    )
-                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
-                log.info(
-                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
-                    self.num_steps,
-                    self.num_epoch,
-                    total_numb_batch,
-                )
-        else:
-            if self.num_epoch_dict:
-                if self.num_steps is not None:
-                    raise ValueError(
-                        "training.numb_steps and training.num_epoch_dict "
-                        "are mutually exclusive."
-                    )
-                for model_key in self.model_keys:
-                    if isinstance(training_data[model_key], LmdbDataset):
-                        per_task_total.append(len(self.training_dataloader[model_key]))
-                    else:
-                        sampler_weights = to_numpy_array(
-                            self.training_dataloader[model_key].sampler.weights
-                        )
-                        per_task_total.append(
-                            compute_total_numb_batch(
-                                training_data[model_key].index,
-                                sampler_weights,
-                            )
-                        )
-                per_task_total = self._broadcast_value_from_rank0(per_task_total)
-                (
-                    self.model_prob,
-                    self.num_steps,
-                    per_task_steps,
-                ) = resolve_model_prob_from_epochs(
-                    self.model_keys,
-                    self.num_epoch_dict,
-                    np.asarray(per_task_total, dtype=np.float64),
-                )
-                log.info(
-                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
-                    "with per-task target steps: %s.",
-                    self.model_prob,
-                    self.num_steps,
-                    self.num_epoch_dict,
-                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
-                )
-            else:
-                if self.num_steps is None:
-                    raise ValueError(
-                        "Either training.numb_steps (multi-task only) or "
-                        "training.num_epoch_dict must be set."
-                    )
-                self.model_prob = resolve_model_prob(
-                    self.model_keys,
-                    training_params.get("model_prob"),
-                    training_data,
-                    rank=self.rank,
-                )
-
-        # === Derive checkpoint retention from ckpt_keep_ratio ===
-        # num_steps is final here (including when derived from num_epoch), so the
-        # ratio can be converted into an absolute keep count once.
-        keep_ckpt_count = resolve_keep_ckpt_count(
-            self.ckpt_keep_ratio, self.num_steps, self.save_freq
-        )
-        if keep_ckpt_count is not None:
-            self.max_ckpt_keep = keep_ckpt_count
-            self.ema_ckpt_keep = keep_ckpt_count
-            log.info(
-                "Resolved checkpoint retention to %d from ckpt_keep_ratio=%s "
-                "(num_steps=%d, save_freq=%d).",
-                keep_ckpt_count,
-                self.ckpt_keep_ratio,
-                self.num_steps,
-                self.save_freq,
+        def epoch_length(model_key: str) -> int:
+            """Return the batches this rank consumes in one epoch of a task."""
+            _data = training_data[model_key] if self.multi_task else training_data
+            _dataloader = (
+                self.training_dataloader[model_key]
+                if self.multi_task
+                else self.training_dataloader
             )
+            if isinstance(_data, LmdbDataset):
+                return len(_dataloader)
+            return compute_total_numb_batch(
+                _data.index,
+                to_numpy_array(_dataloader.sampler.weights),
+            )
+
+        schedule = resolve_step_schedule(
+            training_params,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=(
+                training_data
+                if self.multi_task
+                else {self.model_keys[0]: training_data}
+            ),
+            epoch_length=epoch_length,
+            broadcast=self._broadcast_value_from_rank0,
+            rank=self.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
+
+        # === Checkpoint layout ===
+        # num_steps is final here (including when derived from num_epoch), so a
+        # retention ratio can be converted into an absolute keep count once.
+        self.ckpt_store, self.ema_ckpt_store = build_checkpoint_stores(
+            training_params,
+            num_steps=self.num_steps,
+            ema_prefix=self.ema_save_ckpt,
+            rank=self.rank,
+        )
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
-        # Minimum pairwise distance for filtering unphysical frames during training
-        self.min_pair_dist = training_params.get("training_data", {}).get(
-            "min_pair_dist", 0.0
+        # Minimum pairwise distance for filtering unphysical frames during training.
+        if self.multi_task:
+            self.min_pair_dist: float | dict[str, float] = {
+                model_key: float(
+                    training_params["data_dict"][model_key]
+                    .get("training_data", {})
+                    .get("min_pair_dist", 0.0)
+                )
+                for model_key in self.model_keys
+            }
+        else:
+            self.min_pair_dist = float(
+                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+            )
+        self.has_min_pair_filter = (
+            any(value > 0.0 for value in self.min_pair_dist.values())
+            if isinstance(self.min_pair_dist, dict)
+            else self.min_pair_dist > 0.0
         )
+        if self.has_min_pair_filter:
+            if self.multi_task:
+                local_training_batch_attempts = max(
+                    max(1, len(self.training_dataloader[model_key]))
+                    for model_key in self.model_keys
+                )
+            else:
+                local_training_batch_attempts = max(1, len(self.training_dataloader))
+            # Rank-specific task sampling may select loaders of different
+            # lengths, but validity collectives must use one shared retry count.
+            self._training_batch_attempts = int(
+                self._broadcast_value_from_rank0(local_training_batch_attempts)
+            )
+        else:
+            self._training_batch_attempts = 1
+        self._discarded_training_batches = 0
 
         # JIT
         if JIT:
@@ -829,8 +813,11 @@ class Trainer:
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
                     pretrained_model_params = state_dict["_extra_state"]["model_params"]
-                    pretrained_model = get_model_for_wrapper(pretrained_model_params)
-                    pretrained_model_wrapper = ModelWrapper(pretrained_model)
+                    with scoped_env_defaults(eval_env_defaults):
+                        pretrained_model = get_model_for_wrapper(
+                            pretrained_model_params
+                        )
+                        pretrained_model_wrapper = ModelWrapper(pretrained_model)
                     pretrained_model_wrapper.load_state_dict(state_dict)
                     # update type related params
                     for model_key in self.model_keys:
@@ -845,7 +832,6 @@ class Trainer:
                         ):
                             model_with_new_type_stat = None
                             if finetune_rule_single.get_has_new_type():
-                                self.finetune_update_stat = True
                                 model_with_new_type_stat = self.wrapper.model[model_key]
                             pretrained_model_wrapper.model[
                                 _model_key_from
@@ -939,44 +925,45 @@ class Trainer:
                 state_dict["_extra_state"] = self.wrapper.state_dict()["_extra_state"]
                 self.wrapper.load_state_dict(state_dict)
 
-                # change bias for fine-tuning
-                if finetune_model is not None:
+            if finetune_model is not None:
+                for model_key in self.model_keys:
+                    finetune_rule = self.finetune_links[model_key]
+                    if self.multi_task and finetune_rule.get_resuming():
+                        if self.rank == 0:
+                            log.info("Model branch %s will resume training.", model_key)
+                        continue
+                    if self.multi_task and self.rank == 0:
+                        log.info(
+                            "Model branch %s will be fine-tuned. "
+                            "This may take a long time...",
+                            model_key,
+                        )
 
-                    def single_model_finetune(
-                        _model: Any,
-                        _finetune_rule_single: Any,
-                        _sample_func: Callable,
-                    ) -> Any:
-                        _model = model_change_out_bias(
-                            _model,
-                            _sample_func,
+                    def update_finetune_bias(
+                        _model_key: str = model_key,
+                        _finetune_rule: Any = finetune_rule,
+                    ) -> None:
+                        model = (
+                            self.model[_model_key] if self.multi_task else self.model
+                        )
+                        model = model_change_out_bias(
+                            model,
+                            self.get_sample_func[_model_key]
+                            if self.multi_task
+                            else self.get_sample_func,
                             _bias_adjust_mode="change-by-statistic"
-                            if not _finetune_rule_single.get_random_fitting()
+                            if not _finetune_rule.get_random_fitting()
                             else "set-by-statistic",
                         )
-                        return _model
+                        if self.multi_task:
+                            self.model[_model_key] = model
+                        else:
+                            self.model = model
 
-                    if not self.multi_task:
-                        finetune_rule_single = self.finetune_links["Default"]
-                        self.model = single_model_finetune(
-                            self.model, finetune_rule_single, self.get_sample_func
-                        )
-                    else:
-                        for model_key in self.model_keys:
-                            finetune_rule_single = self.finetune_links[model_key]
-                            if not finetune_rule_single.get_resuming():
-                                log.info(
-                                    f"Model branch {model_key} will be fine-tuned. This may take a long time..."
-                                )
-                                self.model[model_key] = single_model_finetune(
-                                    self.model[model_key],
-                                    finetune_rule_single,
-                                    self.get_sample_func[model_key],
-                                )
-                            else:
-                                log.info(
-                                    f"Model branch {model_key} will resume training."
-                                )
+                    self._run_stat_on_chief(
+                        update_finetune_bias,
+                        operation=f"fine-tuning statistics for task {model_key!r}",
+                    )
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
@@ -998,11 +985,25 @@ class Trainer:
             assert np.allclose(_data_stat_protect, _data_stat_protect[0]), (
                 "Model key 'data_stat_protect' must be the same in each branch when multitask!"
             )
+            share_kwargs = {
+                "model_key_prob_map": dict(
+                    zip(self.model_keys, self.model_prob, strict=True)
+                ),
+                "data_stat_protect": _data_stat_protect[0],
+            }
+            if not has_initial_state or finetune_updates_statistics:
+                self._run_stat_on_chief(
+                    lambda: self.wrapper.share_params(
+                        shared_links,
+                        resume=False,
+                        **share_kwargs,
+                    ),
+                    operation="shared statistics merge",
+                )
             self.wrapper.share_params(
                 shared_links,
-                resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
-                data_stat_protect=_data_stat_protect[0],
+                resume=True,
+                **share_kwargs,
             )
 
         # LoRA injection (single-task only; argcheck rejects multi-task).
@@ -1033,7 +1034,7 @@ class Trainer:
 
         if self.is_distributed:
             torch.cuda.set_device(LOCAL_RANK)
-            if self.zero_stage >= 2:
+            if self.sharding.shards_parameters:
                 if fully_shard is None:
                     raise RuntimeError(
                         "training.zero_stage>=2 requires FSDP2, which is only "
@@ -1049,7 +1050,7 @@ class Trainer:
                     dist.broadcast(p.data, src=0)
                 for b in self.wrapper.buffers():
                     dist.broadcast(b.data, src=0)
-                reshard = self.zero_stage >= 3
+                reshard = self.sharding.reshards_after_forward
                 self.wrapper = fully_shard(self.wrapper, reshard_after_forward=reshard)
             else:
                 # zero_stage=0 or 1: standard DDP (ZeRO-1 will wrap the optimizer)
@@ -1104,7 +1105,7 @@ class Trainer:
                     # ops lack DTensor sharding propagation on older PyTorch, so
                     # fall back to the per-tensor path under zero_stage >= 2.
                     # DDP / ZeRO-1 keep plain tensors and use the default.
-                    "use_foreach": False if self.zero_stage >= 2 else None,
+                    "use_foreach": False if self.sharding.shards_parameters else None,
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -1117,7 +1118,7 @@ class Trainer:
             )
             if self.opt_type == "HybridMuon":
                 target_optimizer = (
-                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                    self.optimizer.optim if self.sharding.stage == 1 else self.optimizer
                 )
                 target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
@@ -1135,16 +1136,8 @@ class Trainer:
                 state=ema_state_dict,
             )
 
-        if self.zero_stage > 0 and self.rank == 0:
-            if self.zero_stage == 1:
-                log.info("Enabled DDP + ZeRO Stage-1 Optimizer State Sharding.")
-            else:
-                stage = (
-                    "FULL_SHARD (Stage 3)"
-                    if self.zero_stage >= 3
-                    else "SHARD_GRAD_OP (Stage 2)"
-                )
-                log.info(f"Enabled FSDP2 {stage}.")
+        if self.sharding.enabled and self.rank == 0:
+            log.info(self.sharding.describe())
 
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
@@ -1153,14 +1146,7 @@ class Trainer:
         self.enable_profiler = training_params.get("enable_profiler", False)
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
-        self.full_validator = None
-        self.ema_full_validator = None
-
-        self.full_validator = self._create_full_validator(
-            validating_params=validating_params,
-            validation_data=validation_data,
-        )
-        self.ema_full_validator = self._create_ema_full_validator(
+        self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
             validation_data=validation_data,
         )
@@ -1168,6 +1154,30 @@ class Trainer:
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    def _run_stat_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run a statistics action on rank 0 and synchronize its outcome."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.is_distributed:
+
+            def broadcast_failure(failed: bool) -> bool:
+                holder = [failed if self.rank == 0 else False]
+                dist.broadcast_object_list(holder, src=0, device=DEVICE)
+                return bool(holder[0])
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank == 0,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
 
     def _broadcast_value_from_rank0(self, value: Any) -> Any:
         """Return rank 0's copy of ``value`` on every rank.
@@ -1202,91 +1212,30 @@ class Trainer:
             last_epoch=start_step - 1,
         )
 
-    def _create_full_validator(
+    def _create_full_validators(
         self,
         *,
         validating_params: dict[str, Any],
         validation_data: DpLoaderSet | None,
-    ) -> FullValidator | None:
-        """Create the runtime full validator when it is active."""
-        if not self._is_validation_requested(validating_params, "full_validation"):
-            return None
-        self._raise_if_full_validation_unsupported(validation_data)
-        if validation_data is None:
-            raise RuntimeError(
-                "validation_data must be available after full validation checks."
-            )
-        return FullValidator(
+    ) -> tuple[FullValidator | None, FullValidator | None]:
+        """Create the live-weight and EMA-weight full validators."""
+        return build_full_validators(
             validating_params=validating_params,
             validation_data=validation_data,
             model=self.model,
             state_store=self._get_inner_module().train_infos,
             num_steps=self.num_steps,
             rank=self.rank,
-            zero_stage=self.zero_stage,
             restart_training=self.restart_training,
             checkpoint_dir=resolve_best_checkpoint_dir(
                 validating_params, self.save_ckpt
             ),
-        )
-
-    def _create_ema_full_validator(
-        self,
-        *,
-        validating_params: dict[str, Any],
-        validation_data: DpLoaderSet | None,
-    ) -> FullValidator | None:
-        """Create the runtime EMA full validator when it is active.
-
-        EMA full validation is independent from regular full validation: it
-        can be enabled on its own to validate only the EMA-smoothed model.
-        """
-        if not self._is_validation_requested(validating_params, "ema_full_validation"):
-            return None
-        if self.model_ema is None:
-            # EMA full validation needs the EMA-smoothed model; when EMA is
-            # disabled the option is silently ignored rather than failing.
-            return None
-        self._raise_if_full_validation_unsupported(validation_data)
-        if validation_data is None:
-            raise RuntimeError(
-                "validation_data must be available after EMA full validation checks."
-            )
-        ema_validating_params = dict(validating_params)
-        ema_validating_params["full_validation"] = True
-        return FullValidator(
-            validating_params=ema_validating_params,
-            validation_data=validation_data,
-            model=self.model,
-            state_store=self.model_ema.validation_state,
-            num_steps=self.num_steps,
-            rank=self.rank,
-            zero_stage=self.zero_stage,
-            restart_training=self.restart_training,
-            checkpoint_dir=resolve_best_checkpoint_dir(
-                validating_params, self.save_ckpt
+            ensure_supported=lambda: self._raise_if_full_validation_unsupported(
+                validation_data
             ),
-            full_val_file=get_ema_validation_log_path(
-                validating_params.get("full_val_file", "val.log")
-            ),
-            best_checkpoint_prefix="best_ema.ckpt",
-            emit_best_save_log=False,
-            model_eval_context=lambda: self.model_ema.apply_shadow(self.model),
+            model_ema=self.model_ema,
+            sharding=self.sharding,
         )
-
-    def _is_validation_requested(
-        self,
-        validating_params: dict[str, Any],
-        flag_name: str,
-    ) -> bool:
-        """Check whether a full validation flow can trigger during this run."""
-        if not validating_params.get(flag_name, False):
-            return False
-        start_step = resolve_full_validation_start_step(
-            validating_params.get("full_val_start", 0.5),
-            self.num_steps,
-        )
-        return start_step is not None and start_step <= self.num_steps
 
     def _raise_if_full_validation_unsupported(
         self,
@@ -1311,48 +1260,19 @@ class Trainer:
                 "to be configured."
             )
 
-        if self.zero_stage >= 2:
+        if self.sharding.shards_parameters:
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
                 "training with training.zero_stage < 2."
             )
 
-    @staticmethod
-    def _count_parameters(model: torch.nn.Module) -> tuple[int, int]:
-        """
-        Count model parameters.
-
-        Parameters
-        ----------
-        model : torch.nn.Module
-            The model to count parameters for.
-
-        Returns
-        -------
-        tuple[int, int]
-            A tuple of (trainable, total) parameter counts.
-        """
-        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        total = sum(p.numel() for p in model.parameters())
-        return trainable, total
-
     def _log_parameter_count(self) -> None:
         """Log model parameter count."""
-        if not self.multi_task:
-            trainable, total = self._count_parameters(self.model)
-            log.info(
-                f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
-            )
-        else:
-            log.warning(
-                "In multitask mode, parameters may be shared across tasks. "
-                "The following per-task counts may include duplicates."
-            )
-            for model_key in self.model_keys:
-                trainable, total = self._count_parameters(self.model[model_key])
-                log.info(
-                    f"Model Params [{model_key}]: {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
-                )
+        models = self.model if self.multi_task else {DEFAULT_TASK_KEY: self.model}
+        log_parameter_counts(
+            {key: count_parameters(models[key]) for key in self.model_keys},
+            multi_task=self.multi_task,
+        )
 
     def _create_optimizer(
         self,
@@ -1374,7 +1294,7 @@ class Trainer:
         torch.optim.Optimizer
             Constructed optimizer instance.
         """
-        if self.zero_stage == 1:
+        if self.sharding.stage == 1:
             return ZeroRedundancyOptimizer(
                 self.wrapper.parameters(),
                 optimizer_class=optimizer_class,
@@ -1384,7 +1304,7 @@ class Trainer:
 
     def _get_inner_module(self) -> ModelWrapper:
         """Unwrap DDP if needed. FSDP2 is in-place so no unwrapping required."""
-        if self.is_distributed and self.zero_stage <= 1:
+        if self.is_distributed and not self.sharding.shards_parameters:
             return self.wrapper.module
         return self.wrapper
 
@@ -1394,7 +1314,7 @@ class Trainer:
         """Load optimizer state for restart training when available."""
         if optimizer_state_dict is None or not self.restart_training:
             return
-        if self.zero_stage >= 2:
+        if self.sharding.shards_parameters:
             set_optimizer_state_dict(
                 self.wrapper,
                 self.optimizer,
@@ -1407,6 +1327,14 @@ class Trainer:
             self.optimizer.load_state_dict(optimizer_state_dict)
 
     def run(self) -> None:
+        """Run training and release asynchronous data pipelines."""
+        try:
+            self._run()
+        finally:
+            self._close_lmdb_loaders()
+
+    def _run(self) -> None:
+        """Execute the PyTorch optimization loop."""
         fout = (
             open(
                 self.disp_file,
@@ -1455,13 +1383,7 @@ class Trainer:
             cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
-            input_dict, label_dict, log_dict = self.get_data(
-                is_train=True, task_key=task_key
-            )
-            # All frames filtered by min_pair_dist (single-GPU only;
-            # DDP path in get_data() always keeps at least one frame)
-            if not input_dict:
-                return
+            input_dict, label_dict, log_dict = self._next_training_batch(task_key)
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -1483,7 +1405,7 @@ class Trainer:
                     # norm. Skip per-param collection in this case to avoid misleading values.
                     if (
                         self.enable_tensorboard
-                        and self.zero_stage < 2
+                        and not self.sharding.shards_parameters
                         and (
                             display_step_id % self.tensorboard_freq == 0
                             or display_step_id == 1
@@ -1497,7 +1419,7 @@ class Trainer:
                     total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        stable=self.zero_stage < 2,
+                        stable=not self.sharding.shards_parameters,
                     )
                     self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
@@ -1723,16 +1645,25 @@ class Trainer:
                                 input_dict, label_dict, _ = self.get_data(
                                     is_train=True, task_key=_key
                                 )
-                                _, loss, more_loss = self.wrapper(
-                                    **input_dict,
-                                    cur_lr=pref_lr,
-                                    label=label_dict,
-                                    task_key=_key,
-                                )
-                                train_results[_key] = log_loss_train(
-                                    loss, more_loss, _task_key=_key
-                                )
+                                if input_dict and not (
+                                    self.is_distributed
+                                    and self.sharding.shards_parameters
+                                ):
+                                    _, loss, more_loss = self._get_inner_module()(
+                                        **input_dict,
+                                        cur_lr=pref_lr,
+                                        label=label_dict,
+                                        task_key=_key,
+                                    )
+                                    train_results[_key] = log_loss_train(
+                                        loss, more_loss, _task_key=_key
+                                    )
                             valid_results[_key] = log_loss_valid(_task_key=_key)
+                            if not train_results[_key] and valid_results[_key]:
+                                train_results[_key] = dict.fromkeys(
+                                    valid_results[_key],
+                                    float("nan"),
+                                )
                             if self.rank == 0:
                                 log.info(
                                     format_training_message_per_task(
@@ -1768,39 +1699,16 @@ class Trainer:
                     self.step_count_in_interval = 0
                     self.last_display_step = display_step_id
 
-                current_time = time.time()
-                train_time = current_time - self.t0
-                self.t0 = current_time
+                interval = self.step_timer.record(display_step_id)
                 if self.rank == 0 and self.timing_in_training:
-                    eta = int(
-                        (self.num_steps - display_step_id)
-                        / min(self.disp_freq, display_step_id - self.start_step)
-                        * train_time
-                    )
                     log.info(
                         format_training_message(
                             batch=display_step_id,
-                            wall_time=train_time,
-                            eta=eta,
-                            current_time=datetime.datetime.fromtimestamp(
-                                current_time,
-                                tz=datetime.timezone.utc,
-                            ).astimezone(),
+                            wall_time=interval.wall_time,
+                            eta=interval.eta,
+                            current_time=interval.timestamp,
                         )
                     )
-                if (
-                    (self.num_steps - self.start_step)
-                    <= 2 * self.disp_freq  # not enough steps
-                    or (_step_id - self.start_step)
-                    >= self.disp_freq  # skip first disp_freq steps
-                ):
-                    self.total_train_time += train_time
-                    if display_step_id == 1:
-                        self.timed_steps += 1
-                    else:
-                        self.timed_steps += min(
-                            self.disp_freq, _step_id - self.start_step
-                        )
 
                 if fout:
                     if self.lcurve_should_print_header:
@@ -1833,9 +1741,11 @@ class Trainer:
                     ),
                 )
 
-            should_save_checkpoint = (
-                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
-            ) or (display_step_id) == self.num_steps
+            should_save_checkpoint = display_step_id == self.num_steps or (
+                self.save_freq > 0
+                and display_step_id % self.save_freq == 0
+                and _step_id != self.start_step
+            )
             if should_save_checkpoint:
                 # Abort before writing if any gradient norm since the previous
                 # checkpoint was non-finite.
@@ -1843,30 +1753,21 @@ class Trainer:
                     self.wrapper.named_parameters
                 )
             if should_save_checkpoint and (
-                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+                self.sharding.enabled or self.rank == 0 or dist.get_rank() == 0
             ):
                 # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = latest_checkpoint_path(
-                    self.save_ckpt, display_step_id, self.save_dir
-                )
+                self.latest_model = self.ckpt_store.path_for(display_step_id)
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 if self.rank == 0 or dist.get_rank() == 0:
                     log.info(f"Saved model to {self.latest_model}")
-                    symlink_prefix_files(
-                        str(self.latest_model.with_suffix("")), self.save_ckpt
-                    )
-                    with open("checkpoint", "w") as f:
-                        f.write(str(self.latest_model))
+                    self.ckpt_store.publish(self.latest_model)
                 if self.model_ema is not None:
-                    self.latest_ema_model = latest_checkpoint_path(
-                        self.ema_save_ckpt, display_step_id, self.save_dir
+                    self.latest_ema_model = self.ema_ckpt_store.path_for(
+                        display_step_id
                     )
                     self.save_ema_model(self.latest_ema_model, lr=cur_lr, step=_step_id)
                     if self.rank == 0 or dist.get_rank() == 0:
-                        symlink_prefix_files(
-                            str(self.latest_ema_model.with_suffix("")),
-                            self.ema_save_ckpt,
-                        )
+                        self.ema_ckpt_store.publish(self.latest_ema_model)
 
             # tensorboard
             if self.enable_tensorboard and (
@@ -1906,9 +1807,12 @@ class Trainer:
                             )
 
         self.wrapper.train()
-        self.t0 = time.time()
-        self.total_train_time = 0.0
-        self.timed_steps = 0
+        self.step_timer = TrainingTimer(
+            start_step=self.start_step,
+            num_steps=self.num_steps,
+            disp_freq=self.disp_freq,
+        )
+        self._discarded_training_batches = 0
 
         if self.disp_avg:
             # Initialize loss accumulators
@@ -1924,6 +1828,13 @@ class Trainer:
             step(step_id)
             if JIT:
                 break
+
+        if self.rank == 0 and self._discarded_training_batches:
+            log.info(
+                "Discarded %d globally invalid batches while collecting "
+                "synchronized training inputs.",
+                self._discarded_training_batches,
+            )
 
         if (
             self.change_bias_after_training
@@ -1943,70 +1854,48 @@ class Trainer:
                         self.get_sample_func[model_key],
                         _bias_adjust_mode="change-by-statistic",
                     )
-            self.latest_model = latest_checkpoint_path(
-                self.save_ckpt, self.num_steps, self.save_dir
-            )
+            self.latest_model = self.ckpt_store.path_for(self.num_steps)
             cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
-            symlink_prefix_files(str(self.latest_model.with_suffix("")), self.save_ckpt)
-            with open("checkpoint", "w") as f:
-                f.write(str(self.latest_model))
+            self.ckpt_store.publish(self.latest_model)
             if self.model_ema is not None:
-                self.latest_ema_model = latest_checkpoint_path(
-                    self.ema_save_ckpt, self.num_steps, self.save_dir
-                )
+                self.latest_ema_model = self.ema_ckpt_store.path_for(self.num_steps)
                 self.save_ema_model(
                     self.latest_ema_model,
                     lr=cur_lr,
                     step=self.num_steps - 1,
                 )
-                symlink_prefix_files(
-                    str(self.latest_ema_model.with_suffix("")), self.ema_save_ckpt
-                )
+                self.ema_ckpt_store.publish(self.latest_ema_model)
 
-        if self.num_steps == 0 and self.zero_stage > 0:
+        if self.num_steps == 0 and self.sharding.enabled:
             # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
-            self.latest_model = latest_checkpoint_path(self.save_ckpt, 0, self.save_dir)
+            self.latest_model = self.ckpt_store.path_for(0)
             self.save_model(self.latest_model, lr=0, step=0)
             if self.model_ema is not None:
-                self.latest_ema_model = latest_checkpoint_path(
-                    self.ema_save_ckpt, 0, self.save_dir
-                )
+                self.latest_ema_model = self.ema_ckpt_store.path_for(0)
                 self.save_ema_model(self.latest_ema_model, lr=0, step=0)
 
         if (
             self.rank == 0 or dist.get_rank() == 0
         ):  # Handle the case if rank 0 aborted and re-assigned
             if self.num_steps == 0:
-                if self.zero_stage == 0:
+                if not self.sharding.enabled:
                     # When num_steps is 0, the checkpoint is never saved in the loop
-                    self.latest_model = latest_checkpoint_path(
-                        self.save_ckpt, 0, self.save_dir
-                    )
+                    self.latest_model = self.ckpt_store.path_for(0)
                     self.save_model(self.latest_model, lr=0, step=0)
                     if self.model_ema is not None:
-                        self.latest_ema_model = latest_checkpoint_path(
-                            self.ema_save_ckpt, 0, self.save_dir
-                        )
+                        self.latest_ema_model = self.ema_ckpt_store.path_for(0)
                         self.save_ema_model(self.latest_ema_model, lr=0, step=0)
                 log.info(f"Saved model to {self.latest_model}")
-                symlink_prefix_files(
-                    str(self.latest_model.with_suffix("")), self.save_ckpt
-                )
-                with open("checkpoint", "w") as f:
-                    f.write(str(self.latest_model))
+                self.ckpt_store.publish(self.latest_model)
                 if self.model_ema is not None:
-                    symlink_prefix_files(
-                        str(self.latest_ema_model.with_suffix("")), self.ema_save_ckpt
-                    )
+                    self.ema_ckpt_store.publish(self.latest_ema_model)
 
-            if self.timing_in_training and self.timed_steps:
-                msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
-                excluded_steps = self.num_steps - self.start_step - self.timed_steps
-                if excluded_steps > 0:
-                    msg += f" ({excluded_steps} batches excluded)"
-                log.info(msg)
+            if self.timing_in_training:
+                average_message = self.step_timer.format_average()
+                if average_message is not None:
+                    log.info(average_message)
 
             if JIT:
                 pth_model_path = (
@@ -2035,6 +1924,24 @@ class Trainer:
                 log.info(
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
+
+    def _close_lmdb_loaders(self) -> None:
+        """Release LMDB pipelines owned by training and validation loaders."""
+        closed: set[int] = set()
+        datasets: dict[int, LmdbDataset] = {}
+        for loaders in (self.training_dataloader, self.validation_dataloader):
+            values = loaders.values() if isinstance(loaders, dict) else (loaders,)
+            for loader in values:
+                if loader is None or id(loader) in closed:
+                    continue
+                closed.add(id(loader))
+                close = getattr(loader, "close", None)
+                if close is not None:
+                    close()
+                if isinstance(loader, LmdbBatchDataLoader):
+                    datasets[id(loader.dataset)] = loader.dataset
+        for dataset in datasets.values():
+            dataset.close()
 
     def _collect_checkpoint_states(
         self,
@@ -2068,7 +1975,7 @@ class Trainer:
             else nullcontext()
         )
         with ema_context:
-            if self.zero_stage >= 2:
+            if self.sharding.shards_parameters:
                 # FSDP2: collective op, all ranks participate; rank 0 gets full state
                 options = StateDictOptions(full_state_dict=True, cpu_offload=True)
                 model_state = get_model_state_dict(self.wrapper, options=options)
@@ -2079,7 +1986,7 @@ class Trainer:
                     if include_optimizer
                     else None
                 )
-            elif self.zero_stage == 1:
+            elif self.sharding.stage == 1:
                 # ZeRO-1: consolidate sharded optimizer state to rank 0.
                 model_state = module.state_dict()
                 if use_ema_weights:
@@ -2099,28 +2006,14 @@ class Trainer:
                 optim_state = self.optimizer.state_dict() if include_optimizer else None
         return model_state, optim_state
 
-    @staticmethod
-    def _parse_checkpoint_step(path: Path, prefix_name: str) -> int | None:
-        """Parse the checkpoint step from ``<prefix>-<step>.pt`` filenames."""
-        checkpoint_prefix = f"{prefix_name}-"
-        if path.suffix != ".pt" or not path.name.startswith(checkpoint_prefix):
-            return None
-        step_text = path.name[len(checkpoint_prefix) : -len(path.suffix)]
-        if not step_text.isdigit():
-            return None
-        return int(step_text)
-
     def _write_checkpoint(
         self,
         save_path: Path,
         checkpoint_data: dict[str, Any],
         *,
-        ckpt_prefix: str,
-        max_ckpt_keep: int,
+        store: CheckpointStore,
     ) -> None:
-        """Write a checkpoint file and apply prefix-based cleanup."""
-        prefix_name = Path(ckpt_prefix).name
-
+        """Write a checkpoint file and apply the store's retention policy."""
         # === Only rank 0 writes to disk ===
         if self.rank != 0:
             return
@@ -2129,27 +2022,7 @@ class Trainer:
             for item in optim_state["param_groups"]:
                 item["lr"] = float(item["lr"])
         torch.save(checkpoint_data, save_path)
-        checkpoint_dir = save_path.parent
-        checkpoint_files = []
-        for checkpoint_file in checkpoint_dir.glob("*.pt"):
-            step = self._parse_checkpoint_step(checkpoint_file, prefix_name)
-            if checkpoint_file.is_symlink() or step is None:
-                continue
-            checkpoint_files.append((checkpoint_file, step))
-
-        current_step = self._parse_checkpoint_step(save_path, prefix_name)
-        if current_step is not None:
-            fresh_checkpoint_files = []
-            for checkpoint_file, step in checkpoint_files:
-                if step > current_step:
-                    checkpoint_file.unlink()
-                else:
-                    fresh_checkpoint_files.append((checkpoint_file, step))
-            checkpoint_files = fresh_checkpoint_files
-
-        checkpoint_files.sort(key=lambda item: (item[1], item[0].name))
-        while len(checkpoint_files) > max_ckpt_keep:
-            checkpoint_files.pop(0)[0].unlink()
+        store.prune(save_path)
 
     def save_model(
         self,
@@ -2157,8 +2030,7 @@ class Trainer:
         lr: float = 0.0,
         step: int = 0,
         *,
-        ckpt_prefix: str | None = None,
-        max_ckpt_keep: int | None = None,
+        store: CheckpointStore | None = None,
         use_ema_weights: bool = False,
         include_ema_state: bool = True,
         include_optimizer: bool = True,
@@ -2178,10 +2050,7 @@ class Trainer:
         self._write_checkpoint(
             Path(save_path),
             checkpoint_data,
-            ckpt_prefix=self.save_ckpt if ckpt_prefix is None else ckpt_prefix,
-            max_ckpt_keep=(
-                self.max_ckpt_keep if max_ckpt_keep is None else max_ckpt_keep
-            ),
+            store=self.ckpt_store if store is None else store,
         )
 
     def save_ema_model(
@@ -2196,8 +2065,7 @@ class Trainer:
             save_path,
             lr=lr,
             step=step,
-            ckpt_prefix=self.ema_save_ckpt,
-            max_ckpt_keep=self.ema_ckpt_keep,
+            store=self.ema_ckpt_store,
             use_ema_weights=True,
             include_ema_state=False,
             include_optimizer=False,
@@ -2209,8 +2077,7 @@ class Trainer:
         lr: float = 0.0,
         step: int = 0,
         *,
-        ckpt_prefix: str | None = None,
-        max_ckpt_keep: int | None = None,
+        store: CheckpointStore | None = None,
         use_ema_weights: bool = False,
     ) -> None:
         """Save a plain SeZM checkpoint with LoRA adapters folded into base weights.
@@ -2250,10 +2117,7 @@ class Trainer:
         self._write_checkpoint(
             Path(save_path),
             {"model": merged_state},
-            ckpt_prefix=self.save_ckpt if ckpt_prefix is None else ckpt_prefix,
-            max_ckpt_keep=(
-                self.max_ckpt_keep if max_ckpt_keep is None else max_ckpt_keep
-            ),
+            store=self.ckpt_store if store is None else store,
         )
 
     def save_ema_model_merged(
@@ -2268,9 +2132,58 @@ class Trainer:
             save_path,
             lr=lr,
             step=step,
-            ckpt_prefix=self.ema_save_ckpt,
-            max_ckpt_keep=self.ema_ckpt_keep,
+            store=self.ema_ckpt_store,
             use_ema_weights=True,
+        )
+
+    def _get_min_pair_dist(self, task_key: str) -> float:
+        """Return the minimum pair distance configured for one task."""
+        if isinstance(self.min_pair_dist, dict):
+            return self.min_pair_dist[task_key]
+        return self.min_pair_dist
+
+    def _next_training_batch(
+        self,
+        task_key: str,
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        """Return the next batch that can produce a synchronized optimizer step.
+
+        Parameters
+        ----------
+        task_key
+            Selected training task.
+
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any], dict[str, Any]]
+            Model inputs, labels, and sampler metadata for a globally valid
+            batch.
+
+        Raises
+        ------
+        RuntimeError
+            If no globally valid batch is found within the synchronized retry
+            budget.
+        """
+        max_attempts = self._training_batch_attempts
+        distributed_filter = (
+            self.has_min_pair_filter and dist.is_available() and dist.is_initialized()
+        )
+
+        for _ in range(max_attempts):
+            batch = self.get_data(is_train=True, task_key=task_key)
+            input_dict = batch[0]
+            globally_valid = bool(input_dict)
+            if distributed_filter:
+                globally_valid = all_ranks_have_valid_frames(globally_valid)
+            if globally_valid:
+                return batch
+            self._discarded_training_batches += 1
+
+        raise RuntimeError(
+            "Unable to collect a globally valid training batch for task "
+            f"{task_key!r} after {max_attempts} attempts with "
+            f"min_pair_dist={self._get_min_pair_dist(task_key)}."
         )
 
     def get_data(
@@ -2286,26 +2199,18 @@ class Trainer:
             return {}, {}, {}
         batch_data = next(iterator)
         # === Filter frames with atoms too close (training only) ===
-        if is_train and self.min_pair_dist > 0.0 and "min_pair_dist" in batch_data:
-            min_dists = batch_data["min_pair_dist"]
-            if isinstance(min_dists, torch.Tensor):
-                valid_mask = min_dists.squeeze(-1) >= self.min_pair_dist
-                n_total = valid_mask.shape[0]
-                n_valid = int(valid_mask.sum().item())
-                if n_valid == 0:
-                    # Under distributed training (DDP/FSDP), every rank must
-                    # participate in backward() to avoid collective communication
-                    # deadlock.  Keep one frame as a fallback instead of
-                    # skipping the entire batch.
-                    if dist.is_available() and dist.is_initialized():
-                        valid_mask[0] = True
-                        n_valid = 1
-                    else:
-                        return {}, {}, {}
-                if n_valid < n_total:
-                    for key, val in batch_data.items():
-                        if isinstance(val, torch.Tensor) and val.shape[0] == n_total:
-                            batch_data[key] = val[valid_mask]
+        min_pair_dist = self._get_min_pair_dist(task_key)
+        valid_mask = (
+            min_pair_dist_frame_mask(batch_data, min_pair_dist) if is_train else None
+        )
+        local_has_valid = valid_mask is None or bool(torch.any(valid_mask))
+        if not local_has_valid:
+            return {}, {}, {}
+
+        if valid_mask is not None:
+            n_valid = int(valid_mask.sum().item())
+            if n_valid < valid_mask.shape[0]:
+                batch_data = select_batch_frames(batch_data, valid_mask)
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue
@@ -2419,6 +2324,29 @@ class Trainer:
         fout.flush()
 
 
+def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
+    """
+    Return whether every distributed rank has a valid training frame.
+
+    Parameters
+    ----------
+    local_has_valid
+        Whether the current rank has at least one valid frame.
+
+    Returns
+    -------
+    bool
+        ``True`` only when every rank reports a valid frame.
+    """
+    all_ranks_have_valid = torch.tensor(
+        int(local_has_valid),
+        dtype=torch.int32,
+        device=DEVICE,
+    )
+    dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN)
+    return bool(all_ranks_have_valid.item())
+
+
 def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     additional_data_requirement = []
     if _model.get_dim_fparam() > 0:
@@ -2482,11 +2410,6 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     return additional_data_requirement
 
 
-def whether_hessian(loss_params: dict[str, Any]) -> bool:
-    loss_type = loss_params.get("type", "ener")
-    return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
-
-
 def prepare_model_for_loss(
     model: Any,
     loss_params: dict[str, Any] | None,
@@ -2501,17 +2424,54 @@ def prepare_model_for_loss(
                 prepare_model_for_loss(sub_model, sub_loss)
         return
     if hasattr(model, "set_active_mode_from_loss"):
-        model.set_active_mode_from_loss(loss_params.get("type", "ener"))
+        loss_type = loss_params.get("type", "ener")
+        model.set_active_mode_from_loss(
+            "ener" if loss_type == "ener_hess" else loss_type
+        )
+
+
+def prepare_model_for_data_requirements(
+    model: Any,
+    data_requirements: list[DataRequirementItem] | dict[str, list[DataRequirementItem]],
+    model_params: dict[str, Any],
+) -> None:
+    """Enable model outputs requested by a loss's data requirements.
+
+    Hessian prefactors are deliberately not inspected here. The presence of a
+    ``hessian`` requirement is the loss-to-trainer contract for enabling that
+    expensive output. The mode is persisted in the model definition so reload
+    and freeze paths reconstruct the same model interface.
+    """
+    if isinstance(model, dict):
+        if not isinstance(data_requirements, dict):
+            raise TypeError("Multi-task models require per-task data requirements.")
+        for model_key, sub_model in model.items():
+            prepare_model_for_data_requirements(
+                sub_model,
+                data_requirements[model_key],
+                model_params["model_dict"][model_key],
+            )
+        return
+    if isinstance(data_requirements, dict):
+        raise TypeError("Single-task models require a list of data requirements.")
+    if not has_data_requirement(data_requirements, "hessian"):
+        return
+    enable_hessian = getattr(model, "enable_hessian", None)
+    if not callable(enable_hessian):
+        raise RuntimeError(
+            f"Model {type(model).__name__} does not support Hessian supervision."
+        )
+    enable_hessian()
+    model_params["hessian_mode"] = True
+    if hasattr(model, "model_def_script"):
+        model.model_def_script = json.dumps(model_params)
 
 
 def get_loss(
     loss_params: dict[str, Any], start_lr: float, _ntypes: int, _model: Any
 ) -> TaskLoss:
     loss_type = loss_params.get("type", "ener")
-    if whether_hessian(loss_params):
-        loss_params["starter_learning_rate"] = start_lr
-        return EnergyHessianStdLoss(**loss_params)
-    elif loss_type == "ener":
+    if loss_type in {"ener", "ener_hess"}:
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
     elif loss_type == "dens":
@@ -2568,11 +2528,8 @@ def get_single_model(
 def get_model_for_wrapper(
     _model_params: dict[str, Any],
     resuming: bool = False,
-    _loss_params: dict[str, Any] | None = None,
 ) -> Any:
     if "model_dict" not in _model_params:
-        if _loss_params is not None and whether_hessian(_loss_params):
-            _model_params["hessian_mode"] = True
         _model = get_single_model(
             _model_params,
         )
@@ -2581,8 +2538,6 @@ def get_model_for_wrapper(
         model_keys = list(_model_params["model_dict"])
         do_case_embd, case_embd_index = get_case_embd_config(_model_params)
         for _model_key in model_keys:
-            if _loss_params is not None and whether_hessian(_loss_params[_model_key]):
-                _model_params["model_dict"][_model_key]["hessian_mode"] = True
             _model[_model_key] = get_single_model(
                 _model_params["model_dict"][_model_key],
             )
