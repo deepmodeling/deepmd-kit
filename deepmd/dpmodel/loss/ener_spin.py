@@ -328,7 +328,7 @@ class EnergySpinLoss(Loss):
             pref_fm = pref_fm * find_force_mag
             force_mag_pred = reshape_atomic(model_dict["force_mag"], 3)
             force_mag_label = reshape_atomic(label_dict["force_mag"], 3)
-            mask_mag = reshape_atomic(model_dict["mask_mag"], 1) > 0
+            mask_mag = reshape_atomic(model_dict["mask_mag"], 1)
             if maskf is not None:
                 mask_mag = xp.logical_and(
                     mask_mag,
