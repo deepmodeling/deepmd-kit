@@ -383,9 +383,9 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         )
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
+        default_cs = _model.get_default_chg_spin()
+        has_default_cs = default_cs is not None
         if has_default_cs:
-            default_cs = _model.get_default_chg_spin()
             if hasattr(default_cs, "cpu"):
                 default_cs = default_cs.cpu().numpy()
             else:
@@ -1178,7 +1178,7 @@ class _CompiledModel(torch.nn.Module):
             distinguish_types=False,
             # model-level pair exclusion is a nlist-BUILD transform (decision
             # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
-            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
+            pair_excl=self.original_model.atomic_model.pair_excl,
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
 
@@ -1215,9 +1215,7 @@ class _CompiledModel(torch.nn.Module):
                     .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = (
-            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = _model.get_dim_chg_spin()
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
@@ -1390,9 +1388,7 @@ class _CompiledModel(torch.nn.Module):
                     .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = (
-            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = _model.get_dim_chg_spin()
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
@@ -1409,7 +1405,7 @@ class _CompiledModel(torch.nn.Module):
         # level pair_exclude is a graph-BUILD transform (decision #18): fold it
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
-        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
+        pair_excl = _model.atomic_model.pair_excl
         ng = build_neighbor_graph_for_method(
             getattr(_model, "neighbor_graph_method", "dense"),
             coord_3d,
