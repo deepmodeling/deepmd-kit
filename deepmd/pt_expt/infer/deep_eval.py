@@ -958,6 +958,7 @@ class DeepEval(DeepEvalBackend):
         """The evaluator of the model type."""
         if self._dpmodel is not None:
             model_output_type = self._dpmodel.model_output_type()
+            var_name = self._dpmodel.get_var_name()
         else:
             # Metadata-only mode: derive the output-type set from the
             # fitting_output_defs names.  `model_output_type()` on a
@@ -966,6 +967,7 @@ class DeepEval(DeepEvalBackend):
             model_output_type = [
                 d.name for d in self._model_output_def.def_outp.get_data().values()
             ]
+            var_name = None
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -976,11 +978,7 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif (
-            self._dpmodel is not None
-            and self._dpmodel.get_var_name() is not None
-            and self._dpmodel.get_var_name() in model_output_type
-        ):
+        elif var_name is not None and var_name in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
