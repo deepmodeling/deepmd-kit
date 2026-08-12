@@ -144,7 +144,9 @@ class ModelTestCase:
         assert isinstance(self.module.has_chg_spin_ebd(), bool)
         assert isinstance(self.module.get_dim_chg_spin(), int)
         dcs = self.module.get_default_chg_spin()
-        assert dcs is None or isinstance(dcs, (list, tuple))
+        # Backend-agnostic: dpmodel returns a list, frozen pt returns a
+        # torch.Tensor -- pin the shape contract, not the container type.
+        assert dcs is None or len(dcs) == self.module.get_dim_chg_spin()
 
     def test_property_capability_contract(self) -> None:
         """Property queries are declared on the base model with concrete

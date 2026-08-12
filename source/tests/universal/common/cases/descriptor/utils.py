@@ -51,7 +51,9 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
         # chg-spin family: concrete base defaults, never probed (issue #5897).
         assert isinstance(self.module.get_dim_chg_spin(), int)
         dcs = self.module.get_default_chg_spin()
-        assert dcs is None or isinstance(dcs, (list, tuple))
+        # Backend-agnostic: dpmodel returns a list, frozen pt returns a
+        # torch.Tensor -- pin the shape contract, not the container type.
+        assert dcs is None or len(dcs) == self.module.get_dim_chg_spin()
         # has_default_chg_spin was merged into get_default_chg_spin: the
         # predicate is ``get_default_chg_spin() is not None``. The absence
         # of ``has_default_chg_spin`` on the dpmodel side is pinned in
