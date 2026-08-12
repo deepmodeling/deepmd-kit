@@ -2,10 +2,8 @@
 """Tests for the DPA4/SeZM model-type dispatch in pt_expt ``get_model``."""
 
 import copy
-import logging
 import unittest
 
-import pytest
 import torch
 
 from deepmd.pt_expt.model import (
@@ -233,12 +231,13 @@ class TestGetModelDPA4(unittest.TestCase):
         """pt-only SeZM model-level features fail fast with NotImplementedError.
 
         ``bridging_method`` is no longer in this list: it is supported as an
-        atomic-model composition (see ``test_zbl_bridging.py``).
+        atomic-model composition (see ``test_zbl_bridging.py``). Neither is
+        ``use_compile``, which pt_expt relocated to ``training.enable_compile``
+        and merely warns about.
         """
         cases = {
             "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
             "lora": ({"rank": 4}, "`lora` is not supported"),
-            "use_compile": (True, "`use_compile` is not supported"),
             "preset_out_bias": (
                 {"energy": [None, 1.0]},
                 "`preset_out_bias` is not supported",
@@ -307,53 +306,6 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertIsNone(model_params.get("preset_out_bias"))
         model = get_model(copy.deepcopy(model_params))
         self.assertIsInstance(model, EnergyModel)
-
-
-# `enable_tf32` toggles TF32 matmul precision in pt but is ignored by pt_expt
-# (always "highest" precision); a truthy value must emit a warn-once message.
-@pytest.mark.parametrize("enable_tf32", [True, False])  # truthy warns, falsy silent
-def test_enable_tf32_warns_once(enable_tf32, monkeypatch) -> None:
-    import importlib
-
-    # the package __init__ rebinds the name ``get_model`` to the function, so
-    # ``import ...get_model as`` would shadow the submodule; load it explicitly
-    gm_mod = importlib.import_module("deepmd.pt_expt.model.get_model")
-
-    # reset the warn-once set so the assertion is deterministic regardless of
-    # test ordering (other get_sezm_model calls may have already warned)
-    monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
-
-    # Count emissions on the EMITTING logger with our own handler rather than
-    # through caplog: caplog reads a root handler, so whatever global logging
-    # state earlier tests left behind (set_log_handles flips the ``deepmd``
-    # logger's propagate off and installs its own handlers) changes how many
-    # records reach it -- zero when propagation is off, more than one when the
-    # record is seen through several attached handlers.  A handler on the
-    # emitting logger sees exactly one record per ``log.warning`` call.
-    records: list[logging.LogRecord] = []
-
-    class _Collect(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            records.append(record)
-
-    handler = _Collect(level=logging.WARNING)
-    old_level = gm_mod.log.level
-    gm_mod.log.setLevel(logging.WARNING)
-    gm_mod.log.addHandler(handler)
-    try:
-        gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
-        matches = [r for r in records if "enable_tf32" in r.getMessage()]
-        if enable_tf32:
-            assert len(matches) == 1, [r.getMessage() for r in records]
-            # a second call must NOT warn again (warn-once per process)
-            records.clear()
-            gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
-            assert not [r for r in records if "enable_tf32" in r.getMessage()]
-        else:
-            assert not matches, [r.getMessage() for r in records]
-    finally:
-        gm_mod.log.removeHandler(handler)
-        gm_mod.log.setLevel(old_level)
 
 
 class TestNativeSpinErrorTranslation(unittest.TestCase):

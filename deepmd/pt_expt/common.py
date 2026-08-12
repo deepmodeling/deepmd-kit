@@ -5,7 +5,8 @@ This module provides the core infrastructure for automatically wrapping dpmodel
 classes (array_api_compat-based) as PyTorch modules. The key insight is to
 detect attributes by their **value type** rather than by hard-coded names:
 
-- numpy arrays → torch buffers (persistent state like statistics, masks)
+- numpy arrays → torch buffers (persistent, unless the owning class lists the
+  array in ``CONFIG_DERIVED_ARRAYS``)
 - dpmodel objects → pt_expt torch.nn.Module wrappers (via registry lookup)
 - None values → clear existing buffers
 
@@ -222,8 +223,12 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     the need to hard-code attribute names in each wrapper's __setattr__ method. It
     handles three cases:
 
-    1. **numpy arrays → torch buffers**: Persistent state like statistics (davg, dstd)
-       or masks that should be saved in state_dict and moved with .to(device).
+    1. **numpy arrays → torch buffers**: State such as statistics (davg, dstd) that
+       is saved in state_dict and moved with .to(device). An array the owning
+       class lists in ``CONFIG_DERIVED_ARRAYS`` becomes a NON-persistent buffer
+       instead: being a pure function of the configuration it is rebuilt by
+       ``__init__``, so adopting a stored copy would let a checkpoint whose
+       configuration differs override the built value.
     2. **None values → clear buffers**: Setting an existing buffer to None.
     3. **dpmodel objects → pt_expt modules**: Nested dpmodel objects like
        AtomExcludeMaskDP or NetworkCollectionDP are converted to their pt_expt
@@ -305,7 +310,11 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         # deserialize), remove it first so register_buffer doesn't conflict.
         if hasattr(obj, name) and name not in obj._buffers:
             delattr(obj, name)
-        obj.register_buffer(name, tensor)
+        obj.register_buffer(
+            name,
+            tensor,
+            persistent=name not in getattr(type(obj), "CONFIG_DERIVED_ARRAYS", ()),
+        )
         return True, tensor
 
     # clear an existing buffer to None
@@ -447,6 +456,19 @@ def torch_module(
             handled, value = dpmodel_setattr(self, name, value)
             if not handled:
                 super().__setattr__(name, value)
+
+        def _load_from_state_dict(
+            self, state_dict: dict, prefix: str, *args: Any, **kwargs: Any
+        ) -> None:
+            # A non-persistent buffer is configuration-derived: ``__init__``
+            # already rebuilt it, so any archived copy is discarded rather than
+            # reported as an unexpected key. This keeps checkpoints written
+            # while the buffer was still persistent loadable, and keeps a
+            # checkpoint from a differently configured model (e.g. a spin-free
+            # pretraining, whose spin gate is all zero) from overriding it.
+            for name in self._non_persistent_buffers_set:
+                state_dict.pop(prefix + name, None)
+            super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
     # Auto-generate forward -> call redirect if not explicitly defined
     if hasattr(module, "call") and "forward" not in module.__dict__:

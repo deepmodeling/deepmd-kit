@@ -293,3 +293,99 @@ class TestEnergySpinLoss:
             torch.testing.assert_close(
                 more_loss["rmse_fm"], torch.zeros_like(more_loss["rmse_fm"])
             )
+
+    @pytest.mark.parametrize("loss_func", ["mse", "mae"])
+    def test_ragged_matches_masked_rectangular(self, loss_func: str) -> None:
+        """Every spin-loss term is invariant to padding the node axis."""
+        dtype = torch.float64
+        device = self.device
+        n_node = torch.tensor([3, 2], dtype=torch.int64, device=device)
+        real_atom = torch.tensor(
+            [[True, True, True], [True, True, False]], device=device
+        )
+
+        def padded(values: torch.Tensor, fill: float = 0.0) -> torch.Tensor:
+            result = torch.full(
+                (2, 3, *values.shape[1:]), fill, dtype=dtype, device=device
+            )
+            result[real_atom] = values
+            return result
+
+        atom_energy = torch.arange(1, 6, dtype=dtype, device=device).reshape(-1, 1)
+        force = torch.arange(15, dtype=dtype, device=device).reshape(-1, 3) / 10.0
+        force_mag = force + 0.25
+        atom_coeff = torch.tensor(
+            [[1.0], [0.5], [-0.5], [2.0], [1.5]], dtype=dtype, device=device
+        )
+        magnetic = torch.tensor(
+            [[True], [False], [True], [False], [True]], device=device
+        )
+        model_rect = {
+            "energy": torch.zeros((2, 1), dtype=dtype, device=device),
+            "force": padded(force),
+            "force_mag": padded(force_mag),
+            "mask_mag": padded(magnetic.to(dtype), fill=1.0).bool(),
+            "virial": torch.arange(18, dtype=dtype, device=device).reshape(2, 9),
+            "atom_energy": padded(atom_energy, fill=100.0),
+            "mask": real_atom.to(dtype),
+        }
+        label_rect = {
+            "energy": torch.tensor([[1.0], [2.0]], dtype=dtype, device=device),
+            "force": padded(force + 0.5, fill=100.0),
+            "force_mag": padded(force_mag - 0.5, fill=100.0),
+            "virial": model_rect["virial"] + 0.5,
+            "atom_ener": padded(atom_energy - 0.25, fill=100.0),
+            "atom_ener_coeff": padded(atom_coeff, fill=3.0),
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_force_mag": 1.0,
+            "find_virial": 1.0,
+            "find_atom_ener": 1.0,
+        }
+        model_ragged = {
+            "energy": model_rect["energy"],
+            "force": force,
+            "force_mag": force_mag,
+            "mask_mag": magnetic,
+            "virial": model_rect["virial"],
+            "atom_energy": atom_energy,
+            "mask": torch.ones(5, dtype=dtype, device=device),
+            "n_node": n_node,
+        }
+        label_ragged = {
+            "energy": label_rect["energy"],
+            "force": force + 0.5,
+            "force_mag": force_mag - 0.5,
+            "virial": label_rect["virial"],
+            "atom_ener": atom_energy - 0.25,
+            "atom_ener_coeff": atom_coeff,
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_force_mag": 1.0,
+            "find_virial": 1.0,
+            "find_atom_ener": 1.0,
+        }
+        loss_fn = EnergySpinLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_fr=1.0,
+            limit_pref_fr=1.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            enable_atom_ener_coeff=True,
+            loss_func=loss_func,
+            intensive_ener_virial=True,
+        )
+
+        rectangular_loss, rectangular_more = loss_fn(1.0, 3, model_rect, label_rect)
+        ragged_loss, ragged_more = loss_fn(1.0, 5, model_ragged, label_ragged)
+
+        torch.testing.assert_close(ragged_loss, rectangular_loss)
+        assert ragged_more.keys() == rectangular_more.keys()
+        for key in ragged_more:
+            torch.testing.assert_close(ragged_more[key], rectangular_more[key])

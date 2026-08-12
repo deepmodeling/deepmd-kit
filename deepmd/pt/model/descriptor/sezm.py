@@ -439,7 +439,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     """
 
     _ENV_DIM: int = 1  # Use se_r style (radial only) for EnvMatStatSe compatibility
-    LATEST_VERSION: float = 1.1
+    LATEST_VERSION: float = 1.2
 
     def __init__(
         self,
@@ -2203,28 +2203,23 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         Notes
         -----
-        - When `use_amp=True`, enables torch.autocast with bfloat16 on CUDA
-          during training. Eval/inference enables the same autocast region only
-          when ``DP_AMP_INFER`` was truthy at construction time.
-          This can improve speed and reduce memory usage on GPUs with native
-          bfloat16 support.
-          Disable AMP on GPUs without native bfloat16 support to avoid runtime
-          errors or additional conversion overhead.
-        - Only affects autocast-eligible operations.
-        - Does nothing during inference (`self.training=False`) unless
-          ``DP_AMP_INFER`` is enabled, on non-CUDA devices, or when
-          `use_amp=False`.
+        Training follows ``use_amp`` and evaluation follows ``DP_AMP_INFER``
+        (captured at construction as ``use_amp_infer``). The two are
+        independent: mixed precision at inference is a throughput choice that
+        must not require a model to have been trained with it, and a
+        checkpoint therefore never carries the training switch into a
+        deployment.
+
+        Autocast reaches only eligible operations, and only on CUDA. Leave it
+        off on GPUs without native bfloat16 to avoid conversion overhead.
 
         Yields
         ------
         None
             Runs the wrapped region under the configured AMP setting.
         """
-        if (
-            not self.use_amp
-            or device.type != "cuda"
-            or (not self.training and not self.use_amp_infer)
-        ):
+        enabled = self.use_amp if self.training else self.use_amp_infer
+        if not enabled or device.type != "cuda":
             yield
             return
 
@@ -2589,8 +2584,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         data.pop("env_mat", None)
         config.pop("s2_grid_resolution", None)
         obj = cls(**config)
-        obj.version = version
-        obj.version_tensor.fill_(version)
         template = obj.state_dict()
         state = {
             key: safe_numpy_to_tensor(
@@ -2598,6 +2591,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
             for key, value in variables.items()
         }
+        state["version_tensor"] = obj.version_tensor.new_tensor(version)
         obj.load_state_dict(state)
         return obj
 
@@ -2637,6 +2631,64 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         )
         local_jdata_cpy["sel"] = sel[0]
         return local_jdata_cpy, min_nbor_dist
+
+    def _migrate_variables(
+        self,
+        variables: dict[str, torch.Tensor],
+        version: float,
+        prefix: str = "",
+    ) -> float:
+        """Rewrite stored state whose meaning changed since ``version``.
+
+        Operates on the incoming ``state_dict``, BEFORE anything is assigned
+        to a module: ``load_state_dict`` restores a module's own buffers
+        before descending into its children, so a migration applied to live
+        attributes would rewrite values the child load is about to
+        overwrite. Only representations are upgraded here; a difference no
+        rewrite can absorb stays a forward-time branch on :attr:`version`,
+        so a migrated descriptor never changes its own math.
+
+        Version 1.2 moved the env-seed spin gate from the spin coordinate to
+        the resulting environment quadratic form. For an active-spin model,
+        squaring the stored amplitude preserves the represented function.
+        Legacy native-spin models with no magnetic types instead carry
+        dormant, unconstrained spin-route values; those output-controlling
+        values are canonicalized to the zero function before the routes can
+        be activated by fine-tuning. Versions below 1.1 predate the
+        native-spin route and retain their original forward semantics.
+
+        Parameters
+        ----------
+        variables
+            Stored state keyed by ``state_dict`` name, mutated in place.
+        version
+            Version the state was written at.
+        prefix
+            Key prefix of this descriptor within ``variables``.
+
+        Returns
+        -------
+        float
+            Version the state expresses after migration.
+        """
+        if not 1.1 <= version < 1.2:
+            return version
+
+        gate_key = prefix + "env_seed_embedding.spin_scale"
+        if self.use_spin is not None and not any(self.use_spin):
+            dormant_keys = (
+                "spin_embedding.mag_layer2.matrix",
+                "spin_embedding.adam_spin_vec_weight",
+                "spin_embedding.adam_spin_nbr_weight",
+                "env_seed_embedding.spin_scale",
+            )
+            for name in dormant_keys:
+                key = prefix + name
+                if key in variables:
+                    variables[key] = torch.zeros_like(variables[key])
+        elif gate_key in variables:
+            variables[gate_key] = variables[gate_key] ** 2
+        return 1.2
 
     def _load_from_state_dict(
         self,
@@ -2683,7 +2735,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if version_key not in state_dict:
             state_dict[version_key] = self.version_tensor.new_tensor(1.0)
 
-        # === Step 3. Drop transient descriptor state rebuilt at construction ===
+        # === Step 3. Bring the incoming state up to the current semantics ===
+        state_dict[version_key] = self.version_tensor.new_tensor(
+            self._migrate_variables(
+                state_dict, float(state_dict[version_key].item()), prefix
+            )
+        )
+
+        # === Step 4. Drop transient descriptor state rebuilt at construction ===
         expected_keys = {prefix + key for key in self.state_dict().keys()}
         for full_key in list(state_dict.keys()):
             if full_key.startswith(prefix) and full_key not in expected_keys:

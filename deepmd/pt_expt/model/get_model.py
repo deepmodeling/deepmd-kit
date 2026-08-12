@@ -57,7 +57,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# Warn at most once per process for backend-ignored switches (keyed by name).
+# Warn at most once per process for backend-relocated switches (keyed by name).
 _WARNED_ONCE: set[str] = set()
 
 
@@ -85,22 +85,20 @@ def get_sezm_model(data: dict) -> BaseModel:
     :func:`get_native_spin_model`; the two combine.
 
     Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme, ``lora``, ``use_compile``, and
+    virtual-atom (``deepspin``) spin scheme, ``lora``, and
     ``preset_out_bias``.
 
     Notes
     -----
-    ``enable_tf32`` is accepted but ignored: the pt backend uses it to toggle
-    TF32 matmul precision, while the pt_expt backend always runs at full
-    ("highest") matmul precision, which is numerically conservative.
+    ``model.use_compile`` and ``model.enable_tf32`` are accepted but ignored.
+    The pt backend hangs both switches off the model because only SeZM
+    implements the compile and precision paths there, whereas pt_expt applies
+    them to every model and so reads them from ``training.enable_compile`` and
+    ``training.enable_tf32``. Requesting the relocated compile switch warns
+    once; ``enable_tf32`` cannot, because normalization fills its model-level
+    default in on every run and an explicit request is indistinguishable.
     """
     data = copy.deepcopy(data)
-    if bool(data.get("enable_tf32", True)) and "enable_tf32" not in _WARNED_ONCE:
-        log.warning(
-            "`enable_tf32` has no effect on the pt_expt backend, which "
-            "always runs at full ('highest') matmul precision; ignoring it."
-        )
-        _WARNED_ONCE.add("enable_tf32")
     if "spin" in data:
         if str(data["spin"].get("scheme", "deepspin")) != "native":
             raise NotImplementedError(
@@ -118,10 +116,12 @@ def get_sezm_model(data: dict) -> BaseModel:
         raise NotImplementedError(
             "`lora` is not supported for DPA4/SeZM in the pt_expt backend."
         )
-    if data.get("use_compile"):
-        raise NotImplementedError(
-            "`use_compile` is not supported for DPA4/SeZM in the pt_expt backend."
+    if data.get("use_compile") and "use_compile" not in _WARNED_ONCE:
+        log.warning(
+            "`model.use_compile` has no effect on the pt_expt backend; "
+            "set `training.enable_compile` instead."
         )
+        _WARNED_ONCE.add("use_compile")
     if data.get("preset_out_bias"):
         raise NotImplementedError(
             "`preset_out_bias` is not supported for DPA4/SeZM in the pt_expt backend."
@@ -306,7 +306,6 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
     spin = Spin(
         use_spin=use_spin,
-        virtual_scale=spin_cfg.get("virtual_scale", 1.0),
         allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data["descriptor"]["use_spin"] = use_spin

@@ -196,6 +196,8 @@ def _cal_hessian_ext(
         Atomic parameters. Shape: [nf, nloc, nap] or None.
     create_graph
         Whether to create graph for higher-order derivatives.
+    charge_spin
+        Frame-level charge and spin conditioning. Shape: [nf, ncs] or None.
 
     Returns
     -------
@@ -761,6 +763,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Model forward over a batch whose node axis is already flat.
 
@@ -790,6 +793,9 @@ def make_model(
                 Whether to compute the atomic virial.
             charge_spin : torch.Tensor or None, optional
                 Frame-level charge/spin conditioning with shape ``(nf, 2)``.
+            spin : torch.Tensor or None, optional
+                Native spin with shape ``(N, 3)``. Virtual-atom spin models do
+                not expose this ragged entry.
 
             Returns
             -------
@@ -849,6 +855,7 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
                 charge_spin=charge_spin,
+                spin=spin,
             )
             # The per-atom mask a rectangular batch carries is what tells the
             # loss each frame's real atom count. Nothing here is padded, so the
@@ -1100,7 +1107,7 @@ def make_model(
 
             Parameters
             ----------
-            extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial
+            extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial, charge_spin
                 Sample inputs with representative shapes (used for tracing).
             **make_fx_kwargs
                 Extra keyword arguments forwarded to ``make_fx``
@@ -1111,7 +1118,7 @@ def make_model(
             torch.nn.Module
                 A traced module whose ``forward`` accepts
                 ``(extended_coord, extended_atype, nlist, mapping,
-                fparam, aparam)`` and returns a dict with the same keys
+                fparam, aparam, charge_spin)`` and returns a dict with the same keys
                 as ``call_common_lower``.
             """
             model = self

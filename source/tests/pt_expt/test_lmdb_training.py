@@ -65,11 +65,11 @@ def _encode_array(arr: np.ndarray) -> dict:
     }
 
 
-def _make_frame(natoms: int, seed: int) -> dict:
+def _make_frame(natoms: int, seed: int, *, include_spin: bool = False) -> dict:
     """Synthetic LMDB frame matching the on-disk schema used by LmdbDataReader."""
     rng = np.random.RandomState(seed)
     half = natoms // 2
-    return {
+    frame = {
         "atom_numbs": [half, natoms - half],
         "atom_names": ["O", "H"],
         "atom_types": _encode_array(
@@ -81,6 +81,14 @@ def _make_frame(natoms: int, seed: int) -> dict:
         "energies": _encode_array(np.array(rng.randn(), dtype=np.float64)),
         "forces": _encode_array(rng.randn(natoms, 3).astype(np.float64)),
     }
+    if include_spin:
+        spin = rng.randn(natoms, 3).astype(np.float64)
+        spin[half:] = 0.0
+        force_mag = rng.randn(natoms, 3).astype(np.float64)
+        force_mag[half:] = 0.0
+        frame["spin"] = _encode_array(spin)
+        frame["force_mag"] = _encode_array(force_mag)
+    return frame
 
 
 def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
@@ -131,7 +139,7 @@ def _create_partially_labeled_lmdb(path: str) -> None:
     env.close()
 
 
-def _create_mixed_nloc_test_lmdb(path: str) -> None:
+def _create_mixed_nloc_test_lmdb(path: str, *, include_spin: bool = False) -> None:
     """Write an LMDB with five six-atom and five nine-atom frames."""
     frame_nlocs = [6] * 5 + [9] * 5
     env = lmdb.open(path, map_size=10 * 1024 * 1024)
@@ -153,7 +161,10 @@ def _create_mixed_nloc_test_lmdb(path: str) -> None:
             key = format(index, fmt).encode()
             txn.put(
                 key,
-                msgpack.packb(_make_frame(nloc, index), use_bin_type=True),
+                msgpack.packb(
+                    _make_frame(nloc, index, include_spin=include_spin),
+                    use_bin_type=True,
+                ),
             )
     env.close()
 
@@ -780,37 +791,32 @@ class TestRaggedTrainingBatches(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
         self.lmdb_path = os.path.join(self.tmpdir, "mixed.lmdb")
+        self.spin_lmdb_path = os.path.join(self.tmpdir, "mixed-spin.lmdb")
         _create_mixed_nloc_test_lmdb(self.lmdb_path)
+        _create_mixed_nloc_test_lmdb(self.spin_lmdb_path, include_spin=True)
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
-    def _config(self, descriptor: dict) -> dict:
+    def _config_for_model(
+        self,
+        model: dict,
+        loss: dict,
+        *,
+        lmdb_path: str | None = None,
+    ) -> dict:
         config = {
-            "model": {
-                "type_map": ["O", "H"],
-                "descriptor": descriptor,
-                "fitting_net": {"neuron": [8, 8], "precision": "float64", "seed": 1},
-                "data_stat_nbatch": 1,
-            },
+            "model": model,
             "learning_rate": {
                 "type": "exp",
                 "decay_steps": 500,
                 "start_lr": 1e-3,
                 "stop_lr": 3.5e-8,
             },
-            "loss": {
-                "type": "ener",
-                "start_pref_e": 0.02,
-                "limit_pref_e": 1,
-                "start_pref_f": 1000,
-                "limit_pref_f": 1,
-                "start_pref_v": 0,
-                "limit_pref_v": 0,
-            },
+            "loss": loss,
             "training": {
                 "training_data": {
-                    "systems": self.lmdb_path,
+                    "systems": self.lmdb_path if lmdb_path is None else lmdb_path,
                     "batch_size": "mix:27",
                 },
                 "numb_steps": 2,
@@ -821,6 +827,29 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             },
         }
         return normalize(update_deepmd_input(config, warning=False))
+
+    def _config(self, descriptor: dict) -> dict:
+        return self._config_for_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": descriptor,
+                "fitting_net": {
+                    "neuron": [8, 8],
+                    "precision": "float64",
+                    "seed": 1,
+                },
+                "data_stat_nbatch": 1,
+            },
+            {
+                "type": "ener",
+                "start_pref_e": 0.02,
+                "limit_pref_e": 1,
+                "start_pref_f": 1000,
+                "limit_pref_f": 1,
+                "start_pref_v": 0,
+                "limit_pref_v": 0,
+            },
+        )
 
     @staticmethod
     def _dpa1() -> dict:
@@ -848,10 +877,82 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             "seed": 1,
         }
 
+    @staticmethod
+    def _dpa4_native_spin_model() -> dict:
+        return {
+            "type": "dpa4",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4",
+                "sel": 20,
+                "rcut": 3.0,
+                "channels": 8,
+                "n_radial": 4,
+                "lmax": 1,
+                "mmax": 1,
+                "n_blocks": 1,
+                "precision": "float64",
+                "seed": 1,
+            },
+            "fitting_net": {
+                "type": "dpa4_ener",
+                "neuron": [8],
+                "precision": "float64",
+                "seed": 1,
+            },
+            "spin": {"use_spin": [True, False], "scheme": "native"},
+            "data_stat_nbatch": 1,
+        }
+
+    def _virtual_spin_model(self) -> dict:
+        return {
+            "type_map": ["O", "H"],
+            "descriptor": self._se_e2_a(),
+            "fitting_net": {
+                "neuron": [8, 8],
+                "precision": "float64",
+                "seed": 1,
+            },
+            "spin": {
+                "use_spin": [True, False],
+                "virtual_scale": [0.314],
+            },
+            "data_stat_nbatch": 1,
+        }
+
+    @staticmethod
+    def _spin_loss() -> dict:
+        return {
+            "type": "ener_spin",
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1,
+            "start_pref_fr": 1000,
+            "limit_pref_fr": 1,
+            "start_pref_fm": 1000,
+            "limit_pref_fm": 1,
+        }
+
     def _run(self, descriptor: dict, *, compile: bool = False):
         """Train two steps and return the trainer plus one drawn batch."""
         config = self._config(descriptor)
         config["training"]["enable_compile"] = compile
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            batch = trainer.training_data.get_batch()
+            trainer.run()
+            return trainer, batch
+        finally:
+            os.chdir(cwd)
+
+    def _run_spin(self, model: dict):
+        """Train a spin model for two mixed-size steps and return one batch."""
+        config = self._config_for_model(
+            model,
+            self._spin_loss(),
+            lmdb_path=self.spin_lmdb_path,
+        )
         cwd = os.getcwd()
         os.chdir(self.tmpdir)
         try:
@@ -928,6 +1029,28 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         )
         self.assertTrue((batch["atype"] >= 0).all())
         self.assertEqual(batch["coord"].shape[0], int(batch["n_node"].sum()))
+
+    def test_native_spin_trains_on_a_flat_node_axis(self) -> None:
+        """Native spin carries moments and magnetic labels through ragged training."""
+        trainer, batch = self._run_spin(self._dpa4_native_spin_model())
+
+        self.assertTrue(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 2)
+        self.assertEqual(batch["spin"].shape, batch["coord"].shape)
+        self.assertEqual(batch["force_mag"].shape, batch["coord"].shape)
+        self.assertEqual(batch["coord"].shape[0], int(batch["n_node"].sum()))
+        self.assertTrue((batch["atype"] >= 0).all())
+
+    def test_virtual_spin_trains_on_a_rectangular_node_axis(self) -> None:
+        """Virtual-atom spin keeps mixed-size training rectangular and masked."""
+        trainer, batch = self._run_spin(self._virtual_spin_model())
+
+        self.assertFalse(trainer.training_data._reader.ragged_batches)
+        self.assertEqual(batch["coord"].ndim, 3)
+        self.assertEqual(batch["spin"].shape, batch["coord"].shape)
+        self.assertEqual(batch["force_mag"].shape, batch["coord"].shape)
+        self.assertNotIn("n_node", batch)
+        self.assertTrue((batch["atype"] < 0).any())
 
     def test_dense_model_keeps_padded_batches(self) -> None:
         """se_e2_a reads a rectangular node axis and must still be padded."""

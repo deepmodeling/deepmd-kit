@@ -1613,12 +1613,15 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         *,
         use_compile: bool = False,
         bridging_method: str = "none",
+        use_spin: list[bool] | None = None,
+        randomize: bool = True,
     ) -> SeZMNativeSpinModel:
-        """Build a tiny float64 native-spin model with randomized parameters."""
+        """Build a tiny float64 native-spin model."""
+        use_spin = [True, False] if use_spin is None else use_spin
         params = {
             "type": "dpa4",
             "type_map": ["Ni", "O"],
-            "spin": {"use_spin": [True, False], "scheme": "native"},
+            "spin": {"use_spin": use_spin, "scheme": "native"},
             "descriptor": {
                 "type": "dpa4",
                 "sel": [12, 12],
@@ -1652,12 +1655,13 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
             "bridging_r_outer": 1.2,
         }
         model = get_model(params)
-        # Perturb away from the near-identity initialization so the spin
-        # embedding measurably shapes the output.
-        torch.manual_seed(1234)
-        with torch.no_grad():
-            for p in model.parameters():
-                p.copy_(torch.randn_like(p) * 0.1)
+        if randomize:
+            # Perturb away from the near-identity initialization so the spin
+            # embedding measurably shapes the output.
+            torch.manual_seed(1234)
+            with torch.no_grad():
+                for p in model.parameters():
+                    p.copy_(torch.randn_like(p) * 0.1)
         model.eval()
         return model
 
@@ -1705,6 +1709,60 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
         coord[1, -2:] = 0.0
         spin[1, -2:] = 0.0
         return coord, atype, spin, box
+
+    def test_spin_routes_initialize_to_zero(self) -> None:
+        """Fresh native-spin models start from the spin-free function."""
+        model = self._build_model(randomize=False)
+        descriptor = model.atomic_model.descriptor
+        spin_embedding = descriptor.spin_embedding
+        env_seed_embedding = descriptor.env_seed_embedding
+
+        self.assertIsNotNone(spin_embedding)
+        self.assertIsNotNone(env_seed_embedding)
+        self.assertTrue(torch.all(spin_embedding.mag_layer2.matrix == 0.0))
+        self.assertTrue(torch.all(spin_embedding.adam_spin_vec_weight == 0.0))
+        self.assertTrue(torch.all(spin_embedding.adam_spin_nbr_weight == 0.0))
+        self.assertTrue(torch.all(env_seed_embedding.spin_scale == 0.0))
+
+    def test_migrated_spin_routes_are_trainable_after_activation(self) -> None:
+        """Mirror the production two-stage native-spin fine-tune load.
+
+        The trainer first rebuilds the pretrained all-false model and loads the
+        legacy checkpoint into it, allowing version migration to canonicalize
+        dormant spin routes. It then transfers that migrated state into the
+        magnetic target. Loading directly into the target would lose the source
+        configuration needed to distinguish dormant routes from trained ones.
+        """
+        legacy = self._build_model(use_spin=[False, False], randomize=True)
+        legacy_state = legacy.state_dict()
+        version_key = "atomic_model.descriptor.version_tensor"
+        legacy_state[version_key] = torch.full_like(legacy_state[version_key], 1.1)
+        migrated = self._build_model(use_spin=[False, False], randomize=False)
+        migrated.load_state_dict(legacy_state)
+
+        model = self._build_model(use_spin=[True, False], randomize=False)
+        model.load_state_dict(migrated.state_dict())
+        coord, atype, spin, box = self._frame()
+
+        model.train()
+        model.zero_grad(set_to_none=True)
+        model(coord, atype, spin, box=box)["energy"].sum().backward()
+        descriptor = model.atomic_model.descriptor
+        spin_embedding = descriptor.spin_embedding
+        env_seed_embedding = descriptor.env_seed_embedding
+        gradients = {
+            "magnitude": spin_embedding.mag_layer2.matrix.grad,
+            "onsite_l1": spin_embedding.adam_spin_vec_weight.grad,
+            "neighbor_l1": spin_embedding.adam_spin_nbr_weight.grad,
+            "env_seed": env_seed_embedding.spin_scale.grad,
+        }
+        for name, gradient in gradients.items():
+            self.assertIsNotNone(gradient, f"{name} has no gradient")
+            self.assertGreater(
+                float(gradient.abs().max()),
+                0.0,
+                f"{name} cannot leave zero initialization",
+            )
 
     def test_zbl_change_out_bias_is_invariant_for_self_labels(self) -> None:
         """Native-spin statistics consume spin and the complete ZBL energy."""

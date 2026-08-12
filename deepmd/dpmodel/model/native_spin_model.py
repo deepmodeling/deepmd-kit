@@ -10,6 +10,7 @@ from typing import (
     Any,
 )
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.model.base_model import (
@@ -74,11 +75,14 @@ def make_native_spin_model(T_Model: type) -> type:
     class NSM(T_Model, NativeSpinModelKind):
         """Native-spin variant of ``T_Model`` (see ``make_native_spin_model``)."""
 
+        CONFIG_DERIVED_ARRAYS = ("spin_mask",)
+
         def __init__(self, *args: Any, spin: Spin, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             self.spin = spin
             self.ntypes_real = self.spin.ntypes_real
-            # Per-real-type 0/1 spin gate.
+            # Per-real-type 0/1 spin gate, derived from ``use_spin`` and hence
+            # rebuilt here rather than adopted from a checkpoint.
             self.spin_mask = self.spin.get_spin_mask()
 
         @staticmethod
@@ -123,6 +127,8 @@ def make_native_spin_model(T_Model: type) -> type:
                 output_def["virial"].squeeze(-2)
                 output_def["atom_virial"] = deepcopy(out_def_data[f"{var_name}_derv_c"])
                 output_def["atom_virial"].squeeze(-2)
+            if "mask" in out_def_data:
+                output_def["mask"] = out_def_data["mask"]
             return output_def
 
         def _spin_active_mask(self, atype: np.ndarray) -> np.ndarray:
@@ -130,7 +136,21 @@ def make_native_spin_model(T_Model: type) -> type:
             where the atom type carries spin. Array-api compatible; reused by
             the eager and graph-export translations.
             """
-            return (self.spin_mask[atype] > 0)[..., None]
+            xp = array_api_compat.array_namespace(atype)
+            real_atom = atype >= 0
+            safe_atype = xp.where(real_atom, atype, xp.zeros_like(atype))
+            spin_mask = xp.asarray(
+                self.spin_mask,
+                device=array_api_compat.device(atype),
+            )
+            spin_active = (
+                xp.reshape(
+                    xp.take(spin_mask, xp.reshape(safe_atype, (-1,)), axis=0),
+                    atype.shape,
+                )
+                > 0
+            )
+            return xp.logical_and(spin_active, real_atom)[..., None]
 
         def _translate_eager_call(
             self,
@@ -161,6 +181,9 @@ def make_native_spin_model(T_Model: type) -> type:
             for kk_src, kk_dst in translated:
                 src = model_ret.get(kk_src)
                 out[kk_dst] = np.squeeze(src, axis=-2) if src is not None else None
+            for key in ("mask", "n_node"):
+                if key in model_ret:
+                    out[key] = model_ret[key]
             return out
 
         def call(

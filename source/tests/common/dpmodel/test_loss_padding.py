@@ -2238,14 +2238,8 @@ class TestDPModelEnerSpinLossVirialGradAccum:
         )
 
 
-class TestDPModelEnerSpinLossForceMagUnchanged:
-    """Guard: the padding mask must NOT affect the force_mag / mask_mag term.
-
-    The force_mag path uses mask_mag (spin virtual-atom mask), which is a
-    completely separate concept from the padding mask model_dict["mask"].
-    After the Task-5 implementation, presenting a padding mask must leave
-    the force_mag loss bit-identical.
-    """
+class TestDPModelEnerSpinLossForceMagConsistentMasks:
+    """A padding mask is idempotent when ``mask_mag`` already excludes it."""
 
     def _make_loss(self):
         return EnergySpinLossDPModel(
@@ -2260,8 +2254,8 @@ class TestDPModelEnerSpinLossForceMagUnchanged:
             limit_pref_v=0.0,
         )
 
-    def test_padding_mask_does_not_affect_force_mag(self):
-        """force_mag loss is bit-identical with and without padding mask."""
+    def test_consistent_padding_mask_is_idempotent(self):
+        """Consistent magnetic and padding masks produce the same loss."""
         fm = _rnd(2, NP, 3)
         fm_hat = _rnd(2, NP, 3)
         loss_obj = self._make_loss()
@@ -2287,8 +2281,7 @@ class TestDPModelEnerSpinLossForceMagUnchanged:
         loss_with = _run(True)
         loss_without = _run(False)
         assert np.isclose(loss_with, loss_without), (
-            f"force_mag loss must be unchanged by padding mask: "
-            f"{loss_with} vs {loss_without}"
+            f"consistent masks must be idempotent: {loss_with} vs {loss_without}"
         )
 
 
