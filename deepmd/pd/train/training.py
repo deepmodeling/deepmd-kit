@@ -1336,10 +1336,9 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
         ]
         additional_data_requirement += spin_requirement_items
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
-        cs_default = (
-            _model.get_default_chg_spin().cpu().numpy() if has_default_cs else 0.0
-        )
+        default_cs = _model.get_default_chg_spin()
+        has_default_cs = default_cs is not None
+        cs_default = default_cs.cpu().numpy() if has_default_cs else 0.0
         additional_data_requirement.append(
             DataRequirementItem(
                 "charge_spin",

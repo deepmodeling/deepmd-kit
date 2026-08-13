@@ -143,6 +143,11 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     # skips the missing buffer, so listing both concrete subclasses is safe)
     "S2GridNet": ("residual_scale",),
     "SO3GridNet": ("residual_scale",),
+    # dpa4_nn.grid_net frame mixing, built only by ``mode="cross"`` grid nets.
+    # Unlike the surrounding projections these are plain numpy arrays rather
+    # than NativeLayer objects, so they need an explicit entry here.
+    "FrameExpand": ("weight",),
+    "FrameContract": ("weight",),
     # descriptor-level FiLM strengths
     "DescrptDPA4": ("film_scale_strength_log", "film_shift_strength_log"),
 }
@@ -205,6 +210,15 @@ class DescrptDPA4(DescrptDPA4DP):
             "graph_lower_disabled",
             torch.zeros((), dtype=torch.bool, device="cpu"),
         )
+        # Persisted descriptor version, for the same reason: pt_expt rebuilds
+        # the module from config before loading, so without a buffer every
+        # checkpoint would come back claiming the semantics of the running
+        # code and silently skip ``_migrate_variables``.
+        torch.nn.Module.register_buffer(
+            self,
+            "version_tensor",
+            torch.tensor(self.version, dtype=torch.float64, device="cpu"),
+        )
         self.use_amp_infer = use_amp_infer()
         _promote_trainable_tree(self)
 
@@ -213,6 +227,9 @@ class DescrptDPA4(DescrptDPA4DP):
         # deserialize assigns numpy arrays after __init__, which demotes
         # promoted Parameters back to buffers; re-promote at the end.
         obj = super().deserialize(data)
+        # The buffer carries the version of the restored variables, not the
+        # version the fresh construction started from.
+        obj.version_tensor.fill_(obj.version)
         return _promote_trainable_tree(obj)
 
     def _in_training_mode(self) -> bool:
@@ -303,7 +320,20 @@ class DescrptDPA4(DescrptDPA4DP):
             # data-dependent ``bool(FakeTensor)`` guard that breaks
             # torch.export (GuardOnDataDependentSymNode Eq(u0, 1)).
             self._graph_lower_disabled = bool(state_dict[key])
+
+        # Back-compat: checkpoints predating the version buffer were written
+        # under version 1.1, the last one released before it existed.
+        version_key = prefix + "version_tensor"
+        if version_key not in state_dict:
+            state_dict[version_key] = self.version_tensor.new_tensor(1.1)
+        state_dict[version_key] = self.version_tensor.new_tensor(
+            self._migrate_variables(
+                state_dict, float(state_dict[version_key].item()), prefix
+            )
+        )
+
         super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+        self.version = float(self.version_tensor.item())
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
@@ -317,18 +347,17 @@ class DescrptDPA4(DescrptDPA4DP):
         geometry, edge cache, radial, env-seed, GIE and output FFN stages stay
         in fp32 (or higher). The dpmodel base stores ``use_amp`` only as a
         config flag and never autocasts (array-API has no autocast), so the
-        real automatic mixed precision lives here. ``x`` is the node-feature
-        tensor entering the blocks; its device equals the working device, so
-        autocast engages when ``self.use_amp`` is set, the inputs live on a
-        CUDA device, and either the module is training or eval-time AMP was
-        opted in through ``DP_AMP_INFER`` (captured once at construction as
-        ``self.use_amp_infer``).
+        real automatic mixed precision lives here.
+
+        Training follows ``use_amp`` and evaluation follows ``DP_AMP_INFER``
+        (captured once at construction as ``use_amp_infer``). The two are
+        independent: mixed precision at inference is a throughput choice that
+        must not require a model to have been trained with it. ``x`` is the
+        node-feature tensor entering the blocks, and its device is the working
+        device.
         """
-        if (
-            self.use_amp
-            and x.device.type == "cuda"
-            and (self.training or self.use_amp_infer)
-        ):
+        enabled = self.use_amp if self.training else self.use_amp_infer
+        if enabled and x.device.type == "cuda":
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 return super()._forward_blocks(x, *args, **kwargs)
         return super()._forward_blocks(x, *args, **kwargs)

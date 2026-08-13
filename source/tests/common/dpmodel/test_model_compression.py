@@ -344,6 +344,8 @@ class TestDPModelCompression(unittest.TestCase):
 
                 self.assertTrue(compressed.compress)
                 self.assertTrue(compressed.geo_compress)
+                self.assertTrue(compressed.get_geo_compress())
+                self.assertFalse(descriptor.get_geo_compress())
                 serialized = compressed.serialize()
                 self.assertEqual(serialized["@version"], 3)
                 self.assertIn("compress", serialized)

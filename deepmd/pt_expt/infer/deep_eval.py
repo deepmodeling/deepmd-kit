@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-import logging
 import warnings
 from collections.abc import (
     Callable,
@@ -79,8 +78,6 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
-
-log = logging.getLogger(__name__)
 
 
 # Public output keys emitted by graph-lower forwards, keyed by the
@@ -192,15 +189,17 @@ class DeepEval(DeepEvalBackend):
     neighbor_graph_method : str, default: "auto"
         Carry-all graph builder for graph-form ``.pt2`` artifacts and
         graph-routed ``.pt`` checkpoints
-        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects
-        ``"nv"`` on CUDA when nvalchemiops is available and otherwise falls
-        back to ``"dense"``. ``"vesin"`` remains explicit opt-in because it
-        loops over frames in Python. Explicit
+        (``metadata["lower_input_kind"] == "graph"``): ``"auto"`` selects via
+        :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
+        at each eval call (CUDA: ``nv`` if importable; else ``vesin`` only when
+        ``nf == 1`` and importable; else ``dense``). Explicit
         ``"dense"`` / ``"ase"`` / ``"vesin"`` / ``"nv"`` choices are preserved.
         A non-default value on any other artifact raises at construction because
         the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
-        choice is performance-only. Consolidating the two knobs into a single
+        choice is performance-only. Training keeps a separate auto policy
+        (:func:`~deepmd.pt_expt.utils.graph_builder.resolve_neighbor_graph_method`)
+        that never selects ``vesin``. Consolidating the two knobs into a single
         backend-selection API is deferred to the dense-nlist deprecation.
     **kwargs : dict
         Keyword arguments.
@@ -271,8 +270,13 @@ class DeepEval(DeepEvalBackend):
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
     @staticmethod
-    def _resolve_neighbor_graph_method(method: str) -> str:
-        """Resolve the graph builder once for the active device."""
+    def _resolve_neighbor_graph_method(method: str, nf: int | None = None) -> str:
+        """Validate and optionally resolve the graph builder for the active device.
+
+        ``"auto"`` is left unresolved when ``nf`` is omitted so construction-
+        time setup can defer to :meth:`_build_eval_graph`, where the frame
+        count is known and vesin can be gated on ``nf == 1``.
+        """
         if method not in ("auto", "dense", "ase", "vesin", "nv"):
             raise ValueError(
                 f"Unknown neighbor_graph_method {method!r}; "
@@ -280,24 +284,17 @@ class DeepEval(DeepEvalBackend):
             )
         if method != "auto":
             return method
+        if nf is None:
+            return "auto"
 
-        from deepmd.pt.utils.nv_nlist import (
-            is_nv_available,
-        )
         from deepmd.pt_expt.utils.env import (
             DEVICE,
         )
+        from deepmd.pt_expt.utils.graph_builder import (
+            resolve_auto_graph_builder,
+        )
 
-        if DEVICE.type == "cuda":
-            if is_nv_available():
-                return "nv"
-            log.warning(
-                "nvalchemi-toolkit-ops is unavailable; falling back from "
-                "neighbor_graph_method='auto' to the dense graph builder. "
-                "Install it with `pip install nvalchemi-toolkit-ops` to enable "
-                "the NV graph builder."
-            )
-        return "dense"
+        return resolve_auto_graph_builder(DEVICE, nf)
 
     def _setup_neighbor_backend(self, nlist_backend: str) -> None:
         """Resolve the graph or neighbor-list construction strategy.
@@ -615,12 +612,13 @@ class DeepEval(DeepEvalBackend):
         model = get_model(deepcopy(model_params)).to(DEVICE)
 
         # Strip the `_CompiledModel` wrapper that pt_expt training applies
-        # after compilation (training.py:996).  The saved state_dict has
-        # `model.Default.original_model.X` keys (the real weights) plus
+        # after compilation.  The saved state_dict has
+        # `model.Default.original_model.X` keys (the real weights).  Some
+        # checkpoints additionally carry
         # `model.Default.compiled_forward_lower._orig_mod._param_constant*`
-        # / `_tensor_constant*` keys (graph constants baked into the
-        # compiled forward — duplicates of the real weights, useless for
-        # eager inference).  Drop the latter and unwrap the former.
+        # / `_tensor_constant*` keys (graph constants baked into a compiled
+        # forward — duplicates of the real weights, useless for eager
+        # inference).  Drop the latter and unwrap the former.
         cleaned: dict[str, Any] = {}
         compiled_marker = ".compiled_forward_lower."
         # Per-task buffer copies registered on _CompiledModel (bias_atom_e,
@@ -691,27 +689,13 @@ class DeepEval(DeepEvalBackend):
             "sel": model.get_sel(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
-            "dim_chg_spin": model.get_dim_chg_spin()
-            if hasattr(model, "get_dim_chg_spin")
-            else 0,
+            "dim_chg_spin": model.get_dim_chg_spin(),
             "mixed_types": model.mixed_types(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
-            "has_chg_spin_ebd": (
-                model.has_chg_spin_ebd()
-                if hasattr(model, "has_chg_spin_ebd")
-                else False
-            ),
-            "has_default_chg_spin": (
-                model.has_default_chg_spin()
-                if hasattr(model, "has_default_chg_spin")
-                else False
-            ),
-            "default_chg_spin": (
-                model.get_default_chg_spin()
-                if hasattr(model, "get_default_chg_spin")
-                else None
-            ),
+            "has_chg_spin_ebd": model.has_chg_spin_ebd(),
+            "has_default_chg_spin": model.get_default_chg_spin() is not None,
+            "default_chg_spin": model.get_default_chg_spin(),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
@@ -909,14 +893,19 @@ class DeepEval(DeepEvalBackend):
 
     def has_chg_spin_ebd(self) -> bool:
         """Check whether the model uses a dedicated charge_spin input."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_chg_spin_ebd"):
+        if self._dpmodel is not None:
             return bool(self._dpmodel.has_chg_spin_ebd())
         return bool(self.metadata.get("has_chg_spin_ebd", self.get_dim_chg_spin() > 0))
 
     def has_default_chg_spin(self) -> bool:
-        """Check whether the model has a default charge_spin fallback."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_default_chg_spin"):
-            return bool(self._dpmodel.has_default_chg_spin())
+        """Check whether the model has a default charge_spin fallback.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin`` on
+        the live-model interfaces; this DeepEval wrapper method is kept for
+        API stability and computes the predicate directly.
+        """
+        if self._dpmodel is not None:
+            return self._dpmodel.get_default_chg_spin() is not None
         return bool(
             self.metadata.get(
                 "has_default_chg_spin",
@@ -926,7 +915,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_chg_spin(self) -> int:
         """Get the width of charge/spin condition inputs."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_dim_chg_spin"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
@@ -967,6 +956,7 @@ class DeepEval(DeepEvalBackend):
         """The evaluator of the model type."""
         if self._dpmodel is not None:
             model_output_type = self._dpmodel.model_output_type()
+            var_name = self._dpmodel.get_var_name()
         else:
             # Metadata-only mode: derive the output-type set from the
             # fitting_output_defs names.  `model_output_type()` on a
@@ -975,6 +965,7 @@ class DeepEval(DeepEvalBackend):
             model_output_type = [
                 d.name for d in self._model_output_def.def_outp.get_data().values()
             ]
+            var_name = None
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -985,11 +976,7 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif (
-            self._dpmodel is not None
-            and hasattr(self._dpmodel, "get_var_name")
-            and self._dpmodel.get_var_name() in model_output_type
-        ):
+        elif var_name is not None and var_name in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
@@ -1014,7 +1001,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+        if self._dpmodel is not None and self._dpmodel.get_var_name() is not None:
             return self._dpmodel.get_var_name()
         raise NotImplementedError(
             "get_var_name is only available for property models with the "
@@ -1023,7 +1010,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_task_dim(self) -> int:
         """Get the output dimension of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_task_dim()
         raise NotImplementedError(
             "get_task_dim is only available for property models with the "
@@ -1032,7 +1019,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_intensive(self) -> bool:
         """Whether the property is intensive (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_intensive()
         raise NotImplementedError(
             "get_intensive is only available for property models with the "
@@ -2316,14 +2303,21 @@ class DeepEval(DeepEvalBackend):
     ) -> "NeighborGraph":
         """Build the carry-all NeighborGraph for graph-lower inference.
 
-        Dispatches on ``self._neighbor_graph_method``: ``dense``/``ase`` run
-        backend-agnostic (numpy); ``vesin``/``nv`` run on-device (torch, O(N)).
-        All backends emit the SAME neighbor set (carry-all, sel-free), so the
-        selection is a pure performance choice and results are unchanged. The
-        result is canonicalized to the destination-major graph-form ``.pt2``
-        ABI after construction.
+        Dispatches on ``self._neighbor_graph_method``: ``auto`` is resolved
+        call-time via
+        :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
+        using the batch frame count (vesin only when ``nf == 1``);
+        ``dense``/``ase`` run backend-agnostic (numpy); ``vesin``/``nv`` run
+        on-device (torch, O(N)). All backends emit the SAME neighbor set
+        (carry-all, sel-free), so the selection is a pure performance choice
+        and results are unchanged. The result is canonicalized to the
+        destination-major graph-form ``.pt2`` ABI after construction.
         """
         method = self._neighbor_graph_method
+        if method == "auto":
+            coord_arr = np.asarray(coord_input)
+            nf = int(coord_arr.shape[0]) if coord_arr.ndim >= 2 else 1
+            method = self._resolve_neighbor_graph_method("auto", nf=nf)
         # Model-level ``pair_exclude_types`` is a graph-BUILD transform
         # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
@@ -2392,7 +2386,7 @@ class DeepEval(DeepEvalBackend):
             )
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
-            "use 'dense', 'ase', 'vesin', or 'nv'"
+            "use 'auto', 'dense', 'ase', 'vesin', or 'nv'"
         )
 
     def _model_pair_excl(self) -> "PairExcludeMask | None":
@@ -2419,7 +2413,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         if self._dpmodel is not None:
-            pe = getattr(self._dpmodel.atomic_model, "pair_excl", None)
+            pe = self._dpmodel.atomic_model.pair_excl
             pet = pe.get_exclude_types() if pe is not None else []
         else:
             pet = self.metadata.get("pair_exclude_types", [])
@@ -2613,9 +2607,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
         return descriptor.detach().cpu().numpy()
 
@@ -2684,9 +2676,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
             atype = ext_atype_t[:, :natoms]
             fitting_net = dp_am.fitting_net
