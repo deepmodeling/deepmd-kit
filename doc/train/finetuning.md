@@ -1,7 +1,8 @@
 # Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
 to vastly reduce the training cost, while it's not trivial in potential models.
@@ -256,3 +257,39 @@ $ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHO
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
 If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+
+## TensorFlow 2 Implementation {{ tensorflow_icon }}
+
+TensorFlow 2 fine-tuning reuses the same `--finetune` flag as the legacy
+TensorFlow backend:
+
+```bash
+dp --tf2 train input.json --finetune pretrained.tf2
+```
+
+The pre-trained model is a `.tf2` training checkpoint directory (or its
+checkpoint prefix). A frozen `.savedmodeltf` export cannot be fine-tuned,
+because it does not carry the structured variable metadata required to restore
+the model. The same command-line options as the legacy TensorFlow backend apply:
+`--model-branch` selects a branch in a multi-task pre-trained model, and
+`--use-pretrain-script` copies the descriptor/fitting parameters from the
+pre-trained model.
+
+## PyTorch-Exportable Implementation {{ pytorch_icon }}
+
+The PyTorch-Exportable backend implements fine-tuning with `--finetune`, and a
+pre-trained model can be either a `.pt` training checkpoint or a frozen `.pte`
+/ `.pt2` model:
+
+```bash
+dp --pt-expt train input.json --finetune pretrained.pt
+dp --pt-expt train input.json --finetune frozen_model.pte
+```
+
+Both single-task and multi-task fine-tuning are supported; multi-task
+fine-tuning uses the `finetune_head` field in each {ref}`model_dict <model/model_dict>` branch. Distributed fine-tuning works under
+[`torchrun`](parallel-training.md#pytorch-exportable-implementation) like
+regular PyTorch-Exportable training. `--use-pretrain-script` requires the
+pre-trained model to embed full model parameters: a `.pte` file frozen with
+older code that lacks `model_def_script` must be re-frozen before it can be
+used with that option.

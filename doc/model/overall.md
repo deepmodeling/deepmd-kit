@@ -58,7 +58,10 @@ The fitting of the following physical properties is supported
 1. [`ener`](train-energy.md): Fit the energy of the system. The force (derivative with atom positions), the virial (derivative with the box tensor) and the hessian (second-order derivative with atom positions) can also be trained.
 
 > [!WARNING]
-> Due to the restrictions of torch jit script, the models trained with hessian are not jitable so that the frozen models cannot output hessians.
+> The PyTorch-TorchScript freeze route cannot output Hessians, and
+> PyTorch-Exportable cannot construct a Hessian model for freezing or
+> inference. The JAX backend can retain Hessian output in a frozen model with
+> `dp --jax freeze --hessian`; see [Freeze a model](../freeze/freeze.md).
 
 2. [`dipole`](train-fitting-tensor.md): The dipole moment.
 1. [`polar`](train-fitting-tensor.md): The polarizability.
