@@ -2849,7 +2849,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             1:1 with ``edge_index`` and ``edge_vec``.
         """
         nloc = nlist.shape[1]
-        atype = torch.empty(
+        atype = torch.zeros(
             (nlist.shape[0], nloc),
             dtype=torch.long,
             device=extended_coord.device,
