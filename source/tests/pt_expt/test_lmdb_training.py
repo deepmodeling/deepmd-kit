@@ -54,6 +54,10 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 
+from .compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
+)
+
 
 def _encode_array(arr: np.ndarray) -> dict:
     return {
@@ -1016,6 +1020,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         self.assertEqual(batch["atype"].ndim, 2)
         self.assertNotIn("n_node", batch)
 
+    @REQUIRES_SUPPORTED_COMPILE
     def test_compiled_graph_model_trains_on_a_flat_node_axis(self) -> None:
         """The compiled lower reads the flat axis too, so compiling changes nothing.
 
