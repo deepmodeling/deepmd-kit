@@ -2286,10 +2286,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """Return the charge/spin condition width."""
         return 2 if self.add_chg_spin_ebd else 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Return whether default charge/spin conditions are configured."""
-        return self.default_chg_spin is not None
-
     def get_default_chg_spin(self) -> list[float] | None:
         """Return default charge/spin conditions."""
         return self.default_chg_spin

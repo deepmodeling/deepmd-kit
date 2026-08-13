@@ -1467,7 +1467,7 @@ class TestCombinedChargeSpinTrainingSmoke:
             model = trainer.wrapper.model[DEFAULT_TASK_KEY]
             assert isinstance(model, NativeSpinEnergyModel)
             assert model.has_chg_spin_ebd()
-            assert model.has_default_chg_spin()
+            assert model.get_default_chg_spin() is not None
 
             tasks = trainer._make_training_tasks()
             task = trainer.select_task(tasks)

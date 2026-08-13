@@ -933,9 +933,10 @@ def make_model(
             with_csr = (
                 not self.training
                 and cuda_infer_level() >= 1
-                and bool(getattr(_desc, "geo_compress", False))
+                and _desc is not None
+                and _desc.get_geo_compress()
             )
-            pair_excl = getattr(self.atomic_model, "pair_excl", None)
+            pair_excl = self.atomic_model.pair_excl
             ng = build_neighbor_graph_for_method(
                 method, cc, atype, bb, rcut, pair_excl, with_csr=with_csr
             )

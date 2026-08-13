@@ -689,27 +689,13 @@ class DeepEval(DeepEvalBackend):
             "sel": model.get_sel(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
-            "dim_chg_spin": model.get_dim_chg_spin()
-            if hasattr(model, "get_dim_chg_spin")
-            else 0,
+            "dim_chg_spin": model.get_dim_chg_spin(),
             "mixed_types": model.mixed_types(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
-            "has_chg_spin_ebd": (
-                model.has_chg_spin_ebd()
-                if hasattr(model, "has_chg_spin_ebd")
-                else False
-            ),
-            "has_default_chg_spin": (
-                model.has_default_chg_spin()
-                if hasattr(model, "has_default_chg_spin")
-                else False
-            ),
-            "default_chg_spin": (
-                model.get_default_chg_spin()
-                if hasattr(model, "get_default_chg_spin")
-                else None
-            ),
+            "has_chg_spin_ebd": model.has_chg_spin_ebd(),
+            "has_default_chg_spin": model.get_default_chg_spin() is not None,
+            "default_chg_spin": model.get_default_chg_spin(),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
@@ -907,14 +893,19 @@ class DeepEval(DeepEvalBackend):
 
     def has_chg_spin_ebd(self) -> bool:
         """Check whether the model uses a dedicated charge_spin input."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_chg_spin_ebd"):
+        if self._dpmodel is not None:
             return bool(self._dpmodel.has_chg_spin_ebd())
         return bool(self.metadata.get("has_chg_spin_ebd", self.get_dim_chg_spin() > 0))
 
     def has_default_chg_spin(self) -> bool:
-        """Check whether the model has a default charge_spin fallback."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "has_default_chg_spin"):
-            return bool(self._dpmodel.has_default_chg_spin())
+        """Check whether the model has a default charge_spin fallback.
+
+        ``has_default_chg_spin`` was merged into ``get_default_chg_spin`` on
+        the live-model interfaces; this DeepEval wrapper method is kept for
+        API stability and computes the predicate directly.
+        """
+        if self._dpmodel is not None:
+            return self._dpmodel.get_default_chg_spin() is not None
         return bool(
             self.metadata.get(
                 "has_default_chg_spin",
@@ -924,7 +915,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_chg_spin(self) -> int:
         """Get the width of charge/spin condition inputs."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_dim_chg_spin"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
@@ -965,6 +956,7 @@ class DeepEval(DeepEvalBackend):
         """The evaluator of the model type."""
         if self._dpmodel is not None:
             model_output_type = self._dpmodel.model_output_type()
+            var_name = self._dpmodel.get_var_name()
         else:
             # Metadata-only mode: derive the output-type set from the
             # fitting_output_defs names.  `model_output_type()` on a
@@ -973,6 +965,7 @@ class DeepEval(DeepEvalBackend):
             model_output_type = [
                 d.name for d in self._model_output_def.def_outp.get_data().values()
             ]
+            var_name = None
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -983,11 +976,7 @@ class DeepEval(DeepEvalBackend):
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
-        elif (
-            self._dpmodel is not None
-            and hasattr(self._dpmodel, "get_var_name")
-            and self._dpmodel.get_var_name() in model_output_type
-        ):
+        elif var_name is not None and var_name in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
@@ -1012,7 +1001,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_var_name"):
+        if self._dpmodel is not None and self._dpmodel.get_var_name() is not None:
             return self._dpmodel.get_var_name()
         raise NotImplementedError(
             "get_var_name is only available for property models with the "
@@ -1021,7 +1010,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_task_dim(self) -> int:
         """Get the output dimension of the property (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_task_dim"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_task_dim()
         raise NotImplementedError(
             "get_task_dim is only available for property models with the "
@@ -1030,7 +1019,7 @@ class DeepEval(DeepEvalBackend):
 
     def get_intensive(self) -> bool:
         """Whether the property is intensive (property models only)."""
-        if self._dpmodel is not None and hasattr(self._dpmodel, "get_intensive"):
+        if self._dpmodel is not None:
             return self._dpmodel.get_intensive()
         raise NotImplementedError(
             "get_intensive is only available for property models with the "
@@ -2424,7 +2413,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         if self._dpmodel is not None:
-            pe = getattr(self._dpmodel.atomic_model, "pair_excl", None)
+            pe = self._dpmodel.atomic_model.pair_excl
             pet = pe.get_exclude_types() if pe is not None else []
         else:
             pet = self.metadata.get("pair_exclude_types", [])
@@ -2618,9 +2607,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
         return descriptor.detach().cpu().numpy()
 
@@ -2689,9 +2676,7 @@ class DeepEval(DeepEvalBackend):
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                charge_spin=charge_spin_t
-                if getattr(dp_am, "add_chg_spin_ebd", False)
-                else None,
+                charge_spin=charge_spin_t if dp_am.has_chg_spin_ebd() else None,
             )
             atype = ext_atype_t[:, :natoms]
             fitting_net = dp_am.fitting_net

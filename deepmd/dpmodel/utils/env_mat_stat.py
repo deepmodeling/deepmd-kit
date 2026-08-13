@@ -69,9 +69,7 @@ def merge_env_stat(
         or getattr(link_obj, "stats", None) is None
     ):
         return
-    if getattr(base_obj, "set_stddev_constant", False) and getattr(
-        base_obj, "set_davg_zero", False
-    ):
+    if base_obj.set_stddev_constant and base_obj.set_davg_zero:
         return
 
     # Weighted merge of StatItem objects
@@ -93,7 +91,7 @@ def merge_env_stat(
     xp = array_api_compat.array_namespace(current_stddev)
     device = array_api_compat.device(current_stddev)
     merged_mean = current_mean
-    if not getattr(base_obj, "set_davg_zero", False):
+    if not base_obj.set_davg_zero:
         merged_mean = xp.asarray(mean, dtype=current_mean.dtype, device=device)
     merged_stddev = xp.asarray(
         stddev,

@@ -56,6 +56,7 @@ from deepmd.kernels.utils import (
     triton_infer_level,
 )
 from deepmd.pt_expt.common import (
+    register_buffer_replacing_slot,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -529,7 +530,7 @@ class DescrptDPA1(DescrptDPA1DP):
                     self.se_atten.embeddings_strip[0].call(two_side_embd).detach()
                 )
 
-            torch.nn.Module.register_buffer(self, "type_embd_data", embd_tensor)
+            register_buffer_replacing_slot(self, "type_embd_data", embd_tensor)
 
     @cast_precision
     def call(

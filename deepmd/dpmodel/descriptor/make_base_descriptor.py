@@ -48,6 +48,15 @@ def make_base_descriptor(
     class BD(ABC, PluginVariant, make_plugin_registry("descriptor")):
         """Base descriptor provides the interfaces of descriptor."""
 
+        # Stat-behavior flags with concrete defaults so stat machinery (e.g.
+        # ``merge_env_stat``, which accepts either a ``Descriptor`` or a
+        # ``DescriptorBlock``) can read them on any descriptor without
+        # getattr probes; descriptors that configure them assign instance
+        # attributes in __init__ (issue #5897). Mirrors the same defaults on
+        # ``DescriptorBlock``.
+        set_davg_zero: bool = False
+        set_stddev_constant: bool = False
+
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
@@ -100,13 +109,17 @@ def make_base_descriptor(
             """Returns the dimension of charge_spin input (0 if not supported)."""
             return 0
 
-        def has_default_chg_spin(self) -> bool:
-            """Returns whether the descriptor has a default charge_spin value."""
-            return False
-
         def get_default_chg_spin(self) -> Any:
             """Returns the default charge_spin value, or None."""
             return None
+
+        def get_geo_compress(self) -> bool:
+            """Return whether geometric tabulated compression is active.
+
+            Concrete default ``False``; descriptor families with a
+            geometric compression path override from their own state.
+            """
+            return False
 
         @abstractmethod
         def mixed_types(self) -> bool:
