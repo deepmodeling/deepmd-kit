@@ -1,9 +1,9 @@
 ---
 name: lammps-deepmd
 description: >
-  A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and job execution via `uv` or offline binaries.
+  A tool and knowledge base for running molecular dynamics (MD) simulations in LAMMPS with the DeePMD-kit plugin. It handles input script preparation, ensemble selection (NVE/NVT/NPT), and execution with a verified DeePMD-enabled runtime.
   USE WHEN you need to set up, write, explain, or execute a LAMMPS molecular dynamics simulation using a DeePMD machine learning potential (for example `.pb`, `.pth`, or DPA4/SeZM `.pt2`).
-compatibility: Requires LAMMPS with DeePMD-kit support. Online mode uses `uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp`; offline mode requires a user-provided LAMMPS executable or module.
+compatibility: Requires a user-provided, containerized, or source-built LAMMPS runtime with DeePMD-kit support. Verify capabilities in the target environment.
 license: LGPL-3.0-or-later
 metadata:
   author: OpenClaw
@@ -18,55 +18,45 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 
 ## Agent responsibilities
 
-1. Confirm the available execution mode:
-   - **Online mode**: if internet access is available and `uv` is installed, prefer
-     `uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp ...`
-   - **Offline mode**: do **not** guess the executable. Ask the user which LAMMPS command, module, or container should be used.
+1. Confirm the available execution runtime:
+   - For a build from the current checkout, record the resolved Git commit SHA.
+   - For an installed binary, module, or container, record the exact command and
+     runtime versions.
+   - Do not infer capabilities from a future release or an artifact suffix.
 1. Confirm the minimum simulation inputs:
    - structure/data file (for example `data.system`)
-
-- DeePMD model artifact; read `references/model-deployment.md` for a training checkpoint, DPA4/SeZM, or an unclear export path
-- atom type to element mapping, including required per-type masses if the data file does not define them
-- target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
-- temperature, pressure if applicable, timestep, and total number of steps
+   - DeePMD model artifact; read `references/model-deployment.md` for a training
+     checkpoint, DPA4/SeZM, or an unclear export path
+   - atom type to element mapping, including required per-type masses if the data
+     file does not define them
+   - target ensemble (NVE, NVT, NPT, or another explicitly requested setup)
+   - temperature, pressure if applicable, timestep, and total number of steps
 
 1. Write the LAMMPS input script yourself instead of asking the user to hand-write it.
 1. Keep the example readable and fully explained. If you include an example input script, explain what **every command** does.
 1. When possible, validate command availability against the LAMMPS docs or local `lmp -h` output before execution.
 1. Report clearly which command was run, which files were used, and where outputs were written.
 
-## Decide the execution mode
+## Verify the execution runtime
 
-### Online mode (preferred when internet access is available)
+Use an existing site-installed binary, container, or build from the current
+checkout. Before execution:
 
-Use:
+- record `git rev-parse HEAD` for a source checkout, or record `dp --version` and
+  the exact installed package/container identity;
+- inspect the selected LAMMPS command with `-h` and confirm that it provides the
+  required DeePMD pair style and model-artifact route;
+- follow `references/model-deployment.md` for DPA4 `.pt2` and multi-rank
+  capability gates;
+- do not install or upgrade packages silently, and do not claim support from an
+  unreleased version number.
 
-```bash
-uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -in input.lammps
-```
-
-If you need to inspect the local command-line help:
-
-```bash
-uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h
-```
-
-Notes:
-
-- This is the preferred path because it can provision LAMMPS and DeePMD-kit on demand.
-- The pins match the LAMMPS dependency declared by the DPA4-capable
-  `deepmd-kit==3.2.0b0` release. Update both pins together after validating a
-  newer pair.
-- If the environment is slow or the packages are large, warn the user that the first run may take time.
-
-### Offline mode
-
-If internet access is unavailable or the user explicitly wants a site-installed binary, ask a concrete question such as:
+If no verified runtime is available, ask a concrete question such as:
 
 - "Which LAMMPS executable should I use, for example `lmp`, `lmp_mpi`, `mpirun -np 8 lmp`, or an HPC module command?"
-- "Do you already have a DeePMD-enabled LAMMPS build on this machine or cluster?"
+- "Do you already have a DeePMD-enabled LAMMPS build or container on this machine or cluster?"
 
-Do not invent a binary name or module name.
+Do not invent a binary, module, container, or package version.
 
 ## Minimal information to collect
 
@@ -80,7 +70,7 @@ Ask only for what is missing:
 - timestep
 - run length in steps
 - whether velocities should be generated from scratch
-- preferred execution command if offline
+- execution command, module, container, or source checkout
 
 ## Recommended workflow
 
@@ -282,21 +272,9 @@ When using NPT, it is often useful to keep `vol`, `lx`, `ly`, and `lz` in the th
 
 ## Execution templates
 
-### Online run
+### Verified run
 
-```bash
-uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -in input.lammps
-```
-
-### Online help
-
-```bash
-uvx --from 'lammps==2025.7.22.2.0' --with 'deepmd-kit[gpu,torch,lmp]==3.2.0b0' lmp -h
-```
-
-### Offline run
-
-Only after the user specifies the executable, use a command such as one of these exact patterns:
+Only after the runtime is identified, use the matching command, for example:
 
 ```bash
 lmp -in input.lammps
@@ -304,7 +282,7 @@ mpirun -np 8 lmp_mpi -in input.lammps
 srun lmp -in input.lammps
 ```
 
-The agent must not choose one of these on its own without user guidance in offline mode.
+Do not choose one of these without evidence that it is the verified runtime.
 
 ## Output checklist
 

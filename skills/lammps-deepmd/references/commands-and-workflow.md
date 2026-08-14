@@ -7,7 +7,7 @@ This reference expands the main skill with practical operating guidance.
 1. Prefer small, explicit input scripts over clever but opaque templates.
 1. Explain every command in the example script, because many users treat the example as a starting point for their own production run.
 1. If the user asks to run a simulation, always confirm the structure file and DeePMD model file before execution.
-1. If the user asks for offline execution, ask which exact LAMMPS command should be used instead of guessing.
+1. Ask which exact LAMMPS command, module, container, or source-built runtime should be used instead of guessing or installing one silently.
 1. If the user only asks for a template, do not overcomplicate it with advanced computes or fixes unless they are needed.
 
 ## Suggested smoke test strategy
