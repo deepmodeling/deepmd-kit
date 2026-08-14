@@ -5,6 +5,12 @@ from pathlib import (
 
 ROOT = Path(__file__).resolve().parents[3]
 LAMMPS_SKILL = ROOT / "skills" / "lammps-deepmd" / "SKILL.md"
+LAMMPS_DEPLOYMENT = (
+    ROOT / "skills" / "lammps-deepmd" / "references" / "model-deployment.md"
+)
+LAMMPS_WORKFLOW = (
+    ROOT / "skills" / "lammps-deepmd" / "references" / "commands-and-workflow.md"
+)
 DPA4_FINETUNE_SKILL = ROOT / "skills" / "deepmd-finetune-dpa4" / "SKILL.md"
 INFERENCE_SKILL = ROOT / "skills" / "deepmd-python-inference" / "SKILL.md"
 HELD_OUT_REFERENCE = (
@@ -81,3 +87,45 @@ def test_held_out_contract_matches_dp_test_source() -> None:
     assert 'detail_path.with_suffix(".e.out")' in energy_tester
     assert 'detail_path.with_suffix(".e_peratom.out")' in energy_tester
     assert 'detail_path.with_suffix(".f.out")' in energy_tester
+
+
+def test_dpa4_freeze_and_lammps_stay_on_target_node() -> None:
+    deployment = LAMMPS_DEPLOYMENT.read_text(encoding="utf-8")
+
+    assert "same target physical compute node" in deployment
+    assert "inspect the native checkpoint -> freeze `.pt2` -> `run 0`" in deployment
+    assert "move the archive to B" in deployment
+    assert "artifact portability is proven" in deployment
+
+
+def test_lammps_mapping_data_and_dump_contract() -> None:
+    skill = LAMMPS_SKILL.read_text(encoding="utf-8")
+    deployment = LAMMPS_DEPLOYMENT.read_text(encoding="utf-8")
+    workflow = LAMMPS_WORKFLOW.read_text(encoding="utf-8")
+    example = skill.split("## Example: annotated NVT input", 1)[1].split(
+        "### What every command means", 1
+    )[0]
+
+    assert example.index("atom_modify     map yes") < example.index(
+        "read_data       data.system"
+    )
+    assert "pair_coeff      * * Si O" in example
+    assert "dump_modify     1 element Si O sort id" in example
+    assert "zero-based `type.raw` index" in deployment
+    assert "Do not sort atoms by element" in deployment
+    assert "`xy = b_x`" in deployment
+    assert "`xz = c_x`" in deployment
+    assert "`yz = c_y`" in deployment
+    assert "first line of a LAMMPS data file is a title" in deployment
+    assert "first line of a LAMMPS data file is a skipped title" in workflow
+
+
+def test_lammps_canary_requires_physical_stability() -> None:
+    deployment = LAMMPS_DEPLOYMENT.read_text(encoding="utf-8")
+    workflow = LAMMPS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "short NVE when physically appropriate" in deployment
+    assert "Exit code zero alone is not a passed canary" in deployment
+    assert "early temperature, pressure, and controlled variables" in deployment
+    assert "do not barostat that direction" in workflow
+    assert "shell environment variables and LAMMPS variables distinct" in workflow

@@ -84,7 +84,7 @@ Ask only for what is missing:
 1. Read `references/model-deployment.md` when the model needs export, its artifact type is unclear, or explicit element mapping is required.
 1. Draft `input.lammps`.
 1. Explain the script to the user if they asked for an explanation or if the script is nontrivial.
-1. Run a short smoke test first when reasonable.
+1. Follow the staged canary in `references/commands-and-workflow.md` before production.
 1. Run the full simulation.
 1. Summarize outputs such as `log.lammps`, dump trajectories, restart files, and thermodynamic data.
 
@@ -105,15 +105,17 @@ atom_style      atomic
 
 neighbor        1.0 bin
 
+atom_modify     map yes
 read_data       data.system
 mass            1 28.0855
 mass            2 15.999
 pair_style      deepmd graph_compressed.pb
-pair_coeff      * *
+pair_coeff      * * Si O
 
 thermo_style    custom step temp pe ke etotal press vol lx ly lz xy xz yz
 thermo          ${THERMO_FREQ}
-dump            1 all custom ${DUMP_FREQ} traj.lammpstrj id type x y z
+dump            1 all custom ${DUMP_FREQ} traj.lammpstrj id type element x y z
+dump_modify     1 element Si O sort id
 
 velocity        all create ${TEMP} 743574
 fix             1 all nvt temp ${TEMP} ${TEMP} ${TAU_T}
@@ -170,9 +172,15 @@ run             ${NSTEPS}
   - Uses the `bin` neighbor-building method.
   - Neighbor lists help LAMMPS efficiently find nearby atoms for force evaluation.
 
+- `atom_modify map yes`
+
+  - Creates an atom-ID map required by the documented DPA4 route.
+  - It must appear before `read_data`.
+
 - `read_data data.system`
 
   - Reads the initial atomic structure, atom types, simulation box, and related information from the LAMMPS data file `data.system`.
+  - The data file's first line is a skipped title; actual header counts begin after it.
   - Replace this filename with the actual user file.
 
 - `mass 1 28.0855`, `mass 2 15.999`
@@ -186,10 +194,11 @@ run             ${NSTEPS}
   - Loads the DeePMD model from `graph_compressed.pb`.
   - Replace the model filename with the actual model path, for example `graph.pb`, `graph-compress.pb`, or another supported exported model.
 
-- `pair_coeff * *`
+- `pair_coeff * * Si O`
 
-  - Activates the previously selected pair style for all atom types.
-  - For DeePMD this often takes the simple form `* *` because the mapping is embedded in the model workflow rather than through conventional pairwise parameters.
+  - Activates the pair style for all local atom types.
+  - Maps LAMMPS type 1 to `Si` and type 2 to `O`, matching the masses and dump labels.
+  - Inspect the actual model type map and replace this example order; do not infer it from integer type IDs.
 
 - `thermo_style custom step temp pe ke etotal press vol lx ly lz xy xz yz`
 
@@ -208,14 +217,15 @@ run             ${NSTEPS}
 
   - Prints the thermo block every `THERMO_FREQ` timesteps.
 
-- `dump 1 all custom ${DUMP_FREQ} traj.lammpstrj id type x y z`
+- `dump 1 all custom ${DUMP_FREQ} traj.lammpstrj id type element x y z`
 
-  - Creates dump ID `1`.
-  - Dumps atoms from group `all`.
-  - Uses the `custom` dump format.
-  - Writes every `DUMP_FREQ` steps.
-  - Saves to `traj.lammpstrj`.
-  - Outputs per-atom columns `id type x y z`.
+  - Creates dump ID `1` and writes every `DUMP_FREQ` steps.
+  - Saves `id`, local type, mapped element, and coordinates to `traj.lammpstrj`.
+
+- `dump_modify 1 element Si O sort id`
+
+  - Uses the same local type-to-element order as `pair_coeff`.
+  - Sorts each frame by stable atom ID, not by element or model type-map position.
 
 - `velocity all create ${TEMP} 743574`
 

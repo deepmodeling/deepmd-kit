@@ -40,6 +40,11 @@ during export:
 dp --pt freeze -c model.ckpt.pt -o frozen_model --head SELECTED_BRANCH
 ```
 
+Create and consume the archive on the same target physical compute node and
+allocation: inspect the native checkpoint -> freeze `.pt2` -> `run 0` -> bounded
+MD -> production. Do not freeze in job or node A and move the archive to B unless
+portability has been independently validated for that exact device and toolchain.
+
 Two DPA4 `.pt2` export contracts exist. `dp --pt freeze` uses the DPA4-specific
 `edge_vec` ABI. `dp --pt_expt freeze --lower-kind graph` uses the NeighborGraph
 ABI. They share a suffix but are not interchangeable contracts, and a `.pt2`
@@ -70,40 +75,62 @@ that metadata or nested artifact is absent.
 
 ## Atom-type mapping
 
-LAMMPS atom types are local integer IDs. Model types are ordered element names.
-Build an explicit mapping instead of assuming the numbers are interchangeable.
-For example:
+LAMMPS atom types, dataset type indices, and model types are separate namespaces.
+Inspect the artifact's ordered type map, for example with
+`dp --pt show model.pt type-map`, and treat element identity as the bridge.
+For DeePMD data, decode each zero-based `type.raw` index through that system's
+ordered `type_map.raw`; do not reuse the dataset integer as a LAMMPS type.
+
+Use compact one-based LAMMPS types for the elements present in the structure and
+write the same element order in masses, `pair_coeff`, and dump metadata:
 
 ```lammps
 mass            1 15.999
 mass            2 1.008
 pair_coeff      * * O H
+dump            1 all custom 100 traj.lammpstrj id type element x y z
+dump_modify     1 element O H sort id
 ```
 
-Here LAMMPS type 1 maps to `O` and type 2 maps to `H`. Require that:
+Here LAMMPS type 1 maps to `O` and type 2 maps to `H`. `dump_modify ... element`
+labels each local type with that same mapping, while `sort id` gives a stable
+per-frame atom order. Do not sort atoms by element or model type-map position.
+Require that:
 
 - every LAMMPS atom type has a mass;
-- every mapped element is supported by the model type map;
-- the `pair_coeff` element order matches LAMMPS type order;
+- every mapped element is supported by the inspected model type map;
+- `pair_coeff`, masses, and dump element labels share one LAMMPS type order;
 - the structure's atom and species counts are unchanged during conversion.
 
 An implicit `pair_coeff * *` is acceptable only when the model and LAMMPS type
 orders have been verified to match. Prefer explicit element names for auditable
 workflows.
 
+## LAMMPS data and box checks
+
+- The first line of a LAMMPS data file is a title and is skipped by `read_data`;
+  place the actual header counts after it.
+- Put `atom_modify map yes` before `read_data` for the documented DPA4 route.
+- For a restricted triclinic box, preserve the tilt mapping `xy = b_x`,
+  `xz = c_x`, and `yz = c_y`; never write `c_z` or `lz` into `yz`.
+- After conversion, compare atom count, species counts, and box volume with the
+  source structure before running dynamics.
+
 ## Pre-production validation
 
 1. Confirm the model loads without format or backend errors.
-1. Treat `.pt2` as a device/toolchain-compiled artifact. Verify that the export
-   and final LAMMPS runtime use compatible PyTorch, DeePMD-kit, device, and C++
-   interfaces.
+1. Keep DPA4 freeze, `run 0`, canary, and production on the same target physical
+   compute node and allocation unless exact artifact portability is proven.
 1. For multi-rank execution, verify the archive's communication metadata and
    nested with-comm artifact before launching MPI.
-1. Run `run 0` or a bounded short run before production.
-1. Require finite energy, force, pressure, and temperature where applicable.
-1. Check atom count, masses, element mapping, box, and units when values are
-   anomalous or atoms are lost.
-1. Preserve the generated LAMMPS input, model path, command, log, and exit code.
+1. Stage `run 0` -> short NVE when physically appropriate -> short requested
+   ensemble -> production; do not jump from a successful load to a long run.
+1. Require finite thermodynamics, stable atom count, and no mapping, box, or
+   lost-atom errors. Exit code zero alone is not a passed canary.
+1. Require early temperature, pressure, and controlled variables to remain
+   physically compatible with the initial state and requested ensemble.
+1. Preserve the generated data and input files, model path and SHA256, runtime
+   identity, command, complete log, and true exit code.
 
 ## References
 
