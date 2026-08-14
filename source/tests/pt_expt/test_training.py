@@ -9,12 +9,15 @@ Verifies that:
 """
 
 import copy
-import datetime
 import math
 import os
+import platform
 import shutil
 import tempfile
 import unittest
+from collections.abc import (
+    Callable,
+)
 from pathlib import (
     Path,
 )
@@ -27,9 +30,6 @@ import numpy as np
 import pytest
 import torch
 
-from deepmd.loggers.training import (
-    format_training_message,
-)
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
 )
@@ -448,7 +448,7 @@ class TestTraining(unittest.TestCase):
                     os.chdir(old_cwd)
                     shutil.rmtree(tmpdir, ignore_errors=True)
 
-    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_loop(self, mocked_eval) -> None:
         """Run pt_expt full validation and verify best-checkpoint outputs."""
         mocked_eval.side_effect = [
@@ -494,6 +494,86 @@ class TestTraining(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_selects_its_own_best(self, mocked_eval) -> None:
+        """The EMA flow keeps a separate log, best prefix and best record."""
+        # Both flows evaluate at every step, the live one first.
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 3.0},
+            {"mae_e_per_atom": 0.5},
+        ]
+        config = _make_config(self.data_dir, numb_steps=2)
+        config["training"]["save_freq"] = 100
+        config["training"]["enable_ema"] = True
+        config["validating"] = {
+            "full_validation": True,
+            "ema_full_validation": True,
+            "validation_freq": 1,
+            "validation_metric": "E:MAE",
+            "full_val_start": 0.0,
+        }
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ema_full_validation_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            trainer = get_trainer(config)
+            self.assertIsNotNone(trainer.full_validator)
+            self.assertIsNotNone(trainer.ema_full_validator)
+            trainer.run()
+
+            # The live flow improves at step 1, the EMA flow at step 2.
+            self.assertTrue(os.path.exists("best.ckpt-1.t-1.pt"))
+            self.assertTrue(os.path.exists("best_ema.ckpt-2.t-1.pt"))
+            self.assertTrue(os.path.exists("val.log"))
+            self.assertTrue(os.path.exists("val_ema.log"))
+            self.assertEqual(
+                trainer.model_ema.validation_state["full_validation_topk_records"],
+                [{"metric": 0.5, "step": 2}],
+            )
+
+            # The EMA best checkpoint carries the smoothed weights.
+            best_ema = torch.load("best_ema.ckpt-2.t-1.pt", weights_only=True)
+            live = torch.load("best.ckpt-1.t-1.pt", weights_only=True)
+            self.assertTrue(
+                any(
+                    not torch.equal(value, live["model"][key])
+                    for key, value in best_ema["model"].items()
+                    if isinstance(value, torch.Tensor)
+                    and torch.is_floating_point(value)
+                )
+            )
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_ema_full_validation_is_ignored_without_ema(self) -> None:
+        """The flow stays inactive when EMA itself is disabled."""
+        config = _make_config(self.data_dir, numb_steps=2)
+        config["validating"] = {
+            "ema_full_validation": True,
+            "validation_freq": 1,
+            "full_val_start": 0.0,
+        }
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ema_full_validation_off_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            trainer = get_trainer(config)
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+        self.assertIsNone(trainer.full_validator)
+        self.assertIsNone(trainer.ema_full_validator)
+
     def test_training_loop_dpa4(self) -> None:
         """Run a few DPA4/SeZM training steps (model type "dpa4" dispatch)."""
         config = _make_config(self.data_dir, numb_steps=5)
@@ -530,7 +610,7 @@ class TestCompiledModelGetattr(unittest.TestCase):
     These tests do not require example data or torch.compile — they use a
     lightweight mock original_model to verify that __getattr__ correctly
     forwards unknown attributes/methods to the wrapped original model.
-    Compilation is lazy, so no compiled_forward_lower is needed for construction.
+    Compilation is lazy, so no compiled graph is needed for construction.
     """
 
     def _make_compiled_model(self):
@@ -573,11 +653,11 @@ class TestCompiledModelGetattr(unittest.TestCase):
         """Attributes owned by _CompiledModel itself are NOT delegated."""
         cm = self._make_compiled_model()
         # original_model is a registered submodule and must not fall through
-        # to delegation.  compiled_forward_lower is None before the first
-        # forward call (lazy compile) — accessing it must return None, not
-        # delegate to original_model.
+        # to delegation.  The compiled-graph cache is empty before the first
+        # forward call (lazy compile) — accessing it must return that empty
+        # dict, not delegate to original_model.
         self.assertIsInstance(cm.original_model, torch.nn.Module)
-        self.assertIsNone(cm.compiled_forward_lower)
+        self.assertEqual(cm._compiled_lower_by_mode, {})
 
     def test_missing_attr_raises(self) -> None:
         """Accessing an attribute missing from both wrapper and original raises."""
@@ -623,8 +703,8 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                 # The wrapper.model should be a _CompiledModel
                 compiled_model = trainer.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
-                # Lazy compile: compiled_forward_lower is None before any forward.
-                self.assertIsNone(compiled_model.compiled_forward_lower)
+                # Lazy compile: no graph exists before any forward.
+                self.assertEqual(compiled_model._compiled_lower_by_mode, {})
 
                 trainer.wrapper.train()
                 for step in range(3):
@@ -635,9 +715,10 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                     loss.backward()
                     trainer.optimizer.step()
 
-                    # After first forward, compiled_forward_lower must be set.
+                    # After the first forward the training graph must exist,
+                    # keyed by the mode it was traced in.
                     if step == 0:
-                        self.assertIsNotNone(compiled_model.compiled_forward_lower)
+                        self.assertIn(True, compiled_model._compiled_lower_by_mode)
 
                     # Loss should be a finite scalar at every step
                     self.assertFalse(torch.isnan(loss))
@@ -679,6 +760,7 @@ class TestCompiledConsistency(unittest.TestCase):
                 config["model"]["fitting_net"]["activation_function"] = activation
             if enable_compile:
                 config["training"]["enable_compile"] = True
+                config["validating"] = {"compiled_infer": True}
             config = update_deepmd_input(config, warning=False)
             return normalize(config)
 
@@ -917,6 +999,7 @@ class TestAdditionalDataRequirement(unittest.TestCase):
         self.assertEqual(fparam_req.key, "fparam")
         self.assertEqual(fparam_req.ndof, 2)
         self.assertFalse(fparam_req.must)
+        self.assertEqual(fparam_req.source_policy, "default")
         # default is the model's default_fparam, not 0.0
         self.assertNotIsInstance(fparam_req.default, float)
         import numpy as np
@@ -954,6 +1037,7 @@ class TestAdditionalDataRequirement(unittest.TestCase):
         self.assertEqual(fparam_req.key, "fparam")
         self.assertTrue(fparam_req.must)
         self.assertEqual(fparam_req.default, 0.0)
+        self.assertEqual(fparam_req.source_policy, "tracked")
 
 
 class TestRestart(unittest.TestCase):
@@ -2021,59 +2105,205 @@ class TestCompiledSharedFittingDifferentDescriptor(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-class TestFormatTrainingMessageStepTime(unittest.TestCase):
-    """The pt_expt trainer reports the average wall time per step over each
-    display interval by passing ``step_time`` to ``format_training_message``
-    (replacing the former standalone ``step=... step_time=...`` debug line).
-    These tests cover both branches of the optional ``step_time``/``eta``
-    arguments so the "avg = ... s/step" segment is rendered only when requested.
-    """
+class TestCheckpointRetention(unittest.TestCase):
+    """Test where periodic checkpoints land and how many are kept."""
 
-    def test_without_step_time(self) -> None:
-        """``step_time=None`` (default) omits the step-time segment."""
-        msg = format_training_message(batch=100, wall_time=18.41)
-        self.assertEqual(msg, "Batch     100: total wall time = 18.41 s")
-        self.assertNotIn("s/step", msg)
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
 
-    def test_with_step_time(self) -> None:
-        """``step_time`` is rendered with 4 decimals after the wall time."""
-        msg = format_training_message(batch=100, wall_time=18.41, step_time=0.1841)
-        self.assertEqual(
-            msg,
-            "Batch     100: total wall time = 18.41 s, avg = 0.1841 s/step",
+    def _run_and_collect_steps(
+        self,
+        config: dict,
+        before_run: Callable[[str], None] | None = None,
+    ) -> tuple[list[int], str]:
+        """Train in a scratch directory and report the surviving checkpoints.
+
+        ``before_run`` receives the checkpoint directory and may seed it, which
+        is how a rerun over an earlier run's output is set up.
+        """
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_save_dir_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            if before_run is not None:
+                before_run(os.path.join(tmpdir, "ckpts"))
+            get_trainer(config).run()
+
+            ckpt_dir = os.path.join(tmpdir, "ckpts")
+            saved = sorted(
+                int(name[len("model.ckpt-") : -len(".pt")])
+                for name in os.listdir(ckpt_dir)
+                if name.startswith("model.ckpt-")
+            )
+            return saved, os.path.realpath(os.path.join(tmpdir, "model.ckpt.pt"))
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_save_dir_holds_a_sliding_window_of_checkpoints(self) -> None:
+        config = _make_config(self.data_dir, numb_steps=6)
+        config["training"]["save_freq"] = 2
+        config["training"]["save_dir"] = "ckpts"
+        config["training"]["max_ckpt_keep"] = 2
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        saved, latest = self._run_and_collect_steps(config)
+
+        self.assertEqual(saved, [4, 6])
+        self.assertTrue(latest.endswith(os.path.join("ckpts", "model.ckpt-6.pt")))
+
+    def test_rerun_in_a_finished_directory_keeps_its_own_checkpoints(self) -> None:
+        """A short rerun is not pruned in favour of a longer run's leftovers."""
+        config = _make_config(self.data_dir, numb_steps=2)
+        config["training"]["save_freq"] = 1
+        config["training"]["save_dir"] = "ckpts"
+        config["training"]["max_ckpt_keep"] = 2
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        def leave_stale_checkpoints(ckpt_dir: str) -> None:
+            os.makedirs(ckpt_dir, exist_ok=True)
+            for step in (900, 1000):
+                open(os.path.join(ckpt_dir, f"model.ckpt-{step}.pt"), "w").close()
+
+        saved, latest = self._run_and_collect_steps(
+            config, before_run=leave_stale_checkpoints
         )
 
-    def test_step_time_zero_is_shown(self) -> None:
-        """A literal ``0.0`` step time is still shown (not treated as absent)."""
-        msg = format_training_message(batch=1, wall_time=0.5, step_time=0.0)
-        self.assertIn("avg = 0.0000 s/step", msg)
+        self.assertEqual(saved, [1, 2])
+        self.assertTrue(latest.endswith(os.path.join("ckpts", "model.ckpt-2.pt")))
 
-    def test_with_step_time_and_eta(self) -> None:
-        """Step time appears before the eta segment."""
-        current_time = datetime.datetime(
-            2026, 6, 7, 5, 21, 29, tzinfo=datetime.timezone.utc
-        )
-        msg = format_training_message(
-            batch=100,
-            wall_time=18.41,
-            eta=100,
-            current_time=current_time,
-            step_time=0.1841,
-        )
-        self.assertIn("total wall time = 18.41 s, avg = 0.1841 s/step, eta = ", msg)
-        # ordering: wall time -> step time -> eta
-        self.assertLess(msg.index("s/step"), msg.index("eta ="))
+    def test_diverged_interval_is_not_checkpointed(self) -> None:
+        """A non-finite gradient aborts the run before anything is written.
 
-    def test_eta_without_step_time(self) -> None:
-        """Eta still works when no step time is supplied."""
-        current_time = datetime.datetime(
-            2026, 6, 7, 5, 21, 29, tzinfo=datetime.timezone.utc
-        )
-        msg = format_training_message(
-            batch=100, wall_time=18.41, eta=100, current_time=current_time
-        )
-        self.assertNotIn("s/step", msg)
-        self.assertIn("eta = ", msg)
+        Display is switched off so the run reaches the checkpoint boundary:
+        the loss report would otherwise reject the NaN first, which leaves the
+        gradient guard untested.
+        """
+        config = _make_config(self.data_dir, numb_steps=2)
+        config["training"]["gradient_max_norm"] = 1.0
+        config["training"]["save_freq"] = 1
+        config["training"]["disp_training"] = False
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_diverged_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            trainer = get_trainer(config)
+            # An infinite weight drives the forward, and therefore the whole
+            # gradient, out of the finite range on the very first step.
+            with torch.no_grad():
+                next(iter(trainer.model.parameters())).fill_(float("inf"))
+
+            with self.assertRaisesRegex(RuntimeError, "diverged"):
+                trainer.run()
+
+            self.assertEqual(
+                [name for name in os.listdir(tmpdir) if name.endswith(".pt")],
+                [],
+            )
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_keep_ratio_retains_the_tail_of_the_run(self) -> None:
+        config = _make_config(self.data_dir, numb_steps=6)
+        config["training"]["save_freq"] = 2
+        config["training"]["save_dir"] = "ckpts"
+        config["training"]["ckpt_keep_ratio"] = 0.5
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+
+        saved, _ = self._run_and_collect_steps(config)
+
+        # 3 periodic checkpoints; ceil(0.5 * 3) = 2 most recent are kept.
+        self.assertEqual(saved, [4, 6])
+
+
+class TestEmaCheckpoints(unittest.TestCase):
+    """Test the EMA-smoothed weights and the checkpoints carrying them."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def _make_ema_config(self, numb_steps: int = 4) -> dict:
+        config = _make_config(self.data_dir, numb_steps=numb_steps)
+        config["training"]["enable_ema"] = True
+        config["training"]["ema_decay"] = 0.9
+        config["training"]["save_freq"] = numb_steps
+        config = update_deepmd_input(config, warning=False)
+        return normalize(config)
+
+    def test_ema_checkpoint_holds_smoothed_weights(self) -> None:
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ema_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            trainer = get_trainer(self._make_ema_config())
+            trainer.run()
+
+            ema_ckpt = os.path.join(tmpdir, "model_ema.ckpt-4.pt")
+            self.assertTrue(os.path.exists(ema_ckpt))
+            ema_alias = os.path.join(tmpdir, "model_ema.ckpt.pt")
+            self.assertTrue(os.path.exists(ema_alias))
+            if platform.system() != "Windows":
+                self.assertTrue(os.path.islink(ema_alias))
+
+            ema_state = torch.load(ema_ckpt, weights_only=True)
+            live_state = torch.load(
+                os.path.join(tmpdir, "model.ckpt-4.pt"), weights_only=True
+            )
+            # A deployment snapshot carries neither optimizer nor EMA state.
+            self.assertNotIn("optimizer", ema_state)
+            self.assertNotIn("ema", ema_state)
+            self.assertIn("ema", live_state)
+
+            # The smoothed weights lag the live ones after a few updates.
+            differing = [
+                key
+                for key, value in ema_state["model"].items()
+                if isinstance(value, torch.Tensor)
+                and torch.is_floating_point(value)
+                and not torch.equal(value, live_state["model"][key])
+            ]
+            self.assertTrue(differing, "EMA weights should differ from live weights")
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_restart_restores_the_ema_shadow(self) -> None:
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ema_restart_")
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmpdir)
+            trainer = get_trainer(self._make_ema_config())
+            trainer.run()
+            shadow = {
+                key: value.clone()
+                for key, value in trainer.model_ema.shadow_params.items()
+            }
+
+            resumed = get_trainer(
+                self._make_ema_config(numb_steps=8),
+                restart_model=os.path.join(tmpdir, "model.ckpt-4.pt"),
+            )
+            self.assertEqual(resumed.start_step, 4)
+            for key, value in shadow.items():
+                torch.testing.assert_close(resumed.model_ema.shadow_params[key], value)
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,9 @@ from typing import (
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
 )
+from deepmd.utils.spin import (
+    normalize_spin_use_spin,
+)
 
 log = logging.getLogger(__name__)
 
@@ -195,6 +198,47 @@ def warn_configuration_mismatch_during_finetune(
         "backend-specific loading:\n"
         + _format_descriptor_differences(differences, overwrite=False)
     )
+
+
+def _native_spin_types(
+    model_config: Mapping[str, Any],
+) -> frozenset[str] | None:
+    """Return the magnetic element set of a native-spin model config."""
+    spin_config = model_config.get("spin")
+    if (
+        not isinstance(spin_config, Mapping)
+        or str(spin_config.get("scheme", "deepspin")).lower() != "native"
+    ):
+        return None
+
+    type_map = model_config["type_map"]
+    use_spin = normalize_spin_use_spin(spin_config["use_spin"], type_map)
+    return frozenset(
+        element for element, enabled in zip(type_map, use_spin, strict=True) if enabled
+    )
+
+
+def _validate_native_spin_finetune(
+    target_config: Mapping[str, Any],
+    pretrained_config: Mapping[str, Any],
+) -> None:
+    """Validate the native-spin transfer contract before model construction."""
+    target_types = _native_spin_types(target_config)
+    if target_types is None:
+        return
+
+    pretrained_types = _native_spin_types(pretrained_config)
+    if pretrained_types is None:
+        raise ValueError(
+            "Native-spin fine-tuning requires a native-spin pretrained model; "
+            "automatic conversion from a spin-free model is not supported."
+        )
+    if pretrained_types and pretrained_types != target_types:
+        raise ValueError(
+            "Changing the active magnetic element set during native-spin "
+            f"fine-tuning is not supported: pretrained={sorted(pretrained_types)}, "
+            f"target={sorted(target_types)}."
+        )
 
 
 class FinetuneRuleItem:
@@ -399,6 +443,8 @@ class FinetuneRuleBuilder:
                 )
             model_branch_chosen = model_alias_dict[model_branch_chosen]
             single_config_chosen = deepcopy(model_dict_params[model_branch_chosen])
+
+        _validate_native_spin_finetune(single_config, single_config_chosen)
 
         old_type_map = single_config_chosen["type_map"]
         new_type_map = single_config["type_map"]

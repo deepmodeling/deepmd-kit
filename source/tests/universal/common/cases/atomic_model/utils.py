@@ -97,6 +97,26 @@ class AtomicModelTestCase:
                 module.has_message_passing(), self.expected_has_message_passing
             )
 
+    def test_pair_exclude_contract(self) -> None:
+        """``pair_exclude_types``/``pair_excl`` are set by
+        ``BaseAtomicModel.__init__`` on every construction path; the
+        accessor is the public surface, the mask attribute is internal.
+        """
+        pet = self.module.get_pair_exclude_types()
+        assert isinstance(pet, list)
+        # invariant pinned by reinit_pair_exclude:
+        assert (self.module.pair_excl is None) == (len(pet) == 0)
+        if self.module.pair_excl is not None:
+            # the mask must hold exactly the SYMMETRIC CLOSURE of the
+            # accessor's pairs (both backends symmetrize on reinit;
+            # compare as sets of tuples: pt stores a set, dpmodel a list)
+            symmetrized = {
+                pair for i, j in map(tuple, pet) for pair in ((i, j), (j, i))
+            }
+            assert {
+                tuple(p) for p in self.module.pair_excl.get_exclude_types()
+            } == symmetrized
+
     def test_forward(self) -> None:
         """Test forward."""
         nf = 1

@@ -65,9 +65,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
         super().init_out_stat()
-        self.add_chg_spin_ebd: bool = getattr(
-            self.descriptor, "add_chg_spin_ebd", False
-        )
+        self.add_chg_spin_ebd: bool = self.descriptor.get_dim_chg_spin() > 0
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
@@ -85,13 +83,12 @@ class DPAtomicModel(BaseAtomicModel):
                 ),
             )
             self.buffer_type_map.name = "buffer_type_map"
-        if hasattr(self.descriptor, "has_message_passing"):
-            # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
-            self.register_buffer(
-                "buffer_has_message_passing",
-                paddle.to_tensor(self.descriptor.has_message_passing(), dtype="int32"),
-            )
-            self.buffer_has_message_passing.name = "buffer_has_message_passing"
+        # register 'has_message_passing' as buffer(cast to int32 as problems may meets with vector<bool>)
+        self.register_buffer(
+            "buffer_has_message_passing",
+            paddle.to_tensor(self.descriptor.has_message_passing(), dtype="int32"),
+        )
+        self.buffer_has_message_passing.name = "buffer_has_message_passing"
         # register 'ntypes' as buffer
         self.register_buffer(
             "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int32")
@@ -488,14 +485,8 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_dim_chg_spin()
         return 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        if self.add_chg_spin_ebd:
-            return self.descriptor.has_default_chg_spin()
-        return False
-
     def get_default_chg_spin(self) -> paddle.Tensor | None:
         """Get the default charge_spin values as a tensor."""
-        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+        if self.add_chg_spin_ebd:
             return self.descriptor.get_default_chg_spin()
         return None

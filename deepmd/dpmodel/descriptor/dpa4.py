@@ -595,7 +595,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     """
 
     _ENV_DIM: int = 1  # Use se_r style (radial only) for EnvMatStatSe compatibility
-    LATEST_VERSION: float = 1.1
+    LATEST_VERSION: float = 1.2
 
     def __init__(
         self,
@@ -2186,7 +2186,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 raise ValueError("`charge_spin` is required for this SeZM descriptor.")
             charge_spin = xp.reshape(
                 xp_asarray_nodetach(
-                    xp, np.asarray(self.default_chg_spin), dtype=dtype, device=device
+                    xp, self.default_chg_spin, dtype=dtype, device=device
                 ),
                 (1, 2),
             )
@@ -2285,10 +2285,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def get_dim_chg_spin(self) -> int:
         """Return the charge/spin condition width."""
         return 2 if self.add_chg_spin_ebd else 0
-
-    def has_default_chg_spin(self) -> bool:
-        """Return whether default charge/spin conditions are configured."""
-        return self.default_chg_spin is not None
 
     def get_default_chg_spin(self) -> list[float] | None:
         """Return default charge/spin conditions."""
@@ -2687,6 +2683,68 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # === Output FFN ===
         self.output_ffn._load_variables(take_prefix("output_ffn."))
 
+    def _migrate_variables(
+        self,
+        variables: dict[str, Any],
+        version: float,
+        prefix: str = "",
+    ) -> float:
+        """Rewrite stored variables whose meaning changed since ``version``.
+
+        Operates on the flat mapping keyed by ``state_dict`` names, BEFORE
+        anything is assigned to a module: ``load_state_dict`` restores a
+        module's own buffers before descending into its children, so a
+        migration applied to live attributes would rewrite values the child
+        load is about to overwrite. Only representations are upgraded here;
+        a difference no rewrite can absorb stays a forward-time branch on
+        :attr:`version`, so a migrated descriptor never changes its own math.
+
+        Version 1.2 moved the env-seed spin gate from the spin coordinate to
+        the resulting environment quadratic form. For an active-spin model,
+        squaring the stored amplitude preserves the represented function.
+        Legacy native-spin models with no magnetic types instead carry
+        dormant, unconstrained spin-route values; those output-controlling
+        values are canonicalized to the zero function before the routes can
+        be activated by fine-tuning. Versions below 1.1 predate the
+        native-spin route and retain their original forward semantics.
+
+        Parameters
+        ----------
+        variables
+            Stored variables keyed by ``state_dict`` name, mutated in place.
+        version
+            Version the variables were written at.
+        prefix
+            Key prefix of this descriptor within ``variables``.
+
+        Returns
+        -------
+        float
+            Version the variables express after migration.
+        """
+        if not 1.1 <= version < 1.2:
+            return version
+
+        gate_key = prefix + "env_seed_embedding.spin_scale"
+        if self.use_spin is not None and not any(self.use_spin):
+            # dpmodel serialization names NativeLayer weights ``matrix``;
+            # pt_expt state dictionaries expose the wrapped attribute as ``w``.
+            dormant_keys = (
+                "spin_embedding.mag_layer2.matrix",
+                "spin_embedding.mag_layer2.w",
+                "spin_embedding.adam_spin_vec_weight",
+                "spin_embedding.adam_spin_nbr_weight",
+                "env_seed_embedding.spin_scale",
+            )
+            for name in dormant_keys:
+                key = prefix + name
+                if key in variables:
+                    xp = array_api_compat.array_namespace(variables[key])
+                    variables[key] = xp.zeros_like(variables[key])
+        elif gate_key in variables:
+            variables[gate_key] = variables[gate_key] ** 2
+        return 1.2
+
     def serialize(self) -> dict[str, Any]:
         return {
             "@class": "Descriptor",
@@ -2776,7 +2834,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         data.pop("env_mat", None)
         config.pop("s2_grid_resolution", None)
         obj = cls(**config)
-        obj.version = version
+        obj.version = obj._migrate_variables(variables, version)
         obj._load_variables(variables)
         return obj
 

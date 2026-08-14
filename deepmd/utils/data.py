@@ -18,6 +18,7 @@ from pathlib import (
 )
 from typing import (
     Any,
+    Literal,
 )
 
 import numpy as np
@@ -34,6 +35,8 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+DataRequirementSourcePolicy = Literal["tracked", "default", "derived"]
 
 
 class DeepmdData:
@@ -1198,6 +1201,13 @@ class DataRequirementItem:
     special_shape : str, optional
         Name of a loader-defined non-standard shape contract. ``"hessian"``
         stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
+    source_policy : {"tracked", "default", "derived"}, optional
+        How source availability affects the consumer. ``"tracked"`` keeps
+        source presence in the ``find_*`` contract. ``"default"`` treats the
+        configured default as valid input and reports the resolved field
+        available. ``"derived"`` computes the value from structural frame
+        data. Only optional tracked fields require availability-homogeneous
+        batching.
     """
 
     def __init__(
@@ -1213,7 +1223,18 @@ class DataRequirementItem:
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
         special_shape: str | None = None,
+        source_policy: DataRequirementSourcePolicy = "tracked",
     ) -> None:
+        if source_policy not in {"tracked", "default", "derived"}:
+            raise ValueError(
+                "source_policy must be 'tracked', 'default', or 'derived', "
+                f"got {source_policy!r}"
+            )
+        if must and source_policy != "tracked":
+            raise ValueError(
+                f"mandatory data requirement {key!r} cannot use "
+                f"source_policy={source_policy!r}"
+            )
         self.key = key
         self.ndof = ndof
         self.atomic = atomic
@@ -1225,6 +1246,7 @@ class DataRequirementItem:
         self.dtype = dtype
         self.output_natoms_for_type_sel = output_natoms_for_type_sel
         self.special_shape = special_shape
+        self.source_policy = source_policy
         self.dict = self.to_dict()
 
     def to_dict(self) -> dict:
@@ -1239,6 +1261,7 @@ class DataRequirementItem:
             "default": self.default,
             "dtype": self.dtype,
             "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
+            "source_policy": self.source_policy,
         }
         if self.special_shape is not None:
             data["special_shape"] = self.special_shape

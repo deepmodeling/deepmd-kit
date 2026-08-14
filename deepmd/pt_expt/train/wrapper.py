@@ -15,6 +15,9 @@ import torch
 from deepmd.dpmodel.utils.multi_task import (
     apply_shared_links,
 )
+from deepmd.pt_expt.train.utils import (
+    MatmulPrecisionPolicy,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +72,10 @@ class ModelWrapper(torch.nn.Module):
         Single loss or dict of losses keyed by task name.
     model_params : dict, optional
         Model parameters to store as extra state.
+    matmul_precision : MatmulPrecisionPolicy, optional
+        The fp32 matmul precision each forward mode runs at. Defaults to full
+        precision for training, which leaves a wrapper built outside a trainer
+        (to hold pre-trained weights, say) at the conservative setting.
     """
 
     def __init__(
@@ -76,9 +83,15 @@ class ModelWrapper(torch.nn.Module):
         model: torch.nn.Module | dict,
         loss: torch.nn.Module | dict | None = None,
         model_params: dict[str, Any] | None = None,
+        matmul_precision: MatmulPrecisionPolicy | None = None,
     ) -> None:
         super().__init__()
         self.model_params = model_params if model_params is not None else {}
+        self.matmul_precision = (
+            matmul_precision
+            if matmul_precision is not None
+            else MatmulPrecisionPolicy(enable_tf32=False)
+        )
         self.train_infos: dict[str, Any] = {
             "lr": 0,
             "step": 0,
@@ -148,6 +161,7 @@ class ModelWrapper(torch.nn.Module):
         task_key: str | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        n_node: torch.Tensor | None = None,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor | None, dict | None]:
         if not self.multi_task:
             task_key = "Default"
@@ -164,6 +178,7 @@ class ModelWrapper(torch.nn.Module):
             "fparam": fparam,
             "aparam": aparam,
             "charge_spin": charge_spin,
+            "n_node": n_node,
         }
         # ``spin`` (native or virtual-atom magnetic moment) is only accepted
         # by spin-capable model forward()s; mirrors
@@ -173,23 +188,33 @@ class ModelWrapper(torch.nn.Module):
         if self.model[task_key].has_spin():
             input_dict["spin"] = spin
 
-        if self.inference_only:
-            with self._frozen_parameter_context():
-                model_pred = self._forward_without_loss(task_key, input_dict)
-            return model_pred, None, None
+        # The module flag distinguishes a training step from the evaluation the
+        # trainer interleaves with it, which is exactly the split the precision
+        # policy is defined over. A compiled model is traced inside this block
+        # on its first call, so its kernels are selected at the same precision
+        # they later run at.
+        with self.matmul_precision.applied(training=self.training):
+            if self.inference_only:
+                with self._frozen_parameter_context():
+                    model_pred = self._forward_without_loss(task_key, input_dict)
+                return model_pred, None, None
 
-        model_pred = self._forward_without_loss(task_key, input_dict)
-        if label is None:
-            return model_pred, None, None
+            model_pred = self._forward_without_loss(task_key, input_dict)
+            if label is None:
+                return model_pred, None, None
 
-        natoms = atype.shape[-1]
-        loss, more_loss = self.loss[task_key](
-            cur_lr,
-            natoms,
-            model_pred,
-            label,
-        )
-        return model_pred, loss, more_loss
+            # The width a rectangular batch pads its frames to. A ragged batch
+            # has none, so this is its whole atom count and the loss reads each
+            # frame's own from ``model_pred["n_node"]``; terms that cannot
+            # express themselves per frame refuse such a batch instead.
+            natoms = atype.shape[-1]
+            loss, more_loss = self.loss[task_key](
+                cur_lr,
+                natoms,
+                model_pred,
+                label,
+            )
+            return model_pred, loss, more_loss
 
     @contextmanager
     def _frozen_parameter_context(self) -> Generator[None, None, None]:
@@ -219,8 +244,17 @@ class ModelWrapper(torch.nn.Module):
         task_key: str,
         input_dict: dict[str, Any],
     ) -> dict[str, torch.Tensor]:
-        """Return model predictions without constructing a loss."""
-        return self.model[task_key](**input_dict)
+        """Return model predictions without constructing a loss.
+
+        ``n_node`` marks a batch whose frames are concatenated rather than
+        padded to a common atom count. Its node axis is already the one the
+        graph lower works on, so it takes the entry that skips the padding
+        round trip; ``forward`` accepts only the rectangular shape.
+        """
+        model = self.model[task_key]
+        if input_dict.get("n_node") is None:
+            return model(**{k: v for k, v in input_dict.items() if k != "n_node"})
+        return model.forward_ragged(**input_dict)
 
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state.get("model_params", {})

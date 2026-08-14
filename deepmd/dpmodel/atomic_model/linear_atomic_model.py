@@ -723,19 +723,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Children that actually consume ``fparam``."""
         return [m for m in self.models if m.get_dim_fparam() > 0]
 
-    def has_default_chg_spin(self) -> bool:
-        """Whether every active child shares one default charge/spin."""
-        return self._agreed_default(
-            self._chg_spin_consumers(),
-            lambda m: m.has_default_chg_spin(),
-            lambda m: m.get_default_chg_spin(),
-        )[0]
-
     def get_default_chg_spin(self) -> "Array | None":
         """The shared default charge/spin conditions, if the children agree."""
         return self._agreed_default(
             self._chg_spin_consumers(),
-            lambda m: m.has_default_chg_spin(),
+            lambda m: m.get_default_chg_spin() is not None,
             lambda m: m.get_default_chg_spin(),
         )[1]
 

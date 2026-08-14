@@ -13,7 +13,7 @@ and defaults to the `dpa4_ener` energy fitting network, so `descriptor.type` and
 `fitting_net.type` may be omitted for energy training. A new energy input then
 needs only the model type, `type_map`, and a few descriptor options.
 
-Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
+Reference: {ref}`DPA4 paper <cite-dpa4>` in the canonical citation guide.
 
 ## Quick start
 
@@ -341,6 +341,17 @@ When ZBL bridging is enabled, set `training.training_data.min_pair_dist` to the
 same value as `bridging_r_inner` so frames with shorter atom pairs are excluded
 from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
 
+> [!NOTE]
+> Output-bias statistics and bridging: the model energy is
+> `E = E_model + E_bias`, and the ZBL term belongs to `E_model`. The
+> `set-by-statistic` bias mode (initial statistics, finetune with a
+> random fitting, `dp change-bias --mode set`) fits `E_bias` to the raw
+> data labels and by definition ignores `E_model` — the analytical ZBL
+> contribution included. For a self-consistent calibration of a bridged
+> model use `change-by-statistic`, which subtracts the complete bridged
+> prediction. See [change-bias](change-bias.md) for the precise
+> definitions.
+
 ## Performance and precision
 
 ### Training-time settings
@@ -369,7 +380,7 @@ equivalent input-file option used during training validation:
 | -------------------- | --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference when `descriptor.use_amp=true`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference, independently of `descriptor.use_amp`. Training AMP remains controlled by `descriptor.use_amp`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). `1`: universal fused kernels, numerically equivalent to the dense path with full float32 accumulation. `2`: adds the table-configured fused SO(2) value path and edge-block backward kernels (still exact float32). `3`: additionally runs the SO(2) mixing stack on fp16 tensor cores with split compensation — roughly float32-level accuracy (maximum force deviation about 4e-6 eV/Å on a 4-thousand-atom system) at a substantial speedup; only shapes validated by the tuning sweep are affected. Levels 2 and 3 read launch tables tuned per GPU model (H20 ships built in); on other GPUs the kernels fall back to conservative configurations, and `dp --pt freeze` tunes the missing entries automatically on the local GPU before exporting (a one-off sweep of a few minutes, baked into the `.pt2`). |
 
 Accepted boolean values for the other switches are `1`/`true`/`yes`/`on` and
@@ -738,20 +749,5 @@ closed over the one-hop neighbor shell.
 
 ## Citation
 
-If you use DPA4/SeZM, please cite the [DPA4 paper](https://arxiv.org/abs/2606.02419):
-
-```bibtex
-@article{li2026dpa4,
-  title = {{DPA4}: Pushing the Accuracy-Cost Frontier of Interatomic
-           Potentials with {EMFA} {SO(2)} Convolution},
-  author = {Li, Tiancheng and Li, Wentao and Peng, Anyang and Xue, Jianming
-            and Zhang, Linfeng and Zhang, Duo and Wang, Han},
-  journal = {arXiv preprint arXiv:2606.02419},
-  year = {2026},
-  eprint = {2606.02419},
-  archivePrefix = {arXiv},
-  primaryClass = {physics.chem-ph},
-  doi = {10.48550/arXiv.2606.02419},
-  url = {https://arxiv.org/abs/2606.02419}
-}
-```
+If you use DPA4/SeZM, cite the {ref}`DPA4 paper <cite-dpa4>` from the
+canonical citation guide. Its BibTeX record is maintained in `CITATIONS.bib`.

@@ -67,6 +67,30 @@ def make_base_fitting(
             """Update the output bias for fitting net."""
             raise NotImplementedError
 
+        def reinit_exclude(self, exclude_types: list[int] = []) -> None:
+            """Reinitialize the per-type output exclusion list.
+
+            Concrete default for fittings without exclusion support: an
+            empty list is a no-op; a non-empty list raises, because
+            silently ignoring a requested exclusion would degrade the
+            model without any signal.
+
+            Parameters
+            ----------
+            exclude_types
+                Atom types whose fitting output is excluded.
+
+            Raises
+            ------
+            NotImplementedError
+                If ``exclude_types`` is non-empty and this fitting does
+                not support atom-type exclusion.
+            """
+            if exclude_types:
+                raise NotImplementedError(
+                    "this fitting does not support atom-type exclusion"
+                )
+
         @abstractmethod
         def get_type_map(self) -> list[str]:
             """Get the name to each type of atoms."""

@@ -231,6 +231,14 @@ def _build_single(
     ii, jj, ss = vesin_search_ijs(
         positions.detach(), cell if periodic else None, periodic, rcut, device
     )
+    # Phantom atoms (atype < 0) pad a mixed-nloc batch and have no physical
+    # site; the geometric search above cannot know that. Their pairs are
+    # dropped before the ``sum(sel)`` truncation below, so that a phantom can
+    # never displace a genuine neighbor from a real atom's list. Compacting
+    # the pair list, rather than marking the pairs empty, also keeps them out
+    # of the ``max_nn`` that sizes the dense candidate matrix.
+    real_pair = (atype[ii] >= 0) & (atype[jj] >= 0)
+    ii, jj, ss = ii[real_pair], jj[real_pair], ss[real_pair]
     # ss is int64 from the helper; cast to the coordinate dtype for the image sum.
     ss = ss.to(positions.dtype)
 

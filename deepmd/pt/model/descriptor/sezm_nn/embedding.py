@@ -422,7 +422,10 @@ class EnvironmentInitialEmbedding(nn.Module):
         # plus, for the native spin scheme, the 3 envelope-gated neighbor-spin
         # components, so the inner product ``D = M^T M`` yields the neighbor
         # spin-spin invariants alongside the geometric ones.
-        self.coord_dim = 4 + (3 if self.spin_flags is not None else 0)
+        self.geometry_coord_dim = 4
+        self.coord_dim = self.geometry_coord_dim + (
+            3 if self.spin_flags is not None else 0
+        )
         self.register_buffer(
             "eps_sq_tensor",
             torch.tensor(self.eps * self.eps, dtype=self.dtype, device=self.device),
@@ -496,13 +499,13 @@ class EnvironmentInitialEmbedding(nn.Module):
             seed=seed_out,
         )
 
-        # === Native spin: per-type mask and isotropic channel scale ===
+        # === Native spin: per-type mask and post-quadratic activation gate ===
         # The mask gates the neighbor-spin channel by source type, so a
         # non-magnetic neighbor contributes zero and (critically) carries zero
-        # magnetic force ``-dE/ds``. The single scalar scale (shared across
-        # x/y/z) keeps the spin coordinates transforming with the geometry, so
-        # the env-matrix invariant stays SO(3)-invariant; ``output_proj`` is
-        # zero-initialized, so the spin contribution starts neutral regardless.
+        # magnetic force ``-dE/ds``. ``spin_scale`` multiplies the spin-only
+        # contribution after the environment quadratic form. This preserves
+        # SO(3) invariance and provides a linear, learnable gate that can start
+        # from exactly zero during spin-free fine-tuning.
         if self.spin_flags is not None:
             spin_mask = torch.tensor(
                 [1.0 if flag else 0.0 for flag in self.spin_flags],
@@ -511,7 +514,7 @@ class EnvironmentInitialEmbedding(nn.Module):
             )
             self.register_buffer("spin_mask", spin_mask, persistent=False)
             self.spin_scale = nn.Parameter(
-                torch.ones(1, dtype=self.dtype, device=self.device),
+                torch.zeros(1, dtype=self.dtype, device=self.device),
                 requires_grad=trainable,
             )
 
@@ -575,7 +578,7 @@ class EnvironmentInitialEmbedding(nn.Module):
                 mask = self.spin_mask.index_select(
                     0, atype_flat.index_select(0, src)
                 ).unsqueeze(-1)  # (E, 1)
-                spin_chan = edge_env * self.spin_scale * spin_src * mask  # (E, 3)
+                spin_chan = edge_env * spin_src * mask  # (E, 3)
             else:
                 spin_chan = r_tilde.new_zeros(r_tilde.shape[0], 3)
             r_tilde = torch.cat([r_tilde, spin_chan], dim=-1)  # (E, coord_dim)
@@ -618,9 +621,22 @@ class EnvironmentInitialEmbedding(nn.Module):
         # Summing over the coordinate axis makes D invariant to a joint rotation
         # of the geometry and the spin channels; with the spin channels present,
         # D additionally carries the neighbor spin-spin invariants.
-        env_agg_t = env_agg.permute(0, 2, 1)  # (N, embed_dim, coord_dim)
-        env_agg_axis = env_agg[:, :, : self.axis_dim]  # (N, coord_dim, axis_dim)
-        D = torch.bmm(env_agg_t, env_agg_axis)  # (N, embed_dim, axis_dim)
+        if self.spin_flags is None:
+            env_agg_t = env_agg.permute(0, 2, 1)  # (N, embed_dim, coord_dim)
+            env_agg_axis = env_agg[:, :, : self.axis_dim]
+            D = torch.bmm(env_agg_t, env_agg_axis)
+        else:
+            geometry_agg = env_agg[:, : self.geometry_coord_dim, :]
+            spin_agg = env_agg[:, self.geometry_coord_dim :, :]
+            D_geometry = torch.bmm(
+                geometry_agg.permute(0, 2, 1),
+                geometry_agg[:, :, : self.axis_dim],
+            )
+            D_spin = torch.bmm(
+                spin_agg.permute(0, 2, 1),
+                spin_agg[:, :, : self.axis_dim],
+            )
+            D = D_geometry + self.spin_scale * D_spin
 
         # === Step 6. Output projection for FiLM logits ===
         D_flat = D.reshape(
@@ -865,6 +881,7 @@ class SpinEmbedding(nn.Module):
             self.channels,
             bias=False,
             activation_function=None,
+            init="final",
             precision=self.precision,
             seed=child_seed(seed_scalar, 1),
             trainable=trainable,
@@ -874,31 +891,18 @@ class SpinEmbedding(nn.Module):
         # ``adam_`` prefix routes the table to Adam in HybridMuon, matching the
         # type-embedding treatment for per-type lookup parameters.
         self.adam_spin_vec_weight = nn.Parameter(
-            torch.empty(
+            torch.zeros(
                 self.ntypes, self.channels, device=self.device, dtype=self.dtype
             )
-        )
-        init_std = 1.0 / math.sqrt(float(self.ntypes + self.channels))
-        nn.init.normal_(
-            self.adam_spin_vec_weight,
-            mean=0.0,
-            std=init_std,
-            generator=get_generator(child_seed(seed, 1)),
         )
 
         # === l=1 per-source-type per-channel weight for neighbor aggregation ===
         # Separate from the on-site weight: this scales the neighbor's spin
         # direction before it is aggregated into the center node's l=1 seed.
         self.adam_spin_nbr_weight = nn.Parameter(
-            torch.empty(
+            torch.zeros(
                 self.ntypes, self.channels, device=self.device, dtype=self.dtype
             )
-        )
-        nn.init.normal_(
-            self.adam_spin_nbr_weight,
-            mean=0.0,
-            std=init_std,
-            generator=get_generator(child_seed(seed, 2)),
         )
 
         for p in self.parameters():

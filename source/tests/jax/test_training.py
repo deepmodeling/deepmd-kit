@@ -496,6 +496,11 @@ class _FakeEnvMatStatSe:
 
 
 class _DescriptorWithStats:
+    # stat-behavior flags merge_env_stat reads directly on any
+    # Descriptor/DescriptorBlock (class defaults on the real bases)
+    set_davg_zero = False
+    set_stddev_constant = False
+
     def __init__(self, stats: dict[str, StatItem]) -> None:
         self.stats = stats
         self.davg = np.asarray([0.0], dtype=np.float64)

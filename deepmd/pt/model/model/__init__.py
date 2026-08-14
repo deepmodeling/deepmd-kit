@@ -505,10 +505,9 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
 
     use_spin = [bool(flag) for flag in model_params["spin"]["use_spin"]]
     # ``virtual_scale`` is a virtual-atom geometric device; the native scheme
-    # only needs ``use_spin`` for masking, so default it when absent.
+    # only needs ``use_spin`` for masking, so it stays unset here.
     spin = Spin(
         use_spin=use_spin,
-        virtual_scale=model_params["spin"].get("virtual_scale", 1.0),
         allow_missing_label=model_params["spin"].get("allow_missing_label", False),
     )
 

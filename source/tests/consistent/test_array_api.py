@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import sys
 import unittest
+from unittest.mock import (
+    patch,
+)
 
+import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
     xp_add_at,
+    xp_asarray_nodetach,
     xp_bincount,
     xp_maximum_at,
     xp_scatter_sum,
@@ -55,6 +60,36 @@ class TestArrayConversion(unittest.TestCase):
         )
         self.assertTrue(param.requires_grad)
         self.assertEqual(param.device, DEVICE)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_foreign_tensor_is_converted_to_numpy_namespace(self) -> None:
+        tensor = torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        numpy_namespace = array_api_compat.array_namespace(np.empty(0))
+
+        # A CUDA tensor rejects the direct NumPy protocol. Simulate that
+        # boundary on CPU so the device-to-host fallback is exercised on every
+        # platform.
+        with patch.object(
+            torch.Tensor,
+            "numpy",
+            side_effect=TypeError("direct conversion is unavailable"),
+        ):
+            converted = xp_asarray_nodetach(numpy_namespace, tensor)
+
+        self.assertIsInstance(converted, np.ndarray)
+        np.testing.assert_allclose(converted, np.array([1.0, 2.0]))
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_native_tensor_keeps_its_autograd_graph(self) -> None:
+        tensor = torch.nn.Parameter(
+            torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        )
+        torch_namespace = array_api_compat.array_namespace(tensor)
+
+        converted = xp_asarray_nodetach(torch_namespace, tensor)
+
+        self.assertIs(converted, tensor)
+        self.assertTrue(converted.requires_grad)
 
 
 class TestXpMaximumAtConsistent(unittest.TestCase):

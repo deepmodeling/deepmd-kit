@@ -12,6 +12,29 @@
 
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #include "device.h"
+
+template <typename FPTYPE>
+static void copy_local_tensor_data(FPTYPE* dst,
+                                   const FPTYPE* src,
+                                   size_t count,
+                                   const paddle::Place& place) {
+  if (count == 0) {
+    return;
+  }
+
+  // CUDA-aware MPI describes whether MPI can consume device pointers; it does
+  // not describe where this particular Paddle tensor lives.  Self-swaps must
+  // select the copy primitive from the actual tensor place so CPU tensors also
+  // work in CUDA/ROCm-enabled builds.
+  if (phi::is_gpu_place(place)) {
+    gpuMemcpy(dst, src, count * sizeof(FPTYPE), gpuMemcpyDeviceToDevice);
+  } else {
+    // CPU and host-pinned tensors are both host-addressable.  Defaulting
+    // non-GPU places to memcpy also avoids treating a future host place as a
+    // CUDA pointer merely because the operator was built with CUDA support.
+    memcpy(dst, src, count * sizeof(FPTYPE));
+  }
+}
 #endif
 
 #ifdef USE_MPI
@@ -83,13 +106,16 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
 
   int tensor_size = g1.dims()[1];
 
+  // nlocal and nghost are scalar protocol values, independent of the number
+  // of communication swaps.  In particular, nswap == 0 still needs one slot
+  // for each value before the host dereference below.
   paddle::Tensor cpu_nlocal =
-      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+      paddle::empty({1}, paddle::DataType::INT32, paddle::CPUPlace());
   cpu_nlocal.copy_(nlocal_tensor, paddle::CPUPlace(), true);
   int nlocal = *(cpu_nlocal.data<int>());
 
   paddle::Tensor cpu_nghost =
-      paddle::empty({nswap}, paddle::DataType::INT32, paddle::CPUPlace());
+      paddle::empty({1}, paddle::DataType::INT32, paddle::CPUPlace());
   cpu_nghost.copy_(nghost_tensor, paddle::CPUPlace(), true);
   int nghost = *(cpu_nghost.data<int>());
 
@@ -175,20 +201,8 @@ void Border_forward_t(const paddle::Tensor& sendlist_tensor,
 #endif
 
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-#ifdef USE_MPI
-      if (cuda_aware == 0) {
-        memcpy(recv_g1, send_g1,
-               (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
-      } else {
-        gpuMemcpy(recv_g1, send_g1,
-                  (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
-                  gpuMemcpyDeviceToDevice);
-      }
-#else
-      gpuMemcpy(recv_g1, send_g1,
-                (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
-                gpuMemcpyDeviceToDevice);
-#endif
+      copy_local_tensor_data(recv_g1, send_g1, (size_t)nsend * tensor_size,
+                             recv_g1_tensor.place());
 
 #else
     memcpy(recv_g1, send_g1,
@@ -317,7 +331,6 @@ void Border_backward_t(const paddle::Tensor& sendlist_tensor,
   cpu_recvnum.copy_(recvnum_tensor, paddle::CPUPlace(), true);
   int* sendnum = cpu_recvnum.data<int>();
 
-  FPTYPE* local_g1 = d_local_g1_tensor.data<FPTYPE>();
   int tensor_size = d_local_g1_tensor.dims()[1];
 
   paddle::Tensor cpu_nlocal =
@@ -381,20 +394,8 @@ void Border_backward_t(const paddle::Tensor& sendlist_tensor,
 #endif
       if (nrecv) {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-#ifdef USE_MPI
-        if (cuda_aware == 0) {
-          memcpy(recv_g1, send_g1,
-                 (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
-        } else {
-          gpuMemcpy(recv_g1, send_g1,
-                    (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
-                    gpuMemcpyDeviceToDevice);
-        }
-#else
-        gpuMemcpy(recv_g1, send_g1,
-                  (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
-                  gpuMemcpyDeviceToDevice);
-#endif
+        copy_local_tensor_data(recv_g1, send_g1, (size_t)nrecv * tensor_size,
+                               d_local_g1_tensor.place());
 #else
       memcpy(recv_g1, send_g1,
              (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
@@ -408,18 +409,34 @@ void Border_backward_t(const paddle::Tensor& sendlist_tensor,
           d_local_g1_tensor, irecvlist, recv_g1_tensor.slice(0, nrecv), 0);
     }
   }
+
+  // Forward swaps overwrite every ghost row with owner data. Reverse
+  // communication accumulates each ghost output gradient into its owner, but
+  // the original ghost input has no path to the output and therefore must
+  // receive a zero gradient. With no swaps, forward is the identity and the
+  // upstream ghost gradient remains valid.
+  if (nswap > 0 && nghost > 0) {
+    FPTYPE* ghost_g1 = d_local_g1_tensor.data<FPTYPE>() + nlocal * tensor_size;
+    size_t ghost_size = (size_t)nghost * tensor_size;
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+    if (phi::is_gpu_place(d_local_g1_tensor.place())) {
+      gpuMemset(ghost_g1, 0, ghost_size * sizeof(FPTYPE));
+    } else {
+      memset(ghost_g1, 0, ghost_size * sizeof(FPTYPE));
+    }
+#else
+    memset(ghost_g1, 0, ghost_size * sizeof(FPTYPE));
+#endif
+  }
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
   gpuDeviceSynchronize();
 #endif
 
-#ifdef USE_MPI
-#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-  if (cuda_aware == 0) {
-    recv_g1_tensor_grad.copy_(d_local_g1_tensor, recv_g1_tensor_grad.place(),
-                              true);
-  }
-#endif
-#endif
+  // The reverse exchange may update a temporary on the original device or on
+  // the CPU fallback used by non-CUDA-aware MPI. Always publish that result to
+  // the custom-op gradient output instead of relying on incidental aliasing.
+  recv_g1_tensor_grad.copy_(d_local_g1_tensor, recv_g1_tensor_grad.place(),
+                            true);
 }
 
 void Border_backward(const paddle::Tensor& sendlist_tensor,

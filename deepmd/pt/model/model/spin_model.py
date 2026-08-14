@@ -554,6 +554,8 @@ class SpinModel(torch.nn.Module):
             The lazy sampled function to get data frames from different data systems.
         stat_file_path
             The dictionary of paths to the statistics files.
+        preset_observed_type
+            Atom types known to occur in the sampled data, if already computed.
         """
 
         @functools.lru_cache
@@ -600,6 +602,8 @@ class SpinModel(torch.nn.Module):
         model_ret[f"{var_name}"] = torch.split(
             model_ret[f"{var_name}"], [nloc, nloc], dim=1
         )[0]
+        if "mask" in model_ret:
+            model_ret["mask"] = model_ret["mask"][:, :nloc]
         if self.backbone_model.do_grad_r(var_name):
             (
                 model_ret[f"{var_name}_derv_r"],
@@ -665,6 +669,8 @@ class SpinModel(torch.nn.Module):
         model_ret[f"{var_name}"] = torch.split(
             model_ret[f"{var_name}"], [nloc, nloc], dim=1
         )[0]
+        if "mask" in model_ret:
+            model_ret["mask"] = model_ret["mask"][:, :nloc]
         if self.backbone_model.do_grad_r(var_name):
             (
                 model_ret[f"{var_name}_derv_r"],
@@ -737,6 +743,8 @@ class SpinEnergyModel(SpinModel):
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
             output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(
@@ -764,6 +772,8 @@ class SpinEnergyModel(SpinModel):
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
@@ -804,6 +814,8 @@ class SpinEnergyModel(SpinModel):
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["extended_mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["extended_force_mag"] = model_ret[
