@@ -52,7 +52,7 @@ def canonical_model_eligible(model: Any) -> bool:
 
 
 def op_available() -> bool:
-    """Return whether both compact DPA4C descriptor operators are loaded."""
+    """Return whether the complete compact DPA4C operator suite is loaded."""
     forward = getattr(torch.ops.deepmd, "dpa4c_canonical_compress", None)
     backward = getattr(
         torch.ops.deepmd,
