@@ -64,9 +64,14 @@ def op_available() -> bool:
         "dpa4c_canonical_compress_backward_inplace",
         None,
     )
+    energy_gradient = getattr(
+        torch.ops.deepmd,
+        "dpa4c_canonical_compress_energy_gradient",
+        None,
+    )
     return all(
         isinstance(operator, torch._ops.OpOverloadPacket)
-        for operator in (forward, backward, backward_inplace)
+        for operator in (forward, backward, backward_inplace, energy_gradient)
     )
 
 
@@ -120,7 +125,7 @@ def _forward_fake(
     )
 
     profile = descriptor_profile(
-        int(type_embedding.shape[1]), int(lmax), spin.numel() != 0
+        int(type_embedding.shape[1]), int(lmax), spin.ndim == 2
     )
     nodes = atype.shape[0]
     descriptor = edge_vec.new_empty(nodes, profile.output_width, dtype=torch.float32)
@@ -157,7 +162,7 @@ def _backward_shapes(
     Each absent output is allocated separately, because the schema declares
     three unannotated results and two of them may not share storage.
     """
-    if spin.numel() == 0:
+    if spin.ndim != 2:
         return (
             torch.empty_like(edge_vec),
             edge_vec.new_empty((0,), dtype=torch.float32),
@@ -179,7 +184,7 @@ def _energy_gradient_fake(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     del source, destination_row_ptr
     spin = args[10]
-    has_spin = spin.numel() != 0
+    has_spin = spin.ndim == 2
     # Each absent output is allocated separately, because the schema declares
     # four unannotated results and no two of them may share storage.
     return (
@@ -194,7 +199,9 @@ def _energy_gradient_fake(
     )
 
 
-def _cpu_energy_gradient(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
+def _cpu_energy_gradient(
+    *args: Any,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Reference sequence of the fused operator, evaluated in one run."""
     from deepmd.kernels.cuda.graph_fitting import _cpu_backward as fitting_backward
     from deepmd.kernels.cuda.graph_fitting import _cpu_forward as fitting_forward

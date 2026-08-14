@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <cuda_runtime_api.h>
 #include <torch/torch.h>
 
 #include <optional>
@@ -166,10 +167,11 @@ void fitting_backward_range(cudaStream_t stream,
                             float* d_x);
 
 // Scatter dE/d(edge_vec) into per-node force, per-frame virial and (optional)
-// per-node virial. A non-empty ``edge_spin_gradient`` adds the per-source total
+// per-node virial. A rank-two ``edge_spin_gradient`` adds the per-source total
 // of the magnetic cotangent, which shares the source grouping the force
-// reduction already walks. Returns (force (N, 3), atom_virial (N, 3, 3) or
-// empty, virial (nf, 3, 3), magnetic_force (N, 3) or empty).
+// reduction already walks; a rank-one empty tensor denotes its absence.
+// Returns (force (N, 3), atom_virial (N, 3, 3) or empty, virial (nf, 3, 3),
+// magnetic_force (N, 3) or a rank-one empty sentinel).
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 edge_force_virial(torch::Tensor g_e,
                   torch::Tensor edge_vec,

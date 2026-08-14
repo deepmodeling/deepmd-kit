@@ -139,7 +139,7 @@ def edge_energy_deriv(
             source_order,
             source_row_ptr,
             n_node,
-            edge_vec.new_zeros(0, 3),
+            edge_vec.new_empty(0),
             n_cap,
             do_atomic_virial,
         )

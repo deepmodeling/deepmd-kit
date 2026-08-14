@@ -276,7 +276,7 @@ def _cpu(
         source_order,
         source_row_ptr,
         n_node,
-        edge_vec.to(fprec).new_zeros(0, 3),
+        edge_vec.to(fprec).new_empty(0),
         node_capacity,
         do_atomic_virial,
     )

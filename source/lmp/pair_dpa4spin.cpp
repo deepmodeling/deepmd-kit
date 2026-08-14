@@ -312,6 +312,9 @@ void PairDPA4Spin::settings(int narg, char** arg) {
 ------------------------------------------------------------------------- */
 
 void PairDPA4Spin::coeff(int narg, char** arg) {
+  if (narg < 2) {
+    error->all(FLERR, "Incorrect args for pair coefficients");
+  }
   if (!allocated) {
     allocate();
   }
@@ -535,13 +538,14 @@ void PairDPA4Spin::compute(int eflag, int vflag) {
   // list covers, ghosts included; the spin atom style folds the ghost rows
   // onto their owners in its reverse communication. Dividing the magnetic
   // force by hbar / |m| turns the energy gradient with respect to the moment
-  // into the precession force LAMMPS stores, and leaves an atom whose moment
-  // vanishes with no precession force at all.
+  // into the precession force LAMMPS stores. Multiplication by |m| preserves
+  // that relation while making a zero moment well-defined.
+  const double force_scale = scale[1][1] * force_unit_cvt_factor;
+  const double magnetic_force_scale = force_scale / kHBar;
   for (int ii = 0; ii < nall; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
-      f[ii][dd] += scale[1][1] * dforce[3 * ii + dd] * force_unit_cvt_factor;
-      fm[ii][dd] += scale[1][1] * dforce_mag[3 * ii + dd] /
-                    (kHBar / sp[ii][3]) * force_unit_cvt_factor;
+      f[ii][dd] += dforce[3 * ii + dd] * force_scale;
+      fm[ii][dd] += dforce_mag[3 * ii + dd] * sp[ii][3] * magnetic_force_scale;
     }
   }
 

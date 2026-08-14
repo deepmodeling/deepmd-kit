@@ -838,16 +838,22 @@ class ChargeStateFold {
           " tables but the archive names " + std::to_string(constants_.size()) +
           " constants; it cannot serve a runtime charge state");
     }
-    std::unordered_map<std::string, at::Tensor> update;
+    // The inactive buffer is a complete model image. A partial inactive update
+    // copies tensor constants and buffers but omits ordinary parameters, so it
+    // cannot be swapped into service safely.
+    auto* runner = target.get_runner();
+    auto constants = runner->extract_constants_map(/*use_inactive=*/false);
     for (size_t ii = 0; ii < tables.size(); ++ii) {
       // An unnamed output belongs to a mechanism this model has disabled and
       // has no constant to reach.
       if (!constants_[ii].empty()) {
-        update[constants_[ii]] = tables[ii];
+        constants[constants_[ii]] = tables[ii];
       }
     }
-    target.update_constant_buffer(update, /*use_inactive=*/false,
-                                  /*validate_full_updates=*/false);
+    target.load_constants(constants, /*use_inactive=*/true,
+                          /*check_full_update=*/true);
+    runner->swap_constant_buffer();
+    runner->free_inactive_constant_buffer();
   }
 
  private:

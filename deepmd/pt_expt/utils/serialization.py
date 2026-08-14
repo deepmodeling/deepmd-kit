@@ -1404,7 +1404,8 @@ def deserialize_to_file(
         raise ValueError(
             "native-spin models implement only the NeighborGraph and compact "
             f"canonical lowers (got lower_kind={lower_kind!r}); use "
-            "lower_kind='graph' with a .pt2 output."
+            "lower_kind='graph', or lower_kind='dpa4c_canonical' for an "
+            "eligible compressed DPA4C model, with a .pt2 output."
         )
     # A graph lower deploys the fused inference pipeline. The trace runs at
     # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
@@ -2276,6 +2277,18 @@ def _deserialize_to_file_pt2(
     )
     metadata["output_keys"] = output_keys
 
+    # A charge-state update swaps constants in one compiled artifact. A model
+    # that also needs the with-comm lower would own two independent constant
+    # buffers, so reject that unsupported combination before compiling either
+    # artifact rather than packaging two states that can silently diverge.
+    charge_state_descriptor = _charge_state_descriptor(data, metadata)
+    has_comm_artifact = bool(metadata.get("has_comm_artifact"))
+    if charge_state_descriptor is not None and has_comm_artifact:
+        raise ValueError(
+            "a charge-state fold cannot be packaged with a with-comm lower "
+            "because each compiled lower owns independent constants"
+        )
+
     # On CUDA, aggressive kernel fusion (default realize_opcount_threshold=30)
     # causes NaN in the backward pass (force/virial) of attention-based
     # descriptors (DPA1, DPA2). Setting threshold=0 prevents fusion and
@@ -2331,7 +2344,6 @@ def _deserialize_to_file_pt2(
     # Charge-state fold. Present only for a compressed charge-conditioned
     # descriptor, whose frozen tables the deployment rebuilds once when the
     # state becomes known.
-    charge_state_descriptor = _charge_state_descriptor(data, metadata)
     charge_state_bytes: bytes | None = None
     if charge_state_descriptor is not None:
         metadata["charge_state_constants"] = _match_charge_state_constants(
@@ -2345,7 +2357,6 @@ def _deserialize_to_file_pt2(
     # passing extends across rank boundaries. The flag was computed
     # from the model in ``_collect_metadata`` and is already in
     # ``metadata`` here.
-    has_comm_artifact = bool(metadata.get("has_comm_artifact"))
     with_comm_bytes: bytes | None = None
     with_comm_output_keys: list[str] | None = None
     if has_comm_artifact:

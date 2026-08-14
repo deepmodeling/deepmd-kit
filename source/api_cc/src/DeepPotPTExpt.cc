@@ -427,19 +427,17 @@ void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
                                    " values but the model expects " +
                                    std::to_string(settable_chgspin));
   }
-  // Route one: the condition of every later forward pass that is not given
-  // one explicitly.  This is the whole mechanism for an uncompressed model,
-  // which reads the condition as an ordinary input.
-  default_chg_spin_ = charge_spin;
-  // Route two: a compressed descriptor has folded the condition into frozen
-  // tables that the lower holds as constants, so serving another condition
-  // means rebuilding those tables and writing them over the constants.
+  // All allocation completes before the compiled constants change. The final
+  // vector swap is non-throwing, so the visible default follows the installed
+  // constants without opening a second failure point.
+  std::vector<double> next_charge_spin(charge_spin);
   if (charge_state_fold_) {
     charge_state_fold_->apply(charge_spin,
                               gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
                                           : torch::Device(torch::kCPU),
                               *loader);
   }
+  default_chg_spin_.swap(next_charge_spin);
 }
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model(
@@ -822,7 +820,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   //   non-message-passing, or nghost == 0: the regular path is always safe.
   //   message-passing, multi-rank:  requires the with-comm artifact.
   //   message-passing, single-rank: requires the atom map (mapping tensor).
-  if (has_message_passing_ && nghost > 0) {
+  if (!lower_input_is_canonical_ && has_message_passing_ && nghost > 0) {
     if (multi_rank && !has_comm_artifact_) {
       throw deepmd::deepmd_exception(
           "Multi-rank LAMMPS .pt2 inference requires the model to be "
@@ -2562,8 +2560,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         torch::TensorOptions().dtype(torch::kFloat32).device(device);
     const auto opt_i64 =
         torch::TensorOptions().dtype(torch::kInt64).device(device);
-    const auto opt_u32 =
-        torch::TensorOptions().dtype(torch::kUInt32).device(device);
+    const auto opt_u32 = torch::TensorOptions()
+                             .dtype(deepmd::canonicalGraphIndexType())
+                             .device(device);
     auto atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
                                   {nall_nodes}, opt_i64);
     auto source = torch::from_blob(const_cast<std::uint32_t*>(d_source),

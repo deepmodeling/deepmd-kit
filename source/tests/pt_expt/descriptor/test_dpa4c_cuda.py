@@ -2,6 +2,9 @@
 """Numerical contract of the compressed DPA4C CUDA mega kernel."""
 
 import dataclasses
+from collections.abc import (
+    Sequence,
+)
 
 import numpy as np
 import pytest
@@ -14,6 +17,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 )
 from deepmd.kernels.cuda.dpa4c.graph_compress import (
     _cpu_descriptor,
+    _cpu_forward,
     _table_lookup,
     build_compression_artifacts,
     build_radial_table,
@@ -409,7 +413,7 @@ def test_post_compression_statistics_update_snapshot(
 def _build_charge_descriptor(
     channels: int = 8,
     radial_modes: int = 0,
-    default_chg_spin: list[float] | None = [2.0, 3.0],
+    default_chg_spin: Sequence[float] | None = (2.0, 3.0),
 ) -> DescrptDPA4C:
     """Return a charge-conditioned descriptor with an active condition head.
 
@@ -428,7 +432,9 @@ def _build_charge_descriptor(
             precision="float32",
             seed=17,
             add_chg_spin_ebd=True,
-            default_chg_spin=default_chg_spin,
+            default_chg_spin=(
+                None if default_chg_spin is None else list(default_chg_spin)
+            ),
         )
         .cuda()
         .eval()
@@ -592,23 +598,24 @@ def test_supported_surface_parity(
 
 @_GPU
 @pytest.mark.parametrize(
-    ("index", "replacement", "message"),
+    ("index", "shape", "dtype", "message"),
     [
-        (6, torch.zeros(9, 4, 2, device="cuda"), "PairFiLM"),
-        (9, torch.zeros(8, 5, 5, device="cuda"), "invalid readout matrix"),
-        (10, torch.zeros(1, 8, dtype=torch.int32, device="cuda"), "degree triples"),
+        (6, (9, 4, 2), torch.float32, "PairFiLM"),
+        (9, (8, 5, 5), torch.float32, "invalid readout matrix"),
+        (10, (1, 8), torch.int32, "degree triples"),
     ],
 )
 def test_operator_rejects_inconsistent_artifacts(
     index: int,
-    replacement: torch.Tensor,
+    shape: tuple[int, ...],
+    dtype: torch.dtype,
     message: str,
 ) -> None:
     """Device-side shape assumptions are enforced at the operator boundary."""
     descriptor = _build_descriptor(8)
     graph, atype = _build_graph(descriptor, canonical=False)
     arguments = list(_arguments(descriptor, graph, atype))
-    arguments[index] = replacement
+    arguments[index] = torch.zeros(shape, dtype=dtype, device="cuda")
     with pytest.raises(RuntimeError, match=message):
         torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
 
@@ -1066,7 +1073,7 @@ def test_fused_energy_force_parity(
         graph.source_order,
         graph.source_row_ptr,
         graph.n_node,
-        edge_vec.new_zeros(0, 3),
+        edge_vec.new_empty(0),
         atype.shape[0],
         True,
     )
@@ -1211,6 +1218,7 @@ def _build_spin_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
+    device: str = "cuda",
 ) -> DescrptDPA4C:
     """Return a spin-conditioned descriptor with a non-unit reference moment.
 
@@ -1232,13 +1240,80 @@ def _build_spin_descriptor(
             seed=17,
             use_spin=[True, False],
         )
-        .cuda()
+        .to(device)
         .eval()
     )
     descriptor.spin.set_spin_reference(np.array([1.7, 1.0, 1.0]))
     with torch.no_grad():
         descriptor.spin.spin_gate.fill_(1.0)
     return descriptor
+
+
+def _empty_graph(device: str) -> tuple[NeighborGraph, torch.Tensor]:
+    """Return a native graph whose node and edge axes are both empty."""
+    n_node = torch.zeros(1, dtype=torch.int64, device=device)
+    edge_index = torch.empty(2, 0, dtype=torch.int64, device=device)
+    edge_vec = torch.empty(0, 3, dtype=torch.float32, device=device)
+    edge_order = torch.empty(0, dtype=torch.int64, device=device)
+    row_pointer = torch.zeros(1, dtype=torch.int64, device=device)
+    return (
+        NeighborGraph(
+            n_node=n_node,
+            n_local=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=torch.empty(0, dtype=torch.bool, device=device),
+            destination_order=edge_order,
+            destination_row_ptr=row_pointer,
+            source_order=edge_order,
+            source_row_ptr=row_pointer,
+        ),
+        torch.empty(0, dtype=torch.int64, device=device),
+    )
+
+
+def test_empty_native_spin_cpu_profile_preserves_spin_contract() -> None:
+    """The CPU reference keeps the native-spin state width at zero nodes."""
+    descriptor = _build_spin_descriptor(8, device="cpu")
+    graph, atype = _empty_graph("cpu")
+    arguments = _with_spin(
+        _arguments(descriptor, graph, atype),
+        graph.edge_vec,
+    )
+
+    output, state = _cpu_forward(graph.edge_vec, *arguments)
+
+    profile = descriptor_profile(8, 2, True)
+    assert output.shape == (0, profile.output_width)
+    assert state.shape == (0, profile.state_width)
+
+
+@_GPU
+def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
+    """The CUDA backward distinguishes present spin from its empty axis."""
+    descriptor = _build_spin_descriptor(8)
+    graph, atype = _empty_graph("cuda")
+    arguments = _with_spin(
+        _arguments(descriptor, graph, atype),
+        graph.edge_vec,
+    )
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(
+        graph.edge_vec,
+        *arguments,
+    )
+
+    edge_gradient, spin_gradient, edge_spin_gradient = (
+        torch.ops.deepmd.dpa4c_graph_compress_backward(
+            torch.empty_like(output),
+            state,
+            graph.edge_vec,
+            *arguments,
+        )
+    )
+
+    assert edge_gradient.shape == (0, 3)
+    assert spin_gradient.shape == (0, 3)
+    assert edge_spin_gradient.shape == (0, 3)
 
 
 @_GPU

@@ -1313,7 +1313,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
-                ev.new_zeros(0, 3),
+                ev.new_empty(0),
                 n,
                 True,
             )
@@ -1491,7 +1491,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
-                edge_vec.new_zeros(0, 3),
+                edge_vec.new_empty(0),
                 n_node,
                 True,
             )
@@ -1637,7 +1637,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
-                ev.new_zeros(0, 3),
+                ev.new_empty(0),
                 n,
                 True,
             )
@@ -1971,7 +1971,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             src_order,
             src_row_ptr,
             n_node,
-            edge_vec.new_zeros(0, 3),
+            edge_vec.new_empty(0),
             total,
             True,
         )
@@ -2055,7 +2055,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             source_order,
             source_row_ptr,
             n_node,
-            edge_vec.new_zeros(0, 3),
+            edge_vec.new_empty(0),
             total,
             True,
         )
@@ -2066,7 +2066,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             compact.source_row_ptr,
             compact.source_order,
             compact.n_node,
-            edge_vec.new_zeros(0, 3),
+            edge_vec.new_empty(0),
             total,
             True,
         )
@@ -2124,11 +2124,11 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             src_order,
             src_row_ptr,
             n_node,
-            edge_vec.new_zeros(0, 3),
+            edge_vec.new_empty(0),
             total,
             True,
         )
-        self.assertEqual(empty.numel(), 0)
+        self.assertEqual(tuple(empty.shape), (0,))
         with_spin_force = edge_force_virial(
             g_e,
             edge_vec,
@@ -2144,6 +2144,31 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             True,
         )[0]
         torch.testing.assert_close(force, with_spin_force)
+
+        # Rank distinguishes an absent spin cotangent from a present one on an
+        # empty edge axis. The latter still produces one zero row per node.
+        empty_vec = edge_vec[:0]
+        empty_rows = torch.zeros(
+            total + 1,
+            dtype=torch.int64,
+            device=edge_vec.device,
+        )
+        empty_magnetic = edge_force_virial(
+            empty_vec,
+            empty_vec,
+            edge_index[:, :0],
+            mask[:0],
+            dst_order[:0],
+            empty_rows,
+            src_order[:0],
+            empty_rows,
+            n_node,
+            empty_vec,
+            total,
+            True,
+        )[3]
+        self.assertEqual(tuple(empty_magnetic.shape), (total, 3))
+        torch.testing.assert_close(empty_magnetic, torch.zeros_like(empty_magnetic))
 
     def test_many_small_frames(self) -> None:
         """Frame reduction is valid beyond the CUDA grid-y limit."""

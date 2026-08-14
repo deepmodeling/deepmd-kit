@@ -245,7 +245,14 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             "virial": virial,
             "mask": output_mask.to(torch.int32),
         }
-        if force_mag is not None and force_mag.numel() != 0:
+        if spin is not None:
+            if force_mag is None or force_mag.ndim != 2:
+                raise RuntimeError(
+                    "canonical native-spin inference did not return a "
+                    "per-node magnetic force"
+                )
+            result["force_mag"] = force_mag
+        elif force_mag is not None and force_mag.ndim == 2:
             result["force_mag"] = force_mag
         if do_atomic_virial:
             result["atom_virial"] = atom_virial

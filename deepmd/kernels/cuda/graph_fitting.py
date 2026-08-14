@@ -79,9 +79,15 @@ def node_tile() -> int:
 
 
 def op_available() -> bool:
-    """Whether the C++ ``deepmd::graph_fitting`` op is loaded."""
-    op = getattr(torch.ops.deepmd, "graph_fitting", None)
-    return isinstance(op, torch._ops.OpOverloadPacket)
+    """Whether every C++ fitting operator used by this module is loaded."""
+    operators = (
+        getattr(torch.ops.deepmd, "graph_fitting", None),
+        getattr(torch.ops.deepmd, "graph_fitting_backward", None),
+        getattr(torch.ops.deepmd, "graph_fitting_energy_gradient", None),
+    )
+    return all(
+        isinstance(operator, torch._ops.OpOverloadPacket) for operator in operators
+    )
 
 
 def fitting_eligible(fit: Any) -> bool:

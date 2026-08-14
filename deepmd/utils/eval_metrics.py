@@ -353,7 +353,7 @@ def compute_full_validation_spin_metrics(
     The energy term reuses per-atom energy errors. Forces are split into a
     real-atom term over all atoms and a magnetic term over the magnetic atoms
     selected by ``mask_mag``. A periodic system additionally reports stress,
-    the virial divided by the cell volume.
+    the negated virial divided by the cell volume.
 
     Parameters
     ----------
@@ -495,7 +495,7 @@ ENERGY_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
     needs_spin=False,
     log_header_note=(
         "# E uses per-atom energy, F uses component-wise force errors, "
-        "and S uses stress, the virial divided by the cell volume.\n"
+        "and S uses stress, the negated virial divided by the cell volume.\n"
     ),
     compute_system_metrics=compute_full_validation_energy_metrics,
 )
@@ -552,7 +552,7 @@ SPIN_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
     log_header_note=(
         "# E uses per-atom energy, FR uses component-wise real-atom force "
         "errors, FM uses magnetic-atom force errors, and S uses stress, the "
-        "virial divided by the cell volume.\n"
+        "negated virial divided by the cell volume.\n"
     ),
     compute_system_metrics=compute_full_validation_spin_metrics,
 )

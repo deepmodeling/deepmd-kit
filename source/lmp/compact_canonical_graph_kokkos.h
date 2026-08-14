@@ -211,7 +211,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     Kokkos::deep_copy(d_destination_row_ptr, std::int64_t{0});
     Kokkos::deep_copy(d_source_counts, std::uint32_t{0});
     if (node_count_int == 0) {
-      storage_count = min_storage_edges;
+      storage_count = 0;
       return;
     }
     auto destination_row_ptr = d_destination_row_ptr;

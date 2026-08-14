@@ -573,8 +573,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
 
         This method exists for the common descriptor ABI and numerical
         reference tests. Production DPA4C execution uses :meth:`call_graph`
-        with a carry-all graph. A rectangular list at the internal compatibility
-        capacity is rejected because its completeness cannot be established.
+        with a carry-all graph.
 
         Parameters
         ----------

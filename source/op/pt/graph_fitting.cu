@@ -283,6 +283,39 @@ FittingLayerPlan fitting_layer_plan(const std::vector<torch::Tensor>& ws) {
   return plan;
 }
 
+namespace {
+
+FittingLayerPlan validate_fitting_forward_inputs(
+    const char* operation,
+    const torch::Tensor& x,
+    const torch::Tensor& atype,
+    const std::vector<torch::Tensor>& ws,
+    const torch::Tensor& bias_atom_e) {
+  TORCH_CHECK(x.dim() == 2 && x.is_cuda() && x.is_contiguous() &&
+                  x.scalar_type() == torch::kFloat32,
+              operation, ": x must be contiguous CUDA fp32 with shape (N, D)");
+  TORCH_CHECK(atype.dim() == 1 && atype.size(0) == x.size(0) &&
+                  atype.is_cuda() && atype.is_contiguous() &&
+                  atype.device() == x.device() &&
+                  atype.scalar_type() == torch::kInt64,
+              operation,
+              ": atype must be contiguous CUDA int64 with shape (N,) on "
+              "the device of x");
+  const FittingLayerPlan plan = fitting_layer_plan(ws);
+  TORCH_CHECK(
+      plan.n_layer > 0 && ws[0].dim() == 2 && ws[0].size(0) == x.size(1),
+      operation, ": the first fitting weight must match the input width");
+  TORCH_CHECK(bias_atom_e.dim() == 1 && bias_atom_e.is_cuda() &&
+                  bias_atom_e.is_contiguous() &&
+                  bias_atom_e.device() == x.device() &&
+                  bias_atom_e.scalar_type() == torch::kFloat64,
+              operation,
+              ": bias_atom_e must be contiguous CUDA fp64 on the device of x");
+  return plan;
+}
+
+}  // namespace
+
 // Evaluate the network over one contiguous run of nodes. Every full-width
 // tensor is indexed from the run's first node, so the same code serves the
 // whole node axis and a single tile of it. ``saved`` and ``activation`` are
@@ -389,10 +422,10 @@ std::tuple<torch::Tensor, torch::Tensor> graph_fitting(
     torch::Tensor b_head,
     torch::Tensor bias_atom_e,
     int64_t act) {
-  TORCH_CHECK(x.is_cuda(), "graph_fitting: x must be a CUDA tensor");
+  const FittingLayerPlan plan = validate_fitting_forward_inputs(
+      "graph_fitting", x, atype, ws, bias_atom_e);
   const c10::cuda::CUDAGuard device_guard(x.device());
   const long n_node = x.size(0);
-  const FittingLayerPlan plan = fitting_layer_plan(ws);
   auto f32 = x.options().dtype(torch::kFloat32);
   auto saved = torch::empty({n_node * plan.saved_width()}, f32);
   auto e = torch::empty({n_node, 1}, x.options().dtype(torch::kFloat64));
@@ -501,16 +534,11 @@ torch::Tensor graph_fitting_energy_gradient(torch::Tensor x,
                                             int64_t act,
                                             torch::Tensor seed,
                                             int64_t tile) {
-  TORCH_CHECK(
-      x.is_cuda() && x.is_contiguous() && x.scalar_type() == torch::kFloat32,
-      "graph_fitting_energy_gradient: x must be contiguous CUDA fp32");
+  const FittingLayerPlan plan = validate_fitting_forward_inputs(
+      "graph_fitting_energy_gradient", x, atype, ws, bias_atom_e);
   const c10::cuda::CUDAGuard device_guard(x.device());
   const long n_node = x.size(0);
   const long input_width = x.size(1);
-  const FittingLayerPlan plan = fitting_layer_plan(ws);
-  TORCH_CHECK(plan.n_layer > 0 && ws[0].size(0) == input_width,
-              "graph_fitting_energy_gradient: first weight does not match the "
-              "descriptor width");
   auto f32 = x.options().dtype(torch::kFloat32);
   auto e = torch::empty({n_node, 1}, x.options().dtype(torch::kFloat64));
   if (n_node == 0) {
@@ -518,9 +546,10 @@ torch::Tensor graph_fitting_energy_gradient(torch::Tensor x,
   }
   auto seed_c = seed.contiguous();
   TORCH_CHECK(
-      seed_c.numel() == n_node && seed_c.scalar_type() == torch::kFloat64,
-      "graph_fitting_energy_gradient: seed must be fp64 with one "
-      "entry per node");
+      seed_c.numel() == n_node && seed_c.scalar_type() == torch::kFloat64 &&
+          seed_c.is_cuda() && seed_c.device() == x.device(),
+      "graph_fitting_energy_gradient: seed must be CUDA fp64 with one entry "
+      "per node on the device of x");
 
   const long run = tile > 0 ? std::min<long>(tile, n_node) : n_node;
   const int slots = plan.n_layer > 1 ? 2 : 1;

@@ -64,6 +64,22 @@ void reject_unsupported_parametric_inputs(const std::vector<VALUETYPE>& fparam,
 }
 
 /**
+ * @brief Validate one Cartesian vector per atom before indexing caller data.
+ */
+template <typename VALUETYPE>
+void validate_cartesian_input(const std::vector<VALUETYPE>& values,
+                              const std::size_t atom_count,
+                              const char* name) {
+  const std::size_t expected = atom_count * 3;
+  if (values.size() != expected) {
+    throw deepmd::deepmd_exception(
+        std::string(name) + " holds " + std::to_string(values.size()) +
+        " values but " + std::to_string(atom_count) + " atoms require " +
+        std::to_string(expected));
+  }
+}
+
+/**
  * @brief Build the frame-parameter input of the conditional graph tail.
  *
  * The artifact consumes it in double precision, shaped ``(1, dim_fparam)``.
@@ -275,11 +291,13 @@ void NativeSpinPTExpt::init(const std::string& model,
     // The compact lower is traced with the nine graph and moment inputs
     // alone, so a model declaring any conditioning width has no slot to
     // receive it.
-    if (dfparam > 0 || daparam > 0) {
+    if (dfparam > 0 || daparam > 0 || dchgspin > 0) {
       throw deepmd::deepmd_exception(
-          "the compact canonical native-spin ABI has no fparam / aparam slot, "
+          "the compact canonical native-spin ABI has no fparam, aparam, or "
+          "charge/spin slot, "
           "but this model declares dim_fparam=" +
           std::to_string(dfparam) + ", dim_aparam=" + std::to_string(daparam) +
+          ", dim_chg_spin=" + std::to_string(dchgspin) +
           "; freeze it with the graph lower instead.");
     }
   }
@@ -405,19 +423,17 @@ void NativeSpinPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
                                    " values but the model expects " +
                                    std::to_string(settable_chgspin));
   }
-  // Route one: the condition of every later forward pass that is not given
-  // one explicitly.  This is the whole mechanism for an uncompressed model,
-  // which reads the condition as an ordinary input.
-  default_chg_spin_ = charge_spin;
-  // Route two: a compressed descriptor has folded the condition into frozen
-  // tables that the lower holds as constants, so serving another condition
-  // means rebuilding those tables and writing them over the constants.
+  // All allocation completes before the compiled constants change. The final
+  // vector swap is non-throwing, so the visible default follows the installed
+  // constants without opening a second failure point.
+  std::vector<double> next_charge_spin(charge_spin);
   if (charge_state_fold_) {
     charge_state_fold_->apply(charge_spin,
                               gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
                                           : torch::Device(torch::kCPU),
                               *loader);
   }
+  default_chg_spin_.swap(next_charge_spin);
 }
 
 void NativeSpinPTExpt::get_type_map(std::string& type_map_str) {
@@ -546,6 +562,8 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
       std::is_same<VALUETYPE, float>::value ? torch::kFloat32 : torch::kFloat64;
   const int nall = static_cast<int>(atype.size());
   const int nframes = 1;
+  validate_cartesian_input(coord, atype.size(), "coord");
+  validate_cartesian_input(spin, atype.size(), "spin");
 
   // Drop the atoms whose LAMMPS type maps to NULL: the model never sees them,
   // and select_map scatters the results back onto the full atom list.
@@ -564,7 +582,7 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
   // communication; a single rank folds ghosts onto their local owners, which
   // needs the LAMMPS atom map to resolve an owner.
   const bool multi_rank = (lmp_list.nprocs > 1);
-  if (!multi_rank && nghost > 0 && lmp_list.mapping == nullptr) {
+  if (!multi_rank && nghost_real > 0 && lmp_list.mapping == nullptr) {
     throw deepmd::deepmd_exception(
         "single-rank inference folds ghost neighbours onto their local owners "
         "through the LAMMPS atom map; add 'atom_modify map yes' to the input, "
@@ -794,6 +812,12 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
       std::is_same<VALUETYPE, float>::value ? torch::kFloat32 : torch::kFloat64;
   const int nloc = static_cast<int>(atype.size());
   const int nframes = 1;
+  if (atype.empty()) {
+    throw deepmd::deepmd_exception(
+        "standalone native-spin inference requires at least one atom");
+  }
+  validate_cartesian_input(coord, atype.size(), "coord");
+  validate_cartesian_input(spin, atype.size(), "spin");
 
   // === Step 1. Supply a box when the caller has none ===
   // An isolated cluster is embedded in an orthorhombic cell wide enough that
@@ -1169,8 +1193,9 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
         torch::TensorOptions().dtype(torch::kFloat64).device(device);
     const auto opt_i64 =
         torch::TensorOptions().dtype(torch::kInt64).device(device);
-    const auto opt_u32 =
-        torch::TensorOptions().dtype(torch::kUInt32).device(device);
+    const auto opt_u32 = torch::TensorOptions()
+                             .dtype(deepmd::canonicalGraphIndexType())
+                             .device(device);
     CanonicalGraphTensorPack graph;
     graph.atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
                                    {nall_nodes}, opt_i64);

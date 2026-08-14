@@ -179,6 +179,8 @@ class DescriptorProfile:
         Descriptor coordinate of the first degree-one Gram entry.
     bispectrum_base
         Descriptor coordinate of the first bispectrum entry.
+    spin_width
+        Width of the trailing native-spin invariant block.
     """
 
     channels: int
@@ -190,6 +192,7 @@ class DescriptorProfile:
     gram_base: int
     bispectrum_base: int
     spin_channels: int
+    spin_width: int
 
     @property
     def state_width(self) -> int:
@@ -210,16 +213,7 @@ class DescriptorProfile:
         is empty for a spin-free profile.
         """
         stop = self.output_width - 2 - self.degree_channels[0]
-        vector_width = 1 + 2 * self.spin_channels
-        width = (
-            0
-            if not self.has_spin
-            else vector_width * (vector_width + 1) // 2
-            + 2
-            + 2 * self.degree_channels[2]
-            + 2 * self.spin_channels
-        )
-        return slice(stop - width, stop)
+        return slice(stop - self.spin_width, stop)
 
 
 def descriptor_profile(
@@ -295,6 +289,7 @@ def descriptor_profile(
         gram_base=gram_base,
         bispectrum_base=bispectrum_base,
         spin_channels=spin_channels,
+        spin_width=spin_dim,
     )
 
 
@@ -1120,7 +1115,7 @@ def _cpu_descriptor(
     node_count = atype.shape[0]
     channels = type_embedding.shape[1]
     type_count = type_embedding.shape[0]
-    has_spin = spin is not None and spin.numel() != 0
+    has_spin = spin is not None and spin.ndim == 2
     profile = descriptor_profile(int(channels), int(lmax), has_spin)
     radial_modes = 0 if pair_mixing.numel() == 0 else int(pair_mixing.shape[2])
 
@@ -1517,7 +1512,7 @@ def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
     profile = descriptor_profile(
         int(args[9].shape[1]),
         int(args[20]),
-        args[16].numel() != 0,
+        args[16].ndim == 2,
     )
     state = torch.zeros(
         descriptor.shape[0],
@@ -1580,7 +1575,7 @@ def _forward_fake(
         degree_floor,
     )
     profile = descriptor_profile(
-        int(type_embedding.shape[1]), int(lmax), spin.numel() != 0
+        int(type_embedding.shape[1]), int(lmax), spin.ndim == 2
     )
     descriptor = torch.empty(
         atype.shape[0],
@@ -1605,7 +1600,7 @@ def _backward_fake(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     del descriptor_gradient, state
     spin = args[15]
-    has_spin = spin.numel() != 0
+    has_spin = spin.ndim == 2
     # Each absent output is allocated separately: the schema declares three
     # unannotated results, so two of them may not share storage.
     return (
@@ -1636,7 +1631,7 @@ def _cpu_backward(
     """
     del state
     spin = args[15]
-    has_spin = spin.numel() != 0
+    has_spin = spin.ndim == 2
     value = edge_vec.detach().clone().requires_grad_(True)
     moment = spin.detach().clone().requires_grad_(has_spin)
     with torch.enable_grad():
@@ -1756,7 +1751,7 @@ def compressed_operator_arguments(
         Radial table, ordered caches, readout projections, coupling tables,
         output calibration, and the native spin block.
     """
-    empty = descriptor.compress_spin_type[:0]
+    empty = descriptor.compress_spin_type.new_empty(0)
     return (
         descriptor.compress_data,
         descriptor.compress_pair_film,

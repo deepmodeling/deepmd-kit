@@ -73,7 +73,7 @@ struct CanonicalGraphTensorPack;
 class NativeSpinPTExpt : public DeepSpinBackend {
  public:
   NativeSpinPTExpt();
-  virtual ~NativeSpinPTExpt();
+  ~NativeSpinPTExpt() override;
   NativeSpinPTExpt(const std::string& model,
                    const int& gpu_rank = 0,
                    const std::string& file_content = "");
@@ -85,25 +85,25 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    **/
   void init(const std::string& model,
             const int& gpu_rank = 0,
-            const std::string& file_content = "");
+            const std::string& file_content = "") override;
 
-  double cutoff() const {
+  double cutoff() const override {
     assert(inited);
     return rcut;
   };
-  int numb_types() const {
+  int numb_types() const override {
     assert(inited);
     return ntypes;
   };
-  int numb_types_spin() const {
+  int numb_types_spin() const override {
     assert(inited);
     return ntypes_spin;
   };
-  int dim_fparam() const {
+  int dim_fparam() const override {
     assert(inited);
     return dfparam;
   };
-  int dim_aparam() const {
+  int dim_aparam() const override {
     assert(inited);
     return daparam;
   };
@@ -138,9 +138,9 @@ class NativeSpinPTExpt : public DeepSpinBackend {
    * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
    **/
   void set_charge_spin(const std::vector<double>& charge_spin) override;
-  void get_type_map(std::string& type_map);
-  bool is_aparam_nall() const { return false; };
-  bool has_default_fparam() const {
+  void get_type_map(std::string& type_map) override;
+  bool is_aparam_nall() const override { return false; };
+  bool has_default_fparam() const override {
     assert(inited);
     return has_default_fparam_;
   };
@@ -161,7 +161,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                 const std::vector<double>& box,
                 const std::vector<double>& fparam,
                 const std::vector<double>& aparam,
-                const bool atomic);
+                const bool atomic) override;
   void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& force_mag,
@@ -174,7 +174,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                 const std::vector<float>& box,
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
-                const bool atomic);
+                const bool atomic) override;
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& force_mag,
@@ -190,7 +190,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                 const int& ago,
                 const std::vector<double>& fparam,
                 const std::vector<double>& aparam,
-                const bool atomic);
+                const bool atomic) override;
   void computew(std::vector<double>& ener,
                 std::vector<float>& force,
                 std::vector<float>& force_mag,
@@ -206,7 +206,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                 const int& ago,
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
-                const bool atomic);
+                const bool atomic) override;
 
   // Charge/spin-aware overloads.  This backend serves the condition in force
   // rather than marshalling one per call, so a condition named here is

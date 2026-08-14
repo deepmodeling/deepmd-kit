@@ -20,6 +20,11 @@ from deepmd.pt_expt.utils.serialization import (
     build_synthetic_graph_inputs,
 )
 
+_GPU = pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="CUDA is required for compact canonical graph export",
+)
+
 
 def _config() -> dict:
     return {
@@ -379,6 +384,45 @@ def test_compressed_graph_export(monkeypatch: pytest.MonkeyPatch) -> None:
     assert metadata["graph_edge_dtype"] == "float32"
 
 
+def test_charge_state_with_comm_is_rejected_before_compilation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent compiled lowers cannot share one mutable charge state."""
+    from deepmd.pt_expt.utils import (
+        serialization,
+    )
+
+    descriptor = object()
+    monkeypatch.setattr(
+        serialization,
+        "_trace_and_export",
+        lambda *args, **kwargs: (
+            object(),
+            {"has_comm_artifact": True},
+            {},
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        serialization,
+        "_charge_state_descriptor",
+        lambda *args, **kwargs: descriptor,
+    )
+    monkeypatch.setattr(
+        torch._inductor,
+        "aoti_compile_and_package",
+        lambda *args, **kwargs: pytest.fail("compilation must not start"),
+    )
+
+    with pytest.raises(ValueError, match="independent constants"):
+        serialization._deserialize_to_file_pt2(
+            "unused.pt2",
+            {},
+            lower_kind="graph",
+        )
+
+
+@_GPU
 @pytest.mark.parametrize("channels", [8, 64])
 def test_compact_canonical_graph_export(
     monkeypatch: pytest.MonkeyPatch,

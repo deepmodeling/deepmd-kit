@@ -1022,7 +1022,7 @@ def dpa1_graph_compress_energy_force(
         graph.source_order,
         graph.source_row_ptr,
         graph.n_node,
-        edge_vec.new_zeros(0, 3),
+        edge_vec.new_empty(0),
         node_capacity,
         do_atomic_virial,
     )

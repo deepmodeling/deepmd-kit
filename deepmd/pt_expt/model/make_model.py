@@ -133,7 +133,7 @@ def _fused_energy_force_graph(
         var + "_derv_c_redu": virial.reshape(nf, 1, 9),
         "mask": output_mask.to(torch.int32),
     }
-    if force_mag.numel() != 0:
+    if force_mag.ndim == 2:
         ret[var + "_derv_r_mag"] = force_mag.reshape(n, 1, 3)
     elif spin is not None:
         # A moment was supplied but this descriptor emits no magnetic force,

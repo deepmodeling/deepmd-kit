@@ -760,13 +760,13 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     }
   }
 
-  // Folding ghost neighbours onto their local owners reads an owner for every
-  // extended atom out of the mapping, which the preceding matrix guarantees
-  // only for a message-passing model.  Without a mapping the owner table falls
-  // back to the identity, whose ghost entries are not local atoms;
-  // establishing the precondition here reports it once, ahead of any tensor,
-  // instead of leaving it to the per-edge lookup inside the topology build.
-  if (!use_with_comm && nghost_real > 0 && !atom_map_present) {
+  // Edge and graph lowers fold ghost neighbours onto local owners before the
+  // model runs. Dense lowers consume the extended neighbor list directly and
+  // retain their established identity-mapping fallback.
+  const bool folds_ghosts_to_local =
+      lower_input_is_edge_ || lower_input_is_graph_;
+  if (folds_ghosts_to_local && !use_with_comm && nghost_real > 0 &&
+      !atom_map_present) {
     throw deepmd::deepmd_exception(
         "This .pt2 lower folds ghost neighbours onto their local owners, "
         "which needs an owner for each of the " +

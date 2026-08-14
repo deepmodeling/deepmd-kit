@@ -443,7 +443,7 @@ def dpa1_canonical_compress_energy_force(
         graph.source_row_ptr,
         graph.source_order,
         graph.n_node,
-        graph.edge_vec.new_zeros(0, 3),
+        graph.edge_vec.new_empty(0),
         atype.shape[0],
         do_atomic_virial,
     )

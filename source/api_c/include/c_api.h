@@ -442,6 +442,8 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
+ * @note API version 29 used signed int64 source and source-order arrays;
+ *       API version 30 uses the uint32 arrays declared here.
  * @since API version 29
  */
 extern void DP_DeepPotComputeCanonicalGraphGPU(
@@ -1275,7 +1277,7 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
- * @since API version 29
+ * @since API version 30
  */
 extern void DP_DeepSpinComputeCanonicalGraphGPU(
     DP_DeepSpin* dp,
@@ -1297,14 +1299,14 @@ extern void DP_DeepSpinComputeCanonicalGraphGPU(
 /**
  * @brief Query whether the compact canonical graph ABI is active for a DP spin
  * model.
- * @since API version 29
+ * @since API version 30
  */
 extern bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp);
 
 /**
  * @brief Query whether a DP spin model is served under the native spin scheme
  * rather than the virtual-atom scheme.
- * @since API version 29
+ * @since API version 30
  */
 extern bool DP_DeepSpinUsesNativeSpinScheme(DP_DeepSpin* dp);
 

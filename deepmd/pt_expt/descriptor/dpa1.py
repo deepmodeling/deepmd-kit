@@ -329,7 +329,7 @@ def _without_magnetic_force(
     tuple of torch.Tensor
         The same outputs followed by an empty magnetic force.
     """
-    return (*output, output[2].new_empty((0, 3)))
+    return (*output, output[2].new_empty(0))
 
 
 @BaseDescriptor.register("se_atten")
@@ -1097,10 +1097,11 @@ class DescrptDPA1(DescrptDPA1DP):
 
         Collapses this descriptor, the energy fitting and the analytic force /
         virial assembly into one value-returning CUDA operator (no autograd
-        tape). Returns ``(energy, atom_energy, force, virial, atom_virial)``, or
-        ``None`` when the descriptor or fitting is not fused-eligible or the
-        operator library is unavailable -- the caller then uses the autograd
-        lower. The geo-compressed descriptor dispatches to its tabulated operator
+        tape). Returns ``(energy, atom_energy, force, virial, atom_virial,
+        force_mag)``, with a rank-one empty magnetic-force sentinel, or ``None``
+        when the descriptor or fitting is not fused-eligible or the operator
+        library is unavailable -- the caller then uses the autograd lower. The
+        geo-compressed descriptor dispatches to its tabulated operator
         (:func:`~deepmd.kernels.cuda.dpa1.graph_compress.dpa1_graph_compress_energy_force`);
         the embedding-MLP descriptor to
         :func:`~deepmd.kernels.cuda.dpa1.graph_energy_force.dpa1_graph_energy_force`.
@@ -1120,11 +1121,15 @@ class DescrptDPA1(DescrptDPA1DP):
             Combined fitting and atomic-model bias with shape (ntypes,).
         do_atomic_virial : bool
             Whether to also assemble the per-atom virial.
+        spin : torch.Tensor or None
+            Optional per-node magnetic moments. DPA1 does not consume them;
+            supplying one makes the caller select a spin-capable fallback.
 
         Returns
         -------
         tuple[torch.Tensor, ...] or None
-            ``(energy, atom_energy, force, virial, atom_virial)``, or ``None``.
+            ``(energy, atom_energy, force, virial, atom_virial, force_mag)``,
+            or ``None``.
         """
         from deepmd.kernels.cuda.graph_fitting import (
             fitting_eligible,

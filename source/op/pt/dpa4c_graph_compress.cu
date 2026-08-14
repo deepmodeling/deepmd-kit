@@ -168,6 +168,10 @@ Arguments build_arguments(const Payload& payload,
                   payload.edge_index.scalar_type(),
               "dpa4c_graph_compress: destination_order dtype must match "
               "edge_index");
+  TORCH_CHECK(payload.canonical ||
+                  payload.destination_order.numel() == edge_vec.size(0),
+              "dpa4c_graph_compress: non-canonical input requires one "
+              "destination_order entry per edge");
   TORCH_CHECK(payload.edge_mask.scalar_type() == torch::kBool,
               "dpa4c_graph_compress: edge_mask must be bool");
   TORCH_CHECK(
@@ -187,6 +191,8 @@ Arguments build_arguments(const Payload& payload,
   }
   TORCH_CHECK(payload.lmax >= 2 && payload.lmax <= 4,
               "dpa4c_graph_compress: lmax must be 2, 3, or 4");
+  TORCH_CHECK(payload.table_max >= payload.rcut,
+              "dpa4c_graph_compress: table_max must cover rcut");
   // The shared mode cache is sized from a compile-time maximum and the split
   // spline row assumes an even table width, so the rank set is closed.
   TORCH_CHECK(radial_modes == 0 || radial_modes == 2 || radial_modes == 4 ||
@@ -232,14 +238,14 @@ Arguments build_arguments(const Payload& payload,
   // absolute source indices. Whole-system entry points additionally require
   // the two to describe the same node axis.
   TORCH_CHECK(payload.atype.size(0) >= payload.node_begin + node_count,
-              "dpa4c_graph_compress: destination_row_ptr must have N + 1 "
-              "entries");
+              "dpa4c_graph_compress: atype does not cover the destination "
+              "node window");
 
   // === Native spin ===
   // The three inputs are present together or not at all. ``spin`` spans the
   // absolute node axis because neighbour lookups address it with source
   // indices, and ``spin_type`` packs the four per-type scalars a node reads.
-  const bool has_spin = payload.spin.numel() != 0;
+  const bool has_spin = payload.spin.dim() == 2;
   if (has_spin) {
     for (const torch::Tensor* tensor :
          {&payload.spin, &payload.spin_pair, &payload.spin_type}) {
@@ -262,8 +268,10 @@ Arguments build_arguments(const Payload& payload,
                 "dpa4c_graph_compress: invalid per-type spin table shape");
   } else {
     TORCH_CHECK(
-        payload.spin_pair.numel() == 0 && payload.spin_type.numel() == 0,
-        "dpa4c_graph_compress: spin tables require a spin input");
+        payload.spin.dim() == 1 && payload.spin.numel() == 0 &&
+            payload.spin_pair.numel() == 0 && payload.spin_type.numel() == 0,
+        "dpa4c_graph_compress: absent spin must be a rank-one empty tensor, "
+        "and spin tables require a spin input");
   }
 
   Arguments arguments;
@@ -375,7 +383,7 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_graph_compress(
               "different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
   const Dimensions widths =
-      profile_dimensions(channels, static_cast<int>(lmax), spin.numel() != 0);
+      profile_dimensions(channels, static_cast<int>(lmax), spin.dim() == 2);
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_graph_compress: edge_vec must be a CUDA tensor");
   const c10::cuda::CUDAGuard device_guard(edge_vec.device());
@@ -449,7 +457,7 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
                         rcut,
                         eps,
                         degree_floor};
-  const bool has_spin = spin.numel() != 0;
+  const bool has_spin = spin.dim() == 2;
   const long node_count = destination_row_ptr.numel() - 1;
   // The destination row pointer defines the node axis; the type table must
   // describe exactly that axis, or the two disagree on how many nodes exist.
@@ -483,6 +491,11 @@ dpa4c_graph_compress_backward_impl(torch::Tensor descriptor_gradient,
     return torch::empty({0}, float_options);
   };
   if (node_count == 0) {
+    if (has_spin) {
+      return {torch::zeros_like(edge_vec),
+              torch::empty({node_count, 3}, float_options),
+              torch::empty(edge_vec.sizes(), float_options)};
+    }
     return {torch::zeros_like(edge_vec), absent(), absent()};
   }
   auto descriptor_gradient_float =
@@ -756,7 +769,7 @@ dpa4c_canonical_compress_energy_gradient(torch::Tensor edge_vec,
               "dpa4c_canonical_compress_energy_gradient: atype and "
               "destination_row_ptr describe different node counts");
   const int channels = static_cast<int>(type_embedding.size(1));
-  const bool has_spin = spin.numel() != 0;
+  const bool has_spin = spin.dim() == 2;
   const Dimensions widths =
       profile_dimensions(channels, static_cast<int>(lmax), has_spin);
   auto f32 = edge_vec.options().dtype(torch::kFloat32);

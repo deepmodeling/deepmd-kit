@@ -520,7 +520,8 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     comm_ptr = &comm_list;
   }
 
-  if ((canonical_graph && nnode_m > 0) || nloc_m > 0 || comm_ptr != nullptr) {
+  if ((canonical_graph && nnode_m > 0) ||
+      (!canonical_graph && (nloc_m > 0 || comm_ptr != nullptr))) {
     // Fully device-resident inference: raw device pointers in and out. The
     // edge buffers are produced on the Kokkos stream and consumed by the model
     // on PyTorch's stream, and the outputs flow back to the Kokkos scatter, so

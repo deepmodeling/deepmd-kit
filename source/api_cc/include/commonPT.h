@@ -3,6 +3,7 @@
 
 #ifdef BUILD_PYTORCH
 #include <torch/torch.h>
+#include <torch/version.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -417,6 +418,23 @@ struct CanonicalGraphTensorPack {
   torch::Tensor source_order;
 };
 
+/**
+ * @brief Return the scalar type of compact canonical graph indices.
+ *
+ * Unsigned 32-bit tensors entered the public C++ API in PyTorch 2.3. Older
+ * CPU-only libtorch releases can still build DeePMD-kit, but cannot execute
+ * the GPU-only compact canonical graph path.
+ */
+inline at::ScalarType canonicalGraphIndexType() {
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 3)
+  return torch::kUInt32;
+#else
+  throw deepmd_exception(
+      "compact canonical graph inference requires PyTorch 2.3 or later");
+#endif
+}
+
 inline CanonicalGraphTensorPack compactCanonicalGraph(
     const GraphTensorPack& graph) {
   const std::int64_t edge_count =
@@ -428,23 +446,24 @@ inline CanonicalGraphTensorPack compactCanonicalGraph(
     throw deepmd_exception(
         "compact canonical graph exceeds the uint32 edge-index range");
   }
+  const auto index_type = canonicalGraphIndexType();
   auto source = torch::zeros({storage_count},
-                             graph.edge_index.options().dtype(torch::kUInt32));
+                             graph.edge_index.options().dtype(index_type));
   auto edge_vec = torch::zeros({storage_count, 3},
                                graph.edge_vec.options().dtype(torch::kFloat32));
   auto source_order =
       torch::arange(storage_count,
                     graph.edge_index.options().dtype(torch::kInt64))
-          .to(torch::kUInt32);
+          .to(index_type);
   if (edge_count > 0) {
     source.slice(0, 0, edge_count)
         .copy_(graph.edge_index.select(0, 0)
                    .slice(0, 0, edge_count)
-                   .to(torch::kUInt32));
+                   .to(index_type));
     edge_vec.slice(0, 0, edge_count)
         .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
     source_order.slice(0, 0, edge_count)
-        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kUInt32));
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(index_type));
   }
   return {graph.atype,
           graph.n_node,
