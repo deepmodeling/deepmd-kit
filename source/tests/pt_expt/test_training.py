@@ -999,6 +999,7 @@ class TestAdditionalDataRequirement(unittest.TestCase):
         self.assertEqual(fparam_req.key, "fparam")
         self.assertEqual(fparam_req.ndof, 2)
         self.assertFalse(fparam_req.must)
+        self.assertEqual(fparam_req.source_policy, "default")
         # default is the model's default_fparam, not 0.0
         self.assertNotIsInstance(fparam_req.default, float)
         import numpy as np
@@ -1036,6 +1037,7 @@ class TestAdditionalDataRequirement(unittest.TestCase):
         self.assertEqual(fparam_req.key, "fparam")
         self.assertTrue(fparam_req.must)
         self.assertEqual(fparam_req.default, 0.0)
+        self.assertEqual(fparam_req.source_policy, "tracked")
 
 
 class TestRestart(unittest.TestCase):

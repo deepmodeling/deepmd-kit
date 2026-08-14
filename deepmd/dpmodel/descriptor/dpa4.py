@@ -2186,7 +2186,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 raise ValueError("`charge_spin` is required for this SeZM descriptor.")
             charge_spin = xp.reshape(
                 xp_asarray_nodetach(
-                    xp, np.asarray(self.default_chg_spin), dtype=dtype, device=device
+                    xp, self.default_chg_spin, dtype=dtype, device=device
                 ),
                 (1, 2),
             )

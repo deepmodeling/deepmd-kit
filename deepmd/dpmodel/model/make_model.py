@@ -48,6 +48,8 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
+    compact_nodes,
+    expand_node_values,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -543,12 +545,21 @@ def make_model(
                 )
             xp = array_api_compat.array_namespace(atype)
             nf, nloc = atype.shape[:2]
+            n_padded = nf * nloc
+            atype_flat = xp.reshape(atype, (n_padded,))
+            # A batch of unequal atom counts arrives padded to a common width
+            # with phantom atoms (atype < 0). The builders leave them out of
+            # every edge, so dropping them from the node axis costs nothing and
+            # spares the network from evaluating them. On a batch of uniform
+            # atom count the mask is all true and this is a renumbering by the
+            # identity.
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
             # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
             # derivative name-holders ``None``, plus int ``mask``), like the
             # dense ``call_common``.  ``call_lower_graph`` masks virtual atoms
             # (atype<0) and sets the real int mask.
             model_predict = self.call_lower_graph(
-                atype=xp.reshape(atype, (nf * nloc,)),
+                atype=xp.take(atype_flat, node_index, axis=0),
                 n_node=ng.n_node,
                 edge_index=ng.edge_index,
                 edge_vec=ng.edge_vec,
@@ -556,25 +567,38 @@ def make_model(
                 fparam=fp,
                 # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
                 aparam=(
-                    xp.reshape(ap, (nf * nloc, ap.shape[-1]))
+                    xp.take(
+                        xp.reshape(ap, (n_padded, ap.shape[-1])), node_index, axis=0
+                    )
                     if ap is not None
                     else None
                 ),
-                spin=(xp.reshape(spin, (nf * nloc, 3)) if spin is not None else None),
+                spin=(
+                    xp.take(xp.reshape(spin, (n_padded, 3)), node_index, axis=0)
+                    if spin is not None
+                    else None
+                ),
                 charge_spin=charge_spin,
             )
-            # Public ABI is rectangular (nf, nloc, *); the lower is flat
-            # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.
-            # public call_common always passes rectangular (nf,nloc) coord/atype (N == nf*nloc), so this unravel always applies; ragged graphs reach call_lower_graph/forward_common_lower_graph directly (no unravel) and stay flat (N,*).
+            # Public ABI is rectangular (nf, nloc, *); the lower is flat over
+            # the real atoms. Scatter per-atom keys back onto the padded width
+            # here at the boundary, where a phantom slot reads zero, which is
+            # what a masked-out atom contributed there before.
+            # Only the rectangular entry reaches this scatter; the ragged
+            # one keeps the flat axis its caller handed over.
+            n_real = node_index.shape[0]
             for k in list(model_predict.keys()):
                 v = model_predict[k]
                 # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
                 if (
                     v is not None
                     and not k.endswith("_redu")
-                    and v.shape[:1] == (nf * nloc,)
+                    and v.shape[:1] == (n_real,)
                 ):
-                    model_predict[k] = xp.reshape(v, (nf, nloc, *v.shape[1:]))
+                    model_predict[k] = xp.reshape(
+                        expand_node_values(v, node_index, n_padded),
+                        (nf, nloc, *v.shape[1:]),
+                    )
             return model_predict
 
         def call_common_lower(

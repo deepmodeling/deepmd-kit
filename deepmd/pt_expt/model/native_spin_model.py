@@ -103,6 +103,34 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             model_ret, atype, do_atomic_virial=do_atomic_virial
         )
 
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        spin: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Return native-spin predictions on a flat, frame-segmented node axis."""
+        model_ret = self.call_common_ragged(
+            coord,
+            atype,
+            n_node,
+            box=box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+            spin=spin,
+        )
+        return self._translate_eager_call(
+            model_ret, atype, do_atomic_virial=do_atomic_virial
+        )
+
     def forward_lower_graph_exportable(
         self,
         atype: torch.Tensor,

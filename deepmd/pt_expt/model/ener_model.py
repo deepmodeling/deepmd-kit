@@ -254,6 +254,30 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             do_atomic_virial=do_atomic_virial,
             neighbor_list=neighbor_list,
         )
+        return self._to_public_keys(model_ret, do_atomic_virial)
+
+    def _to_public_keys(
+        self,
+        model_ret: dict[str, torch.Tensor],
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Rename one ``call_common`` result to the public energy-model keys.
+
+        The renaming is a property of the output definition, not of the node
+        axis, so it serves the rectangular and the ragged entry alike.
+
+        Parameters
+        ----------
+        model_ret : dict[str, torch.Tensor]
+            A ``call_common`` result, in internal ``<var>_<derivative>`` keys.
+        do_atomic_virial : bool
+            Whether the per-atom virial was requested and should be carried.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            The same tensors under the public names.
+        """
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
@@ -263,11 +287,67 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
                 model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
-        if "mask" in model_ret:
-            model_predict["mask"] = model_ret["mask"]
+        for key in ("mask", "n_node"):
+            if key in model_ret:
+                model_predict[key] = model_ret[key]
         if self.atomic_output_def()["energy"].r_hessian:
             model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
         return model_predict
+
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Evaluate the energy model over a batch whose node axis is flat.
+
+        The counterpart of :meth:`forward` for frames held concatenated rather
+        than padded to a common atom count. Arguments and results share their
+        meaning with :meth:`call_common_ragged`, whose per-atom outputs keep
+        the flat axis; only the keys are the public ones.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            Local coordinates with shape ``(N, 3)``, frame-major over ``n_node``.
+        atype : torch.Tensor
+            Local atom types with shape ``(N,)``.
+        n_node : torch.Tensor
+            Atoms per frame with shape ``(nf,)``.
+        box : torch.Tensor or None, optional
+            Simulation cell with shape ``(nf, 3, 3)``.
+        fparam : torch.Tensor or None, optional
+            Frame parameters with shape ``(nf, ndf)``.
+        aparam : torch.Tensor or None, optional
+            Atomic parameters with shape ``(N, nda)``.
+        do_atomic_virial : bool, default: False
+            Whether to return per-atom virials.
+        charge_spin : torch.Tensor or None, optional
+            Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public energy-model keys; per-atom entries have leading dimension
+            ``N`` and per-frame entries ``nf``.
+        """
+        model_ret = self.call_common_ragged(
+            coord,
+            atype,
+            n_node,
+            box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+        )
+        return self._to_public_keys(model_ret, do_atomic_virial)
 
     def forward_lower(
         self,
@@ -605,6 +685,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         ----------
         atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin, do_atomic_virial
             As in :meth:`forward_lower_graph_exportable`.
+
         send_list, send_proc, recv_proc, send_num, recv_num, communicator, nlocal, nghost
             The 8 comm tensors (see ``_make_comm_sample_inputs`` in
             ``serialization.py``), packed into ``comm_dict`` inside the
@@ -621,6 +702,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             back with synchronizing D2H reads (``4 * nlayers`` per MD
             step).  The C++ ``run_model_graph_with_comm`` implements this
             placement.
+
         n_local
             (1,) int64 ON THE MODEL DEVICE: the per-frame OWNED node
             count consumed IN-GRAPH by the owned-node energy mask (it
@@ -630,6 +712,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             access).  Carries the same value as the ``nlocal`` comm
             tensor; the two inputs exist precisely to separate the
             device-compute role from the host-MPI-control role.
+
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).

@@ -289,46 +289,36 @@ class Trainer:
             def get_dataloader_and_iter_lmdb(
                 _data: LmdbDataset,
             ) -> tuple[LmdbBatchDataLoader, Generator[Any, None, None]]:
-                if _data.mixed_batch:
-                    # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
-                    # RandomSampler(replacement=False) + padding collate_fn.
-                    # Changes needed:
-                    #   1. _collate_lmdb_batch: pad coord/force/atype to max_nloc,
-                    #      add "atom_mask" bool tensor (nframes, max_nloc)
-                    #   2. Use RandomSampler(_data, replacement=False) as sampler
-                    #   3. Use fixed batch_size in DataLoader (not batch_sampler)
-                    #   4. Model forward: apply atom_mask to descriptor/fitting
-                    #   5. Loss: mask out padded atoms in force loss
-                    raise NotImplementedError(
-                        "mixed_batch=True training is not yet supported."
-                    )
-                # mixed_batch=False: group frames by nloc, each batch same nloc.
-                # SameNlocBatchSampler yields list[int] per batch, all same nloc.
-                # Auto batch_size is computed per-nloc-group inside the sampler.
+                # The sampler yields one list[int] per batch. Every batch is
+                # homogeneous in label availability; whether it is also
+                # homogeneous in atom count follows from the dataset's
+                # batch_size rule, which the sampler reads off the reader.
                 from deepmd.dpmodel.utils.lmdb_data import (
-                    SameNlocBatchSampler,
+                    LmdbBatchSampler,
                 )
 
                 _block_targets = getattr(_data, "_block_targets", None)
+                _sampler_kwargs = {
+                    "shuffle": True,
+                    "seed": _training_params.get("seed"),
+                    "block_targets": _block_targets,
+                }
 
                 if self.world_size > 1:
                     from deepmd.dpmodel.utils.lmdb_data import (
-                        DistributedSameNlocBatchSampler,
+                        DistributedLmdbBatchSampler,
                     )
 
-                    _inner_sampler = DistributedSameNlocBatchSampler(
+                    _inner_sampler = DistributedLmdbBatchSampler(
                         _data._reader,
                         rank=self.rank,
                         world_size=self.world_size,
-                        shuffle=True,
-                        seed=_training_params.get("seed"),
-                        block_targets=_block_targets,
+                        **_sampler_kwargs,
                     )
                 else:
-                    _inner_sampler = SameNlocBatchSampler(
+                    _inner_sampler = LmdbBatchSampler(
                         _data._reader,
-                        shuffle=True,
-                        block_targets=_block_targets,
+                        **_sampler_kwargs,
                     )
 
                 _dataloader = LmdbBatchDataLoader(
@@ -519,6 +509,7 @@ class Trainer:
                         must=False,
                         high_prec=False,
                         default=min_pair_dist,
+                        source_policy="derived",
                     )
                 )
             training_data.add_data_requirement(data_requirement)
@@ -597,6 +588,7 @@ class Trainer:
                             must=False,
                             high_prec=False,
                             default=min_pair_dist,
+                            source_policy="derived",
                         )
                     )
                 training_data[model_key].add_data_requirement(data_requirement)
@@ -1595,7 +1587,11 @@ class Trainer:
                             task_key=_task_key,
                         )
                         # more_loss.update({"rmse": math.sqrt(loss)})
-                        natoms = int(input_dict["atype"].shape[-1])
+                        # The metrics are per-atom quantities, so each batch
+                        # weighs by the real atoms it holds summed over its
+                        # frames. Phantom atoms (atype < 0), which pad a
+                        # mixed-nloc batch, contribute to none of them.
+                        natoms = int((input_dict["atype"] >= 0).sum())
                         sum_natoms += natoms
                         for k, v in more_loss.items():
                             if "l2_" not in k:
@@ -2362,6 +2358,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not _model.has_default_fparam(),
                 default=_fparam_default,
+                source_policy=("default" if _model.has_default_fparam() else "tracked"),
             )
         ]
         additional_data_requirement += fparam_requirement_items
@@ -2390,6 +2387,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=True,
                 must=not allow_missing_spin,
                 default=0.0,
+                source_policy="default" if allow_missing_spin else "tracked",
             )
         ]
         additional_data_requirement += spin_requirement_items
@@ -2405,6 +2403,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_cs,
                 default=cs_default,
+                source_policy="default" if has_default_cs else "tracked",
             )
         )
     return additional_data_requirement

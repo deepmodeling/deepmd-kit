@@ -51,6 +51,11 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
 
+    @property
+    def supports_ragged_batches(self) -> bool:
+        """Whether this objective accepts a flat per-node batch axis."""
+        return False
+
     @staticmethod
     def display_if_exist(loss: Array, find_property: float) -> Array:
         """Display NaN if labeled property is not found.
