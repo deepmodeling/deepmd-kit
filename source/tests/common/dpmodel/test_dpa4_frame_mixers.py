@@ -211,3 +211,42 @@ def test_torch_namespace(cls) -> None:
         rtol=1e-12,
         atol=1e-12,
     )
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [
+        DPFrameContract,  # (N, D, F, K*C) -> (N, D, F, C)
+        DPFrameExpand,  # (N, D, F, C) -> (N, D, F, K*C)
+    ],
+)
+def test_empty_batch_passes_through(cls) -> None:
+    """``N == 0`` must yield an empty result, not a reshape error.
+
+    Reachable when the cross-grid leading axis is an empty graph/edge set
+    or a distributed rank owns no nodes; the degree-batched contraction
+    must keep the broadcasted matmul's empty-batch behavior (explicit
+    channel widths -- ``-1`` cannot be inferred from zero elements).
+    """
+    import torch
+
+    lmax, kmax, channels, n_focus = 2, 1, 4, 2
+    n_frames = 2 * kmax + 1
+    coeff_dim = (lmax + 1) ** 2
+    mod = cls(
+        lmax=lmax,
+        mmax=lmax,
+        coefficient_layout="packed",
+        n_frames=n_frames,
+        channels=channels,
+        precision="float64",
+        trainable=True,
+        seed=7,
+    )
+    in_dim = n_frames * channels if cls is DPFrameContract else channels
+    out_dim = channels if cls is DPFrameContract else n_frames * channels
+    coeff = np.zeros((0, coeff_dim, n_focus, in_dim), dtype=np.float64)
+    out = mod.call(coeff)
+    assert out.shape == (0, coeff_dim, n_focus, out_dim)
+    t_out = mod.call(torch.from_numpy(coeff))
+    assert tuple(t_out.shape) == (0, coeff_dim, n_focus, out_dim)

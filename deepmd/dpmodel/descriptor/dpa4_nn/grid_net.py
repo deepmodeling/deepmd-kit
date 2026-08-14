@@ -123,11 +123,16 @@ def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
     every backward.  The transposes touch only ``coeff``, which is smaller.
     """
     n_batch, coeff_dim, n_focus, _ = coeff.shape
+    # explicit channel widths: `-1` cannot be inferred when N == 0 (empty
+    # graph/edge batch, or a distributed rank owning no nodes)
+    input_dim = weight.shape[-2]
+    output_dim = weight.shape[-1]
     coeff_d = xp.reshape(
-        xp.permute_dims(coeff, (1, 0, 2, 3)), (coeff_dim, n_batch * n_focus, -1)
+        xp.permute_dims(coeff, (1, 0, 2, 3)),
+        (coeff_dim, n_batch * n_focus, input_dim),
     )  # (D, N*F, i)
     out = xp.matmul(coeff_d, weight)  # (D, N*F, o)
-    out = xp.reshape(out, (coeff_dim, n_batch, n_focus, -1))
+    out = xp.reshape(out, (coeff_dim, n_batch, n_focus, output_dim))
     return xp.permute_dims(out, (1, 0, 2, 3))  # (N, D, F, o)
 
 
