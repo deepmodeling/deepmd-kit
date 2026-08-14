@@ -2806,11 +2806,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "mlp_bias": self.mlp_bias,
                 "exclude_types": self.exclude_types,
                 "eps": self.eps,
-                # Must round-trip: pt_expt rebuilds the descriptor from this
-                # dict, so omitting the key silently reset a configured
-                # ``use_amp: false`` to True and kept training in bfloat16.
-                # Older records without it still load (__init__ defaults it).
-                "use_amp": self.use_amp,
                 "trainable": self.trainable,
                 "seed": self.seed,
                 "inner_clamp_r_inner": self.inner_clamp_r_inner,

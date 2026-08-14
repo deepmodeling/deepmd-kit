@@ -24,6 +24,7 @@ from deepmd.kernels.utils import (
     cuda_infer_level,
 )
 from deepmd.pt_expt.common import (
+    auto_wrapped_class,
     torch_module,
 )
 from deepmd.pt_expt.utils.graph_builder import (
@@ -422,7 +423,14 @@ def make_model(
         The model.
 
     """
-    DPModel = make_model_dp(T_AtomicModel)
+    # Hand the dpmodel CM the WRAPPED atomic class so `self.atomic_model =
+    # T_AtomicModel(...)` constructs the pt_expt module directly with the
+    # live (already wrapped) descriptor/fitting. Passing the raw dpmodel
+    # class instead would build a raw atomic model and convert the instance
+    # through a serialize()/deserialize() round-trip, which drops
+    # runtime-only configuration (e.g. the DPA4 `use_amp` switch) that the
+    # portable record deliberately does not carry.
+    DPModel = make_model_dp(auto_wrapped_class(T_AtomicModel))
 
     @torch_module
     class CM(DPModel, *T_Bases):

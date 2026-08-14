@@ -285,3 +285,61 @@ class TestNativeSpinErrorTranslation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestUseAmpSurvivesAssembly(unittest.TestCase):
+    """``use_amp`` is runtime policy: it must survive model ASSEMBLY without
+    entering the portable serialization record (which the JAX deserializer
+    rejects for ``use_amp: true``). The wrapping of the atomic model must
+    therefore not round-trip the constructed descriptor through
+    ``serialize()``/``deserialize()``.
+    """
+
+    def test_get_model_keeps_use_amp_false(self) -> None:
+        model = get_model(
+            _make_raw_model_config(
+                descriptor={
+                    "sel": 20,
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "n_radial": 4,
+                    "lmax": 1,
+                    "mmax": 1,
+                    "n_blocks": 1,
+                    "precision": "float64",
+                    "seed": 1,
+                    "use_amp": False,
+                }
+            )
+        )
+        assert model.atomic_model.descriptor.use_amp is False
+
+    def test_get_model_keeps_the_use_amp_default(self) -> None:
+        model = get_model(_make_raw_model_config())
+        assert model.atomic_model.descriptor.use_amp is True
+
+    def test_standard_type_keeps_use_amp_false(self) -> None:
+        """The plain `standard` route wraps through the same boundary."""
+        cfg = _make_raw_model_config(
+            descriptor={
+                "type": "dpa4",
+                "sel": 20,
+                "rcut": 4.0,
+                "channels": 8,
+                "n_radial": 4,
+                "lmax": 1,
+                "mmax": 1,
+                "n_blocks": 1,
+                "precision": "float64",
+                "seed": 1,
+                "use_amp": False,
+            },
+            fitting_net={
+                "type": "dpa4_ener",
+                "precision": "float64",
+                "seed": 1,
+            },
+        )
+        del cfg["type"]
+        model = get_model(cfg)
+        assert model.atomic_model.descriptor.use_amp is False
