@@ -74,8 +74,8 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     target_compile_definitions(deepmd_op_pt
                                PRIVATE DEEPMD_ENABLE_DPA1_HIGH_LMAX=1)
   endif()
-  # The compressed DPA1 and DPA4C kernels are instantiated one translation
-  # unit per channel width so their angular-degree and topology specializations
+  # The compressed DPA1 and DPA4C kernels are instantiated one translation unit
+  # per channel width so their angular-degree and topology specializations
   # compile in parallel.
   set_source_files_properties(
     ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} dpa4c_graph_compress_c8.cu

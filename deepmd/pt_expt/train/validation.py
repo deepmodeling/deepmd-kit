@@ -524,9 +524,7 @@ class FullValidator:
         test_data = data_system.get_test()
         natoms = int(test_data["type"].shape[1])
         nframes = int(test_data["coord"].shape[0])
-        include_virial = (
-            data_system.pbc and bool(test_data.get("find_virial", 0.0))
-        )
+        include_virial = data_system.pbc and bool(test_data.get("find_virial", 0.0))
         spin = (
             test_data["spin"].reshape(nframes, -1) if self.profile.needs_spin else None
         )
