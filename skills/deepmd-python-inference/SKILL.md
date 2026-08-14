@@ -33,6 +33,7 @@ e, f, v = dp.eval(coord, cell, atype)
    - Built-in pretrained model name (e.g., `DPA-3.2-5M`)
    - PyTorch checkpoint (`.pt`), whose stored model configuration must be inspected before choosing an inference or export path
 1. Read `references/model-artifacts.md` for `.pt`/`.pt2` models or whenever the artifact route is unclear.
+1. Read `references/held-out-evaluation.md` for complete labeled evaluation used for checkpoint selection or production admission.
 1. Determine the inference task:
    - Single-frame prediction (energy, force, virial)
    - Batch prediction over multiple frames
@@ -202,6 +203,9 @@ Virial RMSE/Natoms : 2.957e-04 eV
 ```
 
 With `-d test_detail`, per-frame predictions are saved to files for further analysis.
+
+The 30-frame commands above are bounded examples, not complete held-out evaluation.
+Use `references/held-out-evaluation.md` when the result admits a model for production.
 
 ## Complete Example: Train, Freeze, and Inference
 

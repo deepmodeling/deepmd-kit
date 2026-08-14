@@ -51,8 +51,12 @@ architecture, and `type_map` before use.
 ## Before fine-tuning
 
 1. Confirm the checkpoint exists and can be inspected.
-1. Confirm training and validation systems, labels, and element type maps.
-1. Keep a held-out test set that is not used for training or model selection.
+1. Confirm training, validation, and held-out systems, labels, and element type maps.
+1. Split correlated frames by independent system, trajectory, or source family;
+   do not create a nominal held-out set by randomly splitting adjacent frames.
+1. Validate each DeePMD system before training: `natoms` is the number of tokens
+   in `type.raw`, coordinate and force widths are `3 * natoms`, and every used
+   label is finite and frame-aligned.
 1. Start from the exact checkpoint architecture. Introducing new element types,
    changing architecture, or combining specialized spin/property/multi-task
    configurations requires separate compatibility validation.
@@ -143,9 +147,10 @@ architecture from the source checkpoint before adding `model.lora`. Do not add
 ## Monitor and validate
 
 Monitor `lcurve.out` for non-finite values and train/validation divergence.
-Select a checkpoint using validation data, then evaluate the selected checkpoint
-on the complete held-out test systems. Report energy and force errors, plus
-virial errors when those labels are part of the task.
+Select a checkpoint using validation data, then follow the
+[complete held-out evaluation](../deepmd-python-inference/references/held-out-evaluation.md)
+with that exact native checkpoint and every held-out system. Export for deployment
+only after the complete evaluation meets the task's declared thresholds.
 
 ## Export and test
 
@@ -174,12 +179,13 @@ again when loading that archive.
 - [ ] The stored descriptor identifies DPA4/SeZM; the `.pt` suffix was not used as proof.
 - [ ] The checkpoint source, DeePMD-kit revision, architecture, and type map are recorded.
 - [ ] The intended branch is explicit for a multi-task checkpoint.
-- [ ] Training, validation, and held-out test systems are separate.
+- [ ] Training, validation, and held-out systems are independent by source family.
+- [ ] Every admitted system has consistent atom counts, shapes, labels, and type maps.
 - [ ] The input architecture is compatible with the checkpoint.
 - [ ] Standard fine-tuning versus LoRA was selected from the task layout and domain shift.
 - [ ] A resumable LoRA checkpoint is distinguished from a merged best checkpoint.
 - [ ] LoRA uses a complete base configuration and is not silently overwritten.
-- [ ] Training and held-out metrics are finite and reported with units.
+- [ ] Complete held-out metrics, sample counts, and reference-label scales are reported.
 - [ ] The selected `.pt` checkpoint was exported to and tested as `.pt2`.
 
 ## References
