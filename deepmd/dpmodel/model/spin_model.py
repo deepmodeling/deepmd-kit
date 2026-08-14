@@ -55,6 +55,8 @@ class SpinModel(NativeOP):
         \boldsymbol{\tau}_i = \mathbf{F}_i^{\mathrm{virtual}} \times \boldsymbol{\sigma}_i.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("spin_mask", "virtual_scale_mask")
+
     def __init__(
         self,
         backbone_model: DPAtomicModel,
@@ -76,6 +78,8 @@ class SpinModel(NativeOP):
                 # concrete default).
                 descriptor.disable_graph_lower()
         self.ntypes_real = self.spin.ntypes_real
+        # Both per-type tables follow from ``use_spin`` and ``virtual_scale``,
+        # so they are rebuilt here rather than adopted from a checkpoint.
         self.virtual_scale_mask = self.spin.get_virtual_scale_mask()
         self.spin_mask = self.spin.get_spin_mask()
 
@@ -210,12 +214,16 @@ class SpinModel(NativeOP):
         # pair exclusion in here (decision #18/A4 — the lower consumes a
         # pre-excluded nlist and never re-applies it). No-op when the backbone
         # has no pair_exclude_types.
-        pair_excl = getattr(
-            self.backbone_model.atomic_model
+        # ``backbone_model`` is either a full ``make_model``-wrapped model
+        # (exposes ``.atomic_model``) or, per the ``__init__`` annotation,
+        # a bare ``DPAtomicModel`` -- which always carries ``pair_excl``
+        # (set unconditionally by ``BaseAtomicModel.__init__`` via
+        # ``reinit_pair_exclude``, ``None`` when no exclusion is
+        # configured). Direct access, not a defensive ``getattr`` probe.
+        pair_excl = (
+            self.backbone_model.atomic_model.pair_excl
             if hasattr(self.backbone_model, "atomic_model")
-            else self.backbone_model,
-            "pair_excl",
-            None,
+            else self.backbone_model.pair_excl
         )
         if pair_excl is not None:
             from deepmd.dpmodel.utils.nlist import (

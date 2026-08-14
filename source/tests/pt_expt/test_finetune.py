@@ -1004,5 +1004,106 @@ class TestFinetuneCLI(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+# Native-spin descriptors, paired with the fitting types they require. Each
+# descriptor entry is deliberately tiny: these tests inspect the parameter tree
+# of a freshly built model, not its predictions.
+_NATIVE_SPIN_DESCRIPTORS = {
+    "dpa4": (
+        {
+            "type": "dpa4",
+            "rcut": 4.0,
+            "sel": 8,
+            "channels": 8,
+            "n_radial": 4,
+            "lmax": 1,
+            "mmax": 1,
+            "n_blocks": 1,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "dpa4_ener",
+    ),
+}
+
+
+def _native_spin_config(descriptor_key: str, use_spin: list[bool]) -> dict:
+    """Build a native-spin model config over the type map ``["Fe", "C"]``."""
+    descriptor, fitting_type = _NATIVE_SPIN_DESCRIPTORS[descriptor_key]
+    config = {
+        "type_map": ["Fe", "C"],
+        "descriptor": deepcopy(descriptor),
+        "fitting_net": {
+            "type": fitting_type,
+            "neuron": [8],
+            "precision": "float64",
+            "seed": 19,
+        },
+        "spin": {"use_spin": use_spin, "scheme": "native"},
+    }
+    if descriptor_key == "dpa4":
+        config["type"] = "dpa4"
+    return config
+
+
+class TestNativeSpinGateNotInherited(unittest.TestCase):
+    """The per-type spin gate is rebuilt from the configuration, never inherited.
+
+    A native-spin model is commonly pretrained on a corpus that declares no
+    magnetic species and then fine-tuned on a magnetic one. Both models are
+    native-spin, so their parameter trees agree and transfer wholesale, but the
+    gate that ``use_spin`` produces is not model state: adopting the pretraining
+    copy leaves it all zero, which silences the spin channel and pins the
+    magnetic force at exactly zero for the whole fine-tuning run.
+    """
+
+    @staticmethod
+    def _gates(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+        """Return every per-type spin gate of *model*, keyed by buffer name."""
+        return {
+            name: buffer
+            for name, buffer in model.named_buffers()
+            if name.endswith("spin_mask")
+        }
+
+    def test_gate_is_rebuilt_not_inherited(self) -> None:
+        for descriptor_key in _NATIVE_SPIN_DESCRIPTORS:
+            with self.subTest(descriptor=descriptor_key):
+                pretrained = get_model(
+                    _native_spin_config(descriptor_key, [False, False])
+                )
+                finetuned = get_model(
+                    _native_spin_config(descriptor_key, [True, False])
+                )
+
+                # Being configuration-derived, the gate is not part of the state.
+                self.assertEqual(
+                    [
+                        key
+                        for key in finetuned.state_dict()
+                        if key.endswith("spin_mask")
+                    ],
+                    [],
+                )
+                expected = {
+                    name: gate.clone() for name, gate in self._gates(finetuned).items()
+                }
+                self.assertTrue(expected, "the model declares no per-type spin gate")
+                for name, gate in expected.items():
+                    self.assertTrue(
+                        bool((gate != 0).any()), f"{name} is all zero as built"
+                    )
+
+                # A checkpoint that still archives the gate -- written before it
+                # became non-persistent -- must neither fail a strict load nor
+                # override the built value.
+                archived = dict(pretrained.state_dict())
+                archived.update(
+                    {name: torch.zeros_like(gate) for name, gate in expected.items()}
+                )
+                finetuned.load_state_dict(archived)
+                for name, gate in self._gates(finetuned).items():
+                    torch.testing.assert_close(gate, expected[name], rtol=0, atol=0)
+
+
 if __name__ == "__main__":
     unittest.main()

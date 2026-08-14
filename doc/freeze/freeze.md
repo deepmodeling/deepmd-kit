@@ -8,17 +8,32 @@ To freeze a model, typically one does
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 ```bash
-$ dp freeze -o model.pb
+dp freeze -o model.pb
 ```
 
 in the folder where the model is trained. The output model is called `model.pb`.
 The idea and part of our code are from [Morgan](https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc).
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} TensorFlow 2 {{ tensorflow_icon }}
 
 ```bash
-$ dp --pt freeze -o model.pth
+dp --tf2 freeze -c model.ckpt -o model.savedmodeltf
+```
+
+When `-c` names a checkpoint prefix, the backend also checks the corresponding
+path with `.tf2` appended, so the example reads `model.ckpt.tf2` and writes the
+TensorFlow SavedModel to `model.savedmodeltf`. If `-c` is omitted, it defaults
+to the current directory. For a multi-task checkpoint, select a branch with
+`--head CHOSEN_BRANCH`. SavedModel export requires graph-traceable model code;
+descriptor-specific export requirements are documented on the corresponding
+model pages.
+:::
+
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
+
+```bash
+dp --pt freeze -o model.pth
 ```
 
 in the folder where the model is trained. The output model is called `model.pth`.
@@ -27,16 +42,30 @@ In [multi-task mode](../train/multi-task-training), you need to choose one avail
 to specify which model branch you want to freeze:
 
 ```bash
-$ dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
+dp --pt freeze -o model_branch1.pth --head CHOSEN_BRANCH
 ```
 
 The output model is called `model_branch1.pth`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.
 :::
 
+:::{tab-item} PyTorch-Exportable {{ pytorch_icon }}
+
+```bash
+dp --pt-expt freeze -c model.ckpt.pt -o model
+```
+
+The backend writes `.pte` for the dense neighbor-list lower form and `.pt2` for
+the graph lower form. A suffixless output lets DeePMD-kit select the matching
+extension. `--lower-kind graph` requires a graph-eligible model. Conversely, a
+graph-capable DPA model may override a requested `nlist` lower with the graph
+form and emit a warning. In multi-task mode, select a model branch with
+`--head CHOSEN_BRANCH`.
+:::
+
 :::{tab-item} Paddle {{ paddle_icon }}
 
 ```bash
-$ dp --pd freeze -o model
+dp --pd freeze -o model
 ```
 
 in the folder where the model is trained. The output model is called `model.json` and `model.pdiparams`.
@@ -45,10 +74,36 @@ In [multi-task mode](../train/multi-task-training.md), you need to choose one av
 to specify which model branch you want to freeze:
 
 ```bash
-$ dp --pd freeze -o model_branch1 --head CHOSEN_BRANCH
+dp --pd freeze -o model_branch1 --head CHOSEN_BRANCH
 ```
 
 The output model is called `model_branch1.json`, which is the specifically frozen model with the `CHOSEN_BRANCH` head.
 :::
 
+:::{tab-item} JAX {{ jax_icon }}
+
+```bash
+dp --jax freeze -c model.ckpt.jax -o model.hlo
+```
+
+The JAX backend can write a StableHLO `.hlo` model, a lossless `.jax`
+serialization, or a JAX2TF `.savedmodel` model. The `.hlo` and `.savedmodel`
+formats work with the normal `dp test`/`DeepPot` route; `.jax` is intended for
+checkpoint round-tripping and JAX-MD and is not a DeepEval model format. The
+`.savedmodel` format requires TensorFlow and is the JAX format that supports the
+C++ inference interface.
+:::
+
 ::::
+
+## Freeze a JAX model with Hessian output {{ jax_icon }}
+
+Use `--hessian` to add coordinate-Hessian output to a frozen JAX energy model:
+
+```bash
+dp --jax freeze -c model.ckpt.jax -o model-hessian.hlo --hessian
+```
+
+The option applies to JAX `.hlo`, `.jax`, and `.savedmodel` outputs. A model
+whose serialized definition already enables Hessian mode retains that mode even
+when `--hessian` is omitted.

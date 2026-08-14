@@ -16,6 +16,7 @@ from deepmd.dpmodel.utils.type_embed import (
     remap_atype_to_padding,
 )
 from deepmd.pt_expt.common import (
+    register_buffer_replacing_slot,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -159,7 +160,7 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
             )
             # Run through the strip embedding network
             embd_tensor = self.se_ttebd.embeddings_strip[0].call(two_side).detach()
-            torch.nn.Module.register_buffer(self, "type_embd_data", embd_tensor)
+            register_buffer_replacing_slot(self, "type_embd_data", embd_tensor)
 
     @cast_precision
     def call(

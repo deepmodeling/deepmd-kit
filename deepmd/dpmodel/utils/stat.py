@@ -208,9 +208,20 @@ def _compute_model_predict(
         fparam = to_numpy_array(system.get("fparam", None))
         aparam = to_numpy_array(system.get("aparam", None))
         charge_spin = to_numpy_array(system.get("charge_spin", None))
+        # A native-spin model conditions on the per-atom moment, so the bias it
+        # predicts here is only the bias it will predict during training if the
+        # moment travels with the sample. The virtual-atom scheme never reaches
+        # this key: it expands the moment into virtual atoms before sampling.
+        spin = to_numpy_array(system.get("spin", None))
 
         sample_predict = model_forward(
-            coord, atype, box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            coord,
+            atype,
+            box,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            spin=spin,
         )
         for kk in keys:
             model_predict[kk].append(

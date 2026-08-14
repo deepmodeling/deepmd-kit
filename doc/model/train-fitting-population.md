@@ -1,7 +1,7 @@
 # Fit atomic charge population {{ pytorch_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}
+> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}
 
 Here we present an API to DeepPopulation model, which can be used to fit the atomic charge population.
 
@@ -89,7 +89,7 @@ The training command is the same as `ener` mode, i.e.
 
 ::::{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt train input_torch.json

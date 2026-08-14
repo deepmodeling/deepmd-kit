@@ -172,7 +172,6 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
     spin = Spin(
         use_spin=use_spin,
-        virtual_scale=spin_cfg.get("virtual_scale", 1.0),
         allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data.setdefault("descriptor", {})

@@ -103,9 +103,9 @@ Other keys in the {ref}`training <training>` section are explained below:
 - {ref}`disp_file <training/disp_file>` The file for printing learning curve.
 - {ref}`disp_freq <training/disp_freq>` The frequency of printing learning curve. Set in the unit of training steps
 - {ref}`save_freq <training/save_freq>` The frequency of saving checkpoint.
-- {ref}`save_dir <training/save_dir>` The directory where periodic checkpoints are written (PyTorch and PyTorch Exportable backends). It is created recursively if missing, while the `model.ckpt.pt` symlinks and the `checkpoint` pointer file stay in the working directory. Defaults to the working directory.
+- {ref}`save_dir <training/save_dir>` The directory where periodic checkpoints are written (PyTorch-TorchScript and PyTorch Exportable backends). It is created recursively if missing, while the `model.ckpt.pt` symlinks and the `checkpoint` pointer file stay in the working directory. Defaults to the working directory.
 - {ref}`max_ckpt_keep <training/max_ckpt_keep>` The number of recent periodic checkpoints retained for each checkpoint family. EMA checkpoints inherit this window by default; {ref}`ema_ckpt_keep <training/ema_ckpt_keep>` may override it when a different EMA window is required.
-- {ref}`ckpt_keep_ratio <training/ckpt_keep_ratio>` An alternative to `max_ckpt_keep` (PyTorch and PyTorch Exportable backends) that keeps a sliding window of `ceil(ckpt_keep_ratio * ceil(numb_steps / save_freq))` most recent checkpoints, i.e. the final `ckpt_keep_ratio` fraction of the run by step. It overrides `max_ckpt_keep` (and `ema_ckpt_keep`) when set, and works the same whether the run length is given by `numb_steps` or `numb_epoch`.
+- {ref}`ckpt_keep_ratio <training/ckpt_keep_ratio>` An alternative to `max_ckpt_keep` (PyTorch-TorchScript and PyTorch Exportable backends) that keeps a sliding window of `ceil(ckpt_keep_ratio * ceil(numb_steps / save_freq))` most recent checkpoints, i.e. the final `ckpt_keep_ratio` fraction of the run by step. It overrides `max_ckpt_keep` (and `ema_ckpt_keep`) when set, and works the same whether the run length is given by `numb_steps` or `numb_epoch`.
 
 ## Options and environment variables
 
