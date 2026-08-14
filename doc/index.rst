@@ -10,9 +10,9 @@ DeePMD-kit
 .. important::
 
    **A pretrained model can be your starting point, not just your end result.**
-   Download a built-in DPA checkpoint, fine-tune the full model or a LoRA
-   adapter on system-specific data, then test, export, and deploy it through
-   the same DeePMD-kit workflow.
+   Download a built-in DPA checkpoint, fine-tune the full model, or use
+   `DPA-4 LoRA`_ with PyTorch single-task training, then test, export, and deploy
+   it through the same DeePMD-kit workflow.
 
 DeePMD-kit turns quantum-mechanical reference data into fast, scalable
 interatomic potentials. Use it across molecular and materials science—from
@@ -46,7 +46,8 @@ Choose your path
       :link-type: doc
       :shadow: md
 
-      Adapt a full pretrained model or LoRA adapters to your target system.
+      Adapt a full pretrained model, or use DPA-4 LoRA with PyTorch single-task
+      training.
 
    .. grid-item-card:: 🏗️ Train from scratch
       :link: train/index
@@ -81,8 +82,9 @@ Why DeePMD-kit
    .. grid-item-card:: Pretrained-first adaptation
       :shadow: sm
 
-      Start from built-in DPA checkpoints, fine-tune full models or LoRA
-      adapters, and reuse learned representations with DPA-ADAPT.
+      Start from built-in DPA checkpoints, fine-tune full models, use
+      `DPA-4 LoRA`_ with PyTorch single-task training, and reuse learned
+      representations with DPA-ADAPT.
 
    .. grid-item-card:: Training from scratch
       :link: train/index
@@ -156,7 +158,7 @@ Two starting points, one path to dynamics
       :link: train/finetuning
       :link-type: doc
 
-      Adapt the full model or LoRA adapters to your system.
+      Adapt the full model, or use DPA-4 LoRA with PyTorch single-task training.
 
    .. grid-item-card:: 3 · Train
       :link: train/index
@@ -177,7 +179,8 @@ Two starting points, one path to dynamics
       Run inference directly or deploy into molecular dynamics.
 
 Fine-tuning and from-scratch training converge on the same validation, export,
-and deployment toolchain.
+and deployment toolchain. `DPA-4 LoRA`_ is currently limited to PyTorch
+single-task fine-tuning.
 
 Choose a model family
 =====================
@@ -200,8 +203,9 @@ Choose a model family
      - Message passing over line-graph representations and broad chemical
        coverage.
    * - :doc:`DPA-4 <model/dpa4>`
-     - SO(3)-equivariant learning, LoRA fine-tuning, optional ZBL bridging,
-       spin support, and compiled ``.pt2`` deployment.
+     - SO(3)-equivariant learning, `DPA-4 LoRA`_ for PyTorch single-task
+       fine-tuning, optional ZBL bridging, spin support, and compiled ``.pt2``
+       deployment.
 
 .. figure:: _static/dpa4-performance.webp
    :alt: DPA4 energy and force accuracy versus saturated throughput
@@ -256,8 +260,8 @@ New and noteworthy
       :link-type: doc
       :shadow: sm
 
-      Equivariant message passing, LoRA, ZBL, spin, compiled inference, and
-      LAMMPS deployment.
+      Equivariant message passing, PyTorch single-task LoRA, ZBL, spin,
+      compiled inference, and LAMMPS deployment.
 
    .. grid-item-card:: DPA-ADAPT
       :link: dpa_adapt/index
@@ -424,6 +428,8 @@ Indices
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+.. _DPA-4 LoRA: https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html#lora-fine-tuning
 
 .. _feedback:
 .. _affiliated packages:
