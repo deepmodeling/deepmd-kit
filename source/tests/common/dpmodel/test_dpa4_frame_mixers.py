@@ -3,9 +3,12 @@
 
 These mirror the current pt
 ``deepmd.pt.model.descriptor.sezm_nn.grid_net`` ``FrameContract`` /
-``FrameExpand`` (and the ``_build_frame_degree_index`` helper). The pt mixers
-realise a per-degree ``einsum("ndfi,dio->ndfo", coeff, weight[degree_index])``;
-the dpmodel port realises the same map as a broadcast batched ``xp.matmul``.
+``FrameExpand`` (and the ``_build_frame_degree_index`` helper). The
+backend-independent mathematical contract of both mixers is the per-degree
+``einsum("ndfi,dio->ndfo", coeff, weight[degree_index])``; both backends
+realise it through the same ``(D, F)``-batched matmul lowering
+(``_degree_batched_matmul``), which these tests pin against the einsum
+contract for values and gradients.
 
 pt imports live inside the test functions because ruff TID253 bans
 module-level ``deepmd.pt`` imports under ``source/tests/common``. pt modules
@@ -250,3 +253,95 @@ def test_empty_batch_passes_through(cls) -> None:
     assert out.shape == (0, coeff_dim, n_focus, out_dim)
     t_out = mod.call(torch.from_numpy(coeff))
     assert tuple(t_out.shape) == (0, coeff_dim, n_focus, out_dim)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "contract",  # (N, D, F, K*C) -> (N, D, F, C)
+        "expand",  # (N, D, F, C) -> (N, D, F, K*C)
+    ],
+)
+def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
+    """``F > 1`` forward AND backward parity of the ``(D, F)``-batched
+    lowering against the ``einsum("ndfi,dio->ndfo")`` contract, for the
+    input and the weight gradients.
+    """
+    import torch
+
+    lmax, kmax, channels = 2, 1, 4
+    n_frames = 2 * kmax + 1
+    coeff_dim = (lmax + 1) ** 2
+    n_batch, n_focus = 5, 2
+    rng = np.random.default_rng(2026)
+
+    if kind == "contract":
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            FrameContract as PTMixer,
+        )
+
+        in_dim = n_frames * channels
+    else:
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            FrameExpand as PTMixer,
+        )
+
+        in_dim = channels
+    pt_mod = PTMixer(
+        lmax=lmax,
+        mmax=lmax,
+        coefficient_layout="packed",
+        n_frames=n_frames,
+        channels=channels,
+        dtype=torch.float64,
+        trainable=True,
+        seed=7,
+    ).to("cpu")
+
+    coeff = torch.from_numpy(
+        rng.normal(size=(n_batch, coeff_dim, n_focus, in_dim))
+    ).requires_grad_(True)
+    out = pt_mod(coeff)
+    grad_out = torch.from_numpy(rng.normal(size=tuple(out.shape)))
+    out.backward(grad_out)
+    grad_in_mod = coeff.grad.detach().clone()
+    grad_w_mod = pt_mod.weight.grad.detach().clone()
+
+    pt_mod.weight.grad = None
+    coeff_ref = coeff.detach().clone().requires_grad_(True)
+    ref = torch.einsum(
+        "ndfi,dio->ndfo",
+        coeff_ref,
+        pt_mod.weight.index_select(0, pt_mod.degree_index),
+    )
+    np.testing.assert_allclose(
+        out.detach().numpy(), ref.detach().numpy(), rtol=1e-12, atol=1e-12
+    )
+    ref.backward(grad_out)
+    np.testing.assert_allclose(
+        grad_in_mod.numpy(), coeff_ref.grad.numpy(), rtol=1e-12, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        grad_w_mod.numpy(), pt_mod.weight.grad.numpy(), rtol=1e-12, atol=1e-12
+    )
+
+    # the dpmodel lowering agrees on the torch namespace, gradients included
+    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+        _degree_batched_matmul,
+    )
+
+    import array_api_compat
+
+    coeff_dp = coeff.detach().clone().requires_grad_(True)
+    dp_out = _degree_batched_matmul(
+        array_api_compat.array_namespace(coeff_dp),
+        coeff_dp,
+        pt_mod.weight.index_select(0, pt_mod.degree_index).detach(),
+    )
+    np.testing.assert_allclose(
+        dp_out.detach().numpy(), out.detach().numpy(), rtol=1e-12, atol=1e-12
+    )
+    dp_out.backward(grad_out)
+    np.testing.assert_allclose(
+        coeff_dp.grad.numpy(), grad_in_mod.numpy(), rtol=1e-12, atol=1e-12
+    )

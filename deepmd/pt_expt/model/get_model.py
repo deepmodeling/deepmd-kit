@@ -13,13 +13,19 @@ from typing import (
 )
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-    DPAtomicModel,
+    DPAtomicModel as DPAtomicModelDP,
+)
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel as InnerPotentialAtomicModelDP,
 )
 from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
-    PairTabAtomicModel,
+    PairTabAtomicModel as PairTabAtomicModelDP,
 )
 from deepmd.dpmodel.model.model_factory import (
     BackendModelFactory,
+)
+from deepmd.pt_expt.common import (
+    auto_wrapped_class,
 )
 from deepmd.dpmodel.model.model_factory import (
     get_spin_model as get_spin_model_from_factory,
@@ -60,6 +66,14 @@ log = logging.getLogger(__name__)
 # Warn at most once per process for backend-relocated switches (keyed by name).
 _WARNED_ONCE: set[str] = set()
 
+
+# Constructing the WRAPPED atomic classes directly is the lossless assembly
+# rule: building a raw dpmodel instance and converting it afterwards
+# round-trips through serialize()/deserialize() and drops runtime-only
+# configuration (e.g. the DPA4 `use_amp` switch) from the live children.
+DPAtomicModel = auto_wrapped_class(DPAtomicModelDP)
+PairTabAtomicModel = auto_wrapped_class(PairTabAtomicModelDP)
+InnerPotentialAtomicModel = auto_wrapped_class(InnerPotentialAtomicModelDP)
 
 _model_factory = BackendModelFactory(
     descriptor_base=BaseDescriptor,
@@ -205,12 +219,6 @@ def _compose_bridging(
     LinearEnergyModel
         A composition over ``[learned, InnerPotential]``.
     """
-    from deepmd.dpmodel.atomic_model.inner_potential import (
-        InnerPotentialAtomicModel,
-    )
-    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-        LinearEnergyAtomicModel,
-    )
     from deepmd.pt_expt.model.dp_linear_model import (
         LinearEnergyModel,
     )
@@ -222,7 +230,11 @@ def _compose_bridging(
         rcut=descriptor.get_rcut(),
         sel=descriptor.get_sel(),
     )
-    composed = LinearEnergyAtomicModel(
+    # Constructor-args form (NOT a pre-built `atomic_model_=` instance): the
+    # CM then constructs the WRAPPED composition class directly and keeps the
+    # live children -- assigning a populated raw dpmodel composition would
+    # convert it through the lossy serialize()/deserialize() round-trip.
+    return LinearEnergyModel(
         models=[model.atomic_model, zbl_atomic],
         type_map=data["type_map"],
         weights="sum",
@@ -231,7 +243,6 @@ def _compose_bridging(
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=data.get("pair_exclude_types", []),
     )
-    return LinearEnergyModel(atomic_model_=composed)
 
 
 def get_standard_model(data: dict) -> BaseModel:

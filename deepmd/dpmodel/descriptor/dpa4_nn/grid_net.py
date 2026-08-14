@@ -118,22 +118,16 @@ def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
 
     Notes
     -----
-    Batching over the degree axis, not over ``N``: the latter would broadcast
-    ``weight`` to ``(N, D, i, o)`` and make autograd reduce that expansion on
-    every backward.  The transposes touch only ``coeff``, which is smaller.
+    Batching over the ``(D, F)`` axes, not over ``N``: expanding ``weight``
+    across ``F`` costs ``D*F*i*o`` elements, whereas batching over ``N``
+    (or collapsing ``N*F``, which needs a materialized permuted copy of
+    ``coeff``) touches ``N*D*F*i`` elements — a factor ``N/o`` more. No
+    reshape is involved, so an empty ``N`` batch (empty graph/edge set, or
+    a distributed rank owning no nodes) flows through naturally.
     """
-    n_batch, coeff_dim, n_focus, _ = coeff.shape
-    # explicit channel widths: `-1` cannot be inferred when N == 0 (empty
-    # graph/edge batch, or a distributed rank owning no nodes)
-    input_dim = weight.shape[-2]
-    output_dim = weight.shape[-1]
-    coeff_d = xp.reshape(
-        xp.permute_dims(coeff, (1, 0, 2, 3)),
-        (coeff_dim, n_batch * n_focus, input_dim),
-    )  # (D, N*F, i)
-    out = xp.matmul(coeff_d, weight)  # (D, N*F, o)
-    out = xp.reshape(out, (coeff_dim, n_batch, n_focus, output_dim))
-    return xp.permute_dims(out, (1, 0, 2, 3))  # (N, D, F, o)
+    coeff_df = xp.permute_dims(coeff, (1, 2, 0, 3))  # (D, F, N, i)
+    out = xp.matmul(coeff_df, weight[:, None, :, :])  # (D, F, N, o)
+    return xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, o)
 
 
 def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
@@ -530,7 +524,7 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # Batched over the degree axis, never over N -- see the helper's note.
+        # Batched over the (D, F) axes, never over N -- see the helper's note.
         return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
@@ -611,7 +605,7 @@ class FrameExpand(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # Batched over the degree axis, never over N -- see the helper's note.
+        # Batched over the (D, F) axes, never over N -- see the helper's note.
         return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
