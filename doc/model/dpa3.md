@@ -12,7 +12,7 @@ Its architecture provides high fitting accuracy and robust generalization both w
 DPA3 also preserves energy conservation and the physical symmetries of the potential energy surface,
 making it a reliable model for a wide range of scientific applications.
 
-Reference: [DPA3 paper](https://arxiv.org/abs/2506.01686).
+Reference: {ref}`DPA3 paper <cite-dpa3>` in the canonical citation guide.
 
 Training example: `examples/water/dpa3/input_torch.json`.
 
@@ -94,7 +94,10 @@ Virials are similarly derived from cell tensor gradients, ensuring the model is 
 
 ### Default Configuration
 
-DPA3 uses LiGS order $K=2$ as the default configuration, which was found effective in prior work ([DPA3 paper](https://arxiv.org/abs/2506.01686)). The model supports scaling through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6, DPA3-L12, DPA3-L24).
+DPA3 uses LiGS order $K=2$ as the default configuration, which was found
+effective in the {ref}`DPA3 paper <cite-dpa3>`. The model supports scaling
+through increasing the number of layers $L$ (e.g., DPA3-L3, DPA3-L6,
+DPA3-L12, DPA3-L24).
 
 ## Hyperparameter tests
 
