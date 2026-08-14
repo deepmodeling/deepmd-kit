@@ -286,6 +286,67 @@ class TestDescrptDPA4:
         dd2 = DescrptDPA4.deserialize(dd.serialize())
         assert dd2.use_amp is use_amp
 
+    def test_legacy_spin_gate_is_squared_on_deserialize(self) -> None:
+        """Version 1.2 stores the env-seed spin gate after the quadratic form.
+
+        The stored scalar used to multiply the spin coordinate channel
+        BEFORE that form, so an amplitude ``a`` contributed ``a**2 * D_spin``
+        and squaring reproduces the stored function exactly. ``@version`` is
+        the source of truth, and a migrated payload is retagged so a second
+        load leaves the gate alone.
+        """
+        dd = make_descriptor(use_spin=[True, False, False])
+        data = dd.serialize()
+        assert data["@version"] == DescrptDPA4.LATEST_VERSION == 1.2
+        data["@version"] = 1.1
+        data["@variables"]["env_seed_embedding.spin_scale"] = np.full(
+            (1,), 3.0, dtype=np.float64
+        )
+
+        migrated = DescrptDPA4.deserialize(data)
+        np.testing.assert_allclose(migrated.env_seed_embedding.spin_scale, 9.0)
+        assert migrated.version == 1.2
+
+        reloaded = DescrptDPA4.deserialize(migrated.serialize())
+        np.testing.assert_allclose(reloaded.env_seed_embedding.spin_scale, 9.0)
+        assert reloaded.version == 1.2
+
+    def test_legacy_spin_free_routes_are_zeroed_on_deserialize(self) -> None:
+        data = make_descriptor(use_spin=[False, False, False]).serialize()
+        data["@version"] = 1.1
+        dormant_keys = (
+            "spin_embedding.mag_layer2.matrix",
+            "spin_embedding.adam_spin_vec_weight",
+            "spin_embedding.adam_spin_nbr_weight",
+            "env_seed_embedding.spin_scale",
+        )
+        for key in dormant_keys:
+            data["@variables"][key] = np.full_like(data["@variables"][key], 3.0)
+        mag_layer1_key = "spin_embedding.mag_layer1.matrix"
+        data["@variables"][mag_layer1_key] = np.full_like(
+            data["@variables"][mag_layer1_key], 5.0
+        )
+
+        migrated = DescrptDPA4.deserialize(data)
+
+        variables = migrated.serialize()["@variables"]
+        for key in dormant_keys:
+            np.testing.assert_array_equal(variables[key], np.zeros_like(variables[key]))
+        np.testing.assert_array_equal(
+            variables[mag_layer1_key], np.full_like(variables[mag_layer1_key], 5.0)
+        )
+        assert migrated.version == 1.2
+
+    def test_pre_spin_versions_keep_their_own_tag(self) -> None:
+        """Version 1.0 predates the spin route and the 1.1 forward math.
+
+        Promoting it would silently switch ``deg_norm_floor`` and the radial
+        envelope, so a payload below 1.1 is left exactly as it was written.
+        """
+        data = make_descriptor().serialize()
+        data["@version"] = 1.0
+        assert DescrptDPA4.deserialize(data).version == 1.0
+
     def test_value_errors(self) -> None:
         with pytest.raises(ValueError):  # kmax must be <= lmax
             make_descriptor(kmax=4, lmax=3)

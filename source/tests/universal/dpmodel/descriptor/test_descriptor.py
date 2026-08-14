@@ -19,12 +19,18 @@ from deepmd.dpmodel.descriptor import (
     DescrptSeT,
     DescrptSeTTebd,
 )
+from deepmd.dpmodel.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
 )
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
+)
+from deepmd.dpmodel.descriptor.make_base_descriptor import (
+    make_base_descriptor,
 )
 from deepmd.dpmodel.descriptor.repflows import (
     DescrptBlockRepflows,
@@ -999,17 +1005,47 @@ class TestHybridChgSpinDefaultDP(unittest.TestCase):
         shared_default = DescrptHybrid(
             list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([5.0, 1.0])]
         )
-        self.assertTrue(shared_default.has_default_chg_spin())
+        self.assertIsNotNone(shared_default.get_default_chg_spin())
         self.assertEqual(shared_default.get_default_chg_spin(), [5.0, 1.0])
 
         missing_default = DescrptHybrid(
             list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3(None)]
         )
-        self.assertFalse(missing_default.has_default_chg_spin())
         self.assertIsNone(missing_default.get_default_chg_spin())
 
         mismatched_default = DescrptHybrid(
             list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([6.0, 1.0])]
         )
-        self.assertFalse(mismatched_default.has_default_chg_spin())
         self.assertIsNone(mismatched_default.get_default_chg_spin())
+
+
+class TestHasDefaultChgSpinAbsentDP(unittest.TestCase):
+    """Pin the dpmodel-side half of the ``has_default_chg_spin`` merge.
+
+    ``has_default_chg_spin`` was merged into ``get_default_chg_spin``
+    (issue #5897): the predicate is ``get_default_chg_spin() is not None``.
+    The shared universal descriptor case only asserts the concrete
+    replacement (``get_default_chg_spin``), since the frozen pt backend
+    still declares the (now-redundant) ``has_default_chg_spin`` method on
+    several descriptors. This test pins that the method is gone from the
+    dpmodel base-descriptor family, where the merge is authoritative.
+    """
+
+    def test_absent_from_base_descriptor(self) -> None:
+        assert not hasattr(BaseDescriptor, "has_default_chg_spin")
+        assert not hasattr(
+            make_base_descriptor(np.ndarray, "call"), "has_default_chg_spin"
+        )
+
+    def test_absent_from_concrete_descriptors(self) -> None:
+        for cls in (
+            DescrptSeA,
+            DescrptSeR,
+            DescrptSeT,
+            DescrptSeTTebd,
+            DescrptDPA1,
+            DescrptDPA2,
+            DescrptDPA3,
+            DescrptHybrid,
+        ):
+            assert not hasattr(cls, "has_default_chg_spin")

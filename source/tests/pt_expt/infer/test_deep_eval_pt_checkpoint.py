@@ -422,16 +422,31 @@ class TestPtExptLoadPt(unittest.TestCase):
 class TestNeighborGraphMethodResolution(unittest.TestCase):
     """Auto graph-builder selection must cover each host policy explicitly."""
 
-    def test_auto_resolution(self) -> None:
-        cases = (
-            ("cpu", False, "dense", False),
-            ("cuda", True, "nv", False),
-            ("cuda", False, "dense", True),
+    def test_auto_deferred_until_nf_known(self) -> None:
+        """Construction-time resolve leaves ``auto`` unresolved without ``nf``."""
+        self.assertEqual(
+            PtExptDeepEval._resolve_neighbor_graph_method("auto"),
+            "auto",
         )
-        for device_type, nv_available, expected, warns in cases:
+
+    def test_auto_resolution(self) -> None:
+        # (device, nv, vesin, nf, expected, warns)
+        cases = (
+            ("cpu", False, True, 1, "vesin", False),
+            ("cpu", False, True, 4, "dense", False),
+            ("cpu", False, False, 1, "dense", False),
+            ("cuda", True, True, 1, "nv", False),
+            ("cuda", True, True, 4, "nv", False),
+            ("cuda", False, True, 1, "vesin", False),
+            ("cuda", False, True, 4, "dense", True),
+            ("cuda", False, False, 1, "dense", True),
+        )
+        for device_type, nv_available, vesin_available, nf, expected, warns in cases:
             with self.subTest(
                 device_type=device_type,
                 nv_available=nv_available,
+                vesin_available=vesin_available,
+                nf=nf,
             ):
                 with (
                     mock.patch(
@@ -442,17 +457,27 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                         "deepmd.pt.utils.nv_nlist.is_nv_available",
                         return_value=nv_available,
                     ),
+                    mock.patch(
+                        "deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available",
+                        return_value=vesin_available,
+                    ),
                 ):
                     if warns:
+                        # reset warn-once so each case can assert the message
+                        import deepmd.pt_expt.utils.graph_builder as gb
+
+                        gb._warned_auto_no_nv = False
                         with self.assertLogs(
-                            "deepmd.pt_expt.infer.deep_eval",
+                            "deepmd.pt_expt.utils.graph_builder",
                             level="WARNING",
                         ):
                             actual = PtExptDeepEval._resolve_neighbor_graph_method(
-                                "auto"
+                                "auto", nf=nf
                             )
                     else:
-                        actual = PtExptDeepEval._resolve_neighbor_graph_method("auto")
+                        actual = PtExptDeepEval._resolve_neighbor_graph_method(
+                            "auto", nf=nf
+                        )
                 self.assertEqual(actual, expected)
 
 

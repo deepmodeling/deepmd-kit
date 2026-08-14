@@ -99,7 +99,7 @@ class NativeLayer(NativeLayerDP, torch.nn.Module):
                     self._buffers[name] = None
                     return None
                 return super().__setattr__(name, None)
-            if getattr(self, "trainable", False):
+            if self.trainable:
                 param = (
                     value
                     if isinstance(value, torch.nn.Parameter)

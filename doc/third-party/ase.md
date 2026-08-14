@@ -24,7 +24,7 @@ print(water.get_forces())
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```python
 from ase import Atoms

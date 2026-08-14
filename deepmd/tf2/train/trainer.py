@@ -164,9 +164,10 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         )
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
+        default_chg_spin = _model.get_default_chg_spin()
+        has_default_cs = default_chg_spin is not None
         default_cs = (
-            np.asarray(to_tf_tensor(_model.get_default_chg_spin()).numpy())
+            np.asarray(to_tf_tensor(default_chg_spin).numpy())
             if has_default_cs
             else 0.0
         )
@@ -882,6 +883,8 @@ class Trainer(AbstractTrainer):
                 aparam=to_tensorflow_array(aparam),
                 charge_spin=to_tensorflow_array(charge_spin),
             )
+            # Guard atomic_model for test doubles.
+            am = getattr(model, "atomic_model", None)
             return prepare_lower_inputs(
                 rcut=model.get_rcut(),
                 sel=model.get_sel(),
@@ -895,10 +898,8 @@ class Trainer(AbstractTrainer):
                 # Model-level pair exclusion is a nlist-BUILD transform
                 # (decision #18/A4): the compiled lower consumes a pre-excluded
                 # nlist, so fold exclusion in here at the compiled-training
-                # prepare seam. Guard atomic_model for test doubles.
-                pair_excl=getattr(
-                    getattr(model, "atomic_model", None), "pair_excl", None
-                ),
+                # prepare seam.
+                pair_excl=am.pair_excl if am is not None else None,
             )
 
         return compiled_prepare_lower_batch

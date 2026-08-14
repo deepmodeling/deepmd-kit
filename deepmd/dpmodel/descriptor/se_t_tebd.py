@@ -206,6 +206,11 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self.trainable = trainable
         self.precision = precision
         self.compress = False
+        # tebd-compression slot: declared here so presence is a class
+        # property, not a runtime accident (issue #5897); optionally
+        # populated by deserialize() (only present in compressed models
+        # that carry type embedding compression data).
+        self.type_embd_data = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -463,7 +468,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
                     "compress_info": [to_numpy_array(i) for i in self.compress_info],
                 },
             }
-            if hasattr(self, "type_embd_data"):
+            if self.type_embd_data is not None:
                 compress_dict["@variables"]["type_embd_data"] = to_numpy_array(
                     self.type_embd_data
                 )

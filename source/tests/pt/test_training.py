@@ -33,9 +33,6 @@ from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.entrypoints.main import train as train_entry
-from deepmd.pt.train.ema import (
-    EMA_CHECKPOINT_KEY,
-)
 from deepmd.pt.train.training import (
     all_ranks_have_valid_frames,
 )
@@ -49,6 +46,9 @@ from deepmd.pt.utils.multi_task import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
     select_batch_frames,
+)
+from deepmd.pt_expt.train.ema import (
+    EMA_CHECKPOINT_KEY,
 )
 from deepmd.utils.argcheck import (
     normalize,
@@ -1017,7 +1017,7 @@ class TestFullValidation(unittest.TestCase):
         self._tmpdir.cleanup()
 
     @TRAINING_TEST_TIMEOUT
-    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
             {"mae_e_per_atom": 1.0},
@@ -1049,7 +1049,7 @@ class TestFullValidation(unittest.TestCase):
         self.assertEqual(val_lines[1].split()[1], "2000.0")
 
     @TRAINING_TEST_TIMEOUT
-    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_save_best_dir(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
             {"mae_e_per_atom": 1.0},
@@ -1071,7 +1071,7 @@ class TestFullValidation(unittest.TestCase):
         self.assertEqual(list(Path(".").glob("best.ckpt-*.pt")), [])
 
     @TRAINING_TEST_TIMEOUT
-    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_runs_when_start_step_is_final_step(
         self, mocked_eval
     ) -> None:
@@ -1268,8 +1268,8 @@ class TestEMATraining(unittest.TestCase):
         trainer = get_trainer(config)
         # 4 periodic checkpoints; ceil(0.5 * 4) = 2 overrides both the regular
         # and EMA keep counts.
-        self.assertEqual(trainer.max_ckpt_keep, 2)
-        self.assertEqual(trainer.ema_ckpt_keep, 2)
+        self.assertEqual(trainer.ckpt_store.max_keep, 2)
+        self.assertEqual(trainer.ema_ckpt_store.max_keep, 2)
         save_ckpt = trainer.save_ckpt
         ema_save_ckpt = trainer.ema_save_ckpt
         trainer.run()
@@ -1341,7 +1341,7 @@ class TestEMATraining(unittest.TestCase):
 
     def test_ema_checkpoint_cleanup_removes_future_steps(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
-        trainer.ema_ckpt_keep = 10
+        trainer.ema_ckpt_store.max_keep = 10
         ema_prefix = trainer.ema_save_ckpt
         Path(f"{ema_prefix}-999.pt").touch()
 
@@ -1429,7 +1429,7 @@ class TestEMATraining(unittest.TestCase):
         )
 
     @TRAINING_TEST_TIMEOUT
-    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_ema_full_validation_writes_separate_outputs(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
             {"mae_e_per_atom": 10.0},
@@ -1460,7 +1460,7 @@ class TestEMATraining(unittest.TestCase):
         )
 
     @TRAINING_TEST_TIMEOUT
-    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_ema_full_validation_ignored_without_full_validation(
         self, mocked_eval
     ) -> None:
