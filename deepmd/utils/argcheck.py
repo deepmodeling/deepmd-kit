@@ -455,7 +455,7 @@ def descrpt_se_a_args() -> list[Argument]:
 @descrpt_args_plugin.register(
     "dpa4c",
     alias=["DPA4C"],
-    doc=doc_only_pt_expt_supported
+    doc=supported_backends("pt_expt")
     + "DPA4C is the compact and compressible degree-wise descriptor of the DPA4 family.",
 )
 def descrpt_dpa4c_args() -> list[Argument]:
