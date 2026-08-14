@@ -12,9 +12,7 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-    DPAtomicModel as DPAtomicModelDP,
-)
+from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
 from deepmd.dpmodel.atomic_model.inner_potential import (
     InnerPotentialAtomicModel as InnerPotentialAtomicModelDP,
 )
@@ -24,11 +22,11 @@ from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
 from deepmd.dpmodel.model.model_factory import (
     BackendModelFactory,
 )
-from deepmd.pt_expt.common import (
-    auto_wrapped_class,
-)
 from deepmd.dpmodel.model.model_factory import (
     get_spin_model as get_spin_model_from_factory,
+)
+from deepmd.pt_expt.common import (
+    auto_wrapped_class,
 )
 from deepmd.pt_expt.descriptor import (
     BaseDescriptor,

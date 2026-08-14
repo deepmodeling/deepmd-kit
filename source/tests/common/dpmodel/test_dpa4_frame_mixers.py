@@ -276,15 +276,11 @@ def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
     rng = np.random.default_rng(2026)
 
     if kind == "contract":
-        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-            FrameContract as PTMixer,
-        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import FrameContract as PTMixer
 
         in_dim = n_frames * channels
     else:
-        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-            FrameExpand as PTMixer,
-        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import FrameExpand as PTMixer
 
         in_dim = channels
     pt_mod = PTMixer(
@@ -326,11 +322,11 @@ def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
     )
 
     # the dpmodel lowering agrees on the torch namespace, gradients included
+    import array_api_compat
+
     from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
         _degree_batched_matmul,
     )
-
-    import array_api_compat
 
     coeff_dp = coeff.detach().clone().requires_grad_(True)
     dp_out = _degree_batched_matmul(
