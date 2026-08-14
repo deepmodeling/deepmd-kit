@@ -82,7 +82,7 @@ Cite DeePMD-kit and methods
 .. bibliography::
    :filter: False
 
-   Zhang_2025_DPA3
+   Zhang_npjComputMater_2026_DPA3
 
 .. _cite-dpa4:
 
