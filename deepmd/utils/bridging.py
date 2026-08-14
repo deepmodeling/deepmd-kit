@@ -117,6 +117,48 @@ _LEARNED_CHILD_KEYS = (
     "finetune_head",
 )
 _NON_CHILD_KEYS = _COMPOSITION_KEYS + _CONSUMED_KEYS + _TRAINER_KEYS
+# The routing tables are pairwise disjoint: a key has exactly one owner.
+assert not set(_LEARNED_CHILD_KEYS) & set(_NON_CHILD_KEYS)
+
+
+def route_canonical_learned_options(composition: dict, learned: dict) -> None:
+    """Route learned-model options from a canonical composition to its child.
+
+    A canonical ``linear_ener`` config accepts generic model options (e.g.
+    ``data_stat_protect``, ``preset_out_bias``) at the composition top
+    level, but the learned child is their one owner: a bridged builder
+    reads them from the child config only. This helper copies each
+    learned-owned key present at the top level onto ``learned`` (in
+    place) when the child does not set it, and raises when both levels
+    set different values — a silent drop or a silent override would both
+    unpin the ownership contract.
+
+    Parameters
+    ----------
+    composition : dict
+        The canonical ``linear_ener`` model config.
+    learned : dict
+        The learned child's config; modified in place.
+
+    Raises
+    ------
+    ValueError
+        If a learned-owned key is set at both levels with different
+        values.
+    """
+    for key in _LEARNED_CHILD_KEYS:
+        if key not in composition:
+            continue
+        if key in learned:
+            if learned[key] != composition[key]:
+                raise ValueError(
+                    f"`{key}` is set both on the linear_ener composition "
+                    f"({composition[key]!r}) and on its learned child "
+                    f"({learned[key]!r}) with different values. The learned "
+                    "child owns this option: set it on the child only."
+                )
+        else:
+            learned[key] = copy.deepcopy(composition[key])
 
 
 def expand_bridging_method(data: dict) -> dict:

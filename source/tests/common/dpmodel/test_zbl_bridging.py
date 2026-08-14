@@ -784,3 +784,49 @@ class TestCanonicalCompositionGuards:
         cfg["models"][1]["descriptor"] = {"type": "dpa4"}
         with pytest.raises(ValueError, match="must not carry"):
             get_model(cfg)
+
+    def test_canonical_rejects_mismatched_learned_type_map(self) -> None:
+        """A remapped learned-child type_map builds a model the graph
+        route rejects on every forward; fail at construction instead.
+        """
+        cfg = _canonical_config()
+        cfg["models"][0]["type_map"] = list(reversed(cfg["type_map"]))
+        with pytest.raises(ValueError, match="type_map"):
+            get_model(cfg)
+
+    def test_canonical_conflicting_top_level_option_raises(self) -> None:
+        """A learned-owned option set differently at both levels must
+        fail loudly instead of one value silently winning.
+        """
+        cfg = _canonical_config()
+        cfg["data_stat_protect"] = 0.123
+        cfg["models"][0]["data_stat_protect"] = 0.456
+        with pytest.raises(ValueError, match="data_stat_protect"):
+            get_model(cfg)
+
+    def test_update_sel_dispatches_and_skips_inner_child(self, monkeypatch) -> None:
+        """``BaseModel.update_sel`` dispatches ``linear_ener`` to a
+        composite implementation that updates the learned child and
+        skips the analytical one (the default neighbor-stat phase would
+        otherwise crash with ``KeyError: 'descriptor'``).
+        """
+        from deepmd.dpmodel.model.dp_model import (
+            DPModelCommon,
+        )
+        from deepmd.utils.argcheck import (
+            model_args,
+        )
+
+        seen = []
+
+        def _fake_update_sel(train_data, type_map, sub):
+            seen.append(copy.deepcopy(sub))
+            return sub, 0.9
+
+        monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+        cfg = model_args().normalize_value(_canonical_config(), trim_pattern="_*")
+        updated, min_dist = BaseModel.update_sel(None, cfg["type_map"], cfg)
+        assert min_dist == 0.9
+        assert len(seen) == 1  # only the learned child
+        assert "descriptor" in seen[0]
+        assert updated["models"][1]["type"] == "inner_potential"

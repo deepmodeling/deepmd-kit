@@ -328,3 +328,34 @@ def test_descriptor_typed_child_routes_through_family_builder() -> None:
     cfg["models"][0]["lora"] = {"rank": 2}
     with pytest.raises(NotImplementedError, match="lora"):
         get_model(cfg)
+
+
+def test_canonical_rejects_mismatched_learned_type_map() -> None:
+    """A remapped learned-child type_map builds a model the graph route
+    rejects on every forward; the shared builder fails at construction.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["type_map"] = list(reversed(cfg["type_map"]))
+    with pytest.raises(ValueError, match="type_map"):
+        get_model(cfg)
+
+
+def test_expanded_sugar_with_lora_raises() -> None:
+    """The expansion keeps trainer-owned `lora` at the composition top
+    level; pt_expt has no LoRA support and must reject it instead of
+    silently training a plain full model (covers the normalized path,
+    where absent `lora` normalizes to None and must NOT trigger).
+    """
+    from deepmd.utils.argcheck import (
+        model_args,
+    )
+
+    cfg = _dpa4_standard_config()
+    cfg["type"] = "dpa4"
+    cfg["bridging_method"] = "ZBL"
+    cfg = model_args().normalize_value(cfg, trim_pattern="_*")
+    assert cfg.get("lora") is None  # normalization default stays buildable
+    get_model(copy.deepcopy(cfg))
+    cfg["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)

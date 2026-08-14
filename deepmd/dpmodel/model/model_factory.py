@@ -10,6 +10,9 @@ from typing import (
     Any,
 )
 
+from deepmd.utils.bridging import (
+    route_canonical_learned_options,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -233,6 +236,7 @@ def get_linear_atomic_model(
         learned_descriptor = children[learned_indices[0]]["descriptor"]
         learned_descriptor["inner_clamp_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
         learned_descriptor["inner_clamp_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
+        route_canonical_learned_options(data, children[learned_indices[0]])
 
     built: dict[int, Any] = {}
     for i, sub in enumerate(children):
@@ -240,6 +244,14 @@ def get_linear_atomic_model(
             continue
         if "type_map" not in sub:
             sub["type_map"] = copy.deepcopy(type_map)
+        elif inner_indices and i == learned_indices[0] and sub["type_map"] != type_map:
+            # The analytical child always uses the composition's type_map,
+            # and the graph route rejects a non-identity remap at forward
+            # time; fail at construction like the pt builder does.
+            raise ValueError(
+                "A bridged linear_ener composition requires the learned "
+                "child's type_map to match the composition type_map."
+            )
         if "descriptor" in sub:
             child = None
             if descriptor_child_builder is not None:

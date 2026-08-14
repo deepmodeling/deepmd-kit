@@ -327,3 +327,47 @@ def test_update_sel_skips_inner_potential_child(monkeypatch) -> None:
     assert len(seen) == 1  # only the learned child
     assert "descriptor" in seen[0]
     assert updated["models"][1]["type"] == "inner_potential"
+
+
+def test_canonical_top_level_option_routes_to_learned_child() -> None:
+    """Generic learned-model options at the canonical top level reach the
+    learned child (the child is their one owner).
+    """
+    cfg = _canonical_config()
+    cfg["data_stat_protect"] = 0.123
+    model = get_model(cfg)
+    assert model.atomic_model.data_stat_protect == 0.123
+
+
+def test_canonical_conflicting_top_level_option_raises() -> None:
+    """A learned-owned option set differently at both levels must fail
+    loudly instead of one value silently winning.
+    """
+    cfg = _canonical_config()
+    cfg["data_stat_protect"] = 0.123
+    cfg["models"][0]["data_stat_protect"] = 0.456
+    with pytest.raises(ValueError, match="data_stat_protect"):
+        get_model(cfg)
+
+
+@pytest.mark.parametrize(
+    "scheme",
+    [
+        "native",  # spin as an equivariant descriptor feature
+        "deepspin",  # classical virtual-atom representation
+    ],
+)
+def test_canonical_spin_rejects_mismatched_pair_exclusions(scheme: str) -> None:
+    """Both spin routes must fail fast on a pair-exclusion mismatch like
+    the no-spin route, not silently overwrite the descriptor's exclusions.
+    """
+    cfg = _canonical_config()
+    cfg["pair_exclude_types"] = [[0, 0]]
+    cfg["models"][0]["descriptor"]["exclude_types"] = [[0, 1]]
+    cfg["spin"] = {
+        "scheme": scheme,
+        "use_spin": [True, False],
+        "virtual_scale": 0.3,
+    }
+    with pytest.raises(ValueError, match="must match"):
+        get_model(cfg)

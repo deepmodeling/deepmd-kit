@@ -272,3 +272,33 @@ class TestIsBridgedSezmConfig:
         cfg = self._canonical()
         cfg["models"][0] = {"type": "standard", "descriptor": {"type": "se_e2_a"}}
         assert not is_bridged_sezm_config(cfg)
+
+
+def test_route_canonical_learned_options_copies_and_conflicts() -> None:
+    """The learned child owns the generic model options: a top-level value
+    is copied onto the child when absent, accepted when equal, and
+    rejected when the two levels differ.
+    """
+    from deepmd.utils.bridging import (
+        route_canonical_learned_options,
+    )
+
+    composition = {
+        "type": "linear_ener",  # composition-owned: never routed
+        "type_map": ["Ni", "O"],  # composition-owned: never routed
+        "data_stat_protect": 0.123,  # learned-owned: routed
+        "preset_out_bias": {"energy": [1.0, 2.0]},  # learned-owned: routed
+    }
+    learned = {"descriptor": {"type": "dpa4"}}
+    route_canonical_learned_options(composition, learned)
+    assert learned["data_stat_protect"] == 0.123
+    assert learned["preset_out_bias"] == {"energy": [1.0, 2.0]}
+    assert learned["preset_out_bias"] is not composition["preset_out_bias"]
+    assert "type_map" not in learned
+
+    # equal values at both levels pass
+    route_canonical_learned_options(composition, learned)
+
+    learned["data_stat_protect"] = 0.456
+    with pytest.raises(ValueError, match="data_stat_protect"):
+        route_canonical_learned_options(composition, learned)

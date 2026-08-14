@@ -385,6 +385,14 @@ def get_model(data: dict) -> BaseModel:
         The data to construct the model.
     """
     data = expand_bridging_method(data)
+    if data.get("lora") is not None:
+        # The expansion keeps trainer-owned `lora` at the composition top
+        # level (the pt trainer reads it there); pt_expt has no LoRA
+        # support, so reject it here instead of silently training a plain
+        # full model.
+        raise NotImplementedError(
+            "`lora` is not supported for DPA4/SeZM in the pt_expt backend."
+        )
     return _model_factory.get_model(
         data,
         standard_model_factory=get_standard_model,

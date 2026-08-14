@@ -38,6 +38,7 @@ from deepmd.pt.utils.multi_task import (
 )
 from deepmd.utils.bridging import (
     expand_bridging_method,
+    route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -346,6 +347,7 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
             "The pt backend requires the learned child's `type_map` to "
             "match the bridged linear_ener composition's `type_map`."
         )
+    route_canonical_learned_options(model_params, learned)
     inner_cfg = inner_cfgs[0]
     learned["type"] = "dpa4"
     learned["type_map"] = copy.deepcopy(model_params["type_map"])
@@ -479,16 +481,31 @@ def get_standard_model(model_params: dict) -> BaseModel:
     return model
 
 
-def get_sezm_model(model_params: dict) -> BaseModel:
-    model_params_old = model_params
-    model_params = copy.deepcopy(model_params)
-    model_params.setdefault("descriptor", {})
-    model_params.setdefault("fitting_net", {})
-    model_params["descriptor"].setdefault("type", "dpa4")
+def _reconcile_sezm_pair_exclude_types(model_params: dict) -> list[list[int]]:
+    """Reconcile ``pair_exclude_types`` with ``descriptor.exclude_types``.
 
-    ntypes = len(model_params["type_map"])
-    model_params["descriptor"]["ntypes"] = ntypes
-    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    A DPA4/SeZM config may spell pair exclusions at the model level
+    (``pair_exclude_types``) or on the descriptor (``exclude_types``).
+    Every SeZM builder (plain, native spin, virtual spin) resolves the two
+    through this ONE helper so that a mismatch always fails fast instead
+    of one spelling silently overwriting the other.
+
+    Parameters
+    ----------
+    model_params : dict
+        The DPA4/SeZM model config; ``model_params["descriptor"]`` must
+        exist.
+
+    Returns
+    -------
+    list[list[int]]
+        The reconciled real-type pair exclusion list.
+
+    Raises
+    ------
+    ValueError
+        If both spellings are given and differ.
+    """
     descriptor_exclude_types = [
         list(pair) for pair in (model_params["descriptor"].get("exclude_types") or [])
     ]
@@ -503,6 +520,20 @@ def get_sezm_model(model_params: dict) -> BaseModel:
             )
     else:
         pair_exclude_types = descriptor_exclude_types
+    return pair_exclude_types
+
+
+def get_sezm_model(model_params: dict) -> BaseModel:
+    model_params_old = model_params
+    model_params = copy.deepcopy(model_params)
+    model_params.setdefault("descriptor", {})
+    model_params.setdefault("fitting_net", {})
+    model_params["descriptor"].setdefault("type", "dpa4")
+
+    ntypes = len(model_params["type_map"])
+    model_params["descriptor"]["ntypes"] = ntypes
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    pair_exclude_types = _reconcile_sezm_pair_exclude_types(model_params)
     model_params["pair_exclude_types"] = pair_exclude_types
     model_params["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
@@ -621,7 +652,7 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
     model_params["descriptor"]["use_spin"] = use_spin
 
-    pair_exclude_types = model_params.get("pair_exclude_types", [])
+    pair_exclude_types = _reconcile_sezm_pair_exclude_types(model_params)
     model_params["pair_exclude_types"] = pair_exclude_types
     if pair_exclude_types:
         model_params["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
@@ -694,9 +725,10 @@ def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
         virtual_scale=model_params["spin"]["virtual_scale"],
         allow_missing_label=model_params["spin"].get("allow_missing_label", False),
     )
+    real_pair_exclude_types = _reconcile_sezm_pair_exclude_types(model_params)
     model_params["type_map"] += [item + "_spin" for item in model_params["type_map"]]
     pair_exclude_types = spin.get_pair_exclude_types(
-        exclude_types=model_params.get("pair_exclude_types", None)
+        exclude_types=real_pair_exclude_types or None
     )
     model_params["pair_exclude_types"] = pair_exclude_types
     model_params["descriptor"]["exclude_types"] = pair_exclude_types
