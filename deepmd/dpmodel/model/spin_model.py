@@ -14,13 +14,13 @@ import array_api_compat
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_asarray_nodetach,
 )
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
 )
 from deepmd.dpmodel.common import (
     NativeOP,
-    to_numpy_array,
 )
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
@@ -140,9 +140,11 @@ class SpinModel(NativeOP):
 
     def _to_xp(self, arr: Any, xp: Any, ref_arr: Any) -> Any:
         """Convert an array to the namespace and device of ``ref_arr``."""
-        if array_api_compat.is_numpy_namespace(xp):
-            arr = to_numpy_array(arr)
-        return xp.asarray(arr, device=array_api_compat.device(ref_arr))
+        return xp_asarray_nodetach(
+            xp,
+            arr,
+            device=array_api_compat.device(ref_arr),
+        )
 
     def _lookup_type_values(self, values: Any, atype: Array, ref_arr: Array) -> Array:
         """Gather per-type values while mapping virtual atom types to zero.
