@@ -302,3 +302,22 @@ def test_route_canonical_learned_options_copies_and_conflicts() -> None:
     learned["data_stat_protect"] = 0.456
     with pytest.raises(ValueError, match="data_stat_protect"):
         route_canonical_learned_options(composition, learned)
+
+
+def test_routing_helper_handles_every_learned_key_uniformly() -> None:
+    """Walk the WHOLE learned-key table through the canonical-route helper:
+    each key copies down when the child lacks it and conflicts when the two
+    levels differ. Pins uniformity, so a future per-key special case in the
+    helper cannot land untested.
+    """
+    from deepmd.utils.bridging import (
+        _LEARNED_CHILD_KEYS,
+        route_canonical_learned_options,
+    )
+
+    for key in _LEARNED_CHILD_KEYS:
+        learned = {}
+        route_canonical_learned_options({key: "sentinel-a"}, learned)
+        assert learned[key] == "sentinel-a", key
+        with pytest.raises(ValueError, match=key):
+            route_canonical_learned_options({key: "sentinel-a"}, {key: "sentinel-b"})

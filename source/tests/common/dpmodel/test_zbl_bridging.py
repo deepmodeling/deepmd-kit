@@ -876,3 +876,65 @@ class TestCanonicalCompositionGuards:
         assert len(seen) == 1  # only the learned child
         assert "descriptor" in seen[0]
         assert updated["models"][1]["type"] == "inner_potential"
+
+
+class TestConsumeOrRejectGuards:
+    """Every key this route accepts is either consumed or loudly rejected;
+    the pt backend's consumers (trainer `lora`, linear `shared_dict`) do
+    not exist here, so silence would build a different model than asked.
+    """
+
+    def test_top_level_lora_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(cfg)
+
+    def test_expanded_sugar_with_lora_raises(self) -> None:
+        """The sugar expansion keeps trainer-owned `lora` at the top level;
+        dpmodel has no trainer to consume it.
+        """
+        from deepmd.utils.bridging import (
+            expand_bridging_method,
+        )
+
+        cfg = copy.deepcopy(ZBL_CONFIG)
+        cfg["type"] = "dpa4"
+        cfg["bridging_method"] = "ZBL"
+        cfg["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(expand_bridging_method(cfg))
+
+    def test_nonempty_shared_dict_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["shared_dict"] = {"my_descriptor": "descriptor"}
+        with pytest.raises(NotImplementedError, match="shared_dict"):
+            get_model(cfg)
+
+    def test_empty_shared_dict_is_fine(self) -> None:
+        """Strict normalization always inserts `shared_dict: {}`; the
+        default CLI path must keep building.
+        """
+        cfg = _canonical_config()
+        cfg["shared_dict"] = {}
+        get_model(cfg)
+
+    def test_child_level_lora_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"][0]["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(cfg)
+
+    def test_non_dpa4_learned_sibling_raises_cleanly(self) -> None:
+        """Same family restriction as the pt builder: without it the clamp
+        injection dies on an obscure unknown-kwarg TypeError.
+        """
+        cfg = _canonical_config()
+        cfg["models"][0]["descriptor"] = {
+            "type": "se_e2_a",
+            "rcut": 4.0,
+            "rcut_smth": 3.5,
+            "sel": [8, 8],
+        }
+        with pytest.raises(NotImplementedError, match="DPA4/SeZM"):
+            get_model(cfg)

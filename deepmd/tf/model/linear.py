@@ -173,6 +173,14 @@ class LinearModel(Model):
         float
             The minimum distance between two atoms
         """
+        if any(sub.get("type") == "inner_potential" for sub in local_jdata["models"]):
+            # reject explicitly (and before any neighbor statistics run):
+            # the generic dispatch below would only report an obscure
+            # "unknown model type" for this child
+            raise NotImplementedError(
+                "`inner_potential` sub-models (analytical bridging) are "
+                "not supported in the TensorFlow backend."
+            )
         local_jdata_cpy = local_jdata.copy()
         new_list = []
         min_nbor_dist = None

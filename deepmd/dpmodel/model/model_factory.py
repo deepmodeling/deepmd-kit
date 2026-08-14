@@ -204,12 +204,32 @@ def get_linear_atomic_model(
                 "`descriptor`: the analytical term has no learned "
                 "component."
             )
+    # Consume-or-reject: this builder has no consumer for these keys, so
+    # accepting them silently would train/evaluate a different model than
+    # the config asks for. (The pt backend consumes top-level `lora` in its
+    # trainer and `shared_dict` in its own linear builder; this shared
+    # builder serves backends without either consumer.)
+    if data.get("lora") is not None:
+        raise NotImplementedError(
+            f"`lora` on a linear_ener composition is not supported in the "
+            f"{backend_name} backend."
+        )
+    if data.get("shared_dict"):
+        raise NotImplementedError(
+            f"`shared_dict` is not supported for linear_ener in the "
+            f"{backend_name} backend."
+        )
     for sub in children:
         if str(sub.get("bridging_method", "none")).lower() not in ("none", ""):
             raise ValueError(
                 "`bridging_method` is not supported on a linear_ener "
                 "sub-model: add an `inner_potential` sub-model to the "
                 "composition instead."
+            )
+        if sub.get("lora") is not None:
+            raise NotImplementedError(
+                "`lora` on a linear_ener sub-model is not supported in the "
+                f"{backend_name} backend."
             )
     if inner_indices:
         if len(inner_indices) > 1:
@@ -229,6 +249,18 @@ def get_linear_atomic_model(
         if str(data.get("weights", "mean")) != "sum":
             raise ValueError(
                 'A bridged linear_ener composition requires `weights: "sum"`.'
+            )
+        learned_descriptor_type = str(
+            children[learned_indices[0]]["descriptor"].get("type", "dpa4")
+        )
+        if learned_descriptor_type not in ("dpa4", "DPA4", "sezm", "SeZM"):
+            # same family restriction as the pt builder: the clamp window
+            # below only exists on DPA4/SeZM descriptors, so any other
+            # family would die on an obscure unknown-kwarg TypeError
+            raise NotImplementedError(
+                f"The {backend_name} backend implements `inner_potential` "
+                "bridging only for the DPA4/SeZM descriptor family, but got "
+                f"{learned_descriptor_type!r}."
             )
         # The composition derives the sibling descriptor's clamp window from
         # the inner_potential child: one source of truth for the radii.

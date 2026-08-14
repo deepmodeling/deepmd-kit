@@ -359,3 +359,13 @@ def test_expanded_sugar_with_lora_raises() -> None:
     cfg["lora"] = {"rank": 2}
     with pytest.raises(NotImplementedError, match="lora"):
         get_model(cfg)
+
+
+def test_nonempty_shared_dict_raises() -> None:
+    """pt_expt has no `shared_dict` consumer for linear compositions: reject
+    loudly instead of silently building without parameter sharing.
+    """
+    cfg = _canonical_config()
+    cfg["shared_dict"] = {"my_descriptor": "descriptor"}
+    with pytest.raises(NotImplementedError, match="shared_dict"):
+        get_model(cfg)
