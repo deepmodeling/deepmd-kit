@@ -19,11 +19,14 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
 ## Agent responsibilities
 
 1. Confirm the available execution runtime:
+
    - For a build from the current checkout, record the resolved Git commit SHA.
    - For an installed binary, module, or container, record the exact command and
      runtime versions.
    - Do not infer capabilities from a future release or an artifact suffix.
+
 1. Confirm the minimum simulation inputs:
+
    - structure/data file (for example `data.system`)
    - DeePMD model artifact; read `references/model-deployment.md` for a training
      checkpoint, DPA4/SeZM, or an unclear export path
@@ -33,8 +36,11 @@ Use this skill when the user wants to run molecular dynamics in LAMMPS with a De
    - temperature, pressure if applicable, timestep, and total number of steps
 
 1. Write the LAMMPS input script yourself instead of asking the user to hand-write it.
+
 1. Keep the example readable and fully explained. If you include an example input script, explain what **every command** does.
+
 1. When possible, validate command availability against the LAMMPS docs or local `lmp -h` output before execution.
+
 1. Report clearly which command was run, which files were used, and where outputs were written.
 
 ## Verify the execution runtime

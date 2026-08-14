@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from pathlib import Path
-
+from pathlib import (
+    Path,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 LAMMPS_SKILL = ROOT / "skills" / "lammps-deepmd" / "SKILL.md"
