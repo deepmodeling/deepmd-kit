@@ -1,19 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Analytical bridging has exactly ONE owner per backend.
+"""The ``bridging_method`` sugar has exactly ONE owner.
 
 Bridging builds a COMPOSITION (``LinearEnergyModel`` over
-``[learned, InnerPotential]``), so it is not expressible on a non-composite
-model type: ``type: "standard"`` would have to return a model of a
-different kind than the one requested. pt_expt therefore owns bridging on
-the DPA4/SeZM route only and REJECTS it in the standard builder -- loudly,
-because silently dropping the term yields a physically different model.
-
-Two builders accepting the flag is exactly how the routes drifted:
-``get_sezm_model`` promotes ``descriptor.exclude_types`` to model-level
-``pair_exclude_types`` and the standard route never did, which changes a
-0.9 A Ni-O dimer by ~80 eV (issue #5947). Issue #5948 replaces the flag
-with an explicit ``linear_ener`` composition, after which this restriction
-becomes moot.
+``[learned, InnerPotential]``). Since issue #5948 the canonical spelling is
+``type: "linear_ener"`` with an ``inner_potential`` sub-model, and the
+``bridging_method`` flag is sugar expanded by the shared
+``deepmd.utils.bridging.expand_bridging_method`` normalizer at the
+``get_model`` entry. The non-composite builders (``get_standard_model``,
+``get_sezm_model``) REJECT the flag -- loudly, because silently dropping
+the term yields a physically different model.
 """
 
 import copy
@@ -68,12 +63,29 @@ def test_standard_builder_rejects_bridging() -> None:
         get_standard_model(_bridged(_dpa4_standard_config()))
 
 
-def test_get_model_rejects_bridging_without_dpa4_model_type() -> None:
-    """Same contract through the dispatcher: an omitted model type defaults
-    to the standard route, so it must reject rather than compose.
+def test_get_model_expands_bridging_without_dpa4_model_type() -> None:
+    """Through the dispatcher the flag is sugar: an omitted model type
+    defaults to 'standard', and the normalizer expands the flag into the
+    canonical composition instead of rejecting it.
     """
+    model = get_model(_bridged(_dpa4_standard_config()))
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert len(model.atomic_model.models) == 2
+    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
+
+
+def test_sezm_builder_rejects_bridging() -> None:
+    """The DPA4/SeZM builder must not hand back a composition either: the
+    flag's one owner is the shared normalizer at the get_model entry.
+    """
+    from deepmd.pt_expt.model.get_model import (
+        get_sezm_model,
+    )
+
+    data = _bridged(_dpa4_standard_config())
+    data["type"] = "dpa4"
     with pytest.raises(ValueError, match="bridging_method"):
-        get_model(_bridged(_dpa4_standard_config()))
+        get_sezm_model(data)
 
 
 def test_standard_builder_without_bridging_is_unaffected() -> None:
@@ -157,3 +169,203 @@ def test_compile_attention_probe_tolerates_composition() -> None:
     assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
     # must not raise
     _warn_compiled_attention(model, "Default")
+
+
+def _canonical_config() -> dict:
+    """The bridged config spelled canonically (issue #5948)."""
+    base = _dpa4_standard_config()
+    return {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": base["type_map"],
+        "models": [
+            {
+                "type": "dpa4",
+                "descriptor": base["descriptor"],
+                "fitting_net": base["fitting_net"],
+            },
+            {
+                "type": "inner_potential",
+                "mode": "ZBL",
+                "r_inner": 0.8,
+                "r_outer": 1.2,
+            },
+        ],
+    }
+
+
+def test_third_child_without_common_route_raises() -> None:
+    """[learned, inner_potential, pairtab] has no common execution route
+    (pairtab is dense-only, the bridged pair is graph-only): the shared
+    builder must reject it at construction like the pt backend does.
+    """
+    cfg = _canonical_config()
+    cfg["models"].append(
+        {"type": "pairtab", "tab_file": "unused.txt", "rcut": 4.0, "sel": 8}
+    )
+    with pytest.raises(ValueError, match="exactly one learned"):
+        get_model(cfg)
+
+
+def test_canonical_composition_builds() -> None:
+    """The canonical spelling composes [learned, InnerPotential] with the
+    clamp radii derived onto the learned child's descriptor.
+    """
+    model = get_model(_canonical_config())
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert len(model.atomic_model.models) == 2
+    learned = model.atomic_model.models[0]
+    assert learned.descriptor.bridging_switch is not None
+    assert float(learned.descriptor.inner_clamp.r_inner) == 0.8
+
+
+def test_canonical_matches_sugar_serialize() -> None:
+    """Both spellings serialize to the same wire dict."""
+    import numpy as np
+
+    data = _bridged(_dpa4_standard_config())
+    data["type"] = "dpa4"
+    d_sugar = get_model(data).serialize()
+    d_canon = get_model(_canonical_config()).serialize()
+
+    def _strip_arrays(obj):
+        if isinstance(obj, dict):
+            return {k: _strip_arrays(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_strip_arrays(v) for v in obj]
+        if isinstance(obj, np.ndarray):
+            return ("ndarray", obj.shape)
+        return obj
+
+    assert _strip_arrays(d_canon) == _strip_arrays(d_sugar)
+
+
+def test_canonical_native_spin_composition() -> None:
+    """A top-level native-spin section wraps the canonical composition."""
+    from deepmd.pt_expt.model.native_spin_model import (
+        NativeSpinEnergyModel,
+    )
+
+    cfg = _canonical_config()
+    cfg["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    model = get_model(cfg)
+    assert isinstance(model, NativeSpinEnergyModel)
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+
+
+def test_canonical_requires_sum_weights() -> None:
+    """`weights: "mean"` would silently halve both energy terms."""
+    cfg = _canonical_config()
+    cfg["weights"] = "mean"
+    with pytest.raises(ValueError, match="sum"):
+        get_model(cfg)
+
+
+def test_canonical_rejects_lora_on_child() -> None:
+    """The DPA4-family child routes through get_sezm_model, so unsupported
+    options are rejected loudly instead of silently ignored.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)
+
+
+def test_canonical_child_gets_dpa4_defaults() -> None:
+    """A dpa4-family child may omit the descriptor/fitting `type` keys; the
+    family builder fills them like a standalone `type: "dpa4"` model.
+    """
+    cfg = _canonical_config()
+    del cfg["models"][0]["descriptor"]["type"]
+    del cfg["models"][0]["fitting_net"]["type"]
+    model = get_model(cfg)
+    assert isinstance(model.atomic_model, LinearEnergyAtomicModel)
+    assert model.atomic_model.models[0].descriptor.bridging_switch is not None
+
+
+def test_nested_bridging_flag_on_child_raises() -> None:
+    """A `bridging_method` flag on a linear child must not be dropped."""
+    cfg = _canonical_config()
+    cfg["models"] = [cfg["models"][0]]
+    cfg["models"][0]["bridging_method"] = "ZBL"
+    with pytest.raises(ValueError, match="sub-model"):
+        get_model(cfg)
+
+
+def test_update_sel_skips_inner_potential_child(monkeypatch) -> None:
+    """Neighbor-stat selection must skip the analytical child instead of
+    crashing on its missing descriptor.
+    """
+    from deepmd.dpmodel.model.dp_model import (
+        DPModelCommon,
+    )
+    from deepmd.pt_expt.model.dp_linear_model import (
+        LinearEnergyModel,
+    )
+
+    seen = []
+
+    def _fake_update_sel(train_data, type_map, sub):
+        seen.append(copy.deepcopy(sub))
+        return sub, 0.9
+
+    monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+    cfg = _canonical_config()
+    updated, min_dist = LinearEnergyModel.update_sel(None, cfg["type_map"], cfg)
+    assert min_dist == 0.9
+    assert len(seen) == 1  # only the learned child
+    assert "descriptor" in seen[0]
+    assert updated["models"][1]["type"] == "inner_potential"
+
+
+def test_descriptor_typed_child_routes_through_family_builder() -> None:
+    """A child of `type: "standard"` with a DPA4 descriptor is a DPA4-family
+    child (the sugar on `type: "standard"` expands to this shape), so it must
+    get the family builder's rejections, not the silent generic path.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["type"] = "standard"
+    cfg["models"][0]["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)
+
+
+def test_canonical_rejects_mismatched_learned_type_map() -> None:
+    """A remapped learned-child type_map builds a model the graph route
+    rejects on every forward; the shared builder fails at construction.
+    """
+    cfg = _canonical_config()
+    cfg["models"][0]["type_map"] = list(reversed(cfg["type_map"]))
+    with pytest.raises(ValueError, match="type_map"):
+        get_model(cfg)
+
+
+def test_expanded_sugar_with_lora_raises() -> None:
+    """The expansion keeps trainer-owned `lora` at the composition top
+    level; pt_expt has no LoRA support and must reject it instead of
+    silently training a plain full model (covers the normalized path,
+    where absent `lora` normalizes to None and must NOT trigger).
+    """
+    from deepmd.utils.argcheck import (
+        model_args,
+    )
+
+    cfg = _dpa4_standard_config()
+    cfg["type"] = "dpa4"
+    cfg["bridging_method"] = "ZBL"
+    cfg = model_args().normalize_value(cfg, trim_pattern="_*")
+    assert cfg.get("lora") is None  # normalization default stays buildable
+    get_model(copy.deepcopy(cfg))
+    cfg["lora"] = {"rank": 2}
+    with pytest.raises(NotImplementedError, match="lora"):
+        get_model(cfg)
+
+
+def test_nonempty_shared_dict_raises() -> None:
+    """pt_expt has no `shared_dict` consumer for linear compositions: reject
+    loudly instead of silently building without parameter sharing.
+    """
+    cfg = _canonical_config()
+    cfg["shared_dict"] = {"my_descriptor": "descriptor"}
+    with pytest.raises(NotImplementedError, match="shared_dict"):
+        get_model(cfg)
