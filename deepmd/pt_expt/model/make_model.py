@@ -423,13 +423,8 @@ def make_model(
         The model.
 
     """
-    # Hand the dpmodel CM the WRAPPED atomic class so `self.atomic_model =
-    # T_AtomicModel(...)` constructs the pt_expt module directly with the
-    # live (already wrapped) descriptor/fitting. Passing the raw dpmodel
-    # class instead would build a raw atomic model and convert the instance
-    # through a serialize()/deserialize() round-trip, which drops
-    # runtime-only configuration (e.g. the DPA4 `use_amp` switch) that the
-    # portable record deliberately does not carry.
+    # wrapped atomic class: live descriptor/fitting keep their runtime
+    # state (see the auto_wrapped_class invariant)
     DPModel = make_model_dp(auto_wrapped_class(T_AtomicModel))
 
     @torch_module

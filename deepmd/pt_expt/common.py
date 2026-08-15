@@ -143,11 +143,11 @@ def auto_wrapped_class(cls: type) -> type:
     then applies ``torch_module`` to get full ``__setattr__`` / post-init
     list conversion.  The wrapped class is cached per dpmodel type.
 
-    Constructing this class DIRECTLY (instead of building the raw dpmodel
-    class and converting the instance afterwards) is the lossless path:
-    instance conversion round-trips through ``serialize()``/``deserialize()``,
-    which by design drops runtime-only configuration (e.g. the DPA4
-    ``use_amp`` switch) from the portable record.
+    Invariant: construct this wrapped class directly whenever live,
+    constructor-supplied components must retain non-serialized runtime
+    state. Converting a populated raw dpmodel instance instead goes
+    through the ``serialize()``/``deserialize()`` round-trip of
+    ``_auto_wrap_native_op``, which preserves only the portable record.
 
     Parameters
     ----------

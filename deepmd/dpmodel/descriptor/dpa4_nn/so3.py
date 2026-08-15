@@ -442,11 +442,9 @@ class SO3Linear(NativeOP):
         weight_expanded = xp.take(weight, expand_index, axis=0)  # (D, Cin, F, Cout)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
-        # einsum "ndfi,difo->ndfo", batched over the small (D, F) axes.
-        # Batching over the node axis N instead would broadcast the weight to
-        # (N, D, F, Cin, Cout) -- for the water example a 165K-element parameter
-        # blown up to 191M elements per call -- and autograd would then reduce
-        # that expansion back down.  It was the costliest kernel of a step.
+        # einsum "ndfi,difo->ndfo". Batch over (D, F) so N remains the GEMM
+        # row dimension: this avoids materializing N copies of the weight and
+        # the corresponding gradient reduction on every backward.
         weight_expanded = xp.permute_dims(
             weight_expanded, (0, 2, 1, 3)
         )  # (D, F, Cin, Cout)

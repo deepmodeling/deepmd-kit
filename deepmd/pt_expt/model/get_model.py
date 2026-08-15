@@ -65,10 +65,8 @@ log = logging.getLogger(__name__)
 _WARNED_ONCE: set[str] = set()
 
 
-# Constructing the WRAPPED atomic classes directly is the lossless assembly
-# rule: building a raw dpmodel instance and converting it afterwards
-# round-trips through serialize()/deserialize() and drops runtime-only
-# configuration (e.g. the DPA4 `use_amp` switch) from the live children.
+# wrapped atomic classes: constructed directly so live children keep their
+# runtime state (see the auto_wrapped_class invariant)
 DPAtomicModel = auto_wrapped_class(DPAtomicModelDP)
 PairTabAtomicModel = auto_wrapped_class(PairTabAtomicModelDP)
 InnerPotentialAtomicModel = auto_wrapped_class(InnerPotentialAtomicModelDP)
@@ -228,10 +226,8 @@ def _compose_bridging(
         rcut=descriptor.get_rcut(),
         sel=descriptor.get_sel(),
     )
-    # Constructor-args form (NOT a pre-built `atomic_model_=` instance): the
-    # CM then constructs the WRAPPED composition class directly and keeps the
-    # live children -- assigning a populated raw dpmodel composition would
-    # convert it through the lossy serialize()/deserialize() round-trip.
+    # constructor-args form: the CM builds the wrapped composition around
+    # the live children (see the auto_wrapped_class invariant)
     return LinearEnergyModel(
         models=[model.atomic_model, zbl_atomic],
         type_map=data["type_map"],

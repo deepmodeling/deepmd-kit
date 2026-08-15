@@ -224,12 +224,10 @@ def test_torch_namespace(cls) -> None:
     ],
 )
 def test_empty_batch_passes_through(cls) -> None:
-    """``N == 0`` must yield an empty result, not a reshape error.
+    """An empty node axis yields ``(0, D, F, o)`` on every namespace.
 
     Reachable when the cross-grid leading axis is an empty graph/edge set
-    or a distributed rank owns no nodes; the degree-batched contraction
-    must keep the broadcasted matmul's empty-batch behavior (explicit
-    channel widths -- ``-1`` cannot be inferred from zero elements).
+    or a distributed rank owns no nodes.
     """
     import torch
 
@@ -329,10 +327,13 @@ def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
     )
 
     coeff_dp = coeff.detach().clone().requires_grad_(True)
+    # leaf copy of the per-degree parameter: its gradient pins the dpmodel
+    # lowering's WEIGHT backward too, not only the input backward
+    weight_dp = pt_mod.weight.detach().clone().requires_grad_(True)
     dp_out = _degree_batched_matmul(
         array_api_compat.array_namespace(coeff_dp),
         coeff_dp,
-        pt_mod.weight.index_select(0, pt_mod.degree_index).detach(),
+        weight_dp.index_select(0, pt_mod.degree_index),
     )
     np.testing.assert_allclose(
         dp_out.detach().numpy(), out.detach().numpy(), rtol=1e-12, atol=1e-12
@@ -340,4 +341,7 @@ def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
     dp_out.backward(grad_out)
     np.testing.assert_allclose(
         coeff_dp.grad.numpy(), grad_in_mod.numpy(), rtol=1e-12, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        weight_dp.grad.numpy(), grad_w_mod.numpy(), rtol=1e-12, atol=1e-12
     )
