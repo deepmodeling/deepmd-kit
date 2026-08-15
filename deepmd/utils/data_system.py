@@ -197,6 +197,12 @@ class DeepmdDataSystem:
                         bsi = 1
                     bs.append(bsi)
                 self.batch_size = bs
+            elif words[0] == "mix":
+                raise RuntimeError(
+                    "the 'mix' batch_size rule packs frames of unequal atom "
+                    "count into one batch and is only available for LMDB "
+                    "datasets on the pt and pt_expt backends"
+                )
             else:
                 raise RuntimeError("unknown batch_size rule " + words[0])
         elif isinstance(self.batch_size, list):

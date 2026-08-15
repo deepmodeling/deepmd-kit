@@ -167,7 +167,7 @@ def build_neighbor_graph_vesin(
             coord,
             box,
             empty_nf,
-            nloc,
+            torch.full((nf,), nloc, dtype=torch.int64, device=dev),
             layout=layout,
             with_csr=with_csr,
             canonicalize=canonicalize,
@@ -224,7 +224,7 @@ def build_neighbor_graph_vesin(
         coord,
         box,
         nf_all,
-        nloc,
+        torch.full((nf,), nloc, dtype=torch.int64, device=dev),
         layout=layout,
     )
     if pair_excl is not None:

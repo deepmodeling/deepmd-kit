@@ -11,7 +11,18 @@ import numpy as np
 _DROP_KEYS = {"default_mesh", "sid", "fid"}
 
 # Keys that belong to model input (everything else is label).
-_INPUT_KEYS = {"coord", "atype", "spin", "box", "fparam", "aparam", "charge_spin"}
+# ``n_node`` is an input rather than a label: it states how a ragged batch's
+# flat node axis divides into frames, which the model needs to read it at all.
+_INPUT_KEYS = {
+    "coord",
+    "atype",
+    "spin",
+    "box",
+    "fparam",
+    "aparam",
+    "charge_spin",
+    "n_node",
+}
 
 
 def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:

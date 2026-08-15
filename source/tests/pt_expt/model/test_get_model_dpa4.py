@@ -92,6 +92,44 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertEqual(ret["energy"].shape, (1, 1))
         self.assertEqual(ret["force"].shape, (1, 5, 3))
 
+    def test_graph_hessian_preserves_charge_spin(self) -> None:
+        """The Hessian is evaluated on the explicitly conditioned energy surface."""
+        config = _make_raw_model_config()
+        config["descriptor"]["add_chg_spin_ebd"] = True
+        model = get_model(config).to(self.device).eval()
+        model.enable_hessian()
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]],
+            dtype=torch.float64,
+            device=self.device,
+            requires_grad=True,
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.int64, device=self.device)
+        box = (5.0 * torch.eye(3, dtype=torch.float64, device=self.device)).reshape(
+            1, 9
+        )
+        charge_spin = torch.tensor(
+            [[0.0, 1.0]], dtype=torch.float64, device=self.device
+        )
+
+        graph = model.call_common(coord, atype, box, charge_spin=charge_spin)
+        dense = model.call_common(
+            coord,
+            atype,
+            box,
+            charge_spin=charge_spin,
+            neighbor_graph_method="legacy",
+        )
+
+        graph_hessian = graph["energy_derv_r_derv_r"]
+        self.assertEqual(graph_hessian.shape, (1, 1, 6, 6))
+        torch.testing.assert_close(
+            graph_hessian,
+            dense["energy_derv_r_derv_r"],
+            rtol=1e-10,
+            atol=1e-10,
+        )
+
     def test_get_model_type_aliases(self) -> None:
         """All model-type aliases route to the SeZM path."""
         for alias in ("dpa4", "DPA4", "sezm", "SeZM"):

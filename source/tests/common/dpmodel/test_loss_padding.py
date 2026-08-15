@@ -1,20 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Reusable grad-accumulation invariant harness for dpmodel loss tests.
+"""Padding-mask behaviour of the dpmodel losses.
 
-This module provides ``assert_grad_accum_invariant`` for Tasks 2-5 that
-verify the loss on a padded multi-frame batch equals mean(per_frame_loss).
+A batch may hold frames of unequal atom count, padded to a common width with
+slots whose ``atype`` is negative. Every loss term must then reduce over the
+real atoms alone. The dpmodel losses accept numpy arrays through the
+array_api_compat backend.
 
-The dpmodel losses accept numpy arrays (via the array_api_compat backend).
+Harness
+-------
+``assert_grad_accum_invariant`` checks that the loss of a padded two-frame
+batch equals the weighted mean of the frames' individual losses. The weights
+express how much each frame counts: frame-level terms (energy, virial) weigh
+frames equally, while per-atom terms (force, atomic energy, dos, tensor) weigh
+them by their label count, so a caller passes the frames' atom counts there.
 
-Scope / follow-ups (mixed_type padding fix, PR #5738)
-----------------------------------------------------
-- The TF backend loss is not covered here and still has the mixed_type
-  dilution behavior; tracked in deepmodeling/deepmd-kit#5760.
-- The pt-only losses ``dens``/``population``/``denoise`` are out of scope;
-  tracked in deepmodeling/deepmd-kit#5761.
-- ``ener_spin``'s ``force_mag`` MAE now uses a batch-size-independent mean
-  reduction (frames/atoms/xyz), consistent with force_mag MSE and force_real
-  MAE; the grad-accum invariant is asserted by the test below.
+Not covered: the TF backend, which still dilutes mixed_type losses
+(deepmodeling/deepmd-kit#5760), and the pt-only ``population`` and ``denoise``
+losses (deepmodeling/deepmd-kit#5761).
 
 Constants
 ---------
@@ -24,6 +26,7 @@ NP = 5   # padded width (nloc)
 """
 
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.loss.dos import (
     DOSLoss,
@@ -58,14 +61,24 @@ def assert_grad_accum_invariant(
     make_batch_A,
     make_batch_B,
     make_padded_batch,
+    frame_weights: tuple[float, float] = (1.0, 1.0),
     rtol: float = 1e-5,
     atol: float = 1e-6,
 ) -> None:
-    """Assert that padded-batch loss == mean(per_frame_loss) for two frames.
+    """Assert that a padded batch scores the weighted mean of its frames.
 
-    The grad-accumulation invariant: a padded batch of [frame_A (NA real atoms
-    padded to NP) + frame_B (NB==NP real atoms)] must yield the same loss as
-    processing each frame separately and averaging.
+    A padded batch of [frame_A (NA real atoms padded to NP) + frame_B (NB==NP
+    real atoms)] must yield the same loss as processing each frame separately
+    and combining them under the weights the term assigns to a frame:
+
+    - **Frame-level terms** (energy, virial, global dos/cdf, global tensor,
+      property) carry a fixed number of labels per frame, so the frames weigh
+      equally and the reference is the plain mean.  Pass the default weights.
+    - **Per-atom terms** (force, atomic energy, atomic prefactor force, atomic
+      dos/cdf, local tensor) carry labels in proportion to a frame's atom
+      count, and the loss pools them, so the reference is the atom-weighted
+      mean.  Pass ``frame_weights=(NA, NB)``; the per-atom component count
+      cancels out of the ratio.
 
     Parameters
     ----------
@@ -79,6 +92,8 @@ def assert_grad_accum_invariant(
     make_padded_batch : callable
         Returns ``(model_pred, label, natoms)`` for the 2-frame padded batch
         (nf=2, nloc=NP; frame A is padded with NP-NA ghost rows).
+    frame_weights : tuple[float, float]
+        Weight of frame A and frame B in the reference combination.
     rtol : float
         Relative tolerance for ``np.isclose``.
     atol : float
@@ -90,7 +105,8 @@ def assert_grad_accum_invariant(
 
     loss_A = float(loss_fn(pred_A, label_A, natoms_A))
     loss_B = float(loss_fn(pred_B, label_B, natoms_B))
-    ref = 0.5 * (loss_A + loss_B)
+    weight_A, weight_B = frame_weights
+    ref = (weight_A * loss_A + weight_B * loss_B) / (weight_A + weight_B)
 
     loss_pad = float(loss_fn(pred_pad, label_pad, natoms_pad))
 
@@ -209,7 +225,9 @@ class TestDOSLossAtomicGradAccum:
         def make_padded():
             return self._make_padded_batch(pred_A, label_A, pred_B, label_B)
 
-        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+        assert_grad_accum_invariant(
+            self._loss_fn, make_A, make_B, make_padded, frame_weights=(NA, NB)
+        )
 
     def test_acdf_grad_accum_invariant(self):
         """Atomic cdf per-frame masked mean meets the grad-accum invariant."""
@@ -366,7 +384,9 @@ class TestTensorLossLocalGradAccum:
                 NP,
             )
 
-        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+        assert_grad_accum_invariant(
+            self._loss_fn, make_A, make_B, make_padded, frame_weights=(NA, NB)
+        )
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same loss as no mask (non-mixed batch)."""
@@ -512,6 +532,168 @@ def _padded_atom_flat(arr_A, arr_B, ncomp):
 _MASK_PAD = np.array(
     [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB], dtype=np.float64
 )  # [2, NP]
+
+
+class TestPerFrameCountSource:
+    """Where the per-frame atom count comes from must not change the loss.
+
+    The extensive terms divide each frame's residual by that frame's atom
+    count. A padded batch states it through its mask, which the per-atom terms
+    also need to skip the padded rows; a concatenated batch has no padded row
+    and states the counts outright in ``n_node``. The two are the same number,
+    so the loss they produce is the same.
+    """
+
+    @staticmethod
+    def _loss(**kwargs):
+        return EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            start_pref_ae=0.0,
+            limit_pref_ae=0.0,
+            start_pref_pf=0.0,
+            limit_pref_pf=0.0,
+            **kwargs,
+        )
+
+    @pytest.mark.parametrize("loss_func", ["mse", "mae"])
+    @pytest.mark.parametrize("intensive", [False, True])
+    @pytest.mark.parametrize("use_huber", [False, True])
+    def test_mask_and_n_node_agree(self, loss_func, intensive, use_huber):
+        if use_huber and loss_func != "mse":
+            pytest.skip("huber replaces the mse branch only")
+        rng = np.random.default_rng(3)
+        nf, nloc = 2, 3
+        n_node = np.array([2, 3], dtype=np.int64)
+        physical = np.arange(nloc)[None, :] < n_node[:, None]
+        mask = physical.astype(np.float64)
+        # The second physical node is excluded by the model, independently of
+        # the padding slot at the end of the first frame.
+        mask[0, 1] = 0.0
+        pred, label = _full_ener_dicts(
+            nf,
+            nloc,
+            rng.normal(size=(nf, 1)),
+            rng.normal(size=(nf, 1)),
+            mask=mask,
+            force=rng.normal(size=(nf, nloc, 3)),
+            virial=rng.normal(size=(nf, 9)),
+            atom_energy=rng.normal(size=(nf, nloc, 1)),
+            atom_ener=rng.normal(size=(nf, nloc, 1)),
+            atom_pref=rng.random(size=(nf, nloc * 3)),
+            find_force=1.0,
+            find_virial=1.0,
+            find_atom_ener=1.0,
+            find_atom_pref=1.0,
+        )
+        label["force"] = rng.normal(size=(nf, nloc, 3))
+        pref_pf = 0.0 if use_huber else 1.0
+        loss_obj = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            start_pref_ae=1.0,
+            limit_pref_ae=1.0,
+            start_pref_pf=pref_pf,
+            limit_pref_pf=pref_pf,
+            loss_func=loss_func,
+            intensive_ener_virial=intensive,
+            use_huber=use_huber,
+        )
+        from_mask, more_mask = loss_obj.call(1.0, nloc, pred, label)
+
+        # The same physical nodes on a flat ragged axis. ``n_node`` retains the
+        # frame boundaries while the flat mask retains the model exclusion.
+        by_count = {
+            **pred,
+            "force": pred["force"][physical],
+            "atom_energy": pred["atom_energy"][physical],
+            "mask": mask[physical],
+            "n_node": n_node,
+        }
+        ragged_label = {
+            **label,
+            "force": label["force"][physical],
+            "atom_ener": label["atom_ener"][physical],
+            "atom_pref": label["atom_pref"].reshape(nf, nloc, 3)[physical],
+        }
+        from_counts, more_counts = loss_obj.call(
+            1.0, int(n_node.sum()), by_count, ragged_label
+        )
+
+        np.testing.assert_allclose(
+            float(from_counts), float(from_mask), rtol=1e-14, atol=0
+        )
+        assert sorted(more_counts) == sorted(more_mask)
+        for key, value in more_mask.items():
+            np.testing.assert_allclose(
+                np.asarray(more_counts[key], dtype=np.float64),
+                np.asarray(value, dtype=np.float64),
+                rtol=1e-14,
+                atol=0,
+                err_msg=key,
+            )
+
+    @pytest.mark.parametrize("ragged", [False, True])
+    def test_fully_excluded_frame_is_neutral(self, ragged):
+        """A frame without an included atom contributes no extensive label."""
+        loss_obj = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+        )
+        mask_shape = (1,) if ragged else (1, 1)
+        model = {
+            "energy": np.ones((1, 1), dtype=np.float64),
+            "mask": np.zeros(mask_shape, dtype=np.float64),
+        }
+        if ragged:
+            model["n_node"] = np.ones(1, dtype=np.int64)
+        label = {
+            "energy": np.zeros((1, 1), dtype=np.float64),
+            "find_energy": 1.0,
+        }
+
+        loss, more_loss = loss_obj.call(1.0, 1, model, label)
+
+        assert float(loss) == 0.0
+        assert float(more_loss["rmse_e"]) == 0.0
+
+    def test_generalized_force_refuses_a_concatenated_batch(self):
+        """``drdq`` is stored against a common atom axis, which is gone."""
+        rng = np.random.default_rng(5)
+        nf, nloc = 2, 4
+        pred, label = _full_ener_dicts(
+            nf, nloc, rng.normal(size=(nf, 1)), rng.normal(size=(nf, 1))
+        )
+        pred["n_node"] = np.full(nf, nloc, dtype=np.int64)
+        label["drdq"] = np.zeros((nf, nloc * 3, 2), dtype=np.float64)
+        label["find_drdq"] = 1.0
+        loss_obj = EnergyLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=0.0,
+            limit_pref_e=0.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=0.0,
+            limit_pref_v=0.0,
+            start_pref_gf=1.0,
+            limit_pref_gf=1.0,
+            numb_generalized_coord=2,
+        )
+        with pytest.raises(NotImplementedError, match="same number of atoms"):
+            loss_obj.call(1.0, nloc, pred, label)
 
 
 class TestDPModelEnergyLossEnerGradAccum:
@@ -703,6 +885,7 @@ class TestDPModelEnergyLossForceGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -729,6 +912,28 @@ class TestDPModelEnergyLossForceGradAccum:
         f_B_hat = _rnd(NB, 3)
         self._run_invariant(
             self._make_loss("mse", use_huber=True), f_A, f_A_hat, f_B, f_B_hat
+        )
+
+    @pytest.mark.parametrize(
+        ("loss_func", "use_huber"), [("mae", False), ("mse", True)]
+    )
+    def test_f_use_norm_grad_accum(self, loss_func, use_huber):
+        """One L2 norm per atom weighs frames the same way three components do.
+
+        ``f_use_norm`` changes how many labels an atom contributes, so it also
+        changes the divisor of the pooled reduction; the frame weights it
+        produces must still follow the atom counts.
+        """
+        f_A = _rnd(NA, 3)
+        f_A_hat = _rnd(NA, 3)
+        f_B = _rnd(NB, 3)
+        f_B_hat = _rnd(NB, 3)
+        self._run_invariant(
+            self._make_loss(loss_func, use_huber=use_huber, f_use_norm=True),
+            f_A,
+            f_A_hat,
+            f_B,
+            f_B_hat,
         )
 
     def test_no_op_for_non_mixed(self):
@@ -1230,6 +1435,7 @@ class TestDPModelEnergyLossAtomEnerGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -1385,6 +1591,7 @@ class TestDPModelEnergyLossAtomPrefGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -1834,6 +2041,7 @@ class TestDPModelEnerSpinLossForceRealGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -2030,14 +2238,8 @@ class TestDPModelEnerSpinLossVirialGradAccum:
         )
 
 
-class TestDPModelEnerSpinLossForceMagUnchanged:
-    """Guard: the padding mask must NOT affect the force_mag / mask_mag term.
-
-    The force_mag path uses mask_mag (spin virtual-atom mask), which is a
-    completely separate concept from the padding mask model_dict["mask"].
-    After the Task-5 implementation, presenting a padding mask must leave
-    the force_mag loss bit-identical.
-    """
+class TestDPModelEnerSpinLossForceMagConsistentMasks:
+    """A padding mask is idempotent when ``mask_mag`` already excludes it."""
 
     def _make_loss(self):
         return EnergySpinLossDPModel(
@@ -2052,8 +2254,8 @@ class TestDPModelEnerSpinLossForceMagUnchanged:
             limit_pref_v=0.0,
         )
 
-    def test_padding_mask_does_not_affect_force_mag(self):
-        """force_mag loss is bit-identical with and without padding mask."""
+    def test_consistent_padding_mask_is_idempotent(self):
+        """Consistent magnetic and padding masks produce the same loss."""
         fm = _rnd(2, NP, 3)
         fm_hat = _rnd(2, NP, 3)
         loss_obj = self._make_loss()
@@ -2079,8 +2281,7 @@ class TestDPModelEnerSpinLossForceMagUnchanged:
         loss_with = _run(True)
         loss_without = _run(False)
         assert np.isclose(loss_with, loss_without), (
-            f"force_mag loss must be unchanged by padding mask: "
-            f"{loss_with} vs {loss_without}"
+            f"consistent masks must be idempotent: {loss_with} vs {loss_without}"
         )
 
 
@@ -2165,6 +2366,7 @@ class TestDPModelEnerSpinLossAtomEnerGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):

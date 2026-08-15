@@ -15,6 +15,12 @@ from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
     per_frame_component_mean,
 )
+from deepmd.dpmodel.utils.neighbor_graph.graph import (
+    frame_id_from_n_node,
+)
+from deepmd.dpmodel.utils.neighbor_graph.segment import (
+    segment_sum,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
@@ -135,6 +141,11 @@ class EnergySpinLoss(Loss):
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
 
+    @property
+    def supports_ragged_batches(self) -> bool:
+        """Whether the configured terms accept a flat per-node batch axis."""
+        return True
+
     def call(
         self,
         learning_rate: float,
@@ -162,18 +173,51 @@ class EnergySpinLoss(Loss):
         # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
         norm_exp = 2 if self.intensive_ener_virial else 1
 
-        # Per-frame mask: recover real-atom count per frame when mask is provided.
-        # maskf[nf, nloc] = 1.0 for real atoms, 0.0 for ghost padding atoms.
-        if "mask" in model_dict:
-            maskf = xp.astype(model_dict["mask"], energy.dtype)  # [nf, nloc]
-            real_natoms = xp.sum(maskf, axis=-1)  # [nf]
-            inv = xp.reshape(1.0 / real_natoms, (-1,))  # [nf]
-            _nf = maskf.shape[0]
-            _nloc = maskf.shape[1]
-        else:
-            # inv, _nf, _nloc are only read inside ``if maskf is not None`` guards,
-            # so leaving them unset here is safe (and avoids dead-store warnings).
-            maskf = None
+        # Rectangular batches describe valid nodes with ``mask``; ragged ones
+        # concatenate the node axis and delimit frames with ``n_node``. The
+        # same included-node counts normalize extensive frame-level terms in
+        # either layout, while the mask drives pooled per-node reductions.
+        maskf = (
+            xp.astype(model_dict["mask"], energy.dtype)
+            if "mask" in model_dict
+            else None
+        )
+        is_ragged = "n_node" in model_dict
+        frame_id = None
+        included_n_node = None
+        inv = None
+        if is_ragged:
+            n_node = model_dict["n_node"]
+            nframes = n_node.shape[0]
+            if maskf is None:
+                included_n_node = xp.astype(n_node, energy.dtype)
+            else:
+                frame_id = frame_id_from_n_node(n_node, n_total=maskf.shape[0])
+                included_n_node = segment_sum(
+                    xp.reshape(maskf, (-1,)), frame_id, nframes
+                )
+        elif maskf is not None:
+            included_n_node = xp.reshape(xp.sum(maskf, axis=-1), (-1,))
+        if included_n_node is not None:
+            has_node = included_n_node > 0
+            safe_n_node = xp.where(
+                has_node,
+                included_n_node,
+                xp.ones_like(included_n_node),
+            )
+            inv = xp.where(
+                has_node,
+                1.0 / safe_n_node,
+                xp.zeros_like(included_n_node),
+            )
+
+        def reshape_atomic(value: Array, ncomp: int) -> Array:
+            """Return one atomic field on the active rectangular or flat axis."""
+            if is_ragged:
+                return xp.reshape(value, (-1, ncomp))
+            if maskf is not None:
+                return xp.reshape(value, (*maskf.shape, ncomp))
+            return xp.reshape(value, (-1, natoms, ncomp))
 
         if self.has_e:
             energy_pred = model_dict["energy"]
@@ -181,14 +225,25 @@ class EnergySpinLoss(Loss):
             find_energy = label_dict.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
             if self.enable_atom_ener_coeff and "atom_energy" in model_dict:
-                atom_ener_pred = model_dict["atom_energy"]
-                atom_ener_coeff = label_dict["atom_ener_coeff"]
-                atom_ener_coeff = xp.reshape(atom_ener_coeff, atom_ener_pred.shape)
-                energy_pred = xp.sum(atom_ener_coeff * atom_ener_pred, axis=1)
+                atom_ener_pred = reshape_atomic(model_dict["atom_energy"], 1)
+                atom_ener_coeff = reshape_atomic(label_dict["atom_ener_coeff"], 1)
+                weighted_atom_ener = atom_ener_coeff * atom_ener_pred
+                if maskf is not None:
+                    weighted_atom_ener = weighted_atom_ener * xp.reshape(
+                        maskf,
+                        (*maskf.shape, 1),
+                    )
+                if is_ragged:
+                    if frame_id is None:
+                        frame_id = frame_id_from_n_node(
+                            n_node, n_total=atom_ener_pred.shape[0]
+                        )
+                    energy_pred = segment_sum(weighted_atom_ener, frame_id, nframes)
+                else:
+                    energy_pred = xp.sum(weighted_atom_ener, axis=1)
             if self.loss_func == "mse":
                 se_e = xp.square(energy_pred - energy_label)  # [nf, k]
-                if maskf is not None:
-                    # Idiom 2 (extensive): per-frame normalization by real-atom count.
+                if inv is not None:
                     per_frame_e = per_frame_component_mean(se_e)  # [nf]
                     loss += pref_e * xp.mean(per_frame_e * inv**norm_exp)
                     more_loss["rmse_e"] = self.display_if_exist(
@@ -202,8 +257,7 @@ class EnergySpinLoss(Loss):
                     )
             elif self.loss_func == "mae":
                 l1_ener_loss = xp.mean(xp.abs(energy_pred - energy_label))
-                if maskf is not None:
-                    # Idiom 2 (extensive) with abs: per-frame normalization by real-atom count.
+                if inv is not None:
                     per_frame_ae = per_frame_component_mean(
                         xp.abs(energy_pred - energy_label)
                     )  # [nf]
@@ -218,7 +272,7 @@ class EnergySpinLoss(Loss):
                         l1_ener_loss * atom_norm, find_energy
                     )
             if mae:
-                if maskf is not None:
+                if inv is not None:
                     per_frame_ae = per_frame_component_mean(
                         xp.abs(energy_pred - energy_label)
                     )
@@ -232,26 +286,18 @@ class EnergySpinLoss(Loss):
         if self.has_fr:
             find_force = label_dict.get("find_force", 0.0)
             pref_fr = pref_fr * find_force
-            # Reshape to the canonical (nf, natoms, 3) atomic shape: the raw
-            # data-loader label is flat (nf, natoms * 3), matching the
-            # ``xp.reshape(label_dict[...], (-1, natoms, ncomp))`` idiom used
-            # by every other atomic-label loss (see ``dpmodel/loss/dos.py``
-            # and ``dpmodel/loss/tensor.py``).
-            force_pred = xp.reshape(model_dict["force"], (-1, natoms, 3))
-            force_label = xp.reshape(label_dict["force"], (-1, natoms, 3))
+            force_pred = reshape_atomic(model_dict["force"], 3)
+            force_label = reshape_atomic(label_dict["force"], 3)
+            diff_fr = force_label - force_pred
             if self.loss_func == "mse":
-                diff_fr = force_label - force_pred  # [nf, nloc, 3]
                 if maskf is not None:
-                    # Idiom 1 (per-atom masked mean, ncomp=3).
                     l2_force_real_loss = masked_atom_mean(xp.square(diff_fr), maskf, 3)
                     loss += pref_fr * l2_force_real_loss
                     more_loss["rmse_fr"] = self.display_if_exist(
                         xp.sqrt(l2_force_real_loss), find_force
                     )
                     if mae:
-                        mae_fr = masked_atom_mean(
-                            xp.abs(force_label - force_pred), maskf, 3
-                        )
+                        mae_fr = masked_atom_mean(xp.abs(diff_fr), maskf, 3)
                         more_loss["mae_fr"] = self.display_if_exist(mae_fr, find_force)
                 else:
                     l2_force_real_loss = xp.mean(xp.square(diff_fr))
@@ -263,9 +309,8 @@ class EnergySpinLoss(Loss):
                         mae_fr = xp.mean(xp.abs(force_label - force_pred))
                         more_loss["mae_fr"] = self.display_if_exist(mae_fr, find_force)
             elif self.loss_func == "mae":
-                abs_diff_fr = xp.abs(force_label - force_pred)  # [nf, nloc, 3]
+                abs_diff_fr = xp.abs(diff_fr)
                 if maskf is not None:
-                    # Idiom 1 (per-atom masked mean, ncomp=3) with abs.
                     l1_force_real_masked = masked_atom_mean(abs_diff_fr, maskf, 3)
                     loss += pref_fr * l1_force_real_masked
                     more_loss["mae_fr"] = self.display_if_exist(
@@ -281,18 +326,17 @@ class EnergySpinLoss(Loss):
         if self.has_fm:
             find_force_mag = label_dict.get("find_force_mag", 0.0)
             pref_fm = pref_fm * find_force_mag
-            # Same flat -> (nf, natoms, 3) reshape as the real-force branch above.
-            force_mag_pred = xp.reshape(model_dict["force_mag"], (-1, natoms, 3))
-            force_mag_label = xp.reshape(label_dict["force_mag"], (-1, natoms, 3))
-            mask_mag = model_dict["mask_mag"]
-            # mask_mag: [nframes, natoms, 1], bool -> use mask multiplication
+            force_mag_pred = reshape_atomic(model_dict["force_mag"], 3)
+            force_mag_label = reshape_atomic(label_dict["force_mag"], 3)
+            mask_mag = reshape_atomic(model_dict["mask_mag"], 1)
+            if maskf is not None:
+                mask_mag = xp.logical_and(
+                    mask_mag,
+                    xp.reshape(maskf > 0, (*maskf.shape, 1)),
+                )
             mask_float = xp.astype(mask_mag, force_mag_pred.dtype)
-            # zero out non-magnetic atoms
             diff_fm = (force_mag_label - force_mag_pred) * mask_float
             n_valid = xp.sum(mask_float)
-            # Guard the denominator itself because array backends may evaluate
-            # both branches of ``where``. This is safe under JAX tracing and
-            # makes an all-empty magnetic mask contribute exactly zero.
             safe_n_valid = xp.where(n_valid > 0, n_valid, xp.ones_like(n_valid))
             if self.loss_func == "mse":
                 l2_force_mag_loss = xp.sum(xp.square(diff_fm)) / (safe_n_valid * 3)
@@ -304,11 +348,7 @@ class EnergySpinLoss(Loss):
                     mae_fm = xp.sum(xp.abs(diff_fm)) / (safe_n_valid * 3)
                     more_loss["mae_fm"] = self.display_if_exist(mae_fm, find_force_mag)
             elif self.loss_func == "mae":
-                abs_diff_fm = xp.abs(diff_fm)  # [nf, na, 3], zeros for non-magnetic
-                # Mean over frames, magnetic atoms and xyz (same reduction as
-                # force_mag MSE, force_real MAE and the displayed mae_fm) so the
-                # loss is batch-size independent: a 2-frame batch equals the mean
-                # of the two single-frame losses.
+                abs_diff_fm = xp.abs(diff_fm)
                 l1_force_mag_loss = xp.sum(abs_diff_fm) / (safe_n_valid * 3)
                 loss += pref_fm * l1_force_mag_loss
                 more_loss["mae_fm"] = self.display_if_exist(
@@ -318,15 +358,12 @@ class EnergySpinLoss(Loss):
         if self.has_ae:
             find_atom_ener = label_dict.get("find_atom_ener", 0.0)
             pref_ae = pref_ae * find_atom_ener
-            atom_ener = model_dict["atom_energy"]
-            atom_ener_label = label_dict["atom_ener"]
+            atom_ener = reshape_atomic(model_dict["atom_energy"], 1)
+            atom_ener_label = reshape_atomic(label_dict["atom_ener"], 1)
             if maskf is not None:
-                # Idiom 1 (per-atom masked mean, ncomp=1).
-                ae = xp.reshape(atom_ener, (_nf, _nloc, 1))
-                ae_label = xp.reshape(atom_ener_label, (_nf, _nloc, 1))
                 if self.loss_func == "mse":
                     l2_atom_ener_loss = masked_atom_mean(
-                        xp.square(ae_label - ae), maskf, 1
+                        xp.square(atom_ener_label - atom_ener), maskf, 1
                     )
                     loss += pref_ae * l2_atom_ener_loss
                     more_loss["rmse_ae"] = self.display_if_exist(
@@ -334,27 +371,21 @@ class EnergySpinLoss(Loss):
                     )
                 elif self.loss_func == "mae":
                     l1_atom_ener_loss = masked_atom_mean(
-                        xp.abs(ae_label - ae), maskf, 1
+                        xp.abs(atom_ener_label - atom_ener), maskf, 1
                     )
                     loss += pref_ae * l1_atom_ener_loss
                     more_loss["mae_ae"] = self.display_if_exist(
                         l1_atom_ener_loss, find_atom_ener
                     )
             else:
-                atom_ener_reshape = xp.reshape(atom_ener, (-1,))
-                atom_ener_label_reshape = xp.reshape(atom_ener_label, (-1,))
                 if self.loss_func == "mse":
-                    l2_atom_ener_loss = xp.mean(
-                        xp.square(atom_ener_label_reshape - atom_ener_reshape)
-                    )
+                    l2_atom_ener_loss = xp.mean(xp.square(atom_ener_label - atom_ener))
                     loss += pref_ae * l2_atom_ener_loss
                     more_loss["rmse_ae"] = self.display_if_exist(
                         xp.sqrt(l2_atom_ener_loss), find_atom_ener
                     )
                 elif self.loss_func == "mae":
-                    l1_atom_ener_loss = xp.mean(
-                        xp.abs(atom_ener_label_reshape - atom_ener_reshape)
-                    )
+                    l1_atom_ener_loss = xp.mean(xp.abs(atom_ener_label - atom_ener))
                     loss += pref_ae * l1_atom_ener_loss
                     more_loss["mae_ae"] = self.display_if_exist(
                         l1_atom_ener_loss, find_atom_ener
@@ -364,11 +395,10 @@ class EnergySpinLoss(Loss):
             find_virial = label_dict.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             virial_pred = xp.reshape(model_dict["virial"], (-1, 9))
-            virial_label = label_dict["virial"]
+            virial_label = xp.reshape(label_dict["virial"], (-1, 9))
             diff_v = virial_label - virial_pred  # [nf, 9]
             if self.loss_func == "mse":
-                if maskf is not None:
-                    # Idiom 2 (extensive, k=9): per-frame normalization by real-atom count.
+                if inv is not None:
                     per_frame_v = per_frame_component_mean(xp.square(diff_v))  # [nf]
                     loss += pref_v * xp.mean(per_frame_v * inv**norm_exp)
                     more_loss["rmse_v"] = self.display_if_exist(
@@ -391,8 +421,7 @@ class EnergySpinLoss(Loss):
                         more_loss["mae_v"] = self.display_if_exist(mae_v, find_virial)
             elif self.loss_func == "mae":
                 l1_virial_loss = xp.mean(xp.abs(diff_v))
-                if maskf is not None:
-                    # Idiom 2 (extensive, k=9) with abs: per-frame normalization by real-atom count.
+                if inv is not None:
                     per_frame_v = per_frame_component_mean(xp.abs(diff_v))  # [nf]
                     l1_virial_masked = xp.mean(per_frame_v * inv)
                     loss += pref_v * l1_virial_masked
@@ -471,6 +500,7 @@ class EnergySpinLoss(Loss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
                 )
             )
         return label_requirement

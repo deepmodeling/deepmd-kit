@@ -190,6 +190,24 @@ class TestGraphForceMag:
             atol=1e-6,
         )
 
+    def test_hessian_uses_spin_conditioning(self) -> None:
+        """Coordinate Hessians retain the spin input of the energy surface."""
+        self.model.enable_hessian()
+        hessian = self.model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.box,
+            spin=self.spin,
+        )["energy_derv_r_derv_r"]
+        scaled_hessian = self.model.call_common(
+            self.coord.clone().requires_grad_(True),
+            self.atype,
+            self.box,
+            spin=2.0 * self.spin,
+        )["energy_derv_r_derv_r"]
+
+        assert torch.max(torch.abs(scaled_hessian - hessian)).item() > 1e-6
+
     def test_force_unchanged_by_spin_leaf_wiring(self) -> None:
         """``call_common`` WITHOUT ``spin`` has no ``energy_derv_r_mag`` key,
         and the spin-less forward is deterministic (the new ``spin is not
@@ -322,6 +340,18 @@ class TestNativeSpinEnergyModelPtExpt:
         expect_mask = (self.atype == 0).unsqueeze(-1)
         torch.testing.assert_close(out["mask_mag"], expect_mask, rtol=0, atol=0)
 
+    def test_padding_is_not_magnetic_when_last_type_is(self) -> None:
+        """A phantom type never aliases the last magnetic type."""
+        config = copy.deepcopy(NATIVE_SPIN_CONFIG)
+        config["spin"]["use_spin"] = [False, True]
+        model = get_model(config).to(self.device)
+        atype = torch.tensor([[0, -1]], dtype=torch.int64, device=self.device)
+
+        torch.testing.assert_close(
+            model._spin_active_mask(atype),
+            torch.zeros((1, 2, 1), dtype=torch.bool, device=self.device),
+        )
+
     def test_force_mag_zero_on_non_spin_types(self) -> None:
         """Non-spin-type (``atype==1``) rows of ``force_mag`` are exactly
         zero, even though ``self.spin`` feeds nonzero noise there -- the
@@ -341,6 +371,37 @@ class TestNativeSpinEnergyModelPtExpt:
         )
         assert "atom_virial" in out
         assert out["atom_virial"].shape == (self.nf, self.nloc, 9)
+
+    def test_ragged_matches_rectangular_mixed_size(self) -> None:
+        """Flat and padded node layouts preserve the same spin predictions."""
+        coord = self.coord.repeat(2, 1, 1)
+        atype = self.atype.repeat(2, 1)
+        spin = self.spin.repeat(2, 1, 1)
+        box = self.box.repeat(2, 1)
+        atype[1, -2:] = -1
+        coord[1, -2:] = 0.0
+        spin[1, -2:] = 0.0
+        real_atom = atype >= 0
+        n_node = real_atom.sum(dim=1)
+
+        rectangular = self.model(coord, atype, spin, box=box)
+        ragged = self.model.forward_ragged(
+            coord[real_atom],
+            atype[real_atom],
+            n_node,
+            spin[real_atom],
+            box=box,
+        )
+
+        torch.testing.assert_close(rectangular["mask"].bool(), real_atom)
+        torch.testing.assert_close(
+            ragged["mask"].bool(), torch.ones_like(ragged["mask"], dtype=torch.bool)
+        )
+        torch.testing.assert_close(ragged["n_node"], n_node)
+        for key in ("energy", "virial"):
+            torch.testing.assert_close(ragged[key], rectangular[key])
+        for key in ("atom_energy", "force", "force_mag", "mask_mag"):
+            torch.testing.assert_close(ragged[key], rectangular[key][real_atom])
 
 
 def _pt_native_spin_model(seed: int = 3):
@@ -736,7 +797,7 @@ class TestDPA4NativeSpinCompiledTraining:
     def test_eager_eval_and_compiled_magnetic_force_backward(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Keep eval eager while retaining compiled magnetic gradients."""
+        """Keep eval eager and compiled mixed-size magnetic gradients correct."""
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
             _get_model_structure_key,
@@ -765,22 +826,53 @@ class TestDPA4NativeSpinCompiledTraining:
                 ]
             ],
             dtype=torch.float64,
-        )
-        atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64)
-        spin = torch.arange(18, dtype=torch.float64).reshape(1, 6, 3) / 20.0 + 0.1
-        box = (8.0 * torch.eye(3, dtype=torch.float64)).reshape(1, 9)
+        ).repeat(2, 1, 1)
+        atype = torch.tensor([[0, 0, 0, 1, 1, 1]], dtype=torch.int64).repeat(2, 1)
+        spin = (
+            torch.arange(18, dtype=torch.float64).reshape(1, 6, 3) / 20.0 + 0.1
+        ).repeat(2, 1, 1)
+        box = (8.0 * torch.eye(3, dtype=torch.float64)).reshape(1, 9).repeat(2, 1)
+        atype[1, -2:] = -1
+        coord[1, -2:] = 0.0
+        spin[1, -2:] = 0.0
 
         eager_result = compiled.eval()(coord, atype, box=box, spin=spin)
+        real_atom = atype >= 0
+        n_node = real_atom.sum(dim=1)
+        eager_ragged = compiled.forward_ragged(
+            coord[real_atom],
+            atype[real_atom],
+            n_node,
+            box=box,
+            spin=spin[real_atom],
+        )
         assert compiled._compiled_lower_by_mode == {}
-        assert eager_result["force_mag"].shape == (1, 6, 3)
+        assert eager_result["force_mag"].shape == (2, 6, 3)
+        torch.testing.assert_close(eager_ragged["n_node"], n_node)
 
         result = compiled.train()(coord, atype, box=box, spin=spin)
 
-        assert result["force"].shape == (1, 6, 3)
-        assert result["force_mag"].shape == (1, 6, 3)
-        assert result["mask_mag"].shape == (1, 6, 1)
+        assert result["force"].shape == (2, 6, 3)
+        assert result["force_mag"].shape == (2, 6, 3)
+        assert result["mask_mag"].shape == (2, 6, 1)
+        assert torch.all(result["force"][1, -2:] == 0.0)
+        assert torch.all(result["force_mag"][1, -2:] == 0.0)
+        assert torch.all(~result["mask_mag"][1, -2:])
         assert set(compiled._compiled_lower_by_mode) == {True}
-        result["force_mag"].square().sum().backward()
+
+        ragged = compiled.forward_ragged(
+            coord[real_atom],
+            atype[real_atom],
+            n_node,
+            box=box,
+            spin=spin[real_atom],
+        )
+        torch.testing.assert_close(ragged["n_node"], n_node)
+        for key in ("energy", "virial"):
+            torch.testing.assert_close(ragged[key], result[key])
+        for key in ("atom_energy", "force", "force_mag", "mask", "mask_mag"):
+            torch.testing.assert_close(ragged[key], result[key][real_atom])
+        ragged["force_mag"].square().sum().backward()
 
         spin_parameters = [
             parameter
@@ -1203,6 +1295,7 @@ class TestNativeSpinConfigFormsPtExpt:
         spin_req = next(rr for rr in reqs if rr.key == "spin")
         assert spin_req.must is expected_must
         assert spin_req.default == 0.0
+        assert spin_req.source_policy == ("default" if allow_missing else "tracked")
 
 
 class TestPublicBaseModelRoundTrip:

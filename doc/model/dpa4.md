@@ -13,7 +13,7 @@ and defaults to the `dpa4_ener` energy fitting network, so `descriptor.type` and
 `fitting_net.type` may be omitted for energy training. A new energy input then
 needs only the model type, `type_map`, and a few descriptor options.
 
-Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
+Reference: {ref}`DPA4 paper <cite-dpa4>` in the canonical citation guide.
 
 ## Quick start
 
@@ -325,11 +325,13 @@ E_i = E_i^{\mathrm{DPA4/SeZM}} + E_i^{\mathrm{ZBL}}.
 Below `bridging_r_inner` the distance seen by the descriptor is clamped, with a
 smooth transition back to the true distance up to `bridging_r_outer`; a source
 gate additionally blocks the learned model from leaking information about the
-frozen short-range pairs. Enable it with:
+frozen short-range pairs. The recommended way to enable it is the concise
+form, set directly on the `dpa4` model:
 
 ```json
 {
   "model": {
+    "type": "dpa4",
     "bridging_method": "zbl",
     "bridging_r_inner": 0.5,
     "bridging_r_outer": 0.8
@@ -351,6 +353,46 @@ from training. See `examples/water/dpa4/input-zbl.json` for a complete example.
 > model use `change-by-statistic`, which subtracts the complete bridged
 > prediction. See [change-bias](change-bias.md) for the precise
 > definitions.
+
+Internally, a bridged model is a linear composition: the learned model plus
+the analytical `inner_potential` term, summed by `linear_ener`. The concise
+form above expands to exactly this equivalent explicit form:
+
+```json
+{
+  "model": {
+    "type": "linear_ener",
+    "weights": "sum",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "models": [
+      {
+        "type": "dpa4",
+        "descriptor": {
+          "...": "..."
+        },
+        "fitting_net": {
+          "...": "..."
+        }
+      },
+      {
+        "type": "inner_potential",
+        "mode": "zbl",
+        "r_inner": 0.5,
+        "r_outer": 0.8
+      }
+    ]
+  }
+}
+```
+
+Both spellings build the same model (one shared normalizer defines the
+equivalence). The explicit form exposes the composition machinery directly:
+use it when you combine models beyond the standard bridged pair. In either
+form, the composition derives the learned descriptor's clamping window from
+the analytical term, so the radii are written once.
 
 ## Performance and precision
 
@@ -749,20 +791,5 @@ closed over the one-hop neighbor shell.
 
 ## Citation
 
-If you use DPA4/SeZM, please cite the [DPA4 paper](https://arxiv.org/abs/2606.02419):
-
-```bibtex
-@article{li2026dpa4,
-  title = {{DPA4}: Pushing the Accuracy-Cost Frontier of Interatomic
-           Potentials with {EMFA} {SO(2)} Convolution},
-  author = {Li, Tiancheng and Li, Wentao and Peng, Anyang and Xue, Jianming
-            and Zhang, Linfeng and Zhang, Duo and Wang, Han},
-  journal = {arXiv preprint arXiv:2606.02419},
-  year = {2026},
-  eprint = {2606.02419},
-  archivePrefix = {arXiv},
-  primaryClass = {physics.chem-ph},
-  doi = {10.48550/arXiv.2606.02419},
-  url = {https://arxiv.org/abs/2606.02419}
-}
-```
+If you use DPA4/SeZM, cite the {ref}`DPA4 paper <cite-dpa4>` from the
+canonical citation guide. Its BibTeX record is maintained in `CITATIONS.bib`.

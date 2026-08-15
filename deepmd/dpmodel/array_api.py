@@ -11,6 +11,10 @@ from packaging.version import (
     Version,
 )
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
+
 # Type alias for array_api compatible arrays
 Array = np.ndarray | Any  # Any to support JAX, PyTorch, etc. arrays
 
@@ -27,22 +31,28 @@ def xp_asarray_nodetach(
     ``torch.asarray`` detaches its input from the autograd graph, so calling
     ``xp.asarray`` on a weight attribute that is already a backend tensor
     (e.g. a ``torch.nn.Parameter`` registered by the pt_expt backend)
-    silently breaks gradient flow to that weight.  This helper converts
-    genuine non-backend data (numpy arrays, python scalars/lists) via
-    ``xp.asarray``; backend tensors are returned as-is, with an optional
-    differentiable dtype cast via ``xp.astype``.
+    silently breaks gradient flow to that weight. Backend tensors already in
+    ``xp`` are therefore returned as-is, with an optional differentiable dtype
+    cast via ``xp.astype``.
 
-    The ``device`` argument only applies to the conversion path: backend
-    tensors are assumed to already live on the working device (they are
-    created together with the inputs).
+    An array from another namespace cannot retain its autograd graph. It is
+    converted through NumPy before entering ``xp``; this also performs the
+    required device-to-host copy when a CUDA-backed model constant is consumed
+    by a NumPy statistics path.
+
+    The ``device`` argument only applies to the conversion path. Arrays already
+    in ``xp`` are assumed to live on the working device because model buffers
+    and inputs are moved together.
     """
-    if isinstance(obj, np.ndarray) or not array_api_compat.is_array_api_obj(obj):
-        if dtype is None:
-            return xp.asarray(obj, device=device)
-        return xp.asarray(obj, dtype=dtype, device=device)
-    if dtype is not None and obj.dtype != dtype:
-        obj = xp.astype(obj, dtype)
-    return obj
+    if array_api_compat.is_array_api_obj(obj):
+        if array_api_compat.array_namespace(obj) is xp:
+            if dtype is not None and obj.dtype != dtype:
+                obj = xp.astype(obj, dtype)
+            return obj
+        obj = to_numpy_array(obj)
+    if dtype is None:
+        return xp.asarray(obj, device=device)
+    return xp.asarray(obj, dtype=dtype, device=device)
 
 
 # array api adds take_along_axis in https://github.com/data-apis/array-api/pull/816

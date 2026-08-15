@@ -358,6 +358,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_fparam,
                 default=fparam_default,
+                source_policy="default" if has_default_fparam else "tracked",
             )
         )
     if _model.get_dim_aparam() > 0:
@@ -380,6 +381,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=True,
                 must=not allow_missing_spin,
                 default=0.0,
+                source_policy="default" if allow_missing_spin else "tracked",
             )
         )
     if _model.has_chg_spin_ebd():
@@ -399,6 +401,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_cs,
                 default=default_cs,
+                source_policy="default" if has_default_cs else "tracked",
             )
         )
     return additional_data_requirement
@@ -460,6 +463,7 @@ def _trace_and_compile(
     model: torch.nn.Module,
     ext_coord: torch.Tensor,
     ext_atype: torch.Tensor,
+    ext_spin: torch.Tensor | None,
     nlist: torch.Tensor,
     mapping: torch.Tensor,
     fparam: torch.Tensor | None,
@@ -474,11 +478,15 @@ def _trace_and_compile(
     ----------
     model : torch.nn.Module
         The (uncompiled) model.
-    ext_coord, ext_atype, nlist, mapping, fparam, aparam
+    ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam
         Sample tensors used to seed the symbolic tracer.
+        ``ext_spin`` is present for virtual-atom spin models and follows the
+        same extended-node axis as coordinates and atom types.
     compile_opts : dict or None
         User-supplied inductor options.  These are merged on top of the
         built-in defaults (user values take precedence).
+    charge_spin : torch.Tensor or None
+        Frame-level charge and spin conditioning used by the traced model.
     task_buffers : dict or None
         Per-task buffers (e.g. ``bias_atom_e``, ``case_embd``, ``out_bias``,
         ``out_std``) detected by ``_detect_task_buffers``.  These are promoted
@@ -523,6 +531,7 @@ def _trace_and_compile(
     def fn(
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
+        extended_spin: torch.Tensor | None,
         nlist: torch.Tensor,
         mapping: torch.Tensor | None,
         fparam: torch.Tensor | None,
@@ -548,6 +557,17 @@ def _trace_and_compile(
                         originals[name] = _fitting._buffers.get(name)
                         _fitting._buffers[name] = val
         try:
+            if extended_spin is not None:
+                return model.forward_lower(
+                    extended_coord,
+                    extended_atype,
+                    extended_spin,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
             return model.forward_lower(
                 extended_coord,
                 extended_atype,
@@ -600,6 +620,8 @@ def _trace_and_compile(
     # Pad nf only; nloc and nall retain their real values (no clamping needed).
     ext_coord = _trace_pad_dim(ext_coord[:1], 0, trace_nf)
     ext_atype = _trace_pad_dim(ext_atype[:1], 0, trace_nf)
+    if ext_spin is not None:
+        ext_spin = _trace_pad_dim(ext_spin[:1], 0, trace_nf)
     nlist = _trace_pad_dim(nlist[:1], 0, trace_nf)
     mapping = _trace_pad_dim(mapping[:1], 0, trace_nf)
     if fparam is not None:
@@ -627,6 +649,7 @@ def _trace_and_compile(
     )(
         ext_coord,
         ext_atype,
+        ext_spin,
         nlist,
         mapping,
         fparam,
@@ -1088,6 +1111,123 @@ class _CompiledModel(torch.nn.Module):
         except AttributeError:
             return getattr(self.original_model, name)
 
+    def _forward_eager(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        do_atomic_virial: bool,
+        charge_spin: torch.Tensor | None,
+        spin: torch.Tensor | None,
+        n_node: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Delegate one rectangular or ragged evaluation to the original model."""
+        kwargs = {
+            "box": box,
+            "fparam": fparam,
+            "aparam": aparam,
+            "do_atomic_virial": do_atomic_virial,
+            "charge_spin": charge_spin,
+        }
+        if spin is not None:
+            kwargs["spin"] = spin
+        if n_node is not None:
+            return self.original_model.forward_ragged(
+                coord,
+                atype,
+                n_node,
+                **kwargs,
+            )
+        return self.original_model(coord, atype, **kwargs)
+
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compiled forward over a batch whose node axis is already flat.
+
+        The compiled lower works on that axis in either case -- its trace keeps
+        the frame count, the node count and the edge count as independent
+        symbols -- so a ragged batch simply skips the padding round trip the
+        rectangular :meth:`forward` performs around it.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            Local coordinates with shape ``(N, 3)``, frame-major over ``n_node``.
+        atype : torch.Tensor
+            Local atom types with shape ``(N,)``.
+        n_node : torch.Tensor
+            Atoms per frame with shape ``(nf,)``.
+        box : torch.Tensor or None, optional
+            Simulation cell, ``(nf, 3, 3)`` or ``(nf, 9)``.
+        fparam : torch.Tensor or None, optional
+            Frame parameters with shape ``(nf, ndf)``.
+        aparam : torch.Tensor or None, optional
+            Atomic parameters with shape ``(N, nda)``.
+        do_atomic_virial : bool, default: False
+            Whether to return per-atom virials.
+        charge_spin : torch.Tensor or None, optional
+            Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+        spin : torch.Tensor or None, optional
+            Native spin with shape ``(N, 3)``.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public model keys; per-atom entries keep the flat axis.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model reads a rectangular node axis, which cannot represent
+            frames of unequal atom count without padding.
+        """
+        if not self.training and not self._compile_eval:
+            return self._forward_eager(
+                coord,
+                atype,
+                box,
+                fparam,
+                aparam,
+                do_atomic_virial,
+                charge_spin,
+                spin,
+                n_node,
+            )
+        del do_atomic_virial
+        if self._graph_eligible is None:
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
+        if not self._graph_eligible:
+            raise NotImplementedError(
+                "a flat node axis requires a model whose descriptor reads one; "
+                "this model compiles the dense (nlist) lower, whose batches "
+                "must be padded to a common atom count"
+            )
+        return self._forward_graph(
+            coord,
+            atype,
+            box,
+            fparam,
+            aparam,
+            charge_spin,
+            spin,
+            int(n_node.shape[0]),
+            0,
+            self.original_model.get_rcut(),
+            n_node=n_node,
+        )
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -1100,16 +1240,16 @@ class _CompiledModel(torch.nn.Module):
         spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         if not self.training and not self._compile_eval:
-            kwargs = {
-                "box": box,
-                "fparam": fparam,
-                "aparam": aparam,
-                "do_atomic_virial": do_atomic_virial,
-                "charge_spin": charge_spin,
-            }
-            if spin is not None:
-                kwargs["spin"] = spin
-            return self.original_model(coord, atype, **kwargs)
+            return self._forward_eager(
+                coord,
+                atype,
+                box,
+                fparam,
+                aparam,
+                do_atomic_virial,
+                charge_spin,
+                spin,
+            )
 
         from deepmd.dpmodel.utils.nlist import (
             build_neighbor_list,
@@ -1142,13 +1282,7 @@ class _CompiledModel(torch.nn.Module):
                 rcut,
             )
 
-        if spin is not None:
-            raise NotImplementedError(
-                "model-level spin requires the NeighborGraph lower; this model "
-                "compiles the dense neighbor-list lower"
-            )
-
-        sel = self.original_model.get_sel()
+        nsel = self.original_model.get_nsel()
 
         # coord extension + nlist (data-dependent, run in eager)
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
@@ -1167,20 +1301,30 @@ class _CompiledModel(torch.nn.Module):
             ext_atype,
             nloc,
             rcut,
-            sel,
+            nsel,
             # Keep the candidate list merged, matching eager training's
             # DefaultNeighborList contract. forward_common_lower always calls
             # model.format_nlist, which performs the type split for non-mixed
-            # descriptors. The shared builder globally truncates to sum(sel)
-            # before either split, so distinguish_types=True would only move
-            # the same layout transform earlier without changing the final
-            # formatted neighbor list consumed by the lower model.
+            # descriptors. The shared builder globally truncates to nsel before
+            # either split, so distinguish_types=True would only move the same
+            # layout transform earlier without changing the final formatted
+            # neighbor list consumed by the lower model. SpinModel.get_nsel()
+            # exposes the real-input count; its lower expands that nlist for
+            # the virtual types together with coordinates and spins.
             distinguish_types=False,
             # model-level pair exclusion is a nlist-BUILD transform (decision
             # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
             pair_excl=self.original_model.atomic_model.pair_excl,
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
+        ext_spin = None
+        if spin is not None:
+            spin = spin.reshape(nframes, nloc, 3)
+            ext_spin = torch.gather(
+                spin,
+                1,
+                mapping.unsqueeze(-1).expand(-1, -1, 3),
+            )
 
         # Mirror the uncompiled path's optional-input defaulting (see
         # ``SeZMModel._forward_common`` -> ``convert_fparam_aparam`` /
@@ -1245,6 +1389,7 @@ class _CompiledModel(torch.nn.Module):
                     self.original_model,
                     ext_coord,
                     ext_atype,
+                    ext_spin,
                     nlist,
                     mapping,
                     fparam,
@@ -1286,6 +1431,7 @@ class _CompiledModel(torch.nn.Module):
             result = compiled_lower(
                 ext_coord,
                 ext_atype,
+                ext_spin,
                 nlist,
                 mapping,
                 fparam,
@@ -1295,42 +1441,36 @@ class _CompiledModel(torch.nn.Module):
             )
         self._report_pending_compile()
 
-        # Translate forward_lower keys -> forward keys.  OUTPUT-AGNOSTIC:
-        # every key passes through unchanged (energy models emit
-        # atom_energy/energy/virial/..., property/dos/... models their own
-        # keys -- the hardcoded energy-key copy here used to KeyError on any
-        # non-energy fitting), EXCEPT the extended-region keys
-        # ``extended_force`` (nf, nall, 3) and ``extended_virial``
-        # (nf, nall, 9): their ghost rows are scatter-summed back onto
-        # local owners via ``mapping`` -- the same fold
-        # ``communicate_extended_output`` performs in the uncompiled path
-        # (which exposes them as ``force`` / ``atom_virial``).  Folding
-        # both keeps the compiled and uncompiled outputs key-for-key
-        # consistent, including for a future atom-virial training
-        # objective.
+        # Translate forward_lower keys -> forward keys. OUTPUT-AGNOSTIC:
+        # ordinary keys pass through unchanged; extended derivatives fold
+        # ghost rows back onto their local owners through ``mapping``, exactly
+        # as ``communicate_extended_output`` does in eager execution. A mask
+        # labels nodes rather than additive contributions, so its public value
+        # is the local prefix of the extended axis.
         out: dict[str, torch.Tensor] = {}
-        if "extended_force" in result:
-            ext_force = result["extended_force"]  # (nf, nall, 3)
-            idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
-            force = torch.zeros(
-                nframes, nloc, 3, dtype=ext_force.dtype, device=ext_force.device
-            )
-            force.scatter_add_(1, idx, ext_force)
-            out["force"] = force
-        if "extended_virial" in result:
-            ext_virial = result["extended_virial"]  # (nf, nall, 9)
-            idx = mapping.unsqueeze(-1).expand_as(ext_virial)  # (nf, nall, 9)
-            atom_virial = torch.zeros(
+        folded_keys = {
+            "extended_force": "force",
+            "extended_force_mag": "force_mag",
+            "extended_virial": "atom_virial",
+        }
+        for extended_key, local_key in folded_keys.items():
+            if extended_key not in result:
+                continue
+            value = result[extended_key]
+            index = mapping.unsqueeze(-1).expand_as(value)
+            local = torch.zeros(
                 nframes,
                 nloc,
-                ext_virial.shape[-1],
-                dtype=ext_virial.dtype,
-                device=ext_virial.device,
+                value.shape[-1],
+                dtype=value.dtype,
+                device=value.device,
             )
-            atom_virial.scatter_add_(1, idx, ext_virial)
-            out["atom_virial"] = atom_virial
+            out[local_key] = local.scatter_add(1, index, value)
+        if "extended_mask_mag" in result:
+            out["mask_mag"] = result["extended_mask_mag"][:, :nloc]
+        translated_extended_keys = {*folded_keys, "extended_mask_mag"}
         for key, val in result.items():
-            if key not in ("extended_force", "extended_virial"):
+            if key not in translated_extended_keys:
                 out[key] = val
         return out
 
@@ -1346,6 +1486,7 @@ class _CompiledModel(torch.nn.Module):
         nframes: int,
         nloc: int,
         rcut: float,
+        n_node: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Carry-all GRAPH forward -> compiled ``forward_common_lower_graph``.
 
@@ -1356,20 +1497,39 @@ class _CompiledModel(torch.nn.Module):
         so no extended->local scatter is needed; only the flat ``(N, *)`` node
         keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
         """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            compact_nodes,
+            expand_node_values,
+        )
         from deepmd.pt_expt.utils.graph_builder import (
             build_neighbor_graph_for_method,
+            build_ragged_neighbor_graph,
         )
 
         _model = self.original_model
 
-        coord_3d = coord.detach().reshape(nframes, nloc, 3)
+        # A ragged batch already holds the node axis the lower works on; a
+        # rectangular one is unravelled to it, and its per-atom outputs are
+        # folded back at the end.
+        ragged = n_node is not None
+        n_padded = nframes * nloc
+        # The builders take the shape the layout hands over: a flat node axis,
+        # or the rectangular one a padded batch carries.
+        coord_3d = (
+            coord.detach().reshape(-1, 3)
+            if ragged
+            else coord.detach().reshape(nframes, nloc, 3)
+        )
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
-        # Graph-lower per-node inputs are flat: aparam is (N, nda) and spin is
-        # (N, 3), matching the synthetic trace schema.
-        if aparam is not None:
-            aparam = aparam.reshape(nframes * nloc, -1)
-        if spin is not None:
-            spin = spin.reshape(nframes * nloc, 3)
+        # Graph-lower per-node inputs are flat: aparam is ``(N, nda)`` and
+        # spin is ``(N, 3)``, matching the synthetic trace schema. A ragged
+        # batch already carries that layout; only rectangular inputs need to
+        # be unfolded from their frame axis.
+        if not ragged:
+            if aparam is not None:
+                aparam = aparam.reshape(n_padded, -1)
+            if spin is not None:
+                spin = spin.reshape(n_padded, 3)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes
@@ -1406,15 +1566,28 @@ class _CompiledModel(torch.nn.Module):
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
         pair_excl = _model.atomic_model.pair_excl
-        ng = build_neighbor_graph_for_method(
-            getattr(_model, "neighbor_graph_method", "dense"),
-            coord_3d,
-            atype,
-            box_flat,
-            rcut,
-            pair_excl,
-        )
-        atype_flat = atype.reshape(nframes * nloc)
+        method = getattr(_model, "neighbor_graph_method", "dense")
+        if ragged:
+            ng = build_ragged_neighbor_graph(
+                method, coord_3d, atype, n_node, box_flat, rcut, pair_excl
+            )
+            atype_flat, node_index = atype, None
+        else:
+            ng = build_neighbor_graph_for_method(
+                method, coord_3d, atype, box_flat, rcut, pair_excl
+            )
+            # A rectangular batch of unequal atom counts is padded to a common
+            # width with phantom atoms (atype < 0). The builders leave them out
+            # of every edge, so dropping them from the node axis costs nothing
+            # and spares the network from evaluating them. On a batch of
+            # uniform atom count this is a renumbering by the identity.
+            atype_flat = atype.reshape(n_padded)
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_flat = atype_flat[node_index]
+            if aparam is not None:
+                aparam = aparam[node_index]
+            if spin is not None:
+                spin = spin[node_index]
 
         # Lazy compile of the GRAPH lower (cached per structure key and mode).
         compiled_lower = self._compiled_lower_by_mode.get(self.training)
@@ -1485,9 +1658,14 @@ class _CompiledModel(torch.nn.Module):
 
         # The compiled graph lower emits PUBLIC keys on the FLAT node axis
         # (``atom_energy`` / ``force`` are (N, *); ``energy`` / ``virial`` are
-        # (nf, *)).  Unravel the node-level keys to rectangular (nf, nloc, *) so
-        # callers receive the same shapes as the dense path.
-        N = nframes * nloc
+        # (nf, *)). A ragged caller reads that axis directly. A rectangular one
+        # has its node-level keys scattered back onto the padded width and
+        # unravelled to (nf, nloc, *), where a phantom slot reads zero -- what
+        # a masked-out atom contributed there before.
+        if ragged:
+            result["n_node"] = ng.n_node
+            return result
+        N = node_index.shape[0]
         # Node-level (per-atom, lead dim N) public keys emitted by the graph
         # lower; the remaining keys are frame-level (lead dim nf) and must NOT
         # be unravelled. Keying on the NAME rather than the ``N != nframes``
@@ -1509,7 +1687,9 @@ class _CompiledModel(torch.nn.Module):
                 and val is not None
                 and val.shape[:1] == torch.Size([N])
             ):
-                out[key] = val.reshape(nframes, nloc, *val.shape[1:])
+                out[key] = expand_node_values(val, node_index, n_padded).reshape(
+                    nframes, nloc, *val.shape[1:]
+                )
             else:
                 out[key] = val
         return out
@@ -1701,6 +1881,11 @@ class Trainer(AbstractTrainer):
             if self.multi_task
             else self.valid_numb_batch_by_task[DEFAULT_TASK_KEY]
         )
+
+        # The layout settles before the schedule below, because under
+        # ``mix:N`` it is what decides how many frames a batch holds, and the
+        # schedule counts those batches to turn epochs into steps.
+        self._configure_batch_layout(training_data, validation_data)
 
         # Statistics ----------------------------------------------------------
         self._finetune_update_stat = False
@@ -2201,6 +2386,58 @@ class Trainer(AbstractTrainer):
     # ------------------------------------------------------------------
     # torch.compile helpers
     # ------------------------------------------------------------------
+
+    def _configure_batch_layout(self, *data_maps: Any) -> None:
+        """Ask each LMDB data system for the layout its own model can consume.
+
+        Under ``mix:N``, a model whose descriptor reads a flat node axis takes
+        the frames of a batch concatenated, which spares it the padding that
+        frames of unequal atom count would otherwise need. Every other model
+        reads an ``(nf, nloc, ...)`` axis and needs them padded to a common
+        width. Non-mixing batch rules retain their established rectangular
+        layout. Only the trainer sees both sides, and it settles the question
+        here, once, before any batch is drawn.
+
+        A graph lower is necessary but not sufficient: the model must expose an
+        entry that takes the flat axis, and the configured loss must accept that
+        representation. Composed models (linear, ZBL bridging) have no such
+        model entry. Generalized-force and Hessian losses require rectangular
+        label axes. Traditional virtual-atom spin models expose no flat-axis
+        entry and therefore remain rectangular; native-spin models follow the
+        same graph capability contract once their loss accepts flat magnetic
+        outputs. Requiring both capabilities keeps the complete objective on a
+        layout it can evaluate.
+
+        Each task has its own data system and its own model, so the answer is
+        each task's own: a multi-task run pairing a graph model with a dense
+        one gives the first concatenated batches and the second padded ones.
+
+        This must run before the run length is resolved. Under ``mix:N`` the
+        layout decides where the sampler cuts a batch -- padding is what makes
+        a batch's cost depend on its widest frame -- so a schedule that
+        counted batches first would count a packing training never uses, and
+        would serve its first epoch in that packing.
+
+        Parameters
+        ----------
+        *data_maps : Any
+            The training and validation data systems, either bare or as the
+            per-task mappings a multi-task run builds.
+        """
+        for task_key in self.model_keys:
+            model = self.models[task_key]
+            loss = self.losses[task_key]
+            ragged = (
+                model_uses_graph_lower(model)
+                and hasattr(model, "forward_ragged")
+                and loss.supports_ragged_batches
+            )
+            for data_map in data_maps:
+                data = (
+                    data_map.get(task_key) if isinstance(data_map, dict) else data_map
+                )
+                if hasattr(data, "use_ragged_batches"):
+                    data.use_ragged_batches(ragged)
 
     def _configure_neighbor_graph_method(self, requested: str) -> None:
         """Resolve and install the training graph builder on eligible models."""
@@ -3002,7 +3239,10 @@ class Trainer(AbstractTrainer):
                 label=val_label,
                 task_key=task.key,
             )
-            natoms = int(val_input["atype"].shape[-1])
+            # The metrics are per-atom quantities, so each batch weighs by the
+            # real atoms it holds summed over its frames. Phantom atoms
+            # (atype < 0), which pad a mixed-nloc batch, contribute to none.
+            natoms = int((val_input["atype"] >= 0).sum())
             sum_natoms += natoms
             for key, value in vmore.items():
                 if "l2_" not in key:

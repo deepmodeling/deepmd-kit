@@ -107,6 +107,30 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             err_msg=err_msg,
         )
 
+    def test_default_charge_spin_uses_model_namespace(self) -> None:
+        """A device buffer supplies the default without a NumPy round trip."""
+        dtype = PRECISION_DICT["float64"]
+        descriptor = make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            add_chg_spin_ebd=True,
+            default_chg_spin=[0.5, -0.5],
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        with mock.patch.object(
+            torch.Tensor,
+            "numpy",
+            side_effect=TypeError("direct conversion is unavailable"),
+        ):
+            output = descriptor(coord_ext, atype_ext, nlist)[0]
+
+        assert output.device == self.device
+        assert torch.isfinite(output).all()
+
     def test_train_and_eval_amp_switches_are_independent(self) -> None:
         """Training follows ``use_amp``, evaluation follows ``DP_AMP_INFER``.
 
