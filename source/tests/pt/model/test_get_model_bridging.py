@@ -371,3 +371,20 @@ def test_canonical_spin_rejects_mismatched_pair_exclusions(scheme: str) -> None:
     }
     with pytest.raises(ValueError, match="must match"):
         get_model(cfg)
+
+
+def test_normalized_canonical_top_level_option_survives_child_defaults() -> None:
+    """The normal CLI path normalizes BEFORE building, which injects the
+    schema default on the learned child; an explicit top-level value must
+    survive that injection instead of being rejected as a conflict.
+    """
+    from deepmd.utils.argcheck import (
+        model_args,
+    )
+
+    cfg = _canonical_config()
+    cfg["data_stat_protect"] = 0.123
+    cfg = model_args().normalize_value(cfg, trim_pattern="_*")
+    assert cfg["models"][0]["data_stat_protect"] == 0.01  # injected default
+    model = get_model(cfg)
+    assert model.atomic_model.data_stat_protect == 0.123

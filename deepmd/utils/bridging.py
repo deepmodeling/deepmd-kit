@@ -121,6 +121,63 @@ _NON_CHILD_KEYS = _COMPOSITION_KEYS + _CONSUMED_KEYS + _TRAINER_KEYS
 assert not set(_LEARNED_CHILD_KEYS) & set(_NON_CHILD_KEYS)
 
 
+_NO_DEFAULT = object()
+_SCHEMA_DEFAULTS: dict | None = None
+
+
+def _learned_key_schema_defaults() -> dict:
+    """Collect the argcheck defaults of the learned-owned keys (cached).
+
+    Strict normalization injects these defaults on BOTH the composition
+    top level and the learned child, erasing the "did the user set this?"
+    provenance. The conflict resolution in
+    :func:`route_canonical_learned_options` recovers it by comparing a
+    value against its schema default: a level holding exactly the default
+    is treated as not explicitly configured.
+
+    Returns
+    -------
+    dict
+        Mapping from key name to its argcheck default, for every
+        ``_LEARNED_CHILD_KEYS`` entry that declares one.
+
+    Raises
+    ------
+    RuntimeError
+        If a key is declared with two different defaults anywhere in the
+        model schema: the recovery above then has no single reference
+        value and must not guess.
+    """
+    global _SCHEMA_DEFAULTS
+    if _SCHEMA_DEFAULTS is None:
+        from deepmd.utils.argcheck import (  # deferred: heavy import
+            model_args,
+        )
+
+        defaults: dict = {}
+
+        def _walk(arg: object) -> None:
+            for field in getattr(arg, "sub_fields", {}).values():
+                if field.name in _LEARNED_CHILD_KEYS and field.optional:
+                    if field.name in defaults and defaults[field.name] != (
+                        field.default
+                    ):
+                        raise RuntimeError(
+                            f"`{field.name}` is declared with inconsistent "
+                            "argcheck defaults; the canonical-route conflict "
+                            "resolution relies on a single one."
+                        )
+                    defaults[field.name] = field.default
+                _walk(field)
+            for variant in getattr(arg, "sub_variants", {}).values():
+                for choice in variant.choice_dict.values():
+                    _walk(choice)
+
+        _walk(model_args())
+        _SCHEMA_DEFAULTS = defaults
+    return _SCHEMA_DEFAULTS
+
+
 def route_canonical_learned_options(composition: dict, learned: dict) -> None:
     """Route learned-model options from a canonical composition to its child.
 
@@ -129,9 +186,18 @@ def route_canonical_learned_options(composition: dict, learned: dict) -> None:
     level, but the learned child is their one owner: a bridged builder
     reads them from the child config only. This helper copies each
     learned-owned key present at the top level onto ``learned`` (in
-    place) when the child does not set it, and raises when both levels
-    set different values — a silent drop or a silent override would both
-    unpin the ownership contract.
+    place) when the child does not set it.
+
+    When the two levels disagree, the argcheck default decides: strict
+    normalization injects defaults on both levels, so a level holding
+    exactly the schema default is treated as not explicitly configured
+    and the other level wins (in particular, a user-set top-level value
+    survives the child default injected on the normal CLI path). Only two
+    explicitly configured (non-default) values raise — a silent drop or
+    a silent override there would unpin the ownership contract. The one
+    unrecoverable ambiguity: explicitly setting a level to exactly the
+    default value is indistinguishable from not setting it, and loses to
+    an explicit non-default on the other level.
 
     Parameters
     ----------
@@ -143,20 +209,30 @@ def route_canonical_learned_options(composition: dict, learned: dict) -> None:
     Raises
     ------
     ValueError
-        If a learned-owned key is set at both levels with different
-        values.
+        If a learned-owned key is set to two different non-default values
+        at the two levels.
     """
     for key in _LEARNED_CHILD_KEYS:
         if key not in composition:
             continue
         if key in learned:
             if learned[key] != composition[key]:
-                raise ValueError(
-                    f"`{key}` is set both on the linear_ener composition "
-                    f"({composition[key]!r}) and on its learned child "
-                    f"({learned[key]!r}) with different values. The learned "
-                    "child owns this option: set it on the child only."
-                )
+                default = _learned_key_schema_defaults().get(key, _NO_DEFAULT)
+                if learned[key] == default:
+                    # argcheck-injected child default: the explicit
+                    # top-level value wins
+                    learned[key] = copy.deepcopy(composition[key])
+                elif composition[key] == default:
+                    # top-level default: the explicit child value wins
+                    pass
+                else:
+                    raise ValueError(
+                        f"`{key}` is set both on the linear_ener composition "
+                        f"({composition[key]!r}) and on its learned child "
+                        f"({learned[key]!r}) with different values. The "
+                        "learned child owns this option: set it on the child "
+                        "only."
+                    )
         else:
             learned[key] = copy.deepcopy(composition[key])
 

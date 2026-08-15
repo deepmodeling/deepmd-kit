@@ -321,3 +321,27 @@ def test_routing_helper_handles_every_learned_key_uniformly() -> None:
         assert learned[key] == "sentinel-a", key
         with pytest.raises(ValueError, match=key):
             route_canonical_learned_options({key: "sentinel-a"}, {key: "sentinel-b"})
+
+
+def test_routing_resolves_argcheck_default_conflicts() -> None:
+    """Strict normalization injects schema defaults on BOTH levels, erasing
+    the set-by-user provenance; the helper recovers it by comparing against
+    the argcheck default, so only two explicit non-default values conflict.
+    """
+    from deepmd.utils.bridging import (
+        route_canonical_learned_options,
+    )
+
+    # child holds the injected default -> the explicit top-level value wins
+    learned = {"data_stat_protect": 0.01}
+    route_canonical_learned_options({"data_stat_protect": 0.123}, learned)
+    assert learned["data_stat_protect"] == 0.123
+    # the top level holds the injected default -> the explicit child wins
+    learned = {"data_stat_protect": 0.123}
+    route_canonical_learned_options({"data_stat_protect": 0.01}, learned)
+    assert learned["data_stat_protect"] == 0.123
+    # two explicit non-default values are a REAL conflict
+    with pytest.raises(ValueError, match="data_stat_protect"):
+        route_canonical_learned_options(
+            {"data_stat_protect": 0.2}, {"data_stat_protect": 0.3}
+        )
