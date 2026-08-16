@@ -135,7 +135,6 @@ def get_linear_atomic_model(
     backend_name: str,
     atomic_model: type,
     pairtab_model: type,
-    inner_potential_model: type | None = None,
     linear_atomic_model: type | None = None,
     descriptor_child_builder: "Callable[[dict], Any | None] | None" = None,
 ) -> Any:
@@ -164,17 +163,13 @@ def get_linear_atomic_model(
         Backend learned atomic-model class.
     pairtab_model : type
         Backend pair-tabulation atomic-model class.
-    inner_potential_model : type, optional
-        Backend analytical-bridging atomic-model class. Defaults to the
-        dpmodel class; a backend that wraps dpmodel classes must pass its
-        own wrapper so the composition is assembled from backend-native
-        children rather than converted afterwards.
     linear_atomic_model : type, optional
         Backend linear composition atomic-model class. Defaults to the
-        dpmodel class, with the same obligation as
-        ``inner_potential_model``: a wrapping backend that leaves this
-        unset gets a composition that its model wrapper must convert, and
-        conversion keeps only what the portable record carries.
+        dpmodel class. A backend that wraps dpmodel classes must pass its
+        own wrapper: otherwise the composition it gets back is a dpmodel
+        instance that its model wrapper has to convert, and conversion
+        keeps only what the portable record carries -- dropping any
+        runtime state the children hold (e.g. ``use_amp``).
     descriptor_child_builder : callable, optional
         Backend hook for descriptor-bearing children: called with the
         child config (``type_map`` and derived clamp radii already
@@ -193,13 +188,12 @@ def get_linear_atomic_model(
         unsupported kind.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
-        InnerPotentialAtomicModel as InnerPotentialAtomicModelDP,
+        InnerPotentialAtomicModel,
     )
     from deepmd.dpmodel.atomic_model.linear_atomic_model import (
         LinearEnergyAtomicModel as LinearEnergyAtomicModelDP,
     )
 
-    InnerPotentialAtomicModel = inner_potential_model or InnerPotentialAtomicModelDP
     LinearEnergyAtomicModel = linear_atomic_model or LinearEnergyAtomicModelDP
 
     data = copy.deepcopy(data)
@@ -449,7 +443,6 @@ class BackendModelFactory:
         atomic_model: type | None = None,
         pairtab_model: type | None = None,
         zbl_model: type | None = None,
-        inner_potential_model: type | None = None,
         linear_atomic_model: type | None = None,
     ) -> None:
         """Store backend-native classes used by all model construction paths."""
@@ -460,7 +453,6 @@ class BackendModelFactory:
         self.atomic_model = atomic_model
         self.pairtab_model = pairtab_model
         self.zbl_model = zbl_model
-        self.inner_potential_model = inner_potential_model
         self.linear_atomic_model = linear_atomic_model
 
     def get_model_components(self, data: dict) -> tuple[Any, Any, str]:
@@ -498,7 +490,6 @@ class BackendModelFactory:
             backend_name=self.backend_name,
             atomic_model=self.atomic_model,
             pairtab_model=self.pairtab_model,
-            inner_potential_model=self.inner_potential_model,
             linear_atomic_model=self.linear_atomic_model,
             descriptor_child_builder=descriptor_child_builder,
         )

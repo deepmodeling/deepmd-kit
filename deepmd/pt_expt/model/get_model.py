@@ -10,9 +10,6 @@ import copy
 import logging
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
-from deepmd.dpmodel.atomic_model.inner_potential import (
-    InnerPotentialAtomicModel as InnerPotentialAtomicModelDP,
-)
 from deepmd.dpmodel.atomic_model.linear_atomic_model import (
     LinearEnergyAtomicModel as LinearEnergyAtomicModelDP,
 )
@@ -67,7 +64,6 @@ _WARNED_ONCE: set[str] = set()
 # runtime state (see the auto_wrapped_class invariant)
 DPAtomicModel = auto_wrapped_class(DPAtomicModelDP)
 PairTabAtomicModel = auto_wrapped_class(PairTabAtomicModelDP)
-InnerPotentialAtomicModel = auto_wrapped_class(InnerPotentialAtomicModelDP)
 LinearEnergyAtomicModel = auto_wrapped_class(LinearEnergyAtomicModelDP)
 
 _model_factory = BackendModelFactory(
@@ -78,7 +74,6 @@ _model_factory = BackendModelFactory(
     atomic_model=DPAtomicModel,
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
-    inner_potential_model=InnerPotentialAtomicModel,
     linear_atomic_model=LinearEnergyAtomicModel,
 )
 get_zbl_model = _model_factory.get_zbl_model
