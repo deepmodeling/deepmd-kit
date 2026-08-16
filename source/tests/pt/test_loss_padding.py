@@ -922,7 +922,9 @@ class TestPTEnergyLossForceGradAccum:
         actual = _ener_loss_fn(loss_obj, model_pred, label, 2)
         label_norm = torch.linalg.vector_norm(label_force, dim=-1)
         residual_norm = label_norm / (label_norm + relative_f)
-        expected = residual_norm.mean()
+        # The loss is assembled on the training device, while the inputs above
+        # are built on the host like every other case in this file.
+        expected = residual_norm.mean().to(actual.device)
         torch.testing.assert_close(actual, expected)
 
     def test_no_op_for_non_mixed(self):
