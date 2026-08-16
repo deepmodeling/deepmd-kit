@@ -278,12 +278,42 @@ class EquivariantFFN(nn.Module):
         torch.Tensor
             Output with shape (N, D, F, C).
         """
+        hidden = self._activate_hidden(x, scalar_only=False)
+
+        # === Step 3. Per-degree output projection ===
+        return self.so3_linear_2(hidden)
+
+    def forward_scalar(self, x: torch.Tensor) -> torch.Tensor:
+        """Evaluate the FFN for the ``l=0`` output only.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input with shape ``(N, D, F, C)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar output with shape ``(N, 1, F, C)``.
+        """
+        hidden = self._activate_hidden(x, scalar_only=True)
+
+        # === Step 3. Scalar output projection ===
+        return self.so3_linear_2.forward_scalar(hidden)
+
+    def _activate_hidden(
+        self,
+        x: torch.Tensor,
+        *,
+        scalar_only: bool,
+    ) -> torch.Tensor:
+        """Apply the input projection and equivariant nonlinearity."""
         # === Step 1. Input up projection ===
         x = self.so3_linear_1(x)
 
         # === Step 2. Equivariant nonlinearity ===
         if self.use_grid_net:
-            x = self.act(x)
+            x = self.act.forward_scalar(x) if scalar_only else self.act(x)
         elif self.glu_activation:
             # Split into value and gate branches along channel dimension
             x_val, x_gate = x.chunk(2, dim=-1)
@@ -292,9 +322,8 @@ class EquivariantFFN(nn.Module):
         else:
             x = self.act(x)
 
-        # === Step 3. Per-degree output projection ===
-        x = self.so3_linear_2(x)
-
+        if scalar_only and not self.use_grid_net:
+            x = x[:, 0:1, :, :]
         return x
 
     def serialize(self) -> dict[str, Any]:

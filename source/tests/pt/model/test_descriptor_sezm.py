@@ -355,6 +355,125 @@ class TestDescrptSeZM(_SeZMTestCase):
                 self.assertEqual(desc.shape, (1, 2, 4))
                 self.assertTrue(torch.all(torch.isfinite(desc)))
 
+    def test_so3_readout_scalar_path_matches_full_output(self) -> None:
+        """The scalar-specialized final FFN matches slicing its full output."""
+        dtype = torch.float64
+        for readout in ("glu", "mlp"):
+            with self.subTest(so3_readout=readout):
+                descriptor = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        l_schedule=[2, 2],
+                        kmax=1,
+                        so3_readout=readout,
+                        precision="float64",
+                        use_amp=False,
+                        seed=19,
+                    )
+                )
+                ffn = descriptor.output_ffn
+                generator = torch.Generator(device=self.device).manual_seed(23)
+                with torch.no_grad():
+                    for parameter in ffn.parameters():
+                        parameter.add_(
+                            torch.randn(
+                                parameter.shape,
+                                dtype=parameter.dtype,
+                                device=parameter.device,
+                                generator=generator,
+                            )
+                            * 0.1
+                        )
+
+                shape = (3, descriptor.node_readout_dim, 1, descriptor.channels)
+                full_input = torch.randn(
+                    shape,
+                    dtype=dtype,
+                    device=self.device,
+                    generator=generator,
+                    requires_grad=True,
+                )
+                scalar_input = full_input.detach().clone().requires_grad_(True)
+                probe = torch.randn(
+                    (3, 1, 1, descriptor.channels),
+                    dtype=dtype,
+                    device=self.device,
+                    generator=generator,
+                )
+
+                full = ffn(full_input)[:, 0:1, :, :]
+                scalar = ffn.forward_scalar(scalar_input)
+                torch.testing.assert_close(full, scalar, atol=1e-12, rtol=1e-12)
+
+                parameters = tuple(ffn.parameters())
+                full_grads = torch.autograd.grad(
+                    torch.sum(full * probe),
+                    (full_input, *parameters),
+                    allow_unused=True,
+                    create_graph=True,
+                )
+                scalar_grads = torch.autograd.grad(
+                    torch.sum(scalar * probe),
+                    (scalar_input, *parameters),
+                    allow_unused=True,
+                    create_graph=True,
+                )
+                for full_grad, scalar_grad in zip(
+                    full_grads, scalar_grads, strict=True
+                ):
+                    self.assertEqual(full_grad is None, scalar_grad is None)
+                    if full_grad is not None:
+                        torch.testing.assert_close(
+                            full_grad,
+                            scalar_grad,
+                            atol=1e-12,
+                            rtol=1e-12,
+                        )
+
+                tangents = tuple(
+                    None
+                    if grad is None
+                    else torch.randn(
+                        grad.shape,
+                        dtype=grad.dtype,
+                        device=grad.device,
+                        generator=generator,
+                    )
+                    for grad in full_grads
+                )
+                full_grad_probe = sum(
+                    torch.sum(grad * tangent)
+                    for grad, tangent in zip(full_grads, tangents, strict=True)
+                    if grad is not None and grad.requires_grad
+                )
+                scalar_grad_probe = sum(
+                    torch.sum(grad * tangent)
+                    for grad, tangent in zip(scalar_grads, tangents, strict=True)
+                    if grad is not None and grad.requires_grad
+                )
+                full_second_grads = torch.autograd.grad(
+                    full_grad_probe,
+                    (full_input, *parameters),
+                    allow_unused=True,
+                )
+                scalar_second_grads = torch.autograd.grad(
+                    scalar_grad_probe,
+                    (scalar_input, *parameters),
+                    allow_unused=True,
+                )
+                for full_grad, scalar_grad in zip(
+                    full_second_grads,
+                    scalar_second_grads,
+                    strict=True,
+                ):
+                    self.assertEqual(full_grad is None, scalar_grad is None)
+                    if full_grad is not None:
+                        torch.testing.assert_close(
+                            full_grad,
+                            scalar_grad,
+                            atol=1e-12,
+                            rtol=1e-12,
+                        )
+
     def test_zero_block_descriptor(self) -> None:
         """``n_blocks=0`` builds the interaction-free descriptor end to end.
 

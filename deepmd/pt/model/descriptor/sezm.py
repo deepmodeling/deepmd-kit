@@ -1848,7 +1848,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             x_ro = x[:, : self.node_readout_dim, :, :].to(dtype=self.compute_dtype)
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
-        return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        if self.so3_readout == "none":
+            return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        return x_ro[:, 0:1, :, :] + self.output_ffn.forward_scalar(x_ro)
 
     def _edge_quaternion(self, edge_cache: EdgeFeatureCache) -> torch.Tensor:
         """

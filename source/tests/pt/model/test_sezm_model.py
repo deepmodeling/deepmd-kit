@@ -763,9 +763,14 @@ class TestSeZMModelCompile(unittest.TestCase):
         coord_2, atype_2, box_2, _, _, _ = self._make_tiny_frame(nframe=2)
 
         # === Step 1. Build paired models with shared random weights ===
-        model_dyn = get_sezm_model(self._build_model_params(use_compile=False))
+        eager_params = self._build_model_params(use_compile=False)
+        compiled_params = self._build_model_params(use_compile=True)
+        for params in (eager_params, compiled_params):
+            params["descriptor"]["l_schedule"] = [1, 1]
+            params["descriptor"]["so3_readout"] = "mlp"
+        model_dyn = get_sezm_model(eager_params)
         self._randomize_params(model_dyn)
-        model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
+        model_cmp = get_sezm_model(compiled_params)
         model_cmp.load_state_dict(model_dyn.state_dict())
         model_dyn.train()
         model_cmp.train()
@@ -1158,6 +1163,7 @@ class TestSeZMModelProperty(unittest.TestCase):
                 "precision": "float32",
                 "seed": 7,
             },
+            "enable_tf32": True,
             "use_compile": use_compile,
         }
 
@@ -1268,7 +1274,8 @@ class TestSeZMModelProperty(unittest.TestCase):
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager_and_backpropagates(self) -> None:
-        """Compiled property forward should match eager and keep gradients."""
+        """Compiled property outputs and gradients should match eager."""
+        # === Step 1. Build models with identical parameters ===
         eager = get_sezm_model(
             self._build_model_params(use_compile=False, intensive=False)
         ).to(self.device)
@@ -1280,25 +1287,63 @@ class TestSeZMModelProperty(unittest.TestCase):
         eager.train()
         compiled.train()
 
+        # === Step 2. Compare atomic and reduced property outputs ===
         coord, atype, box = self._make_tiny_frame()
         ret_eager = eager(coord, atype, box=box)
         ret_compiled = compiled(coord, atype, box=box)
-        _assert_close_with_strict_warning(
-            ret_compiled["foo"],
-            ret_eager["foo"],
-            atol=1.0e-5,
-            rtol=1.0e-5,
-            msg="compiled property mismatch",
-        )
+        # TF32 kernels may use different matrix-multiplication tilings in eager
+        # and Inductor while accumulating TF32 products in float32.
+        forward_tol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
+        for key in ("atom_foo", "foo"):
+            _assert_close_with_strict_warning(
+                ret_compiled[key],
+                ret_eager[key],
+                atol=forward_tol,
+                rtol=forward_tol,
+                msg=f"compiled property mismatch at {key}",
+            )
         self.assertIn((True, False), compiled.compiled_core_compute_cache)
 
-        loss = ret_compiled["foo"].sum()
-        loss.backward()
-        grad_found = any(
-            param.grad is not None and torch.count_nonzero(param.grad).item() > 0
-            for param in compiled.parameters()
+        # === Step 3. Compare parameter gradients ===
+        probe = torch.tensor(
+            [[0.7, -1.1, 0.3]],
+            dtype=ret_eager["foo"].dtype,
+            device=self.device,
         )
-        self.assertTrue(grad_found)
+        torch.sum(ret_eager["foo"] * probe).backward()
+        torch.sum(ret_compiled["foo"] * probe).backward()
+        eager_grads = {
+            name: None if param.grad is None else param.grad.detach().clone()
+            for name, param in eager.named_parameters()
+        }
+        compiled_grads = {
+            name: None if param.grad is None else param.grad.detach().clone()
+            for name, param in compiled.named_parameters()
+        }
+        self.assertEqual(set(eager_grads), set(compiled_grads))
+        self.assertTrue(
+            any(
+                grad is not None and torch.count_nonzero(grad).item() > 0
+                for grad in compiled_grads.values()
+            )
+        )
+        grad_rtol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
+        for name, eager_grad in eager_grads.items():
+            compiled_grad = compiled_grads[name]
+            self.assertEqual(
+                eager_grad is None,
+                compiled_grad is None,
+                msg=f"gradient presence mismatch at {name}",
+            )
+            if eager_grad is None:
+                continue
+            _assert_close_with_strict_warning(
+                compiled_grad,
+                eager_grad,
+                atol=1.0e-6,
+                rtol=grad_rtol,
+                msg=f"compiled property gradient mismatch at {name}",
+            )
 
 
 class TestInnerPotential(unittest.TestCase):
