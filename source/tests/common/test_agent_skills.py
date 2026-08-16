@@ -4,12 +4,11 @@ import os
 import re
 import shutil
 import subprocess
-
-import pytest
-
 from pathlib import (
     Path,
 )
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 LAMMPS_SKILL = ROOT / "skills" / "lammps-deepmd" / "SKILL.md"
@@ -189,8 +188,12 @@ touch "${detail_prefix}.e.out" "${detail_prefix}.e_peratom.out" \
 
 def test_dpa4_minimal_model_configuration_normalizes() -> None:
     pytest.importorskip("deepmd.lib", reason="requires a built DeePMD checkout")
-    from deepmd.utils.argcheck import normalize
-    from deepmd.utils.compat import update_deepmd_input
+    from deepmd.utils.argcheck import (
+        normalize,
+    )
+    from deepmd.utils.compat import (
+        update_deepmd_input,
+    )
 
     text = DPA4_TRAIN_REFERENCE.read_text(encoding="utf-8")
     section = text.split("## Minimal model configuration", 1)[1]

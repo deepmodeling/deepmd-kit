@@ -27,7 +27,7 @@ checkpoint, run one command per held-out system:
 detail_prefix="details/system.000"
 mkdir -p "$(dirname "$detail_prefix")"
 for suffix in e.out e_peratom.out f.out v.out; do
-  test ! -e "${detail_prefix}.${suffix}" || exit 1
+    test ! -e "${detail_prefix}.${suffix}" || exit 1
 done
 dp --pt test -m selected.pt -s held_out/system.000 -n 0 -d "$detail_prefix"
 ```
@@ -42,7 +42,7 @@ branch during evaluation:
 ```bash
 dp --pt show selected.pt model-branch
 dp --pt test -m selected.pt -s held_out/system.000 -n 0 \
-  -d "$detail_prefix" --head SELECTED_BRANCH
+    -d "$detail_prefix" --head SELECTED_BRANCH
 ```
 
 A frozen selected `.pt2` is already single-head; do not pass `--head` to it.
