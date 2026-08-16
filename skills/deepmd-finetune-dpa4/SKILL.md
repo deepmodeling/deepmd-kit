@@ -96,8 +96,11 @@ If `--model-branch` is omitted, the fitting net may be initialized from the
 `RANDOM` branch instead. A multi-task target uses `finetune_head` in each target
 branch rather than the command-line option.
 
-If the architecture is unknown, `--use-pretrain-script` can inherit the stored
-model configuration except for `type_map`:
+`--use-pretrain-script` replaces only the target `model.descriptor` and
+`model.fitting_net` from the checkpoint. It does not restore the complete model
+configuration. Inspect and reproduce all other required model-level fields in
+the target input, including `type`, spin settings, bridging method/radii, and
+task-specific options:
 
 ```bash
 dp --pt train input.json --finetune pretrained.pt --use-pretrain-script
@@ -153,6 +156,10 @@ with that exact native checkpoint and every held-out system. Export for deployme
 only after the complete evaluation meets the task's declared thresholds.
 
 ## Export and test
+
+Before export, read
+`../deepmd-python-inference/references/dpa4-freeze-policy.md` and record the
+selected freeze-time inference environment.
 
 DPA4/SeZM uses the `.pt2` AOTInductor export path rather than the conventional
 PyTorch `.pth` freeze path:

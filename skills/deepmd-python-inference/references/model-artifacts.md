@@ -27,7 +27,9 @@ Do not add a backend flag merely from the assumed model family.
 ## DPA4/SeZM
 
 DPA4/SeZM supports Python evaluation from its `.pt` checkpoint, but a `.pt2`
-archive is the normal frozen deployment artifact. Freeze with:
+archive is the normal frozen deployment artifact. First read
+`dpa4-freeze-policy.md`; choose and record the freeze-time inference environment
+instead of inheriting unknown shell values. Then freeze with:
 
 ```bash
 dp --pt freeze -c model.ckpt.pt -o frozen_model

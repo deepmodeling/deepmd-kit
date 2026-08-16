@@ -26,7 +26,10 @@ Do not call a DPA4 `.pt2` archive a compressed model: DPA4 does not support
 
 ## DPA4/SeZM deployment
 
-Freeze a DPA4/SeZM checkpoint with the standard PyTorch command:
+Before export, read
+`../../deepmd-python-inference/references/dpa4-freeze-policy.md` and explicitly
+choose the freeze-time inference environment. Then freeze a DPA4/SeZM checkpoint
+with the standard PyTorch command:
 
 ```bash
 dp --pt freeze -c model.ckpt.pt -o frozen_model
@@ -78,8 +81,10 @@ that metadata or nested artifact is absent.
 LAMMPS atom types, dataset type indices, and model types are separate namespaces.
 Inspect the artifact's ordered type map, for example with
 `dp --pt show model.pt type-map`, and treat element identity as the bridge.
-For DeePMD data, decode each zero-based `type.raw` index through that system's
-ordered `type_map.raw`; do not reuse the dataset integer as a LAMMPS type.
+For DeePMD data with `type_map.raw`, decode each zero-based `type.raw` index
+through that ordered map. Without `type_map.raw`, require provenance that dataset
+indices already follow the candidate model's ordered type map. Fail closed when
+neither contract is established; do not reuse a dataset integer as a LAMMPS type.
 
 Use compact one-based LAMMPS types for the elements present in the structure and
 write the same element order in masses, `pair_coeff`, and dump metadata:

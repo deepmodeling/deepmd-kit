@@ -33,14 +33,17 @@ model section is:
     ],
     "descriptor": {
       "rcut": 6.0
+    },
+    "fitting_net": {
+      "type": "dpa4_ener"
     }
   }
 }
 ```
 
-`model.type: "dpa4"` selects the DPA4/SeZM descriptor and its default energy
-fitting network. DPA4 defaults to `float32`; double precision is unnecessary and
-not recommended for the normal workflow.
+Both `model.descriptor` and `model.fitting_net` are required. DPA4 defaults to
+`float32`; double precision is unnecessary and not recommended for the normal
+workflow.
 
 ## Parameters to choose deliberately
 
@@ -72,7 +75,9 @@ the `deepmd-finetune-dpa4` skill.
 
 ## Freeze and test
 
-DPA4 checkpoints are `.pt`, but deployment uses an AOTInductor `.pt2` archive:
+DPA4 checkpoints are `.pt`, but deployment uses an AOTInductor `.pt2` archive.
+Read `../../deepmd-python-inference/references/dpa4-freeze-policy.md` and choose
+the freeze-time inference policy before exporting:
 
 ```bash
 dp --pt freeze -c model.ckpt.pt -o frozen_model

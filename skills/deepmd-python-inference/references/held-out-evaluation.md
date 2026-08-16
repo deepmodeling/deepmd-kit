@@ -12,9 +12,11 @@ held-out evaluation.
 - Set `natoms` to the number of whitespace-separated entries in `type.raw`.
   Require coordinate and force widths of `3 * natoms`, one energy row per frame,
   nine box values per periodic frame, and finite values for every evaluated label.
-- Interpret `type.raw` as zero-based indices into that system's ordered
-  `type_map.raw`. Compare model and data types by element identity, not by copying
-  dataset indices into another type map.
+- When `type_map.raw` is present, interpret `type.raw` as zero-based indices into
+  that ordered map and compare model and data types by element identity. When it
+  is absent, require provenance that the dataset indices already follow the
+  candidate model's ordered type map. Fail closed when neither contract is
+  established; never copy dataset indices into an assumed model map.
 
 ## Run every system
 
@@ -22,12 +24,28 @@ Use the backend required by the exact candidate artifact. For a DPA4/SeZM native
 checkpoint, run one command per held-out system:
 
 ```bash
-dp --pt test -m selected.pt -s held_out/system.000 -n 0 -d details/system.000
+detail_prefix="details/system.000"
+mkdir -p "$(dirname "$detail_prefix")"
+for suffix in e.out e_peratom.out f.out v.out; do
+  test ! -e "${detail_prefix}.${suffix}" || exit 1
+done
+dp --pt test -m selected.pt -s held_out/system.000 -n 0 -d "$detail_prefix"
 ```
 
 `-n 0` evaluates all frames. Require explicit `-m`, `-s`, and a unique `-d`
 prefix for each system. Preserve the command, log, true exit code, checkpoint
 SHA256, and dataset identity. Do not overwrite existing detail files silently.
+
+For a native multi-task checkpoint, inspect its branches and pass the admitted
+branch during evaluation:
+
+```bash
+dp --pt show selected.pt model-branch
+dp --pt test -m selected.pt -s held_out/system.000 -n 0 \
+  -d "$detail_prefix" --head SELECTED_BRANCH
+```
+
+A frozen selected `.pt2` is already single-head; do not pass `--head` to it.
 
 ## Validate detail outputs
 
