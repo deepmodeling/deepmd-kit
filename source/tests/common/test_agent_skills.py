@@ -183,7 +183,7 @@ touch "${detail_prefix}.e.out" "${detail_prefix}.e_peratom.out" \
 
     assert first.returncode == 0
     assert second.returncode != 0
-    assert (tmp_path / "details" / "system.000.e.out").is_file()
+    assert (tmp_path / "details" / "selected-SHA256" / "system.000.e.out").is_file()
 
 
 def test_dpa4_minimal_model_configuration_normalizes() -> None:

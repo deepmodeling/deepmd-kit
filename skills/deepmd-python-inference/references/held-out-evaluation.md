@@ -24,11 +24,10 @@ Use the backend required by the exact candidate artifact. For a DPA4/SeZM native
 checkpoint, run one command per held-out system:
 
 ```bash
-detail_prefix="details/system.000"
-mkdir -p "$(dirname "$detail_prefix")"
-for suffix in e.out e_peratom.out f.out v.out; do
-    test ! -e "${detail_prefix}.${suffix}" || exit 1
-done
+detail_root="details/selected-SHA256"
+test ! -e "$detail_root" || exit 1
+mkdir -p "$detail_root"
+detail_prefix="$detail_root/system.000"
 dp --pt test -m selected.pt -s held_out/system.000 -n 0 -d "$detail_prefix"
 ```
 
