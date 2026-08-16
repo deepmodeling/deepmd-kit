@@ -58,6 +58,11 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
+from deepmd.pt_expt.infer.charge_state import (
+    ChargeStateFold,
+    charge_states_per_frame,
+    single_charge_state,
+)
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
 )
@@ -71,9 +76,6 @@ from deepmd.utils.pt_checkpoint import (
 
 if TYPE_CHECKING:
     import ase.neighborlist
-    from torch._inductor.package import (
-        AOTICompiledModel,
-    )
 
     from deepmd.dpmodel.utils.exclude_mask import (
         PairExcludeMask,
@@ -123,223 +125,6 @@ def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
     if odef.magnetic and odef.category == OutputVariableCategory.DERV_R:
         return "force_mag"
     return _GRAPH_CATEGORY_TO_KEY.get(odef.category)
-
-
-def _reshape_charge_spin(
-    charge_spin: np.ndarray, nframes: int, dim_chg_spin: int
-) -> np.ndarray:
-    charge_spin_arr = np.asarray(charge_spin)
-    try:
-        return charge_spin_arr.reshape(nframes, dim_chg_spin)
-    except ValueError as err:
-        raise ValueError(
-            f"charge_spin must be reshape-compatible with ({nframes}, {dim_chg_spin}), "
-            f"got shape {charge_spin_arr.shape}."
-        ) from err
-
-
-def _single_charge_state(charge_spin: np.ndarray, width: int) -> tuple[float, ...]:
-    """Reduce a requested condition to the one state a folded snapshot serves.
-
-    A folded condition lives in tables that are shared by the whole snapshot,
-    so it is a property of the loaded model rather than of a frame. A request
-    that names one state per frame is honoured only when every frame names the
-    same one.
-
-    Parameters
-    ----------
-    charge_spin : np.ndarray
-        Requested condition, of any shape holding a whole number of states.
-    width : int
-        Number of values in one charge state.
-
-    Returns
-    -------
-    tuple[float, ...]
-        The requested state, with ``width`` values.
-
-    Raises
-    ------
-    ValueError
-        If the request does not hold at least one whole state, or holds
-        several states that are not all equal.
-    """
-    values = np.asarray(charge_spin, dtype=np.float64)
-    if values.size == 0 or values.size % width:
-        raise ValueError(
-            f"charge_spin carries {values.size} values, which is not a positive "
-            f"whole number of {width}-wide charge states."
-        )
-    states = values.reshape(-1, width)
-    if not bool((states == states[0]).all()):
-        raise ValueError(
-            "This model folds one charge state into its frozen tables and "
-            "therefore serves a single state at a time, but charge_spin names "
-            f"{states.shape[0]} states that are not all equal."
-        )
-    return tuple(states[0].tolist())
-
-
-class _ChargeStateFold:
-    """The rebuild of the frozen tables that carry a compressed charge state.
-
-    A compressed charge-conditioned descriptor evaluates its frame condition
-    once, when the model is frozen, into a handful of tables. Those tables
-    reach the compiled lower as module constants, so serving a different
-    condition means rebuilding them and writing them over those constants
-    rather than re-evaluating the condition on every step. The archive
-    therefore ships a second compiled artifact that performs the rebuild,
-    together with the name of the constant each of its outputs replaces.
-
-    Every lower lifts its constants independently, so the names hold only for
-    the lower they were resolved against at freeze time. Only a compressed
-    DPA4C descriptor folds a charge state, and that family never carries
-    message passing across ranks, so an archive with a fold holds exactly one
-    lower and the question of a second set of names does not arise.
-
-    Parameters
-    ----------
-    model_file : str
-        Path to the ``.pt2`` archive.
-    metadata : dict[str, Any]
-        Parsed archive metadata.
-    target : AOTICompiledModel
-        The lower whose constants carry the condition.
-
-    Attributes
-    ----------
-    width : int
-        Number of values in a charge state this fold accepts.
-
-    Raises
-    ------
-    ValueError
-        If the archive declares a fold it cannot supply, or names no width
-        for a charge state.
-    """
-
-    def __init__(
-        self,
-        model_file: str,
-        metadata: dict[str, Any],
-        target: "AOTICompiledModel",
-    ) -> None:
-        import tempfile
-        import zipfile
-
-        from torch._inductor import (
-            aoti_load_package,
-        )
-
-        from deepmd.pt_expt.utils.serialization import (
-            PT2_EXTRA_PREFIX,
-        )
-
-        self._constants = [str(name) for name in metadata["charge_state_constants"]]
-        # The lower reads no condition, so what the model accepts is the state
-        # the snapshot was frozen against, which is also the layout the rebuild
-        # consumes.
-        default_chg_spin = metadata.get("default_chg_spin")
-        if not default_chg_spin:
-            raise ValueError(
-                f"'{model_file}' ships a charge-state fold but names no "
-                "default_chg_spin, so the width of a charge state is unknown."
-            )
-        self.width = len(default_chg_spin)
-
-        entry = PT2_EXTRA_PREFIX + "charge_state.pt2"
-        with zipfile.ZipFile(model_file, "r") as zf:
-            if entry not in zf.namelist():
-                raise ValueError(
-                    f"Invalid .pt2 file '{model_file}': it declares "
-                    f"charge_state_constants but carries no '{entry}', so it "
-                    "cannot serve a runtime charge state."
-                )
-            archive = zf.read(entry)
-        # ``aoti_load_package`` reads a path, so the nested archive is extracted
-        # to a temporary file that this object owns and releases with itself.
-        self._archive = tempfile.NamedTemporaryFile(suffix=".pt2")
-        self._archive.write(archive)
-        self._archive.flush()
-        self._runner = aoti_load_package(self._archive.name)
-        self._target = target
-        self._applied: tuple[float, ...] | None = None
-
-    @classmethod
-    def load(
-        cls,
-        model_file: str,
-        metadata: dict[str, Any],
-        target: "AOTICompiledModel",
-    ) -> "_ChargeStateFold | None":
-        """Load the rebuild an archive declares, if it declares one.
-
-        The constant-name field is the archive's claim that the rebuild ships
-        with it, so an archive that declares the names and cannot supply the
-        rebuild is malformed and fails here rather than degrading silently.
-
-        Parameters
-        ----------
-        model_file : str
-            Path to the ``.pt2`` archive.
-        metadata : dict[str, Any]
-            Parsed archive metadata.
-        target : AOTICompiledModel
-            The lower whose constants carry the condition.
-
-        Returns
-        -------
-        _ChargeStateFold or None
-            The fold, or ``None`` when the archive declares none.
-        """
-        if "charge_state_constants" not in metadata:
-            return None
-        return cls(model_file, metadata, target)
-
-    def apply(self, charge_spin: tuple[float, ...]) -> None:
-        """Rebuild the tables for a condition and write them over the constants.
-
-        Rebuilding is skipped when the condition already applies, so a run that
-        evaluates many frames at one condition pays for it once.
-
-        Applying a condition overwrites loaded module state and is therefore
-        not safe to interleave with a forward pass.
-
-        Parameters
-        ----------
-        charge_spin : tuple[float, ...]
-            The condition, with :attr:`width` values.
-
-        Raises
-        ------
-        RuntimeError
-            If the rebuild returns a different number of tables than the
-            archive names constants.
-        """
-        from deepmd.pt_expt.utils.env import (
-            DEVICE,
-        )
-
-        if charge_spin == self._applied:
-            return
-        # The rebuild consumes the condition in the (1, width) float32 layout
-        # the inference lower would receive.
-        tables = self._runner(
-            torch.tensor([charge_spin], dtype=torch.float32, device=DEVICE)
-        )
-        if len(tables) != len(self._constants):
-            raise RuntimeError(
-                f"The charge-state fold returned {len(tables)} tables but the "
-                f"archive names {len(self._constants)} constants; it cannot "
-                "serve a runtime charge state."
-            )
-        # An unnamed output belongs to a mechanism this model has disabled and
-        # has no constant to reach.
-        self._target.load_constants(
-            {name: table for name, table in zip(self._constants, tables) if name},
-            check_full_update=False,
-        )
-        self._applied = charge_spin
 
 
 def _warn_legacy_edge_vec(metadata: dict) -> None:
@@ -432,7 +217,7 @@ class DeepEval(DeepEvalBackend):
         self._is_pt2 = model_file.endswith(".pt2")
         # Only a compressed ``.pt2`` folds its charge state into constants; a
         # model that reads the condition as an ordinary input needs no rebuild.
-        self._charge_state_fold: _ChargeStateFold | None = None
+        self._charge_state_fold: ChargeStateFold | None = None
 
         if self._is_pt2:
             self._load_pt2(model_file)
@@ -713,7 +498,7 @@ class DeepEval(DeepEvalBackend):
         PyTorch 2.11 ``load_pt2`` loader accepts the archive without the
         "outdated pt2 file" fallback warning.  A compressed charge-conditioned
         archive carries a second compiled artifact beside the inference lower,
-        which :class:`_ChargeStateFold` loads to serve a runtime condition.
+        which :class:`ChargeStateFold` loads to serve a runtime condition.
         """
         import zipfile
 
@@ -756,7 +541,7 @@ class DeepEval(DeepEvalBackend):
         self._pt2_runner = aoti_load_package(model_file)
         self.exported_module = None
 
-        self._charge_state_fold = _ChargeStateFold.load(
+        self._charge_state_fold = ChargeStateFold.load(
             model_file, self.metadata, self._pt2_runner
         )
 
@@ -920,6 +705,7 @@ class DeepEval(DeepEvalBackend):
             "has_chg_spin_ebd": model.has_chg_spin_ebd(),
             "has_default_chg_spin": model.get_default_chg_spin() is not None,
             "default_chg_spin": model.get_default_chg_spin(),
+            "chg_spin_table_ranges": model.get_chg_spin_table_ranges(),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
@@ -1149,6 +935,19 @@ class DeepEval(DeepEvalBackend):
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
+    def _chg_spin_table_ranges(self) -> list | None:
+        """Get the row range each charge/spin value indexes, as declared.
+
+        The domain of a condition belongs to the model that consumes it: one
+        that gathers table rows accepts only integers inside those rows, while
+        one that embeds the condition continuously accepts any value. A
+        compiled archive carries the declaration in its metadata, so the same
+        rule applies with or without a Python model in hand.
+        """
+        if self._dpmodel is not None:
+            return self._dpmodel.get_chg_spin_table_ranges()
+        return self.metadata.get("chg_spin_table_ranges")
+
     def _no_runtime_condition_reason(self) -> str:
         """Explain why the loaded model serves no runtime charge state.
 
@@ -1208,7 +1007,9 @@ class DeepEval(DeepEvalBackend):
             return
         if charge_spin is None:
             charge_spin = self.metadata["default_chg_spin"]
-        fold.apply(_single_charge_state(charge_spin, fold.width))
+        fold.apply(
+            single_charge_state(charge_spin, fold.width, self._chg_spin_table_ranges())
+        )
 
     def _make_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
@@ -1253,7 +1054,9 @@ class DeepEval(DeepEvalBackend):
             return None
         if charge_spin is not None:
             return torch.tensor(
-                _reshape_charge_spin(charge_spin, nframes, dim_chg_spin),
+                charge_states_per_frame(
+                    charge_spin, nframes, dim_chg_spin, self._chg_spin_table_ranges()
+                ),
                 dtype=torch.float64,
                 device=DEVICE,
             )
@@ -1266,7 +1069,13 @@ class DeepEval(DeepEvalBackend):
         if hasattr(default_chg_spin, "cpu"):
             default_chg_spin = default_chg_spin.cpu().numpy()
         return (
-            torch.tensor(default_chg_spin, dtype=torch.float64, device=DEVICE)
+            torch.tensor(
+                single_charge_state(
+                    default_chg_spin, dim_chg_spin, self._chg_spin_table_ranges()
+                ),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
             .view(1, dim_chg_spin)
             .expand(nframes, -1)
             .contiguous()

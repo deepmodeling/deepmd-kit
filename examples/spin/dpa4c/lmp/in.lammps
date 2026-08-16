@@ -4,12 +4,8 @@
 # magnetic force is the negative spin gradient of the energy, so no virtual
 # atoms are created and the atom count equals the number of physical atoms.
 #
-# The pair style requires a model frozen with the compact canonical graph
-# lower, which is what `dp --pt-expt freeze --lower-kind auto` selects for a
-# compressed DPA4C:
-#
-#   dp --pt-expt compress -i model.ckpt.pt -o compressed.pt
-#   dp --pt-expt freeze -c compressed.pt -o frozen_model --lower-kind auto
+# The pair style reads a graph-lower archive or the compact canonical graph
+# archive produced by compression. See README.md for how to obtain one.
 #
 # Substitute `dpa4spin/kk` for the device-resident Kokkos path, which keeps the
 # graph and the moment in device memory:

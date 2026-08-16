@@ -613,8 +613,16 @@ def build_compression_artifacts(
     Raises
     ------
     ValueError
-        If the descriptor is not an fp32 model with a compiled specialization.
+        If the descriptor excludes type pairs, or is not an fp32 model with a
+        compiled specialization.
     """
+    if getattr(descriptor, "exclude_types", None):
+        raise ValueError(
+            "DPA4C compressed CUDA has no type-exclusion branch, so a "
+            "descriptor with a non-empty `exclude_types` cannot reach the "
+            "fused path. Drop the exclusions, or deploy the uncompressed "
+            "graph archive."
+        )
     sample_parameter = next(descriptor.parameters())
     if sample_parameter.dtype != torch.float32:
         raise ValueError(

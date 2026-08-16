@@ -16,15 +16,19 @@ scheme, see `examples/spin/lmp`; for DPA4 / SeZM native spin, see
 
 ## Usage
 
-Train with the configuration in `../input.json`, compress, and freeze. The
-pair style requires the compact canonical graph lower, which `--lower-kind auto` selects for a compressed DPA4C; the archive is target-specific and is not
-shipped, so freeze locally:
+Train with the configuration in `../input.json` and freeze to a `.pt2` archive.
+The archive is target-specific and is not shipped, so freeze locally:
 
 ```bash
 dp --pt-expt train ../input.json
-dp --pt-expt compress -i model.ckpt.pt -o compressed.pt
-dp --pt-expt freeze -c compressed.pt -o frozen_model --lower-kind auto
+dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph
 ```
+
+The pair style accepts either a graph-lower archive, as frozen above, or the
+compact canonical graph archive that `dp --pt-expt compress` produces, which
+runs the fused CUDA kernels. See
+[model compression](../../../../doc/model/dpa4c.md#model-compression) for that
+workflow, and point `pair_style` at the compressed archive if you follow it.
 
 Run on the host:
 

@@ -6074,10 +6074,13 @@ def validating_args() -> Argument:
         "Metric used to determine the best checkpoint during full validation. "
         "The string is case-insensitive. For energy training the supported "
         f"values are {energy_metrics}; for spin-energy training they are "
-        f"{spin_metrics}. `E` and `V` are per-atom metrics, `F` and `FR` use "
+        f"{spin_metrics}. `E` and `V` are per-atom metrics, `S` is stress, the "
+        "negated virial divided by the cell volume, `F` and `FR` use "
         "component-wise force errors, and `FM` uses magnetic-force errors, "
         "matching `dp test`. The corresponding loss prefactors must not both "
-        "be 0."
+        "be 0; `S` and `V` are two presentations of the virial and both "
+        "require `start_pref_v` and `limit_pref_v`. The validation log reports "
+        "whichever of `S` and `V` is selected, defaulting to `S`."
     )
     doc_full_val_file = "The file for writing full validation results only. This file is independent from `training.disp_file`."
     doc_full_val_start = (

@@ -254,6 +254,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Get the default charge_spin values."""
         return None
 
+    def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
+        """Get the row range each charge_spin value indexes, or None."""
+        return None
+
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],

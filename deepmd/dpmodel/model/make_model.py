@@ -1163,6 +1163,10 @@ def make_model(
             """Get the default charge_spin values."""
             return self.atomic_model.get_default_chg_spin()
 
+        def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
+            """Get the row range each charge_spin value indexes, or None."""
+            return self.atomic_model.get_chg_spin_table_ranges()
+
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
 

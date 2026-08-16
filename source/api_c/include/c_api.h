@@ -442,9 +442,9 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
- * @note API version 29 used signed int64 source and source-order arrays;
- *       API version 30 uses the uint32 arrays declared here.
- * @since API version 29
+ * @note The source and source-order arrays are uint32 as of API version 30;
+ *       API versions 28 and 29 declared them as signed int64.
+ * @since API version 28
  */
 extern void DP_DeepPotComputeCanonicalGraphGPU(
     DP_DeepPot* dp,

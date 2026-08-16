@@ -125,6 +125,15 @@ def make_base_model() -> type[object]:
             """
             return None
 
+        def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
+            """Return the row range each charge/spin value indexes, or ``None``.
+
+            ``None`` means the condition is a continuous quantity, so only its
+            width is constrained; a list means every acceptable value is an
+            integer inside the matching half-open range.
+            """
+            return None
+
         def get_var_name(self) -> str | None:
             """Return the fitted property's variable name, or ``None`` if
             this is not a property model. ``is not None`` is the support

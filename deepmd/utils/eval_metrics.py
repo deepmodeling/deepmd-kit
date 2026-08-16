@@ -18,13 +18,18 @@ if TYPE_CHECKING:
         Callable,
     )
 
-# Full validation reports the second-rank response as stress rather than as
-# virial, and stress is not a field of :class:`EnergyTypeEvalMetrics`: it needs
-# the cell volume. It is therefore contributed by ``_stress_weighted_errors``
-# instead of being projected here.
 FULL_VALIDATION_WEIGHTED_METRIC_KEYS = {
     "energy_per_atom": ("mae_e_per_atom", "rmse_e_per_atom"),
     "force": ("mae_f", "rmse_f"),
+    "virial_per_atom": ("mae_v_per_atom", "rmse_v_per_atom"),
+    "stress": ("mae_s", "rmse_s"),
+}
+# Spin full validation splits the force term into real and magnetic parts, so
+# it projects every shared metric except the plain force.
+SPIN_FULL_VALIDATION_WEIGHTED_METRIC_KEYS = {
+    "energy_per_atom": ("mae_e_per_atom", "rmse_e_per_atom"),
+    "virial_per_atom": ("mae_v_per_atom", "rmse_v_per_atom"),
+    "stress": ("mae_s", "rmse_s"),
 }
 DP_TEST_WEIGHTED_METRIC_KEYS = {
     "energy": ("mae_e", "rmse_e"),
@@ -80,6 +85,7 @@ class EnergyTypeEvalMetrics:
     force: ErrorStat | None = None
     virial: ErrorStat | None = None
     virial_per_atom: ErrorStat | None = None
+    stress: ErrorStat | None = None
 
     def as_weighted_average_errors(
         self,
@@ -146,6 +152,46 @@ def compute_weighted_error_stat(
     )
 
 
+def _compute_stress_error_stat(
+    virial_prediction: np.ndarray,
+    virial_reference: np.ndarray,
+    box: np.ndarray | None,
+) -> ErrorStat | None:
+    """Compute the stress error of one evaluation dataset.
+
+    Stress is the negated virial divided by the cell volume, the
+    tensile-positive convention ``dp test`` reports. A frame whose cell is
+    singular carries no stress and is dropped rather than contributing a
+    divergent entry.
+
+    Parameters
+    ----------
+    virial_prediction : np.ndarray
+        Predicted virial with shape (nframes, 9), in eV.
+    virial_reference : np.ndarray
+        Reference virial with shape (nframes, 9), in eV.
+    box : np.ndarray | None
+        Cell vectors with shape (nframes, 9) in Angstrom, or ``None`` when the
+        caller supplies no cell.
+
+    Returns
+    -------
+    ErrorStat | None
+        Stress error in eV/Angstrom^3, or ``None`` when no cell is supplied or
+        no frame has a non-singular cell.
+    """
+    if box is None:
+        return None
+    volume = np.abs(np.linalg.det(np.asarray(box).reshape(-1, 3, 3)))
+    finite = volume > 0.0
+    if not np.any(finite):
+        return None
+    scale = -1.0 / volume[finite, None]
+    return compute_error_stat(
+        virial_prediction[finite] * scale, virial_reference[finite] * scale
+    )
+
+
 def compute_energy_type_metrics(
     prediction: dict[str, np.ndarray],
     test_data: dict[str, np.ndarray],
@@ -158,6 +204,7 @@ def compute_energy_type_metrics(
     force = None
     virial = None
     virial_per_atom = None
+    stress = None
 
     if bool(test_data.get("find_energy", 0.0)):
         energy = compute_error_stat(
@@ -177,14 +224,14 @@ def compute_energy_type_metrics(
         )
 
     if has_pbc and bool(test_data.get("find_virial", 0.0)):
-        virial = compute_error_stat(
-            prediction["virial"].reshape(-1, 9),
-            test_data["virial"].reshape(-1, 9),
-        )
+        virial_prediction = prediction["virial"].reshape(-1, 9)
+        virial_reference = test_data["virial"].reshape(-1, 9)
+        virial = compute_error_stat(virial_prediction, virial_reference)
         virial_per_atom = compute_error_stat(
-            prediction["virial"].reshape(-1, 9),
-            test_data["virial"].reshape(-1, 9),
-            scale=1.0 / natoms,
+            virial_prediction, virial_reference, scale=1.0 / natoms
+        )
+        stress = _compute_stress_error_stat(
+            virial_prediction, virial_reference, test_data.get("box")
         )
 
     return EnergyTypeEvalMetrics(
@@ -193,51 +240,8 @@ def compute_energy_type_metrics(
         force=force,
         virial=virial,
         virial_per_atom=virial_per_atom,
+        stress=stress,
     )
-
-
-def _stress_weighted_errors(
-    prediction: dict[str, np.ndarray],
-    test_data: dict[str, np.ndarray],
-    has_pbc: bool,
-) -> dict[str, tuple[float, float]]:
-    """Return the weighted stress errors of one system.
-
-    Stress is the negated virial divided by the cell volume, the
-    tensile-positive convention ``dp test`` reports. A frame whose cell is
-    singular carries no stress and is dropped rather than producing a
-    divergent entry.
-
-    Parameters
-    ----------
-    prediction : dict[str, np.ndarray]
-        Model predictions containing ``virial`` with shape ``(nframes, 9)``.
-    test_data : dict[str, np.ndarray]
-        Reference labels containing ``virial`` and ``box``, the latter with
-        shape ``(nframes, 9)`` in Angstrom.
-    has_pbc : bool
-        Whether the system is periodic, gating the metric.
-
-    Returns
-    -------
-    dict[str, tuple[float, float]]
-        Weighted-average-ready stress errors in eV/Angstrom^3, empty when the
-        system is aperiodic, carries no virial label, or has no frame with a
-        non-singular cell.
-    """
-    if not (has_pbc and bool(test_data.get("find_virial", 0.0))):
-        return {}
-    box = np.asarray(test_data["box"]).reshape(-1, 3, 3)
-    volume = np.abs(np.linalg.det(box))
-    finite = volume > 0.0
-    if not np.any(finite):
-        return {}
-    scale = -1.0 / volume[finite]
-    stress = compute_error_stat(
-        prediction["virial"].reshape(-1, 9)[finite] * scale[:, None],
-        test_data["virial"].reshape(-1, 9)[finite] * scale[:, None],
-    )
-    return stress.as_weighted_average_errors("mae_s", "rmse_s")
 
 
 def compute_spin_force_metrics(
@@ -329,7 +333,7 @@ def compute_full_validation_energy_metrics(
     natoms : int
         The number of atoms per frame, used for per-atom normalization.
     has_pbc : bool
-        Whether the system is periodic, gating the virial metrics.
+        Whether the system is periodic, gating the second-rank metrics.
 
     Returns
     -------
@@ -337,9 +341,7 @@ def compute_full_validation_energy_metrics(
         Weighted-average-ready ``(value, weight)`` pairs keyed by metric.
     """
     metrics = compute_energy_type_metrics(prediction, test_data, natoms, has_pbc)
-    errors = metrics.as_weighted_average_errors(FULL_VALIDATION_WEIGHTED_METRIC_KEYS)
-    errors.update(_stress_weighted_errors(prediction, test_data, has_pbc))
-    return errors
+    return metrics.as_weighted_average_errors(FULL_VALIDATION_WEIGHTED_METRIC_KEYS)
 
 
 def compute_full_validation_spin_metrics(
@@ -350,10 +352,9 @@ def compute_full_validation_spin_metrics(
 ) -> dict[str, tuple[float, float]]:
     """Compute spin-energy full validation metrics for one system.
 
-    The energy term reuses per-atom energy errors. Forces are split into a
-    real-atom term over all atoms and a magnetic term over the magnetic atoms
-    selected by ``mask_mag``. A periodic system additionally reports stress,
-    the negated virial divided by the cell volume.
+    The energy and second-rank terms come from the shared energy-type metrics.
+    Forces replace the shared plain-force term with a real-atom term over all
+    atoms and a magnetic term over the magnetic atoms selected by ``mask_mag``.
 
     Parameters
     ----------
@@ -365,32 +366,57 @@ def compute_full_validation_spin_metrics(
     natoms : int
         The number of atoms per frame, used for per-atom normalization.
     has_pbc : bool
-        Whether the system is periodic, gating the stress metric.
+        Whether the system is periodic, gating the second-rank metrics.
 
     Returns
     -------
     dict[str, tuple[float, float]]
         Weighted-average-ready ``(value, weight)`` pairs keyed by metric.
     """
-    errors: dict[str, tuple[float, float]] = {}
-    if bool(test_data.get("find_energy", 0.0)):
-        energy_per_atom = compute_error_stat(
-            prediction["energy"].reshape(-1, 1),
-            test_data["energy"].reshape(-1, 1),
-            scale=1.0 / natoms,
-        )
-        errors.update(
-            energy_per_atom.as_weighted_average_errors(
-                "mae_e_per_atom", "rmse_e_per_atom"
-            )
-        )
+    metrics = compute_energy_type_metrics(prediction, test_data, natoms, has_pbc)
+    errors = metrics.as_weighted_average_errors(
+        SPIN_FULL_VALIDATION_WEIGHTED_METRIC_KEYS
+    )
     if bool(test_data.get("find_force", 0.0)):
         spin_metrics = _spin_force_metrics_from_prediction(prediction, test_data)
         errors.update(
             spin_metrics.as_weighted_average_errors(DP_TEST_SPIN_WEIGHTED_METRIC_KEYS)
         )
-    errors.update(_stress_weighted_errors(prediction, test_data, has_pbc))
     return errors
+
+
+@dataclass(frozen=True)
+class MetricFamily:
+    """One quantity a full validation profile reports, as MAE and RMSE.
+
+    Families sharing a loss prefactor pair are alternative presentations of the
+    same trained quantity, such as the second-rank response reported either as
+    stress or as per-atom virial. The log table shows exactly one of them.
+
+    Attributes
+    ----------
+    token : str
+        Family identifier used in ``validation_metric``, such as ``"e"``.
+    mae_key : str
+        Internal metric key carrying the mean absolute error.
+    rmse_key : str
+        Internal metric key carrying the root mean square error.
+    unit : tuple[str, float]
+        Display unit and the factor converting an internal value into it.
+    prefactors : tuple[str, str]
+        Loss prefactor keys that must both be active for the family to be
+        trainable.
+    """
+
+    token: str
+    mae_key: str
+    rmse_key: str
+    unit: tuple[str, float]
+    prefactors: tuple[str, str]
+
+    def metrics(self) -> tuple[tuple[str, str], ...]:
+        """Return the ``(kind, metric_key)`` pairs this family contributes."""
+        return (("mae", self.mae_key), ("rmse", self.rmse_key))
 
 
 @dataclass(frozen=True)
@@ -399,37 +425,16 @@ class FullValidationMetricProfile:
 
     Bundles every aspect that differs between energy-type and spin-energy full
     validation so the validator stays data-driven instead of branching on the
-    model class:
-
-    - ``column_order`` defines the ``val.log`` table layout as
-      ``(header_label, metric_key)`` pairs.
-    - ``metric_key_map`` maps a normalized ``validation_metric`` token (such as
-      ``"e:mae"``) to an internal metric key (such as ``"mae_e_per_atom"``).
-    - ``metric_family_by_key`` maps an internal metric key back to its family,
-      used for display-unit lookup.
-    - ``unit_by_family`` maps a family to its ``(display_unit, scale)``.
-    - ``prefactor_by_metric`` maps a metric token to the loss prefactor keys
-      that must both be active for the metric to be trainable.
-    - ``needs_spin`` indicates whether the model consumes a spin input and
-      emits magnetic forces.
-    - ``log_header_note`` is the one-line table legend written to ``val.log``.
-    - ``compute_system_metrics`` turns one system's prediction and reference
-      into weighted ``(value, weight)`` metric pairs.
+    model class. Every selectable metric, display unit and loss prefactor pair
+    derives from ``families``, so each quantity is declared exactly once.
 
     Attributes
     ----------
     name : str
         Profile identifier, either ``"energy"`` or ``"spin"``.
-    column_order : tuple[tuple[str, str], ...]
-        Ordered ``(header_label, metric_key)`` pairs for the log table.
-    metric_key_map : dict[str, str]
-        Normalized metric token to internal metric key.
-    metric_family_by_key : dict[str, str]
-        Internal metric key to family identifier.
-    unit_by_family : dict[str, tuple[str, float]]
-        Family identifier to ``(display_unit, scale)``.
-    prefactor_by_metric : dict[str, tuple[str, str]]
-        Normalized metric token to ``(start_pref_key, limit_pref_key)``.
+    families : tuple[MetricFamily, ...]
+        Reported quantities in table order. Where several families share a
+        loss prefactor pair, the first one is the default presentation.
     needs_spin : bool
         Whether the profile requires spin input and magnetic-force outputs.
     log_header_note : str
@@ -440,11 +445,7 @@ class FullValidationMetricProfile:
     """
 
     name: str
-    column_order: tuple[tuple[str, str], ...]
-    metric_key_map: dict[str, str]
-    metric_family_by_key: dict[str, str]
-    unit_by_family: dict[str, tuple[str, float]]
-    prefactor_by_metric: dict[str, tuple[str, str]]
+    families: tuple[MetricFamily, ...]
     needs_spin: bool
     log_header_note: str
     compute_system_metrics: Callable[
@@ -452,107 +453,147 @@ class FullValidationMetricProfile:
         dict[str, tuple[float, float]],
     ]
 
+    @property
+    def metric_key_map(self) -> dict[str, str]:
+        """Map a normalized metric token to its internal metric key."""
+        return {
+            f"{family.token}:{kind}": key
+            for family in self.families
+            for kind, key in family.metrics()
+        }
+
+    @property
+    def metric_family_by_key(self) -> dict[str, str]:
+        """Map an internal metric key back to its family identifier."""
+        return {
+            key: family.token for family in self.families for _, key in family.metrics()
+        }
+
+    @property
+    def unit_by_family(self) -> dict[str, tuple[str, float]]:
+        """Map a family identifier to its ``(display_unit, scale)``."""
+        return {family.token: family.unit for family in self.families}
+
+    @property
+    def prefactor_by_metric(self) -> dict[str, tuple[str, str]]:
+        """Map a normalized metric token to its loss prefactor keys."""
+        return {
+            f"{family.token}:{kind}": family.prefactors
+            for family in self.families
+            for kind, _ in family.metrics()
+        }
+
+    def columns(self, metric: str) -> tuple[tuple[str, str], ...]:
+        """Return the ``val.log`` table layout for a selected metric.
+
+        The table carries one column pair per trained quantity. Where several
+        families present the same quantity, the selected family wins and the
+        first declared family is the fallback, so no quantity is reported
+        twice and the selected metric is always available to the
+        best-checkpoint selector.
+
+        Parameters
+        ----------
+        metric : str
+            Normalized ``validation_metric`` token, such as ``"v:rmse"``.
+
+        Returns
+        -------
+        tuple[tuple[str, str], ...]
+            Ordered ``(header_label, metric_key)`` pairs.
+        """
+        selected = metric.split(":")[0]
+        shown: dict[tuple[str, str], MetricFamily] = {}
+        for family in self.families:
+            if family.prefactors not in shown or family.token == selected:
+                shown[family.prefactors] = family
+        return tuple(
+            (f"{family.token.upper()}_{kind.upper()}", key)
+            for family in shown.values()
+            for kind, key in family.metrics()
+        )
+
+
+#: Per-atom energy, reported by every profile.
+_ENERGY_FAMILY = MetricFamily(
+    token="e",
+    mae_key="mae_e_per_atom",
+    rmse_key="rmse_e_per_atom",
+    unit=("meV/atom", 1000.0),
+    prefactors=("start_pref_e", "limit_pref_e"),
+)
+#: The second-rank response as stress, the default presentation. Declared
+#: ahead of the per-atom virial so the table shows stress unless
+#: ``validation_metric`` selects the virial instead.
+_STRESS_FAMILY = MetricFamily(
+    token="s",
+    mae_key="mae_s",
+    rmse_key="rmse_s",
+    unit=("meV/Å³", 1000.0),
+    prefactors=("start_pref_v", "limit_pref_v"),
+)
+#: The second-rank response as virial normalized by the atom count.
+_VIRIAL_FAMILY = MetricFamily(
+    token="v",
+    mae_key="mae_v_per_atom",
+    rmse_key="rmse_v_per_atom",
+    unit=("meV/atom", 1000.0),
+    prefactors=("start_pref_v", "limit_pref_v"),
+)
+#: Legend fragment shared by every profile that reports the second-rank term.
+_SECOND_RANK_NOTE = (
+    "the second-rank column is S, stress as the negated virial divided by the "
+    "cell volume, or V, virial normalized by natoms, following "
+    "`validation_metric`.\n"
+)
 
 ENERGY_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
     name="energy",
-    column_order=(
-        ("E_MAE", "mae_e_per_atom"),
-        ("E_RMSE", "rmse_e_per_atom"),
-        ("F_MAE", "mae_f"),
-        ("F_RMSE", "rmse_f"),
-        ("S_MAE", "mae_s"),
-        ("S_RMSE", "rmse_s"),
+    families=(
+        _ENERGY_FAMILY,
+        MetricFamily(
+            token="f",
+            mae_key="mae_f",
+            rmse_key="rmse_f",
+            unit=("meV/Å", 1000.0),
+            prefactors=("start_pref_f", "limit_pref_f"),
+        ),
+        _STRESS_FAMILY,
+        _VIRIAL_FAMILY,
     ),
-    metric_key_map={
-        "e:mae": "mae_e_per_atom",
-        "e:rmse": "rmse_e_per_atom",
-        "f:mae": "mae_f",
-        "f:rmse": "rmse_f",
-        "s:mae": "mae_s",
-        "s:rmse": "rmse_s",
-    },
-    metric_family_by_key={
-        "mae_e_per_atom": "e",
-        "rmse_e_per_atom": "e",
-        "mae_f": "f",
-        "rmse_f": "f",
-        "mae_s": "s",
-        "rmse_s": "s",
-    },
-    unit_by_family={
-        "e": ("meV/atom", 1000.0),
-        "f": ("meV/Å", 1000.0),
-        "s": ("meV/Å³", 1000.0),
-    },
-    prefactor_by_metric={
-        "e:mae": ("start_pref_e", "limit_pref_e"),
-        "e:rmse": ("start_pref_e", "limit_pref_e"),
-        "f:mae": ("start_pref_f", "limit_pref_f"),
-        "f:rmse": ("start_pref_f", "limit_pref_f"),
-        "s:mae": ("start_pref_v", "limit_pref_v"),
-        "s:rmse": ("start_pref_v", "limit_pref_v"),
-    },
     needs_spin=False,
     log_header_note=(
-        "# E uses per-atom energy, F uses component-wise force errors, "
-        "and S uses stress, the negated virial divided by the cell volume.\n"
+        "# E uses per-atom energy, F uses component-wise force errors, and "
+        + _SECOND_RANK_NOTE
     ),
     compute_system_metrics=compute_full_validation_energy_metrics,
 )
 
 SPIN_FULL_VALIDATION_PROFILE = FullValidationMetricProfile(
     name="spin",
-    column_order=(
-        ("E_MAE", "mae_e_per_atom"),
-        ("E_RMSE", "rmse_e_per_atom"),
-        ("FR_MAE", "mae_fr"),
-        ("FR_RMSE", "rmse_fr"),
-        ("FM_MAE", "mae_fm"),
-        ("FM_RMSE", "rmse_fm"),
-        ("S_MAE", "mae_s"),
-        ("S_RMSE", "rmse_s"),
+    families=(
+        _ENERGY_FAMILY,
+        MetricFamily(
+            token="fr",
+            mae_key="mae_fr",
+            rmse_key="rmse_fr",
+            unit=("meV/Å", 1000.0),
+            prefactors=("start_pref_fr", "limit_pref_fr"),
+        ),
+        MetricFamily(
+            token="fm",
+            mae_key="mae_fm",
+            rmse_key="rmse_fm",
+            unit=("meV/μB", 1000.0),
+            prefactors=("start_pref_fm", "limit_pref_fm"),
+        ),
+        _STRESS_FAMILY,
+        _VIRIAL_FAMILY,
     ),
-    metric_key_map={
-        "e:mae": "mae_e_per_atom",
-        "e:rmse": "rmse_e_per_atom",
-        "fr:mae": "mae_fr",
-        "fr:rmse": "rmse_fr",
-        "fm:mae": "mae_fm",
-        "fm:rmse": "rmse_fm",
-        "s:mae": "mae_s",
-        "s:rmse": "rmse_s",
-    },
-    metric_family_by_key={
-        "mae_e_per_atom": "e",
-        "rmse_e_per_atom": "e",
-        "mae_fr": "fr",
-        "rmse_fr": "fr",
-        "mae_fm": "fm",
-        "rmse_fm": "fm",
-        "mae_s": "s",
-        "rmse_s": "s",
-    },
-    unit_by_family={
-        "e": ("meV/atom", 1000.0),
-        "fr": ("meV/Å", 1000.0),
-        "fm": ("meV/μB", 1000.0),
-        "s": ("meV/Å³", 1000.0),
-    },
-    prefactor_by_metric={
-        "e:mae": ("start_pref_e", "limit_pref_e"),
-        "e:rmse": ("start_pref_e", "limit_pref_e"),
-        "fr:mae": ("start_pref_fr", "limit_pref_fr"),
-        "fr:rmse": ("start_pref_fr", "limit_pref_fr"),
-        "fm:mae": ("start_pref_fm", "limit_pref_fm"),
-        "fm:rmse": ("start_pref_fm", "limit_pref_fm"),
-        "s:mae": ("start_pref_v", "limit_pref_v"),
-        "s:rmse": ("start_pref_v", "limit_pref_v"),
-    },
     needs_spin=True,
     log_header_note=(
         "# E uses per-atom energy, FR uses component-wise real-atom force "
-        "errors, FM uses magnetic-atom force errors, and S uses stress, the "
-        "negated virial divided by the cell volume.\n"
+        "errors, FM uses magnetic-atom force errors, and " + _SECOND_RANK_NOTE
     ),
     compute_system_metrics=compute_full_validation_spin_metrics,
 )

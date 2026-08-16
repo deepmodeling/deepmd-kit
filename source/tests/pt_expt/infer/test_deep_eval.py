@@ -23,6 +23,11 @@ from deepmd.pt_expt.descriptor.se_e2_a import (
 from deepmd.pt_expt.fitting import (
     EnergyFittingNet,
 )
+from deepmd.pt_expt.infer.charge_state import (
+    charge_states,
+    charge_states_per_frame,
+    single_charge_state,
+)
 from deepmd.pt_expt.model import (
     EnergyModel,
 )
@@ -53,6 +58,81 @@ def _assert_repeatable(a, b) -> None:
         np.testing.assert_array_equal(a, b)
     else:
         np.testing.assert_allclose(a, b, rtol=1e-10, atol=1e-10)
+
+
+class TestChargeStateBoundary(unittest.TestCase):
+    """The host boundary must reject a state no declared table row answers.
+
+    A model that gathers table rows declares their ranges, and neither the
+    gather nor the compiled kernel bounds-checks the index, so a fractional or
+    out-of-range request has to fail here rather than be truncated into a
+    neighbouring row or read past the table. A model that embeds the condition
+    continuously declares no ranges and constrains only the width.
+    """
+
+    WIDTH = 2
+
+    #: Ranges a table-indexing model declares, as DPA4C does.
+    RANGES = ((-100, 100), (0, 100))
+
+    #: Requests that address no declared row, with the value each one violates.
+    UNADDRESSABLE_STATES = (
+        ([0.5, 1.0], "first charge_spin value.*must be an integer"),
+        ([1.0, 2.5], "second charge_spin value.*must be an integer"),
+        ([float("nan"), 1.0], "first charge_spin value.*must be an integer"),
+        ([1.0, float("inf")], "second charge_spin value.*must be an integer"),
+        ([-101.0, 1.0], r"first charge_spin value must lie in \[-100, 100\)"),
+        ([100.0, 1.0], r"first charge_spin value must lie in \[-100, 100\)"),
+        ([0.0, -1.0], r"second charge_spin value must lie in \[0, 100\)"),
+        ([0.0, 100.0], r"second charge_spin value must lie in \[0, 100\)"),
+    )
+
+    def test_folded_path_rejects_unaddressable_states(self) -> None:
+        for state, message in self.UNADDRESSABLE_STATES:
+            with self.subTest(state=state):
+                with self.assertRaisesRegex(ValueError, message):
+                    single_charge_state(state, self.WIDTH, self.RANGES)
+
+    def test_input_tensor_path_rejects_unaddressable_states(self) -> None:
+        for state, message in self.UNADDRESSABLE_STATES:
+            with self.subTest(state=state):
+                with self.assertRaisesRegex(ValueError, message):
+                    charge_states_per_frame(state, 1, self.WIDTH, self.RANGES)
+
+    def test_an_unaddressable_state_is_rejected_in_any_frame(self) -> None:
+        # The check covers every frame, not just the first.
+        with self.assertRaisesRegex(ValueError, "must be an integer"):
+            charge_states_per_frame(
+                [[1.0, 2.0], [0.5, 2.0]], 2, self.WIDTH, self.RANGES
+            )
+
+    def test_a_continuous_condition_is_left_alone(self) -> None:
+        # A model that declares no ranges embeds the condition continuously,
+        # so a fractional state is legitimate and must survive untouched.
+        np.testing.assert_array_equal(
+            charge_states_per_frame([0.5, 0.8], 1, self.WIDTH),
+            [[0.5, 0.8]],
+        )
+        self.assertEqual(single_charge_state([0.5, 0.8], self.WIDTH), (0.5, 0.8))
+
+    def test_addressable_states_pass_through_unchanged(self) -> None:
+        np.testing.assert_array_equal(
+            charge_states_per_frame([[-3, 4], [0, 1]], 2, self.WIDTH, self.RANGES),
+            [[-3.0, 4.0], [0.0, 1.0]],
+        )
+        self.assertEqual(
+            single_charge_state([[2, 1], [2, 1]], self.WIDTH, self.RANGES), (2.0, 1.0)
+        )
+
+    def test_shape_contracts_are_kept(self) -> None:
+        with self.assertRaisesRegex(ValueError, "whole number of 2-wide"):
+            charge_states([1.0], self.WIDTH)
+        with self.assertRaisesRegex(ValueError, "one charge state per frame"):
+            charge_states_per_frame([[1, 2]], 2, self.WIDTH)
+        with self.assertRaisesRegex(ValueError, "not all equal"):
+            single_charge_state([[1, 2], [3, 4]], self.WIDTH)
+        with self.assertRaisesRegex(ValueError, "model indexes 3 tables"):
+            charge_states([1, 2], self.WIDTH, ((-1, 1), (-1, 1), (-1, 1)))
 
 
 class TestDeepEvalEner(unittest.TestCase):

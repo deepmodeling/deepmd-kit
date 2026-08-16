@@ -73,6 +73,7 @@ from .dpa4_nn import (
     resolve_swiglu_hidden_width,
 )
 from .dpa4c_nn import (
+    CHARGE_STATE_TABLE_RANGES,
     ChargeStateEmbedding,
     InvariantReadout,
     OrderedPairFiLM,
@@ -2002,6 +2003,19 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def get_default_chg_spin(self) -> list[float] | None:
         """Return the fallback ``[charge, multiplicity]``, if configured."""
         return self.default_chg_spin
+
+    def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
+        """Return the row range each value of the frame condition indexes.
+
+        The condition is embedded by gathering one row of the charge table and
+        one of the multiplicity table, so an acceptable state is a pair of
+        integers inside these half-open ranges. A folded condition indexes the
+        same tables at rebuild time, so the ranges hold whether or not the
+        descriptor is compressed.
+        """
+        if self.charge_spin_embedding is None:
+            return None
+        return [tuple(rng) for rng in CHARGE_STATE_TABLE_RANGES]
 
     def has_message_passing_across_ranks(self) -> bool:
         """Return whether intermediate halo communication is required."""

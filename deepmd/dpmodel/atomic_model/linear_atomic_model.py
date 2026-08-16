@@ -740,6 +740,20 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             lambda m: m.get_default_chg_spin(),
         )[1]
 
+    def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
+        """The shared table row ranges, if the children agree.
+
+        A condition reaches every consuming child, so it must address the
+        tables of all of them. Children that disagree share no acceptable
+        state, which the composition reports as an unconstrained domain
+        rather than silently enforcing one child's tables on the others.
+        """
+        return self._agreed_default(
+            self._chg_spin_consumers(),
+            lambda m: m.get_chg_spin_table_ranges() is not None,
+            lambda m: m.get_chg_spin_table_ranges(),
+        )[1]
+
     def has_default_fparam(self) -> bool:
         """Whether every active child shares one default frame parameter."""
         return self._agreed_default(

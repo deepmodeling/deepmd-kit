@@ -85,6 +85,15 @@ CHARGE_RANGE = (-CHARGE_OFFSET, CHARGE_TABLE_ROWS - CHARGE_OFFSET)
 #: Half-open range of representable spin multiplicities.
 MULTIPLICITY_RANGE = (0, MULTIPLICITY_TABLE_ROWS)
 
+#: Name of each value of a charge state, in order, for diagnostics.
+CHARGE_STATE_FIELDS = ("charge", "multiplicity")
+
+#: Half-open row range addressed by each value of a charge state, in order.
+#: A condition is a pair of table row indices, so a host-side boundary that
+#: knows these ranges can reject an unaddressable state without knowing which
+#: descriptor holds the tables.
+CHARGE_STATE_TABLE_RANGES = (CHARGE_RANGE, MULTIPLICITY_RANGE)
+
 
 def validate_charge_state(charge_spin: Any) -> list[float]:
     """Check that a frame condition addresses a row of each embedding table.
@@ -120,11 +129,11 @@ def validate_charge_state(charge_spin: Any) -> list[float]:
         )
     for value, name, (low, high) in zip(
         values,
-        ("charge", "multiplicity"),
-        (CHARGE_RANGE, MULTIPLICITY_RANGE),
+        CHARGE_STATE_FIELDS,
+        CHARGE_STATE_TABLE_RANGES,
         strict=True,
     ):
-        if value != int(value):
+        if not np.isfinite(value) or value != int(value):
             raise ValueError(f"The {name} must be an integer, got {value}")
         if not low <= value < high:
             raise ValueError(

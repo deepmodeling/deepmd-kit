@@ -1116,6 +1116,9 @@ def _collect_metadata(
         "has_chg_spin_ebd": model.has_chg_spin_ebd(),
         "has_default_chg_spin": model.get_default_chg_spin() is not None,
         "default_chg_spin": _metadata_value_to_json(model.get_default_chg_spin()),
+        # Present only when the condition indexes tables, which is what lets a
+        # deployment reject an unaddressable state without a Python model.
+        "chg_spin_table_ranges": model.get_chg_spin_table_ranges(),
         "fitting_output_defs": fitting_output_defs,
         # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
         # round-trip; required for dipole/polar/wfc models in metadata-only

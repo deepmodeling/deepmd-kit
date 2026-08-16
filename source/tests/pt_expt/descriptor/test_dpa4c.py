@@ -211,6 +211,21 @@ class TestDPA4C:
         assert replica.exclude_types == [[0, 1]]
         assert replica.readout is base.readout
 
+    def test_compression_rejects_excluded_pairs(self) -> None:
+        """The fused kernel has no type-exclusion branch.
+
+        Compression must refuse rather than emit an artifact that can never
+        reach the fused path: the re-export would fall back to the plain graph
+        lower, which the Kokkos spin pair style in turn refuses to load.
+        """
+        excluded = self.build(precision="float32", exclude_types=[[0, 1]])
+        with pytest.raises(ValueError, match="type-exclusion branch"):
+            excluded.enable_compression(0.5)
+        # The exclusion is the only thing standing in the way.
+        included = self.build(precision="float32")
+        included.enable_compression(0.5)
+        assert included.compress
+
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)
         original_parameters = dict(self.descriptor.named_parameters())

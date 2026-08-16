@@ -8,6 +8,7 @@ from .bispectrum import (
     enumerate_degree_triples,
 )
 from .charge_state import (
+    CHARGE_STATE_TABLE_RANGES,
     ChargeStateEmbedding,
     canonicalize_charge_spin,
     validate_charge_state,
@@ -33,6 +34,7 @@ from .spin import (
 )
 
 __all__ = [
+    "CHARGE_STATE_TABLE_RANGES",
     "MAX_ANGULAR_DEGREE",
     "NEIGHBOR_QUADRUPOLE_CHANNELS",
     "BispectrumLayout",

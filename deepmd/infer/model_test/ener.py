@@ -495,7 +495,11 @@ class EnerTester(ModelTester):
                 "find_virial": find_virial,
                 "energy": test_data["energy"],
                 "force": test_data["force"],
-                **({"virial": test_data["virial"]} if reports_virial else {}),
+                **(
+                    {"virial": test_data["virial"], "box": box}
+                    if reports_virial
+                    else {}
+                ),
             },
             natoms=natoms,
             has_pbc=data.pbc,
@@ -514,17 +518,18 @@ class EnerTester(ModelTester):
             if shared_metrics.virial is None or shared_metrics.virial_per_atom is None:
                 raise RuntimeError("Virial metrics are unavailable for dp test.")
             # Stress sigma = -virial / volume, in eV/Å³ (tensile-positive
-            # convention).
+            # convention). The errors come from the shared metrics; the
+            # per-frame tensors below feed the detail file.
+            errors.update(
+                shared_metrics.as_weighted_average_errors(
+                    {"stress": ("mae_s", "rmse_s")}
+                )
+            )
             volume = np.abs(np.linalg.det(box.reshape([nframes, 3, 3]))).reshape(
                 [nframes, 1]
             )
             prediction_stress = -virial / volume
             reference_stress = -test_data["virial"] / volume
-            errors.update(
-                compute_error_stat(
-                    prediction_stress, reference_stress
-                ).as_weighted_average_errors("mae_s", "rmse_s")
-            )
 
         if dp.has_hessian:
             errors.update(

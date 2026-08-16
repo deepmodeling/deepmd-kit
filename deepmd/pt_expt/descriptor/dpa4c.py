@@ -564,8 +564,9 @@ class DescrptDPA4C(DescrptDPA4CDP):
         Raises
         ------
         ValueError
-            If compression is already enabled or the descriptor configuration
-            has no compiled CUDA specialization.
+            If compression is already enabled, the descriptor excludes type
+            pairs, or the descriptor configuration has no compiled CUDA
+            specialization.
         """
         del min_nbor_dist, table_extrapolate, table_stride_2, check_frequency
         if self.compress:
