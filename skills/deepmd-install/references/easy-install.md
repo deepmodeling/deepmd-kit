@@ -1,0 +1,162 @@
+# Easy installation
+
+Use this reference for stable package releases and official artifacts. Read the
+version-matched `doc/install/easy-install.md` when package extras, platform
+support, or backend installation commands differ from this routing guide. The
+published documentation is
+<https://docs.deepmodeling.com/projects/deepmd/en/latest/install/easy-install.html>.
+
+## Contents
+
+- [Environment gate](#environment-gate)
+- [Pip](#pip)
+- [Conda](#conda)
+- [dp1s](#dp1s)
+- [Offline package](#offline-package)
+- [Docker](#docker)
+- [Verification](#verification)
+
+## Environment gate
+
+Do not mix conda, pip, offline, and `dp1s` installations in one prefix. Reuse
+an environment only when the user selected it and the probe found no conflicting
+DeePMD-kit install.
+
+For a new venv, create it first, resolve its absolute interpreter, update the
+plan, and re-run `validate_plan.py` before installing packages:
+
+```bash
+"<absolute-bootstrap-python>" -m venv "<absolute-venv-prefix>"
+"<absolute-venv-prefix>/bin/python" -c "import sys; print(sys.executable)"
+```
+
+Use the platform-equivalent interpreter path on Windows.
+
+## Pip
+
+Install backend packages recorded in `package.backend_packages` before
+DeePMD-kit when they require a dedicated index. Render one literal pip command;
+omit `--index-url` when `backend_index_url` is null.
+
+```bash
+"<absolute-python>" -m pip install \
+    "<backend-package-1>" "<backend-package-2>" \
+    --index-url "<confirmed-backend-index>"
+```
+
+Choose DeePMD-kit extras from the matching checkout documentation:
+
+| Backend        | DeePMD-kit requirement                                                    |
+| -------------- | ------------------------------------------------------------------------- |
+| PyTorch        | `deepmd-kit[torch]`                                                       |
+| TensorFlow CPU | `deepmd-kit[cpu]`                                                         |
+| TensorFlow GPU | `deepmd-kit[gpu,cu12]` when the documented CUDA runtime extra is required |
+| JAX            | `deepmd-kit[jax]` plus the selected JAX accelerator package               |
+| Paddle         | Install the selected Paddle package first, then `deepmd-kit`              |
+
+Append `lmp` and/or `ipi` only when the plan enables them. Append the exact
+DeePMD-kit version when `package.deepmd_version` is non-null. Example shape:
+
+```bash
+"<absolute-python>" -m pip install "deepmd-kit[torch,lmp]==<version>"
+```
+
+The final rendered command must contain a real version or omit the version
+specifier; it must not contain `<version>`. Add `--index-url` and
+`--extra-index-url` only when the corresponding DeePMD-kit index fields are
+non-null.
+
+## Conda
+
+Use the absolute manager and environment name from the plan. Install only the
+requested packages; do not add LAMMPS, Horovod, or MPI unless they are in scope.
+
+```bash
+"<absolute-conda-or-mamba>" create -n "<environment-name>" \
+    -c conda-forge deepmd-kit
+```
+
+Add `lammps` only for `goal=python+lammps`. Resolve the created interpreter
+without assuming shell activation:
+
+```bash
+"<absolute-conda-or-mamba>" run -n "<environment-name>" \
+    python -c "import sys; print(sys.executable)"
+```
+
+Record that absolute interpreter in the plan before running the Python verifier.
+Follow the conda-forge CUDA guidance referenced by
+`doc/install/easy-install.md`; do not invent a `cudatoolkit` pin.
+
+## dp1s
+
+Show the exact command and obtain confirmation before piping a remote response
+to a shell:
+
+```bash
+curl -fsSL https://dp1s.deepmodeling.com | bash
+```
+
+Apply only options selected from the official `dp1s` documentation. After the
+installer reports its prefix, resolve the installed Python and update the plan
+before verification.
+
+## Offline package
+
+Use the exact release asset and SHA-256 checksum recorded in the plan. For a
+remote artifact:
+
+```bash
+curl -fL "<artifact-url>" -o "<absolute-download-path>"
+printf '%s  %s\n' "<sha256>" "<absolute-download-path>" | sha256sum --check -
+bash "<absolute-download-path>"
+```
+
+Use `shasum -a 256` on systems without `sha256sum`. When a release is split,
+verify each part before concatenating it into a new file. Never execute an HTML
+error page or an artifact whose checksum is unknown.
+
+## Docker
+
+Pull the exact image reference from the plan and verify it in a disposable
+container:
+
+```bash
+docker pull "<registry/image:tag-or-digest>"
+docker run --rm "<registry/image:tag-or-digest>" dp --version
+```
+
+For CUDA, bind the physical GPU selected for the smoke test:
+
+```bash
+docker run --rm --gpus 'device=<physical-index>' \
+    "<registry/image:tag-or-digest>" \
+    python -c "import torch; print(torch.cuda.get_device_name(0))"
+```
+
+Add only user-selected volume mounts and working directories. Do not mount a
+home directory or source tree read-write merely for version verification.
+
+## Verification
+
+Run the backend-aware verifier with the absolute installed interpreter:
+
+```bash
+"<absolute-python>" "<absolute-skill-root>/scripts/verify_python.py" \
+    --backend "<pytorch|tensorflow|jax|paddle>" \
+    --accelerator "<cpu|cuda|rocm>"
+```
+
+For packaged host LAMMPS, resolve the executable and require the conventional
+host pair style:
+
+```bash
+"<absolute-python>" "<absolute-skill-root>/scripts/verify_lammps.py" \
+    --binary "<absolute-lammps-binary>" \
+    --model-family conventional \
+    --flavor host
+```
+
+Packaged LAMMPS does not imply Kokkos `deepmd/kk` or DPA4C
+`dpa4spin/kk`. Use the source LAMMPS path when either device pair style is
+required.

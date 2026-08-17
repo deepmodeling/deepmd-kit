@@ -1,0 +1,402 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Tests for the DeePMD-kit installation skill helpers."""
+
+from __future__ import (
+    annotations,
+)
+
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import (
+    Path,
+)
+from typing import (
+    TYPE_CHECKING,
+)
+
+import pytest
+
+if TYPE_CHECKING:
+    from types import (
+        ModuleType,
+    )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_DIRECTORY = REPOSITORY_ROOT / "skills" / "deepmd-install" / "scripts"
+
+
+def _load_script(name: str) -> ModuleType:
+    """Load one helper script as a module."""
+    path = SCRIPT_DIRECTORY / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"deepmd_install_{name}", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+PLAN = _load_script("validate_plan")
+PREPARE = _load_script("prepare_lammps")
+
+
+def _source_plan() -> dict[str, object]:
+    """Return a valid source CUDA DPA4C plan."""
+    return {
+        "schema_version": 1,
+        "method": "source",
+        "goal": "python+cpp+lammps",
+        "backend": "pytorch",
+        "accelerator": "cuda",
+        "environment": {
+            "kind": "existing",
+            "python": "/opt/deepmd/bin/python",
+            "manager": None,
+            "name": None,
+            "prefix": "/opt/deepmd",
+        },
+        "package": {
+            "deepmd_version": None,
+            "deepmd_index_url": None,
+            "deepmd_extra_index_url": None,
+            "backend_packages": [],
+            "backend_index_url": None,
+            "channels": [],
+            "install_lammps": False,
+            "install_ipi": False,
+            "artifact_url": None,
+            "sha256": None,
+            "docker_image": None,
+        },
+        "source": {
+            "directory": "/work/deepmd-kit",
+            "remote": "https://github.com/deepmodeling/deepmd-kit.git",
+            "ref": "master",
+            "editable": False,
+        },
+        "build": {
+            "variant": "cuda",
+            "cc": "/usr/bin/gcc",
+            "cxx": "/usr/bin/g++",
+            "cuda_home": "/usr/local/cuda",
+            "rocm_root": None,
+            "native_optimization": False,
+            "jobs": 8,
+        },
+        "cpp": {
+            "install_prefix": "/work/install/deepmd",
+            "build_directory": "/work/build/deepmd-cpp",
+            "tensorflow_root": None,
+            "tensorflow_c_root": None,
+            "paddle_inference_dir": None,
+        },
+        "lammps": {
+            "source_directory": "/work/lammps",
+            "build_directory": "/work/build/lammps-blackwell120",
+            "version": "stable_22Jul2025_update2",
+            "url": "https://github.com/lammps/lammps/archive/refs/tags/stable_22Jul2025_update2.tar.gz",
+            "sha256": None,
+            "flavor": "kokkos-cuda",
+            "machine": "blackwell120",
+            "kokkos_arch": "BLACKWELL120",
+            "mpi": False,
+            "model_family": "dpa4c",
+        },
+        "smoke_test": {"enabled": False, "gpu": None, "example": None},
+    }
+
+
+def _easy_plan(method: str) -> dict[str, object]:
+    """Return a valid Python-only easy-install plan."""
+    environment: dict[str, object] = {
+        "kind": "existing",
+        "python": "/opt/deepmd/bin/python",
+        "manager": None,
+        "name": None,
+        "prefix": "/opt/deepmd",
+    }
+    package: dict[str, object] = {
+        "deepmd_version": None,
+        "deepmd_index_url": None,
+        "deepmd_extra_index_url": None,
+        "backend_packages": [],
+        "backend_index_url": None,
+        "channels": [],
+        "install_lammps": False,
+        "install_ipi": False,
+        "artifact_url": None,
+        "sha256": None,
+        "docker_image": None,
+    }
+    if method == "conda":
+        environment.update(
+            {"kind": "conda", "python": None, "manager": "/opt/conda", "name": "deepmd"}
+        )
+    elif method == "offline":
+        environment.update({"kind": "prefix", "python": None})
+        package.update(
+            {
+                "artifact_url": "https://example.invalid/deepmd.sh",
+                "sha256": "a" * 64,
+            }
+        )
+    elif method == "docker":
+        environment.update({"kind": "container", "python": None, "prefix": None})
+        package["docker_image"] = "ghcr.io/deepmodeling/deepmd-kit:master"
+    return {
+        "schema_version": 1,
+        "method": method,
+        "goal": "python",
+        "backend": "tensorflow",
+        "accelerator": "cpu",
+        "environment": environment,
+        "package": package,
+        "source": None,
+        "build": None,
+        "cpp": None,
+        "lammps": None,
+        "smoke_test": {"enabled": False, "gpu": None, "example": None},
+    }
+
+
+def test_validate_source_dpa4c_plan() -> None:
+    """Accept a complete PyTorch CUDA DPA4C plan."""
+    plan = _source_plan()
+    assert PLAN.validate_plan(plan) == []
+    assert PLAN.required_lammps_styles("dpa4c", "kokkos-cuda") == [
+        "dpa4spin",
+        "dpa4spin/kk",
+    ]
+
+
+def test_validate_source_jax_gpu_with_cpu_custom_ops() -> None:
+    """Allow JAX to provide GPU execution independently of custom OPs."""
+    plan = _source_plan()
+    plan["goal"] = "python"
+    plan["backend"] = "jax"
+    build = plan["build"]
+    assert isinstance(build, dict)
+    build["variant"] = "cpu"
+    build["cuda_home"] = None
+    plan["cpp"] = None
+    plan["lammps"] = None
+    assert PLAN.validate_plan(plan) == []
+
+
+def test_validate_source_tensorflow_cpu_plan() -> None:
+    """Accept a TensorFlow source build with matching CPU custom operations."""
+    plan = _source_plan()
+    plan["goal"] = "python"
+    plan["backend"] = "tensorflow"
+    plan["accelerator"] = "cpu"
+    build = plan["build"]
+    assert isinstance(build, dict)
+    build["variant"] = "cpu"
+    build["cuda_home"] = None
+    plan["cpp"] = None
+    plan["lammps"] = None
+    assert PLAN.validate_plan(plan) == []
+
+
+@pytest.mark.parametrize("method", ["pip", "conda", "offline", "docker"])
+def test_validate_easy_install_plans(method: str) -> None:
+    """Accept the method-specific fields for each easy-install path."""
+    assert PLAN.validate_plan(_easy_plan(method)) == []
+
+
+def test_validate_offline_plan_requires_checksum() -> None:
+    """Reject an offline artifact without an integrity value."""
+    plan = _easy_plan("offline")
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package["sha256"] = None
+    errors = PLAN.validate_plan(plan)
+    assert "package.sha256: offline installation requires a checksum" in errors
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (("backend", "tensorflow"), "Kokkos CUDA graph pair styles require PyTorch"),
+        (("source", {"directory": "$HOME/deepmd"}), "unresolved shell variable"),
+        (("unknown", True), "unknown field"),
+    ],
+)
+def test_validate_plan_rejects_invalid_input(
+    mutation: tuple[str, object], message: str
+) -> None:
+    """Reject unsupported combinations, placeholders, and unknown keys."""
+    plan = _source_plan()
+    key, value = mutation
+    if key == "source":
+        source = plan["source"]
+        assert isinstance(source, dict)
+        source.update(value)
+    else:
+        plan[key] = value
+    errors = PLAN.validate_plan(plan)
+    assert any(message in error for error in errors)
+
+
+def test_validate_plan_rejects_shared_cpp_prefix() -> None:
+    """Reject a C/C++ install into the selected Python environment."""
+    plan = _source_plan()
+    cpp = plan["cpp"]
+    assert isinstance(cpp, dict)
+    cpp["install_prefix"] = "/opt/deepmd"
+    errors = PLAN.validate_plan(plan)
+    assert "cpp.install_prefix: select a dedicated, non-shared prefix" in errors
+
+
+def test_prepare_lammps_is_idempotent(tmp_path: Path) -> None:
+    """Create one quoted managed include and preserve it on a second run."""
+    lammps = tmp_path / "lammps tree"
+    deepmd = tmp_path / "deepmd tree"
+    cmake_file = lammps / "cmake" / "CMakeLists.txt"
+    builtin = deepmd / "source" / "lmp" / "builtin.cmake"
+    cmake_file.parent.mkdir(parents=True)
+    builtin.parent.mkdir(parents=True)
+    cmake_file.write_text("cmake_minimum_required(VERSION 3.25)\n", encoding="utf-8")
+    builtin.write_text("# builtin\n", encoding="utf-8")
+
+    assert PREPARE.prepare(lammps, deepmd, check=False) is False
+    updated = cmake_file.read_text(encoding="utf-8")
+    assert updated.count(PREPARE.BEGIN_MARKER) == 1
+    assert f"include([=[{builtin}]=])" in updated
+    assert PREPARE.prepare(lammps, deepmd, check=True) is True
+
+
+def test_prepare_lammps_replaces_one_legacy_include() -> None:
+    """Replace a legacy include without retaining a duplicate."""
+    builtin = Path("/work/deepmd/source/lmp/builtin.cmake")
+    original = "include(/old/deepmd/source/lmp/builtin.cmake)\n"
+    updated = PREPARE.render_updated_text(original, builtin)
+    assert "/old/deepmd" not in updated
+    assert updated.count("source/lmp/builtin.cmake") == 1
+
+
+def test_prepare_lammps_rejects_duplicate_legacy_includes() -> None:
+    """Reject an ambiguous source tree with multiple unmanaged includes."""
+    original = "\n".join(
+        (
+            "include(/one/source/lmp/builtin.cmake)",
+            "include(/two/source/lmp/builtin.cmake)",
+        )
+    )
+    with pytest.raises(ValueError, match="multiple DeePMD includes"):
+        PREPARE.render_updated_text(
+            original, Path("/work/deepmd/source/lmp/builtin.cmake")
+        )
+
+
+def test_prepare_lammps_rejects_managed_and_unmanaged_includes() -> None:
+    """Reject an extra include outside the managed block."""
+    builtin = Path("/work/deepmd/source/lmp/builtin.cmake")
+    original = "\n".join(
+        (
+            PREPARE.BEGIN_MARKER,
+            f"include([=[{builtin}]=])",
+            PREPARE.END_MARKER,
+            "include(/other/source/lmp/builtin.cmake)",
+        )
+    )
+    with pytest.raises(ValueError, match="unmanaged DeePMD include"):
+        PREPARE.render_updated_text(original, builtin)
+
+
+def _write_fake_lammps(path: Path, styles: str) -> None:
+    """Write an executable that emits a deterministic LAMMPS help surface."""
+    path.write_text(f"#!/usr/bin/env python3\nprint({styles!r})\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def test_verify_lammps_dpa4c_cli(tmp_path: Path) -> None:
+    """Accept the exact DPA4C host and Kokkos pair styles."""
+    binary = tmp_path / "lmp_dpa4c"
+    _write_fake_lammps(binary, "Pair styles: dpa4spin dpa4spin/kk")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_DIRECTORY / "verify_lammps.py"),
+            "--binary",
+            str(binary),
+            "--model-family",
+            "dpa4c",
+            "--flavor",
+            "kokkos-cuda",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "PASS  pair_style:dpa4spin/kk" in completed.stdout
+
+
+def test_verify_lammps_requires_exact_style_token(tmp_path: Path) -> None:
+    """Reject a near-name token instead of accepting a substring."""
+    binary = tmp_path / "lmp_near_name"
+    _write_fake_lammps(binary, "Pair styles: deepmd deepmd/kkx")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_DIRECTORY / "verify_lammps.py"),
+            "--binary",
+            str(binary),
+            "--model-family",
+            "dpa4",
+            "--flavor",
+            "kokkos-cuda",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 1
+    assert "FAIL  pair_style:deepmd/kk" in completed.stdout
+
+
+def test_verify_python_rejects_backend_incompatible_checks() -> None:
+    """Reject PyTorch-only flags before importing another backend."""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_DIRECTORY / "verify_python.py"),
+            "--backend",
+            "jax",
+            "--accelerator",
+            "cpu",
+            "--expect-custom-op",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 2
+    assert "PyTorch-only checks require --backend pytorch" in completed.stderr
+
+
+def test_probe_cli_emits_json() -> None:
+    """Emit the stable top-level probe schema without requiring optional tools."""
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPT_DIRECTORY / "probe_env.py"), "--json"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(completed.stdout)
+    assert set(report) == {
+        "system",
+        "environment",
+        "python",
+        "tools",
+        "nvidia",
+        "rocm",
+        "packages",
+    }
+    assert Path(report["python"]["executable"]).is_absolute()

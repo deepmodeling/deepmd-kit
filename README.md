@@ -212,9 +212,27 @@ plugins. Applications can therefore open the backend required by a model
 without directly linking every framework.
 
 > [!NOTE]
-> Working with an AI coding or scientific agent? DeePMD-kit ships
+> Working with an AI coding or scientific agent? Start with
+> [Install with an AI agent][agent-install], or browse the
 > [official Agent Skills][agent-skills] for model selection, training,
 > fine-tuning, Python inference, and LAMMPS workflows.
+>
+> ```bash
+> npx -y skills add https://github.com/deepmodeling/deepmd-kit/tree/master/skills \
+>     --skill deepmd-install -y
+> ```
+>
+> If direct GitHub access fails, use `gh-proxy.com` for a public, read-only
+> clone, then install from the local checkout. Do not send credentials or
+> private repository URLs through the proxy.
+>
+> ```bash
+> git clone --depth 1 \
+>     https://gh-proxy.com/https://github.com/deepmodeling/deepmd-kit.git \
+>     deepmd-kit-skill-source
+> npx -y skills add ./deepmd-kit-skill-source/skills \
+>     --skill deepmd-install -y
+> ```
 
 ## 📚 Documentation and community
 
@@ -251,6 +269,7 @@ that matches the version used and the method-specific papers listed in
 DeePMD-kit is licensed under the
 [GNU Lesser General Public License v3.0 or later](./LICENSE).
 
+[agent-install]: https://docs.deepmodeling.com/projects/deepmd/en/latest/install/install-with-agent.html
 [agent-skills]: https://docs.deepmodeling.com/projects/deepmd/en/latest/agent-skills.html
 [ase]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/ase.html
 [backends]: https://docs.deepmodeling.com/projects/deepmd/en/latest/backend.html

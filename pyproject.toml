@@ -493,6 +493,8 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
 # Example / demo scripts are run directly: top-level imports and prints are fine.
 "examples/**/*.py" = ["T20", "TID253"]
+# Skill helper CLIs print probe and verification reports.
+"skills/**/*.py" = ["T20"]
 
 [tool.pytest.ini_options]
 markers = "run"
