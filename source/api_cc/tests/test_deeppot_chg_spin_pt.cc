@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 #include "DeepPot.h"
@@ -125,6 +126,15 @@ TYPED_TEST(TestInferDeepPotChgSpinPt,
   EXPECT_THROW(dp.set_charge_spin({100.0, 1.0}), deepmd::deepmd_exception);
   EXPECT_THROW(dp.set_charge_spin({0.0, -1.0}), deepmd::deepmd_exception);
   EXPECT_THROW(dp.set_charge_spin({0.0, 100.0}), deepmd::deepmd_exception);
+
+  // A NaN compares false against every bound, so it is refused only because
+  // the range test asks the value to be inside rather than outside.
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  EXPECT_THROW(dp.set_charge_spin({nan, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({0.0, nan}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({inf, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({-inf, 1.0}), deepmd::deepmd_exception);
 }
 
 // An installed state has to reach the evaluations that follow it, and a

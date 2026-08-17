@@ -220,6 +220,10 @@ class DeepPotBackend : public DeepBaseModelBackend {
    * mirror ``deepmd/utils/charge_state.py``, which holds the same contract
    * for the Python boundaries.
    *
+   * Both tests are relational rather than equalities, which keeps them exact
+   * and lets a NaN, which compares false against everything, fall out of the
+   * range test rather than through it.
+   *
    * @param[in] charge_spin The condition, as ``{charge, multiplicity}``.
    **/
   static void require_addressable_charge_spin(
@@ -230,14 +234,16 @@ class DeepPotBackend : public DeepBaseModelBackend {
     const std::size_t checked = std::min<std::size_t>(charge_spin.size(), 2);
     for (std::size_t ii = 0; ii < checked; ++ii) {
       const double value = charge_spin[ii];
-      if (value != std::floor(value)) {
+      // Flooring leaves an integer where it is and moves everything else
+      // down, so a strict drop is exactly a fractional part.
+      if (std::floor(value) < value) {
         throw deepmd::deepmd_exception(
             std::string("the ") + names[ii] +
             " must be an integer, which indexes one row of its embedding "
             "table, but is " +
             std::to_string(value));
       }
-      if (value < lows[ii] || value >= highs[ii]) {
+      if (!(value >= lows[ii] && value < highs[ii])) {
         throw deepmd::deepmd_exception(
             std::string("the ") + names[ii] + " must lie in [" +
             std::to_string(lows[ii]) + ", " + std::to_string(highs[ii]) +
