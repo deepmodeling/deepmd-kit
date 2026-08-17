@@ -131,13 +131,12 @@ test -f "<absolute-prefix>/lib/libdeepmd_cc.so"
 test -f "<absolute-prefix>/lib/libdeepmd_c.so"
 ```
 
-Use the platform library suffix on macOS or Windows. On Linux, fail if any
-installed DeePMD library has an unresolved dynamic dependency:
+On Linux and macOS, fail if any installed DeePMD library has an unresolved
+dynamic dependency. The verifier selects the platform library suffix:
 
 ```bash
 "<absolute-python>" "<absolute-skill-root>/scripts/verify_native.py" \
-    --directory "<absolute-prefix>/lib" \
-    --pattern 'libdeepmd*.so*'
+    --directory "<absolute-prefix>/lib"
 ```
 
 Finally compile and run a public C++ API probe inside the build directory:

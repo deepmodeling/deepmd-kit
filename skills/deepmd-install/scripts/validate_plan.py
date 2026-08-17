@@ -59,7 +59,7 @@ OBJECT_KEYS = {
         "docker_image",
         "lammps_model_family",
     },
-    "source": {"directory", "remote", "ref", "commit", "editable"},
+    "source": {"directory", "remote", "ref", "commit"},
     "build": {
         "variant",
         "cc",
@@ -90,6 +90,11 @@ OBJECT_KEYS = {
     },
     "smoke_test": {"enabled", "gpu", "example"},
 }
+
+
+def _platform_name() -> str:
+    """Return the operating-system family used for command rendering."""
+    return os.name
 
 
 def _is_absolute_path(value: object) -> bool:
@@ -157,7 +162,7 @@ def _validate_strings(value: object, path: str, errors: list[str]) -> None:
             errors.append(f"{path}: unresolved shell variable is not allowed")
         if re.search(r"<[^<>\r\n]+>", value):
             errors.append(f"{path}: unresolved placeholder is not allowed")
-        unsafe_characters = ('"', "`") + (("\\",) if os.name != "nt" else ())
+        unsafe_characters = ('"', "`") + (("\\",) if _platform_name() != "nt" else ())
         if any(character in value for character in unsafe_characters):
             errors.append(f"{path}: unsafe shell-template character is not allowed")
         if any(character in value for character in ("\0", "\n", "\r")):
@@ -320,7 +325,7 @@ def _validate_source(
     errors: list[str],
 ) -> None:
     """Validate source checkout and build fields."""
-    _require_keys(source, {"directory", "remote", "ref", "editable"}, "source", errors)
+    _require_keys(source, {"directory", "remote", "ref"}, "source", errors)
     if not _is_absolute_path(source.get("directory")):
         errors.append("source.directory: expected an absolute path")
     for key in ("remote", "ref"):
@@ -332,9 +337,6 @@ def _validate_source(
         or re.fullmatch(r"[0-9a-fA-F]{7,40}", commit) is None
     ):
         errors.append("source.commit: expected a 7-40 character commit SHA or null")
-    if not isinstance(source.get("editable"), bool):
-        errors.append("source.editable: expected a boolean")
-
     _require_keys(
         build,
         {"variant", "cc", "cxx", "native_optimization", "jobs"},
@@ -467,13 +469,25 @@ def _validate_lammps(
         "lammps.model_family",
         errors,
     )
-    _validate_checksum(lammps.get("sha256"), "lammps.sha256", errors)
+    checksum = lammps.get("sha256")
+    _validate_checksum(checksum, "lammps.sha256", errors)
     source_directory = lammps.get("source_directory")
-    if _is_absolute_path(source_directory) and not Path(source_directory).exists():
-        if lammps.get("url") is None:
-            errors.append("lammps.url: required when the source directory is absent")
-    if lammps.get("url") is not None:
-        _validate_https_url(lammps["url"], "lammps.url", errors)
+    url = lammps.get("url")
+    if _is_absolute_path(source_directory):
+        source_path = Path(source_directory)
+        if source_path.exists() and not source_path.is_dir():
+            errors.append("lammps.source_directory: existing path is not a directory")
+        elif not source_path.is_dir():
+            if url is None:
+                errors.append(
+                    "lammps.url: required when the source directory is absent"
+                )
+            if checksum is None:
+                errors.append(
+                    "lammps.sha256: required when the source directory is absent"
+                )
+    if url is not None:
+        _validate_https_url(url, "lammps.url", errors)
     if all(
         _is_absolute_path(item)
         for item in (

@@ -32,6 +32,11 @@ Store the resolved SHA in `source.commit` and re-run `validate_plan.py` with
 `--require-resolved-source` before installing backend packages or building
 DeePMD-kit.
 
+```bash
+"<absolute-python>" "<absolute-skill-root>/scripts/validate_plan.py" \
+    "<absolute-plan-path>" --require-resolved-source
+```
+
 For an existing checkout, inspect it without changing its branch, remotes, or
 working tree:
 
@@ -162,10 +167,6 @@ env \
 For CPU, omit CUDA variables and set `DP_VARIANT=cpu`. For ROCm, follow the
 selected checkout documentation and set `DP_VARIANT=rocm` plus the planned
 `ROCM_ROOT` in the same invocation.
-
-When `source.editable=true`, add `--editable` to the one pip command. Otherwise
-perform a regular installation. Do not make editable mode the default for a
-runtime installation.
 
 For TensorFlow, JAX, and Paddle, replace the requirement and the two
 `DP_ENABLE_*` values using the table. Do not add a backend the plan does not

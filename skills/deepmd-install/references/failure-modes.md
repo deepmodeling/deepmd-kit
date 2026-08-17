@@ -38,8 +38,14 @@ head -n 1 "$(command -v dp)"
 ```
 
 The interpreter, pip prefix, and `dp` shebang must identify the same
-environment. A previous `conda activate` does not persist across independent
-agent shell calls. Re-render the failed gate with the absolute interpreter.
+environment. Resolve `deepmd.__file__` as well; it must exist below the planned
+prefix. If it points into a checkout or another environment, run the verifier
+from a neutral directory without an injected `PYTHONPATH`. A previous
+`conda activate` does not persist across independent agent shell calls.
+If a neutral-directory import still points into the checkout, replace the
+editable installation with the regular source installation documented in
+[`source-python.md`](source-python.md). Re-render the failed gate with the
+absolute interpreter.
 
 ## Invalid or stale plan
 
@@ -88,6 +94,18 @@ Omit `--expected-version` when the plan does not pin a release.
 Check visibility masks from the probe before replacing packages. A false GPU
 availability result may come from `CUDA_VISIBLE_DEVICES`,
 `HIP_VISIBLE_DEVICES`, a driver/runtime mismatch, or a CPU backend package.
+For JAX, inspect backend metadata rather than the device vendor label:
+
+```bash
+"<absolute-python>" - <<'PY'
+import jax
+
+for device in jax.devices():
+    client = device.client
+    print(device.platform, client.platform, client.platform_version)
+PY
+```
+
 For a ROCm smoke test, inspect occupancy with `rocm-smi`, then bind the planned
 physical index in the same command:
 
@@ -266,15 +284,23 @@ CUDA toolkit.
 
 ## Runtime link failure
 
-Inspect the exact binary:
+Use the bundled verifier so Linux checks `ldd` output and macOS asks `dyld` to
+load the library instead of trusting Mach-O metadata alone:
 
 ```bash
-ldd "<absolute-lammps-binary>"
+"<absolute-python>" "<absolute-skill-root>/scripts/verify_native.py" \
+    --path "<absolute-native-library>"
+"<absolute-python>" "<absolute-skill-root>/scripts/verify_lammps.py" \
+    --binary "<absolute-lammps-binary>" \
+    --model-family "<conventional|dpa4|dpa4c>" \
+    --flavor "<host|kokkos-cuda>" \
+    --check-links
 ```
 
 Resolve every `not found` entry through build/install RPATH. Avoid global
 `LD_LIBRARY_PATH` and shell-rc changes; they can cause another environment's
 CUDA, Torch, TensorFlow, or compiler runtime to shadow the planned libraries.
+On macOS, `otool -L` lists install names but does not prove they resolve.
 
 ## Insufficient build resources
 
@@ -293,9 +319,9 @@ file "<absolute-download-path>"
 printf '%s  %s\n' "<sha256>" "<absolute-download-path>" | sha256sum --check -
 ```
 
-An HTML response, truncated split archive, unexpected top-level directory, or
-checksum mismatch requires a fresh artifact from the planned URL; it is not a
-reason to disable verification.
+An absent checksum, HTML response, truncated split archive, unexpected
+top-level directory, or checksum mismatch blocks extraction. Obtain a fresh
+artifact and trusted checksum for the planned URL; do not disable verification.
 
 For `package.artifact_path`, skip curl and run the same file-type and checksum
 checks directly on the absolute local path.

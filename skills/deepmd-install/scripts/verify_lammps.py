@@ -129,7 +129,7 @@ def run_checks(
     results = [CheckResult("lammps_binary", True, str(resolved))]
     results.extend(_check_help(resolved, required_styles(model_family, flavor)))
     if check_links:
-        link_result = check_dynamic_links(resolved)
+        link_result = check_dynamic_links(resolved, darwin_probe=[str(resolved), "-h"])
         results.append(
             CheckResult("dynamic_links", link_result.passed, link_result.detail)
         )

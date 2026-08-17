@@ -76,7 +76,6 @@ def _source_plan() -> dict[str, object]:
             "remote": "https://github.com/deepmodeling/deepmd-kit.git",
             "ref": "master",
             "commit": None,
-            "editable": False,
         },
         "build": {
             "variant": "cuda",
@@ -99,7 +98,7 @@ def _source_plan() -> dict[str, object]:
             "build_directory": "/work/build/lammps-blackwell120",
             "version": "stable_22Jul2025_update2",
             "url": "https://github.com/lammps/lammps/archive/refs/tags/stable_22Jul2025_update2.tar.gz",
-            "sha256": None,
+            "sha256": "a" * 64,
             "flavor": "kokkos-cuda",
             "machine": "blackwell120",
             "kokkos_arch": "BLACKWELL120",
@@ -300,9 +299,7 @@ def test_validate_plan_rejects_embedded_placeholders(
     assert any("unresolved placeholder" in error for error in errors)
 
 
-@pytest.mark.parametrize(
-    "value", ['bad"value', "bad`value", "bad\\value", "bad\nvalue"]
-)
+@pytest.mark.parametrize("value", ['bad"value', "bad`value", "bad\nvalue"])
 def test_validate_plan_rejects_unsafe_shell_template_values(value: str) -> None:
     """Reject values that can escape the documented POSIX templates."""
     plan = _source_plan()
@@ -325,14 +322,21 @@ def test_validate_plan_keeps_quoted_semicolon_as_data() -> None:
     assert PLAN.validate_plan(plan) == []
 
 
-def test_validate_plan_allows_windows_path_separator_on_windows(
+def test_validate_plan_applies_platform_specific_backslash_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Preserve Windows paths while keeping POSIX backslash escaping blocked."""
-    errors: list[str] = []
-    monkeypatch.setattr(PLAN.os, "name", "nt")
-    PLAN._validate_strings(r"C:\DeePMD\python.exe", "environment.python", errors)
-    assert errors == []
+    """Preserve Windows paths and reject POSIX shell-escape backslashes."""
+    windows_errors: list[str] = []
+    monkeypatch.setattr(PLAN, "_platform_name", lambda: "nt")
+    PLAN._validate_strings(
+        r"C:\DeePMD\python.exe", "environment.python", windows_errors
+    )
+    assert windows_errors == []
+
+    posix_errors: list[str] = []
+    monkeypatch.setattr(PLAN, "_platform_name", lambda: "posix")
+    PLAN._validate_strings(r"C:\DeePMD\python.exe", "environment.python", posix_errors)
+    assert any("unsafe shell-template character" in item for item in posix_errors)
 
 
 @pytest.mark.parametrize(
@@ -361,6 +365,44 @@ def test_validate_plan_requires_https_lammps_url() -> None:
     lammps["url"] = "/opt/lammps.tar.gz"
     errors = PLAN.validate_plan(plan)
     assert any("lammps.url: expected an HTTPS URL" in error for error in errors)
+
+
+def test_validate_plan_requires_checksum_for_lammps_download(tmp_path: Path) -> None:
+    """Reject an unverified archive when the LAMMPS source is absent."""
+    plan = _source_plan()
+    lammps = plan["lammps"]
+    assert isinstance(lammps, dict)
+    lammps["source_directory"] = str(tmp_path / "missing-lammps")
+    lammps["sha256"] = None
+    errors = PLAN.validate_plan(plan)
+    assert "lammps.sha256: required when the source directory is absent" in errors
+
+
+def test_validate_plan_allows_existing_lammps_without_archive(
+    tmp_path: Path,
+) -> None:
+    """Allow a verified existing source directory without download fields."""
+    source_directory = tmp_path / "lammps"
+    source_directory.mkdir()
+    plan = _source_plan()
+    lammps = plan["lammps"]
+    assert isinstance(lammps, dict)
+    lammps.update(
+        {"source_directory": str(source_directory), "url": None, "sha256": None}
+    )
+    assert PLAN.validate_plan(plan) == []
+
+
+def test_validate_plan_rejects_lammps_source_file(tmp_path: Path) -> None:
+    """Reject an existing file where a LAMMPS source directory is required."""
+    source_path = tmp_path / "lammps"
+    source_path.write_text("not a source tree", encoding="utf-8")
+    plan = _source_plan()
+    lammps = plan["lammps"]
+    assert isinstance(lammps, dict)
+    lammps["source_directory"] = str(source_path)
+    errors = PLAN.validate_plan(plan)
+    assert "lammps.source_directory: existing path is not a directory" in errors
 
 
 @pytest.mark.parametrize("field", ["build_directory", "install_prefix"])
@@ -550,8 +592,8 @@ def test_native_link_check_rejects_not_found_with_zero_exit(
     """Fail when ldd reports an unresolved library despite return code zero."""
     binary = tmp_path / "libexample.so"
     binary.write_bytes(b"native")
-    monkeypatch.setattr(NATIVE.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(NATIVE.shutil, "which", lambda _name: "/usr/bin/ldd")
+    monkeypatch.setattr(NATIVE, "_system_name", lambda: "Linux")
+    monkeypatch.setattr(NATIVE, "_find_executable", lambda _name: "/usr/bin/ldd")
     monkeypatch.setattr(
         NATIVE,
         "_run",
@@ -564,21 +606,92 @@ def test_native_link_check_rejects_not_found_with_zero_exit(
     assert "libmissing.so => not found" in result.detail
 
 
+def test_native_link_check_uses_dyld_loader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail when the isolated Darwin loader cannot resolve a dependency."""
+    library = tmp_path / "libexample.dylib"
+    library.write_bytes(b"native")
+    commands: list[list[str]] = []
+
+    def run(command: list[str]) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr="OSError: Library not loaded: @rpath/libmissing.dylib",
+        )
+
+    monkeypatch.setattr(NATIVE, "_system_name", lambda: "Darwin")
+    monkeypatch.setattr(NATIVE, "_run", run)
+    result = NATIVE.check_dynamic_links(library)
+    assert result.passed is False
+    assert "Library not loaded" in result.detail
+    assert commands[0][:2] == [sys.executable, "-c"]
+    assert "otool" not in commands[0]
+
+
+def test_native_link_default_pattern_matches_platform() -> None:
+    """Select the native-library suffix without changing explicit patterns."""
+    assert NATIVE._default_pattern("Linux") == "libdeepmd*.so"
+    assert NATIVE._default_pattern("Darwin") == "libdeepmd*.dylib"
+
+
+def test_native_link_collection_preserves_explicit_pattern(tmp_path: Path) -> None:
+    """Use a caller-provided directory pattern without platform substitution."""
+    selected = tmp_path / "libdeepmd.custom"
+    ignored = tmp_path / "libdeepmd.so"
+    selected.write_bytes(b"native")
+    ignored.write_bytes(b"native")
+    assert NATIVE._collect_paths([], tmp_path, "*.custom") == [selected.resolve()]
+
+
+def test_native_link_check_fails_closed_on_unsupported_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reject an unimplemented platform instead of reporting false success."""
+    library = tmp_path / "deepmd.dll"
+    library.write_bytes(b"native")
+    monkeypatch.setattr(NATIVE, "_system_name", lambda: "Windows")
+    result = NATIVE.check_dynamic_links(library)
+    assert result.passed is False
+    assert result.detail == "unsupported platform: Windows"
+
+
 def test_verify_python_checks_version_and_prefix(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Reject an importable DeePMD-kit with the wrong requested identity."""
-    fake_deepmd = SimpleNamespace(
-        __version__="3.2.0", __file__="/opt/deepmd/deepmd/__init__.py"
-    )
+    """Require both interpreter and imported module to use the planned prefix."""
+    environment = tmp_path / "environment"
+    module_file = environment / "lib" / "deepmd" / "__init__.py"
+    module_file.parent.mkdir(parents=True)
+    module_file.write_text("", encoding="utf-8")
+    fake_deepmd = SimpleNamespace(__version__="3.2.0", __file__=str(module_file))
     monkeypatch.setitem(sys.modules, "deepmd", fake_deepmd)
-    monkeypatch.setattr(VERIFY.sys, "prefix", str(tmp_path / "environment"))
-    passing = VERIFY._check_deepmd("3.2.0", str(tmp_path / "environment"))
-    wrong_version = VERIFY._check_deepmd("3.1.0", str(tmp_path / "environment"))
+    monkeypatch.setattr(VERIFY, "_interpreter_prefix", lambda: environment.resolve())
+    passing = VERIFY._check_deepmd("3.2.0", str(environment))
+    wrong_version = VERIFY._check_deepmd("3.1.0", str(environment))
     wrong_prefix = VERIFY._check_deepmd("3.2.0", str(tmp_path / "other"))
     assert passing.passed is True
     assert wrong_version.passed is False
     assert wrong_prefix.passed is False
+
+
+def test_verify_python_rejects_shadowed_or_missing_module(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Reject a checkout import even when the interpreter prefix is correct."""
+    environment = tmp_path / "environment"
+    checkout_file = tmp_path / "checkout" / "deepmd" / "__init__.py"
+    checkout_file.parent.mkdir(parents=True)
+    checkout_file.write_text("", encoding="utf-8")
+    fake_deepmd = SimpleNamespace(__version__="3.2.0", __file__=str(checkout_file))
+    monkeypatch.setitem(sys.modules, "deepmd", fake_deepmd)
+    monkeypatch.setattr(VERIFY, "_interpreter_prefix", lambda: environment.resolve())
+    assert VERIFY._check_deepmd("3.2.0", str(environment)).passed is False
+    fake_deepmd.__file__ = None
+    assert VERIFY._check_deepmd("3.2.0", str(environment)).passed is False
 
 
 def test_verify_python_matches_abbreviated_source_commit() -> None:
@@ -642,25 +755,44 @@ def test_tensorflow_rejects_wrong_gpu_runtime(
 
 
 @pytest.mark.parametrize(
-    ("device_kind", "platform_version", "expected"),
+    ("client_platform", "device_kind", "platform_version", "expected"),
     [
-        ("NVIDIA RTX PRO 6000", "CUDA 13.0", "cuda"),
-        ("AMD Instinct MI300X", "ROCm 7.0", "rocm"),
+        ("gpu", "NVIDIA RTX PRO 6000", "CUDA 13.0", "cuda"),
+        ("gpu", "AMD Instinct MI300X", "ROCm 7.0", "rocm"),
+        ("gpu", "AMD-compatible adapter", "CUDA 13.0", "cuda"),
+        ("cuda", "vendor text is not authoritative", "unknown", "cuda"),
     ],
 )
 def test_jax_runtime_detection(
-    device_kind: str, platform_version: str, expected: str
+    client_platform: str,
+    device_kind: str,
+    platform_version: str,
+    expected: str,
 ) -> None:
     """Distinguish JAX CUDA and ROCm client metadata."""
     device = SimpleNamespace(
         platform="gpu",
         device_kind=device_kind,
-        client=SimpleNamespace(platform_version=platform_version),
+        client=SimpleNamespace(
+            platform=client_platform, platform_version=platform_version
+        ),
     )
     assert VERIFY._jax_accelerator([device]) == expected
     assert VERIFY._jax_accelerator([device]) != (
         "rocm" if expected == "cuda" else "cuda"
     )
+
+
+def test_jax_runtime_detection_fails_closed_on_conflicting_backends() -> None:
+    """Reject a device set that reports both CUDA and ROCm clients."""
+    devices = [
+        SimpleNamespace(
+            platform="gpu",
+            client=SimpleNamespace(platform=runtime, platform_version=runtime),
+        )
+        for runtime in ("cuda", "rocm")
+    ]
+    assert VERIFY._jax_accelerator(devices) is None
 
 
 @pytest.mark.parametrize(
@@ -686,7 +818,7 @@ def test_jax_rejects_wrong_gpu_runtime(
     device = SimpleNamespace(
         platform="gpu",
         device_kind=device_kind,
-        client=SimpleNamespace(platform_version=platform_version),
+        client=SimpleNamespace(platform="gpu", platform_version=platform_version),
     )
     jax.devices = lambda: [device]  # type: ignore[attr-defined]
     jax_numpy = ModuleType("jax.numpy")

@@ -107,8 +107,7 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
   "directory": "/absolute/path/to/deepmd-kit",
   "remote": "https://github.com/deepmodeling/deepmd-kit.git",
   "ref": "master",
-  "commit": null,
-  "editable": false
+  "commit": null
 }
 ```
 
@@ -161,7 +160,7 @@ For a JAX C++ backend, provide either `tensorflow_root` or
   "build_directory": "/absolute/build/lammps-blackwell120",
   "version": "stable_22Jul2025_update2",
   "url": "https://github.com/lammps/lammps/archive/refs/tags/stable_22Jul2025_update2.tar.gz",
-  "sha256": null,
+  "sha256": "<published-64-character-sha256>",
   "flavor": "kokkos-cuda",
   "machine": "blackwell120",
   "kokkos_arch": "BLACKWELL120",
@@ -174,6 +173,9 @@ For a JAX C++ backend, provide either `tensorflow_root` or
 - `model_family`: `conventional`, `dpa4`, or `dpa4c`.
 - `machine` and `kokkos_arch` are required only for `kokkos-cuda`.
 - Use one Kokkos GPU architecture and one build directory per binary.
+- Keep `url` and `sha256` null only when `source_directory` is an existing
+  directory whose LAMMPS version has been verified. Otherwise provide both an
+  HTTPS archive URL and its trusted 64-character SHA-256 checksum.
 
 ### `smoke_test`
 
@@ -200,7 +202,8 @@ The validator enforces these invariants:
 1. DPA4C maps to `dpa4spin`/`dpa4spin/kk`; other families map to
    `deepmd`/`deepmd/kk`.
 1. DeePMD, C/C++, and LAMMPS source/build/install paths are distinct.
-1. Checksums contain exactly 64 hexadecimal characters.
+1. Checksums contain exactly 64 hexadecimal characters; offline artifacts and
+   downloaded LAMMPS archives require a checksum.
 1. Easy-install methods reject ROCm and Paddle packaged LAMMPS/i-PI.
 1. Embedded placeholders, control characters, and POSIX-template escape
    characters fail before command rendering.
@@ -253,6 +256,11 @@ The validator enforces these invariants:
 
 ### Source PyTorch CUDA with DPA4C LAMMPS
 
+This is a pre-resolution template. Replace the LAMMPS checksum placeholder
+before initial validation. Keep `source.commit` null until the checkout gate
+resolves `source.ref`; then record the SHA and run the resolved-source gate
+before installing dependencies or building.
+
 ```json
 {
   "schema_version": 1,
@@ -286,8 +294,7 @@ The validator enforces these invariants:
     "directory": "/work/deepmd-kit",
     "remote": "https://github.com/deepmodeling/deepmd-kit.git",
     "ref": "master",
-    "commit": null,
-    "editable": false
+    "commit": null
   },
   "build": {
     "variant": "cuda",
@@ -310,7 +317,7 @@ The validator enforces these invariants:
     "build_directory": "/work/build/lammps-blackwell120",
     "version": "stable_22Jul2025_update2",
     "url": "https://github.com/lammps/lammps/archive/refs/tags/stable_22Jul2025_update2.tar.gz",
-    "sha256": null,
+    "sha256": "<published-64-character-sha256>",
     "flavor": "kokkos-cuda",
     "machine": "blackwell120",
     "kokkos_arch": "BLACKWELL120",

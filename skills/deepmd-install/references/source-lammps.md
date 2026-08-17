@@ -26,11 +26,15 @@ from the plan into a separate directory:
 curl -fL "<lammps-url>" -o "<absolute-download-path>"
 ```
 
-When `lammps.sha256` is non-null, verify it before extraction:
+For a download, require `lammps.sha256` and verify it before extraction:
 
 ```bash
 printf '%s  %s\n' "<sha256>" "<absolute-download-path>" | sha256sum --check -
 ```
+
+Stop on a missing or mismatched checksum. A plan may omit the URL and checksum
+only when `lammps.source_directory` already exists and its version has been
+verified.
 
 Extract into a directory whose resolved path equals
 `lammps.source_directory`. Stop if the archive creates an unexpected directory

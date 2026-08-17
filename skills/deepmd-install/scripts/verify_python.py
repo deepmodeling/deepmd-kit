@@ -36,6 +36,11 @@ def _result(name: str, passed: bool, detail: object) -> CheckResult:
     return CheckResult(name=name, passed=passed, detail=str(detail))
 
 
+def _interpreter_prefix() -> Path:
+    """Return the resolved prefix of the running interpreter."""
+    return Path(sys.prefix).resolve(strict=False)
+
+
 def _check_deepmd(
     expected_version: str | None, expected_prefix: str | None
 ) -> CheckResult:
@@ -45,8 +50,18 @@ def _check_deepmd(
     except (ImportError, OSError, RuntimeError) as exc:
         return _result("deepmd", False, f"{type(exc).__name__}: {exc}")
     version = getattr(deepmd, "__version__", "unknown")
-    location = getattr(deepmd, "__file__", "unknown")
-    actual_prefix = Path(sys.prefix).resolve(strict=False)
+    location_value = getattr(deepmd, "__file__", None)
+    if not isinstance(location_value, str) or not location_value:
+        return _result("deepmd", False, f"version={version} file=missing")
+    try:
+        location = Path(location_value).resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        return _result(
+            "deepmd",
+            False,
+            f"version={version} file={location_value} {type(exc).__name__}: {exc}",
+        )
+    actual_prefix = _interpreter_prefix()
     passed = True
     identity = [f"version={version}", f"file={location}", f"prefix={actual_prefix}"]
     if expected_version is not None:
@@ -54,7 +69,8 @@ def _check_deepmd(
         identity.append(f"expected_version={expected_version}")
     if expected_prefix is not None:
         expected = Path(expected_prefix).resolve(strict=False)
-        passed = passed and actual_prefix == expected
+        imported_from_prefix = location == expected or expected in location.parents
+        passed = passed and actual_prefix == expected and imported_from_prefix
         identity.append(f"expected_prefix={expected}")
     return _result("deepmd", passed, " ".join(identity))
 
@@ -75,21 +91,27 @@ def _tensorflow_accelerator(tf: Any) -> str | None:
 
 
 def _jax_accelerator(devices: list[Any]) -> str | None:
-    """Return JAX's GPU runtime from device and client metadata."""
-    metadata: list[str] = []
+    """Return JAX's unambiguous GPU runtime from backend metadata."""
+    runtimes: set[str] = set()
     for device in devices:
-        platform_name = str(getattr(device, "platform", "")).lower()
-        if platform_name in {"cuda", "rocm"}:
-            return platform_name
-        metadata.append(str(getattr(device, "device_kind", "")))
         client = getattr(device, "client", None)
-        metadata.append(str(getattr(client, "platform_version", "")))
-    combined = " ".join(metadata).lower()
-    if "rocm" in combined or "hip" in combined or "amd" in combined:
-        return "rocm"
-    if "cuda" in combined or "nvidia" in combined:
-        return "cuda"
-    return None
+        canonical_platforms = (
+            str(getattr(client, "platform", "")).lower(),
+            str(getattr(device, "platform", "")).lower(),
+        )
+        runtime = next(
+            (item for item in canonical_platforms if item in {"cuda", "rocm"}),
+            None,
+        )
+        if runtime is None:
+            platform_version = str(getattr(client, "platform_version", "")).lower()
+            is_cuda = "cuda" in platform_version
+            is_rocm = "rocm" in platform_version or "hip" in platform_version
+            if is_cuda != is_rocm:
+                runtime = "cuda" if is_cuda else "rocm"
+        if runtime is not None:
+            runtimes.add(runtime)
+    return next(iter(runtimes)) if len(runtimes) == 1 else None
 
 
 def _check_build_variant(expected: str) -> CheckResult:
