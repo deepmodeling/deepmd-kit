@@ -325,6 +325,16 @@ def test_validate_plan_keeps_quoted_semicolon_as_data() -> None:
     assert PLAN.validate_plan(plan) == []
 
 
+def test_validate_plan_allows_windows_path_separator_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preserve Windows paths while keeping POSIX backslash escaping blocked."""
+    errors: list[str] = []
+    monkeypatch.setattr(PLAN.os, "name", "nt")
+    PLAN._validate_strings(r"C:\DeePMD\python.exe", "environment.python", errors)
+    assert errors == []
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

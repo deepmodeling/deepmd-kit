@@ -8,6 +8,7 @@ from __future__ import (
 
 import argparse
 import json
+import os
 import re
 from pathlib import (
     Path,
@@ -156,7 +157,8 @@ def _validate_strings(value: object, path: str, errors: list[str]) -> None:
             errors.append(f"{path}: unresolved shell variable is not allowed")
         if re.search(r"<[^<>\r\n]+>", value):
             errors.append(f"{path}: unresolved placeholder is not allowed")
-        if any(character in value for character in ('"', "`", "\\")):
+        unsafe_characters = ('"', "`") + (("\\",) if os.name != "nt" else ())
+        if any(character in value for character in unsafe_characters):
             errors.append(f"{path}: unsafe shell-template character is not allowed")
         if any(character in value for character in ("\0", "\n", "\r")):
             errors.append(f"{path}: control character is not allowed")
