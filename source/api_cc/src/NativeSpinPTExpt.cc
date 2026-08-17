@@ -82,6 +82,61 @@ void validate_cartesian_input(const std::vector<VALUETYPE>& values,
 }
 
 /**
+ * @brief Derive the frame count carried by a per-atom Cartesian input.
+ *
+ * The standalone entry points take the frame count nowhere in their
+ * signature; it is the coordinates that hold it, as a whole multiple of the
+ * atom count.
+ */
+template <typename VALUETYPE>
+int frame_count(const std::vector<VALUETYPE>& coord,
+                const std::size_t atom_count) {
+  const std::size_t stride = atom_count * 3;
+  if (coord.size() % stride != 0 || coord.empty()) {
+    throw deepmd::deepmd_exception(
+        "coord holds " + std::to_string(coord.size()) +
+        " values, which is not a whole number of frames of " +
+        std::to_string(atom_count) + " atoms");
+  }
+  return static_cast<int>(coord.size() / stride);
+}
+
+/**
+ * @brief Validate an input laid out as one block of @p stride per frame.
+ *
+ * An empty input stands for an absent one and is left to the frame to
+ * interpret.
+ */
+template <typename VALUETYPE>
+void validate_frame_blocks(const std::vector<VALUETYPE>& values,
+                           const int nframes,
+                           const std::size_t stride,
+                           const char* name) {
+  const std::size_t expected = static_cast<std::size_t>(nframes) * stride;
+  if (!values.empty() && values.size() != expected) {
+    throw deepmd::deepmd_exception(
+        std::string(name) + " holds " + std::to_string(values.size()) +
+        " values but " + std::to_string(nframes) + " frames require " +
+        std::to_string(expected));
+  }
+}
+
+/**
+ * @brief Take the block one frame owns, or nothing when the input is absent.
+ */
+template <typename T>
+std::vector<T> frame_block(const std::vector<T>& values,
+                           const int frame,
+                           const std::size_t stride) {
+  if (values.empty()) {
+    return {};
+  }
+  const auto first = values.begin() + static_cast<std::ptrdiff_t>(frame) *
+                                          static_cast<std::ptrdiff_t>(stride);
+  return std::vector<T>(first, first + static_cast<std::ptrdiff_t>(stride));
+}
+
+/**
  * @brief Build the frame-parameter input of the conditional graph tail.
  *
  * The artifact consumes it in double precision, shaped ``(1, dim_fparam)``.
@@ -813,6 +868,62 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam,
                                const bool atomic) {
+  if (atype.empty()) {
+    throw deepmd::deepmd_exception(
+        "standalone native-spin inference requires at least one atom");
+  }
+  const std::size_t nloc = atype.size();
+  const int nframes = frame_count(coord, nloc);
+  validate_frame_blocks(spin, nframes, nloc * 3, "spin");
+  validate_frame_blocks(box, nframes, 9, "box");
+  validate_frame_blocks(fparam, nframes, static_cast<std::size_t>(dfparam),
+                        "fparam");
+  validate_frame_blocks(aparam, nframes,
+                        nloc * static_cast<std::size_t>(daparam), "aparam");
+
+  ener.clear();
+  force.clear();
+  force_mag.clear();
+  virial.clear();
+  atom_energy.clear();
+  atom_virial.clear();
+  for (int ff = 0; ff < nframes; ++ff) {
+    ENERGYVTYPE frame_ener;
+    std::vector<VALUETYPE> frame_force, frame_force_mag, frame_virial,
+        frame_atom_energy, frame_atom_virial;
+    compute_frame(
+        frame_ener, frame_force, frame_force_mag, frame_virial,
+        frame_atom_energy, frame_atom_virial, frame_block(coord, ff, nloc * 3),
+        frame_block(spin, ff, nloc * 3), atype, frame_block(box, ff, 9),
+        frame_block(fparam, ff, static_cast<std::size_t>(dfparam)),
+        frame_block(aparam, ff, nloc * static_cast<std::size_t>(daparam)),
+        atomic);
+    ener.insert(ener.end(), frame_ener.begin(), frame_ener.end());
+    force.insert(force.end(), frame_force.begin(), frame_force.end());
+    force_mag.insert(force_mag.end(), frame_force_mag.begin(),
+                     frame_force_mag.end());
+    virial.insert(virial.end(), frame_virial.begin(), frame_virial.end());
+    atom_energy.insert(atom_energy.end(), frame_atom_energy.begin(),
+                       frame_atom_energy.end());
+    atom_virial.insert(atom_virial.end(), frame_atom_virial.begin(),
+                       frame_atom_virial.end());
+  }
+}
+
+template <typename VALUETYPE, typename ENERGYVTYPE>
+void NativeSpinPTExpt::compute_frame(ENERGYVTYPE& ener,
+                                     std::vector<VALUETYPE>& force,
+                                     std::vector<VALUETYPE>& force_mag,
+                                     std::vector<VALUETYPE>& virial,
+                                     std::vector<VALUETYPE>& atom_energy,
+                                     std::vector<VALUETYPE>& atom_virial,
+                                     const std::vector<VALUETYPE>& coord,
+                                     const std::vector<VALUETYPE>& spin,
+                                     const std::vector<int>& atype,
+                                     const std::vector<VALUETYPE>& box,
+                                     const std::vector<VALUETYPE>& fparam,
+                                     const std::vector<VALUETYPE>& aparam,
+                                     const bool atomic) {
   const torch::Device device = gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
                                            : torch::Device(torch::kCPU);
   const auto f64_options = torch::TensorOptions().dtype(torch::kFloat64);
@@ -820,10 +931,6 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
       std::is_same<VALUETYPE, float>::value ? torch::kFloat32 : torch::kFloat64;
   const int nloc = static_cast<int>(atype.size());
   const int nframes = 1;
-  if (atype.empty()) {
-    throw deepmd::deepmd_exception(
-        "standalone native-spin inference requires at least one atom");
-  }
   validate_cartesian_input(coord, atype.size(), "coord");
   validate_cartesian_input(spin, atype.size(), "spin");
 

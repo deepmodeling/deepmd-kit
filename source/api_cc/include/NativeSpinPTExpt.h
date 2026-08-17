@@ -349,8 +349,12 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
   /**
-   * @brief Evaluate without a neighbor list: build one, then fold ghost
-   * contributions back onto their local owners.
+   * @brief Evaluate frames that arrive without a neighbor list.
+   *
+   * The inputs carry the frame count implicitly, in the length of the
+   * coordinates; the outputs are the frames' results laid end to end. Every
+   * frame brings its own cell and therefore its own ghost set, so they are
+   * evaluated one at a time.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
   void compute(ENERGYVTYPE& ener,
@@ -366,6 +370,25 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
+
+  /**
+   * @brief Evaluate one frame: build a neighbor list, then fold ghost
+   * contributions back onto their local owners.
+   **/
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_frame(ENERGYVTYPE& ener,
+                     std::vector<VALUETYPE>& force,
+                     std::vector<VALUETYPE>& force_mag,
+                     std::vector<VALUETYPE>& virial,
+                     std::vector<VALUETYPE>& atom_energy,
+                     std::vector<VALUETYPE>& atom_virial,
+                     const std::vector<VALUETYPE>& coord,
+                     const std::vector<VALUETYPE>& spin,
+                     const std::vector<int>& atype,
+                     const std::vector<VALUETYPE>& box,
+                     const std::vector<VALUETYPE>& fparam,
+                     const std::vector<VALUETYPE>& aparam,
+                     const bool atomic);
 
   /**
    * @brief Run the nine-input compact canonical native-spin forward.
