@@ -14,9 +14,13 @@ import os
 import tempfile
 import zipfile
 
+import numpy as np
 import pytest
 import torch
 
+from deepmd.entrypoints.convert_backend import (
+    convert_backend,
+)
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
 )
@@ -24,6 +28,7 @@ from deepmd.pt_expt.utils.serialization import (
     _needs_with_comm_artifact,
     _supports_graph_export,
     deserialize_to_file,
+    serialize_from_file,
 )
 
 # dpa1 with attn_layer == 0 — the energy model exercised by the graph path.
@@ -86,9 +91,163 @@ def _read_metadata(pt2_path: str) -> dict:
     return json.loads(raw)
 
 
+@pytest.mark.parametrize(
+    "lower_input_kind",
+    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+)
+def test_pt2_serialization_preserves_lower_input_kind(
+    tmp_path, lower_input_kind: str
+) -> None:
+    """The interchange dictionary exposes the artifact's lower semantics."""
+    model_file = tmp_path / "model.pt2"
+    with zipfile.ZipFile(model_file, "w") as zf:
+        zf.writestr("model/extra/model.json", json.dumps({"model": {}}))
+        zf.writestr(
+            "model/extra/metadata.json",
+            json.dumps({"lower_input_kind": lower_input_kind}),
+        )
+
+    data = serialize_from_file(str(model_file))
+
+    assert data["lower_input_kind"] == lower_input_kind
+
+
+@pytest.mark.parametrize(
+    "lower_input_kind",
+    ["nlist", "graph", "dpa1_canonical", "dpa4c_canonical", "edge_vec"],
+)
+def test_pte_serialization_preserves_lower_input_kind(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, lower_input_kind: str
+) -> None:
+    """PTE extra metadata has the same interchange contract as PT2."""
+
+    def load_exported_program(_model_file: str, *, extra_files: dict[str, str]) -> None:
+        extra_files["model.json"] = json.dumps({"model": {}})
+        extra_files["model_def_script.json"] = ""
+        extra_files["metadata.json"] = json.dumps(
+            {"lower_input_kind": lower_input_kind}
+        )
+
+    monkeypatch.setattr(torch.export, "load", load_exported_program)
+
+    data = serialize_from_file(str(tmp_path / "model.pte"))
+
+    assert data["lower_input_kind"] == lower_input_kind
+
+
+@pytest.mark.parametrize(
+    ("embedded_lower_input_kind", "expected"),
+    [("graph", "graph"), (None, "nlist")],
+)
+def test_pt2_serialization_legacy_lower_input_kind_fallback(
+    tmp_path,
+    embedded_lower_input_kind: str | None,
+    expected: str,
+) -> None:
+    """Legacy PT2 archives use embedded metadata, then dense fallback."""
+    model_file = tmp_path / "model.pt2"
+    model_data: dict[str, object] = {"model": {}}
+    if embedded_lower_input_kind is not None:
+        model_data["lower_input_kind"] = embedded_lower_input_kind
+    with zipfile.ZipFile(model_file, "w") as zf:
+        zf.writestr("model/extra/model.json", json.dumps(model_data))
+
+    data = serialize_from_file(str(model_file))
+
+    assert data["lower_input_kind"] == expected
+
+
+@pytest.mark.parametrize(
+    ("embedded_lower_input_kind", "expected"),
+    [("graph", "graph"), (None, "nlist")],
+)
+def test_pte_serialization_legacy_lower_input_kind_fallback(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    embedded_lower_input_kind: str | None,
+    expected: str,
+) -> None:
+    """Legacy PTE archives use embedded metadata, then dense fallback."""
+    model_data: dict[str, object] = {"model": {}}
+    if embedded_lower_input_kind is not None:
+        model_data["lower_input_kind"] = embedded_lower_input_kind
+
+    def load_exported_program(_model_file: str, *, extra_files: dict[str, str]) -> None:
+        extra_files["model.json"] = json.dumps(model_data)
+        extra_files["model_def_script.json"] = ""
+        extra_files["metadata.json"] = ""
+
+    monkeypatch.setattr(torch.export, "load", load_exported_program)
+
+    data = serialize_from_file(str(tmp_path / "model.pte"))
+
+    assert data["lower_input_kind"] == expected
+
+
 @pytest.fixture(scope="module")
 def dpa1_dpmodel_data() -> dict:
     return _build_dpa1_data()
+
+
+def test_convert_regular_pt_dpa1_preserves_dense_semantics(tmp_path) -> None:
+    """A nonzero-davg PT artifact remains numerically dense after conversion."""
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt.utils.serialization import (
+        deserialize_to_file as deserialize_to_pt,
+    )
+    from deepmd.pt.utils.serialization import (
+        serialize_from_file as serialize_from_pt,
+    )
+
+    data = _build_dpa1_data()
+    descriptor_variables = data["model"]["descriptor"]["@variables"]
+    descriptor_variables["davg"] = np.full_like(
+        descriptor_variables["davg"], 0.01
+    )
+    source_model = tmp_path / "model.pth"
+    converted_model = tmp_path / "model.pt2"
+    deserialize_to_pt(str(source_model), copy.deepcopy(data))
+
+    source_data = serialize_from_pt(str(source_model))
+    assert source_data["lower_input_kind"] == "nlist"
+
+    convert_backend(INPUT=str(source_model), OUTPUT=str(converted_model))
+    assert _read_metadata(str(converted_model))["lower_input_kind"] == "nlist"
+
+    coord = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.1, 0.2, 0.1],
+            [0.3, 1.4, 0.2],
+            [1.2, 1.1, 0.8],
+        ],
+        dtype=np.float64,
+    )[None, ...]
+    atype = np.array([[0, 1, 0, 1]], dtype=np.int32)
+    source_result = DeepPot(str(source_model), auto_batch_size=False).eval(
+        coord, None, atype
+    )
+    converted_result = DeepPot(str(converted_model), auto_batch_size=False).eval(
+        coord, None, atype
+    )
+    np.testing.assert_allclose(
+        converted_result[0], source_result[0], rtol=1e-10, atol=1e-10
+    )
+    np.testing.assert_allclose(
+        converted_result[1], source_result[1], rtol=1e-10, atol=1e-10
+    )
+
+
+def test_deserialize_rejects_unknown_lower_kind(dpa1_dpmodel_data, tmp_path) -> None:
+    """The target serializer owns validation of its supported lower ABIs."""
+    with pytest.raises(ValueError, match="Unsupported lower_kind 'unknown'"):
+        deserialize_to_file(
+            str(tmp_path / "model.pt2"),
+            copy.deepcopy(dpa1_dpmodel_data),
+            lower_kind="unknown",
+        )
 
 
 def test_graph_pt2_has_lower_input_kind_graph(dpa1_dpmodel_data) -> None:

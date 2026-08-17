@@ -52,6 +52,10 @@ from deepmd.utils.charge_state import (
 # ---------------------------------------------------------------------------
 PT2_EXTRA_PREFIX = "model/extra/"
 
+_SUPPORTED_LOWER_INPUT_KINDS = frozenset(
+    {"nlist", "graph", "dpa1_canonical", "dpa4c_canonical"}
+)
+
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
     """Neutralise deferred shape-guard assertion nodes in an exported graph.
@@ -1242,7 +1246,8 @@ def serialize_from_file(model_file: str) -> dict:
     dict
         The serialized model data.  If the archive contains
         ``model_def_script.json`` (training config), it is included
-        under the ``"model_def_script"`` key.
+        under the ``"model_def_script"`` key. ``lower_input_kind`` records
+        the concrete lower ABI from the artifact metadata.
     """
     if model_file.endswith(".pt2"):
         return _serialize_from_file_pt2(model_file)
@@ -1252,10 +1257,20 @@ def serialize_from_file(model_file: str) -> dict:
 
 def _serialize_from_file_pte(model_file: str) -> dict:
     """Serialize a .pte model file to a dictionary."""
-    extra_files = {"model.json": "", "model_def_script.json": ""}
+    extra_files = {
+        "model.json": "",
+        "model_def_script.json": "",
+        "metadata.json": "",
+    }
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
+    metadata = (
+        json.loads(extra_files["metadata.json"]) if extra_files["metadata.json"] else {}
+    )
+    model_dict["lower_input_kind"] = metadata.get(
+        "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
+    )
     if extra_files["model_def_script.json"]:
         model_dict["model_def_script"] = json.loads(
             extra_files["model_def_script.json"]
@@ -1273,6 +1288,7 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
 
     model_json_entry = PT2_EXTRA_PREFIX + "model.json"
     model_def_script_entry = PT2_EXTRA_PREFIX + "model_def_script.json"
+    metadata_entry = PT2_EXTRA_PREFIX + "metadata.json"
     with zipfile.ZipFile(model_file, "r") as zf:
         names = zf.namelist()
         if model_json_entry not in names:
@@ -1283,8 +1299,15 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
         model_def_script_json = ""
         if model_def_script_entry in names:
             model_def_script_json = zf.read(model_def_script_entry).decode("utf-8")
+        metadata_json = ""
+        if metadata_entry in names:
+            metadata_json = zf.read(metadata_entry).decode("utf-8")
     model_dict = json.loads(model_json)
     model_dict = _json_to_numpy(model_dict)
+    metadata = json.loads(metadata_json) if metadata_json else {}
+    model_dict["lower_input_kind"] = metadata.get(
+        "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
+    )
     if model_def_script_json:
         model_dict["model_def_script"] = json.loads(model_def_script_json)
     return model_dict
@@ -1393,14 +1416,21 @@ def deserialize_to_file(
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
         the destination/source CSR views) with a DYNAMIC edge axis ``E``
         (``Dim("nedge", min=2)``), so the artifact accepts any system size.
-        ``"auto"`` (used by ``convert-backend``) resolves to ``"graph"`` for an
-        exportable graph-lower ``.pt2`` and ``"nlist"`` otherwise (see
-        :func:`_resolve_lower_kind`). A graph lower always preserves the fused
-        inference operators (``DP_CUDA_INFER >= 2``) and the per-atom virial.
+        ``"auto"`` resolves to ``"graph"`` for an exportable graph-lower
+        ``.pt2`` and ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`).
+        Backend conversion passes the source artifact's concrete lower kind
+        instead, preserving its execution semantics. A graph lower always
+        preserves the fused inference operators (``DP_CUDA_INFER >= 2``) and
+        the per-atom virial.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
     """
     lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
+    if lower_kind not in _SUPPORTED_LOWER_INPUT_KINDS:
+        raise ValueError(
+            f"Unsupported lower_kind {lower_kind!r}; expected one of "
+            f"{sorted(_SUPPORTED_LOWER_INPUT_KINDS)}."
+        )
     if data["model"].get("type") == "native_spin" and lower_kind not in (
         "graph",
         "dpa4c_canonical",

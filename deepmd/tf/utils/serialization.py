@@ -50,6 +50,7 @@ def serialize_from_file(model_file: str) -> dict:
         "tf_version": tf.__version__,
         "model": model_dict,
         "model_def_script": jdata["model"],
+        "lower_input_kind": "nlist",
     }
     # neighbor stat information
     try:
