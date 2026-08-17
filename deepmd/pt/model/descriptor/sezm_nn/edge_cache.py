@@ -25,6 +25,10 @@ from einops import (
     rearrange,
 )
 
+from deepmd.kernels.cute.neo.runtime_policy import (
+    is_cute_infer_enabled,
+)
+
 from .utils import (
     get_promoted_dtype,
     nvtx_range,
@@ -68,10 +72,11 @@ class EdgeFeatureCache(NamedTuple):
     inv_sqrt_deg
         Inverse square root smooth degree normalization with shape (N, 1, 1).
     D_full
-        Block-diagonal Wigner-D matrix with shape (E, D, D) where D=(lmax+1)^2.
-        Used for efficient batched rotation. None if not available.
+        Block-diagonal Wigner-D matrix with shape (E, D, D). None when dense
+        Wigner storage is skipped.
     Dt_full
-        Transpose of D_full with shape (E, D, D). None if not available.
+        Transpose of D_full with shape (E, D, D). None when dense Wigner
+        storage is skipped.
     edge_quat
         Per-edge global-to-local quaternion actually used to build ``D_full`` and
         ``Dt_full`` with shape (E, 4). Includes the optional random local-Z roll.
@@ -92,6 +97,12 @@ class EdgeFeatureCache(NamedTuple):
         by this gate to forbid any node whose local neighborhood enters
         the frozen zone from propagating information along its outgoing
         edges.
+    destinations_sorted
+        Host-side provenance indicating that ``dst`` is nondecreasing. CuTe K1
+        may only consume caches carrying this guarantee.
+    D_packed
+        Opt-in Neo packed Wigner panel with shape (E, 46). This is kept
+        separate so the public dense fields have a stable rank.
     """
 
     src: torch.Tensor
@@ -108,6 +119,78 @@ class EdgeFeatureCache(NamedTuple):
     Dt_from_m_cache: dict[str, torch.Tensor] | None = None
     edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
+    destinations_sorted: bool = False
+    D_packed: torch.Tensor | None = None
+
+
+def _separate_packed_wigner(
+    D_full: torch.Tensor | None,
+    Dt_full: torch.Tensor | None,
+) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+    """Move the opt-in 46-value panel out of the dense Wigner fields."""
+    if D_full is None or D_full.dim() != 2:
+        return D_full, Dt_full, None
+    if Dt_full is not D_full:
+        raise RuntimeError("packed Wigner forward and transpose must share storage")
+    return None, None, D_full
+
+
+def build_sorted_edge_index_metadata(
+    src: torch.Tensor,
+    dst: torch.Tensor,
+    n_nodes: int,
+    *,
+    validate_sorted: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build destination and source CSR metadata for one sorted edge list."""
+    if src.dim() != 1 or dst.dim() != 1:
+        raise ValueError("src and dst must be one-dimensional")
+    if src.shape != dst.shape:
+        raise ValueError("src and dst must have the same shape")
+    if src.device != dst.device:
+        raise ValueError("src and dst must be on the same device")
+    if src.dtype not in (torch.int32, torch.int64):
+        raise TypeError("src must have dtype int32 or int64")
+    if dst.dtype not in (torch.int32, torch.int64):
+        raise TypeError("dst must have dtype int32 or int64")
+    if n_nodes < 0:
+        raise ValueError("n_nodes must be non-negative")
+    if src.numel() > 2**31 - 1:
+        raise ValueError("sorted edge metadata requires E <= 2**31 - 1")
+
+    src = src.contiguous()
+    dst = dst.contiguous()
+    if validate_sorted and dst.numel() > 1:
+        torch._assert_async(
+            torch.all(dst[1:] >= dst[:-1]),
+            "Neo K1 destinations_sorted=True requires monotonically "
+            "nondecreasing destination indices",
+        )
+    dst_boundaries = torch.arange(
+        n_nodes + 1,
+        device=dst.device,
+        dtype=dst.dtype,
+    )
+    dst_ptr = torch.searchsorted(
+        dst,
+        dst_boundaries,
+        out_int32=True,
+    ).contiguous()
+
+    source_order_i64 = torch.argsort(src, stable=True)
+    sorted_src = src.index_select(0, source_order_i64)
+    src_boundaries = torch.arange(
+        n_nodes + 1,
+        device=src.device,
+        dtype=src.dtype,
+    )
+    source_ptr = torch.searchsorted(
+        sorted_src,
+        src_boundaries,
+        out_int32=True,
+    ).contiguous()
+    source_order = source_order_i64.to(dtype=torch.int32).contiguous()
+    return dst_ptr, source_order, source_ptr
 
 
 def compute_edge_src_gate(
@@ -248,6 +331,7 @@ def build_edge_cache(
     n_radial: int,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
+    packed_wigner_candidate: bool = False,
     build_wigner: bool = True,
 ) -> EdgeFeatureCache:
     """
@@ -310,6 +394,11 @@ def build_edge_cache(
     wigner_calc
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
+    packed_wigner_candidate
+        Whether descriptor-level strict-FP32 K1 checks passed. Concrete edge
+        count and destination ordering are checked before panel generation.
+    build_wigner
+        Whether to materialize Wigner-D blocks for the SO(2) path.
 
     Returns
     -------
@@ -374,7 +463,18 @@ def build_edge_cache(
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
             build_full=build_wigner,
+            packed_wigner=(
+                build_wigner
+                and _packed_wigner_edges_eligible(
+                    packed_wigner_candidate,
+                    edge_count=dst.numel(),
+                    node_count=n_nodes,
+                    destinations_sorted=True,
+                    runtime_dtypes=(edge_vec.dtype, edge_env.dtype, edge_rbf.dtype),
+                )
+            ),
         )  # (E, D, D), (E, D, D), (E, 4)
+        D_full, Dt_full, D_packed = _separate_packed_wigner(D_full, Dt_full)
 
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)  # (E, C)
 
@@ -388,8 +488,10 @@ def build_edge_cache(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
+        destinations_sorted=True,
     )
 
 
@@ -412,6 +514,8 @@ def build_edge_cache_from_edges(
     edge_type_keep_mask: EdgeTypeKeepMaskFn,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
+    packed_wigner_candidate: bool = False,
+    destinations_sorted: bool = False,
     build_wigner: bool = True,
     node_partial_exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> EdgeFeatureCache:
@@ -460,6 +564,13 @@ def build_edge_cache_from_edges(
     wigner_calc
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
+    packed_wigner_candidate
+        Whether descriptor-level strict-FP32 K1 checks passed. Concrete edge
+        count and destination ordering are checked before panel generation.
+    destinations_sorted
+        Host-side provenance that ``edge_index[1]`` is nondecreasing.
+    build_wigner
+        Whether to materialize Wigner-D blocks for the SO(2) path.
 
     Returns
     -------
@@ -469,6 +580,11 @@ def build_edge_cache_from_edges(
     n_nodes = type_ebed.shape[0]
     src = edge_index[0].to(dtype=torch.long)
     dst = edge_index[1].to(dtype=torch.long)
+    if is_cute_infer_enabled() and destinations_sorted and dst.numel() > 1:
+        torch._assert_async(
+            torch.all(dst[1:] >= dst[:-1]),
+            "destinations_sorted=True requires nondecreasing destination indices",
+        )
 
     # === Step 1. Normalize mask and apply type exclusions ===
     edge_keep = edge_mask.to(dtype=torch.bool)
@@ -503,8 +619,20 @@ def build_edge_cache_from_edges(
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
+            packed_wigner=(
+                build_wigner
+                and bridging_switch is None
+                and _packed_wigner_edges_eligible(
+                    packed_wigner_candidate,
+                    edge_count=dst.numel(),
+                    node_count=n_nodes,
+                    destinations_sorted=destinations_sorted,
+                    runtime_dtypes=(edge_vec.dtype, edge_env.dtype, edge_rbf.dtype),
+                )
+            ),
             build_full=build_wigner,
         )  # (E, D, D), (E, D, D), (E, 4)
+        D_full, Dt_full, D_packed = _separate_packed_wigner(D_full, Dt_full)
 
     # === Step 5. Edge type features ===
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)
@@ -537,9 +665,11 @@ def build_edge_cache_from_edges(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
         edge_src_gate=edge_src_gate,
+        destinations_sorted=destinations_sorted,
     )
 
 
@@ -551,6 +681,7 @@ def _build_edge_wigner(
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_full: bool = True,
+    packed_wigner: bool = False,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]:
     """
     Build packed Wigner-D blocks from edge vectors.
@@ -573,13 +704,14 @@ def _build_edge_wigner(
         False (all message-passing blocks take the Cartesian path), only the
         quaternion is returned and the blocks are ``None``; the geometric
         initial embedding reconstructs the zonal coupling from the quaternion.
+    packed_wigner
+        Whether the exact packed K1 eligibility contract has passed.
 
     Returns
     -------
     tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]
-        Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``
-        (or ``None`` when ``build_full`` is False) and the quaternion used to
-        build them with shape ``(E, 4)``.
+        Wigner data with dense shape ``(E, D, D)``, packed shape ``(E, 46)``,
+        or ``None`` when ``build_full`` is false, plus the edge quaternion.
     """
     # === Step 1. Build edge-aligned quaternions ===
     edge_quat = build_edge_quaternion(
@@ -600,8 +732,42 @@ def _build_edge_wigner(
     # === Step 3. Convert quaternions to packed Wigner-D blocks ===
     if not build_full:
         return None, None, edge_quat
+    if packed_wigner:
+        from deepmd.kernels.cute.neo.k4_wignerd import (
+            run_cute_wignerd,
+        )
+
+        cute_wigner = run_cute_wignerd(
+            edge_quat,
+            wigner_calc,
+            packed_wigner=packed_wigner,
+        )
+        if cute_wigner is not None:
+            return cute_wigner[0], cute_wigner[1], edge_quat
     D_full, Dt_full = wigner_calc(edge_quat)
     return D_full, Dt_full, edge_quat
+
+
+def _packed_wigner_edges_eligible(
+    candidate: bool,
+    *,
+    edge_count: int,
+    node_count: int,
+    destinations_sorted: bool,
+    runtime_dtypes: tuple[torch.dtype, ...] = (),
+) -> bool:
+    """Finish packed eligibility from scalar shape and provenance metadata."""
+    from deepmd.kernels.cute.neo.k1 import (
+        packed_wigner_edges_eligible,
+    )
+
+    return packed_wigner_edges_eligible(
+        candidate=candidate,
+        edge_count=edge_count,
+        node_count=node_count,
+        destinations_sorted=destinations_sorted,
+        runtime_dtypes=runtime_dtypes,
+    )
 
 
 def _finalize_edge_cache(
@@ -615,9 +781,11 @@ def _finalize_edge_cache(
     edge_env: torch.Tensor,
     D_full: torch.Tensor | None,
     Dt_full: torch.Tensor | None,
+    D_packed: torch.Tensor | None,
     edge_quat: torch.Tensor,
     deg_norm_floor: float,
     edge_src_gate: torch.Tensor | None = None,
+    destinations_sorted: bool = False,
 ) -> EdgeFeatureCache:
     """
     Assemble the shared `EdgeFeatureCache` layout.
@@ -639,11 +807,14 @@ def _finalize_edge_cache(
     edge_env
         Smooth edge envelope weights with shape (E, 1).
     D_full
-        Packed Wigner-D matrices with shape (E, D, D), or None when the
+        Dense Wigner-D matrices with shape (E, D, D), or None when the
         full Wigner-D construction is skipped (all-Cartesian model).
     Dt_full
-        Transposed packed Wigner-D matrices with shape (E, D, D), or None
+        Transposed dense Wigner-D matrices with shape (E, D, D), or None
         when the full Wigner-D construction is skipped.
+    D_packed
+        Optional Neo packed Wigner panel with shape (E, 46). Dense consumers
+        continue to observe stable-rank ``D_full`` and ``Dt_full`` fields.
     edge_quat
         Global-to-local quaternions used to build the Wigner-D matrices with
         shape (E, 4).
@@ -655,12 +826,17 @@ def _finalize_edge_cache(
     edge_src_gate
         Optional per-edge SFPG weight with shape (E, 1). ``None`` in
         non-bridging mode.
+    destinations_sorted
+        Host-side provenance that ``dst`` is nondecreasing.
 
     Returns
     -------
     EdgeFeatureCache
         Finalized per-edge cache shared by eager and compile paths.
     """
+    if deg_norm_floor <= 0.0:
+        raise ValueError("deg_norm_floor must be positive")
+
     # === Step 1. Build smooth destination degrees ===
     with nvtx_range("degree"):
         deg = torch.zeros(n_nodes, dtype=edge_vec.dtype, device=edge_vec.device)  # (N,)
@@ -680,10 +856,12 @@ def _finalize_edge_cache(
         inv_sqrt_deg=inv_sqrt_deg,
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         D_to_m_cache={},
         Dt_from_m_cache={},
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        destinations_sorted=destinations_sorted,
     )
 
 
@@ -734,10 +912,12 @@ def _get_empty_edge_cache(
         inv_sqrt_deg=inv_sqrt_deg,
         D_full=None,
         Dt_full=None,
+        D_packed=None,
         D_to_m_cache={},
         Dt_from_m_cache={},
         edge_src_gate=None,
         edge_quat=empty_quat,
+        destinations_sorted=True,
     )
 
 
@@ -893,16 +1073,20 @@ def edge_cache_to_dtype(
     # Use local variables with explicit None check and assignment.
     _D_full = cache.D_full
     _Dt_full = cache.Dt_full
+    _D_packed = cache.D_packed
     _edge_src_gate = cache.edge_src_gate
     _edge_quat = cache.edge_quat
     D_full: torch.Tensor | None = None
     Dt_full: torch.Tensor | None = None
+    D_packed: torch.Tensor | None = None
     edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
     if _D_full is not None:
         D_full = _D_full.to(dtype=dtype)
     if _Dt_full is not None:
         Dt_full = _Dt_full.to(dtype=dtype)
+    if _D_packed is not None:
+        D_packed = _D_packed.to(dtype=dtype)
     if _edge_src_gate is not None:
         edge_src_gate = _edge_src_gate.to(dtype=dtype)
     if _edge_quat is not None:
@@ -919,8 +1103,10 @@ def edge_cache_to_dtype(
         inv_sqrt_deg=cache.inv_sqrt_deg.to(dtype=dtype),
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        destinations_sorted=cache.destinations_sorted,
     )

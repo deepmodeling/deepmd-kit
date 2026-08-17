@@ -189,6 +189,20 @@ pip install deepmd-kit
 
 ::::::
 
+Optional CuTe inference kernels are available on Linux for the PyTorch backend:
+
+```bash
+pip install "deepmd-kit[torch,cute]"
+```
+
+The `cute` extra installs the CUTLASS CuTe DSL and NVIDIA Alchemi Toolkit-Ops
+runtime used by the optional CuTe paths. Set `DP_NEO_CUTE_INFER=1` to enable the
+DPA4-Neo K1 implementation; it may coexist with `DP_TRITON_INFER=2`.
+`DP_NEO_CUTE_INFER` and `DP_CUTE_INFER` are independent: the latter controls the
+inner SO(2) value-path implementation. Requesting a CuTe path without its
+runtime dependencies raises an error rather than silently selecting another
+implementation.
+
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 
 > [!WARNING]

@@ -40,6 +40,7 @@ from deepmd.pt.model.model import (
 from deepmd.pt.model.model.sezm_model import (
     InnerPotential,
     SeZMModel,
+    _sort_edge_tensors_by_destination,
 )
 from deepmd.pt.model.model.sezm_native_spin_model import (
     SeZMNativeSpinModel,
@@ -229,6 +230,39 @@ class TestSeZMModelCompile(unittest.TestCase):
     def setUp(self) -> None:
         self.device = env.DEVICE
         torch.manual_seed(2024)
+
+    def test_destination_edge_sort_is_empty_safe_and_keeps_alignment(self) -> None:
+        empty_index = torch.empty((2, 0), dtype=torch.long, device="cpu")
+        empty_vec = torch.empty((0, 3), device="cpu")
+        empty_mask = torch.empty((0,), dtype=torch.bool, device="cpu")
+        empty_scatter = torch.empty((2, 0), dtype=torch.long, device="cpu")
+
+        empty_result = _sort_edge_tensors_by_destination(
+            empty_index,
+            empty_vec,
+            empty_mask,
+            empty_scatter,
+        )
+        self.assertEqual(tuple(empty_result[0].shape), (2, 0))
+
+        edge_index = torch.tensor([[2, 0, 1, 0], [1, 0, 1, 0]], device="cpu")
+        edge_vec = torch.arange(12, dtype=torch.float32, device="cpu").view(4, 3)
+        edge_mask = torch.tensor([True, False, True, True], device="cpu")
+        edge_scatter = edge_index + 10
+        sorted_index, sorted_vec, sorted_mask, sorted_scatter = (
+            _sort_edge_tensors_by_destination(
+                edge_index,
+                edge_vec,
+                edge_mask,
+                edge_scatter,
+            )
+        )
+        permutation = torch.tensor([1, 3, 2, 0], device="cpu")
+
+        self.assertTrue(torch.equal(sorted_index, edge_index[:, permutation]))
+        self.assertTrue(torch.equal(sorted_vec, edge_vec[permutation]))
+        self.assertTrue(torch.equal(sorted_mask, edge_mask[permutation]))
+        self.assertTrue(torch.equal(sorted_scatter, edge_scatter[:, permutation]))
 
     @staticmethod
     def _randomize_params(model: torch.nn.Module, seed: int = 1234) -> None:
@@ -429,6 +463,111 @@ class TestSeZMModelCompile(unittest.TestCase):
         )
         return coord, atype, box
 
+    def test_neo_cute_flag_is_noop_for_ineligible_model(self) -> None:
+        """An unsupported SeZM shape must remain bit-identical with the flag on."""
+        from deepmd.kernels.cute.neo import k1 as cute_k1
+
+        cpu = torch.device("cpu")
+        with (
+            mock.patch.object(env, "DEVICE", cpu),
+            mock.patch.object(self, "device", cpu),
+            torch.device(cpu),
+        ):
+            coord, atype, _, _, _, _ = self._make_tiny_frame()
+            params = self._build_model_params(use_compile=False)
+            params["descriptor"]["seed"] = None
+            params["descriptor"]["use_env_seed"] = False
+            params["fitting_net"]["seed"] = None
+            model = get_sezm_model(params).to(device=cpu)
+            self._randomize_params(model)
+            model.eval()
+            for parameter in model.parameters():
+                parameter.requires_grad_(False)
+
+            extended_coord, extended_atype, mapping, nlist = (
+                extend_input_and_build_neighbor_list(
+                    coord,
+                    atype,
+                    model.get_rcut(),
+                    model.get_sel(),
+                    mixed_types=model.mixed_types(),
+                    box=None,
+                )
+            )
+            edge = edge_schema_from_extended(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+            )
+
+            def run_lower() -> dict[str, torch.Tensor]:
+                return model.forward_common_lower(
+                    edge.coord,
+                    edge.atype,
+                    edge.edge_index,
+                    edge.edge_vec,
+                    edge.edge_scatter_index,
+                    edge.edge_mask,
+                )
+
+            with mock.patch.dict(
+                os.environ,
+                {"DP_NEO_CUTE_INFER": "0"},
+                clear=False,
+            ):
+                reference = run_lower()
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {"DP_NEO_CUTE_INFER": "1"},
+                    clear=False,
+                ),
+                mock.patch.object(
+                    cute_k1,
+                    "maybe_run_cute_k1",
+                    wraps=cute_k1.maybe_run_cute_k1,
+                ) as maybe_run,
+            ):
+                actual = run_lower()
+
+            self.assertGreater(maybe_run.call_count, 0)
+            self.assertEqual(actual.keys(), reference.keys())
+            for name, expected in reference.items():
+                if not isinstance(expected, torch.Tensor):
+                    continue
+                self.assertTrue(
+                    torch.equal(actual[name], expected),
+                    msg=f"DP_NEO_CUTE_INFER changed ineligible-model {name}",
+                )
+
+    def test_neo_cute_sort_guard_uses_post_cast_geometry_dtype(self) -> None:
+        """Raw FP64 coordinates do not hide an otherwise eligible FP32 K1."""
+        from deepmd.pt.model.model import (
+            sezm_model,
+        )
+
+        descriptor = mock.Mock()
+        descriptor.compute_dtype = torch.float32
+        descriptor._packed_wigner_candidate.return_value = True
+        device = torch.device("cuda")
+
+        with mock.patch.object(
+            sezm_model, "_neo_cute_infer_enabled", return_value=True
+        ):
+            actual = sezm_model._neo_cute_k1_requires_sorted_edges(
+                descriptor,
+                training=False,
+                device=device,
+            )
+
+        self.assertTrue(actual)
+        descriptor._packed_wigner_candidate.assert_called_once_with(
+            device,
+            torch.float32,
+            torch.float32,
+        )
+
     def test_trace_pad_dim_trim_returns_contiguous(self) -> None:
         """Trimmed trace inputs stay contiguous so strides mirror runtime layout.
 
@@ -590,6 +729,103 @@ class TestSeZMModelCompile(unittest.TestCase):
             model_cmp.compiled_core_compute_cache[eval_key], callable_eval_first
         )
 
+    def test_load_state_dict_invalidates_local_and_shared_compile_caches(self) -> None:
+        """Checkpoint loads must discard every callable that captured old state."""
+        from deepmd.pt.model.model import sezm_model as sezm_model_module
+
+        model = get_sezm_model(self._build_model_params(use_compile=True))
+        self.assertTrue(
+            all(
+                getattr(hook, "__self__", None) is None
+                for hook in model._load_state_dict_post_hooks.values()
+            )
+        )
+        local_callable = object()
+        shared_callable = object()
+        model.compiled_core_compute_cache[(False, False)] = local_callable
+        model._task_buf_order_cache[(False, False)] = ("task",)
+        object.__setattr__(model, "compiled_embedding", local_callable)
+        object.__setattr__(model, "_embedding_task_buf_order", ("task",))
+        object.__setattr__(model, "compiled_dens_compute", local_callable)
+        model._dens_compiled = True
+
+        with (
+            mock.patch.dict(
+                sezm_model_module._SEZM_COMPILE_CACHE,
+                {("shared",): shared_callable},
+                clear=True,
+            ),
+            mock.patch.dict(
+                sezm_model_module._SEZM_TASK_BUF_ORDER,
+                {("shared",): ("task",)},
+                clear=True,
+            ),
+        ):
+            model.load_state_dict(model.state_dict())
+            self.assertEqual(model.compiled_core_compute_cache, {})
+            self.assertEqual(model._task_buf_order_cache, {})
+            self.assertIsNone(model.compiled_embedding)
+            self.assertIsNone(model._embedding_task_buf_order)
+            self.assertIsNone(model.compiled_dens_compute)
+            self.assertFalse(model._dens_compiled)
+            self.assertEqual(sezm_model_module._SEZM_COMPILE_CACHE, {})
+            self.assertEqual(sezm_model_module._SEZM_TASK_BUF_ORDER, {})
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_eval_compile_retraces_after_load_state_dict(self) -> None:
+        """The public eval path must not reuse a make_fx graph after reloading."""
+        coord, atype, box, _, _, _ = self._make_tiny_frame()
+        initial = get_sezm_model(self._build_model_params(use_compile=False))
+        replacement = get_sezm_model(self._build_model_params(use_compile=False))
+        self._randomize_params(initial, seed=1234)
+        self._randomize_params(replacement, seed=5678)
+        with mock.patch.dict(os.environ, {"DP_COMPILE_INFER": "1"}, clear=False):
+            compiled = get_sezm_model(self._build_model_params(use_compile=True))
+        compiled.load_state_dict(initial.state_dict())
+        initial.eval()
+        replacement.eval()
+        compiled.eval()
+
+        # Exercise the public make_fx/AOT cache lifecycle without depending on
+        # Inductor's dynamic-View lowering for this intentionally tiny frame.
+        with mock.patch(
+            "torch._inductor.compile_fx.compile_fx_inner",
+            side_effect=lambda graph, inputs: graph.forward,
+        ):
+            before = compiled(coord, atype, box=box)
+            old_callable = compiled.compiled_core_compute_cache[(False, False)]
+
+            compiled.load_state_dict(replacement.state_dict())
+            self.assertEqual(compiled.compiled_core_compute_cache, {})
+            expected = replacement(coord, atype, box=box)
+            actual = compiled(coord, atype, box=box)
+        self.assertIsNot(
+            compiled.compiled_core_compute_cache[(False, False)],
+            old_callable,
+        )
+        self.assertFalse(torch.equal(actual["energy"], before["energy"]))
+        _assert_close_with_strict_warning(
+            actual["energy"],
+            expected["energy"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="eval energy mismatch after checkpoint reload",
+        )
+        _assert_close_with_strict_warning(
+            actual["force"],
+            expected["force"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="eval force mismatch after checkpoint reload",
+        )
+        _assert_close_with_strict_warning(
+            actual["virial"],
+            expected["virial"],
+            atol=1.0e-5,
+            rtol=1.0e-5,
+            msg="eval virial mismatch after checkpoint reload",
+        )
+
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_charge_spin_condition_matches_compile(self) -> None:
         """Charge/spin conditions should work through the compiled energy path."""
@@ -731,6 +967,41 @@ class TestSeZMModelCompile(unittest.TestCase):
         torch.testing.assert_close(cache_std.edge_env, cache_sparse.edge_env[:n_real])
         torch.testing.assert_close(cache_std.D_full, cache_sparse.D_full[:n_real])
         torch.testing.assert_close(cache_std.Dt_full, cache_sparse.Dt_full[:n_real])
+
+        from deepmd.pt.model.descriptor.sezm_nn import edge_cache as edge_cache_module
+
+        with (
+            mock.patch.dict(os.environ, {"DP_CUTE_INFER": "1"}, clear=False),
+            mock.patch.object(
+                edge_cache_module,
+                "_build_edge_wigner",
+                wraps=edge_cache_module._build_edge_wigner,
+            ) as build_edge_wigner,
+        ):
+            cache_sfpg = build_edge_cache_from_edges(
+                type_ebed=type_ebed,
+                atype_flat=atype_loc.reshape(-1),
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+                compute_dtype=descriptor.compute_dtype,
+                eps=descriptor.eps,
+                deg_norm_floor=descriptor.deg_norm_floor,
+                inner_clamp=descriptor.inner_clamp,
+                bridging_switch=torch.ones_like,
+                edge_envelope=descriptor.edge_envelope,
+                radial_basis=descriptor.radial_basis,
+                has_exclude_types=False,
+                edge_type_keep_mask=descriptor._edge_type_keep_mask,
+                random_gamma=False,
+                wigner_calc=descriptor.wigner_calc,
+                packed_wigner_candidate=True,
+                destinations_sorted=True,
+            )
+
+        self.assertFalse(build_edge_wigner.call_args.kwargs["packed_wigner"])
+        self.assertEqual(cache_sfpg.D_full.dim(), 3)
+        self.assertIsNotNone(cache_sfpg.edge_src_gate)
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_eval_compile_policy(self) -> None:

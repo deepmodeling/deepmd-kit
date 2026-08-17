@@ -26,6 +26,9 @@ from torch.utils.checkpoint import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.cute.neo.runtime_policy import (
+    is_cute_infer_enabled,
+)
 from deepmd.pt.utils import (
     env,
 )
@@ -673,6 +676,9 @@ class SeZMInteractionBlock(nn.Module):
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        k1_dst_ptr: torch.Tensor | None = None,
+        k1_source_order: torch.Tensor | None = None,
+        k1_source_ptr: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -712,7 +718,16 @@ class SeZMInteractionBlock(nn.Module):
             - full AttnRes path returns `(block_output, None, so2_unit_output, ffn_unit_outputs)`
             - block AttnRes path returns `(block_output, block_summary, None, None)`
         """
-        return self._forward_impl(x, edge_cache, radial_feat, unit_history, comm_dict)
+        return self._forward_impl(
+            x,
+            edge_cache,
+            radial_feat,
+            unit_history,
+            comm_dict,
+            k1_dst_ptr,
+            k1_source_order,
+            k1_source_ptr,
+        )
 
     def _extract_l0_from_canonical(self, value: torch.Tensor) -> torch.Tensor:
         """
@@ -751,6 +766,9 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        k1_dst_ptr: torch.Tensor | None = None,
+        k1_source_order: torch.Tensor | None = None,
+        k1_source_ptr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Run the SO(2) unit without an outer block-level residual shortcut.
@@ -786,21 +804,55 @@ class SeZMInteractionBlock(nn.Module):
                     x_,
                     edge_cache_no_proj,
                     radial_feat_,
+                    k1_dst_ptr,
+                    k1_source_order,
+                    k1_source_ptr,
                 ),
                 x,
                 radial_feat,
                 use_reentrant=False,
                 preserve_rng_state=True,
             )
-        return self._run_so2_unit_impl(x, edge_cache, radial_feat)
+        return self._run_so2_unit_impl(
+            x,
+            edge_cache,
+            radial_feat,
+            k1_dst_ptr,
+            k1_source_order,
+            k1_source_ptr,
+        )
 
     def _run_so2_unit_impl(
         self,
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
+        k1_dst_ptr: torch.Tensor | None = None,
+        k1_source_order: torch.Tensor | None = None,
+        k1_source_ptr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Run the SO(2) unit implementation."""
+        if not self.training and is_cute_infer_enabled():
+            from deepmd.kernels.cute.neo.k1 import (
+                maybe_run_cute_k1,
+            )
+
+            cute_out = maybe_run_cute_k1(
+                self,
+                x,
+                edge_cache,
+                radial_feat,
+                dst_ptr=k1_dst_ptr,
+                source_order=k1_source_order,
+                source_ptr=k1_source_ptr,
+            )
+            if cute_out is not None:
+                return cute_out
+        if edge_cache.D_packed is not None:
+            raise RuntimeError(
+                "packed Wigner cache reached an ineligible Neo K1 dispatch"
+            )
+
         n_node = x.shape[0]
         channels = self.channels
         use_full_node = self.node_lmax == self.lmax
@@ -861,6 +913,9 @@ class SeZMInteractionBlock(nn.Module):
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        k1_dst_ptr: torch.Tensor | None = None,
+        k1_source_order: torch.Tensor | None = None,
+        k1_source_ptr: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -891,7 +946,15 @@ class SeZMInteractionBlock(nn.Module):
             Tuple `(block_output, None, None, None)`.
         """
         with nvtx_range("so2_conv"):
-            so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat, comm_dict)
+            so2_unit_output = self._run_so2_unit(
+                x,
+                edge_cache,
+                radial_feat,
+                comm_dict,
+                k1_dst_ptr,
+                k1_source_order,
+                k1_source_ptr,
+            )
             so2_state = x + so2_unit_output
 
         with nvtx_range("ffn"):
@@ -910,6 +973,9 @@ class SeZMInteractionBlock(nn.Module):
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        k1_dst_ptr: torch.Tensor | None = None,
+        k1_source_order: torch.Tensor | None = None,
+        k1_source_ptr: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -949,7 +1015,13 @@ class SeZMInteractionBlock(nn.Module):
                     current_x=x,
                 )
             so2_unit_output = self._run_so2_unit(
-                so2_input, edge_cache, radial_feat, comm_dict
+                so2_input,
+                edge_cache,
+                radial_feat,
+                comm_dict,
+                k1_dst_ptr,
+                k1_source_order,
+                k1_source_ptr,
             )
 
         with nvtx_range("ffn"):
@@ -978,6 +1050,9 @@ class SeZMInteractionBlock(nn.Module):
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        k1_dst_ptr: torch.Tensor | None = None,
+        k1_source_order: torch.Tensor | None = None,
+        k1_source_ptr: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -1017,7 +1092,13 @@ class SeZMInteractionBlock(nn.Module):
                     current_x=x,
                 )
             so2_unit_output = self._run_so2_unit(
-                so2_input, edge_cache, radial_feat, comm_dict
+                so2_input,
+                edge_cache,
+                radial_feat,
+                comm_dict,
+                k1_dst_ptr,
+                k1_source_order,
+                k1_source_ptr,
             )
 
         with nvtx_range("ffn"):

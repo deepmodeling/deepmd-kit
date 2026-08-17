@@ -30,6 +30,7 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.cute.neo import runtime_policy as cute_runtime_policy
 from deepmd.pt.utils import (
     env,
 )
@@ -114,6 +115,13 @@ def _project_frames(
     n_batch, coeff_dim, n_focus, _ = coeff.shape
     projected = proj(coeff.reshape(n_batch, coeff_dim, n_focus, n_frames, -1))
     return projected.reshape(n_batch, coeff_dim, n_focus, -1)
+
+
+def _inference_mode_is_frozen(module: nn.Module) -> bool:
+    """Return whether first-order inference-only shortcuts are safe."""
+    return not module.training and not any(
+        parameter.requires_grad for parameter in module.parameters()
+    )
 
 
 class GridProduct(nn.Module):
@@ -204,6 +212,8 @@ class GridMLP(nn.Module):
         *,
         to_grid: Callable[[torch.Tensor], torch.Tensor],
         from_grid: Callable[[torch.Tensor], torch.Tensor],
+        grid_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | None = None,
     ) -> torch.Tensor:
         """
         Apply the polynomial point-wise MLP on coefficient operands.
@@ -221,6 +231,8 @@ class GridMLP(nn.Module):
             Invariant routing signal; unused on this path.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        grid_product : Callable, optional
+            Fused replacement for the middle grid projection/product path.
 
         Returns
         -------
@@ -240,7 +252,10 @@ class GridMLP(nn.Module):
             right = _project_frames(right, self.right_proj, self.n_frames)
 
         # === Step 2. Quadratic product on the grid, projected back ===
-        coeff = from_grid(to_grid(left) * to_grid(right))
+        if grid_product is None:
+            coeff = from_grid(to_grid(left) * to_grid(right))
+        else:
+            coeff = grid_product(left, right)
         return _project_frames(coeff, self.out_proj, self.n_frames)
 
 
@@ -310,6 +325,8 @@ class GridBranch(nn.Module):
         *,
         to_grid: Callable[[torch.Tensor], torch.Tensor],
         from_grid: Callable[[torch.Tensor], torch.Tensor],
+        grid_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | None = None,
     ) -> torch.Tensor:
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
@@ -322,6 +339,8 @@ class GridBranch(nn.Module):
             Invariant router source with shape ``(N, F, 2*C)``.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        grid_product : Callable, optional
+            Fused replacement for the single-branch middle grid product.
 
         Returns
         -------
@@ -331,6 +350,17 @@ class GridBranch(nn.Module):
         # === Step 1. Branch channel projections at coefficient resolution ===
         left = _project_frames(left, self.left_proj, self.n_frames)
         right = _project_frames(right, self.right_proj, self.n_frames)
+
+        if (
+            self.n_branches == 1
+            and cute_runtime_policy.is_cute_infer_enabled()
+            and _inference_mode_is_frozen(self)
+        ):
+            if grid_product is None:
+                coeff = from_grid(to_grid(left) * to_grid(right))
+            else:
+                coeff = grid_product(left, right)
+            return _project_frames(coeff, self.out_proj, self.n_frames)
 
         # === Step 2. Quadratic branches on the grid, routed by scalars ===
         value = to_grid(left) * to_grid(right)  # (N, G, F, N_branches * C)
@@ -575,13 +605,26 @@ class BaseGridNet(nn.Module):
         input_dtype = query.dtype
         query_ndfc, shape_info = self._to_ndfc(query)
         left, right, scalar_pair = self._prepare_pair(query_ndfc, context)
-        coeff_out = self.grid_op(
-            left.to(dtype=self.dtype),
-            right.to(dtype=self.dtype),
-            scalar_pair,
-            to_grid=self._to_grid,
-            from_grid=self._from_grid,
-        )
+        if isinstance(self.grid_op, (GridMLP, GridBranch)):
+            grid_product = (
+                self._grid_product if _inference_mode_is_frozen(self) else None
+            )
+            coeff_out = self.grid_op(
+                left.to(dtype=self.dtype),
+                right.to(dtype=self.dtype),
+                scalar_pair,
+                to_grid=self._to_grid,
+                from_grid=self._from_grid,
+                grid_product=grid_product,
+            )
+        else:
+            coeff_out = self.grid_op(
+                left.to(dtype=self.dtype),
+                right.to(dtype=self.dtype),
+                scalar_pair,
+                to_grid=self._to_grid,
+                from_grid=self._from_grid,
+            )
         coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
         coeff_out = self._contract_frames(coeff_out)
         coeff_out = self._apply_residual_scale(coeff_out)
@@ -716,6 +759,26 @@ class BaseGridNet(nn.Module):
         )
         coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, grid)
         return coeff.reshape(n_batch, coeff_dim, n_focus, -1)
+
+    def _grid_product(
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+    ) -> torch.Tensor:
+        from deepmd.kernels.cute.neo.output_grid_product import (
+            maybe_run_cute_output_grid_product,
+        )
+
+        candidate = maybe_run_cute_output_grid_product(
+            left,
+            right,
+            self.projector.to_grid_mat,
+            self.projector.from_grid_mat,
+            n_frames=self.n_frames,
+        )
+        if candidate is not None:
+            return candidate
+        return self._from_grid(self._to_grid(left) * self._to_grid(right))
 
     def _to_ndfc(self, value: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
         # All grid operations run in the canonical ``(N, D, F, C)`` layout; the

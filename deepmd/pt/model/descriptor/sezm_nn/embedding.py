@@ -22,6 +22,10 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.kernels.cute.neo.k1_wigner_layout import (
+    PACKED_VALUE_COUNT,
+    ZONAL_PANEL_OFFSETS,
+)
 from deepmd.pt.model.network.mlp import (
     MLPLayer,
 )
@@ -196,6 +200,16 @@ class GeometricInitialEmbedding(nn.Module):
             node_radial_l_index,
             persistent=True,
         )
+        packed_zonal_offsets = torch.tensor(
+            ZONAL_PANEL_OFFSETS if self.lmax == 3 else (),
+            device=self.device,
+            dtype=torch.long,
+        )
+        self.register_buffer(
+            "packed_zonal_offsets",
+            packed_zonal_offsets,
+            persistent=False,
+        )
         # The l=1 coefficients (packed rows 1..3) are the first three entries of
         # the non-scalar sequence ``node_row_index = [1, 2, ..., D-1]``, so the
         # native neighbor-spin l=1 message folds in at these local positions.
@@ -238,27 +252,55 @@ class GeometricInitialEmbedding(nn.Module):
         torch.Tensor
             Initial features to add with shape (N, D, C). l=0 is guaranteed zero.
         """
-        # === Step 1. Initialize output ===
+        # === Step 1. Validate the non-scalar contract ===
         device = edge_cache.edge_vec.device
         dtype = edge_cache.edge_vec.dtype
-        out = torch.zeros(
-            n_nodes, self.ebed_dim, self.channels, device=device, dtype=dtype
-        )  # (N, D, C)
         if self.lmax == 0:
-            return out
+            return torch.zeros(
+                n_nodes, self.ebed_dim, self.channels, device=device, dtype=dtype
+            )
 
         # === Step 2. Gather all m=0 columns (l >= 1) in one shot ===
         # Advanced indexing pairs one packed non-scalar row with the zonal m=0 column
         # from the same degree block in Dt_full.
         if zonal_coupling is None:
-            Dt_full = edge_cache.Dt_full  # (E, D, D)
-            zonal_coupling = Dt_full[
-                :,
-                self.non_scalar_row_index,
-                self.zonal_m0_col_index_for_row,
-            ]  # (E, D-1)
+            D_packed = edge_cache.D_packed
+            if D_packed is not None:
+                if self.lmax != 3 or D_packed.shape[1] != PACKED_VALUE_COUNT:
+                    raise ValueError("packed Wigner zonal coupling requires Neo lmax=3")
+                zonal_coupling = D_packed.index_select(
+                    1,
+                    self.packed_zonal_offsets,
+                )
+            else:
+                Dt_full = edge_cache.Dt_full  # (E, D, D)
+                if Dt_full is None:
+                    raise RuntimeError("GIE requires dense or packed Wigner storage")
+                zonal_coupling = Dt_full[
+                    :,
+                    self.non_scalar_row_index,
+                    self.zonal_m0_col_index_for_row,
+                ]  # (E, D-1)
 
-        # === Step 3. Broadcast radial features per row ===
+        # === Step 3. Optional fused message construction and reduction ===
+        if not self.training:
+            from deepmd.kernels.cute.neo.gie import (
+                is_cute_gie_enabled,
+                maybe_run_cute_gie,
+            )
+
+            if is_cute_gie_enabled(device) and spin_l1_message is None:
+                cute_out = maybe_run_cute_gie(
+                    self,
+                    n_nodes=n_nodes,
+                    edge_cache=edge_cache,
+                    radial_feat=radial_feat,
+                    zonal_coupling=zonal_coupling,
+                )
+                if cute_out is not None:
+                    return cute_out
+
+        # === Step 4. Eager fallback: broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
         radial_value_for_row = radial_feat.index_select(
             1, self.radial_slot_index_for_row
@@ -276,7 +318,7 @@ class GeometricInitialEmbedding(nn.Module):
                 1, self.l1_local_index, spin_l1_message
             )
 
-        # === Step 4. Source Freeze Propagation Gate (optional) ===
+        # === Step 5. Source Freeze Propagation Gate (optional) ===
         # Mute messages emitted by nodes whose local neighborhood enters
         # the frozen zone. ``edge_src_gate`` is ``None`` outside bridging
         # mode so this is a no-op in normal training.
@@ -286,7 +328,10 @@ class GeometricInitialEmbedding(nn.Module):
                 dtype=non_scalar_message.dtype
             ).unsqueeze(-1)
 
-        # === Step 5. Scatter to nodes and normalize ===
+        # === Step 6. Scatter to nodes and normalize ===
+        out = torch.zeros(
+            n_nodes, self.ebed_dim, self.channels, device=device, dtype=dtype
+        )  # (N, D, C)
         # Avoid advanced-index writeback (out[:, non_scalar_row_index, :]) which produces a copy.
         non_scalar_out = out.new_zeros(
             n_nodes, self.non_scalar_row_index.numel(), self.channels

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 from typing import (
     Any,
     ClassVar,
@@ -46,6 +47,41 @@ def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
     return torch.empty(shape, dtype=precision, device=device)
 
 
+@torch.compiler.assume_constant_result
+def _use_k1_compile_visible_linear(
+    input_device: torch.device | None = None,
+) -> bool:
+    """Keep the SM80 linear topology stable for one compiled graph."""
+    truthy = {"1", "true", "yes", "on"}
+    falsy = {"0", "false", "no", "off"}
+    cute_enabled = os.environ.get("DP_NEO_CUTE_INFER", "").strip().lower()
+    if cute_enabled not in truthy:
+        return False
+    thin_enabled = os.environ.get("DP_CUTE_K1_THIN_WRAPPER", "").strip().lower()
+    if thin_enabled in falsy:
+        return False
+    if thin_enabled in truthy:
+        return True
+    if input_device is not None and input_device.type != "cuda":
+        return False
+    if not torch.cuda.is_available():
+        return False
+    try:
+        return tuple(torch.cuda.get_device_capability(input_device)) == (8, 0)
+    except RuntimeError:
+        return False
+
+
+def _matmul_bias(
+    value: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+) -> torch.Tensor:
+    """Avoid eager addmm's expanded-bias copy and expose the add to Inductor."""
+    output = torch.matmul(value, weight)
+    return output if bias is None else output + bias
+
+
 class Identity(nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -86,6 +122,7 @@ class MLPLayer(nn.Module):
     ) -> None:
         super().__init__()
         self.trainable = trainable
+        self._deepmd_cute_compile_visible_linear = False
         # only use_timestep when skip connection is established.
         self.use_timestep = use_timestep and (
             num_out == num_in or num_out == num_in * 2
@@ -204,7 +241,20 @@ class MLPLayer(nn.Module):
         ori_prec = xx.dtype
         if not env.DP_DTYPE_PROMOTION_STRICT:
             xx = xx.to(self.prec)
-        yy = F.linear(xx, self.matrix.t(), self.bias)
+        if torch.jit.is_scripting():
+            yy = F.linear(xx, self.matrix.t(), self.bias)
+        elif (
+            not self.training
+            and xx.dtype == torch.float32
+            and self.matrix.dtype == torch.float32
+            and (self.bias is None or self.bias.dtype == torch.float32)
+            and not torch.is_autocast_enabled(xx.device.type)
+            and self._deepmd_cute_compile_visible_linear
+            and _use_k1_compile_visible_linear(xx.device)
+        ):
+            yy = _matmul_bias(xx, self.matrix, self.bias)
+        else:
+            yy = F.linear(xx, self.matrix.t(), self.bias)
         yy = self.activate(yy)
         yy = yy * self.idt if self.idt is not None else yy
         if self.resnet:
@@ -276,6 +326,13 @@ class MLPLayer(nn.Module):
         obj.bias = check_load_param("bias")
         obj.idt = check_load_param("idt")
         return obj
+
+
+def enable_neo_cute_compile_visible_linears(module: nn.Module) -> None:
+    """Select the alternate eval linear topology only inside one Neo model."""
+    for child in module.modules():
+        if isinstance(child, MLPLayer):
+            child._deepmd_cute_compile_visible_linear = True
 
 
 MLP_ = make_multilayer_network(MLPLayer, nn.Module)
