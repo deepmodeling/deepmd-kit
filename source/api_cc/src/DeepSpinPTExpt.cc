@@ -148,7 +148,7 @@ void DeepSpinPTExpt::init(const std::string& model,
     }
   }
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
-  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata, dchgspin);
   check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
 
   if (metadata.obj_val.count("do_atomic_virial")) {

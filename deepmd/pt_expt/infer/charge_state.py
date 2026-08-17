@@ -56,6 +56,8 @@ def charge_states(charge_spin: Any, width: int) -> np.ndarray:
         If the request does not hold at least one whole state, or names a
         state that no embedding table row answers.
     """
+    if width <= 0:
+        raise ValueError(f"a charge state must be at least one value wide, got {width}")
     values = np.asarray(charge_spin, dtype=np.float64).reshape(-1)
     if values.size == 0 or values.size % width:
         raise ValueError(

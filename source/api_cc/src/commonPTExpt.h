@@ -293,12 +293,17 @@ inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
  * table. An archive frozen before the ranges were recorded names none, and
  * the boundary then checks only the width, as it did before.
  *
+ * The ranges are indexed by column, so one per value of a charge state is the
+ * only count that lines the domain check up with the values it guards. A
+ * shorter or longer list would check a value against another value's table.
+ *
  * @param[in] metadata Parsed archive metadata.
+ * @param[in] dim_chg_spin Width of a charge state the model accepts.
  * @return One ``{low, high}`` pair per value, empty when the archive names
  *   no ranges.
  **/
 inline std::vector<std::pair<double, double>> read_chg_spin_table_ranges(
-    const JsonValue& metadata) {
+    const JsonValue& metadata, const int dim_chg_spin) {
   std::vector<std::pair<double, double>> ranges;
   if (!metadata.obj_val.count("chg_spin_table_ranges") ||
       metadata["chg_spin_table_ranges"].type == JsonValue::Null) {
@@ -310,7 +315,18 @@ inline std::vector<std::pair<double, double>> read_chg_spin_table_ranges(
       throw deepmd::deepmd_exception(
           "chg_spin_table_ranges must hold a [low, high) pair per value.");
     }
+    if (pair[0].as_double() >= pair[1].as_double()) {
+      throw deepmd::deepmd_exception(
+          "chg_spin_table_ranges names an empty [low, high) range, which no "
+          "charge state can address.");
+    }
     ranges.emplace_back(pair[0].as_double(), pair[1].as_double());
+  }
+  if (static_cast<int>(ranges.size()) != dim_chg_spin) {
+    throw deepmd::deepmd_exception(
+        "chg_spin_table_ranges holds " + std::to_string(ranges.size()) +
+        " ranges but the model accepts charge states of width " +
+        std::to_string(dim_chg_spin) + ".");
   }
   return ranges;
 }

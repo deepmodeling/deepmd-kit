@@ -224,7 +224,7 @@ void DeepPotPTExpt::init(const std::string& model,
     }
   }
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
-  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata, dchgspin);
   check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
@@ -397,7 +397,8 @@ void DeepPotPTExpt::init(const std::string& model,
     // The constants were frozen against the archive's own charge state, so
     // that is the state in force until ``set_charge_spin`` installs another.
     default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
-    chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+    chg_spin_table_ranges_ =
+        read_chg_spin_table_ranges(metadata, settable_chgspin);
     check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   }
 

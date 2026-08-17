@@ -1798,3 +1798,50 @@ def test_the_calibration_samples_the_corpus_charge_states() -> None:
         [{key: value for key, value in corpus[0].items() if key != "charge_spin"}]
     )
     assert not np.allclose(descriptor.stddev, default_state.stddev)
+
+
+def test_dense_lower_escape_hatch_is_refused() -> None:
+    """DPA4C overrides ``uses_graph_lower`` and owes the paired hatch.
+
+    The base contract requires the postcondition ``uses_graph_lower() is
+    False`` after the hatch. DPA4C has no dense form to reach: it carries
+    every neighbour within the cutoff and reports an unreachable ``get_sel``,
+    so it refuses instead of inheriting a no-op that reports success while
+    leaving the graph lower in place.
+    """
+    descriptor = DescrptDPA4C(
+        rcut=4.0, ntypes=2, channels=8, lmax=2, n_radial=4, seed=1
+    )
+    assert descriptor.uses_graph_lower()
+    with pytest.raises(NotImplementedError, match="no dense lower"):
+        descriptor.disable_graph_lower()
+    assert descriptor.uses_graph_lower()
+
+
+def test_virtual_atom_spin_scheme_is_refused() -> None:
+    """DPA4C is a DPA4-family descriptor, so deepspin must be rejected.
+
+    ``SpinModel`` pulls the dense escape hatch its descriptors do not have,
+    and the family's constraint lives in the model factory, so a new member
+    has to be registered there rather than rely on a downstream failure.
+    """
+    from deepmd.dpmodel.model.model import (
+        get_spin_model,
+    )
+
+    with pytest.raises(NotImplementedError, match="deepspin"):
+        get_spin_model(
+            {
+                "type_map": ["Ni", "O"],
+                "spin": {"use_spin": [True, False]},
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 4,
+                    "seed": 1,
+                },
+                "fitting_net": {"neuron": [8, 8], "seed": 1},
+            }
+        )

@@ -2021,6 +2021,28 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """Return whether graph-native lowering is supported."""
         return True
 
+    def disable_graph_lower(self) -> None:
+        """Reject the dense lower, which this descriptor cannot serve.
+
+        The base contract asks a descriptor that overrides
+        :meth:`uses_graph_lower` to provide the matching escape hatch. DPA4C
+        has no dense form to escape to: it carries every neighbour within the
+        cutoff and reports an unreachable :meth:`get_sel`, so a dense lower
+        sized from that capacity is not a slower route but an unallocatable
+        one. Refusing is therefore the honest answer, where a silent no-op
+        would leave the caller believing the route had been taken.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, because the graph lower is the only form DPA4C has.
+        """
+        raise NotImplementedError(
+            "DPA4C is graph-native and has no dense lower to fall back on; "
+            "it carries every neighbor within the cutoff rather than a "
+            "bounded `sel`."
+        )
+
     def graph_edge_dtype(self) -> str:
         """Return the edge-geometry dtype accepted by graph deployment.
 

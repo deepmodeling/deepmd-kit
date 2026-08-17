@@ -11,10 +11,11 @@ addresses them all.
 Neither the gather nor the compiled kernel bounds-checks the row index, so a
 value outside a table reads past it and a fractional value is silently
 truncated onto a neighbouring row. Every host-side boundary that accepts a
-condition therefore passes it through :func:`validate_charge_state` first. The
-per-forward path is deliberately not guarded: its values come from the data
-pipeline, which owns their validity exactly as it owns the validity of an atom
-type.
+condition therefore checks it here first: a configured default through
+:func:`validate_charge_state`, and a batch of frames read from the training
+data through :func:`validate_charge_states`. Both share one rule, evaluated
+over the whole batch at once so the training loop pays no per-frame cost, and
+both run before tensor conversion so no device synchronization is needed.
 """
 
 from __future__ import (
@@ -53,6 +54,50 @@ CHARGE_STATE_TABLE_RANGES = (CHARGE_RANGE, MULTIPLICITY_RANGE)
 CHARGE_STATE_WIDTH = len(CHARGE_STATE_FIELDS)
 
 
+def _as_states(charge_spin: Any) -> np.ndarray:
+    """Read a request as ``(n, CHARGE_STATE_WIDTH)`` states."""
+    values = np.asarray(charge_spin, dtype=np.float64).reshape(-1)
+    if values.size == 0 or values.size % CHARGE_STATE_WIDTH:
+        raise ValueError(
+            f"A charge state must be a `[charge, multiplicity]` pair, got "
+            f"{values.size} values"
+        )
+    return values.reshape(-1, CHARGE_STATE_WIDTH)
+
+
+def _check_states(states: np.ndarray) -> None:
+    """Reject any state that addresses no row of the embedding tables.
+
+    The whole batch is tested column by column with array operations, so the
+    cost does not grow with the number of frames. A non-finite value is
+    reported as the integrality failure rather than reaching the range test,
+    whose message would have to render it.
+
+    Parameters
+    ----------
+    states : np.ndarray
+        Charge states with shape (n, CHARGE_STATE_WIDTH).
+
+    Raises
+    ------
+    ValueError
+        If any value is not an integer inside its table's row range.
+    """
+    integral = np.isfinite(states) & (states == np.floor(states))
+    for column, (name, (low, high)) in enumerate(
+        zip(CHARGE_STATE_FIELDS, CHARGE_STATE_TABLE_RANGES, strict=True)
+    ):
+        values = states[:, column]
+        offending = values[~integral[:, column]]
+        if offending.size:
+            raise ValueError(f"The {name} must be an integer, got {offending[0]}")
+        outside = values[(values < low) | (values >= high)]
+        if outside.size:
+            raise ValueError(
+                f"The {name} must lie in [{low}, {high}), got {outside[0]:.0f}"
+            )
+
+
 def validate_charge_state(charge_spin: Any) -> list[float]:
     """Check that a frame condition addresses a row of each embedding table.
 
@@ -72,22 +117,28 @@ def validate_charge_state(charge_spin: Any) -> list[float]:
         If the pair does not hold exactly two integral values within the
         representable ranges.
     """
-    values = [float(value) for value in np.reshape(np.asarray(charge_spin), (-1,))]
-    if len(values) != CHARGE_STATE_WIDTH:
+    states = _as_states(charge_spin)
+    if states.shape[0] != 1:
         raise ValueError(
             f"A charge state must be a `[charge, multiplicity]` pair, got "
-            f"{len(values)} values"
+            f"{states.size} values"
         )
-    for value, name, (low, high) in zip(
-        values,
-        CHARGE_STATE_FIELDS,
-        CHARGE_STATE_TABLE_RANGES,
-        strict=True,
-    ):
-        if not np.isfinite(value) or value != int(value):
-            raise ValueError(f"The {name} must be an integer, got {value}")
-        if not low <= value < high:
-            raise ValueError(
-                f"The {name} must lie in [{low}, {high}), got {int(value)}"
-            )
-    return values
+    _check_states(states)
+    return states[0].tolist()
+
+
+def validate_charge_states(charge_spin: Any) -> None:
+    """Check every frame condition of a batch against the embedding tables.
+
+    Parameters
+    ----------
+    charge_spin
+        One ``[charge, multiplicity]`` pair per frame, in any shape holding a
+        whole number of pairs.
+
+    Raises
+    ------
+    ValueError
+        If any frame names a state that no table row answers.
+    """
+    _check_states(_as_states(charge_spin))

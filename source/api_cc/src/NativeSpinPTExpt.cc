@@ -268,7 +268,7 @@ void NativeSpinPTExpt::init(const std::string& model,
   // compressed model, whose lower has no conditioning input at all.
   settable_chgspin = dchgspin;
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
-  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata, dchgspin);
   check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   has_default_fparam_ = metadata.obj_val.count("has_default_fparam") &&
                         metadata["has_default_fparam"].as_bool();
@@ -395,7 +395,8 @@ void NativeSpinPTExpt::init(const std::string& model,
     // The constants were frozen against the archive's own charge state, so
     // that is the state in force until ``set_charge_spin`` installs another.
     default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
-    chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+    chg_spin_table_ranges_ =
+        read_chg_spin_table_ranges(metadata, settable_chgspin);
     check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   }
 

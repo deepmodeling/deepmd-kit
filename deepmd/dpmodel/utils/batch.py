@@ -7,6 +7,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.utils.charge_state import (
+    validate_charge_states,
+)
+
 # Keys that are metadata / not needed by models or loss functions.
 _DROP_KEYS = {"default_mesh", "sid", "fid"}
 
@@ -36,6 +40,11 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
     * ``find_*`` flags are converted to ``np.bool_``.
     * Metadata keys (``default_mesh``, ``sid``, ``fid``) are dropped.
 
+    Every backend reads its batches through here, so this is also where a
+    frame condition is checked against the charge and multiplicity tables it
+    indexes. Doing it on the numpy batch keeps the check off the compiled
+    forward, where an out-of-range row would reach an unguarded gather.
+
     Parameters
     ----------
     batch : dict[str, Any]
@@ -64,6 +73,9 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
             out["natoms"] = nv
         else:
             out[key] = val
+
+    if out.get("charge_spin") is not None and bool(out.get("find_charge_spin", True)):
+        validate_charge_states(out["charge_spin"])
 
     return out
 
