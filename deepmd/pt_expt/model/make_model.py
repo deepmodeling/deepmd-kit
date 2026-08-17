@@ -28,6 +28,7 @@ from deepmd.kernels.utils import (
     cuda_infer_level,
 )
 from deepmd.pt_expt.common import (
+    auto_wrapped_class,
     torch_module,
 )
 from deepmd.pt_expt.utils.graph_builder import (
@@ -465,7 +466,9 @@ def make_model(
         The model.
 
     """
-    DPModel = make_model_dp(T_AtomicModel)
+    # wrapped atomic class: live descriptor/fitting keep their runtime
+    # state (see the auto_wrapped_class invariant)
+    DPModel = make_model_dp(auto_wrapped_class(T_AtomicModel))
 
     @torch_module
     class CM(DPModel, *T_Bases):

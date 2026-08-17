@@ -189,10 +189,12 @@ class LoRASO3(SO3Linear):
         )
         expand_index = xp_asarray_nodetach(xp, self.expand_index, device=device)
         weight_expanded = xp.take(weight, expand_index, axis=0)
-        # einsum "ndfi,difo->ndfo" as a broadcast batched matmul:
-        # (N, D, F, 1, Cin) @ (1, D, F, Cin, Cout) -> (N, D, F, 1, Cout)
+        # einsum "ndfi,difo->ndfo", batched over the small (D, F) axes rather
+        # than over N, which would broadcast the weight and make autograd
+        # reduce the expansion.  LoRA twin of the so3.py contraction.
         weight_expanded = xp.permute_dims(weight_expanded, (0, 2, 1, 3))
-        out = xp.matmul(x[:, :, :, None, :], weight_expanded[None, ...])[..., 0, :]
+        out = xp.matmul(xp.permute_dims(x, (1, 2, 0, 3)), weight_expanded)
+        out = xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, Cout)
         if self.mlp_bias:
             bias = xp.reshape(
                 xp_asarray_nodetach(xp, self.bias[...], device=device),

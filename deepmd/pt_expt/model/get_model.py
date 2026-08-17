@@ -9,17 +9,21 @@ constructed objects are ``torch.nn.Module`` subclasses.
 import copy
 import logging
 
-from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-    DPAtomicModel,
+from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
+from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+    LinearEnergyAtomicModel as LinearEnergyAtomicModelDP,
 )
 from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
-    PairTabAtomicModel,
+    PairTabAtomicModel as PairTabAtomicModelDP,
 )
 from deepmd.dpmodel.model.model_factory import (
     BackendModelFactory,
 )
 from deepmd.dpmodel.model.model_factory import (
     get_spin_model as get_spin_model_from_factory,
+)
+from deepmd.pt_expt.common import (
+    auto_wrapped_class,
 )
 from deepmd.pt_expt.descriptor import (
     BaseDescriptor,
@@ -56,6 +60,12 @@ log = logging.getLogger(__name__)
 _WARNED_ONCE: set[str] = set()
 
 
+# wrapped atomic classes: constructed directly so live children keep their
+# runtime state (see the auto_wrapped_class invariant)
+DPAtomicModel = auto_wrapped_class(DPAtomicModelDP)
+PairTabAtomicModel = auto_wrapped_class(PairTabAtomicModelDP)
+LinearEnergyAtomicModel = auto_wrapped_class(LinearEnergyAtomicModelDP)
+
 _model_factory = BackendModelFactory(
     descriptor_base=BaseDescriptor,
     fitting_base=BaseFitting,
@@ -64,6 +74,7 @@ _model_factory = BackendModelFactory(
     atomic_model=DPAtomicModel,
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
+    linear_atomic_model=LinearEnergyAtomicModel,
 )
 get_zbl_model = _model_factory.get_zbl_model
 
