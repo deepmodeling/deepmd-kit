@@ -133,6 +133,7 @@ class DeepPotJAX : public DeepPotBackend {
                                      " values but the model expects " +
                                      std::to_string(dchgspin));
     }
+    require_addressable_charge_spin(charge_spin);
     default_chg_spin_ = charge_spin;
     has_default_chg_spin_ = true;
   };

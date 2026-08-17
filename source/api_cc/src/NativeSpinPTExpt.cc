@@ -91,6 +91,10 @@ void validate_cartesian_input(const std::vector<VALUETYPE>& values,
 template <typename VALUETYPE>
 int frame_count(const std::vector<VALUETYPE>& coord,
                 const std::size_t atom_count) {
+  if (atom_count == 0) {
+    throw deepmd::deepmd_exception(
+        "standalone native-spin inference requires at least one atom");
+  }
   const std::size_t stride = atom_count * 3;
   if (coord.size() % stride != 0 || coord.empty()) {
     throw deepmd::deepmd_exception(
@@ -102,16 +106,28 @@ int frame_count(const std::vector<VALUETYPE>& coord,
 }
 
 /**
- * @brief Validate an input laid out as one block of @p stride per frame.
+ * @brief How an input divides among the frames.
+ *
+ * The step is zero where one block stands for every frame, which resolves
+ * the two accepted layouts at the point of validation and leaves the frame
+ * loop with one way to read any input.
+ */
+struct FrameLayout {
+  std::size_t length;  ///< Values one frame reads.
+  std::size_t step;    ///< Distance between the frames' blocks.
+};
+
+/**
+ * @brief Validate an input that carries one block of @p stride per frame.
  *
  * An empty input stands for an absent one and is left to the frame to
  * interpret.
  */
 template <typename VALUETYPE>
-void validate_frame_blocks(const std::vector<VALUETYPE>& values,
-                           const int nframes,
-                           const std::size_t stride,
-                           const char* name) {
+FrameLayout per_frame_layout(const std::vector<VALUETYPE>& values,
+                             const int nframes,
+                             const std::size_t stride,
+                             const char* name) {
   const std::size_t expected = static_cast<std::size_t>(nframes) * stride;
   if (!values.empty() && values.size() != expected) {
     throw deepmd::deepmd_exception(
@@ -119,21 +135,41 @@ void validate_frame_blocks(const std::vector<VALUETYPE>& values,
         " values but " + std::to_string(nframes) + " frames require " +
         std::to_string(expected));
   }
+  return {stride, stride};
 }
 
 /**
- * @brief Take the block one frame owns, or nothing when the input is absent.
+ * @brief Validate an input the frames may either own or share.
+ *
+ * ``computew`` documents both layouts for the parameter inputs: one block per
+ * frame, or the single block every frame is to be evaluated with.
+ */
+template <typename VALUETYPE>
+FrameLayout broadcast_layout(const std::vector<VALUETYPE>& values,
+                             const int nframes,
+                             const std::size_t stride,
+                             const char* name) {
+  if (values.empty() || values.size() == stride) {
+    return {stride, 0};
+  }
+  return per_frame_layout(values, nframes, stride, name);
+}
+
+/**
+ * @brief Take the block one frame reads, or nothing when the input is absent.
  */
 template <typename T>
 std::vector<T> frame_block(const std::vector<T>& values,
                            const int frame,
-                           const std::size_t stride) {
+                           const FrameLayout& layout) {
   if (values.empty()) {
     return {};
   }
-  const auto first = values.begin() + static_cast<std::ptrdiff_t>(frame) *
-                                          static_cast<std::ptrdiff_t>(stride);
-  return std::vector<T>(first, first + static_cast<std::ptrdiff_t>(stride));
+  const auto first =
+      values.begin() + static_cast<std::ptrdiff_t>(frame) *
+                           static_cast<std::ptrdiff_t>(layout.step);
+  return std::vector<T>(first,
+                        first + static_cast<std::ptrdiff_t>(layout.length));
 }
 
 /**
@@ -868,18 +904,17 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam,
                                const bool atomic) {
-  if (atype.empty()) {
-    throw deepmd::deepmd_exception(
-        "standalone native-spin inference requires at least one atom");
-  }
   const std::size_t nloc = atype.size();
   const int nframes = frame_count(coord, nloc);
-  validate_frame_blocks(spin, nframes, nloc * 3, "spin");
-  validate_frame_blocks(box, nframes, 9, "box");
-  validate_frame_blocks(fparam, nframes, static_cast<std::size_t>(dfparam),
-                        "fparam");
-  validate_frame_blocks(aparam, nframes,
-                        nloc * static_cast<std::size_t>(daparam), "aparam");
+  const FrameLayout coord_layout =
+      per_frame_layout(coord, nframes, nloc * 3, "coord");
+  const FrameLayout spin_layout =
+      per_frame_layout(spin, nframes, nloc * 3, "spin");
+  const FrameLayout box_layout = per_frame_layout(box, nframes, 9, "box");
+  const FrameLayout fparam_layout = broadcast_layout(
+      fparam, nframes, static_cast<std::size_t>(dfparam), "fparam");
+  const FrameLayout aparam_layout = broadcast_layout(
+      aparam, nframes, nloc * static_cast<std::size_t>(daparam), "aparam");
 
   ener.clear();
   force.clear();
@@ -891,13 +926,13 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
     ENERGYVTYPE frame_ener;
     std::vector<VALUETYPE> frame_force, frame_force_mag, frame_virial,
         frame_atom_energy, frame_atom_virial;
-    compute_frame(
-        frame_ener, frame_force, frame_force_mag, frame_virial,
-        frame_atom_energy, frame_atom_virial, frame_block(coord, ff, nloc * 3),
-        frame_block(spin, ff, nloc * 3), atype, frame_block(box, ff, 9),
-        frame_block(fparam, ff, static_cast<std::size_t>(dfparam)),
-        frame_block(aparam, ff, nloc * static_cast<std::size_t>(daparam)),
-        atomic);
+    compute_frame(frame_ener, frame_force, frame_force_mag, frame_virial,
+                  frame_atom_energy, frame_atom_virial,
+                  frame_block(coord, ff, coord_layout),
+                  frame_block(spin, ff, spin_layout), atype,
+                  frame_block(box, ff, box_layout),
+                  frame_block(fparam, ff, fparam_layout),
+                  frame_block(aparam, ff, aparam_layout), atomic);
     ener.insert(ener.end(), frame_ener.begin(), frame_ener.end());
     force.insert(force.end(), frame_force.begin(), frame_force.end());
     force_mag.insert(force_mag.end(), frame_force_mag.begin(),
@@ -1195,9 +1230,9 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& aparam,
                                 const std::vector<double>& charge_spin,
                                 const bool atomic) {
-  check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_,
-                         chg_spin_table_ranges_);
+  check_call_charge_spin(
+      charge_spin, frame_count(coord, atype.size()), settable_chgspin,
+      /*applied_per_call=*/false, default_chg_spin_, chg_spin_table_ranges_);
   computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
            spin, atype, box, fparam, aparam, atomic);
 }
@@ -1216,9 +1251,9 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<float>& aparam,
                                 const std::vector<double>& charge_spin,
                                 const bool atomic) {
-  check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_,
-                         chg_spin_table_ranges_);
+  check_call_charge_spin(
+      charge_spin, frame_count(coord, atype.size()), settable_chgspin,
+      /*applied_per_call=*/false, default_chg_spin_, chg_spin_table_ranges_);
   computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
            spin, atype, box, fparam, aparam, atomic);
 }

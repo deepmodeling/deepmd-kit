@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 
@@ -205,6 +207,45 @@ class DeepPotBackend : public DeepBaseModelBackend {
    * Returns 0 for backends that do not support charge/spin conditioning.
    **/
   virtual int dim_chg_spin() const { return 0; }
+
+  /**
+   * @brief Reject a charge/spin condition no embedding table can address.
+   *
+   * A descriptor embeds the condition by gathering one row of a charge table
+   * and one row of a multiplicity table, whose geometry belongs to the
+   * feature rather than to any one descriptor. Neither the gather nor the
+   * compiled kernel bounds-checks the row, so a value outside a table reads
+   * past it and a fractional value is truncated onto a neighbouring row,
+   * both of which answer for a state the caller never asked for. The bounds
+   * mirror ``deepmd/utils/charge_state.py``, which holds the same contract
+   * for the Python boundaries.
+   *
+   * @param[in] charge_spin The condition, as ``{charge, multiplicity}``.
+   **/
+  static void require_addressable_charge_spin(
+      const std::vector<double>& charge_spin) {
+    static const char* const names[] = {"charge", "multiplicity"};
+    static const double lows[] = {-100.0, 0.0};
+    static const double highs[] = {100.0, 100.0};
+    const std::size_t checked = std::min<std::size_t>(charge_spin.size(), 2);
+    for (std::size_t ii = 0; ii < checked; ++ii) {
+      const double value = charge_spin[ii];
+      if (value != std::floor(value)) {
+        throw deepmd::deepmd_exception(
+            std::string("the ") + names[ii] +
+            " must be an integer, which indexes one row of its embedding "
+            "table, but is " +
+            std::to_string(value));
+      }
+      if (value < lows[ii] || value >= highs[ii]) {
+        throw deepmd::deepmd_exception(
+            std::string("the ") + names[ii] + " must lie in [" +
+            std::to_string(lows[ii]) + ", " + std::to_string(highs[ii]) +
+            "), which its embedding table covers, but is " +
+            std::to_string(value));
+      }
+    }
+  }
 
   /**
    * @brief Fix the charge/spin condition served for the rest of the run.
