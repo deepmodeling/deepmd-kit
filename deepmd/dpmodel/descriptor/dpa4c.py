@@ -1986,6 +1986,15 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """Return whether ``call_graph`` conditions on a frame charge state."""
         return self.charge_spin_embedding is not None
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Return whether a frame charge/spin condition is configured.
+
+        Unlike :meth:`get_dim_chg_spin`, this stays true once the condition is
+        folded into the compressed tables, which is what lets a deployment
+        rebuild them for another state.
+        """
+        return self.charge_spin_embedding is not None
+
     def get_dim_chg_spin(self) -> int:
         """Return the runtime width of the frame condition.
 

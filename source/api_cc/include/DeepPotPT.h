@@ -241,6 +241,31 @@ class DeepPotPT : public DeepPotBackend {
     return dchgspin;
   };
   /**
+   * @brief Fix the charge/spin condition served when a call names none.
+   *
+   * This backend reads the condition as an ordinary per-call input and falls
+   * back to the state loaded from the model whenever a call omits it, so
+   * installing a new state means replacing that fallback. Without this the
+   * inherited no-op would report success while every later evaluation kept
+   * using the model's own default.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) override {
+    assert(inited);
+    if (dchgspin == 0) {
+      throw deepmd::deepmd_exception(
+          "this model does not support a charge/spin condition");
+    }
+    if (static_cast<int>(charge_spin.size()) != dchgspin) {
+      throw deepmd::deepmd_exception("the charge/spin condition carries " +
+                                     std::to_string(charge_spin.size()) +
+                                     " values but the model expects " +
+                                     std::to_string(dchgspin));
+    }
+    default_chg_spin_ = charge_spin;
+  };
+  /**
    * @brief Get the type map (element name of the atom types) of this model.
    * @param[out] type_map The type map of this model.
    **/

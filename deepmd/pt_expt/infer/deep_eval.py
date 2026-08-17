@@ -1003,6 +1003,20 @@ class DeepEval(DeepEvalBackend):
             charge_spin = self.metadata["default_chg_spin"]
         fold.apply(single_charge_state(charge_spin, fold.width))
 
+    @property
+    def _dpmodel_dim_chg_spin(self) -> int:
+        """Width of the condition the deserialized model reads as an argument.
+
+        An archive that ships its model dict is deserialized into an ordinary
+        implementation beside the compiled lower, and the introspection
+        methods evaluate that one. It reads the condition as an argument even
+        where the lower reads none, so the two widths part company exactly
+        when a fold exists, and the fold carries the width.
+        """
+        if self._charge_state_fold is not None:
+            return self._charge_state_fold.width
+        return self.get_dim_chg_spin()
+
     def _make_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
     ) -> torch.Tensor | None:
@@ -1036,12 +1050,69 @@ class DeepEval(DeepEvalBackend):
             If the model reads a condition as an input and neither the caller
             nor the model supplies one.
         """
+        self._apply_charge_state(charge_spin)
+        return self._charge_spin_tensor(nframes, charge_spin, self.get_dim_chg_spin())
+
+    def _make_dpmodel_charge_spin_input(
+        self, nframes: int, charge_spin: np.ndarray | None = None
+    ) -> torch.Tensor | None:
+        """Build the condition the deserialized model reads.
+
+        The introspection methods evaluate that model rather than the compiled
+        lower, so they condition it through this argument; folding the state
+        into the compressed tables would not reach them, as those tables are
+        read only by the fused kernel behind the lower.
+
+        Parameters
+        ----------
+        nframes : int
+            Number of frames the returned tensor covers.
+        charge_spin : np.ndarray, optional
+            The requested condition. Defaults to the condition stored in the
+            model.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
+            for a model that carries no charge/spin conditioning.
+        """
+        return self._charge_spin_tensor(
+            nframes, charge_spin, self._dpmodel_dim_chg_spin
+        )
+
+    def _charge_spin_tensor(
+        self, nframes: int, charge_spin: np.ndarray | None, dim_chg_spin: int
+    ) -> torch.Tensor | None:
+        """Validate a condition of the given width and broadcast it per frame.
+
+        Parameters
+        ----------
+        nframes : int
+            Number of frames the returned tensor covers.
+        charge_spin : np.ndarray, optional
+            The requested condition, reshape-compatible with
+            ``(nframes, dim_chg_spin)``. Defaults to the condition stored in
+            the model.
+        dim_chg_spin : int
+            Width of the condition the consumer reads; zero if it reads none.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
+            when the consumer takes no conditioning input.
+
+        Raises
+        ------
+        ValueError
+            If a condition is read and neither the caller nor the model
+            supplies one.
+        """
         from deepmd.pt_expt.utils.env import (
             DEVICE,
         )
 
-        self._apply_charge_state(charge_spin)
-        dim_chg_spin = self.get_dim_chg_spin()
         if dim_chg_spin == 0:
             return None
         if charge_spin is not None:
@@ -2778,12 +2849,16 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             _aparam_t,
-            charge_spin_t,
-            _nframes,
+            _lower_charge_spin_t,
+            nframes,
             _natoms,
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
+        # The lower's condition is not the one this path reads: it evaluates
+        # the deserialized model, which takes the condition as an argument
+        # even where the lower has it folded into constants.
+        charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, *_ = dp_am.descriptor(
                 ext_coord_t,
@@ -2851,12 +2926,16 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
-            charge_spin_t,
-            _nframes,
+            _lower_charge_spin_t,
+            nframes,
             natoms,
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
+        # The lower's condition is not the one this path reads: it evaluates
+        # the deserialized model, which takes the condition as an argument
+        # even where the lower has it folded into constants.
+        charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
                 ext_coord_t,

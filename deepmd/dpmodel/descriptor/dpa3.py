@@ -547,6 +547,10 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns the dimension of charge_spin input."""
         return 2 if self.add_chg_spin_ebd else 0
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Return whether a frame charge/spin condition is configured."""
+        return self.add_chg_spin_ebd
+
     def get_default_chg_spin(self) -> list[float] | None:
         """Returns the default charge_spin values."""
         return self.default_chg_spin

@@ -2285,6 +2285,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     def get_type_map(self) -> list[str]:
         return self.type_map if self.type_map is not None else []
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Return whether a frame charge/spin condition is configured."""
+        return self.charge_spin_embedding is not None
+
     def get_dim_chg_spin(self) -> int:
         """Return the charge/spin condition width."""
         return 2 if self.add_chg_spin_ebd else 0

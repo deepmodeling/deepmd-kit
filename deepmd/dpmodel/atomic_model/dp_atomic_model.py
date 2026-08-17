@@ -119,7 +119,7 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net = fitting
         self.fitting_net.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
-        self.add_chg_spin_ebd: bool = self.descriptor.get_dim_chg_spin() > 0
+        self.add_chg_spin_ebd: bool = self.descriptor.has_chg_spin_ebd()
         # Structural capability: only descriptors with a native spin
         # conditioning mechanism (currently DPA4) accept a ``spin`` kwarg on
         # ``call_graph`` at all -- unlike ``charge_spin``, which every

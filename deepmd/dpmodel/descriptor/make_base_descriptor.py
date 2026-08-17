@@ -113,6 +113,17 @@ def make_base_descriptor(
             """Returns the default charge_spin value, or None."""
             return None
 
+        def has_chg_spin_ebd(self) -> bool:
+            """Returns whether the descriptor carries a charge/spin condition.
+
+            This asks whether the condition is part of the model at all, which
+            :meth:`get_dim_chg_spin` does not: that reports the width of the
+            conditioning input a compiled forward reads, and a compressed
+            descriptor folds the condition into frozen tables and so reads
+            none. The two agree everywhere else.
+            """
+            return False
+
         def get_geo_compress(self) -> bool:
             """Return whether geometric tabulated compression is active.
 

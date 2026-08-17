@@ -17,6 +17,7 @@ import torch
 from deepmd.infer import (
     DeepPot,
 )
+from deepmd.kernels.cuda.dpa4c.graph_compress import op_available as dpa4c_op_available
 from deepmd.pt_expt.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -2523,6 +2524,133 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
         np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
         np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+
+
+@unittest.skipUnless(
+    torch.cuda.is_available() and dpa4c_op_available(),
+    "CUDA and the compiled DPA4C operator are required",
+)
+class TestCompressedChargeStateRoutes(unittest.TestCase):
+    """A compressed archive must serve one charge state to all of its routes.
+
+    Compression folds the condition into frozen tables that only the fused
+    kernel behind the compiled lower reads, while ``eval_descriptor`` and
+    ``eval_fitting_last_layer`` evaluate the model deserialized beside that
+    lower, which reads the condition as an argument. Both routes have to
+    answer for the state the caller asked for.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import copy
+
+        from deepmd.pt_expt.model import get_model as pt_expt_get_model
+
+        cls.nt = 2
+        config = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 4,
+                "precision": "float32",
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": [0.0, 1.0],
+                "seed": GLOBAL_SEED,
+            },
+            "fitting_net": {"neuron": [8, 8], "precision": "float32", "seed": 1},
+        }
+        model = pt_expt_get_model(copy.deepcopy(config)).to("cuda")
+
+        # The conditioning projection is zero initialized so that an untrained
+        # descriptor is unconditioned; give it weight to make the state
+        # observable at all.
+        generator = torch.Generator(device="cuda").manual_seed(GLOBAL_SEED)
+        for (
+            _,
+            param,
+        ) in model.atomic_model.descriptor.charge_spin_embedding.named_parameters():
+            with torch.no_grad():
+                param.copy_(
+                    torch.randn(
+                        param.shape,
+                        generator=generator,
+                        device="cuda",
+                        dtype=param.dtype,
+                    )
+                    * 0.3
+                )
+        model.atomic_model.descriptor.enable_compression(0.5)
+
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.tmpfile.close()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(
+                cls.tmpfile.name, {"model": model.serialize()}, lower_kind="auto"
+            )
+            # The nested rebuild is loaded as an archive of its own, which
+            # reads the default device.
+            cls.dp = DeepPot(cls.tmpfile.name)
+        finally:
+            torch.set_default_device("cuda:9999999")
+
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        cls.coords = rng.random((1, natoms, 3)) * 6.0
+        cls.cells = np.eye(3).reshape(1, 9) * 12.0
+        cls.atom_types = np.array([i % cls.nt for i in range(natoms)], dtype=np.int32)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.unlink(cls.tmpfile.name)
+
+    def _routes(self, charge_spin: list[float]) -> tuple[float, float, float]:
+        state = np.array([charge_spin])
+        energy = self.dp.eval(
+            self.coords, self.cells, self.atom_types, charge_spin=state
+        )[0]
+        descriptor = self.dp.deep_eval.eval_descriptor(
+            self.coords, self.cells, self.atom_types, charge_spin=state
+        )
+        fitting = self.dp.deep_eval.eval_fitting_last_layer(
+            self.coords, self.cells, self.atom_types, charge_spin=state
+        )
+        return float(energy.sum()), float(descriptor.sum()), float(fitting.sum())
+
+    def test_the_archive_carries_a_rebuild(self) -> None:
+        """Without the fold no route could serve a state other than the default."""
+        self.assertIsNotNone(self.dp.deep_eval._charge_state_fold)
+
+    def test_every_route_follows_the_requested_state(self) -> None:
+        default_state = self._routes([0.0, 1.0])
+        other_state = self._routes([2.0, 3.0])
+        for name, before, after in zip(
+            ("energy", "descriptor", "fitting last layer"),
+            default_state,
+            other_state,
+            strict=True,
+        ):
+            with self.subTest(route=name):
+                self.assertNotAlmostEqual(
+                    before,
+                    after,
+                    places=6,
+                    msg=f"the {name} route ignored the requested charge state",
+                )
+
+    def test_a_state_is_not_left_behind(self) -> None:
+        """Serving one state must not shift what a later call answers for.
+
+        Returning to a state rebuilds the tables rather than restoring them,
+        so the tolerance admits float32 rounding while staying far below the
+        separation between the two states.
+        """
+        first = self._routes([0.0, 1.0])
+        self._routes([2.0, 3.0])
+        np.testing.assert_allclose(self._routes([0.0, 1.0]), first, rtol=1e-6)
 
 
 if __name__ == "__main__":
