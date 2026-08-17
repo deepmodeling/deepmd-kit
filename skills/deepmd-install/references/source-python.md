@@ -28,6 +28,10 @@ git -C "<absolute-source-directory>" checkout --detach \
 git -C "<absolute-source-directory>" rev-parse HEAD
 ```
 
+Store the resolved SHA in `source.commit` and re-run `validate_plan.py` with
+`--require-resolved-source` before installing backend packages or building
+DeePMD-kit.
+
 For an existing checkout, inspect it without changing its branch, remotes, or
 working tree:
 
@@ -177,9 +181,12 @@ cd "<absolute-neutral-directory>" &&
 "<absolute-python>" "<absolute-skill-root>/scripts/verify_python.py" \
     --backend "<pytorch|tensorflow|jax|paddle>" \
     --accelerator "<cpu|cuda|rocm>" \
+    --expected-prefix "<absolute-environment-prefix>" \
+    --expected-source-commit "<resolved-source-commit>" \
     --expected-build-variant "<cpu|cuda|rocm>"
 ```
 
-Add `--expect-custom-op` for a PyTorch source build. Add `--expect-nv` and
-`--expect-vesin` only when their platform markers and the plan require them.
-Do not continue to the C/C++ gate until every requested check passes.
+Add `--expected-version "<deepmd-version>"` when the plan pins a release. Add
+`--expect-custom-op` for a PyTorch source build. Add `--expect-nv` and
+`--expect-vesin` only when their platform markers and the plan require them. Do
+not continue to the C/C++ gate until every requested check passes.

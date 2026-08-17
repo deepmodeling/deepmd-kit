@@ -65,6 +65,7 @@ current directory:
 test -f "<absolute-skill-root>/scripts/probe_env.py"
 test -f "<absolute-skill-root>/scripts/verify_python.py"
 test -f "<absolute-skill-root>/scripts/verify_lammps.py"
+test -f "<absolute-skill-root>/scripts/verify_native.py"
 ```
 
 Resolve the directory containing `SKILL.md`; do not search for a same-named
@@ -77,12 +78,27 @@ Use the backend-aware verifier and retain its complete output:
 ```bash
 "<absolute-python>" "<absolute-skill-root>/scripts/verify_python.py" \
     --backend "<backend>" \
-    --accelerator "<accelerator>"
+    --accelerator "<accelerator>" \
+    --expected-version "<deepmd-version>" \
+    --expected-prefix "<absolute-environment-prefix>"
 ```
+
+Omit `--expected-version` when the plan does not pin a release.
 
 Check visibility masks from the probe before replacing packages. A false GPU
 availability result may come from `CUDA_VISIBLE_DEVICES`,
 `HIP_VISIBLE_DEVICES`, a driver/runtime mismatch, or a CPU backend package.
+For a ROCm smoke test, inspect occupancy with `rocm-smi`, then bind the planned
+physical index in the same command:
+
+```bash
+HIP_VISIBLE_DEVICES="<physical-index>" \
+    ROCR_VISIBLE_DEVICES="<physical-index>" \
+    "<absolute-python>" "<absolute-skill-root>/scripts/verify_python.py" \
+    --backend "<backend>" \
+    --accelerator rocm \
+    --expected-prefix "<absolute-environment-prefix>"
+```
 
 ## Wrong compiled variant
 
@@ -153,7 +169,10 @@ git -C "<absolute-source-directory>" rev-parse HEAD
 ```
 
 Use a separate clone when `HEAD`, remote, or local changes do not match the
-plan. Do not reset, clean, or rewrite the existing checkout.
+plan. Store the resolved SHA in `source.commit`, revalidate with
+`--require-resolved-source`, and pass the same SHA to
+`verify_python.py --expected-source-commit`. Do not reset, clean, or rewrite
+the existing checkout.
 
 ## Stale build directory
 
@@ -181,7 +200,7 @@ from pathlib import Path
 import torch
 
 print(Path(torch.__file__).resolve().parent / "lib")
-spec = find_spec("nvidia.nccl")
+spec = find_spec("nvidia.nccl") if find_spec("nvidia") is not None else None
 if spec is not None:
     for root in spec.submodule_search_locations or ():
         candidate = Path(root) / "lib"
@@ -277,3 +296,6 @@ printf '%s  %s\n' "<sha256>" "<absolute-download-path>" | sha256sum --check -
 An HTML response, truncated split archive, unexpected top-level directory, or
 checksum mismatch requires a fresh artifact from the planned URL; it is not a
 reason to disable verification.
+
+For `package.artifact_path`, skip curl and run the same file-type and checksum
+checks directly on the absolute local path.

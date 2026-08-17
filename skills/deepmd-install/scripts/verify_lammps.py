@@ -8,7 +8,6 @@ from __future__ import (
 
 import argparse
 import json
-import platform
 import re
 import shutil
 import subprocess
@@ -21,6 +20,10 @@ from pathlib import (
 )
 from typing import (
     Any,
+)
+
+from verify_native import (
+    check_dynamic_links,
 )
 
 
@@ -97,32 +100,6 @@ def _check_help(binary: Path, styles: list[str]) -> list[CheckResult]:
     return results
 
 
-def _check_links(binary: Path) -> CheckResult:
-    """Check native library resolution on Linux or macOS."""
-    system = platform.system()
-    if system == "Linux":
-        tool = shutil.which("ldd")
-        command = [tool, str(binary)] if tool is not None else None
-    elif system == "Darwin":
-        tool = shutil.which("otool")
-        command = [tool, "-L", str(binary)] if tool is not None else None
-    else:
-        return CheckResult("dynamic_links", True, f"not applicable on {system}")
-    if command is None:
-        return CheckResult("dynamic_links", False, "link inspection tool unavailable")
-    try:
-        completed = _run(command)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return CheckResult("dynamic_links", False, f"{type(exc).__name__}: {exc}")
-    output = "\n".join((completed.stdout, completed.stderr))
-    unresolved = [line.strip() for line in output.splitlines() if "not found" in line]
-    passed = completed.returncode == 0 and not unresolved
-    detail = (
-        "; ".join(unresolved) if unresolved else f"returncode={completed.returncode}"
-    )
-    return CheckResult("dynamic_links", passed, detail)
-
-
 def run_checks(
     *, binary: str, model_family: str, flavor: str, check_links: bool
 ) -> list[CheckResult]:
@@ -152,7 +129,10 @@ def run_checks(
     results = [CheckResult("lammps_binary", True, str(resolved))]
     results.extend(_check_help(resolved, required_styles(model_family, flavor)))
     if check_links:
-        results.append(_check_links(resolved))
+        link_result = check_dynamic_links(resolved)
+        results.append(
+            CheckResult("dynamic_links", link_result.passed, link_result.detail)
+        )
     return results
 
 

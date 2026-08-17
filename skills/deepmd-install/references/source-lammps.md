@@ -135,7 +135,7 @@ from pathlib import Path
 import torch
 
 paths = [Path(torch.__file__).resolve().parent / "lib"]
-spec = find_spec("nvidia.nccl")
+spec = find_spec("nvidia.nccl") if find_spec("nvidia") is not None else None
 if spec is not None:
     for root in spec.submodule_search_locations or ():
         candidate = Path(root) / "lib"

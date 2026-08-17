@@ -82,8 +82,10 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
   "install_lammps": false,
   "install_ipi": false,
   "artifact_url": null,
+  "artifact_path": null,
   "sha256": null,
-  "docker_image": null
+  "docker_image": null,
+  "lammps_model_family": null
 }
 ```
 
@@ -92,8 +94,11 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
 - Keep the two DeePMD-kit index fields null for the default package index.
   Record a user-selected mirror or the documented pre-release index explicitly.
 - Keep `backend_index_url` null when the default package index is intended.
-- Require `artifact_url` and `sha256` for `offline`.
+- Package indexes and download URLs use HTTPS.
+- Require exactly one of HTTPS `artifact_url` or absolute `artifact_path`, plus
+  `sha256`, for `offline`.
 - Require an immutable image reference or user-selected tag for `docker`.
+- Require `lammps_model_family` for packaged LAMMPS verification.
 
 ### `source`
 
@@ -102,12 +107,14 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
   "directory": "/absolute/path/to/deepmd-kit",
   "remote": "https://github.com/deepmodeling/deepmd-kit.git",
   "ref": "master",
+  "commit": null,
   "editable": false
 }
 ```
 
-Treat `ref` as an opaque Git ref. Resolve it to a commit and record that commit
-in the completion report. Do not reset or clean an existing checkout.
+Treat `ref` as an opaque Git ref. Resolve it to a commit, store the SHA in
+`commit`, and revalidate the plan before building. Do not reset or clean an
+existing checkout.
 
 ### `build`
 
@@ -178,9 +185,9 @@ For a JAX C++ backend, provide either `tensorflow_root` or
 }
 ```
 
-Require a physical GPU index for a CUDA smoke test. Keep `gpu` null for CPU.
-The example path must belong to the selected source checkout or be explicitly
-provided by the user.
+Require a physical GPU index for CUDA and ROCm smoke tests. Keep `gpu` null for
+CPU. The example path must belong to the selected source checkout or be
+explicitly provided by the user.
 
 ## Validation rules
 
@@ -192,8 +199,11 @@ The validator enforces these invariants:
    and a CUDA build.
 1. DPA4C maps to `dpa4spin`/`dpa4spin/kk`; other families map to
    `deepmd`/`deepmd/kk`.
-1. Source directories, build directories, and install prefixes are distinct.
+1. DeePMD, C/C++, and LAMMPS source/build/install paths are distinct.
 1. Checksums contain exactly 64 hexadecimal characters.
+1. Easy-install methods reject ROCm and Paddle packaged LAMMPS/i-PI.
+1. Embedded placeholders, control characters, and POSIX-template escape
+   characters fail before command rendering.
 1. Unknown keys and unsupported combinations fail before any state change.
 
 ## Examples
@@ -224,8 +234,10 @@ The validator enforces these invariants:
     "install_lammps": false,
     "install_ipi": false,
     "artifact_url": null,
+    "artifact_path": null,
     "sha256": null,
-    "docker_image": null
+    "docker_image": null,
+    "lammps_model_family": null
   },
   "source": null,
   "build": null,
@@ -265,13 +277,16 @@ The validator enforces these invariants:
     "install_lammps": false,
     "install_ipi": false,
     "artifact_url": null,
+    "artifact_path": null,
     "sha256": null,
-    "docker_image": null
+    "docker_image": null,
+    "lammps_model_family": null
   },
   "source": {
     "directory": "/work/deepmd-kit",
     "remote": "https://github.com/deepmodeling/deepmd-kit.git",
     "ref": "master",
+    "commit": null,
     "editable": false
   },
   "build": {

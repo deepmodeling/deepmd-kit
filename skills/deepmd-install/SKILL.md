@@ -1,6 +1,6 @@
 ---
 name: deepmd-install
-description: Install or rebuild DeePMD-kit with conda, pip, dp1s, offline packages, Docker, or a source checkout. Use for CPU, NVIDIA CUDA, or ROCm environments; PyTorch, TensorFlow, JAX, or Paddle backends; the C/C++ interface; and DeePMD-enabled LAMMPS, including Kokkos pair styles for DPA4 and DPA4C.
+description: Install or rebuild DeePMD-kit with conda, pip, dp1s, offline packages, Docker, or a source checkout. Use for CPU, NVIDIA CUDA, or ROCm environments; PyTorch, TensorFlow, JAX, or Paddle backends; backend-enabled C/C++ interfaces; and DeePMD-enabled LAMMPS, including Kokkos pair styles for DPA4 and DPA4C.
 ---
 
 # Install DeePMD-kit
@@ -21,6 +21,10 @@ and verify the requested public interface rather than package presence alone.
 | source LAMMPS Kokkos CUDA                       | PyTorch graph artifacts: `deepmd/kk` for DPA4/SeZM and `dpa4spin/kk` for DPA4C                 |
 | ROCm source, Windows source, LAMMPS plugin mode | Follow the version-matched documentation in the selected checkout                              |
 
+Backend-neutral C/C++ libraries with `ALLOW_NO_BACKEND=ON` are outside the
+automated plan. Follow `doc/install/install-from-source.md` in the selected
+checkout for that layout.
+
 ## Hard rules
 
 1. Resolve the absolute directory containing this `SKILL.md` as `SKILL_ROOT`.
@@ -36,7 +40,8 @@ and verify the requested public interface rather than package presence alone.
    `conda activate` from a previous agent tool call.
 1. Render commands with concrete plan values. Stop if a plan placeholder,
    empty required value, unexpected path, or shell variable not assigned
-   earlier in the same command block remains.
+   earlier in the same command block remains. Keep each plan string in the
+   quoted argument position shown by the selected reference.
 1. Never run `git reset --hard`, `git clean`, recursively remove an install
    prefix, or edit shell rc files as part of this workflow. Use a new build
    directory or versioned install prefix instead.
@@ -106,7 +111,7 @@ cannot leak across calls.
 
 | Gate        | Required evidence                                                                                                                 |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Plan        | `validate_plan.py` exits zero and prints the normalized plan                                                                      |
+| Plan        | `validate_plan.py` exits zero and prints a validation summary                                                                     |
 | Environment | The selected package manager and absolute interpreter target the planned environment                                              |
 | Python      | `verify_python.py` passes for the selected backend and accelerator; source builds also match the expected build variant           |
 | C/C++       | Expected libraries and headers exist, dynamic dependencies resolve, and the build cache records the requested accelerator/backend |

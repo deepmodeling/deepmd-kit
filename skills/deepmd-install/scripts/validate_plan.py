@@ -24,6 +24,9 @@ METHODS = {"pip", "conda", "dp1s", "offline", "docker", "source"}
 GOALS = {"python", "python+lammps", "python+cpp", "python+cpp+lammps"}
 BACKENDS = {"pytorch", "tensorflow", "jax", "paddle"}
 ACCELERATORS = {"cpu", "cuda", "rocm"}
+ENVIRONMENT_KINDS = {"existing", "venv", "conda", "prefix", "container"}
+LAMMPS_FLAVORS = {"host", "kokkos-cuda"}
+MODEL_FAMILIES = {"conventional", "dpa4", "dpa4c"}
 TOP_LEVEL_KEYS = {
     "schema_version",
     "method",
@@ -50,10 +53,12 @@ OBJECT_KEYS = {
         "install_lammps",
         "install_ipi",
         "artifact_url",
+        "artifact_path",
         "sha256",
         "docker_image",
+        "lammps_model_family",
     },
-    "source": {"directory", "remote", "ref", "editable"},
+    "source": {"directory", "remote", "ref", "commit", "editable"},
     "build": {
         "variant",
         "cc",
@@ -128,8 +133,18 @@ def _as_object(
     return value
 
 
+def _validate_choice(
+    value: object, choices: set[str], path: str, errors: list[str]
+) -> str | None:
+    """Validate a string enum and return the accepted value."""
+    if not isinstance(value, str) or value not in choices:
+        errors.append(f"{path}: unsupported value {value!r}")
+        return None
+    return value
+
+
 def _validate_strings(value: object, path: str, errors: list[str]) -> None:
-    """Reject unresolved shell variables and placeholder-only strings."""
+    """Reject unresolved placeholders and unsafe POSIX-template characters."""
     if isinstance(value, dict):
         for key, item in value.items():
             _validate_strings(item, f"{path}.{key}" if path else key, errors)
@@ -139,8 +154,12 @@ def _validate_strings(value: object, path: str, errors: list[str]) -> None:
     elif isinstance(value, str):
         if "$" in value:
             errors.append(f"{path}: unresolved shell variable is not allowed")
-        if re.fullmatch(r"<[^>]+>", value):
+        if re.search(r"<[^<>\r\n]+>", value):
             errors.append(f"{path}: unresolved placeholder is not allowed")
+        if any(character in value for character in ('"', "`", "\\")):
+            errors.append(f"{path}: unsafe shell-template character is not allowed")
+        if any(character in value for character in ("\0", "\n", "\r")):
+            errors.append(f"{path}: control character is not allowed")
 
 
 def _validate_checksum(value: object, path: str, errors: list[str]) -> None:
@@ -151,17 +170,21 @@ def _validate_checksum(value: object, path: str, errors: list[str]) -> None:
         errors.append(f"{path}: expected 64 hexadecimal SHA-256 characters")
 
 
-def _validate_url_or_path(value: object, path: str, errors: list[str]) -> None:
-    """Validate an HTTPS URL or an absolute local path."""
+def _validate_https_url(value: object, path: str, errors: list[str]) -> None:
+    """Validate an HTTPS URL without embedded credentials."""
     if not isinstance(value, str) or not value:
-        errors.append(f"{path}: expected an HTTPS URL or absolute path")
+        errors.append(f"{path}: expected an HTTPS URL")
         return
     parsed = urlparse(value)
-    if parsed.scheme == "https" and parsed.netloc:
+    if (
+        parsed.scheme == "https"
+        and parsed.netloc
+        and parsed.username is None
+        and parsed.password is None
+        and not any(character.isspace() for character in value)
+    ):
         return
-    if Path(value).is_absolute():
-        return
-    errors.append(f"{path}: expected an HTTPS URL or absolute path")
+    errors.append(f"{path}: expected an HTTPS URL without credentials")
 
 
 def _validate_string_list(value: object, path: str, errors: list[str]) -> None:
@@ -177,9 +200,9 @@ def _validate_environment(
 ) -> None:
     """Validate method-specific environment fields."""
     _require_keys(environment, {"kind"}, "environment", errors)
-    kind = environment.get("kind")
-    if kind not in {"existing", "venv", "conda", "prefix", "container"}:
-        errors.append(f"environment.kind: unsupported value {kind!r}")
+    kind = _validate_choice(
+        environment.get("kind"), ENVIRONMENT_KINDS, "environment.kind", errors
+    )
     if method in {"pip", "source"}:
         python = environment.get("python")
         if not _is_absolute_path(python):
@@ -204,7 +227,12 @@ def _validate_environment(
 
 
 def _validate_package(
-    package: dict[str, Any], method: str, goal: str, errors: list[str]
+    package: dict[str, Any],
+    method: str,
+    goal: str,
+    backend: str,
+    accelerator: str,
+    errors: list[str],
 ) -> None:
     """Validate package and artifact selection."""
     for key in ("backend_packages", "channels"):
@@ -218,30 +246,68 @@ def _validate_package(
     ):
         errors.append("package.deepmd_version: expected a non-empty string or null")
     if package.get("backend_index_url") is not None:
-        _validate_url_or_path(
+        _validate_https_url(
             package["backend_index_url"], "package.backend_index_url", errors
         )
     for key in ("deepmd_index_url", "deepmd_extra_index_url"):
         if package.get(key) is not None:
-            _validate_url_or_path(package[key], f"package.{key}", errors)
+            _validate_https_url(package[key], f"package.{key}", errors)
     _validate_checksum(package.get("sha256"), "package.sha256", errors)
     if method == "offline":
-        _require_keys(package, {"artifact_url", "sha256"}, "package", errors)
-        _validate_url_or_path(
-            package.get("artifact_url"), "package.artifact_url", errors
-        )
+        _require_keys(package, {"sha256"}, "package", errors)
+        artifact_url = package.get("artifact_url")
+        artifact_path = package.get("artifact_path")
+        if (artifact_url is None) == (artifact_path is None):
+            errors.append(
+                "package: offline installation requires exactly one of "
+                "artifact_url or artifact_path"
+            )
+        elif artifact_url is not None:
+            _validate_https_url(artifact_url, "package.artifact_url", errors)
+        elif not _is_absolute_path(artifact_path):
+            errors.append("package.artifact_path: expected an absolute path")
         if package.get("sha256") is None:
             errors.append("package.sha256: offline installation requires a checksum")
+    elif (
+        package.get("artifact_url") is not None
+        or package.get("artifact_path") is not None
+    ):
+        errors.append("package.artifact_url/artifact_path: allowed only for offline")
     if method == "docker" and (
         not isinstance(package.get("docker_image"), str)
         or not package.get("docker_image")
     ):
         errors.append("package.docker_image: docker requires an image reference")
-    if goal == "python+lammps" and method in {"pip", "conda"}:
-        if package.get("install_lammps") is not True:
+    if goal == "python+lammps" and package.get("install_lammps") is not True:
+        errors.append(
+            "package.install_lammps: python+lammps requires the packaged LAMMPS runtime"
+        )
+    if goal != "python+lammps" and package.get("install_lammps") is True:
+        errors.append("package.install_lammps: requires goal 'python+lammps'")
+    if method != "source" and accelerator == "rocm":
+        errors.append("accelerator: ROCm requires method 'source'")
+    packaged_lammps = goal == "python+lammps" or package.get("install_lammps") is True
+    if packaged_lammps:
+        family = _validate_choice(
+            package.get("lammps_model_family"),
+            MODEL_FAMILIES,
+            "package.lammps_model_family",
+            errors,
+        )
+        if family in {"dpa4", "dpa4c"} and backend != "pytorch":
             errors.append(
-                "package.install_lammps: python+lammps requires the packaged LAMMPS runtime"
+                f"package.lammps_model_family: {family} requires the PyTorch backend"
             )
+    elif package.get("lammps_model_family") is not None:
+        errors.append(
+            "package.lammps_model_family: allowed only when packaged LAMMPS is requested"
+        )
+    if (
+        backend == "paddle"
+        and method != "source"
+        and (packaged_lammps or package.get("install_ipi") is True)
+    ):
+        errors.append("package: Paddle does not support packaged LAMMPS or i-PI")
 
 
 def _validate_source(
@@ -258,6 +324,12 @@ def _validate_source(
     for key in ("remote", "ref"):
         if not isinstance(source.get(key), str) or not source.get(key):
             errors.append(f"source.{key}: expected a non-empty string")
+    commit = source.get("commit")
+    if commit is not None and (
+        not isinstance(commit, str)
+        or re.fullmatch(r"[0-9a-fA-F]{7,40}", commit) is None
+    ):
+        errors.append("source.commit: expected a 7-40 character commit SHA or null")
     if not isinstance(source.get("editable"), bool):
         errors.append("source.editable: expected a boolean")
 
@@ -267,9 +339,9 @@ def _validate_source(
         "build",
         errors,
     )
-    variant = build.get("variant")
-    if variant not in ACCELERATORS:
-        errors.append(f"build.variant: unsupported value {variant!r}")
+    variant = _validate_choice(
+        build.get("variant"), ACCELERATORS, "build.variant", errors
+    )
     for key in ("cc", "cxx"):
         if not _is_absolute_path(build.get(key)):
             errors.append(f"build.{key}: expected an absolute executable")
@@ -358,6 +430,7 @@ def _validate_lammps(
     lammps: dict[str, Any],
     source: dict[str, Any],
     build: dict[str, Any],
+    cpp: dict[str, Any],
     backend: str,
     accelerator: str,
     errors: list[str],
@@ -383,35 +456,43 @@ def _validate_lammps(
         errors.append("lammps.version: expected a non-empty string")
     if not isinstance(lammps.get("mpi"), bool):
         errors.append("lammps.mpi: expected a boolean")
-    flavor = lammps.get("flavor")
-    if flavor not in {"host", "kokkos-cuda"}:
-        errors.append(f"lammps.flavor: unsupported value {flavor!r}")
-    model_family = lammps.get("model_family")
-    if model_family not in {"conventional", "dpa4", "dpa4c"}:
-        errors.append(f"lammps.model_family: unsupported value {model_family!r}")
+    flavor = _validate_choice(
+        lammps.get("flavor"), LAMMPS_FLAVORS, "lammps.flavor", errors
+    )
+    model_family = _validate_choice(
+        lammps.get("model_family"),
+        MODEL_FAMILIES,
+        "lammps.model_family",
+        errors,
+    )
     _validate_checksum(lammps.get("sha256"), "lammps.sha256", errors)
     source_directory = lammps.get("source_directory")
     if _is_absolute_path(source_directory) and not Path(source_directory).exists():
         if lammps.get("url") is None:
             errors.append("lammps.url: required when the source directory is absent")
     if lammps.get("url") is not None:
-        _validate_url_or_path(lammps["url"], "lammps.url", errors)
+        _validate_https_url(lammps["url"], "lammps.url", errors)
     if all(
         _is_absolute_path(item)
         for item in (
             source.get("directory"),
             lammps.get("source_directory"),
             lammps.get("build_directory"),
+            cpp.get("build_directory"),
+            cpp.get("install_prefix"),
         )
     ):
         paths = {
             _canonical(source["directory"]),
             _canonical(lammps["source_directory"]),
             _canonical(lammps["build_directory"]),
+            _canonical(cpp["build_directory"]),
+            _canonical(cpp["install_prefix"]),
         }
-        if len(paths) != 3:
+        if len(paths) != 5:
             errors.append(
-                "lammps: DeePMD source, LAMMPS source, and build paths must differ"
+                "lammps: DeePMD source, C/C++ build/install, and LAMMPS "
+                "source/build paths must differ"
             )
     if flavor == "kokkos-cuda":
         if backend != "pytorch":
@@ -450,23 +531,26 @@ def _validate_smoke_test(
     if not _is_absolute_path(smoke_test.get("example")):
         errors.append("smoke_test.example: enabled test requires an absolute path")
     gpu = smoke_test.get("gpu")
-    if accelerator == "cuda" and (
+    if accelerator in {"cuda", "rocm"} and (
         not isinstance(gpu, int) or isinstance(gpu, bool) or gpu < 0
     ):
         errors.append(
-            "smoke_test.gpu: CUDA test requires a non-negative physical index"
+            f"smoke_test.gpu: {accelerator.upper()} test requires a non-negative "
+            "physical index"
         )
     if accelerator == "cpu" and gpu is not None:
         errors.append("smoke_test.gpu: CPU test must use null")
 
 
-def validate_plan(plan: object) -> list[str]:
+def validate_plan(plan: object, *, require_resolved_source: bool = False) -> list[str]:
     """Validate an installation plan.
 
     Parameters
     ----------
     plan : object
         Parsed JSON value.
+    require_resolved_source : bool, optional
+        Require `source.commit` for a source build gate.
 
     Returns
     -------
@@ -493,41 +577,53 @@ def validate_plan(plan: object) -> list[str]:
         errors,
     )
     _validate_strings(plan, "", errors)
-    if plan.get("schema_version") != SCHEMA_VERSION:
+    schema_version = plan.get("schema_version")
+    if (
+        not isinstance(schema_version, int)
+        or isinstance(schema_version, bool)
+        or schema_version != SCHEMA_VERSION
+    ):
         errors.append(f"schema_version: expected {SCHEMA_VERSION}")
-    method = plan.get("method")
-    goal = plan.get("goal")
-    backend = plan.get("backend")
-    accelerator = plan.get("accelerator")
-    if method not in METHODS:
-        errors.append(f"method: unsupported value {method!r}")
-    if goal not in GOALS:
-        errors.append(f"goal: unsupported value {goal!r}")
-    if backend not in BACKENDS:
-        errors.append(f"backend: unsupported value {backend!r}")
-    if accelerator not in ACCELERATORS:
-        errors.append(f"accelerator: unsupported value {accelerator!r}")
+    method = _validate_choice(plan.get("method"), METHODS, "method", errors)
+    goal = _validate_choice(plan.get("goal"), GOALS, "goal", errors)
+    backend = _validate_choice(plan.get("backend"), BACKENDS, "backend", errors)
+    accelerator = _validate_choice(
+        plan.get("accelerator"), ACCELERATORS, "accelerator", errors
+    )
 
     environment = _as_object(plan, "environment", required=True, errors=errors)
     package = _as_object(plan, "package", required=True, errors=errors)
     smoke_test = _as_object(plan, "smoke_test", required=True, errors=errors)
-    if environment is not None and method in METHODS:
+    if environment is not None and method is not None:
         _validate_environment(environment, method, errors)
-    if package is not None and method in METHODS and goal in GOALS:
-        _validate_package(package, method, goal, errors)
-    if smoke_test is not None and accelerator in ACCELERATORS:
+    if (
+        package is not None
+        and method is not None
+        and goal is not None
+        and backend is not None
+        and accelerator is not None
+    ):
+        _validate_package(package, method, goal, backend, accelerator, errors)
+    if smoke_test is not None and accelerator is not None:
         _validate_smoke_test(smoke_test, accelerator, errors)
 
     source_required = method == "source"
     source = _as_object(plan, "source", required=source_required, errors=errors)
     build = _as_object(plan, "build", required=source_required, errors=errors)
+    if (
+        require_resolved_source
+        and method == "source"
+        and source is not None
+        and source.get("commit") is None
+    ):
+        errors.append("source.commit: resolved source SHA is required for this gate")
     if method != "source" and (source is not None or build is not None):
         errors.append("source/build: allowed only when method is 'source'")
     if (
         source is not None
         and build is not None
-        and backend in BACKENDS
-        and accelerator in ACCELERATORS
+        and backend is not None
+        and accelerator is not None
     ):
         _validate_source(source, build, backend, accelerator, errors)
 
@@ -541,7 +637,7 @@ def validate_plan(plan: object) -> list[str]:
         cpp is not None
         and source is not None
         and environment is not None
-        and backend in BACKENDS
+        and backend is not None
     ):
         _validate_cpp(cpp, source, environment, backend, errors)
 
@@ -555,10 +651,11 @@ def validate_plan(plan: object) -> list[str]:
         lammps is not None
         and source is not None
         and build is not None
-        and backend in BACKENDS
-        and accelerator in ACCELERATORS
+        and cpp is not None
+        and backend is not None
+        and accelerator is not None
     ):
-        _validate_lammps(lammps, source, build, backend, accelerator, errors)
+        _validate_lammps(lammps, source, build, cpp, backend, accelerator, errors)
 
     if goal == "python+lammps" and method == "source":
         errors.append("goal: source-built LAMMPS also requires the C/C++ gate")
@@ -580,7 +677,7 @@ def _load_plan(path: Path) -> object:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Validate a plan file and print a normalized summary.
+    """Validate a plan file and print a validation summary.
 
     Parameters
     ----------
@@ -597,6 +694,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--json", action="store_true", help="Emit a machine-readable result."
     )
+    parser.add_argument(
+        "--require-resolved-source",
+        action="store_true",
+        help="Require source.commit before a source build gate.",
+    )
     args = parser.parse_args(argv)
     try:
         plan = _load_plan(args.plan)
@@ -610,7 +712,9 @@ def main(argv: list[str] | None = None) -> int:
         errors = [f"plan: invalid JSON at line {exc.lineno}, column {exc.colno}"]
         plan = None
     else:
-        errors = validate_plan(plan)
+        errors = validate_plan(
+            plan, require_resolved_source=args.require_resolved_source
+        )
 
     result: dict[str, Any] = {"valid": not errors, "errors": errors}
     if isinstance(plan, dict):
@@ -622,10 +726,12 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(lammps, dict):
             family = lammps.get("model_family")
             flavor = lammps.get("flavor")
-            if family in {"conventional", "dpa4", "dpa4c"} and flavor in {
-                "host",
-                "kokkos-cuda",
-            }:
+            if (
+                isinstance(family, str)
+                and family in MODEL_FAMILIES
+                and isinstance(flavor, str)
+                and flavor in LAMMPS_FLAVORS
+            ):
                 result["required_lammps_styles"] = required_lammps_styles(
                     family, flavor
                 )

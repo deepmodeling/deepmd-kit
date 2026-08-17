@@ -74,13 +74,12 @@ npx -y skills add https://github.com/deepmodeling/deepmd-kit/tree/master/skills 
     --skill '*' -y
 ```
 
-If direct GitHub access fails, use `gh-proxy.com` for a public, read-only clone
-and install from that checkout. Do not send credentials or private repository
-URLs through the proxy.
+If direct GitHub access fails, clone the official Gitee mirror and install from
+that checkout:
 
 ```bash
 git clone --depth 1 \
-    https://gh-proxy.com/https://github.com/deepmodeling/deepmd-kit.git \
+    https://gitee.com/deepmodeling/deepmd-kit.git \
     deepmd-kit-skill-source
 npx -y skills add ./deepmd-kit-skill-source/skills --skill '*' -y
 ```

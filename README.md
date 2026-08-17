@@ -222,13 +222,12 @@ without directly linking every framework.
 >     --skill deepmd-install -y
 > ```
 >
-> If direct GitHub access fails, use `gh-proxy.com` for a public, read-only
-> clone, then install from the local checkout. Do not send credentials or
-> private repository URLs through the proxy.
+> If direct GitHub access fails, clone the official Gitee mirror and install
+> from the local checkout:
 >
 > ```bash
 > git clone --depth 1 \
->     https://gh-proxy.com/https://github.com/deepmodeling/deepmd-kit.git \
+>     https://gitee.com/deepmodeling/deepmd-kit.git \
 >     deepmd-kit-skill-source
 > npx -y skills add ./deepmd-kit-skill-source/skills \
 >     --skill deepmd-install -y

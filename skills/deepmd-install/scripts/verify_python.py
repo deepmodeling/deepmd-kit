@@ -8,9 +8,14 @@ from __future__ import (
 
 import argparse
 import json
+import re
+import sys
 from dataclasses import (
     asdict,
     dataclass,
+)
+from pathlib import (
+    Path,
 )
 from typing import (
     Any,
@@ -31,15 +36,60 @@ def _result(name: str, passed: bool, detail: object) -> CheckResult:
     return CheckResult(name=name, passed=passed, detail=str(detail))
 
 
-def _check_deepmd() -> CheckResult:
-    """Import DeePMD-kit and report its version and location."""
+def _check_deepmd(
+    expected_version: str | None, expected_prefix: str | None
+) -> CheckResult:
+    """Import DeePMD-kit and verify its requested identity."""
     try:
         import deepmd
     except (ImportError, OSError, RuntimeError) as exc:
         return _result("deepmd", False, f"{type(exc).__name__}: {exc}")
     version = getattr(deepmd, "__version__", "unknown")
     location = getattr(deepmd, "__file__", "unknown")
-    return _result("deepmd", True, f"version={version} file={location}")
+    actual_prefix = Path(sys.prefix).resolve(strict=False)
+    passed = True
+    identity = [f"version={version}", f"file={location}", f"prefix={actual_prefix}"]
+    if expected_version is not None:
+        passed = passed and version == expected_version
+        identity.append(f"expected_version={expected_version}")
+    if expected_prefix is not None:
+        expected = Path(expected_prefix).resolve(strict=False)
+        passed = passed and actual_prefix == expected
+        identity.append(f"expected_prefix={expected}")
+    return _result("deepmd", passed, " ".join(identity))
+
+
+def _tensorflow_accelerator(tf: Any) -> str | None:
+    """Return TensorFlow's compiled GPU runtime from build metadata."""
+    try:
+        build_info = tf.sysconfig.get_build_info()
+    except (AttributeError, RuntimeError, TypeError):
+        return None
+    if not isinstance(build_info, dict):
+        return None
+    if build_info.get("is_rocm_build") is True:
+        return "rocm"
+    if build_info.get("is_cuda_build") is True:
+        return "cuda"
+    return None
+
+
+def _jax_accelerator(devices: list[Any]) -> str | None:
+    """Return JAX's GPU runtime from device and client metadata."""
+    metadata: list[str] = []
+    for device in devices:
+        platform_name = str(getattr(device, "platform", "")).lower()
+        if platform_name in {"cuda", "rocm"}:
+            return platform_name
+        metadata.append(str(getattr(device, "device_kind", "")))
+        client = getattr(device, "client", None)
+        metadata.append(str(getattr(client, "platform_version", "")))
+    combined = " ".join(metadata).lower()
+    if "rocm" in combined or "hip" in combined or "amd" in combined:
+        return "rocm"
+    if "cuda" in combined or "nvidia" in combined:
+        return "cuda"
+    return None
 
 
 def _check_build_variant(expected: str) -> CheckResult:
@@ -55,6 +105,33 @@ def _check_build_variant(expected: str) -> CheckResult:
         "build_variant",
         actual == expected,
         f"expected={expected} actual={actual}",
+    )
+
+
+def _commits_match(actual: str, expected: str) -> bool:
+    """Return whether full or abbreviated hexadecimal commits identify one SHA."""
+    actual = actual.strip().lower()
+    expected = expected.strip().lower()
+    if re.fullmatch(r"[0-9a-f]{7,40}", actual) is None:
+        return False
+    if re.fullmatch(r"[0-9a-f]{7,40}", expected) is None:
+        return False
+    return actual.startswith(expected) or expected.startswith(actual)
+
+
+def _check_source_commit(expected: str) -> CheckResult:
+    """Check the source commit recorded in DeePMD-kit's build metadata."""
+    try:
+        from deepmd.env import (
+            GLOBAL_CONFIG,
+        )
+    except (ImportError, OSError, RuntimeError) as exc:
+        return _result("source_commit", False, f"{type(exc).__name__}: {exc}")
+    actual = str(GLOBAL_CONFIG.get("git_hash", ""))
+    return _result(
+        "source_commit",
+        _commits_match(actual, expected),
+        f"expected={expected} actual={actual or 'unknown'}",
     )
 
 
@@ -111,6 +188,16 @@ def _check_tensorflow(accelerator: str) -> list[CheckResult]:
         results.append(_result("tensorflow_accelerator", False, "no visible GPU"))
         return results
     else:
+        runtime = _tensorflow_accelerator(tf)
+        if runtime != accelerator:
+            results.append(
+                _result(
+                    "tensorflow_accelerator",
+                    False,
+                    f"expected={accelerator} actual={runtime or 'unknown'}",
+                )
+            )
+            return results
         device = "/GPU:0"
     try:
         with tf.device(device):
@@ -148,6 +235,17 @@ def _check_jax(accelerator: str) -> list[CheckResult]:
     if not candidates:
         results.append(_result("jax_accelerator", False, f"no {accelerator} device"))
         return results
+    if accelerator != "cpu":
+        runtime = _jax_accelerator(candidates)
+        if runtime != accelerator:
+            results.append(
+                _result(
+                    "jax_accelerator",
+                    False,
+                    f"expected={accelerator} actual={runtime or 'unknown'}",
+                )
+            )
+            return results
     try:
         value = jax.device_put(jnp.ones((2,)), candidates[0]).sum()
         value.block_until_ready()
@@ -235,6 +333,9 @@ def run_checks(
     *,
     backend: str,
     accelerator: str,
+    expected_version: str | None,
+    expected_prefix: str | None,
+    expected_source_commit: str | None,
     expected_build_variant: str | None,
     expect_custom_op: bool,
     expect_nv: bool,
@@ -248,6 +349,12 @@ def run_checks(
         Backend name.
     accelerator : str
         Runtime accelerator.
+    expected_version : str, optional
+        Required DeePMD-kit version.
+    expected_prefix : str, optional
+        Required Python environment prefix.
+    expected_source_commit : str, optional
+        Required source commit recorded at build time.
     expected_build_variant : str, optional
         Required DeePMD-kit compiled variant.
     expect_custom_op : bool
@@ -262,7 +369,9 @@ def run_checks(
     list of CheckResult
         Ordered verification results.
     """
-    checks = [_check_deepmd()]
+    checks = [_check_deepmd(expected_version, expected_prefix)]
+    if expected_source_commit is not None:
+        checks.append(_check_source_commit(expected_source_commit))
     if expected_build_variant is not None:
         checks.append(_check_build_variant(expected_build_variant))
     backend_checks = {
@@ -315,6 +424,9 @@ def main(argv: list[str] | None = None) -> int:
         choices=("pytorch", "tensorflow", "jax", "paddle"),
     )
     parser.add_argument("--accelerator", required=True, choices=("cpu", "cuda", "rocm"))
+    parser.add_argument("--expected-version")
+    parser.add_argument("--expected-prefix")
+    parser.add_argument("--expected-source-commit")
     parser.add_argument("--expected-build-variant", choices=("cpu", "cuda", "rocm"))
     parser.add_argument("--expect-custom-op", action="store_true")
     parser.add_argument("--expect-nv", action="store_true")
@@ -325,9 +437,22 @@ def main(argv: list[str] | None = None) -> int:
         (args.expect_custom_op, args.expect_nv, args.expect_vesin)
     ):
         parser.error("PyTorch-only checks require --backend pytorch")
+    if (
+        args.expected_prefix is not None
+        and not Path(args.expected_prefix).is_absolute()
+    ):
+        parser.error("--expected-prefix must be absolute")
+    if (
+        args.expected_source_commit is not None
+        and re.fullmatch(r"[0-9a-fA-F]{7,40}", args.expected_source_commit) is None
+    ):
+        parser.error("--expected-source-commit must be a 7-40 character commit SHA")
     checks = run_checks(
         backend=args.backend,
         accelerator=args.accelerator,
+        expected_version=args.expected_version,
+        expected_prefix=args.expected_prefix,
+        expected_source_commit=args.expected_source_commit,
         expected_build_variant=args.expected_build_variant,
         expect_custom_op=args.expect_custom_op,
         expect_nv=args.expect_nv,

@@ -22,6 +22,9 @@ Do not mix conda, pip, offline, and `dp1s` installations in one prefix. Reuse
 an environment only when the user selected it and the probe found no conflicting
 DeePMD-kit install.
 
+ROCm installations use the source workflow. Packaged LAMMPS and i-PI support
+TensorFlow, PyTorch, and JAX; do not add either extra to a Paddle environment.
+
 For a new venv, create it first, resolve its absolute interpreter, update the
 plan, and re-run `validate_plan.py` before installing packages:
 
@@ -112,30 +115,43 @@ printf '%s  %s\n' "<sha256>" "<absolute-download-path>" | sha256sum --check -
 bash "<absolute-download-path>"
 ```
 
+For `package.artifact_path`, skip curl and verify the local file directly:
+
+```bash
+printf '%s  %s\n' "<sha256>" "<absolute-artifact-path>" | sha256sum --check -
+bash "<absolute-artifact-path>"
+```
+
 Use `shasum -a 256` on systems without `sha256sum`. When a release is split,
 verify each part before concatenating it into a new file. Never execute an HTML
 error page or an artifact whose checksum is unknown.
 
 ## Docker
 
-Pull the exact image reference from the plan and verify it in a disposable
-container:
+Pull the exact image reference from the plan:
 
 ```bash
 docker pull "<registry/image:tag-or-digest>"
-docker run --rm "<registry/image:tag-or-digest>" dp --version
 ```
 
-For CUDA, bind the physical GPU selected for the smoke test:
+Mount the verifier read-only and invoke the backend and accelerator selected by
+the plan:
 
 ```bash
-docker run --rm --gpus 'device=<physical-index>' \
+docker run --rm \
+    --mount \
+    type=bind,src="<absolute-skill-root>/scripts/verify_python.py",dst=/opt/deepmd-install/verify_python.py,readonly \
     "<registry/image:tag-or-digest>" \
-    python -c "import torch; print(torch.cuda.get_device_name(0))"
+    python /opt/deepmd-install/verify_python.py \
+    --backend "<pytorch|tensorflow|jax|paddle>" \
+    --accelerator "<cpu|cuda>" \
+    --expected-version "<deepmd-version>"
 ```
 
-Add only user-selected volume mounts and working directories. Do not mount a
-home directory or source tree read-write merely for version verification.
+For CUDA, add `--gpus 'device=<physical-index>'` from the plan before the
+read-only mount. Omit `--expected-version` when the plan does not pin one. Add
+only user-selected volume mounts and working directories; never mount a home
+directory or source tree read-write for verification.
 
 ## Verification
 
@@ -144,8 +160,12 @@ Run the backend-aware verifier with the absolute installed interpreter:
 ```bash
 "<absolute-python>" "<absolute-skill-root>/scripts/verify_python.py" \
     --backend "<pytorch|tensorflow|jax|paddle>" \
-    --accelerator "<cpu|cuda|rocm>"
+    --accelerator "<cpu|cuda>" \
+    --expected-version "<deepmd-version>" \
+    --expected-prefix "<absolute-environment-prefix>"
 ```
+
+Omit `--expected-version` when `package.deepmd_version` is null.
 
 For packaged host LAMMPS, resolve the executable and require the conventional
 host pair style:
@@ -153,7 +173,7 @@ host pair style:
 ```bash
 "<absolute-python>" "<absolute-skill-root>/scripts/verify_lammps.py" \
     --binary "<absolute-lammps-binary>" \
-    --model-family conventional \
+    --model-family "<package.lammps_model_family>" \
     --flavor host
 ```
 

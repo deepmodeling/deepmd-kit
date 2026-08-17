@@ -12,16 +12,12 @@ import sys
 from pathlib import (
     Path,
 )
-from typing import (
-    TYPE_CHECKING,
+from types import (
+    ModuleType,
+    SimpleNamespace,
 )
 
 import pytest
-
-if TYPE_CHECKING:
-    from types import (
-        ModuleType,
-    )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_DIRECTORY = REPOSITORY_ROOT / "skills" / "deepmd-install" / "scripts"
@@ -41,6 +37,8 @@ def _load_script(name: str) -> ModuleType:
 
 PLAN = _load_script("validate_plan")
 PREPARE = _load_script("prepare_lammps")
+NATIVE = _load_script("verify_native")
+VERIFY = _load_script("verify_python")
 
 
 def _source_plan() -> dict[str, object]:
@@ -68,13 +66,16 @@ def _source_plan() -> dict[str, object]:
             "install_lammps": False,
             "install_ipi": False,
             "artifact_url": None,
+            "artifact_path": None,
             "sha256": None,
             "docker_image": None,
+            "lammps_model_family": None,
         },
         "source": {
             "directory": "/work/deepmd-kit",
             "remote": "https://github.com/deepmodeling/deepmd-kit.git",
             "ref": "master",
+            "commit": None,
             "editable": False,
         },
         "build": {
@@ -128,8 +129,10 @@ def _easy_plan(method: str) -> dict[str, object]:
         "install_lammps": False,
         "install_ipi": False,
         "artifact_url": None,
+        "artifact_path": None,
         "sha256": None,
         "docker_image": None,
+        "lammps_model_family": None,
     }
     if method == "conda":
         environment.update(
@@ -170,6 +173,17 @@ def test_validate_source_dpa4c_plan() -> None:
         "dpa4spin",
         "dpa4spin/kk",
     ]
+
+
+def test_validate_source_build_gate_requires_resolved_commit() -> None:
+    """Require the resolved source identity before a source build gate."""
+    plan = _source_plan()
+    errors = PLAN.validate_plan(plan, require_resolved_source=True)
+    assert "source.commit: resolved source SHA is required for this gate" in errors
+    source = plan["source"]
+    assert isinstance(source, dict)
+    source["commit"] = "ed691aab147d9d7686d296e30f46902c08e9fb68"
+    assert PLAN.validate_plan(plan, require_resolved_source=True) == []
 
 
 def test_validate_source_jax_gpu_with_cpu_custom_ops() -> None:
@@ -215,6 +229,213 @@ def test_validate_offline_plan_requires_checksum() -> None:
     package["sha256"] = None
     errors = PLAN.validate_plan(plan)
     assert "package.sha256: offline installation requires a checksum" in errors
+
+
+def test_validate_offline_local_artifact() -> None:
+    """Accept a local offline artifact only through its dedicated path field."""
+    plan = _easy_plan("offline")
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package["artifact_url"] = None
+    package["artifact_path"] = "/opt/artifacts/deepmd.sh"
+    assert PLAN.validate_plan(plan) == []
+
+
+def test_validate_offline_artifact_url_requires_https() -> None:
+    """Reject a local path routed through the offline curl branch."""
+    plan = _easy_plan("offline")
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package["artifact_url"] = "/opt/artifacts/deepmd.sh"
+    errors = PLAN.validate_plan(plan)
+    assert any(
+        "package.artifact_url: expected an HTTPS URL" in error for error in errors
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("method",), []),
+        (("goal",), {}),
+        (("environment", "kind"), []),
+        (("build", "variant"), {}),
+        (("lammps", "flavor"), []),
+        (("lammps", "model_family"), {}),
+    ],
+)
+def test_validate_plan_rejects_non_string_enums(
+    path: tuple[str, ...], value: object
+) -> None:
+    """Convert malformed JSON enum types into validation errors."""
+    plan = _source_plan()
+    target: dict[str, object] = plan
+    for key in path[:-1]:
+        nested = target[key]
+        assert isinstance(nested, dict)
+        target = nested
+    target[path[-1]] = value
+    errors = PLAN.validate_plan(plan)
+    assert any("unsupported value" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value"),
+    [
+        ("source", "ref", "v<ref>"),
+        ("package", "backend_packages", ["torch==<version>"]),
+        ("package", "docker_image", "image:<tag>"),
+        ("environment", "python", "/opt/<user>/python"),
+    ],
+)
+def test_validate_plan_rejects_embedded_placeholders(
+    section: str, field: str, value: object
+) -> None:
+    """Reject placeholder tokens embedded inside otherwise valid values."""
+    plan = _source_plan()
+    target = plan[section]
+    assert isinstance(target, dict)
+    target[field] = value
+    errors = PLAN.validate_plan(plan)
+    assert any("unresolved placeholder" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "value", ['bad"value', "bad`value", "bad\\value", "bad\nvalue"]
+)
+def test_validate_plan_rejects_unsafe_shell_template_values(value: str) -> None:
+    """Reject values that can escape the documented POSIX templates."""
+    plan = _source_plan()
+    source = plan["source"]
+    assert isinstance(source, dict)
+    source["remote"] = value
+    errors = PLAN.validate_plan(plan)
+    assert any(
+        "unsafe shell-template character" in error or "control character" in error
+        for error in errors
+    )
+
+
+def test_validate_plan_keeps_quoted_semicolon_as_data() -> None:
+    """Allow semicolons that remain inside the documented quoted argument."""
+    plan = _source_plan()
+    source = plan["source"]
+    assert isinstance(source, dict)
+    source["remote"] = "https://example.invalid/repository;mirror.git"
+    assert PLAN.validate_plan(plan) == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("backend_index_url", "/mirror"),
+        ("deepmd_index_url", "file:///mirror"),
+        ("deepmd_extra_index_url", "http://example.invalid/simple"),
+    ],
+)
+def test_validate_plan_requires_https_package_indexes(field: str, value: str) -> None:
+    """Reject local paths and non-HTTPS package indexes."""
+    plan = _easy_plan("pip")
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package[field] = value
+    errors = PLAN.validate_plan(plan)
+    assert any("expected an HTTPS URL" in error for error in errors)
+
+
+def test_validate_plan_requires_https_lammps_url() -> None:
+    """Reject a local path rendered through the LAMMPS curl branch."""
+    plan = _source_plan()
+    lammps = plan["lammps"]
+    assert isinstance(lammps, dict)
+    lammps["url"] = "/opt/lammps.tar.gz"
+    errors = PLAN.validate_plan(plan)
+    assert any("lammps.url: expected an HTTPS URL" in error for error in errors)
+
+
+@pytest.mark.parametrize("field", ["build_directory", "install_prefix"])
+def test_validate_plan_rejects_lammps_cpp_path_collisions(field: str) -> None:
+    """Keep LAMMPS source/build paths out of the C/C++ build and prefix."""
+    plan = _source_plan()
+    cpp = plan["cpp"]
+    lammps = plan["lammps"]
+    assert isinstance(cpp, dict)
+    assert isinstance(lammps, dict)
+    lammps["build_directory"] = cpp[field]
+    errors = PLAN.validate_plan(plan)
+    assert any("C/C++ build/install" in error for error in errors)
+
+
+@pytest.mark.parametrize("cpp_field", ["build_directory", "install_prefix"])
+def test_validate_plan_rejects_lammps_source_in_cpp_paths(cpp_field: str) -> None:
+    """Keep the LAMMPS source tree out of C/C++ build and install paths."""
+    plan = _source_plan()
+    cpp = plan["cpp"]
+    lammps = plan["lammps"]
+    assert isinstance(cpp, dict)
+    assert isinstance(lammps, dict)
+    lammps["source_directory"] = cpp[cpp_field]
+    errors = PLAN.validate_plan(plan)
+    assert any("C/C++ build/install" in error for error in errors)
+
+
+def test_validate_plan_rejects_easy_rocm() -> None:
+    """Route ROCm installations through the source workflow."""
+    plan = _easy_plan("pip")
+    plan["accelerator"] = "rocm"
+    errors = PLAN.validate_plan(plan)
+    assert "accelerator: ROCm requires method 'source'" in errors
+
+
+@pytest.mark.parametrize("feature", ["lammps", "ipi"])
+def test_validate_plan_rejects_paddle_packaged_native_tools(feature: str) -> None:
+    """Reject packaged LAMMPS and i-PI for the unsupported Paddle backend."""
+    plan = _easy_plan("pip")
+    plan["backend"] = "paddle"
+    package = plan["package"]
+    assert isinstance(package, dict)
+    if feature == "lammps":
+        plan["goal"] = "python+lammps"
+        package["install_lammps"] = True
+        package["lammps_model_family"] = "conventional"
+    else:
+        package["install_ipi"] = True
+    errors = PLAN.validate_plan(plan)
+    assert "package: Paddle does not support packaged LAMMPS or i-PI" in errors
+
+
+def test_validate_packaged_lammps_requires_model_family() -> None:
+    """Require exact pair-style identity for packaged LAMMPS."""
+    plan = _easy_plan("pip")
+    plan["goal"] = "python+lammps"
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package["install_lammps"] = True
+    errors = PLAN.validate_plan(plan)
+    assert any("package.lammps_model_family" in error for error in errors)
+    package["lammps_model_family"] = "dpa4c"
+    plan["backend"] = "pytorch"
+    assert PLAN.validate_plan(plan) == []
+
+
+def test_validate_rocm_smoke_test_requires_physical_gpu() -> None:
+    """Require explicit ROCm device binding for an enabled smoke test."""
+    plan = _source_plan()
+    plan["goal"] = "python"
+    plan["accelerator"] = "rocm"
+    plan["backend"] = "jax"
+    build = plan["build"]
+    smoke_test = plan["smoke_test"]
+    assert isinstance(build, dict)
+    assert isinstance(smoke_test, dict)
+    build.update({"variant": "cpu", "cuda_home": None})
+    plan["cpp"] = None
+    plan["lammps"] = None
+    smoke_test.update({"enabled": True, "gpu": None, "example": "/work/example"})
+    errors = PLAN.validate_plan(plan)
+    assert any(
+        "ROCM test requires a non-negative physical index" in error for error in errors
+    )
 
 
 @pytest.mark.parametrize(
@@ -311,6 +532,171 @@ def _write_fake_lammps(path: Path, styles: str) -> None:
     """Write an executable that emits a deterministic LAMMPS help surface."""
     path.write_text(f"#!/usr/bin/env python3\nprint({styles!r})\n", encoding="utf-8")
     path.chmod(0o755)
+
+
+def test_native_link_check_rejects_not_found_with_zero_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail when ldd reports an unresolved library despite return code zero."""
+    binary = tmp_path / "libexample.so"
+    binary.write_bytes(b"native")
+    monkeypatch.setattr(NATIVE.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(NATIVE.shutil, "which", lambda _name: "/usr/bin/ldd")
+    monkeypatch.setattr(
+        NATIVE,
+        "_run",
+        lambda _command: subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="libmissing.so => not found\n", stderr=""
+        ),
+    )
+    result = NATIVE.check_dynamic_links(binary)
+    assert result.passed is False
+    assert "libmissing.so => not found" in result.detail
+
+
+def test_verify_python_checks_version_and_prefix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Reject an importable DeePMD-kit with the wrong requested identity."""
+    fake_deepmd = SimpleNamespace(
+        __version__="3.2.0", __file__="/opt/deepmd/deepmd/__init__.py"
+    )
+    monkeypatch.setitem(sys.modules, "deepmd", fake_deepmd)
+    monkeypatch.setattr(VERIFY.sys, "prefix", str(tmp_path / "environment"))
+    passing = VERIFY._check_deepmd("3.2.0", str(tmp_path / "environment"))
+    wrong_version = VERIFY._check_deepmd("3.1.0", str(tmp_path / "environment"))
+    wrong_prefix = VERIFY._check_deepmd("3.2.0", str(tmp_path / "other"))
+    assert passing.passed is True
+    assert wrong_version.passed is False
+    assert wrong_prefix.passed is False
+
+
+def test_verify_python_matches_abbreviated_source_commit() -> None:
+    """Match the abbreviated commit stored in build metadata to a full SHA."""
+    assert VERIFY._commits_match("e59966be", "e59966be1234567890abcdef1234567890abcdef")
+    assert not VERIFY._commits_match(
+        "e59966be", "a59966be1234567890abcdef1234567890abcdef"
+    )
+
+
+@pytest.mark.parametrize(
+    ("build_info", "expected"),
+    [
+        ({"is_cuda_build": True, "is_rocm_build": False}, "cuda"),
+        ({"is_cuda_build": False, "is_rocm_build": True}, "rocm"),
+    ],
+)
+def test_tensorflow_runtime_detection(
+    build_info: dict[str, bool], expected: str
+) -> None:
+    """Distinguish TensorFlow CUDA and ROCm build metadata."""
+    tensorflow = SimpleNamespace(
+        sysconfig=SimpleNamespace(get_build_info=lambda: build_info)
+    )
+    assert VERIFY._tensorflow_accelerator(tensorflow) == expected
+    assert VERIFY._tensorflow_accelerator(tensorflow) != (
+        "rocm" if expected == "cuda" else "cuda"
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "build_info"),
+    [
+        ("cuda", {"is_cuda_build": False, "is_rocm_build": True}),
+        ("rocm", {"is_cuda_build": True, "is_rocm_build": False}),
+    ],
+)
+def test_tensorflow_rejects_wrong_gpu_runtime(
+    requested: str,
+    build_info: dict[str, bool],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail TensorFlow verification when GPU presence masks a runtime mismatch."""
+    deepmd = ModuleType("deepmd")
+    deepmd.__path__ = []  # type: ignore[attr-defined]
+    deepmd_tf = ModuleType("deepmd.tf")
+    tensorflow = ModuleType("tensorflow")
+    tensorflow.__version__ = "test"  # type: ignore[attr-defined]
+    tensorflow.sysconfig = SimpleNamespace(  # type: ignore[attr-defined]
+        get_build_info=lambda: build_info
+    )
+    tensorflow.config = SimpleNamespace(  # type: ignore[attr-defined]
+        list_physical_devices=lambda _kind: [object()]
+    )
+    monkeypatch.setitem(sys.modules, "deepmd", deepmd)
+    monkeypatch.setitem(sys.modules, "deepmd.tf", deepmd_tf)
+    monkeypatch.setitem(sys.modules, "tensorflow", tensorflow)
+    checks = VERIFY._check_tensorflow(requested)
+    assert checks[-1].passed is False
+    assert f"expected={requested}" in checks[-1].detail
+
+
+@pytest.mark.parametrize(
+    ("device_kind", "platform_version", "expected"),
+    [
+        ("NVIDIA RTX PRO 6000", "CUDA 13.0", "cuda"),
+        ("AMD Instinct MI300X", "ROCm 7.0", "rocm"),
+    ],
+)
+def test_jax_runtime_detection(
+    device_kind: str, platform_version: str, expected: str
+) -> None:
+    """Distinguish JAX CUDA and ROCm client metadata."""
+    device = SimpleNamespace(
+        platform="gpu",
+        device_kind=device_kind,
+        client=SimpleNamespace(platform_version=platform_version),
+    )
+    assert VERIFY._jax_accelerator([device]) == expected
+    assert VERIFY._jax_accelerator([device]) != (
+        "rocm" if expected == "cuda" else "cuda"
+    )
+
+
+@pytest.mark.parametrize(
+    ("requested", "device_kind", "platform_version"),
+    [
+        ("cuda", "AMD Instinct MI300X", "ROCm 7.0"),
+        ("rocm", "NVIDIA RTX PRO 6000", "CUDA 13.0"),
+    ],
+)
+def test_jax_rejects_wrong_gpu_runtime(
+    requested: str,
+    device_kind: str,
+    platform_version: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail JAX verification when a GPU uses the other runtime."""
+    deepmd = ModuleType("deepmd")
+    deepmd.__path__ = []  # type: ignore[attr-defined]
+    deepmd_jax = ModuleType("deepmd.jax")
+    jax = ModuleType("jax")
+    jax.__path__ = []  # type: ignore[attr-defined]
+    jax.__version__ = "test"  # type: ignore[attr-defined]
+    device = SimpleNamespace(
+        platform="gpu",
+        device_kind=device_kind,
+        client=SimpleNamespace(platform_version=platform_version),
+    )
+    jax.devices = lambda: [device]  # type: ignore[attr-defined]
+    jax_numpy = ModuleType("jax.numpy")
+    monkeypatch.setitem(sys.modules, "deepmd", deepmd)
+    monkeypatch.setitem(sys.modules, "deepmd.jax", deepmd_jax)
+    monkeypatch.setitem(sys.modules, "jax", jax)
+    monkeypatch.setitem(sys.modules, "jax.numpy", jax_numpy)
+    checks = VERIFY._check_jax(requested)
+    assert checks[-1].passed is False
+    assert f"expected={requested}" in checks[-1].detail
+
+
+def test_docker_reference_uses_backend_aware_verifier() -> None:
+    """Keep Docker verification backend-aware and read-only mounted."""
+    reference = (
+        REPOSITORY_ROOT / "skills" / "deepmd-install" / "references" / "easy-install.md"
+    ).read_text(encoding="utf-8")
+    assert "verify_python.py" in reference
+    assert '--backend "<pytorch|tensorflow|jax|paddle>"' in reference
+    assert "readonly" in reference
 
 
 def test_verify_lammps_dpa4c_cli(tmp_path: Path) -> None:

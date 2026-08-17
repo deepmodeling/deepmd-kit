@@ -5,6 +5,10 @@ Build the C/C++ interface only after the Python/backend gate passes. Use
 CMake options supported by that ref. The published documentation is
 <https://docs.deepmodeling.com/projects/deepmd/en/latest/install/install-from-source.html>.
 
+This workflow builds a backend-enabled C/C++ interface. For backend-neutral
+`libdeepmd_cc`/`libdeepmd_c`, follow the checkout documentation and its explicit
+`ALLOW_NO_BACKEND=ON` contract.
+
 ## Contents
 
 - [Build-directory gate](#build-directory-gate)
@@ -131,9 +135,9 @@ Use the platform library suffix on macOS or Windows. On Linux, fail if any
 installed DeePMD library has an unresolved dynamic dependency:
 
 ```bash
-for library in "<absolute-prefix>"/lib/libdeepmd*.so; do
-    ldd "$library"
-done
+"<absolute-python>" "<absolute-skill-root>/scripts/verify_native.py" \
+    --directory "<absolute-prefix>/lib" \
+    --pattern 'libdeepmd*.so*'
 ```
 
 Finally compile and run a public C++ API probe inside the build directory:
