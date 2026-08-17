@@ -297,14 +297,23 @@ inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
  * only count that lines the domain check up with the values it guards. A
  * shorter or longer list would check a value against another value's table.
  *
+ * A width of zero means the caller does not yet know how wide a charge state
+ * is. A compressed model reports that at load, because its lower carries no
+ * conditioning input and the width becomes known only once the charge-state
+ * fold names it; the caller then reads the ranges again with that width. This
+ * mirrors ``read_default_chg_spin``, which the callers invoke in pair with it.
+ *
  * @param[in] metadata Parsed archive metadata.
  * @param[in] dim_chg_spin Width of a charge state the model accepts.
- * @return One ``{low, high}`` pair per value, empty when the archive names
- *   no ranges.
+ * @return One ``{low, high}`` pair per value, empty when the width is unknown
+ *   or the archive names no ranges.
  **/
 inline std::vector<std::pair<double, double>> read_chg_spin_table_ranges(
     const JsonValue& metadata, const int dim_chg_spin) {
   std::vector<std::pair<double, double>> ranges;
+  if (dim_chg_spin <= 0) {
+    return ranges;
+  }
   if (!metadata.obj_val.count("chg_spin_table_ranges") ||
       metadata["chg_spin_table_ranges"].type == JsonValue::Null) {
     return ranges;
