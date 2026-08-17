@@ -154,12 +154,6 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_default_chg_spin()
         return None
 
-    def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
-        """Get the row range each charge_spin value indexes, or None."""
-        if self.add_chg_spin_ebd:
-            return self.descriptor.get_chg_spin_table_ranges()
-        return None
-
     def uses_graph_lower(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())

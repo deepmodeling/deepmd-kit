@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +20,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "common.h"  // for remap_comm_sendlist
@@ -284,6 +286,77 @@ inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
 }
 
 /**
+ * @brief Read the row range each value of a charge state indexes.
+ *
+ * A charge-conditioned descriptor embeds the condition by gathering one row
+ * of each embedding table, so the archive records the half-open range of each
+ * table. An archive frozen before the ranges were recorded names none, and
+ * the boundary then checks only the width, as it did before.
+ *
+ * @param[in] metadata Parsed archive metadata.
+ * @return One ``{low, high}`` pair per value, empty when the archive names
+ *   no ranges.
+ **/
+inline std::vector<std::pair<double, double>> read_chg_spin_table_ranges(
+    const JsonValue& metadata) {
+  std::vector<std::pair<double, double>> ranges;
+  if (!metadata.obj_val.count("chg_spin_table_ranges") ||
+      metadata["chg_spin_table_ranges"].type == JsonValue::Null) {
+    return ranges;
+  }
+  for (const auto& bounds : metadata["chg_spin_table_ranges"].as_array()) {
+    const auto& pair = bounds.as_array();
+    if (pair.size() != 2) {
+      throw deepmd::deepmd_exception(
+          "chg_spin_table_ranges must hold a [low, high) pair per value.");
+    }
+    ranges.emplace_back(pair[0].as_double(), pair[1].as_double());
+  }
+  return ranges;
+}
+
+/**
+ * @brief Reject a charge state that addresses no row of the model's tables.
+ *
+ * The gather is not bounds-checked and the index is truncated from a double,
+ * so a fractional value would silently land on a neighbouring row and an
+ * out-of-range value would read past the table. An archive that names no
+ * ranges is left unchecked.
+ *
+ * @param[in] charge_spin One or more states laid out end to end.
+ * @param[in] ranges Half-open row range of each value of one state.
+ **/
+inline void check_charge_spin_domain(
+    const std::vector<double>& charge_spin,
+    const std::vector<std::pair<double, double>>& ranges) {
+  if (ranges.empty() || charge_spin.empty()) {
+    return;
+  }
+  const std::size_t width = ranges.size();
+  static const char* kFields[] = {"charge", "multiplicity"};
+  for (std::size_t ii = 0; ii < charge_spin.size(); ++ii) {
+    const std::size_t column = ii % width;
+    const double value = charge_spin[ii];
+    const std::string field =
+        column < 2 ? kFields[column]
+                   : "charge_spin value " + std::to_string(column);
+    if (!std::isfinite(value) || value != std::floor(value)) {
+      throw deepmd::deepmd_exception("the " + field +
+                                     " indexes an embedding table row and "
+                                     "must be an integer, got " +
+                                     std::to_string(value));
+    }
+    if (value < ranges[column].first || value >= ranges[column].second) {
+      throw deepmd::deepmd_exception(
+          "the " + field + " must lie in [" +
+          std::to_string(static_cast<long>(ranges[column].first)) + ", " +
+          std::to_string(static_cast<long>(ranges[column].second)) + "), got " +
+          std::to_string(static_cast<long>(value)));
+    }
+  }
+}
+
+/**
  * @brief Validate a charge/spin condition supplied with an inference call.
  *
  * The condition holds either one frame's values, broadcast to every frame, or
@@ -302,15 +375,20 @@ inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
  * @param[in] applied_per_call Whether the call marshals the condition into
  *   the forward pass instead of serving the state in force.
  * @param[in] installed The state in force, of width ``settable_chg_spin``.
+ * @param[in] ranges Half-open row range of each value, from the archive.
  **/
-inline void check_call_charge_spin(const std::vector<double>& charge_spin,
-                                   const int nframes,
-                                   const int settable_chg_spin,
-                                   const bool applied_per_call,
-                                   const std::vector<double>& installed) {
+inline void check_call_charge_spin(
+    const std::vector<double>& charge_spin,
+    const int nframes,
+    const int settable_chg_spin,
+    const bool applied_per_call,
+    const std::vector<double>& installed,
+    const std::vector<std::pair<double, double>>& ranges =
+        std::vector<std::pair<double, double>>()) {
   if (charge_spin.empty()) {
     return;
   }
+  check_charge_spin_domain(charge_spin, ranges);
   const std::size_t width = static_cast<std::size_t>(settable_chg_spin);
   if (charge_spin.size() != width &&
       charge_spin.size() != width * static_cast<std::size_t>(nframes)) {

@@ -21,7 +21,9 @@
 #include "neighbor_list.h"
 
 using deepmd::ptexpt::check_call_charge_spin;
+using deepmd::ptexpt::check_charge_spin_domain;
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_chg_spin_table_ranges;
 using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -146,6 +148,8 @@ void DeepSpinPTExpt::init(const std::string& model,
     }
   }
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+  check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -303,6 +307,7 @@ void DeepSpinPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
                                    " values but the model expects " +
                                    std::to_string(dchgspin));
   }
+  check_charge_spin_domain(charge_spin, chg_spin_table_ranges_);
   default_chg_spin_ = charge_spin;
 }
 
@@ -614,7 +619,7 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // A single-frame call names at most one charge state, and only one this
   // model can serve.
   check_call_charge_spin(charge_spin, /*nframes=*/1, dchgspin, dchgspin > 0,
-                         default_chg_spin_);
+                         default_chg_spin_, chg_spin_table_ranges_);
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -1394,7 +1399,7 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // A single-frame call names at most one charge state, and only one this
   // model can serve.
   check_call_charge_spin(charge_spin, /*nframes=*/1, dchgspin, dchgspin > 0,
-                         default_chg_spin_);
+                         default_chg_spin_, chg_spin_table_ranges_);
   int natoms = atype.size();
 
   torch::Device device(torch::kCUDA, gpu_id);

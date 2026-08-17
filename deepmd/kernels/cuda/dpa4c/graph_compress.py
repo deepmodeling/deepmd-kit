@@ -51,6 +51,8 @@ from deepmd.dpmodel.descriptor.dpa4c_nn import (
     derive_degree_channels,
     derive_spin_channels,
     packed_l2_to_stf,
+)
+from deepmd.utils.charge_state import (
     validate_charge_state,
 )
 

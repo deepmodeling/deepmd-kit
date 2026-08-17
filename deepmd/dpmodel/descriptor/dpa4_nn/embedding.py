@@ -45,6 +45,11 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.type_embed import (
     remap_atype_to_padding,
 )
+from deepmd.utils.charge_state import (
+    CHARGE_OFFSET,
+    CHARGE_TABLE_ROWS,
+    MULTIPLICITY_TABLE_ROWS,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -884,7 +889,7 @@ class ChargeSpinEmbedding(NativeOP):
             raise ValueError("`embed_dim` must be positive")
 
         self.charge_embedding = SeZMTypeEmbedding(
-            ntypes=200,
+            ntypes=CHARGE_TABLE_ROWS,
             embed_dim=self.embed_dim,
             precision=self.precision,
             seed=child_seed(seed, 0),
@@ -892,7 +897,7 @@ class ChargeSpinEmbedding(NativeOP):
             padding=False,
         )
         self.spin_embedding = SeZMTypeEmbedding(
-            ntypes=100,
+            ntypes=MULTIPLICITY_TABLE_ROWS,
             embed_dim=self.embed_dim,
             precision=self.precision,
             seed=child_seed(seed, 1),
@@ -923,7 +928,7 @@ class ChargeSpinEmbedding(NativeOP):
             Mixed condition embedding with shape (nf, embed_dim).
         """
         xp = array_api_compat.array_namespace(charge_spin)
-        charge = xp.astype(charge_spin[:, 0], xp.int64) + 100
+        charge = xp.astype(charge_spin[:, 0], xp.int64) + CHARGE_OFFSET
         spin = xp.astype(charge_spin[:, 1], xp.int64)
         charge_embed = self.charge_embedding(charge)
         spin_embed = self.spin_embedding(spin)

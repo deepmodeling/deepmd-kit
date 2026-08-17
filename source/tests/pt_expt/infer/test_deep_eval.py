@@ -61,68 +61,52 @@ def _assert_repeatable(a, b) -> None:
 
 
 class TestChargeStateBoundary(unittest.TestCase):
-    """The host boundary must reject a state no declared table row answers.
+    """The host boundary must reject a state no embedding row answers.
 
-    A model that gathers table rows declares their ranges, and neither the
-    gather nor the compiled kernel bounds-checks the index, so a fractional or
-    out-of-range request has to fail here rather than be truncated into a
-    neighbouring row or read past the table. A model that embeds the condition
-    continuously declares no ranges and constrains only the width.
+    Every charge-conditioned descriptor gathers one charge row and one
+    multiplicity row, and neither the gather nor the compiled kernel
+    bounds-checks the index, so a fractional or out-of-range request has to
+    fail here rather than be truncated onto a neighbouring row or read past
+    the table.
     """
 
     WIDTH = 2
 
-    #: Ranges a table-indexing model declares, as DPA4C does.
-    RANGES = ((-100, 100), (0, 100))
-
-    #: Requests that address no declared row, with the value each one violates.
+    #: Requests that address no table row, with the value each one violates.
     UNADDRESSABLE_STATES = (
-        ([0.5, 1.0], "first charge_spin value.*must be an integer"),
-        ([1.0, 2.5], "second charge_spin value.*must be an integer"),
-        ([float("nan"), 1.0], "first charge_spin value.*must be an integer"),
-        ([1.0, float("inf")], "second charge_spin value.*must be an integer"),
-        ([-101.0, 1.0], r"first charge_spin value must lie in \[-100, 100\)"),
-        ([100.0, 1.0], r"first charge_spin value must lie in \[-100, 100\)"),
-        ([0.0, -1.0], r"second charge_spin value must lie in \[0, 100\)"),
-        ([0.0, 100.0], r"second charge_spin value must lie in \[0, 100\)"),
+        ([0.5, 1.0], "charge must be an integer"),
+        ([1.0, 2.5], "multiplicity must be an integer"),
+        ([float("nan"), 1.0], "charge must be an integer"),
+        ([1.0, float("inf")], "multiplicity must be an integer"),
+        ([-101.0, 1.0], r"charge must lie in \[-100, 100\)"),
+        ([100.0, 1.0], r"charge must lie in \[-100, 100\)"),
+        ([0.0, -1.0], r"multiplicity must lie in \[0, 100\)"),
+        ([0.0, 100.0], r"multiplicity must lie in \[0, 100\)"),
     )
 
     def test_folded_path_rejects_unaddressable_states(self) -> None:
         for state, message in self.UNADDRESSABLE_STATES:
             with self.subTest(state=state):
                 with self.assertRaisesRegex(ValueError, message):
-                    single_charge_state(state, self.WIDTH, self.RANGES)
+                    single_charge_state(state, self.WIDTH)
 
     def test_input_tensor_path_rejects_unaddressable_states(self) -> None:
         for state, message in self.UNADDRESSABLE_STATES:
             with self.subTest(state=state):
                 with self.assertRaisesRegex(ValueError, message):
-                    charge_states_per_frame(state, 1, self.WIDTH, self.RANGES)
+                    charge_states_per_frame(state, 1, self.WIDTH)
 
     def test_an_unaddressable_state_is_rejected_in_any_frame(self) -> None:
         # The check covers every frame, not just the first.
-        with self.assertRaisesRegex(ValueError, "must be an integer"):
-            charge_states_per_frame(
-                [[1.0, 2.0], [0.5, 2.0]], 2, self.WIDTH, self.RANGES
-            )
-
-    def test_a_continuous_condition_is_left_alone(self) -> None:
-        # A model that declares no ranges embeds the condition continuously,
-        # so a fractional state is legitimate and must survive untouched.
-        np.testing.assert_array_equal(
-            charge_states_per_frame([0.5, 0.8], 1, self.WIDTH),
-            [[0.5, 0.8]],
-        )
-        self.assertEqual(single_charge_state([0.5, 0.8], self.WIDTH), (0.5, 0.8))
+        with self.assertRaisesRegex(ValueError, "charge must be an integer"):
+            charge_states_per_frame([[1.0, 2.0], [0.5, 2.0]], 2, self.WIDTH)
 
     def test_addressable_states_pass_through_unchanged(self) -> None:
         np.testing.assert_array_equal(
-            charge_states_per_frame([[-3, 4], [0, 1]], 2, self.WIDTH, self.RANGES),
+            charge_states_per_frame([[-3, 4], [0, 1]], 2, self.WIDTH),
             [[-3.0, 4.0], [0.0, 1.0]],
         )
-        self.assertEqual(
-            single_charge_state([[2, 1], [2, 1]], self.WIDTH, self.RANGES), (2.0, 1.0)
-        )
+        self.assertEqual(single_charge_state([[2, 1], [2, 1]], self.WIDTH), (2.0, 1.0))
 
     def test_shape_contracts_are_kept(self) -> None:
         with self.assertRaisesRegex(ValueError, "whole number of 2-wide"):
@@ -131,8 +115,6 @@ class TestChargeStateBoundary(unittest.TestCase):
             charge_states_per_frame([[1, 2]], 2, self.WIDTH)
         with self.assertRaisesRegex(ValueError, "not all equal"):
             single_charge_state([[1, 2], [3, 4]], self.WIDTH)
-        with self.assertRaisesRegex(ValueError, "model indexes 3 tables"):
-            charge_states([1, 2], self.WIDTH, ((-1, 1), (-1, 1), (-1, 1)))
 
 
 class TestDeepEvalEner(unittest.TestCase):
@@ -2421,7 +2403,7 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         from deepmd.dpmodel.model.model import get_model as dp_get_model
 
         cls.nt = 2
-        cls.default_chg_spin = [0.5, 0.8]
+        cls.default_chg_spin = [-1.0, 2.0]
 
         config = {
             "type_map": ["O", "H"],
@@ -2503,6 +2485,24 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
         assert not np.allclose(e0, e1), (
             "Changing charge_spin did not change output — charge_spin may be ignored"
         )
+
+    def test_unaddressable_states_are_rejected(self) -> None:
+        """DPA3 gathers table rows, so it serves integers in range only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        for state, message in (
+            ([[0.5, 1.0]], "charge must be an integer"),
+            ([[0.0, 1.5]], "multiplicity must be an integer"),
+            ([[100.0, 1.0]], r"charge must lie in \[-100, 100\)"),
+            ([[0.0, 100.0]], r"multiplicity must lie in \[0, 100\)"),
+        ):
+            with self.subTest(charge_spin=state):
+                with self.assertRaisesRegex(ValueError, message):
+                    self.dp.eval(coords, cells, atom_types, charge_spin=np.array(state))
 
     def test_default_matches_explicit_default(self) -> None:
         """Eval without charge_spin should use stored default and match explicit."""

@@ -70,6 +70,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
 )
+from deepmd.utils.charge_state import (
+    CHARGE_STATE_TABLE_RANGES,
+)
 from deepmd.utils.pt_checkpoint import (
     detect_pt_checkpoint_backend,
 )
@@ -705,7 +708,11 @@ class DeepEval(DeepEvalBackend):
             "has_chg_spin_ebd": model.has_chg_spin_ebd(),
             "has_default_chg_spin": model.get_default_chg_spin() is not None,
             "default_chg_spin": model.get_default_chg_spin(),
-            "chg_spin_table_ranges": model.get_chg_spin_table_ranges(),
+            "chg_spin_table_ranges": (
+                [list(bounds) for bounds in CHARGE_STATE_TABLE_RANGES]
+                if model.has_chg_spin_ebd()
+                else None
+            ),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
@@ -935,19 +942,6 @@ class DeepEval(DeepEvalBackend):
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
-    def _chg_spin_table_ranges(self) -> list | None:
-        """Get the row range each charge/spin value indexes, as declared.
-
-        The domain of a condition belongs to the model that consumes it: one
-        that gathers table rows accepts only integers inside those rows, while
-        one that embeds the condition continuously accepts any value. A
-        compiled archive carries the declaration in its metadata, so the same
-        rule applies with or without a Python model in hand.
-        """
-        if self._dpmodel is not None:
-            return self._dpmodel.get_chg_spin_table_ranges()
-        return self.metadata.get("chg_spin_table_ranges")
-
     def _no_runtime_condition_reason(self) -> str:
         """Explain why the loaded model serves no runtime charge state.
 
@@ -1007,9 +1001,7 @@ class DeepEval(DeepEvalBackend):
             return
         if charge_spin is None:
             charge_spin = self.metadata["default_chg_spin"]
-        fold.apply(
-            single_charge_state(charge_spin, fold.width, self._chg_spin_table_ranges())
-        )
+        fold.apply(single_charge_state(charge_spin, fold.width))
 
     def _make_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
@@ -1054,9 +1046,7 @@ class DeepEval(DeepEvalBackend):
             return None
         if charge_spin is not None:
             return torch.tensor(
-                charge_states_per_frame(
-                    charge_spin, nframes, dim_chg_spin, self._chg_spin_table_ranges()
-                ),
+                charge_states_per_frame(charge_spin, nframes, dim_chg_spin),
                 dtype=torch.float64,
                 device=DEVICE,
             )
@@ -1070,9 +1060,7 @@ class DeepEval(DeepEvalBackend):
             default_chg_spin = default_chg_spin.cpu().numpy()
         return (
             torch.tensor(
-                single_charge_state(
-                    default_chg_spin, dim_chg_spin, self._chg_spin_table_ranges()
-                ),
+                single_charge_state(default_chg_spin, dim_chg_spin),
                 dtype=torch.float64,
                 device=DEVICE,
             )

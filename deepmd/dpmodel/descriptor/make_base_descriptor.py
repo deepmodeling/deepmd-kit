@@ -113,17 +113,6 @@ def make_base_descriptor(
             """Returns the default charge_spin value, or None."""
             return None
 
-        def get_chg_spin_table_ranges(self) -> list[tuple[int, int]] | None:
-            """Returns the row range each charge_spin value indexes, or None.
-
-            A descriptor that embeds the condition by indexing tables reports
-            one half-open range per value, which makes every acceptable state
-            an integer tuple inside those ranges. ``None``, the default, means
-            the condition enters as a continuous quantity and only its width
-            is constrained.
-            """
-            return None
-
         def get_geo_compress(self) -> bool:
             """Return whether geometric tabulated compression is active.
 

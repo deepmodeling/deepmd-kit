@@ -52,6 +52,11 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.utils.charge_state import (
+    CHARGE_OFFSET,
+    CHARGE_TABLE_ROWS,
+    MULTIPLICITY_TABLE_ROWS,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -68,78 +73,6 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
     )
-
-#: Rows of the charge table, covering integer charges in ``[-100, 99]``.
-CHARGE_TABLE_ROWS = 200
-
-#: Index of the neutral charge row, so row ``CHARGE_OFFSET + Q`` holds ``Q``.
-CHARGE_OFFSET = 100
-
-#: Rows of the spin table, covering integer multiplicities below this bound.
-MULTIPLICITY_TABLE_ROWS = 100
-
-#: Half-open range of representable total charges, in units of the elementary
-#: charge.
-CHARGE_RANGE = (-CHARGE_OFFSET, CHARGE_TABLE_ROWS - CHARGE_OFFSET)
-
-#: Half-open range of representable spin multiplicities.
-MULTIPLICITY_RANGE = (0, MULTIPLICITY_TABLE_ROWS)
-
-#: Name of each value of a charge state, in order, for diagnostics.
-CHARGE_STATE_FIELDS = ("charge", "multiplicity")
-
-#: Half-open row range addressed by each value of a charge state, in order.
-#: A condition is a pair of table row indices, so a host-side boundary that
-#: knows these ranges can reject an unaddressable state without knowing which
-#: descriptor holds the tables.
-CHARGE_STATE_TABLE_RANGES = (CHARGE_RANGE, MULTIPLICITY_RANGE)
-
-
-def validate_charge_state(charge_spin: Any) -> list[float]:
-    """Check that a frame condition addresses a row of each embedding table.
-
-    Both tables are indexed directly by the condition, and neither the gather
-    nor the compiled kernel bounds-checks that index, so an out-of-range value
-    would read past the table. Every host-side boundary that accepts a charge
-    state therefore passes it through here first. The per-forward path is
-    deliberately not guarded: its values come from the data pipeline, which
-    owns their validity exactly as it owns the validity of an atom type.
-
-    Parameters
-    ----------
-    charge_spin
-        A pair ``[charge, multiplicity]``, in any sequence form.
-
-    Returns
-    -------
-    list[float]
-        The same pair, as two floats.
-
-    Raises
-    ------
-    ValueError
-        If the pair does not hold exactly two integral values within the
-        representable ranges.
-    """
-    values = [float(value) for value in np.reshape(np.asarray(charge_spin), (-1,))]
-    if len(values) != 2:
-        raise ValueError(
-            f"A charge state must be a `[charge, multiplicity]` pair, got "
-            f"{len(values)} values"
-        )
-    for value, name, (low, high) in zip(
-        values,
-        CHARGE_STATE_FIELDS,
-        CHARGE_STATE_TABLE_RANGES,
-        strict=True,
-    ):
-        if not np.isfinite(value) or value != int(value):
-            raise ValueError(f"The {name} must be an integer, got {value}")
-        if not low <= value < high:
-            raise ValueError(
-                f"The {name} must lie in [{low}, {high}), got {int(value)}"
-            )
-    return values
 
 
 class ChargeStateEmbedding(NativeOP):

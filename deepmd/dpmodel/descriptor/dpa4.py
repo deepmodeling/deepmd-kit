@@ -73,6 +73,9 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.charge_state import (
+    validate_charge_state,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -784,10 +787,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.edge_cartesian = bool(edge_cartesian)
         self.node_cartesian = str(node_cartesian)
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
-        if default_chg_spin is not None and len(default_chg_spin) != 2:
-            raise ValueError("`default_chg_spin` must contain [charge, spin].")
         self.default_chg_spin = (
-            None if default_chg_spin is None else [float(x) for x in default_chg_spin]
+            None
+            if default_chg_spin is None
+            else validate_charge_state(default_chg_spin)
         )
 
         # === Native per-atom spin embedding ===

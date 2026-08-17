@@ -8,12 +8,9 @@ by rebuilding them. Both routes start from the same user request, so this
 module owns the step that turns that request into validated charge states, and
 the rebuild that the folded route performs.
 
-What counts as an acceptable value is a property of the loaded model, not of
-this layer. A model that embeds the condition by indexing tables declares the
-row range of each value, and a condition outside those ranges is rejected here
-because neither the gather nor the compiled kernel bounds-checks the index. A
-model that embeds the condition continuously declares no ranges, and only the
-width of a request is constrained.
+Every state a caller names is checked against the shared charge-state contract
+before it can reach a tensor or a table rebuild, because neither the gather nor
+the compiled kernel bounds-checks the row index.
 """
 
 from __future__ import (
@@ -28,54 +25,17 @@ from typing import (
 import numpy as np
 import torch
 
-if TYPE_CHECKING:
-    from collections.abc import (
-        Sequence,
-    )
+from deepmd.utils.charge_state import (
+    validate_charge_state,
+)
 
+if TYPE_CHECKING:
     from torch._inductor.package import (
         AOTICompiledModel,
     )
 
-#: Ranges are declared per value, so a request is described by its position.
-_VALUE_LABELS = ("first", "second", "third", "fourth")
 
-
-def _check_against_ranges(
-    states: np.ndarray, table_ranges: Sequence[Sequence[int]]
-) -> None:
-    """Reject any state that addresses no row of the declared tables."""
-    if states.shape[1] != len(table_ranges):
-        raise ValueError(
-            f"charge_spin states are {states.shape[1]} values wide, but the "
-            f"model indexes {len(table_ranges)} tables."
-        )
-    # A non-finite value is not a row index either, so it is reported as the
-    # integrality failure rather than reaching the range comparison, whose
-    # message would have to render it.
-    integral = np.isfinite(states) & (states == np.floor(states))
-    for column, (low, high) in enumerate(table_ranges):
-        label = _VALUE_LABELS[column] if column < len(_VALUE_LABELS) else str(column)
-        values = states[:, column]
-        offending = values[~integral[:, column]]
-        if offending.size:
-            raise ValueError(
-                f"The {label} charge_spin value indexes a table row and must "
-                f"be an integer, got {offending[0]}"
-            )
-        outside = values[(values < low) | (values >= high)]
-        if outside.size:
-            raise ValueError(
-                f"The {label} charge_spin value must lie in [{low}, {high}), "
-                f"got {outside[0]:.0f}"
-            )
-
-
-def charge_states(
-    charge_spin: Any,
-    width: int,
-    table_ranges: Sequence[Sequence[int]] | None = None,
-) -> np.ndarray:
+def charge_states(charge_spin: Any, width: int) -> np.ndarray:
     """Read a requested condition as validated charge states.
 
     Parameters
@@ -84,9 +44,6 @@ def charge_states(
         Requested condition, of any shape holding a whole number of states.
     width : int
         Number of values in one charge state.
-    table_ranges : Sequence[Sequence[int]], optional
-        Half-open row range of each value, as the model declares it. ``None``
-        leaves the values unconstrained beyond the width.
 
     Returns
     -------
@@ -97,7 +54,7 @@ def charge_states(
     ------
     ValueError
         If the request does not hold at least one whole state, or names a
-        state that no declared table row answers.
+        state that no embedding table row answers.
     """
     values = np.asarray(charge_spin, dtype=np.float64).reshape(-1)
     if values.size == 0 or values.size % width:
@@ -105,17 +62,14 @@ def charge_states(
             f"charge_spin carries {values.size} values, which is not a positive "
             f"whole number of {width}-wide charge states."
         )
-    states = values.reshape(-1, width)
-    if table_ranges is not None:
-        _check_against_ranges(states, table_ranges)
-    return states
+    return np.array(
+        [validate_charge_state(state) for state in values.reshape(-1, width)],
+        dtype=np.float64,
+    )
 
 
 def charge_states_per_frame(
-    charge_spin: Any,
-    nframes: int,
-    dim_chg_spin: int,
-    table_ranges: Sequence[Sequence[int]] | None = None,
+    charge_spin: Any, nframes: int, dim_chg_spin: int
 ) -> np.ndarray:
     """Read a requested condition as one validated state per frame.
 
@@ -127,8 +81,6 @@ def charge_states_per_frame(
         Number of frames the forward covers.
     dim_chg_spin : int
         Number of values in one charge state.
-    table_ranges : Sequence[Sequence[int]], optional
-        Half-open row range of each value, as the model declares it.
 
     Returns
     -------
@@ -140,7 +92,7 @@ def charge_states_per_frame(
     ValueError
         If the request does not hold exactly one valid state per frame.
     """
-    states = charge_states(charge_spin, dim_chg_spin, table_ranges)
+    states = charge_states(charge_spin, dim_chg_spin)
     if states.shape[0] != nframes:
         raise ValueError(
             f"charge_spin must hold one charge state per frame: expected "
@@ -149,11 +101,7 @@ def charge_states_per_frame(
     return states
 
 
-def single_charge_state(
-    charge_spin: Any,
-    width: int,
-    table_ranges: Sequence[Sequence[int]] | None = None,
-) -> tuple[float, ...]:
+def single_charge_state(charge_spin: Any, width: int) -> tuple[float, ...]:
     """Reduce a requested condition to the one state a folded snapshot serves.
 
     A folded condition lives in tables that are shared by the whole snapshot,
@@ -167,8 +115,6 @@ def single_charge_state(
         Requested condition, of any shape holding a whole number of states.
     width : int
         Number of values in one charge state.
-    table_ranges : Sequence[Sequence[int]], optional
-        Half-open row range of each value, as the model declares it.
 
     Returns
     -------
@@ -181,7 +127,7 @@ def single_charge_state(
         If the request does not hold at least one valid state, or holds
         several states that are not all equal.
     """
-    states = charge_states(charge_spin, width, table_ranges)
+    states = charge_states(charge_spin, width)
     if not bool((states == states[0]).all()):
         raise ValueError(
             "This model folds one charge state into its frozen tables and "

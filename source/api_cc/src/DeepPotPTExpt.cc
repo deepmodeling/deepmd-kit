@@ -25,7 +25,9 @@
 #include "neighbor_list.h"
 
 using deepmd::ptexpt::check_call_charge_spin;
+using deepmd::ptexpt::check_charge_spin_domain;
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_chg_spin_table_ranges;
 using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -222,6 +224,8 @@ void DeepPotPTExpt::init(const std::string& model,
     }
   }
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+  check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -393,6 +397,8 @@ void DeepPotPTExpt::init(const std::string& model,
     // The constants were frozen against the archive's own charge state, so
     // that is the state in force until ``set_charge_spin`` installs another.
     default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
+    chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+    check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   }
 
   int num_intra_nthreads, num_inter_nthreads;
@@ -427,6 +433,7 @@ void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
                                    " values but the model expects " +
                                    std::to_string(settable_chgspin));
   }
+  check_charge_spin_domain(charge_spin, chg_spin_table_ranges_);
   // All allocation completes before the compiled constants change. The final
   // vector swap is non-throwing, so the visible default follows the installed
   // constants without opening a second failure point.
@@ -726,7 +733,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // A single-frame call names at most one charge state, and only one this
   // model can serve.
   check_call_charge_spin(charge_spin, /*nframes=*/1, settable_chgspin,
-                         dchgspin > 0, default_chg_spin_);
+                         dchgspin > 0, default_chg_spin_,
+                         chg_spin_table_ranges_);
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -1465,7 +1473,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // A single-frame call names at most one charge state, and only one this
   // model can serve.
   check_call_charge_spin(charge_spin, /*nframes=*/1, settable_chgspin,
-                         dchgspin > 0, default_chg_spin_);
+                         dchgspin > 0, default_chg_spin_,
+                         chg_spin_table_ranges_);
   // The .pt2 model only contains forward_common_lower, which requires
   // nlist as input. We must build the nlist in C++ and fold back the
   // extended-region outputs to local atoms.
@@ -1764,7 +1773,7 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
   // (broadcast to every frame), or one per frame. Reject anything else up
   // front to avoid out-of-range slicing in the loop.
   check_call_charge_spin(charge_spin, nframes, settable_chgspin, dchgspin > 0,
-                         default_chg_spin_);
+                         default_chg_spin_, chg_spin_table_ranges_);
   ener.clear();
   force.clear();
   virial.clear();
@@ -1968,7 +1977,7 @@ void DeepPotPTExpt::compute_mixed_type_impl(
   // (broadcast to every frame), or one per frame. Reject anything else up
   // front to avoid out-of-range slicing in the loop.
   check_call_charge_spin(charge_spin, nframes, settable_chgspin, dchgspin > 0,
-                         default_chg_spin_);
+                         default_chg_spin_, chg_spin_table_ranges_);
   ener.clear();
   force.clear();
   virial.clear();

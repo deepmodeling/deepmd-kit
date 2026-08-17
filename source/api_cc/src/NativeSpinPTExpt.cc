@@ -22,7 +22,9 @@
 #include "neighbor_list.h"
 
 using deepmd::ptexpt::check_call_charge_spin;
+using deepmd::ptexpt::check_charge_spin_domain;
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_chg_spin_table_ranges;
 using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -266,6 +268,8 @@ void NativeSpinPTExpt::init(const std::string& model,
   // compressed model, whose lower has no conditioning input at all.
   settable_chgspin = dchgspin;
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+  check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   has_default_fparam_ = metadata.obj_val.count("has_default_fparam") &&
                         metadata["has_default_fparam"].as_bool();
   default_fparam_.clear();
@@ -391,6 +395,8 @@ void NativeSpinPTExpt::init(const std::string& model,
     // The constants were frozen against the archive's own charge state, so
     // that is the state in force until ``set_charge_spin`` installs another.
     default_chg_spin_ = read_default_chg_spin(metadata, settable_chgspin);
+    chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata);
+    check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   }
 
   int num_intra_nthreads, num_inter_nthreads;
@@ -423,6 +429,7 @@ void NativeSpinPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
                                    " values but the model expects " +
                                    std::to_string(settable_chgspin));
   }
+  check_charge_spin_domain(charge_spin, chg_spin_table_ranges_);
   // All allocation completes before the compiled constants change. The final
   // vector swap is non-throwing, so the visible default follows the installed
   // constants without opening a second failure point.
@@ -1081,7 +1088,8 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& charge_spin,
                                 const bool atomic) {
   check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_);
+                         /*applied_per_call=*/false, default_chg_spin_,
+                         chg_spin_table_ranges_);
   computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
            spin, atype, box, fparam, aparam, atomic);
 }
@@ -1101,7 +1109,8 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& charge_spin,
                                 const bool atomic) {
   check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_);
+                         /*applied_per_call=*/false, default_chg_spin_,
+                         chg_spin_table_ranges_);
   computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
            spin, atype, box, fparam, aparam, atomic);
 }
@@ -1124,7 +1133,8 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& charge_spin,
                                 const bool atomic) {
   check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_);
+                         /*applied_per_call=*/false, default_chg_spin_,
+                         chg_spin_table_ranges_);
   computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
            spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
 }
@@ -1147,7 +1157,8 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& charge_spin,
                                 const bool atomic) {
   check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_);
+                         /*applied_per_call=*/false, default_chg_spin_,
+                         chg_spin_table_ranges_);
   computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
            spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
 }

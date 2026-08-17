@@ -8,10 +8,8 @@ from .bispectrum import (
     enumerate_degree_triples,
 )
 from .charge_state import (
-    CHARGE_STATE_TABLE_RANGES,
     ChargeStateEmbedding,
     canonicalize_charge_spin,
-    validate_charge_state,
 )
 from .geometry import (
     MAX_ANGULAR_DEGREE,
@@ -34,7 +32,6 @@ from .spin import (
 )
 
 __all__ = [
-    "CHARGE_STATE_TABLE_RANGES",
     "MAX_ANGULAR_DEGREE",
     "NEIGHBOR_QUADRUPOLE_CHANNELS",
     "BispectrumLayout",
@@ -52,5 +49,4 @@ __all__ = [
     "derive_spin_channels",
     "enumerate_degree_triples",
     "packed_l2_to_stf",
-    "validate_charge_state",
 ]

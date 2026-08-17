@@ -459,6 +459,8 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
   std::vector<double> default_chg_spin_;
+  /** Half-open row range of each charge-state value, from the archive. */
+  std::vector<std::pair<double, double> > chg_spin_table_ranges_;
   double rcut;
   int gpu_id;
   bool gpu_enabled;
