@@ -224,6 +224,9 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
         type_map = local_jdata_cpy["type_map"]
         min_nbor_dist = None
         for idx, sub_model in enumerate(local_jdata_cpy["models"]):
+            if sub_model.get("type") == "inner_potential":
+                # analytical child: no descriptor, no selection to update
+                continue
             if "tab_file" not in sub_model:
                 sub_model, temp_min = DPModelCommon.update_sel(
                     train_data, type_map, local_jdata_cpy["models"][idx]

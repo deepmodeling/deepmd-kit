@@ -5,7 +5,9 @@
 
 Here we present an API to DeepPopulation model, which can be used to fit the atomic charge population.
 
-See the [preprint on arXiv](https://arxiv.org/abs/2606.01763) for details and an example of how the DeepPopulation model was used to study small polaron transport.
+See the {ref}`DeepPopulation paper <cite-deeppopulation>` in the canonical
+citation guide for details and an example of how the model was used to study
+small-polaron transport.
 
 In this example, we will show you how to train a model to fit the atomic charge population for a titanium dioxide system. A complete training input script of the examples can be found in
 
