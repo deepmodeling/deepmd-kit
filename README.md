@@ -42,7 +42,7 @@ dynamics.
 | --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🧬  | **Pretrained-first workflows**      | Download [pretrained DPA4 models][dpa4-omat24], fine-tune full models, or adapt supported pretrained representations to downstream properties with [DPA-ADAPT].                  |
 | 🏗️  | **Training from scratch**           | Design a model for a new system or physical target, then train it with single-task, multi-task, and distributed workflows across supported backends.                             |
-| 🧠  | **Modern model portfolio**          | Start with [DPA4] when accuracy is the priority, or [DPA4C] when simulation throughput and system size are the binding constraints.                                              |
+| 🧠  | **Modern model portfolio**          | For conservative energy/force interatomic potentials, start with [DPA4] for accuracy or [DPA4C] for simulation throughput and scale.                                             |
 | 🧲  | **More than energy and force**      | Model virials, Hessians, spin and magnetic forces, dipoles, polarizabilities, electronic density of states, atomic populations, and arbitrary intensive or extensive properties. |
 | 🔄  | **Backend flexibility**             | Train or run supported models with [TensorFlow, PyTorch, JAX, or Paddle][backends], with backend-aware model formats and conversion paths for compatible architectures.          |
 | 🚀  | **Performance from training to MD** | Use CPUs, CUDA GPUs, ROCm source builds, distributed training, compiled DPA4 paths, compressed DPA4C CUDA inference, AOTInductor `.pt2` export, and MPI-enabled simulation.      |
@@ -169,8 +169,9 @@ For a guided end-to-end example, open the [web quick-start notebook][quick-start
 
 ## 🧠 Choose a model family
 
-Start with the DPA4 family. The choice between its two primary models follows
-the constraint that matters most for your workload:
+For conservative energy/force interatomic potentials, start with the DPA4
+family. The choice between its two primary models follows the constraint that
+matters most for your workload:
 
 | Priority                           | Start with | Why                                                                                                  |
 | ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------- |
@@ -179,17 +180,17 @@ the constraint that matters most for your workload:
 
 DPA4 uses the PyTorch backend (`dp --pt`). DPA4C currently uses the PyTorch
 Exportable backend (`dp --pt-expt`); its compressed CUDA path requires
-`float32`. Older model families remain available when their backend coverage or
-compatibility is required.
+`float32`.
 
-Use the [model guide][model-guide] to compare model families, supported backends,
-targets, data formats, precision, compression, and deployment constraints.
+For other physical targets, use the [model guide][model-guide] to select a
+compatible model and backend. The guide also compares data formats, precision,
+compression, and deployment constraints.
 
 <p align="center">
   <img alt="DPA4 and DPA4C energy and force accuracy versus saturated throughput" src="./doc/_static/dpa4-performance.webp" width="1200">
 </p>
 
-<p align="center"><em>DPA4 and DPA4C span accuracy–throughput trade-offs for different deployment budgets.</em></p>
+<p align="center"><em>For energy/force potentials, DPA4 and DPA4C span accuracy–throughput trade-offs for different deployment budgets.</em></p>
 
 ## 🔬 Go beyond conventional force fields
 
