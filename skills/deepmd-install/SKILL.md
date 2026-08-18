@@ -173,9 +173,9 @@ select another runtime or backend:
 
 ```bash
 DP_VARIANT="<cpu|cuda|rocm>" \
-DP_ENABLE_TENSORFLOW="<0|1>" \
-DP_ENABLE_PYTORCH="<0|1>" \
-"<absolute-python>" -m pip install "<absolute-source-directory>"
+    DP_ENABLE_TENSORFLOW="<0|1>" \
+    DP_ENABLE_PYTORCH="<0|1>" \
+    "<absolute-python>" -m pip install "<absolute-source-directory>"
 ```
 
 Enable only the TensorFlow or PyTorch compiled support requested by the user.
