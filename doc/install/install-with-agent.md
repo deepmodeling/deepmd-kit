@@ -3,13 +3,13 @@
 DeePMD-kit ships an official Agent Skill, `deepmd-install`, that walks an AI
 agent through installing the package. The skill covers easy methods (conda,
 pip, Docker, offline installers, `dp1s`) and source builds of the Python
-package, the C++ interface, and LAMMPS with Kokkos (`pair_style deepmd/kk`,
-used by DPA4/SeZM, and `pair_style dpa4spin/kk`, used by DPA4C).
+package, the C++ interface, and LAMMPS.
 
-The skill probes the machine, asks only for decisions required by the selected
-installation path, and records concrete paths and versions in a validated
-plan. It does not assume a host path, package mirror, CUDA toolkit, or backend
-version.
+The skill inspects the target machine, asks only for decisions required by the
+selected installation path, reads the official documentation matching the
+requested version, and verifies the requested interface. Version-specific
+package and build commands remain in the installation documentation instead
+of being duplicated in the skill.
 
 The full skill catalog is in [Agent Skills](../agent-skills.md). For a
 manual install, use [Easy install](easy-install.md) or
@@ -23,8 +23,8 @@ commands below yourself.
 
 ## If you are an agent
 
-Install `deepmd-install` first, then follow its probe, validated plan, and
-gate workflow.
+Install `deepmd-install` first, then load it and install DeePMD-kit with the
+required backend, accelerator, and optional native interfaces.
 
 If this machine already has a DeePMD-kit checkout, run from the repository
 root:
@@ -56,7 +56,7 @@ uses the detected agent. To target one product, add `--agent cursor`,
 `--agent claude-code`, or another supported agent name. Refresh or restart the
 session afterward so the skill is reloaded.
 
-Then use the `deepmd-install` skill: probe the machine, ask only for missing
-decisions, validate `install-plan.json`, and execute one gate at a time. A
-CUDA LAMMPS build uses exactly one `Kokkos_ARCH_*` flag per binary and verifies
-the pair styles required by the selected model family.
+Then use the `deepmd-install` skill. The agent selects one installation method,
+loads the version-matched official documentation, executes its commands in the
+chosen environment, and verifies the requested Python, C/C++, or LAMMPS
+interface.

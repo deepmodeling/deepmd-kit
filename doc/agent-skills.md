@@ -14,14 +14,11 @@ in the DeePMD-kit repository under `skills/`.
 
 ## List of skills
 
-- `deepmd-install`: Install DeePMD-kit for users. The skill probes the machine,
-  records the selected environment and build in a validated plan, then follows
-  either an easy path (conda, pip, Docker, offline, `dp1s`) or a source build of
-  the Python package, C/C++ interface, and LAMMPS. Kokkos builds use one
-  `Kokkos_ARCH_*` flag per binary. DPA4/SeZM uses `deepmd/kk`; DPA4C uses
-  `dpa4spin/kk` with a compact canonical graph artifact. Detailed recipes live
-  under `skills/deepmd-install/references/` and are loaded only for the selected
-  path or a matching failure mode.
+- `deepmd-install`: Select a pip, conda, `dp1s`, offline, Docker, or source
+  installation path, load the official documentation matching the requested
+  version, and verify the requested Python, C/C++, or LAMMPS interface. A
+  compact failure-mode reference covers issues not resolved by the install
+  pages.
 - `deepmd-train`: Choose a DeePMD-kit model family, then train from scratch.
   The skill uses progressive disclosure: the top-level workflow handles common
   training steps and model selection, while model-specific configuration lives
@@ -102,6 +99,6 @@ without launching an expensive calculation. For example:
   water dataset and draft a training input, but do not start training.”
 - “Use the `lammps-deepmd` skill to prepare an NVT LAMMPS input file for a
   DeePMD-kit model, and explain each command.”
-- “Use the `deepmd-install` skill to plan a PyTorch CUDA source install, but
-  ask me for the CUDA toolkit path, PyTorch wheel, and install prefix first.
-  Do not start compiling.”
+- “Use the `deepmd-install` skill to install the current stable release with
+  PyTorch and CUDA. Read the matching official documentation before choosing
+  packages, then verify a tensor operation on the GPU.”

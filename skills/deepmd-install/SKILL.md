@@ -1,146 +1,205 @@
 ---
 name: deepmd-install
-description: Install or rebuild DeePMD-kit with conda, pip, dp1s, offline packages, Docker, or a source checkout. Use for CPU, NVIDIA CUDA, or ROCm environments; PyTorch, TensorFlow, JAX, or Paddle backends; backend-enabled C/C++ interfaces; and DeePMD-enabled LAMMPS, including Kokkos pair styles for DPA4 and DPA4C.
+description: Install DeePMD-kit with pip, conda, dp1s, an offline package, Docker, or source code. Use for PyTorch, TensorFlow, JAX, or Paddle on CPU, CUDA, or ROCm, and for the C/C++ interface or DeePMD-enabled LAMMPS.
 ---
 
 # Install DeePMD-kit
 
-Install the smallest runtime that satisfies the user's goal. Probe first, keep
-all decisions in a validated plan, execute one self-contained gate at a time,
-and verify the requested public interface rather than package presence alone.
+Use the official documentation as the source of version-specific commands.
+This skill selects the shortest suitable installation path, applies a small
+set of safety rules, and verifies the requested runtime. It does not duplicate
+the full installation manual.
 
-## Supported workflows
+## 1. Establish the target
 
-| Path                                            | Scope                                                                                          |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| conda, pip                                      | Stable Python installs for PyTorch, TensorFlow, JAX, and Paddle; optional packaged host LAMMPS |
-| `dp1s`, offline package, Docker                 | Official release artifacts selected by the user or matching documentation                      |
-| source Python                                   | PyTorch, TensorFlow, JAX, and Paddle with backend-specific dependencies and verification       |
-| source C/C++                                    | Backend-enabled C/C++ libraries installed into a dedicated prefix                              |
-| source LAMMPS host                              | Built-in DeePMD module with exact pair-style verification                                      |
-| source LAMMPS Kokkos CUDA                       | PyTorch graph artifacts: `deepmd/kk` for DPA4/SeZM and `dpa4spin/kk` for DPA4C                 |
-| ROCm source, Windows source, LAMMPS plugin mode | Follow the version-matched documentation in the selected checkout                              |
+Determine only the choices that affect installation:
 
-Backend-neutral C/C++ libraries with `ALLOW_NO_BACKEND=ON` are outside the
-automated plan. Follow `doc/install/install-from-source.md` in the selected
-checkout for that layout.
+- DeePMD-kit release or Git ref;
+- PyTorch, TensorFlow, JAX, or Paddle backend;
+- CPU, NVIDIA CUDA, or ROCm runtime;
+- Python only, packaged LAMMPS, C/C++, or source-built LAMMPS;
+- existing environment or a new user-approved environment.
 
-## Hard rules
+If the user does not request a development version, prefer the current stable
+release. When no method is specified, recommend a source install if the
+machine has the required compiler and the user accepts the build time;
+otherwise choose the shortest supported package path. Do not create a new
+environment when the user requires an existing one. Ask only for a missing
+choice that changes the installation path.
 
-1. Resolve the absolute directory containing this `SKILL.md` as `SKILL_ROOT`.
-   Invoke every bundled script through that absolute path.
-1. Run the read-only probe before choosing versions, paths, or accelerators.
-1. Ask only for a missing value that changes the selected path. Do not ask
-   source, compiler, CUDA, or LAMMPS questions for an unrelated easy install.
-1. Record all decisions in `install-plan.json` and validate it before an
-   install, checkout, compile, download, or environment modification.
-1. Use the plan's absolute Python executable. Never substitute a bare
-   `python`, `pip`, or an assumed conda activation.
-1. Make every shell call self-contained. Do not rely on an `export`, `cd`, or
-   `conda activate` from a previous agent tool call.
-1. Render commands with concrete plan values. Stop if a plan placeholder,
-   empty required value, unexpected path, or shell variable not assigned
-   earlier in the same command block remains. Keep each plan string in the
-   quoted argument position shown by the selected reference.
-1. Never run `git reset --hard`, `git clean`, recursively remove an install
-   prefix, or edit shell rc files as part of this workflow. Use a new build
-   directory or versioned install prefix instead.
-1. Use documentation from the selected checkout for version-sensitive source
-   options. Do not apply `latest` documentation blindly to an older ref.
-1. Confirm before piping a remote script to a shell. Use fail-on-HTTP-error
-   downloads and verify a checksum whenever the plan contains one.
-1. Check GPU occupancy and bind the confirmed physical device explicitly
-   before a GPU smoke test.
-1. On failure, stop the current gate and read
-   [`references/failure-modes.md`](references/failure-modes.md). Do not restart
-   the entire install or wipe caches.
+Inspect the OS, architecture, Python version and prefix, package manager, and
+requested accelerator before changing the machine. Resolve the selected
+Python executable to an absolute path and use `"<absolute-python>" -m pip`;
+do not rely on a bare `pip` or shell activation persisting between commands.
 
-## Workflow
+## 2. Read the matching documentation
 
-### 0. Probe
+Assume no local DeePMD-kit checkout exists. Fetch the documentation before
+rendering an install command:
 
-Run with an available Python 3.10+ interpreter:
+1. Use the agent's browser or web-fetch tool to open the direct official page,
+   not a search-result summary.
 
-```bash
-"<absolute-python>" "<absolute-skill-root>/scripts/probe_env.py" --json
-```
+1. For a release, open the Releases page, record its tag, and use the matching
+   versioned documentation.
 
-Use the report to identify the OS, libc, Python environments, compilers,
-toolkits, driver, GPU compute capabilities and visibility mask, disk/RAM, and
-existing DeePMD-kit/PyTorch installs. The probe does not select versions.
+1. If the page is missing or no web-fetch tool is available, fetch the needed
+   Markdown file from that exact tag or commit:
 
-### 1. Select one path
+   ```bash
+   curl -fsSL --retry 2 \
+       "https://raw.githubusercontent.com/deepmodeling/deepmd-kit/<REF>/doc/install/<FILE>.md"
+   ```
 
-- Prefer an easy method for a stable release without local source changes,
-  custom C/C++ libraries, or Kokkos device pair styles.
-- Use source Python for a branch/fork, unreleased feature, local toolkit build,
-  or customized OPs.
-- Add source C/C++ only when a C/C++ client, source-built LAMMPS, or i-PI needs
-  it.
-- Add source LAMMPS only after the C/C++ gate passes.
+1. If direct GitHub access fails, retry that same public URL through the
+   documented `gh-proxy.com` form. Reject an HTTP failure, empty response, or
+   HTML error page.
 
-### 2. Create and validate the plan
+Read [`references/official-docs.md`](references/official-docs.md) for the URL
+map, version-selection rules, exact repository paths, and network fallback.
+Use the docs matching the selected version, not `latest` for an older release.
 
-Read [`references/plan-schema.md`](references/plan-schema.md), write the plan to
-a stable scratch path outside the source/build trees, and validate it:
+The commands below are route summaries. Before execution, replace every
+placeholder with an observed or user-selected value and apply any changed
+requirements from the matching official page.
+
+## 3. Choose one installation path
+
+### pip
+
+Use pip for a released Python package and optional packaged LAMMPS. Start from
+the backend tab in the official easy-install page:
+
+| Backend    | Minimal package shape                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| PyTorch    | Install the selected PyTorch build, then `deepmd-kit` or `deepmd-kit[torch]` as documented |
+| TensorFlow | `deepmd-kit[cpu]` for CPU or the documented GPU/CUDA extras                                |
+| JAX        | `deepmd-kit[jax]`, plus the documented JAX accelerator package                             |
+| Paddle     | Install the documented Paddle package first, then `deepmd-kit`                             |
+
+Add `lmp` or `ipi` to the extras only when requested and supported by the
+selected backend and platform. Install through the absolute target Python:
 
 ```bash
-"<absolute-python>" "<absolute-skill-root>/scripts/validate_plan.py" \
-    "<absolute-plan-path>"
+"<absolute-python>" -m pip install "<requirement-from-the-matching-docs>"
 ```
 
-Present a concise summary only when the request or probe leaves a meaningful
-choice unresolved. If the user already specified the method, backend, version,
-and target, proceed without asking them to reconfirm their own request.
+### conda
 
-### 3. Execute the selected references
+Use conda-forge for a released package when the user prefers conda:
 
-| Selection                           | Read                                                         |
-| ----------------------------------- | ------------------------------------------------------------ |
-| conda, pip, `dp1s`, offline, Docker | [`references/easy-install.md`](references/easy-install.md)   |
-| source Python                       | [`references/source-python.md`](references/source-python.md) |
-| source C/C++                        | [`references/source-cpp.md`](references/source-cpp.md)       |
-| source LAMMPS                       | [`references/source-lammps.md`](references/source-lammps.md) |
-| failed gate                         | [`references/failure-modes.md`](references/failure-modes.md) |
+```bash
+"<absolute-conda-or-mamba>" create -n "<environment-name>" \
+    -c conda-forge deepmd-kit
+```
 
-Read only the references required by the plan. Within each gate, render one
-command block with absolute values so that directory and environment state
-cannot leak across calls.
+Add `lammps` or distributed-training packages only when requested. Follow the
+linked conda-forge CUDA guidance rather than inventing a toolkit pin. After
+creation, resolve the environment's absolute Python before verification.
 
-### 4. Enforce the gates
+### dp1s
 
-| Gate        | Required evidence                                                                                                                 |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Plan        | `validate_plan.py` exits zero and prints a validation summary                                                                     |
-| Environment | The selected package manager and absolute interpreter target the planned environment                                              |
-| Python      | `verify_python.py` passes for the selected backend and accelerator; source builds also match the expected build variant           |
-| C/C++       | Expected libraries and headers exist, dynamic dependencies resolve, and the build cache records the requested accelerator/backend |
-| LAMMPS      | `verify_lammps.py` finds the exact pair styles required by the model family and no unresolved dynamic dependency                  |
-| Smoke       | The selected short example finishes on the explicitly bound device and emits its documented success signal                        |
+Use the official one-second installer when the user selects it. Show the
+remote script command and obtain confirmation before piping it to a shell:
 
-For PyTorch source builds, install the intended PyTorch before DeePMD-kit and
-use `--no-build-isolation`. Set both `DP_ENABLE_PYTORCH` and
-`DP_ENABLE_TENSORFLOW` explicitly in the same command that invokes pip.
+```bash
+curl -fsSL https://dp1s.deepmodeling.com | bash
+```
 
-## LAMMPS model contract
+Read the dp1s repository for `DP1S_HOME`, version selection, release-candidate,
+and PATH-update options. Resolve the installed `dp` entry point and its Python
+prefix instead of assuming that `DP1S_HOME` is the Python environment.
 
-| Model/runtime       | Host pair style | Kokkos CUDA pair style                                      | Artifact requirement                                      |
-| ------------------- | --------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
-| conventional models | `deepmd`        | `deepmd/kk` when the model supports device edge/graph input | Compatible frozen model; `/kk` requires edge/graph `.pt2` |
-| DPA4 / SeZM         | `deepmd`        | `deepmd/kk`                                                 | Target-specific graph `.pt2`                              |
-| DPA4C native spin   | `dpa4spin`      | `dpa4spin/kk`                                               | `atom_style spin` and compact canonical graph `.pt2`      |
+### Offline package
 
-Do not accept `deepmd/kk` as proof that DPA4C is available. Do not substitute
-LAMMPS `PKG_GPU` for Kokkos.
+Use the exact asset for the selected release, OS, architecture, and runtime
+from the official GitHub Releases page. Follow the release instructions to
+assemble split files, verify the published checksum when available, and run
+the completed installer. Never execute a partial download, an HTML response,
+or an asset selected only by a similar filename.
 
-## Completion report
+### Docker
 
-Report:
+Pull the exact official image tag selected from the package page. For current
+official images, the DeePMD environment is under `/opt/deepmd-kit`; confirm the
+selected image's absolute `sys.executable` and `sys.prefix` before using it.
+The minimal CPU check is:
 
-- plan path and resolved source commit, when applicable;
-- environment activation or absolute Python path;
-- installed DeePMD-kit/backend versions and accelerator visibility;
-- C/C++ prefix and LAMMPS binary, when applicable;
-- each gate command and observed result;
-- any validation gate that was not run and the concrete reason;
-- no claim of success beyond the gates that actually passed.
+```bash
+docker pull "<official-image:tag>"
+docker run --rm --entrypoint /opt/deepmd-kit/bin/python \
+    "<official-image:tag>" -c \
+    "import sys, deepmd; print(sys.executable, sys.prefix, deepmd.__version__)"
+```
+
+Use a different absolute interpreter only when the selected image definition
+documents it. For packaged LAMMPS, run the binary inside the same container:
+
+```bash
+docker run --rm --entrypoint /opt/deepmd-kit/bin/lmp \
+    "<official-image:tag>" -h
+```
+
+A host-side `lmp` does not verify the image. Mount inputs read-only, and add
+explicit GPU device selection for CUDA.
+
+### Source Python (recommended)
+
+Use source installation for a reproducible build from a selected stable tag,
+an unreleased feature, a custom build, or ROCm. Reject a remote or ref beginning
+with `-`, then clone and resolve the selected ref safely:
+
+```bash
+git clone --no-checkout -- \
+    https://github.com/deepmodeling/deepmd-kit.git "<source-directory>"
+git -C "<source-directory>" fetch --tags -- origin "<validated-ref>"
+git -C "<source-directory>" checkout --detach FETCH_HEAD
+git -C "<source-directory>" rev-parse HEAD
+```
+
+Read `doc/install/install-from-source.md` at that exact commit, install the
+selected backend first, and apply only the documented build variables. The
+basic Python build is:
+
+```bash
+"<absolute-python>" -m pip install "<absolute-source-directory>"
+```
+
+Keep source, build, and install locations distinct.
+
+### Pre-compiled C library
+
+Use this route only when the official page provides an artifact for the
+selected version, platform, and backend. Download and unpack it into a
+dedicated prefix, then follow the same page for CMake discovery and optional
+LAMMPS plugin use. Do not substitute a Python wheel or a C library from another
+release.
+
+### C/C++ interface and LAMMPS
+
+For C/C++, follow the backend-specific section of the matching source-install
+page; do not guess CMake options or backend library roots. For LAMMPS, use a
+packaged `lmp` when it satisfies the request. Otherwise follow the matching
+built-in or plugin instructions after the C/C++ interface succeeds. Enable
+Kokkos only when the requested LAMMPS runtime requires it, and select the
+architecture supported by that exact LAMMPS/Kokkos source tree.
+
+## 4. Verify the requested interface
+
+An installation is complete only after the requested public interface runs:
+
+1. Print `sys.executable`, `sys.prefix`, `deepmd.__version__`, and
+   `deepmd.__file__` with the selected absolute Python.
+1. Import the selected backend (`deepmd.pt`, `deepmd.tf`, `deepmd.jax`, or
+   `deepmd.pd`) and run one minimal tensor operation on the requested device.
+1. Run the installed `dp --version` and backend-specific help.
+1. For C/C++, confirm the installed headers/libraries and unresolved dynamic
+   dependencies before testing a client.
+1. For LAMMPS, run the selected binary with `-h`, require the exact DeePMD pair
+   style needed by the model, and run a short documented example.
+1. For Docker, perform all applicable checks inside the selected image.
+
+On failure, stop at the first failing check and read
+[`references/failure-modes.md`](references/failure-modes.md). Report the
+selected method, version or commit, environment identity, commands executed,
+observed verification results, and anything that remains unverified.
