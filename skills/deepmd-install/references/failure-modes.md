@@ -62,11 +62,16 @@ validate it, and render the gate again. A command containing an unassigned
 plan variable, an empty required argument, or `<placeholder>` is not
 executable.
 
-For conda, compare every rendered `-c` argument with `package.channels`. An
-empty list uses only the stable `conda-forge` default; a non-empty list replaces
-that default and preserves the recorded order. For JAX C/C++, two null
-TensorFlow roots select the Python-library route. A single root selects its
-corresponding external library route; setting both is ambiguous and invalid.
+For conda, require `--override-channels` and compare every rendered `-c`
+argument with `package.channels`. An empty list uses only the stable
+`conda-forge` default; a non-empty list replaces that default and preserves the
+recorded order. A non-null `package.deepmd_version` produces the exact
+`deepmd-kit=<version>` package constraint.
+
+For `dp1s`, compare `DP1S_HOME` and the optional `DEEPMD_VERSION` with the plan,
+and require `DP1S_NO_PATH_UPDATE=1`. For JAX C/C++, two null TensorFlow roots
+select the Python-library route. A single root selects its corresponding
+external library route; setting both is ambiguous and invalid.
 
 ## Wrong skill root
 
@@ -325,9 +330,11 @@ file "<absolute-download-path>"
 printf '%s  %s\n' "<sha256>" "<absolute-download-path>" | sha256sum --check -
 ```
 
-An absent checksum, HTML response, truncated split archive, unexpected
-top-level directory, or checksum mismatch blocks extraction. Obtain a fresh
-artifact and trusted checksum for the planned URL; do not disable verification.
+An absent checksum, HTML response, unexpected top-level directory, or checksum
+mismatch blocks extraction. Obtain a fresh artifact and trusted checksum for
+the planned URL; do not disable verification. Split parts are not valid plan
+artifacts; supply one already-assembled installer with a trusted checksum for
+the complete file.
 
 For `package.artifact_path`, skip curl and run the same file-type and checksum
 checks directly on the absolute local path.

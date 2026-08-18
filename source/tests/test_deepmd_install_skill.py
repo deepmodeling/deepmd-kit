@@ -243,6 +243,19 @@ def test_validate_easy_install_plans(method: str) -> None:
     assert PLAN.validate_plan(_easy_plan(method)) == []
 
 
+@pytest.mark.parametrize("method", ["pip", "source"])
+def test_validate_interpreter_methods_require_prefix(method: str) -> None:
+    """Require a planned interpreter prefix before pip or source execution."""
+    plan = _easy_plan("pip") if method == "pip" else _source_plan()
+    environment = plan["environment"]
+    assert isinstance(environment, dict)
+    environment["prefix"] = None
+    errors = PLAN.validate_plan(plan)
+    assert any(
+        "pip and source methods require an absolute prefix" in error for error in errors
+    )
+
+
 def test_validate_conda_channels_are_method_specific() -> None:
     """Accept selected conda channels without ignoring them for other methods."""
     plan = _easy_plan("conda")
@@ -259,6 +272,17 @@ def test_validate_conda_channels_are_method_specific() -> None:
     assert "package.channels: non-empty channels require method 'conda'" in errors
 
 
+@pytest.mark.parametrize("field", ["python", "prefix"])
+def test_validate_conda_resolved_paths_must_be_absolute(field: str) -> None:
+    """Reject a relative Conda interpreter or prefix after environment creation."""
+    plan = _easy_plan("conda")
+    environment = plan["environment"]
+    assert isinstance(environment, dict)
+    environment[field] = "relative/path"
+    errors = PLAN.validate_plan(plan)
+    assert f"environment.{field}: conda requires an absolute path or null" in errors
+
+
 def test_validate_offline_plan_requires_checksum() -> None:
     """Reject an offline artifact without an integrity value."""
     plan = _easy_plan("offline")
@@ -269,14 +293,27 @@ def test_validate_offline_plan_requires_checksum() -> None:
     assert "package.sha256: offline installation requires a checksum" in errors
 
 
-def test_validate_offline_local_artifact() -> None:
+def test_validate_offline_local_artifact(tmp_path: Path) -> None:
     """Accept a local offline artifact only through its dedicated path field."""
+    artifact = tmp_path / "deepmd.sh"
+    artifact.write_text("installer", encoding="utf-8")
     plan = _easy_plan("offline")
     package = plan["package"]
     assert isinstance(package, dict)
     package["artifact_url"] = None
-    package["artifact_path"] = "/opt/artifacts/deepmd.sh"
+    package["artifact_path"] = str(artifact)
     assert PLAN.validate_plan(plan) == []
+
+
+def test_validate_offline_local_artifact_must_exist(tmp_path: Path) -> None:
+    """Reject a missing file in the single-artifact offline contract."""
+    plan = _easy_plan("offline")
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package["artifact_url"] = None
+    package["artifact_path"] = str(tmp_path / "missing-deepmd.sh")
+    errors = PLAN.validate_plan(plan)
+    assert any("existing complete artifact file" in error for error in errors)
 
 
 def test_validate_offline_artifact_url_requires_https() -> None:
@@ -887,7 +924,19 @@ def test_conda_reference_renders_planned_channels() -> None:
     ).read_text(encoding="utf-8")
     assert "package.channels" in reference
     assert '-c "<channel-1>" -c "<channel-2>"' in reference
-    assert "Use `conda-forge` only when the list is empty" in reference
+    assert reference.count("--override-channels") >= 2
+    assert '"deepmd-kit=<version>"' in reference
+    assert "print(sys.executable); print(sys.prefix)" in reference
+
+
+def test_dp1s_reference_preserves_planned_identity() -> None:
+    """Pass the planned dp1s prefix and version without editing shell startup."""
+    reference = (
+        REPOSITORY_ROOT / "skills" / "deepmd-install" / "references" / "easy-install.md"
+    ).read_text(encoding="utf-8")
+    assert 'DP1S_HOME="<absolute-environment-prefix>"' in reference
+    assert 'DEEPMD_VERSION="<deepmd-version>"' in reference
+    assert "DP1S_NO_PATH_UPDATE=1" in reference
 
 
 def test_verify_lammps_dpa4c_cli(tmp_path: Path) -> None:

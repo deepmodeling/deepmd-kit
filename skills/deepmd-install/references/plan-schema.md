@@ -63,7 +63,9 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
   environment and before installing DeePMD-kit.
 - `manager` and `name`: required for `conda`; `manager` is the absolute
   `conda` or `mamba` executable.
-- `prefix`: required for `venv`, `prefix`, and offline installations.
+- `prefix`: required for `pip`, `source`, `venv`, `prefix`, `dp1s`, and offline
+  installations. For conda, resolve and record both `sys.executable` and
+  `sys.prefix` after creating the environment and before verification.
 
 ### `package`
 
@@ -100,6 +102,9 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
 - Package indexes and download URLs use HTTPS.
 - Require exactly one of HTTPS `artifact_url` or absolute `artifact_path`, plus
   `sha256`, for `offline`.
+- An offline plan represents one complete installer. `artifact_path` must be an
+  existing assembled file with a trusted SHA-256 for that complete file. Split
+  release parts and per-part checksums are outside this plan contract.
 - Require an immutable image reference or user-selected tag for `docker`.
 - Require `lammps_model_family` for packaged LAMMPS verification.
 

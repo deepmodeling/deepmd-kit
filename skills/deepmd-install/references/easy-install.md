@@ -77,17 +77,25 @@ Treat `package.channels` as authoritative when it is non-empty and preserve its
 order by rendering one `-c` option per entry. This includes selected mirrors and
 pre-release channels such as `conda-forge/label/deepmd-kit_dev` or
 `conda-forge/label/deepmd-kit_rc`. Use `conda-forge` only when the list is empty.
+Pass `--override-channels` so configured defaults cannot supply packages outside
+the plan.
+
+Render the DeePMD-kit package argument as `deepmd-kit=<version>` when
+`package.deepmd_version` is non-null, or as `deepmd-kit` when it is null. The
+following non-null example preserves the recorded channel order:
 
 ```bash
 "<absolute-conda-or-mamba>" create -n "<environment-name>" \
-    -c "<channel-1>" -c "<channel-2>" deepmd-kit
+    --override-channels \
+    -c "<channel-1>" -c "<channel-2>" "deepmd-kit=<version>"
 ```
 
-For an empty `package.channels` list, render the stable default explicitly:
+For null `package.deepmd_version` and an empty `package.channels` list, render
+the stable unversioned default explicitly:
 
 ```bash
 "<absolute-conda-or-mamba>" create -n "<environment-name>" \
-    -c conda-forge deepmd-kit
+    --override-channels -c conda-forge deepmd-kit
 ```
 
 Add `lammps` only for `goal=python+lammps`. Resolve the created interpreter
@@ -95,11 +103,11 @@ without assuming shell activation:
 
 ```bash
 "<absolute-conda-or-mamba>" run -n "<environment-name>" \
-    python -c "import sys; print(sys.executable)"
+    python -c "import sys; print(sys.executable); print(sys.prefix)"
 ```
 
-Record that absolute interpreter in the plan before running the Python verifier.
-Follow the conda-forge CUDA guidance referenced by
+Record both absolute paths in the plan, re-run `validate_plan.py`, and then run
+the Python verifier. Follow the conda-forge CUDA guidance referenced by
 `doc/install/easy-install.md`; do not invent a `cudatoolkit` pin.
 
 ## dp1s
@@ -108,12 +116,18 @@ Show the exact command and obtain confirmation before piping a remote response
 to a shell:
 
 ```bash
-curl -fsSL https://dp1s.deepmodeling.com | bash
+curl -fsSL https://dp1s.deepmodeling.com | env \
+    DP1S_HOME="<absolute-environment-prefix>" \
+    DP1S_NO_PATH_UPDATE=1 \
+    DEEPMD_VERSION="<deepmd-version>" \
+    bash
 ```
 
-Apply only options selected from the official `dp1s` documentation. After the
-installer reports its prefix, resolve the installed Python and update the plan
-before verification.
+Omit the `DEEPMD_VERSION` assignment when `package.deepmd_version` is null.
+`DP1S_NO_PATH_UPDATE` prevents the installer from editing shell startup files.
+Apply only additional options selected from the official `dp1s` documentation.
+After installation, resolve the absolute interpreter from the installed `dp`
+entry point, record it in the plan, and re-run validation before verification.
 
 ## Offline package
 
@@ -133,9 +147,11 @@ printf '%s  %s\n' "<sha256>" "<absolute-artifact-path>" | sha256sum --check -
 bash "<absolute-artifact-path>"
 ```
 
-Use `shasum -a 256` on systems without `sha256sum`. When a release is split,
-verify each part before concatenating it into a new file. Never execute an HTML
-error page or an artifact whose checksum is unknown.
+Use `shasum -a 256` on systems without `sha256sum`. This workflow accepts one
+complete installer only. For a split release, follow the version-matched manual
+instructions to produce an already-assembled local installer, and use this
+workflow only when a trusted final SHA-256 is available for that complete file.
+Never execute an HTML error page or an artifact whose checksum is unknown.
 
 ## Docker
 

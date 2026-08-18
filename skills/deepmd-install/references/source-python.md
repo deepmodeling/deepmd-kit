@@ -52,10 +52,13 @@ not reset, clean, or repoint `origin`.
 
 ## Interpreter and compiler gate
 
-Use the plan's absolute interpreter and confirm Python 3.10 or newer:
+Use the plan's absolute interpreter and confirm Python 3.10 or newer. Record
+the resolved `sys.prefix` as `environment.prefix` and revalidate the plan if it
+differs from the recorded value:
 
 ```bash
-"<absolute-python>" -c "import sys; print(sys.executable); print(sys.version)"
+"<absolute-python>" -c \
+    "import sys; print(sys.executable); print(sys.prefix); print(sys.version)"
 "<absolute-cc>" --version
 "<absolute-cxx>" --version
 ```

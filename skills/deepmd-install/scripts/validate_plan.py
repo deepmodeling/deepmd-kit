@@ -216,6 +216,10 @@ def _validate_environment(
             errors.append(
                 "environment.python: pip and source methods require an absolute executable"
             )
+        if not _is_absolute_path(environment.get("prefix")):
+            errors.append(
+                "environment.prefix: pip and source methods require an absolute prefix"
+            )
     if method == "conda":
         if not _is_absolute_path(environment.get("manager")):
             errors.append("environment.manager: conda requires an absolute executable")
@@ -223,6 +227,13 @@ def _validate_environment(
             errors.append(
                 "environment.name: conda requires a non-empty environment name"
             )
+        for key in ("python", "prefix"):
+            if environment.get(key) is not None and not _is_absolute_path(
+                environment.get(key)
+            ):
+                errors.append(
+                    f"environment.{key}: conda requires an absolute path or null"
+                )
     if kind in {"venv", "prefix"} and not _is_absolute_path(environment.get("prefix")):
         errors.append(f"environment.prefix: {kind} requires an absolute path")
     if method in {"dp1s", "offline"} and not _is_absolute_path(
@@ -276,6 +287,10 @@ def _validate_package(
             _validate_https_url(artifact_url, "package.artifact_url", errors)
         elif not _is_absolute_path(artifact_path):
             errors.append("package.artifact_path: expected an absolute path")
+        elif not Path(artifact_path).is_file():
+            errors.append(
+                "package.artifact_path: expected an existing complete artifact file"
+            )
         if package.get("sha256") is None:
             errors.append("package.sha256: offline installation requires a checksum")
     elif (
