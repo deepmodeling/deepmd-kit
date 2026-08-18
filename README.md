@@ -20,9 +20,9 @@ and deploy it at simulation scale.**
 
 > [!IMPORTANT]
 > **A pretrained model can be your starting point, not just your end result.**
-> Download a built-in DPA checkpoint, fine-tune the full model, or use a
-> [DPA-4 LoRA adapter][dpa4-lora] with PyTorch single-task training, then test,
-> export, and deploy it through the same DeePMD-kit workflow.
+> Download a built-in pretrained DPA4 checkpoint, fine-tune the full model for
+> your system, then test, export, and deploy it through the same DeePMD-kit
+> workflow.
 
 DeePMD-kit turns quantum-mechanical reference data into fast, scalable
 interatomic potentials. Use it across molecular and materials science—from
@@ -38,16 +38,16 @@ dynamics.
 
 ## ⚡ Why DeePMD-kit
 
-|     | Advantage                           | What it unlocks                                                                                                                                                                                                          |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 🧬  | **Pretrained-first workflows**      | Download [pretrained DPA models][pretrained], fine-tune full models, use [DPA-4 LoRA adapters][dpa4-lora] with PyTorch single-task training, or adapt learned representations to downstream properties with [DPA-ADAPT]. |
-| 🏗️  | **Training from scratch**           | Design a model for a new system or physical target, then train it with single-task, multi-task, and distributed workflows across supported backends.                                                                     |
-| 🧠  | **Modern model portfolio**          | Start with efficient DeepPot-SE descriptors or move to [DPA][model-guide] for large atomistic models.                                                                                                                    |
-| 🧲  | **More than energy and force**      | Model virials, Hessians, spin and magnetic forces, dipoles, polarizabilities, electronic density of states, atomic populations, and arbitrary intensive or extensive properties.                                         |
-| 🔄  | **Backend flexibility**             | Train or run supported models with [TensorFlow, PyTorch, JAX, or Paddle][backends], with backend-aware model formats and conversion paths for compatible architectures.                                                  |
-| 🚀  | **Performance from training to MD** | Use CPUs, CUDA GPUs, ROCm source builds, distributed training, model compression, compiled DPA-4 paths, AOTInductor `.pt2` export, and MPI-enabled simulation.                                                           |
-| 🔌  | **Deploy where science happens**    | Use the CLI, Python, C, C++, or Node.js, then connect models to LAMMPS, i-PI, ASE, GROMACS, JAX MD, nvalchemi, OpenMM, Amber, CP2K, ABACUS, and more.                                                                    |
-| 🧩  | **Open and extensible**             | Compose hybrid potentials, add analytical ZBL or long-range corrections, create custom models and operators, or connect external GNNs such as MACE and NequIP through plugins.                                           |
+|     | Advantage                           | What it unlocks                                                                                                                                                                  |
+| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧬  | **Pretrained-first workflows**      | Download [pretrained DPA4 models][dpa4-omat24], fine-tune full models, or adapt supported pretrained representations to downstream properties with [DPA-ADAPT].                  |
+| 🏗️  | **Training from scratch**           | Design a model for a new system or physical target, then train it with single-task, multi-task, and distributed workflows across supported backends.                             |
+| 🧠  | **Modern model portfolio**          | For conservative energy/force interatomic potentials, start with [DPA4] for accuracy or [DPA4C] for simulation throughput and scale.                                             |
+| 🧲  | **More than energy and force**      | Model virials, Hessians, spin and magnetic forces, dipoles, polarizabilities, electronic density of states, atomic populations, and arbitrary intensive or extensive properties. |
+| 🔄  | **Backend flexibility**             | Train or run supported models with [TensorFlow, PyTorch, JAX, or Paddle][backends], with backend-aware model formats and conversion paths for compatible architectures.          |
+| 🚀  | **Performance from training to MD** | Use CPUs, CUDA GPUs, ROCm source builds, distributed training, compiled DPA4 paths, compressed DPA4C CUDA inference, AOTInductor `.pt2` export, and MPI-enabled simulation.      |
+| 🔌  | **Deploy where science happens**    | Use the CLI, Python, C, C++, or Node.js, then connect models to LAMMPS, i-PI, ASE, GROMACS, JAX MD, nvalchemi, OpenMM, Amber, CP2K, ABACUS, and more.                            |
+| 🧩  | **Open and extensible**             | Compose hybrid potentials, add analytical ZBL or long-range corrections, create custom models and operators, or connect external GNNs such as MACE and NequIP through plugins.   |
 
 > [!TIP]
 > On supported descriptors and workloads, [model compression][compression] can
@@ -62,7 +62,7 @@ feature page.
 
 ```mermaid
 flowchart LR
-    A["Pretrained DPA model"] --> C["Fine-tune on target data"]
+    A["Pretrained DPA4 model"] --> C["Fine-tune on target data"]
     B["Model configuration"] --> D["Train from scratch"]
     E["Target reference data"] --> C
     E --> D
@@ -72,14 +72,13 @@ flowchart LR
     F --> H["Molecular dynamics"]
 ```
 
-1. **Choose a starting point:** download a pretrained DPA checkpoint for
-   adaptation, or configure a model to train from scratch.
+1. **Choose a starting point:** download a pretrained DPA4 checkpoint for
+   adaptation, or configure DPA4 or DPA4C to train from scratch.
 1. **Prepare target data** in DeePMD's NumPy format or convert structures and
    trajectories with [dpdata][data].
-1. **Fine-tune or train:** adapt the full pretrained model, use
-   [DPA-4 LoRA adapters][dpa4-lora] with PyTorch single-task training, or
-   optimize a new model with single-task, multi-task, and distributed training
-   workflows.
+1. **Fine-tune or train:** adapt the full pretrained DPA4 model, or optimize a
+   new DPA4 or DPA4C model with single-task, multi-task, and distributed
+   training workflows.
 1. **Validate and export** with [`dp test`][testing], [`dp freeze`][freeze],
    backend conversion, embedding extraction, and supported compression paths.
 1. **Run simulation** through Python or native APIs, or load the model into a
@@ -98,31 +97,38 @@ dp -h
 The [installation guide][installation] covers pip, conda-forge, containers,
 offline packages, GPU builds, LAMMPS, i-PI, and source installation.
 
-### Fine-tune from a pretrained DPA model
+### Fine-tune a pretrained DPA4 model
 
-Download a built-in checkpoint, inspect its branches, and fine-tune the branch
-that matches your target system:
+Download a built-in checkpoint, start from its matching released training
+configuration, and fine-tune it on your target data. This example uses DPA4-Neo,
+one of the recommended general-purpose sizes:
 
 ```bash
-dp pretrained download DPA-3.2-5M
-dp --pt show ~/.cache/deepmd/pretrained/models/DPA-3.2-5M.pt model-branch
-dp --pt train input.json \
-    --finetune ~/.cache/deepmd/pretrained/models/DPA-3.2-5M.pt \
-    --model-branch <branch> \
-    --use-pretrain-script
+dp pretrained download DPA4-Neo-OMat24-v20260805
+curl -fsSL \
+    https://huggingface.co/deepmodelingcommunity/DPA4-OMat24/resolve/main/DPA4-Neo-OMat24-v20260805.json \
+    -o input_finetune.json
 ```
 
-`DPA-3.2-5M` is a PyTorch multi-task checkpoint: run the trainer in PyTorch
-mode with `dp --pt` and select the branch that matches your system with
-`--model-branch` (list them with
-`dp --pt show ~/.cache/deepmd/pretrained/models/DPA-3.2-5M.pt model-branch`). The
-`--use-pretrain-script` option imports that branch's descriptor and fitting
-configuration, so `input.json` does not need to reproduce the DPA-3.2
-architecture.
+The [DPA4 OMat24 release][dpa4-omat24] provides Nano, Mini, Neo, Air, and Plus
+checkpoints together with their matching training configurations. The downloaded
+`input_finetune.json` matches the Neo checkpoint above; for another size or
+version, use the correspondingly named JSON file. Keep its complete `model`
+section unchanged, including the full-periodic-table `type_map`; replace the
+training and validation data, and use a smaller learning rate for fine-tuning.
+Then run:
 
-The [fine-tuning guide][finetune] covers full-model adaptation. [DPA-4 LoRA
-fine-tuning][dpa4-lora] is available for PyTorch single-task training.
-[DPA-ADAPT] reuses pretrained DPA representations for downstream
+```bash
+dp --pt train input_finetune.json \
+    --finetune ~/.cache/deepmd/pretrained/models/DPA4-Neo-OMat24-v20260805.pt
+```
+
+These are PyTorch single-task checkpoints, so no model branch selection is
+needed. They target inorganic materials in the OMat24 chemical space; validate
+accuracy before using them outside that domain.
+
+The [fine-tuning guide][finetune] covers full-model adaptation. [DPA-ADAPT]
+reuses supported pretrained DPA representations for downstream
 property-prediction tasks.
 
 Pretrained model names can also be resolved and cached automatically by
@@ -131,7 +137,7 @@ Python:
 ```python
 from deepmd.infer import DeepPot
 
-potential = DeepPot("DPA-3.2-5M")
+potential = DeepPot("DPA4-Neo-OMat24-v20260805")
 ```
 
 ### Train a model from scratch
@@ -142,37 +148,49 @@ checkpoint. Clone the examples and start with the compact water system:
 
 ```bash
 git clone https://github.com/deepmodeling/deepmd-kit.git
-cd deepmd-kit/examples/water/se_e2_a
+cd deepmd-kit/examples/water/dpa4
 
-# TensorFlow backend
-dp train input.json
+# Accuracy-first DPA4 model
+dp --pt train input.json
 
-# Or PyTorch
-dp --pt train input_torch.json
+# Or the throughput-first DPA4C model
+cd ../dpa4c
+dp --pt-expt train input.json
 ```
 
 Ready-to-run inputs include:
 
-- [DPA-3 water training](./examples/water/dpa3/input_torch.json)
-- [DPA-4 water training](./examples/water/dpa4/input.json)
-- [Multi-task training](./examples/water_multi_task/pytorch_example/input_torch.json)
+- [DPA4 water training](./examples/water/dpa4/input.json)
+- [DPA4C high-throughput water training](./examples/water/dpa4c/input.json)
+- [DPA4 multi-task training](./examples/water/dpa4/input_multitask.json)
 - [DPA-ADAPT property prediction](./examples/dpa_adapt/README.md)
 
 For a guided end-to-end example, open the [web quick-start notebook][quick-start].
 
 ## 🧠 Choose a model family
 
-DeepPot-SE is a strong default: efficient, established, and broadly supported.
-For large atomistic models, start with [DPA-4](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html).
+For conservative energy/force interatomic potentials, start with the DPA4
+family. The choice between its two primary models follows the constraint that
+matters most for your workload:
 
-Use the [model guide][model-guide] to compare model families, supported backends,
-targets, data formats, precision, compression, and deployment constraints.
+| Priority                           | Start with | Why                                                                                                  |
+| ---------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------- |
+| Highest accuracy                   | [DPA4]     | SO(3)-equivariant message passing targets the accuracy frontier.                                     |
+| Highest throughput or system scale | [DPA4C]    | A compact one-hop descriptor targets the throughput frontier and supports compressed CUDA inference. |
+
+DPA4 uses the PyTorch backend (`dp --pt`). DPA4C currently uses the PyTorch
+Exportable backend (`dp --pt-expt`); its compressed CUDA path requires
+`float32`.
+
+For other physical targets, use the [model guide][model-guide] to select a
+compatible model and backend. The guide also compares data formats, precision,
+compression, and deployment constraints.
 
 <p align="center">
-  <img alt="DPA4 energy and force accuracy versus saturated throughput" src="./doc/_static/dpa4-performance.webp" width="1200">
+  <img alt="DPA4 and DPA4C energy and force accuracy versus saturated throughput" src="./doc/_static/dpa4-performance.webp" width="1200">
 </p>
 
-<p align="center"><em>DPA4 provides a family of accuracy–throughput trade-offs for different deployment budgets.</em></p>
+<p align="center"><em>For energy/force potentials, DPA4 and DPA4C span accuracy–throughput trade-offs for different deployment budgets.</em></p>
 
 ## 🔬 Go beyond conventional force fields
 
@@ -258,7 +276,9 @@ DeePMD-kit is licensed under the
 [data]: https://docs.deepmodeling.com/projects/deepmd/en/latest/data/dpdata.html
 [documentation]: https://docs.deepmodeling.com/projects/deepmd/en/latest/
 [dpa-adapt]: https://docs.deepmodeling.com/projects/deepmd/en/latest/dpa_adapt/overview.html
-[dpa4-lora]: https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html#lora-fine-tuning
+[dpa4]: https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html
+[dpa4-omat24]: https://huggingface.co/deepmodelingcommunity/DPA4-OMat24
+[dpa4c]: https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4c.html
 [embeddings]: https://docs.deepmodeling.com/projects/deepmd/en/latest/inference/embedding.html
 [finetune]: https://docs.deepmodeling.com/projects/deepmd/en/latest/train/finetuning.html
 [freeze]: https://docs.deepmodeling.com/projects/deepmd/en/latest/freeze/freeze.html
