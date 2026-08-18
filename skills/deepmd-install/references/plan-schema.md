@@ -54,7 +54,8 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
   "python": "/absolute/path/to/python",
   "manager": null,
   "name": null,
-  "prefix": "/absolute/environment/prefix"
+  "prefix": "/absolute/environment/prefix",
+  "dp1s_home": null
 }
 ```
 
@@ -63,9 +64,13 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
   environment and before installing DeePMD-kit.
 - `manager` and `name`: required for `conda`; `manager` is the absolute
   `conda` or `mamba` executable.
-- `prefix`: required for `pip`, `source`, `venv`, `prefix`, `dp1s`, and offline
+- `prefix`: required for `pip`, `source`, `venv`, `prefix`, and offline
   installations. For conda, resolve and record both `sys.executable` and
   `sys.prefix` after creating the environment and before verification.
+- `dp1s_home`: required only for `dp1s`; it is the Pixi and exposed-binary root
+  passed as `DP1S_HOME`, not the installed Python prefix. Before installation,
+  keep `python` and `prefix` null. After installation, preserve `dp1s_home` and
+  record the resolved interpreter and its `sys.prefix` together.
 
 ### `package`
 
@@ -241,7 +246,8 @@ The validator enforces these invariants:
     "python": "/opt/conda/envs/deepmd/bin/python",
     "manager": null,
     "name": null,
-    "prefix": "/opt/conda/envs/deepmd"
+    "prefix": "/opt/conda/envs/deepmd",
+    "dp1s_home": null
   },
   "package": {
     "deepmd_version": null,
@@ -289,7 +295,8 @@ before installing dependencies or building.
     "python": "/opt/conda/envs/deepmd/bin/python",
     "manager": null,
     "name": null,
-    "prefix": "/opt/conda/envs/deepmd"
+    "prefix": "/opt/conda/envs/deepmd",
+    "dp1s_home": null
   },
   "package": {
     "deepmd_version": null,

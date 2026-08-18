@@ -68,10 +68,15 @@ argument with `package.channels`. An empty list uses only the stable
 recorded order. A non-null `package.deepmd_version` produces the exact
 `deepmd-kit=<version>` package constraint.
 
-For `dp1s`, compare `DP1S_HOME` and the optional `DEEPMD_VERSION` with the plan,
-and require `DP1S_NO_PATH_UPDATE=1`. For JAX C/C++, two null TensorFlow roots
-select the Python-library route. A single root selects its corresponding
-external library route; setting both is ambiguous and invalid.
+For `dp1s`, compare `DP1S_HOME` with `environment.dp1s_home`, compare the
+optional `DEEPMD_VERSION` with the plan, and require
+`DP1S_NO_PATH_UPDATE=1`. Preserve `dp1s_home` after installation; record the
+installed interpreter's distinct `sys.prefix` as `environment.prefix` for the
+Python identity gate.
+
+For JAX C/C++, two null TensorFlow roots select the Python-library route. A
+single root selects its corresponding external library route; setting both is
+ambiguous and invalid.
 
 ## Wrong skill root
 

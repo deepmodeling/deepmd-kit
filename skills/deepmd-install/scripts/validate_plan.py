@@ -43,7 +43,7 @@ TOP_LEVEL_KEYS = {
     "smoke_test",
 }
 OBJECT_KEYS = {
-    "environment": {"kind", "python", "manager", "name", "prefix"},
+    "environment": {"kind", "python", "manager", "name", "prefix", "dp1s_home"},
     "package": {
         "deepmd_version",
         "deepmd_index_url",
@@ -234,12 +234,36 @@ def _validate_environment(
                 errors.append(
                     f"environment.{key}: conda requires an absolute path or null"
                 )
-    if kind in {"venv", "prefix"} and not _is_absolute_path(environment.get("prefix")):
-        errors.append(f"environment.prefix: {kind} requires an absolute path")
-    if method in {"dp1s", "offline"} and not _is_absolute_path(
-        environment.get("prefix")
+    if method == "dp1s":
+        if not _is_absolute_path(environment.get("dp1s_home")):
+            errors.append("environment.dp1s_home: dp1s requires an absolute path")
+        python = environment.get("python")
+        prefix = environment.get("prefix")
+        unresolved = python is None and prefix is None
+        resolved = _is_absolute_path(python) and _is_absolute_path(prefix)
+        if not (unresolved or resolved):
+            errors.append(
+                "environment: dp1s python and prefix must both be null or absolute paths"
+            )
+        if (
+            resolved
+            and _is_absolute_path(environment.get("dp1s_home"))
+            and _canonical(environment["dp1s_home"]) == _canonical(prefix)
+        ):
+            errors.append(
+                "environment: dp1s_home and resolved Python prefix must be distinct"
+            )
+    elif environment.get("dp1s_home") is not None:
+        errors.append("environment.dp1s_home: allowed only for method 'dp1s'")
+    dp1s_prefix_pending = method == "dp1s" and environment.get("prefix") is None
+    if (
+        kind in {"venv", "prefix"}
+        and not dp1s_prefix_pending
+        and not _is_absolute_path(environment.get("prefix"))
     ):
-        errors.append(f"environment.prefix: {method} requires an absolute path")
+        errors.append(f"environment.prefix: {kind} requires an absolute path")
+    if method == "offline" and not _is_absolute_path(environment.get("prefix")):
+        errors.append("environment.prefix: offline requires an absolute path")
     if method == "docker" and kind != "container":
         errors.append("environment.kind: docker requires 'container'")
 

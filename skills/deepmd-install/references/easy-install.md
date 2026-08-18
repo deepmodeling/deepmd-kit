@@ -117,7 +117,7 @@ to a shell:
 
 ```bash
 curl -fsSL https://dp1s.deepmodeling.com | env \
-    DP1S_HOME="<absolute-environment-prefix>" \
+    DP1S_HOME="<absolute-dp1s-home>" \
     DP1S_NO_PATH_UPDATE=1 \
     DEEPMD_VERSION="<deepmd-version>" \
     bash
@@ -126,8 +126,11 @@ curl -fsSL https://dp1s.deepmodeling.com | env \
 Omit the `DEEPMD_VERSION` assignment when `package.deepmd_version` is null.
 `DP1S_NO_PATH_UPDATE` prevents the installer from editing shell startup files.
 Apply only additional options selected from the official `dp1s` documentation.
-After installation, resolve the absolute interpreter from the installed `dp`
-entry point, record it in the plan, and re-run validation before verification.
+After installation, keep `environment.dp1s_home` unchanged. Resolve the absolute
+interpreter from the installed `dp` entry point, run that interpreter to obtain
+its `sys.prefix`, record both as `environment.python` and `environment.prefix`,
+and re-run validation before verification. The Python prefix normally differs
+from `dp1s_home`; pass only `environment.prefix` to `--expected-prefix`.
 
 ## Offline package
 

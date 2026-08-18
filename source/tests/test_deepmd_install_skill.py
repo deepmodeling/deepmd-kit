@@ -55,6 +55,7 @@ def _source_plan() -> dict[str, object]:
             "manager": None,
             "name": None,
             "prefix": "/opt/deepmd",
+            "dp1s_home": None,
         },
         "package": {
             "deepmd_version": None,
@@ -117,6 +118,7 @@ def _easy_plan(method: str) -> dict[str, object]:
         "manager": None,
         "name": None,
         "prefix": "/opt/deepmd",
+        "dp1s_home": None,
     }
     package: dict[str, object] = {
         "deepmd_version": None,
@@ -136,6 +138,15 @@ def _easy_plan(method: str) -> dict[str, object]:
     if method == "conda":
         environment.update(
             {"kind": "conda", "python": None, "manager": "/opt/conda", "name": "deepmd"}
+        )
+    elif method == "dp1s":
+        environment.update(
+            {
+                "kind": "prefix",
+                "python": None,
+                "prefix": None,
+                "dp1s_home": "/opt/dp1s",
+            }
         )
     elif method == "offline":
         environment.update({"kind": "prefix", "python": None})
@@ -237,7 +248,7 @@ def test_validate_jax_cpp_rejects_ambiguous_tensorflow_roots() -> None:
     assert any("mutually exclusive" in error for error in errors)
 
 
-@pytest.mark.parametrize("method", ["pip", "conda", "offline", "docker"])
+@pytest.mark.parametrize("method", ["pip", "conda", "dp1s", "offline", "docker"])
 def test_validate_easy_install_plans(method: str) -> None:
     """Accept the method-specific fields for each easy-install path."""
     assert PLAN.validate_plan(_easy_plan(method)) == []
@@ -270,6 +281,41 @@ def test_validate_conda_channels_are_method_specific() -> None:
     pip_package["channels"] = ["conda-forge"]
     errors = PLAN.validate_plan(pip_plan)
     assert "package.channels: non-empty channels require method 'conda'" in errors
+
+
+def test_validate_dp1s_lifecycle_keeps_home_and_prefix_distinct(tmp_path: Path) -> None:
+    """Accept unresolved and resolved dp1s identities without conflating paths."""
+    plan = _easy_plan("dp1s")
+    environment = plan["environment"]
+    assert isinstance(environment, dict)
+    dp1s_home = tmp_path / "dp1s-home"
+    python_prefix = dp1s_home / "envs" / "dp1s"
+    environment["dp1s_home"] = str(dp1s_home)
+    assert PLAN.validate_plan(plan) == []
+
+    environment["python"] = str(python_prefix / "bin" / "python")
+    environment["prefix"] = str(python_prefix)
+    assert environment["dp1s_home"] != environment["prefix"]
+    assert PLAN.validate_plan(plan) == []
+
+    environment["prefix"] = environment["dp1s_home"]
+    errors = PLAN.validate_plan(plan)
+    assert any("must be distinct" in error for error in errors)
+
+    environment["prefix"] = str(python_prefix)
+    environment["python"] = None
+    errors = PLAN.validate_plan(plan)
+    assert any("must both be null or absolute paths" in error for error in errors)
+
+
+def test_validate_dp1s_home_is_method_specific() -> None:
+    """Reject a dp1s installer root that another method would ignore."""
+    plan = _easy_plan("pip")
+    environment = plan["environment"]
+    assert isinstance(environment, dict)
+    environment["dp1s_home"] = "/opt/dp1s"
+    errors = PLAN.validate_plan(plan)
+    assert "environment.dp1s_home: allowed only for method 'dp1s'" in errors
 
 
 @pytest.mark.parametrize("field", ["python", "prefix"])
@@ -934,9 +980,10 @@ def test_dp1s_reference_preserves_planned_identity() -> None:
     reference = (
         REPOSITORY_ROOT / "skills" / "deepmd-install" / "references" / "easy-install.md"
     ).read_text(encoding="utf-8")
-    assert 'DP1S_HOME="<absolute-environment-prefix>"' in reference
+    assert 'DP1S_HOME="<absolute-dp1s-home>"' in reference
     assert 'DEEPMD_VERSION="<deepmd-version>"' in reference
     assert "DP1S_NO_PATH_UPDATE=1" in reference
+    assert '--expected-prefix "<absolute-environment-prefix>"' in reference
 
 
 def test_verify_lammps_dpa4c_cli(tmp_path: Path) -> None:
