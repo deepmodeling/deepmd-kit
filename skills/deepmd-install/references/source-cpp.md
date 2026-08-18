@@ -35,15 +35,21 @@ build directory. Never delete or recursively replace the install prefix.
 
 Start with all backends disabled, then enable the selected backend and its
 documented C API dependency. Enabling TensorFlow also enables the JAX C API in
-DeePMD-kit by design.
+DeePMD-kit by design. For JAX, select exactly one route from the state of the
+nullable roots in the plan.
 
-| Backend                 | Required CMake arguments                                                            |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| PyTorch                 | `-DENABLE_PYTORCH=ON -DUSE_PT_PYTHON_LIBS=ON` plus the PyTorch CMake prefix         |
-| TensorFlow              | `-DENABLE_TENSORFLOW=ON -DUSE_TF_PYTHON_LIBS=ON` and the selected Python executable |
-| JAX with TensorFlow C++ | `-DENABLE_TENSORFLOW=ON -DUSE_TF_PYTHON_LIBS=ON`                                    |
-| JAX with TensorFlow C   | `-DENABLE_JAX=ON -DCMAKE_PREFIX_PATH=<tensorflow-c-root>`                           |
-| Paddle                  | `-DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=<paddle-inference-dir>`                  |
+| Backend dependency                       | Plan state                      | Required CMake arguments                                                              |
+| ---------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------- |
+| PyTorch                                  | Not applicable                  | `-DENABLE_PYTORCH=ON -DUSE_PT_PYTHON_LIBS=ON` plus the PyTorch CMake prefix           |
+| TensorFlow                               | Not applicable                  | `-DENABLE_TENSORFLOW=ON -DUSE_TF_PYTHON_LIBS=ON` and the selected Python executable   |
+| JAX with Python TensorFlow C++ libraries | Both TensorFlow roots are null  | `-DENABLE_TENSORFLOW=ON -DUSE_TF_PYTHON_LIBS=ON` and the selected Python executable   |
+| JAX with external TensorFlow C++         | Only `tensorflow_root` is set   | `-DENABLE_TENSORFLOW=ON -DUSE_TF_PYTHON_LIBS=OFF -DTENSORFLOW_ROOT=<tensorflow-root>` |
+| JAX with TensorFlow C                    | Only `tensorflow_c_root` is set | `-DENABLE_JAX=ON -DCMAKE_PREFIX_PATH=<tensorflow-c-root>`                             |
+| Paddle                                   | Not applicable                  | `-DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=<paddle-inference-dir>`                    |
+
+The Python TensorFlow C++ route requires the planned interpreter to import a
+TensorFlow package that provides `libtensorflow_cc`. Record and install that
+package during the Python gate before configuring CMake.
 
 For PyTorch, discover the prefix from the planned interpreter in the same shell
 call that configures CMake:

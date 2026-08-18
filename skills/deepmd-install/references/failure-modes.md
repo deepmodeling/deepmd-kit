@@ -62,6 +62,12 @@ validate it, and render the gate again. A command containing an unassigned
 plan variable, an empty required argument, or `<placeholder>` is not
 executable.
 
+For conda, compare every rendered `-c` argument with `package.channels`. An
+empty list uses only the stable `conda-forge` default; a non-empty list replaces
+that default and preserves the recorded order. For JAX C/C++, two null
+TensorFlow roots select the Python-library route. A single root selects its
+corresponding external library route; setting both is ambiguous and invalid.
+
 ## Wrong skill root
 
 Helper scripts belong to the installed skill, not the DeePMD-kit checkout or

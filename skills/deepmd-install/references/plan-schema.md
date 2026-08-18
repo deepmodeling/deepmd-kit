@@ -94,6 +94,9 @@ Use `null` for an inapplicable object. Do not add undeclared keys.
 - Keep the two DeePMD-kit index fields null for the default package index.
   Record a user-selected mirror or the documented pre-release index explicitly.
 - Keep `backend_index_url` null when the default package index is intended.
+- For conda, an empty `channels` list selects the stable `conda-forge`
+  default. A non-empty list is authoritative and is rendered in order, with
+  one `-c` option per channel. Keep this list empty for other methods.
 - Package indexes and download URLs use HTTPS.
 - Require exactly one of HTTPS `artifact_url` or absolute `artifact_path`, plus
   `sha256`, for `offline`.
@@ -149,8 +152,16 @@ entirely by its Python package. Require `cuda_home` for a CUDA build and
 Use a dedicated install prefix. Never choose `/`, a home directory, a conda
 prefix, `/usr`, `/usr/local`, or `$HOME/.local` as a disposable prefix.
 
-For a JAX C++ backend, provide either `tensorflow_root` or
-`tensorflow_c_root`. For Paddle C++, provide `paddle_inference_dir`.
+For a JAX C++ backend, the TensorFlow dependency is selected by the two
+nullable roots:
+
+- Keep both null to use the TensorFlow C++ libraries from the selected Python
+  environment with `USE_TF_PYTHON_LIBS=ON`.
+- Set only `tensorflow_root` to use an external TensorFlow C++ installation.
+- Set only `tensorflow_c_root` to use the TensorFlow C library.
+
+The two TensorFlow roots are mutually exclusive. For Paddle C++, provide
+`paddle_inference_dir`.
 
 ### `lammps`
 

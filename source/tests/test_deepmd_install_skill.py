@@ -214,10 +214,49 @@ def test_validate_source_tensorflow_cpu_plan() -> None:
     assert PLAN.validate_plan(plan) == []
 
 
+def test_validate_jax_cpp_with_tensorflow_python_libraries() -> None:
+    """Allow JAX C++ to use TensorFlow libraries from the Python environment."""
+    plan = _source_plan()
+    plan["goal"] = "python+cpp"
+    plan["backend"] = "jax"
+    plan["lammps"] = None
+    assert PLAN.validate_plan(plan) == []
+
+
+def test_validate_jax_cpp_rejects_ambiguous_tensorflow_roots() -> None:
+    """Require one unambiguous TensorFlow dependency route for JAX C++."""
+    plan = _source_plan()
+    plan["goal"] = "python+cpp"
+    plan["backend"] = "jax"
+    plan["lammps"] = None
+    cpp = plan["cpp"]
+    assert isinstance(cpp, dict)
+    cpp["tensorflow_root"] = "/opt/tensorflow-cpp"
+    cpp["tensorflow_c_root"] = "/opt/tensorflow-c"
+    errors = PLAN.validate_plan(plan)
+    assert any("mutually exclusive" in error for error in errors)
+
+
 @pytest.mark.parametrize("method", ["pip", "conda", "offline", "docker"])
 def test_validate_easy_install_plans(method: str) -> None:
     """Accept the method-specific fields for each easy-install path."""
     assert PLAN.validate_plan(_easy_plan(method)) == []
+
+
+def test_validate_conda_channels_are_method_specific() -> None:
+    """Accept selected conda channels without ignoring them for other methods."""
+    plan = _easy_plan("conda")
+    package = plan["package"]
+    assert isinstance(package, dict)
+    package["channels"] = ["conda-forge/label/deepmd-kit_rc", "conda-forge"]
+    assert PLAN.validate_plan(plan) == []
+
+    pip_plan = _easy_plan("pip")
+    pip_package = pip_plan["package"]
+    assert isinstance(pip_package, dict)
+    pip_package["channels"] = ["conda-forge"]
+    errors = PLAN.validate_plan(pip_plan)
+    assert "package.channels: non-empty channels require method 'conda'" in errors
 
 
 def test_validate_offline_plan_requires_checksum() -> None:
@@ -839,6 +878,16 @@ def test_docker_reference_uses_backend_aware_verifier() -> None:
     assert "verify_python.py" in reference
     assert '--backend "<pytorch|tensorflow|jax|paddle>"' in reference
     assert "readonly" in reference
+
+
+def test_conda_reference_renders_planned_channels() -> None:
+    """Keep selected conda channels authoritative with a stable default."""
+    reference = (
+        REPOSITORY_ROOT / "skills" / "deepmd-install" / "references" / "easy-install.md"
+    ).read_text(encoding="utf-8")
+    assert "package.channels" in reference
+    assert '-c "<channel-1>" -c "<channel-2>"' in reference
+    assert "Use `conda-forge` only when the list is empty" in reference
 
 
 def test_verify_lammps_dpa4c_cli(tmp_path: Path) -> None:

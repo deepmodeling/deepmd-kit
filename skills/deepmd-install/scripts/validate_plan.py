@@ -245,6 +245,9 @@ def _validate_package(
     for key in ("backend_packages", "channels"):
         if key in package:
             _validate_string_list(package[key], f"package.{key}", errors)
+    channels = package.get("channels")
+    if method != "conda" and isinstance(channels, list) and channels:
+        errors.append("package.channels: non-empty channels require method 'conda'")
     for key in ("install_lammps", "install_ipi"):
         if key in package and not isinstance(package[key], bool):
             errors.append(f"package.{key}: expected a boolean")
@@ -376,6 +379,9 @@ def _validate_cpp(
     for key in ("install_prefix", "build_directory"):
         if not _is_absolute_path(cpp.get(key)):
             errors.append(f"cpp.{key}: expected an absolute path")
+    for key in ("tensorflow_root", "tensorflow_c_root", "paddle_inference_dir"):
+        if cpp.get(key) is not None and not _is_absolute_path(cpp.get(key)):
+            errors.append(f"cpp.{key}: expected an absolute path or null")
     if not all(
         _is_absolute_path(cpp.get(key)) for key in ("install_prefix", "build_directory")
     ) or not _is_absolute_path(source.get("directory")):
@@ -397,12 +403,11 @@ def _validate_cpp(
         forbidden.add(_canonical(environment_prefix))
     if prefix in forbidden:
         errors.append("cpp.install_prefix: select a dedicated, non-shared prefix")
-    if backend == "jax" and not (
-        _is_absolute_path(cpp.get("tensorflow_root"))
-        or _is_absolute_path(cpp.get("tensorflow_c_root"))
+    if backend == "jax" and all(
+        cpp.get(key) is not None for key in ("tensorflow_root", "tensorflow_c_root")
     ):
         errors.append(
-            "cpp: JAX requires tensorflow_root or tensorflow_c_root for the C API"
+            "cpp: JAX tensorflow_root and tensorflow_c_root are mutually exclusive"
         )
     if backend == "paddle" and not _is_absolute_path(cpp.get("paddle_inference_dir")):
         errors.append("cpp.paddle_inference_dir: Paddle C++ requires an absolute path")

@@ -73,6 +73,17 @@ non-null.
 
 Use the absolute manager and environment name from the plan. Install only the
 requested packages; do not add LAMMPS, Horovod, or MPI unless they are in scope.
+Treat `package.channels` as authoritative when it is non-empty and preserve its
+order by rendering one `-c` option per entry. This includes selected mirrors and
+pre-release channels such as `conda-forge/label/deepmd-kit_dev` or
+`conda-forge/label/deepmd-kit_rc`. Use `conda-forge` only when the list is empty.
+
+```bash
+"<absolute-conda-or-mamba>" create -n "<environment-name>" \
+    -c "<channel-1>" -c "<channel-2>" deepmd-kit
+```
+
+For an empty `package.channels` list, render the stable default explicitly:
 
 ```bash
 "<absolute-conda-or-mamba>" create -n "<environment-name>" \
