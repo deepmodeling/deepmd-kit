@@ -347,6 +347,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
   /**
    * @brief Evaluate frames that arrive without a neighbor list.
@@ -369,7 +370,20 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
+
+  /**
+   * @brief Whether a call may name the charge state it wants served.
+   *
+   * The two artifacts this class serves carry the condition differently. An
+   * uncompressed one keeps it in the argument list of its compiled forward,
+   * where a state reaches the evaluation that names it. A compressed one
+   * folds it into frozen tables, which are rebuilt by ``set_charge_spin``
+   * and stand for the whole run, so a call can only restate what they hold.
+   * The width of the forward's argument tells the two apart.
+   **/
+  bool reads_charge_spin_per_call() const { return dchgspin > 0; }
 
   /**
    * @brief Evaluate one frame: build a neighbor list, then fold ghost
@@ -388,6 +402,7 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                      const std::vector<VALUETYPE>& box,
                      const std::vector<VALUETYPE>& fparam,
                      const std::vector<VALUETYPE>& aparam,
+                     const std::vector<double>& charge_spin,
                      const bool atomic);
 
   /**
@@ -444,7 +459,8 @@ class NativeSpinPTExpt : public DeepSpinBackend {
       const std::int64_t nloc,
       const torch::Tensor& spin,
       const std::vector<double>& fparam,
-      const std::vector<double>& aparam);
+      const std::vector<double>& aparam,
+      const std::vector<double>& charge_spin);
 
   /**
    * @brief Bind the flat artifact outputs to their metadata key names.

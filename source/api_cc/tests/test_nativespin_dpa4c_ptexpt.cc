@@ -186,14 +186,31 @@ TYPED_TEST(TestInferNativeSpinDpa4cPtExpt, parameters_may_be_shared_by_frames) {
   EXPECT_DOUBLE_EQ(shared[1], per_frame[1]);
 }
 
-// This backend serves one state at a time, installed ahead of inference, and
-// a call may name that state as well. The condition is then checked against
-// the frames the call carries, so naming it once per frame must be accepted.
-TYPED_TEST(TestInferNativeSpinDpa4cPtExpt,
-           an_installed_state_reaches_every_frame) {
+// This archive keeps the condition in the argument list of its compiled
+// forward, so successive calls may each name their own state and neither
+// needs set_charge_spin.
+TYPED_TEST(TestInferNativeSpinDpa4cPtExpt, a_call_may_name_its_own_state) {
   using VALUETYPE = TypeParam;
-  this->dp.set_charge_spin(this->charge_spin_other);
+  double served_default, served_other;
+  std::vector<VALUETYPE> force, force_mag, virial;
 
+  this->dp.compute(served_default, force, force_mag, virial, this->coord,
+                   this->spin, this->atype, this->box, this->fparam,
+                   this->aparam, this->charge_spin_default);
+  this->dp.compute(served_other, force, force_mag, virial, this->coord,
+                   this->spin, this->atype, this->box, this->fparam,
+                   this->aparam, this->charge_spin_other);
+
+  EXPECT_LT(fabs(served_default - this->expected_e_frame0), EPSILON);
+  EXPECT_LT(fabs(served_other - this->expected_e_other_state), EPSILON);
+  // Anti-vacuity: the states have to be telling the two results apart.
+  EXPECT_GT(fabs(this->expected_e_other_state - this->expected_e_frame0), 1e-6);
+}
+
+// A state that is not named per frame still reaches every frame, and the
+// state left over from an earlier call does not.
+TYPED_TEST(TestInferNativeSpinDpa4cPtExpt, a_named_state_reaches_every_frame) {
+  using VALUETYPE = TypeParam;
   std::vector<double> ener;
   std::vector<VALUETYPE> force, force_mag, virial;
   this->dp.compute(
@@ -206,20 +223,20 @@ TYPED_TEST(TestInferNativeSpinDpa4cPtExpt,
   ASSERT_EQ(ener.size(), 2u);
   EXPECT_LT(fabs(ener[0] - this->expected_e_other_state), EPSILON);
   EXPECT_LT(fabs(ener[1] - this->expected_e_other_state), EPSILON);
-  // Anti-vacuity: the installed state has to be what moved the energy.
-  EXPECT_GT(fabs(this->expected_e_other_state - this->expected_e_frame0), 1e-6);
 }
 
-// The model keeps serving the state it was frozen with until a caller
-// installs another, so naming a different one per call cannot be honoured.
-TYPED_TEST(TestInferNativeSpinDpa4cPtExpt,
-           a_state_the_model_does_not_serve_is_refused) {
+// Installing a state replaces what a call that names none is served.
+TYPED_TEST(TestInferNativeSpinDpa4cPtExpt, an_installed_state_is_the_fallback) {
   using VALUETYPE = TypeParam;
-  double ener;
+  double before, after;
   std::vector<VALUETYPE> force, force_mag, virial;
-  EXPECT_THROW(
-      this->dp.compute(ener, force, force_mag, virial, this->coord, this->spin,
-                       this->atype, this->box, this->fparam, this->aparam,
-                       this->charge_spin_other),
-      deepmd::deepmd_exception);
+
+  this->dp.compute(before, force, force_mag, virial, this->coord, this->spin,
+                   this->atype, this->box, this->fparam, this->aparam);
+  this->dp.set_charge_spin(this->charge_spin_other);
+  this->dp.compute(after, force, force_mag, virial, this->coord, this->spin,
+                   this->atype, this->box, this->fparam, this->aparam);
+
+  EXPECT_LT(fabs(before - this->expected_e_frame0), EPSILON);
+  EXPECT_LT(fabs(after - this->expected_e_other_state), EPSILON);
 }

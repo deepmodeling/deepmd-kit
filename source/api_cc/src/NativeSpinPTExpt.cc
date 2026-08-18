@@ -149,7 +149,10 @@ FrameLayout broadcast_layout(const std::vector<VALUETYPE>& values,
                              const int nframes,
                              const std::size_t stride,
                              const char* name) {
-  if (values.empty() || values.size() == stride) {
+  // A width of zero is a consumer that reads nothing. Whatever the caller
+  // supplied was answered before the frames were reached, so they divide
+  // nothing between them.
+  if (stride == 0 || values.empty() || values.size() == stride) {
     return {stride, 0};
   }
   return per_frame_layout(values, nframes, stride, name);
@@ -593,7 +596,8 @@ std::map<std::string, torch::Tensor> NativeSpinPTExpt::run_graph_payload(
     const std::int64_t nloc,
     const torch::Tensor& spin,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam) {
+    const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin) {
   graph.edge_mask =
       deepmd::applyPairExclusion(graph.edge_index, graph.edge_mask, graph.atype,
                                  pair_exclude_table_, ntypes);
@@ -607,13 +611,18 @@ std::map<std::string, torch::Tensor> NativeSpinPTExpt::run_graph_payload(
     deepmd::flatten_canonical_atom_virial(output_map);
   } else {
     const torch::Device device = graph.atype.device();
+    // This lower reads the condition as an ordinary input, so a call may name
+    // the state it wants; the state the model was frozen with stands in for a
+    // call that names none.
+    const std::vector<double>& served =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
     extract_outputs(
         output_map,
         run_model_graph(
             graph, spin,
             make_fparam_tensor(fparam, default_fparam_, dfparam, device),
             make_aparam_tensor(aparam, daparam, node_count, nloc, device),
-            make_chg_spin_tensor(default_chg_spin_, dchgspin, device)));
+            make_chg_spin_tensor(served, dchgspin, device)));
   }
   return output_map;
 }
@@ -651,6 +660,7 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
                                const int& ago,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam,
+                               const std::vector<double>& charge_spin,
                                const bool atomic) {
   const torch::Device device = gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
                                            : torch::Device(torch::kCPU);
@@ -781,7 +791,7 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
   std::map<std::string, torch::Tensor> output_map = run_graph_payload(
       graph, node_count, nloc, spin_Tensor.slice(0, 0, node_count),
       std::vector<double>(fparam.begin(), fparam.end()),
-      std::vector<double>(aparam_real.begin(), aparam_real.end()));
+      std::vector<double>(aparam_real.begin(), aparam_real.end()), charge_spin);
 
   // The forward emits flat per-node public keys; rewrite them into the dense
   // internal-key layout the extraction below reads. The extended node set
@@ -868,6 +878,7 @@ template void NativeSpinPTExpt::compute<double, std::vector<ENERGYTYPE>>(
     const int& ago,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 template void NativeSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
@@ -884,6 +895,7 @@ template void NativeSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const int& ago,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 // ============================================================================
@@ -903,6 +915,7 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
                                const std::vector<VALUETYPE>& box,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam,
+                               const std::vector<double>& charge_spin,
                                const bool atomic) {
   const std::size_t nloc = atype.size();
   const int nframes = frame_count(coord, nloc);
@@ -915,6 +928,8 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
       fparam, nframes, static_cast<std::size_t>(dfparam), "fparam");
   const FrameLayout aparam_layout = broadcast_layout(
       aparam, nframes, nloc * static_cast<std::size_t>(daparam), "aparam");
+  const FrameLayout charge_spin_layout = broadcast_layout(
+      charge_spin, nframes, static_cast<std::size_t>(dchgspin), "charge_spin");
 
   ener.clear();
   force.clear();
@@ -932,7 +947,8 @@ void NativeSpinPTExpt::compute(ENERGYVTYPE& ener,
                   frame_block(spin, ff, spin_layout), atype,
                   frame_block(box, ff, box_layout),
                   frame_block(fparam, ff, fparam_layout),
-                  frame_block(aparam, ff, aparam_layout), atomic);
+                  frame_block(aparam, ff, aparam_layout),
+                  frame_block(charge_spin, ff, charge_spin_layout), atomic);
     ener.insert(ener.end(), frame_ener.begin(), frame_ener.end());
     force.insert(force.end(), frame_force.begin(), frame_force.end());
     force_mag.insert(force_mag.end(), frame_force_mag.begin(),
@@ -958,6 +974,7 @@ void NativeSpinPTExpt::compute_frame(ENERGYVTYPE& ener,
                                      const std::vector<VALUETYPE>& box,
                                      const std::vector<VALUETYPE>& fparam,
                                      const std::vector<VALUETYPE>& aparam,
+                                     const std::vector<double>& charge_spin,
                                      const bool atomic) {
   const torch::Device device = gpu_enabled ? torch::Device(torch::kCUDA, gpu_id)
                                            : torch::Device(torch::kCPU);
@@ -1036,10 +1053,10 @@ void NativeSpinPTExpt::compute_frame(ENERGYVTYPE& ener,
                        f64_options)
           .clone()
           .to(device);
-  std::map<std::string, torch::Tensor> output_map =
-      run_graph_payload(graph, nloc, nloc, spin_Tensor,
-                        std::vector<double>(fparam.begin(), fparam.end()),
-                        std::vector<double>(aparam.begin(), aparam.end()));
+  std::map<std::string, torch::Tensor> output_map = run_graph_payload(
+      graph, nloc, nloc, spin_Tensor,
+      std::vector<double>(fparam.begin(), fparam.end()),
+      std::vector<double>(aparam.begin(), aparam.end()), charge_spin);
   deepmd::remap_graph_spin_outputs_to_dense_keys(output_map, nloc, nall,
                                                  atomic);
 
@@ -1110,6 +1127,7 @@ template void NativeSpinPTExpt::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<double>& box,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 template void NativeSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
@@ -1124,6 +1142,7 @@ template void NativeSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& box,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 // ============================================================================
@@ -1143,11 +1162,8 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& fparam,
                                 const std::vector<double>& aparam,
                                 const bool atomic) {
-  translate_error([&] {
-    reject_unsupported_parametric_inputs(fparam, aparam, dfparam, daparam);
-    compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-            spin, atype, box, fparam, aparam, atomic);
-  });
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, fparam, aparam, std::vector<double>(), atomic);
 }
 
 void NativeSpinPTExpt::computew(std::vector<double>& ener,
@@ -1163,11 +1179,8 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<float>& fparam,
                                 const std::vector<float>& aparam,
                                 const bool atomic) {
-  translate_error([&] {
-    reject_unsupported_parametric_inputs(fparam, aparam, dfparam, daparam);
-    compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-            spin, atype, box, fparam, aparam, atomic);
-  });
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, fparam, aparam, std::vector<double>(), atomic);
 }
 
 void NativeSpinPTExpt::computew(std::vector<double>& ener,
@@ -1186,10 +1199,105 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const std::vector<double>& fparam,
                                 const std::vector<double>& aparam,
                                 const bool atomic) {
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, nghost, inlist, ago, fparam, aparam,
+           std::vector<double>(), atomic);
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<float>& force,
+                                std::vector<float>& force_mag,
+                                std::vector<float>& virial,
+                                std::vector<float>& atom_energy,
+                                std::vector<float>& atom_virial,
+                                const std::vector<float>& coord,
+                                const std::vector<float>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<float>& box,
+                                const int nghost,
+                                const InputNlist& inlist,
+                                const int& ago,
+                                const std::vector<float>& fparam,
+                                const std::vector<float>& aparam,
+                                const bool atomic) {
+  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+           spin, atype, box, nghost, inlist, ago, fparam, aparam,
+           std::vector<double>(), atomic);
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<double>& force,
+                                std::vector<double>& force_mag,
+                                std::vector<double>& virial,
+                                std::vector<double>& atom_energy,
+                                std::vector<double>& atom_virial,
+                                const std::vector<double>& coord,
+                                const std::vector<double>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<double>& box,
+                                const std::vector<double>& fparam,
+                                const std::vector<double>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
   translate_error([&] {
     reject_unsupported_parametric_inputs(fparam, aparam, dfparam, daparam);
+    check_call_charge_spin(charge_spin, frame_count(coord, atype.size()),
+                           settable_chgspin, reads_charge_spin_per_call(),
+                           default_chg_spin_, chg_spin_table_ranges_);
     compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-            spin, atype, nghost, inlist, ago, fparam, aparam, atomic);
+            spin, atype, box, fparam, aparam, charge_spin, atomic);
+  });
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<float>& force,
+                                std::vector<float>& force_mag,
+                                std::vector<float>& virial,
+                                std::vector<float>& atom_energy,
+                                std::vector<float>& atom_virial,
+                                const std::vector<float>& coord,
+                                const std::vector<float>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<float>& box,
+                                const std::vector<float>& fparam,
+                                const std::vector<float>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
+  translate_error([&] {
+    reject_unsupported_parametric_inputs(fparam, aparam, dfparam, daparam);
+    check_call_charge_spin(charge_spin, frame_count(coord, atype.size()),
+                           settable_chgspin, reads_charge_spin_per_call(),
+                           default_chg_spin_, chg_spin_table_ranges_);
+    compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+            spin, atype, box, fparam, aparam, charge_spin, atomic);
+  });
+}
+
+void NativeSpinPTExpt::computew(std::vector<double>& ener,
+                                std::vector<double>& force,
+                                std::vector<double>& force_mag,
+                                std::vector<double>& virial,
+                                std::vector<double>& atom_energy,
+                                std::vector<double>& atom_virial,
+                                const std::vector<double>& coord,
+                                const std::vector<double>& spin,
+                                const std::vector<int>& atype,
+                                const std::vector<double>& box,
+                                const int nghost,
+                                const InputNlist& inlist,
+                                const int& ago,
+                                const std::vector<double>& fparam,
+                                const std::vector<double>& aparam,
+                                const std::vector<double>& charge_spin,
+                                const bool atomic) {
+  translate_error([&] {
+    reject_unsupported_parametric_inputs(fparam, aparam, dfparam, daparam);
+    check_call_charge_spin(charge_spin, 1, settable_chgspin,
+                           reads_charge_spin_per_call(), default_chg_spin_,
+                           chg_spin_table_ranges_);
+    compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
+            spin, atype, nghost, inlist, ago, fparam, aparam, charge_spin,
+            atomic);
   });
 }
 
@@ -1208,102 +1316,17 @@ void NativeSpinPTExpt::computew(std::vector<double>& ener,
                                 const int& ago,
                                 const std::vector<float>& fparam,
                                 const std::vector<float>& aparam,
+                                const std::vector<double>& charge_spin,
                                 const bool atomic) {
   translate_error([&] {
     reject_unsupported_parametric_inputs(fparam, aparam, dfparam, daparam);
+    check_call_charge_spin(charge_spin, 1, settable_chgspin,
+                           reads_charge_spin_per_call(), default_chg_spin_,
+                           chg_spin_table_ranges_);
     compute(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-            spin, atype, nghost, inlist, ago, fparam, aparam, atomic);
+            spin, atype, nghost, inlist, ago, fparam, aparam, charge_spin,
+            atomic);
   });
-}
-
-void NativeSpinPTExpt::computew(std::vector<double>& ener,
-                                std::vector<double>& force,
-                                std::vector<double>& force_mag,
-                                std::vector<double>& virial,
-                                std::vector<double>& atom_energy,
-                                std::vector<double>& atom_virial,
-                                const std::vector<double>& coord,
-                                const std::vector<double>& spin,
-                                const std::vector<int>& atype,
-                                const std::vector<double>& box,
-                                const std::vector<double>& fparam,
-                                const std::vector<double>& aparam,
-                                const std::vector<double>& charge_spin,
-                                const bool atomic) {
-  check_call_charge_spin(
-      charge_spin, frame_count(coord, atype.size()), settable_chgspin,
-      /*applied_per_call=*/false, default_chg_spin_, chg_spin_table_ranges_);
-  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-           spin, atype, box, fparam, aparam, atomic);
-}
-
-void NativeSpinPTExpt::computew(std::vector<double>& ener,
-                                std::vector<float>& force,
-                                std::vector<float>& force_mag,
-                                std::vector<float>& virial,
-                                std::vector<float>& atom_energy,
-                                std::vector<float>& atom_virial,
-                                const std::vector<float>& coord,
-                                const std::vector<float>& spin,
-                                const std::vector<int>& atype,
-                                const std::vector<float>& box,
-                                const std::vector<float>& fparam,
-                                const std::vector<float>& aparam,
-                                const std::vector<double>& charge_spin,
-                                const bool atomic) {
-  check_call_charge_spin(
-      charge_spin, frame_count(coord, atype.size()), settable_chgspin,
-      /*applied_per_call=*/false, default_chg_spin_, chg_spin_table_ranges_);
-  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-           spin, atype, box, fparam, aparam, atomic);
-}
-
-void NativeSpinPTExpt::computew(std::vector<double>& ener,
-                                std::vector<double>& force,
-                                std::vector<double>& force_mag,
-                                std::vector<double>& virial,
-                                std::vector<double>& atom_energy,
-                                std::vector<double>& atom_virial,
-                                const std::vector<double>& coord,
-                                const std::vector<double>& spin,
-                                const std::vector<int>& atype,
-                                const std::vector<double>& box,
-                                const int nghost,
-                                const InputNlist& inlist,
-                                const int& ago,
-                                const std::vector<double>& fparam,
-                                const std::vector<double>& aparam,
-                                const std::vector<double>& charge_spin,
-                                const bool atomic) {
-  check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_,
-                         chg_spin_table_ranges_);
-  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-           spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
-}
-
-void NativeSpinPTExpt::computew(std::vector<double>& ener,
-                                std::vector<float>& force,
-                                std::vector<float>& force_mag,
-                                std::vector<float>& virial,
-                                std::vector<float>& atom_energy,
-                                std::vector<float>& atom_virial,
-                                const std::vector<float>& coord,
-                                const std::vector<float>& spin,
-                                const std::vector<int>& atype,
-                                const std::vector<float>& box,
-                                const int nghost,
-                                const InputNlist& inlist,
-                                const int& ago,
-                                const std::vector<float>& fparam,
-                                const std::vector<float>& aparam,
-                                const std::vector<double>& charge_spin,
-                                const bool atomic) {
-  check_call_charge_spin(charge_spin, 1, settable_chgspin,
-                         /*applied_per_call=*/false, default_chg_spin_,
-                         chg_spin_table_ranges_);
-  computew(ener, force, force_mag, virial, atom_energy, atom_virial, coord,
-           spin, atype, box, nghost, inlist, ago, fparam, aparam, atomic);
 }
 
 void NativeSpinPTExpt::compute_canonical_graph_gpu(
