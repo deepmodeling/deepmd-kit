@@ -254,3 +254,9 @@ TEST(TestChargeSpinValidation, rejects_invalid_size) {
   EXPECT_THROW(deepmd::hpp::validate_charge_spin(charge_spin, 2, 2, tiled),
                deepmd::hpp::deepmd_exception);
 }
+
+TEST(TestChargeSpinValidation, c_boundary_rejects_null_nonempty_input) {
+  EXPECT_TRUE(deepmd::c_api_internal::copy_charge_spin(nullptr, 0, 0).empty());
+  EXPECT_THROW(deepmd::c_api_internal::copy_charge_spin(nullptr, 2, 2),
+               deepmd::deepmd_exception);
+}

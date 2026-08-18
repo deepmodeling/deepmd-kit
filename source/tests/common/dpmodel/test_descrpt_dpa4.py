@@ -236,7 +236,7 @@ class TestDescrptDPA4:
             # Charge/spin condition embedding; default_chg_spin lets forward run
             # without an explicit charge_spin input.
             pytest.param(
-                {"add_chg_spin_ebd": True, "default_chg_spin": [0.5, -0.5]},
+                {"add_chg_spin_ebd": True, "default_chg_spin": [-1.0, 3.0]},
                 id="add_chg_spin_ebd",
             ),
             pytest.param({"so2_attn_res": "independent"}, id="so2_attn_res"),
@@ -264,6 +264,19 @@ class TestDescrptDPA4:
         dd2 = DescrptDPA4.deserialize(dd.serialize())
         out2 = np.asarray(dd2.call(coord.reshape(nf, -1), atype, nlist)[0])
         np.testing.assert_array_equal(out1, out2)
+
+    def test_use_amp_stays_out_of_the_portable_record(self) -> None:
+        """``use_amp`` is a runtime/training policy, not model state.
+
+        The portable serialization must not carry it (a ``use_amp: true``
+        record would e.g. be rejected by the JAX deserializer); a fresh
+        deserialize falls back to the constructor default. Construction-time
+        survival is pinned at the pt_expt assembly boundary instead
+        (``test_get_model_dpa4.py``).
+        """
+        dd = make_descriptor(use_amp=False)
+        assert dd.use_amp is False
+        assert "use_amp" not in dd.serialize()["config"]
 
     def test_legacy_spin_gate_is_squared_on_deserialize(self) -> None:
         """Version 1.2 stores the env-seed spin gate after the quadratic form.

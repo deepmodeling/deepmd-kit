@@ -1023,6 +1023,18 @@ _NATIVE_SPIN_DESCRIPTORS = {
         },
         "dpa4_ener",
     ),
+    "dpa4c": (
+        {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 8,
+            "lmax": 2,
+            "n_radial": 8,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "ener",
+    ),
 }
 
 

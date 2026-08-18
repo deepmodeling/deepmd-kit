@@ -479,7 +479,10 @@ def test_native_spin_nlist_deserialize_rejected(tmp_path) -> None:
     """
     model = _build_native_spin_model_cpu()
     data = {"model": model.serialize()}
-    with pytest.raises(ValueError, match="only the NeighborGraph lower"):
+    with pytest.raises(
+        ValueError,
+        match="only the NeighborGraph and compact canonical lowers",
+    ):
         deserialize_to_file(str(tmp_path / "spin_nlist.pte"), data, lower_kind="nlist")
 
 

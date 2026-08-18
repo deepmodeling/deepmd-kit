@@ -136,12 +136,41 @@ def try_convert_module(value: Any) -> torch.nn.Module | None:
 _AUTO_WRAPPED_CLASSES: dict[type, type] = {}
 
 
-def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
-    """Auto-wrap any NativeOP as a torch.nn.Module via ``torch_module``.
+def auto_wrapped_class(cls: type) -> type:
+    """Return the cached ``torch_module`` auto-wrap of a dpmodel class.
 
     Creates a subclass with a generic ``forward`` that delegates to ``call``,
     then applies ``torch_module`` to get full ``__setattr__`` / post-init
     list conversion.  The wrapped class is cached per dpmodel type.
+
+    Invariant: construct this wrapped class directly whenever live,
+    constructor-supplied components must retain non-serialized runtime
+    state. Converting a populated raw dpmodel instance instead goes
+    through the ``serialize()``/``deserialize()`` round-trip of
+    ``_auto_wrap_native_op``, which preserves only the portable record.
+
+    Parameters
+    ----------
+    cls : type
+        The dpmodel NativeOP class to wrap.
+
+    Returns
+    -------
+    type
+        The ``torch_module``-wrapped subclass.
+    """
+    if cls not in _AUTO_WRAPPED_CLASSES:
+        wrapped = type(
+            cls.__name__,
+            (cls,),
+            {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
+        )
+        _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
+    return _AUTO_WRAPPED_CLASSES[cls]
+
+
+def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
+    """Auto-wrap any NativeOP as a torch.nn.Module via ``torch_module``.
 
     Parameters
     ----------
@@ -154,14 +183,7 @@ def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
         The wrapped pt_expt module, deserialized from value's serialized state.
     """
     cls = type(value)
-    if cls not in _AUTO_WRAPPED_CLASSES:
-        wrapped = type(
-            cls.__name__,
-            (cls,),
-            {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
-        )
-        _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
-    wrapped_cls = _AUTO_WRAPPED_CLASSES[cls]
+    wrapped_cls = auto_wrapped_class(cls)
     if not (hasattr(value, "serialize") and hasattr(wrapped_cls, "deserialize")):
         raise TypeError(
             f"Cannot auto-wrap {cls.__name__}: "

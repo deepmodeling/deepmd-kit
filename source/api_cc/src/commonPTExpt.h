@@ -4,17 +4,23 @@
 // and helpers for the with-comm dual-artifact layout.
 #pragma once
 
+#include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 #include <torch/torch.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "common.h"  // for remap_comm_sendlist
@@ -279,6 +285,168 @@ inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
   return default_chg_spin;
 }
 
+/**
+ * @brief Read the row range each value of a charge state indexes.
+ *
+ * A charge-conditioned descriptor embeds the condition by gathering one row
+ * of each embedding table, so the archive records the half-open range of each
+ * table. An archive frozen before the ranges were recorded names none, and
+ * the boundary then checks only the width, as it did before.
+ *
+ * The ranges are indexed by column, so one per value of a charge state is the
+ * only count that lines the domain check up with the values it guards. A
+ * shorter or longer list would check a value against another value's table.
+ *
+ * A width of zero means the caller does not yet know how wide a charge state
+ * is. A compressed model reports that at load, because its lower carries no
+ * conditioning input and the width becomes known only once the charge-state
+ * fold names it; the caller then reads the ranges again with that width. This
+ * mirrors ``read_default_chg_spin``, which the callers invoke in pair with it.
+ *
+ * @param[in] metadata Parsed archive metadata.
+ * @param[in] dim_chg_spin Width of a charge state the model accepts.
+ * @return One ``{low, high}`` pair per value, empty when the width is unknown
+ *   or the archive names no ranges.
+ **/
+inline std::vector<std::pair<double, double>> read_chg_spin_table_ranges(
+    const JsonValue& metadata, const int dim_chg_spin) {
+  std::vector<std::pair<double, double>> ranges;
+  if (dim_chg_spin <= 0) {
+    return ranges;
+  }
+  if (!metadata.obj_val.count("chg_spin_table_ranges") ||
+      metadata["chg_spin_table_ranges"].type == JsonValue::Null) {
+    return ranges;
+  }
+  for (const auto& bounds : metadata["chg_spin_table_ranges"].as_array()) {
+    const auto& pair = bounds.as_array();
+    if (pair.size() != 2) {
+      throw deepmd::deepmd_exception(
+          "chg_spin_table_ranges must hold a [low, high) pair per value.");
+    }
+    if (pair[0].as_double() >= pair[1].as_double()) {
+      throw deepmd::deepmd_exception(
+          "chg_spin_table_ranges names an empty [low, high) range, which no "
+          "charge state can address.");
+    }
+    ranges.emplace_back(pair[0].as_double(), pair[1].as_double());
+  }
+  if (static_cast<int>(ranges.size()) != dim_chg_spin) {
+    throw deepmd::deepmd_exception(
+        "chg_spin_table_ranges holds " + std::to_string(ranges.size()) +
+        " ranges but the model accepts charge states of width " +
+        std::to_string(dim_chg_spin) + ".");
+  }
+  return ranges;
+}
+
+/**
+ * @brief Reject a charge state that addresses no row of the model's tables.
+ *
+ * The gather is not bounds-checked and the index is truncated from a double,
+ * so a fractional value would silently land on a neighbouring row and an
+ * out-of-range value would read past the table. An archive that names no
+ * ranges is left unchecked.
+ *
+ * @param[in] charge_spin One or more states laid out end to end.
+ * @param[in] ranges Half-open row range of each value of one state.
+ **/
+inline void check_charge_spin_domain(
+    const std::vector<double>& charge_spin,
+    const std::vector<std::pair<double, double>>& ranges) {
+  if (ranges.empty() || charge_spin.empty()) {
+    return;
+  }
+  const std::size_t width = ranges.size();
+  static const char* kFields[] = {"charge", "multiplicity"};
+  for (std::size_t ii = 0; ii < charge_spin.size(); ++ii) {
+    const std::size_t column = ii % width;
+    const double value = charge_spin[ii];
+    const std::string field =
+        column < 2 ? kFields[column]
+                   : "charge_spin value " + std::to_string(column);
+    if (!std::isfinite(value) || value != std::floor(value)) {
+      throw deepmd::deepmd_exception("the " + field +
+                                     " indexes an embedding table row and "
+                                     "must be an integer, got " +
+                                     std::to_string(value));
+    }
+    if (value < ranges[column].first || value >= ranges[column].second) {
+      throw deepmd::deepmd_exception(
+          "the " + field + " must lie in [" +
+          std::to_string(static_cast<long>(ranges[column].first)) + ", " +
+          std::to_string(static_cast<long>(ranges[column].second)) + "), got " +
+          std::to_string(static_cast<long>(value)));
+    }
+  }
+}
+
+/**
+ * @brief Validate a charge/spin condition supplied with an inference call.
+ *
+ * The condition holds either one frame's values, broadcast to every frame, or
+ * one set per frame. Whether a call may name a condition of its own depends
+ * on how the model receives it. A lower that reads the condition as an
+ * ordinary input takes a different one on every call. A model whose condition
+ * instead lives in the constants of its compiled tables, and a backend that
+ * marshals only the condition in force, both serve one state at a time; there
+ * a supplied condition can only restate the state in force, and anything else
+ * is rejected rather than silently ignored.
+ *
+ * @param[in] charge_spin The condition supplied by the caller. Empty selects
+ *   the state in force and is always accepted.
+ * @param[in] nframes Number of frames the call evaluates.
+ * @param[in] settable_chg_spin Width of a charge state the model accepts.
+ * @param[in] applied_per_call Whether the call marshals the condition into
+ *   the forward pass instead of serving the state in force.
+ * @param[in] installed The state in force, of width ``settable_chg_spin``.
+ * @param[in] ranges Half-open row range of each value, from the archive.
+ **/
+inline void check_call_charge_spin(
+    const std::vector<double>& charge_spin,
+    const int nframes,
+    const int settable_chg_spin,
+    const bool applied_per_call,
+    const std::vector<double>& installed,
+    const std::vector<std::pair<double, double>>& ranges =
+        std::vector<std::pair<double, double>>()) {
+  if (charge_spin.empty()) {
+    return;
+  }
+  check_charge_spin_domain(charge_spin, ranges);
+  const std::size_t width = static_cast<std::size_t>(settable_chg_spin);
+  if (charge_spin.size() != width &&
+      charge_spin.size() != width * static_cast<std::size_t>(nframes)) {
+    throw deepmd::deepmd_exception(
+        "charge_spin has " + std::to_string(charge_spin.size()) +
+        " values but the model expects dim_chg_spin=" +
+        std::to_string(settable_chg_spin) + " (per frame) or " +
+        std::to_string(settable_chg_spin * nframes) + " (for " +
+        std::to_string(nframes) + " frames).");
+  }
+  if (applied_per_call) {
+    return;
+  }
+  if (installed.size() != width) {
+    throw deepmd::deepmd_exception(
+        "the model serves one charge/spin state at a time but holds none of "
+        "the " +
+        std::to_string(settable_chg_spin) + " values it accepts.");
+  }
+  // Charge and multiplicity are integer-valued categorical indices carried as
+  // double, so a condition either is the state in force or is not.
+  for (std::size_t ii = 0; ii < charge_spin.size(); ++ii) {
+    if (charge_spin[ii] != installed[ii % width]) {
+      throw deepmd::deepmd_exception(
+          "the charge/spin condition supplied with this call differs from "
+          "the state the model serves. This model serves one state at a "
+          "time, held in the constants of its compiled tables or fixed for "
+          "the whole run, so the state must be chosen with set_charge_spin "
+          "before inference rather than named per call.");
+    }
+  }
+}
+
 // ============================================================================
 // ZIP archive reader — reads a file from a ZIP archive.
 // ============================================================================
@@ -509,14 +677,16 @@ class TempFile {
    * file and return a TempFile owning that path.
    *
    * The temp file is created via ``mkstemp(3)`` (atomic, unique,
-   * 0600 permissions) under the system tempdir (TMPDIR or /tmp).
+   * 0600 permissions) under the system tempdir (TMPDIR or /tmp), and is
+   * named after the entry it holds so that a file left behind by a crash
+   * says which artifact it came from.
    */
   static TempFile from_zip_entry(const std::string& outer_pt2_path,
                                  const std::string& entry_name) {
     std::string content = read_zip_entry(outer_pt2_path, entry_name);
     const char* tmpdir = std::getenv("TMPDIR");
-    std::string tmpl =
-        std::string(tmpdir ? tmpdir : "/tmp") + "/dp_pt2_with_comm_XXXXXX";
+    std::string tmpl = std::string(tmpdir ? tmpdir : "/tmp") + "/dp_pt2_" +
+                       entry_stem(entry_name) + "_XXXXXX";
     std::vector<char> buf(tmpl.begin(), tmpl.end());
     buf.push_back('\0');
     int fd = mkstemp(buf.data());
@@ -548,6 +718,26 @@ class TempFile {
   }
 
  private:
+  /**
+   * @brief The base name of a ZIP entry, without directories or extension
+   * and reduced to characters a file name carries safely.
+   */
+  static std::string entry_stem(const std::string& entry_name) {
+    const std::size_t slash = entry_name.find_last_of('/');
+    std::string stem =
+        slash == std::string::npos ? entry_name : entry_name.substr(slash + 1);
+    const std::size_t dot = stem.find_last_of('.');
+    if (dot != std::string::npos) {
+      stem.erase(dot);
+    }
+    for (char& c : stem) {
+      if (!std::isalnum(static_cast<unsigned char>(c))) {
+        c = '_';
+      }
+    }
+    return stem;
+  }
+
   void cleanup() {
     if (!path_.empty()) {
       ::unlink(path_.c_str());
@@ -657,6 +847,134 @@ inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
                                        remapped_sendnum.data(),
                                        remapped_recvnum.data(), nlocal, nghost);
 }
+
+// ============================================================================
+// Charge-state fold — the runtime charge/spin condition of a compressed model.
+// ============================================================================
+
+/**
+ * @brief The frozen tables through which a compressed descriptor carries its
+ * charge/spin condition, as a rebuild that can be re-run at any time.
+ *
+ * A compressed charge-conditioned descriptor evaluates its frame condition
+ * once, when the model is frozen, into a handful of tables. Those tables
+ * reach a compiled lower as module constants, so serving a different
+ * condition means rebuilding them and writing them over those constants
+ * rather than re-evaluating the condition on every step. The archive
+ * therefore ships a second compiled artifact that performs the rebuild,
+ * together with the name of the constant each of its outputs replaces.
+ *
+ * Every lower lifts its constants independently, so the names hold only for
+ * the lower they were resolved against at freeze time. Only a compressed
+ * DPA4C descriptor folds a charge state, and that family never carries
+ * message passing across ranks, so an archive with a fold holds exactly one
+ * lower and the question of a second set of names does not arise.
+ *
+ * An archive without the rebuild leaves the fold inactive. That is the
+ * ordinary case: an uncompressed model reads its condition as a plain input,
+ * so nothing needs rebuilding.
+ */
+class ChargeStateFold {
+ public:
+  /**
+   * @brief Load the rebuild an archive declares, if it declares one.
+   *
+   * The constant-name field is the archive's claim that the rebuild ships
+   * with it, so an archive that declares the names and cannot supply the
+   * rebuild is malformed and fails here rather than degrading silently.
+   *
+   * @param[in] model_path Path to the .pt2 archive.
+   * @param[in] metadata Parsed archive metadata.
+   * @param[in] gpu_enabled Whether the lower was loaded on a GPU.
+   * @param[in] gpu_id The GPU the lower was loaded on.
+   * @return The fold, or ``nullptr`` when the archive declares none.
+   **/
+  static std::unique_ptr<ChargeStateFold> load(const std::string& model_path,
+                                               const JsonValue& metadata,
+                                               const bool gpu_enabled,
+                                               const int gpu_id) {
+    if (!metadata.obj_val.count("charge_state_constants")) {
+      return nullptr;
+    }
+    if (metadata.obj_val.count("has_comm_artifact") &&
+        metadata["has_comm_artifact"].as_bool()) {
+      throw deepmd::deepmd_exception(
+          "the archive ships a charge-state fold beside a with-comm lower; "
+          "the fold names the constants of one lower only, so the second "
+          "would keep serving the condition it was frozen against");
+    }
+    std::unique_ptr<ChargeStateFold> fold(new ChargeStateFold());
+    fold->constants_ = read_names(metadata, "charge_state_constants");
+    fold->tempfile_ = std::make_unique<TempFile>(
+        TempFile::from_zip_entry(model_path, "extra/charge_state.pt2"));
+    fold->loader_ = std::make_unique<torch::inductor::AOTIModelPackageLoader>(
+        fold->tempfile_->path(), "model", false, 1,
+        gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
+                    : static_cast<c10::DeviceIndex>(-1));
+    return fold;
+  }
+
+  /**
+   * @brief Rebuild the tables for a condition and write them over the
+   * constants of the lower.
+   *
+   * @param[in] charge_spin The condition.
+   * @param[in] device The device the lower was loaded on.
+   * @param[in,out] target The lower whose constants carry the condition.
+   **/
+  void apply(const std::vector<double>& charge_spin,
+             const torch::Device& device,
+             torch::inductor::AOTIModelPackageLoader& target) const {
+    // The rebuild consumes the condition in the (1, dim) float32 layout the
+    // inference lower would receive.
+    std::vector<float> state(charge_spin.begin(), charge_spin.end());
+    torch::Tensor state_tensor =
+        torch::from_blob(state.data(),
+                         {1, static_cast<std::int64_t>(state.size())},
+                         torch::TensorOptions().dtype(torch::kFloat32))
+            .clone()
+            .to(device);
+    std::vector<torch::Tensor> tables = loader_->run({state_tensor});
+    if (tables.size() != constants_.size()) {
+      throw deepmd::deepmd_exception(
+          "the charge-state rebuild returned " + std::to_string(tables.size()) +
+          " tables but the archive names " + std::to_string(constants_.size()) +
+          " constants; it cannot serve a runtime charge state");
+    }
+    // The inactive buffer is a complete model image. A partial inactive update
+    // copies tensor constants and buffers but omits ordinary parameters, so it
+    // cannot be swapped into service safely.
+    auto* runner = target.get_runner();
+    auto constants = runner->extract_constants_map(/*use_inactive=*/false);
+    for (size_t ii = 0; ii < tables.size(); ++ii) {
+      // An unnamed output belongs to a mechanism this model has disabled and
+      // has no constant to reach.
+      if (!constants_[ii].empty()) {
+        constants[constants_[ii]] = tables[ii];
+      }
+    }
+    target.load_constants(constants, /*use_inactive=*/true,
+                          /*check_full_update=*/true);
+    runner->swap_constant_buffer();
+    runner->free_inactive_constant_buffer();
+  }
+
+ private:
+  ChargeStateFold() = default;
+
+  static std::vector<std::string> read_names(const JsonValue& metadata,
+                                             const std::string& key) {
+    std::vector<std::string> names;
+    for (const auto& v : metadata[key].as_array()) {
+      names.push_back(v.as_string());
+    }
+    return names;
+  }
+
+  std::vector<std::string> constants_;
+  std::unique_ptr<TempFile> tempfile_;
+  std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader_;
+};
 
 }  // namespace ptexpt
 }  // namespace deepmd

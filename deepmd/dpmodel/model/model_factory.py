@@ -135,6 +135,7 @@ def get_linear_atomic_model(
     backend_name: str,
     atomic_model: type,
     pairtab_model: type,
+    linear_atomic_model: type | None = None,
     descriptor_child_builder: "Callable[[dict], Any | None] | None" = None,
 ) -> Any:
     """Build the ``LinearEnergyAtomicModel`` composition from a config.
@@ -162,6 +163,13 @@ def get_linear_atomic_model(
         Backend learned atomic-model class.
     pairtab_model : type
         Backend pair-tabulation atomic-model class.
+    linear_atomic_model : type, optional
+        Backend linear composition atomic-model class. Defaults to the
+        dpmodel class. A backend that wraps dpmodel classes must pass its
+        own wrapper: otherwise the composition it gets back is a dpmodel
+        instance that its model wrapper has to convert, and conversion
+        keeps only what the portable record carries -- dropping any
+        runtime state the children hold (e.g. ``use_amp``).
     descriptor_child_builder : callable, optional
         Backend hook for descriptor-bearing children: called with the
         child config (``type_map`` and derived clamp radii already
@@ -183,8 +191,10 @@ def get_linear_atomic_model(
         InnerPotentialAtomicModel,
     )
     from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-        LinearEnergyAtomicModel,
+        LinearEnergyAtomicModel as LinearEnergyAtomicModelDP,
     )
+
+    LinearEnergyAtomicModel = linear_atomic_model or LinearEnergyAtomicModelDP
 
     data = copy.deepcopy(data)
     type_map = data["type_map"]
@@ -433,6 +443,7 @@ class BackendModelFactory:
         atomic_model: type | None = None,
         pairtab_model: type | None = None,
         zbl_model: type | None = None,
+        linear_atomic_model: type | None = None,
     ) -> None:
         """Store backend-native classes used by all model construction paths."""
         self.descriptor_base = descriptor_base
@@ -442,6 +453,7 @@ class BackendModelFactory:
         self.atomic_model = atomic_model
         self.pairtab_model = pairtab_model
         self.zbl_model = zbl_model
+        self.linear_atomic_model = linear_atomic_model
 
     def get_model_components(self, data: dict) -> tuple[Any, Any, str]:
         """Construct descriptor and fitting objects for this backend."""
@@ -478,6 +490,7 @@ class BackendModelFactory:
             backend_name=self.backend_name,
             atomic_model=self.atomic_model,
             pairtab_model=self.pairtab_model,
+            linear_atomic_model=self.linear_atomic_model,
             descriptor_child_builder=descriptor_child_builder,
         )
 

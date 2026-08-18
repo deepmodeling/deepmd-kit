@@ -31,15 +31,18 @@ from deepmd.utils.version import (
 )
 
 
-def custom_huber_loss(
-    predictions: torch.Tensor, targets: torch.Tensor, delta: float = 1.0
-) -> torch.Tensor:
-    error = targets - predictions
-    abs_error = torch.abs(error)
-    quadratic_loss = 0.5 * torch.pow(error, 2)
+def _huber_from_residual(residual: torch.Tensor, delta: float = 1.0) -> torch.Tensor:
+    abs_error = torch.abs(residual)
+    quadratic_loss = 0.5 * torch.pow(residual, 2)
     linear_loss = delta * (abs_error - 0.5 * delta)
     loss = torch.where(abs_error <= delta, quadratic_loss, linear_loss)
     return torch.mean(loss)
+
+
+def custom_huber_loss(
+    predictions: torch.Tensor, targets: torch.Tensor, delta: float = 1.0
+) -> torch.Tensor:
+    return _huber_from_residual(targets - predictions, delta)
 
 
 class EnergyStdLoss(TaskLoss):
@@ -426,11 +429,8 @@ class EnergyStdLoss(TaskLoss):
                                 )  # [nf, nloc, 3]
                                 huber_ncomp = 3
                             else:
-                                diff_3 = (force_label - force_pred).reshape(
-                                    _nf, _nloc, 3
-                                )
                                 norm_2d = torch.linalg.vector_norm(
-                                    diff_3.reshape(-1, 3), ord=2, dim=1
+                                    diff_f_3d.reshape(-1, 3), ord=2, dim=1
                                 ).reshape(_nf, _nloc)
                                 abs_n = norm_2d
                                 quad_n = 0.5 * torch.square(norm_2d)
@@ -452,21 +452,19 @@ class EnergyStdLoss(TaskLoss):
                             )
                         else:
                             if not self.f_use_norm:
-                                l_huber_loss = custom_huber_loss(
-                                    force_pred.reshape(-1),
-                                    force_label.reshape(-1),
+                                l_huber_loss = _huber_from_residual(
+                                    diff_f,
                                     delta=self._huber_delta_force,
                                 )
                             else:
                                 force_diff_norm = torch.linalg.vector_norm(
-                                    (force_label - force_pred).reshape(-1, 3),
+                                    diff_f.reshape(-1, 3),
                                     ord=2,
                                     dim=1,
                                     keepdim=True,
                                 )
-                                l_huber_loss = custom_huber_loss(
+                                l_huber_loss = _huber_from_residual(
                                     force_diff_norm,
-                                    torch.zeros_like(force_diff_norm),
                                     delta=self._huber_delta_force,
                                 )
                             loss += pref_f * l_huber_loss
@@ -486,9 +484,8 @@ class EnergyStdLoss(TaskLoss):
                                 torch.abs(diff_f_3d), maskf, 3
                             )
                         else:
-                            diff_3 = (force_label - force_pred).reshape(_nf, _nloc, 3)
                             norm_2d = torch.linalg.vector_norm(
-                                diff_3.reshape(-1, 3), ord=2, dim=1
+                                diff_f_3d.reshape(-1, 3), ord=2, dim=1
                             ).reshape(_nf, _nloc)
                             # One L2 norm per atom, hence one label per atom.
                             l1_f_masked = masked_atom_mean(
@@ -500,14 +497,10 @@ class EnergyStdLoss(TaskLoss):
                         loss += (pref_f * l1_f_masked).to(GLOBAL_PT_FLOAT_PRECISION)
                     else:
                         if not self.f_use_norm:
-                            l1_force_loss = F.l1_loss(
-                                force_label.reshape(-1),
-                                force_pred.reshape(-1),
-                                reduction="mean",
-                            )
+                            l1_force_loss = torch.mean(torch.abs(diff_f))
                         else:
                             l1_force_loss = torch.linalg.vector_norm(
-                                (force_label - force_pred).reshape(-1, 3),
+                                diff_f.reshape(-1, 3),
                                 ord=2,
                                 dim=1,
                                 keepdim=True,

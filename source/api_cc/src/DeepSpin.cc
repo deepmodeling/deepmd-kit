@@ -458,11 +458,86 @@ template void DeepSpin::compute<float>(std::vector<ENERGYTYPE>& dener,
 
 int DeepSpin::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
+void DeepSpin::set_charge_spin(const std::vector<double>& charge_spin) {
+  dp->set_charge_spin(charge_spin);
+}
+
 std::vector<bool> DeepSpin::get_use_spin() const {
   if (dp) {
     return dp->get_use_spin();
   }
   return {};
+}
+
+void DeepSpinBackend::compute_canonical_graph_gpu(
+    double* d_atom_energy,
+    double* d_force,
+    double* d_force_mag,
+    double* d_atom_virial,
+    const std::int64_t* d_atype,
+    const std::uint32_t* d_source,
+    const float* d_edge_vec,
+    const std::int64_t* d_destination_row_ptr,
+    const std::int64_t* d_source_row_ptr,
+    const std::uint32_t* d_source_order,
+    const float* d_spin,
+    const int nloc,
+    const int nall_nodes,
+    const std::int64_t edge_storage) {
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_force_mag;
+  (void)d_atom_virial;
+  (void)d_atype;
+  (void)d_source;
+  (void)d_edge_vec;
+  (void)d_destination_row_ptr;
+  (void)d_source_row_ptr;
+  (void)d_source_order;
+  (void)d_spin;
+  (void)nloc;
+  (void)nall_nodes;
+  (void)edge_storage;
+  throw deepmd::deepmd_exception(
+      "compact canonical graph inference is only supported by a compatible "
+      "PyTorch Exportable backend.");
+}
+
+bool DeepSpinBackend::uses_canonical_graph_inference() const { return false; }
+
+bool DeepSpinBackend::uses_native_spin_scheme() const { return false; }
+
+void DeepSpin::compute_canonical_graph_gpu(
+    double* d_atom_energy,
+    double* d_force,
+    double* d_force_mag,
+    double* d_atom_virial,
+    const std::int64_t* d_atype,
+    const std::uint32_t* d_source,
+    const float* d_edge_vec,
+    const std::int64_t* d_destination_row_ptr,
+    const std::int64_t* d_source_row_ptr,
+    const std::uint32_t* d_source_order,
+    const float* d_spin,
+    const int nloc,
+    const int nall_nodes,
+    const std::int64_t edge_storage) {
+  // Backend-agnostic dispatch: backends that implement device-resident
+  // canonical inference override the hook, while the others inherit the
+  // throwing default. ``libdeepmd_cc`` does not link any backend, so the
+  // dispatch stays virtual rather than casting to a concrete backend type.
+  dp->compute_canonical_graph_gpu(
+      d_atom_energy, d_force, d_force_mag, d_atom_virial, d_atype, d_source,
+      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
+      d_spin, nloc, nall_nodes, edge_storage);
+}
+
+bool DeepSpin::uses_canonical_graph_inference() const {
+  return dp->uses_canonical_graph_inference();
+}
+
+bool DeepSpin::uses_native_spin_scheme() const {
+  return dp->uses_native_spin_scheme();
 }
 
 DeepSpinModelDevi::DeepSpinModelDevi() {

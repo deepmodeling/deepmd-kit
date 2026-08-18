@@ -427,7 +427,8 @@ class TestRadialParity:
         assert_parity(dp_mod.call(r), pt_mod(to_pt(r)))
 
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
-    def test_radial_basis_roundtrip(self, basis_type) -> None:
+    @pytest.mark.parametrize("apply_envelope", [True, False])  # both envelope modes
+    def test_radial_basis_roundtrip(self, basis_type, apply_envelope) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
@@ -438,12 +439,44 @@ class TestRadialParity:
             n_radial=12,
             precision="float64",
             exponent=7,
+            apply_envelope=apply_envelope,
         )
         dp_mod2 = DPRadialBasis.deserialize(dp_mod.serialize())
+        assert dp_mod2.apply_envelope is apply_envelope
         r = self._r_grid()
         np.testing.assert_array_equal(
             np.asarray(dp_mod.call(r)), np.asarray(dp_mod2.call(r))
         )
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
+    def test_radial_basis_envelope_modes(self, basis_type) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+
+        def make(apply_envelope: bool) -> DPRadialBasis:
+            return DPRadialBasis(
+                rcut=self.rcut,
+                basis_type=basis_type,
+                n_radial=12,
+                precision="float64",
+                exponent=7,
+                apply_envelope=apply_envelope,
+            )
+
+        enveloped, raw = make(True), make(False)
+        r = self._r_grid()
+        enveloped_value = np.asarray(enveloped.call(r))
+        raw_value = np.asarray(raw.call(r))
+        # the two modes differ by exactly one envelope factor
+        np.testing.assert_array_equal(
+            enveloped_value, raw_value * np.asarray(enveloped.envelope(r))
+        )
+        # only the enveloped mode is truncated; consumers of the raw mode owe
+        # the basis one cutoff factor of their own
+        outside = r[:, 0] > self.rcut
+        np.testing.assert_array_equal(enveloped_value[outside], 0.0)
+        assert np.any(raw_value[outside] != 0.0)
 
     @pytest.mark.parametrize(
         "mlp_layers",
