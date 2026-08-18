@@ -11,6 +11,7 @@
 #include <torch/torch.h>
 
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <tuple>
 
@@ -44,6 +45,29 @@ cudaError_t dispatch_width(int width,
 
 void check_launch(const char* operation, const cudaError_t error) {
   TORCH_CHECK(error == cudaSuccess, operation, ": ", cudaGetErrorString(error));
+}
+
+IndexKind index_kind_from_tensor(const torch::Tensor& tensor) {
+  if (tensor.scalar_type() == torch::kInt32) {
+    return IndexKind::kInt32;
+  }
+  if (tensor.scalar_type() == torch::kUInt32) {
+    return IndexKind::kUInt32;
+  }
+  return IndexKind::kInt64;
+}
+
+const void* index_data_ptr(const torch::Tensor& tensor, IndexKind kind) {
+  switch (kind) {
+    case IndexKind::kInt32:
+      return static_cast<const void*>(tensor.data_ptr<int>());
+    case IndexKind::kUInt32:
+      return static_cast<const void*>(tensor.data_ptr<std::uint32_t>());
+    case IndexKind::kInt64:
+      return static_cast<const void*>(tensor.data_ptr<long>());
+  }
+  TORCH_CHECK(false, "dpa1_graph_compress: unsupported index kind");
+  return nullptr;
 }
 
 Arguments make_common_arguments(long node_count,
@@ -91,9 +115,7 @@ Arguments make_common_arguments(long node_count,
   arguments.smooth = smooth;
   arguments.canonical = canonical;
   arguments.masked = edge_mask.numel() != 0;
-  arguments.index_kind = edge_index.scalar_type() == torch::kInt32
-                             ? IndexKind::kInt32
-                             : IndexKind::kInt64;
+  arguments.index_kind = index_kind_from_tensor(edge_index);
   arguments.rcut = rcut;
   arguments.rcut_smooth = rcut_smooth;
   arguments.protection = protection;
@@ -104,18 +126,12 @@ Arguments make_common_arguments(long node_count,
   arguments.stride0 = stride0;
   arguments.stride1 = stride1;
   arguments.edge_vec = edge_vec.data_ptr<float>();
-  arguments.edge_index =
-      arguments.index_kind == IndexKind::kInt32
-          ? static_cast<const void*>(edge_index.data_ptr<int>())
-          : static_cast<const void*>(edge_index.data_ptr<long>());
+  arguments.edge_index = index_data_ptr(edge_index, arguments.index_kind);
   arguments.edge_mask = arguments.masked ? edge_mask.data_ptr<bool>() : nullptr;
   arguments.destination_order =
       destination_order.numel() == 0
           ? nullptr
-          : (arguments.index_kind == IndexKind::kInt32
-                 ? static_cast<const void*>(destination_order.data_ptr<int>())
-                 : static_cast<const void*>(
-                       destination_order.data_ptr<long>()));
+          : index_data_ptr(destination_order, arguments.index_kind);
   arguments.destination_row_ptr = destination_row_ptr.data_ptr<long>();
   arguments.atype = atype.data_ptr<long>();
   arguments.average = average.data_ptr<float>();
@@ -153,8 +169,10 @@ void validate_inputs(const torch::Tensor& edge_vec,
           table.is_contiguous() && gate_table.is_contiguous(),
       "dpa1_graph_compress: inputs must be contiguous");
   TORCH_CHECK(edge_index.scalar_type() == torch::kInt32 ||
+                  edge_index.scalar_type() == torch::kUInt32 ||
                   edge_index.scalar_type() == torch::kInt64,
-              "dpa1_graph_compress: edge_index must be int32 or int64");
+              "dpa1_graph_compress: edge_index must be int32, uint32, or "
+              "int64");
   TORCH_CHECK(destination_order.scalar_type() == edge_index.scalar_type(),
               "dpa1_graph_compress: destination_order must match the "
               "edge_index dtype");

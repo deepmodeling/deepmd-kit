@@ -113,6 +113,17 @@ def make_base_descriptor(
             """Returns the default charge_spin value, or None."""
             return None
 
+        def has_chg_spin_ebd(self) -> bool:
+            """Returns whether the descriptor carries a charge/spin condition.
+
+            This asks whether the condition is part of the model at all, which
+            :meth:`get_dim_chg_spin` does not: that reports the width of the
+            conditioning input a compiled forward reads, and a compressed
+            descriptor folds the condition into frozen tables and so reads
+            none. The two agree everywhere else.
+            """
+            return False
+
         def get_geo_compress(self) -> bool:
             """Return whether geometric tabulated compression is active.
 
@@ -343,6 +354,21 @@ def make_base_descriptor(
                 The overflow check frequency
             """
             raise NotImplementedError("This descriptor doesn't support compression!")
+
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Whether :meth:`enable_compression` consumes ``min_nbor_dist``.
+
+            Returns
+            -------
+            bool
+                Concrete default ``True``: a tabulated embedding starts its
+                table at the shortest distance the training data contains, so
+                the caller must measure it first. ``False`` for descriptors
+                whose table domain is fixed analytically; the caller may then
+                skip the neighbor-statistics pass, which is a dense all-pairs
+                computation over the training data.
+            """
+            return True
 
         @abstractmethod
         def fwd(

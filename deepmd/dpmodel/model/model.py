@@ -50,7 +50,14 @@ _model_factory = BackendModelFactory(
 )
 get_zbl_model = _model_factory.get_zbl_model
 
-_DPA4_SEZM_DESCRIPTOR_TYPES = ("dpa4", "DPA4", "sezm", "SeZM")
+_DPA4_SEZM_DESCRIPTOR_TYPES = (
+    "dpa4",
+    "DPA4",
+    "dpa4c",
+    "DPA4C",
+    "sezm",
+    "SeZM",
+)
 
 
 def get_standard_model(data: dict) -> BaseModel:

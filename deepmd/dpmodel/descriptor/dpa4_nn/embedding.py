@@ -45,6 +45,11 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.type_embed import (
     remap_atype_to_padding,
 )
+from deepmd.utils.charge_state import (
+    CHARGE_OFFSET,
+    CHARGE_TABLE_ROWS,
+    MULTIPLICITY_TABLE_ROWS,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -128,26 +133,41 @@ class SeZMTypeEmbedding(NativeOP):
         # === Step 2. Register the embedding table parameter ===
         self.adam_type_embedding = table
 
-    def call(self, atype: Any) -> Any:
+    def call(self, atype: Any | None = None) -> Any:
         """
         Gather type embeddings.
 
         Parameters
         ----------
         atype
-            Atom types with shape (...,). Valid type range is [0, ntypes-1].
+            Atom types with shape (...). Valid type range is [0, ntypes-1].
+            If omitted, return the complete embedding table, including the
+            optional padding row. This form is used by graph-native descriptor
+            ABIs that precompute the table once per forward call.
 
         Returns
         -------
         Array
-            Type embeddings with shape (..., embed_dim).
+            Gathered type embeddings with shape ``(..., embed_dim)`` when
+            ``atype`` is provided. Otherwise, the complete table with shape
+            ``(ntypes + int(padding), embed_dim)``.
         """
+        # === Step 1. Return the complete graph-native lookup table ===
+        if atype is None:
+            xp = array_api_compat.array_namespace(self.adam_type_embedding)
+            return xp_asarray_nodetach(
+                xp,
+                self.adam_type_embedding[...],
+                device=array_api_compat.device(self.adam_type_embedding),
+            )
+
+        # === Step 2. Gather rows for an explicit atom-type tensor ===
         xp = array_api_compat.array_namespace(atype)
         weight = xp_asarray_nodetach(
             xp, self.adam_type_embedding[...], device=array_api_compat.device(atype)
         )
-        # torch.embedding gather: flatten the indices to int64, take the rows,
-        # then restore the original index shape.
+        # Flattening provides one backend-neutral gather while preserving every
+        # leading batch or graph dimension on restoration.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
         if self.padding:
             index = remap_atype_to_padding(index, self.ntypes + 1)
@@ -869,7 +889,7 @@ class ChargeSpinEmbedding(NativeOP):
             raise ValueError("`embed_dim` must be positive")
 
         self.charge_embedding = SeZMTypeEmbedding(
-            ntypes=200,
+            ntypes=CHARGE_TABLE_ROWS,
             embed_dim=self.embed_dim,
             precision=self.precision,
             seed=child_seed(seed, 0),
@@ -877,7 +897,7 @@ class ChargeSpinEmbedding(NativeOP):
             padding=False,
         )
         self.spin_embedding = SeZMTypeEmbedding(
-            ntypes=100,
+            ntypes=MULTIPLICITY_TABLE_ROWS,
             embed_dim=self.embed_dim,
             precision=self.precision,
             seed=child_seed(seed, 1),
@@ -908,7 +928,7 @@ class ChargeSpinEmbedding(NativeOP):
             Mixed condition embedding with shape (nf, embed_dim).
         """
         xp = array_api_compat.array_namespace(charge_spin)
-        charge = xp.astype(charge_spin[:, 0], xp.int64) + 100
+        charge = xp.astype(charge_spin[:, 0], xp.int64) + CHARGE_OFFSET
         spin = xp.astype(charge_spin[:, 1], xp.int64)
         charge_embed = self.charge_embedding(charge)
         spin_embed = self.spin_embedding(spin)

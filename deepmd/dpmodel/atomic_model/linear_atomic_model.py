@@ -303,6 +303,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 check_frequency,
             )
 
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Required as soon as ANY child consumes it.
+
+        The statistic is measured once and handed to every child, so a single
+        child that tabulates from the shortest observed distance keeps the
+        neighbor-statistics pass for the whole composition.
+        """
+        return any(m.compression_needs_min_nbor_dist() for m in self.models)
+
     def uses_graph_lower(self) -> bool:
         """Graph-capable iff EVERY child supports the graph lower.
 

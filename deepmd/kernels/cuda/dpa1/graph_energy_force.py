@@ -94,7 +94,6 @@ def _fake(
     basis_dim: int,
     fit_ws: list[torch.Tensor],
     fit_bs: list[torch.Tensor],
-    fit_idts: list[torch.Tensor],
     fit_resnets: list[int],
     w_head: torch.Tensor,
     b_head: torch.Tensor,
@@ -157,7 +156,6 @@ def _cpu(
     basis_dim: int,
     fit_ws: list[torch.Tensor],
     fit_bs: list[torch.Tensor],
-    fit_idts: list[torch.Tensor],
     fit_resnets: list[int],
     w_head: torch.Tensor,
     b_head: torch.Tensor,
@@ -209,7 +207,6 @@ def _cpu(
         atype,
         fit_ws,
         fit_bs,
-        fit_idts,
         fit_resnets,
         w_head,
         b_head,
@@ -226,7 +223,7 @@ def _cpu(
     energy = torch.zeros(nf, 1, dtype=atom_e.dtype, device=atom_e.device)
     energy = energy.index_add(0, frame_id, atom_e)
     d_grrg = torch.ops.deepmd.graph_fitting_backward(
-        energy_seed, fit_saved, fit_ws, fit_resnets, w_head
+        energy_seed, fit_saved, fit_ws, fit_bs, fit_resnets, w_head, fit_act
     )
     del grrg, fit_saved
     g_e = torch.ops.deepmd.dpa1_graph_descriptor_backward(
@@ -269,7 +266,7 @@ def _cpu(
     # ``_fake`` and the CUDA operator; the sub-operator would otherwise return
     # fp64 whenever the edge inputs are fp64.
     fprec = w1.dtype
-    force, atom_virial, virial = torch.ops.deepmd.edge_force_virial(
+    force, atom_virial, virial, _ = torch.ops.deepmd.edge_force_virial(
         g_e.to(fprec),
         edge_vec.to(fprec),
         edge_index,
@@ -279,6 +276,7 @@ def _cpu(
         source_order,
         source_row_ptr,
         n_node,
+        edge_vec.to(fprec).new_empty(0),
         node_capacity,
         do_atomic_virial,
     )
@@ -371,8 +369,11 @@ def dpa1_graph_energy_force(
         smooth = 0
     w1, w2, w3 = (layer.w.contiguous() for layer in layers)
 
-    *hidden, head = fit.nets[0].layers
-    fempty = hidden[0].w.new_empty(0)
+    from deepmd.kernels.cuda.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    network = fitting_operator_arguments(fit)
     if (
         graph.destination_order is None
         or graph.destination_row_ptr is None
@@ -423,21 +424,13 @@ def dpa1_graph_energy_force(
         float(se.env_protection),
         float(se.nnei),
         (int(se.lmax) + 1) ** 2,
-        [layer.w.contiguous() for layer in hidden],
-        [layer.b.contiguous() if layer.b is not None else fempty for layer in hidden],
-        [
-            layer.idt.contiguous() if layer.idt is not None else fempty
-            for layer in hidden
-        ],
-        [1 if layer.resnet else 0 for layer in hidden],
-        head.w.reshape(-1).contiguous(),
-        (
-            head.b.reshape(-1).to(torch.float32).contiguous()
-            if head.b is not None
-            else fempty
-        ),
+        network.weights,
+        network.biases,
+        network.residuals,
+        network.head_weight,
+        network.head_bias,
         atom_bias.to(torch.float64).contiguous(),
-        ACT_CODES[str(hidden[0].activation_function).lower()],
+        network.activation,
         node_capacity,
         do_atomic_virial,
     )

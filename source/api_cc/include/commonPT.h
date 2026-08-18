@@ -3,9 +3,11 @@
 
 #ifdef BUILD_PYTORCH
 #include <torch/torch.h>
+#include <torch/version.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -195,6 +197,18 @@ inline EdgeTensorPack createEdgeTensors(
     const bool with_geometry = true,
     const std::vector<int>* row_centers = nullptr,
     const bool fold_to_local = true) {
+  // Folding reads an owner for every extended atom, so a mapping shorter than
+  // that is a caller error rather than a degraded input: indexing it would be
+  // out of bounds, and the out-of-range owners it appears to yield would drop
+  // the corresponding edges one by one, leaving a quietly incomplete graph.
+  if (fold_to_local && mapping.size() < static_cast<size_t>(nall)) {
+    throw deepmd::deepmd_exception(
+        "folding ghost neighbours onto their local owners needs an owner for "
+        "each of the " +
+        std::to_string(nall) + " extended atoms, but the mapping holds " +
+        std::to_string(mapping.size()) +
+        "; under LAMMPS this is what 'atom_modify map yes' supplies");
+  }
   std::vector<std::int64_t> src;
   std::vector<std::int64_t> dst;
   std::vector<std::int64_t> src_ext;
@@ -234,8 +248,19 @@ inline EdgeTensorPack createEdgeTensors(
       std::int64_t src_node;
       if (fold_to_local) {
         const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
+        // Folding is single-domain, where every extended atom has an owner
+        // among the local ones. An owner outside that range therefore marks a
+        // mapping that was never filled, not a neighbour to skip: skipping
+        // would discard every ghost edge and leave a graph that is quietly
+        // missing the whole halo.
         if (src_local < 0 || src_local >= nloc) {
-          continue;
+          throw deepmd::deepmd_exception(
+              "extended atom " + std::to_string(jj) + " of " +
+              std::to_string(nall) + " maps to owner " +
+              std::to_string(src_local) + ", which is not one of the " +
+              std::to_string(nloc) +
+              " local atoms; under LAMMPS an owner for every extended atom is "
+              "what 'atom_modify map yes' supplies");
         }
         src_node = src_local;
       } else {
@@ -393,27 +418,52 @@ struct CanonicalGraphTensorPack {
   torch::Tensor source_order;
 };
 
+/**
+ * @brief Return the scalar type of compact canonical graph indices.
+ *
+ * Unsigned 32-bit tensors entered the public C++ API in PyTorch 2.3. Older
+ * CPU-only libtorch releases can still build DeePMD-kit, but cannot execute
+ * the GPU-only compact canonical graph path.
+ */
+inline at::ScalarType canonicalGraphIndexType() {
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 3)
+  return torch::kUInt32;
+#else
+  throw deepmd_exception(
+      "compact canonical graph inference requires PyTorch 2.3 or later");
+#endif
+}
+
 inline CanonicalGraphTensorPack compactCanonicalGraph(
     const GraphTensorPack& graph) {
   const std::int64_t edge_count =
       graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
           .item<std::int64_t>();
   const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  if (static_cast<std::uint64_t>(storage_count) >
+      std::numeric_limits<std::uint32_t>::max()) {
+    throw deepmd_exception(
+        "compact canonical graph exceeds the uint32 edge-index range");
+  }
+  const auto index_type = canonicalGraphIndexType();
   auto source = torch::zeros({storage_count},
-                             graph.edge_index.options().dtype(torch::kInt64));
+                             graph.edge_index.options().dtype(index_type));
   auto edge_vec = torch::zeros({storage_count, 3},
                                graph.edge_vec.options().dtype(torch::kFloat32));
-  auto source_order = torch::arange(
-      storage_count, graph.edge_index.options().dtype(torch::kInt64));
+  auto source_order =
+      torch::arange(storage_count,
+                    graph.edge_index.options().dtype(torch::kInt64))
+          .to(index_type);
   if (edge_count > 0) {
     source.slice(0, 0, edge_count)
         .copy_(graph.edge_index.select(0, 0)
                    .slice(0, 0, edge_count)
-                   .to(torch::kInt64));
+                   .to(index_type));
     edge_vec.slice(0, 0, edge_count)
         .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
     source_order.slice(0, 0, edge_count)
-        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kInt64));
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(index_type));
   }
   return {graph.atype,
           graph.n_node,
@@ -841,6 +891,25 @@ inline void remap_graph_outputs_to_dense_keys(
     atom_virial_full.index_put_({0, Slice(0, nloc), 0}, atom_virial_pub);
     output_map["energy_derv_c"] = atom_virial_full;
   }
+}
+
+/**
+ * @brief Flatten the per-atom virial emitted by a compact canonical lower.
+ *
+ * The compact lower emits the per-atom virial as a three-by-three tensor,
+ * whereas the graph lower flattens it to nine components -- the layout the
+ * dense-key remap consumes. The key is absent when the artifact was traced
+ * without the per-atom virial, in which case the remap never reads it either.
+ *
+ * @param[in,out] output_map Output tensor map of a canonical forward.
+ */
+inline void flatten_canonical_atom_virial(
+    std::map<std::string, torch::Tensor>& output_map) {
+  const auto entry = output_map.find("atom_virial");
+  if (entry == output_map.end()) {
+    return;
+  }
+  entry->second = entry->second.reshape({entry->second.size(0), 9});
 }
 
 /**

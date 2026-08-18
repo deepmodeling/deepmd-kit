@@ -54,6 +54,76 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self.requires_hessian("energy")
         self._hessian_enabled = True
 
+    def _to_public_keys(
+        self,
+        model_ret: dict[str, torch.Tensor],
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Rename one ``call_common`` result to the public energy-model keys.
+
+        The renaming is a property of the output definition, not of the node
+        axis, so it serves the rectangular and the ragged entry alike.
+
+        Parameters
+        ----------
+        model_ret : dict[str, torch.Tensor]
+            A ``call_common`` result, in internal ``<var>_<derivative>`` keys.
+        do_atomic_virial : bool
+            Whether the per-atom virial was requested and should be carried.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            The same tensors under the public names.
+        """
+        model_predict = {}
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
+        if self.do_grad_r("energy"):
+            model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
+        for key in ("mask", "n_node"):
+            if key in model_ret:
+                model_predict[key] = model_ret[key]
+        if self.atomic_output_def()["energy"].r_hessian:
+            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
+        return model_predict
+
+    def _translate_eager_call(
+        self,
+        model_ret: dict[str, torch.Tensor],
+        atype: torch.Tensor,
+        do_atomic_virial: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """Translate internal energy outputs at the public model boundary.
+
+        Parameters
+        ----------
+        model_ret : dict[str, torch.Tensor]
+            Result returned by a ``call_common`` entry.
+        atype : torch.Tensor
+            Atom types on the same node axis as the atomic outputs.
+        do_atomic_virial : bool, default: False
+            Whether the per-atom virial was requested.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public model outputs.
+
+        Notes
+        -----
+        Native-spin models override this translation to add ``force_mag`` and
+        ``mask_mag``. Keeping the dispatch here lets rectangular and ragged
+        forwards share one implementation without duplicating a spin-specific
+        ``forward_ragged``.
+        """
+        del atype
+        return self._to_public_keys(model_ret, do_atomic_virial)
+
     def forward_lower_canonical_graph(
         self,
         atype: torch.Tensor,
@@ -66,8 +136,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         source_order: torch.Tensor,
         *,
         do_atomic_virial: bool,
+        spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Evaluate an eligible compressed DPA1 deployment graph.
+        """Evaluate an eligible compressed canonical deployment graph.
 
         Parameters
         ----------
@@ -78,7 +149,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         n_local
             Per-frame owned node counts with shape ``(nf,)``, int64.
         source
-            Source-node indices with shape ``(S,)``, int32 or int64.
+            Source-node indices with shape ``(S,)``, uint32.
         edge_vec
             Destination-major edge vectors with shape ``(S, 3)``, float32.
         destination_row_ptr
@@ -90,6 +161,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             dtype as ``source``.
         do_atomic_virial
             Whether to return the per-node virial.
+        spin
+            Per-node magnetic moments with shape ``(N, 3)`` for a native-spin
+            model, or ``None``. Ghost rows carry their owner's moment.
 
         Returns
         -------
@@ -97,17 +171,26 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Public energy-model outputs on the flat node axis.
         """
         from deepmd.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible,
+            canonical_model_eligible as dpa1_canonical_eligible,
+        )
+        from deepmd.kernels.cuda.dpa1.canonical import (
             dpa1_canonical_compress_energy_force,
         )
+        from deepmd.kernels.cuda.dpa4c.canonical import (
+            canonical_model_eligible as dpa4c_canonical_eligible,
+        )
+        from deepmd.kernels.cuda.dpa4c.canonical import (
+            dpa4c_canonical_compress_energy_force,
+        )
         from deepmd.pt_expt.utils.canonical_graph import (
-            DPA1CanonicalGraph,
+            CanonicalGraph,
             validate_canonical_graph_shapes,
         )
 
-        if not canonical_model_eligible(self):
+        use_dpa4c = dpa4c_canonical_eligible(self)
+        if not use_dpa4c and not dpa1_canonical_eligible(self):
             raise ValueError("model is not eligible for compact canonical deployment")
-        graph = DPA1CanonicalGraph(
+        graph = CanonicalGraph(
             n_node=n_node,
             n_local=n_local,
             source=source,
@@ -126,21 +209,35 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         descriptor = self.atomic_model.descriptor
         fitting = self.atomic_model.fitting_net
         atom_bias = fitting.bias_atom_e[:, 0] + self.atomic_model.out_bias[0, :, 0]
-        energy, atom_energy, force, virial, atom_virial = (
-            dpa1_canonical_compress_energy_force(
-                descriptor,
-                fitting,
-                graph,
-                atype,
-                # descriptor-owned hook (single owner for the graph-route tebd
-                # table); value-identical for dpa1, the only canonical-eligible
-                # descriptor.
-                descriptor.graph_type_embedding_table(),
-                output_mask,
-                atom_bias,
-                do_atomic_virial,
+        if use_dpa4c:
+            energy, atom_energy, force, virial, atom_virial, force_mag = (
+                dpa4c_canonical_compress_energy_force(
+                    descriptor,
+                    fitting,
+                    graph,
+                    atype,
+                    output_mask,
+                    atom_bias,
+                    do_atomic_virial,
+                    spin,
+                )
             )
-        )
+        else:
+            force_mag = None
+            energy, atom_energy, force, virial, atom_virial = (
+                dpa1_canonical_compress_energy_force(
+                    descriptor,
+                    fitting,
+                    graph,
+                    atype,
+                    # Descriptor-owned hook: the single owner of the
+                    # graph-route type-embedding table.
+                    descriptor.graph_type_embedding_table(),
+                    output_mask,
+                    atom_bias,
+                    do_atomic_virial,
+                )
+            )
         result = {
             "atom_energy": atom_energy,
             "energy": energy,
@@ -148,6 +245,15 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             "virial": virial,
             "mask": output_mask.to(torch.int32),
         }
+        if spin is not None:
+            if force_mag is None or force_mag.ndim != 2:
+                raise RuntimeError(
+                    "canonical native-spin inference did not return a "
+                    "per-node magnetic force"
+                )
+            result["force_mag"] = force_mag
+        elif force_mag is not None and force_mag.ndim == 2:
+            result["force_mag"] = force_mag
         if do_atomic_virial:
             result["atom_virial"] = atom_virial
         return result
@@ -236,6 +342,20 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
         Parameters
         ----------
+        coord
+            Atomic coordinates.
+        atype
+            Atomic type indices.
+        box
+            Simulation-cell vectors, or ``None`` for a non-periodic system.
+        fparam
+            Optional frame parameters.
+        aparam
+            Optional atomic parameters.
+        do_atomic_virial
+            Whether to return per-atom virials.
+        charge_spin
+            Optional frame-level charge and spin conditioning.
         neighbor_list
             The neighbor-list construction strategy forwarded to
             :meth:`call_common`.  ``None`` uses the default all-pairs builder
@@ -254,45 +374,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             do_atomic_virial=do_atomic_virial,
             neighbor_list=neighbor_list,
         )
-        return self._to_public_keys(model_ret, do_atomic_virial)
-
-    def _to_public_keys(
-        self,
-        model_ret: dict[str, torch.Tensor],
-        do_atomic_virial: bool,
-    ) -> dict[str, torch.Tensor]:
-        """Rename one ``call_common`` result to the public energy-model keys.
-
-        The renaming is a property of the output definition, not of the node
-        axis, so it serves the rectangular and the ragged entry alike.
-
-        Parameters
-        ----------
-        model_ret : dict[str, torch.Tensor]
-            A ``call_common`` result, in internal ``<var>_<derivative>`` keys.
-        do_atomic_virial : bool
-            Whether the per-atom virial was requested and should be carried.
-
-        Returns
-        -------
-        dict[str, torch.Tensor]
-            The same tensors under the public names.
-        """
-        model_predict = {}
-        model_predict["atom_energy"] = model_ret["energy"]
-        model_predict["energy"] = model_ret["energy_redu"]
-        if self.do_grad_r("energy"):
-            model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
-        if self.do_grad_c("energy"):
-            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
-            if do_atomic_virial:
-                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
-        for key in ("mask", "n_node"):
-            if key in model_ret:
-                model_predict[key] = model_ret[key]
-        if self.atomic_output_def()["energy"].r_hessian:
-            model_predict["hessian"] = model_ret["energy_derv_r_derv_r"].squeeze(-3)
-        return model_predict
+        return self._translate_eager_call(
+            model_ret,
+            atype,
+            do_atomic_virial=do_atomic_virial,
+        )
 
     def forward_ragged(
         self,
@@ -304,6 +390,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate the energy model over a batch whose node axis is flat.
 
@@ -330,6 +417,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Whether to return per-atom virials.
         charge_spin : torch.Tensor or None, optional
             Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+        spin : torch.Tensor or None, optional
+            Per-atom native spin with shape ``(N, 3)``.
 
         Returns
         -------
@@ -346,8 +435,13 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             charge_spin=charge_spin,
+            spin=spin,
         )
-        return self._to_public_keys(model_ret, do_atomic_virial)
+        return self._translate_eager_call(
+            model_ret,
+            atype,
+            do_atomic_virial=do_atomic_virial,
+        )
 
     def forward_lower(
         self,
@@ -425,8 +519,22 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
 
         Parameters
         ----------
-        extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial
-            Sample inputs with representative shapes (used for tracing).
+        extended_coord
+            Extended-coordinate sample used for tracing.
+        extended_atype
+            Extended atom-type sample used for tracing.
+        nlist
+            Neighbor-list sample used for tracing.
+        mapping
+            Extended-to-local mapping sample used for tracing.
+        fparam
+            Optional frame-parameter sample.
+        aparam
+            Optional atomic-parameter sample.
+        do_atomic_virial
+            Whether the traced module returns per-atom virials.
+        charge_spin
+            Optional charge/spin conditioning sample.
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).
@@ -685,6 +793,18 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         ----------
         atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin, do_atomic_virial
             As in :meth:`forward_lower_graph_exportable`.
+
+        destination_order
+            Destination-major edge permutation used by fused graph operators.
+
+        destination_row_ptr
+            Destination CSR row pointers.
+
+        source_order
+            Source-major edge permutation used by force assembly.
+
+        source_row_ptr
+            Source CSR row pointers.
 
         send_list, send_proc, recv_proc, send_num, recv_num, communicator, nlocal, nghost
             The 8 comm tensors (see ``_make_comm_sample_inputs`` in

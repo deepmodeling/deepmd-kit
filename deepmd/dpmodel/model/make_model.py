@@ -271,6 +271,10 @@ def make_model(
                 check_frequency,
             )
 
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Delegates to the atomic model."""
+            return bool(self.atomic_model.compression_needs_min_nbor_dist())
+
         def call_common(
             self,
             coord: Array,
