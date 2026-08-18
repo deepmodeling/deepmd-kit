@@ -9,9 +9,9 @@ working environment without the user's approval.
 
 Confirm the requested version or ref and the exact URL. Try the versioned docs,
 then the same file at the exact GitHub ref as described in
-[`official-docs.md`](official-docs.md). For a blocked public GitHub URL, use the
-documented `gh-proxy.com` fallback. Do not silently substitute a newer release,
-different CUDA build, or similarly named asset.
+[`official-docs.md`](official-docs.md). If GitHub is blocked, use the exact ref
+and path on the official Gitee mirror. Do not silently substitute a newer
+release, different CUDA build, or similarly named asset.
 
 For downloads, retain the HTTP status, file size, and content type. An HTML
 error page is not an installer or archive. Reassemble split offline assets in
@@ -87,10 +87,20 @@ unless the docs explicitly support it.
 
 ## A native library cannot be loaded
 
-Use `ldd` on Linux or `otool -L` on macOS for the failing library or executable.
-Locate the named dependency in the selected environment before changing
-`RPATH`, `LD_LIBRARY_PATH`, or linker flags. Framework import success does not
-prove that a separately built C++ client or LAMMPS binary uses the same ABI and
+Use `ldd` on Linux or `otool -L` on macOS to identify dependencies of the
+failing library or executable. These listings are diagnostic; `otool -L` does
+not prove that dyld can resolve its install names. Require the platform loader
+to load the built library or execute a linked client. A minimal dylib probe is:
+
+```bash
+"<absolute-python>" -c \
+    'import ctypes; ctypes.CDLL("<absolute-library>.dylib")'
+```
+
+Treat any loader error or Linux `not found` entry as a failed gate. Locate the
+named dependency in the selected environment before changing `RPATH`,
+`LD_LIBRARY_PATH`, or linker flags. Framework import success does not prove
+that a separately built C++ client or LAMMPS binary uses the same ABI and
 libraries.
 
 ## LAMMPS lacks the required DeePMD pair style

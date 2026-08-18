@@ -24,8 +24,16 @@ DeePMD-kit checkout.
        "https://raw.githubusercontent.com/deepmodeling/deepmd-kit/<REF>/doc/install/<FILE>.md"
    ```
 
-1. Stop on a nonzero curl exit, empty response, or HTML error page. Do not
-   generate commands from partial or unverified content.
+1. If GitHub is unavailable, fetch the same exact ref and path from the
+   official Gitee mirror:
+
+   ```bash
+   curl -fsSL --retry 2 \
+       "https://gitee.com/deepmodeling/deepmd-kit/raw/<REF>/doc/install/<FILE>.md"
+   ```
+
+1. Stop on a nonzero curl exit, empty response, HTML error page, or missing
+   ref. Do not generate commands from partial or unverified content.
 
 ## Primary pages
 
@@ -36,6 +44,7 @@ DeePMD-kit checkout.
 - Development packages: <https://docs.deepmodeling.com/projects/deepmd/en/latest/install/easy-install-dev.html>
 - Releases: <https://github.com/deepmodeling/deepmd-kit/releases>
 - Container images: <https://github.com/deepmodeling/deepmd-kit/pkgs/container/deepmd-kit>
+- Official Gitee mirror: <https://gitee.com/deepmodeling/deepmd-kit>
 - dp1s options: <https://github.com/deepmodeling-activity/dp1s>
 
 Use official backend installers when the DeePMD-kit page links to them:
@@ -71,6 +80,7 @@ For example, replace `<REF>` with a validated tag or commit in either form:
 ```text
 https://github.com/deepmodeling/deepmd-kit/blob/<REF>/doc/install/install-from-source.md
 https://raw.githubusercontent.com/deepmodeling/deepmd-kit/<REF>/doc/install/install-from-source.md
+https://gitee.com/deepmodeling/deepmd-kit/raw/<REF>/doc/install/install-from-source.md
 ```
 
 Resolve a branch or tag to a commit SHA before building. Treat a Git ref as
@@ -94,14 +104,14 @@ version, wheel index, image tag, CMake option, or Kokkos architecture.
 
 ## Network fallback
 
-If a GitHub repository or raw-file URL is unreachable because of network
-restrictions, retry the same public URL through `gh-proxy.com`, for example:
+If GitHub is unreachable, use the official Gitee mirror for both source and
+raw documentation:
 
 ```text
-https://gh-proxy.com/https://github.com/deepmodeling/deepmd-kit.git
-https://gh-proxy.com/https://raw.githubusercontent.com/deepmodeling/deepmd-kit/<REF>/doc/install/install-from-source.md
+https://gitee.com/deepmodeling/deepmd-kit.git
+https://gitee.com/deepmodeling/deepmd-kit/raw/<REF>/doc/install/install-from-source.md
 ```
 
-Use the proxy only for public GitHub content. Never send credentials through
-it. After cloning through a proxy, verify the configured upstream URL and the
-resolved commit SHA before building.
+Require the requested tag or commit to exist on the mirror. After cloning,
+record the configured remote and resolved commit SHA before building; do not
+silently substitute the mirror's default branch for a missing ref.

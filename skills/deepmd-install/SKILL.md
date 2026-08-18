@@ -1,6 +1,6 @@
 ---
 name: deepmd-install
-description: Install DeePMD-kit with pip, conda, dp1s, an offline package, Docker, or source code. Use for PyTorch, TensorFlow, JAX, or Paddle on CPU, CUDA, or ROCm, and for the C/C++ interface or DeePMD-enabled LAMMPS.
+description: Install DeePMD-kit with pip, conda, dp1s, an offline package, Docker, or source code. Use for PyTorch, TensorFlow, JAX, or Paddle on CPU, CUDA, or ROCm, and for backend-enabled or backend-neutral C/C++ interfaces and DeePMD-enabled LAMMPS.
 ---
 
 # Install DeePMD-kit
@@ -15,7 +15,8 @@ the full installation manual.
 Determine only the choices that affect installation:
 
 - DeePMD-kit release or Git ref;
-- PyTorch, TensorFlow, JAX, or Paddle backend;
+- PyTorch, TensorFlow, JAX, or Paddle backend, or a backend-neutral C/C++
+  library;
 - CPU, NVIDIA CUDA, or ROCm runtime;
 - Python only, packaged LAMMPS, C/C++, or source-built LAMMPS;
 - existing environment or a new user-approved environment.
@@ -26,6 +27,9 @@ machine has the required compiler and the user accepts the build time;
 otherwise choose the shortest supported package path. Do not create a new
 environment when the user requires an existing one. Ask only for a missing
 choice that changes the installation path.
+
+The backend-neutral choice applies only to the C/C++ interface and requires a
+compatible backend plugin at runtime. It is not a Python installation target.
 
 Inspect the OS, architecture, Python version and prefix, package manager, and
 requested accelerator before changing the machine. Resolve the selected
@@ -51,9 +55,9 @@ rendering an install command:
        "https://raw.githubusercontent.com/deepmodeling/deepmd-kit/<REF>/doc/install/<FILE>.md"
    ```
 
-1. If direct GitHub access fails, retry that same public URL through the
-   documented `gh-proxy.com` form. Reject an HTTP failure, empty response, or
-   HTML error page.
+1. If direct GitHub access fails, fetch the same path and exact ref from the
+   official Gitee mirror. Reject an HTTP failure, empty response, HTML error
+   page, or missing ref.
 
 Read [`references/official-docs.md`](references/official-docs.md) for the URL
 map, version-selection rules, exact repository paths, and network fallback.
@@ -157,13 +161,28 @@ git -C "<source-directory>" checkout --detach FETCH_HEAD
 git -C "<source-directory>" rev-parse HEAD
 ```
 
+If GitHub is unavailable, use the official mirror at
+`https://gitee.com/deepmodeling/deepmd-kit.git` and resolve the same validated
+ref. Do not obtain installation instructions or source through an
+unauthenticated proxy.
+
 Read `doc/install/install-from-source.md` at that exact commit, install the
-selected backend first, and apply only the documented build variables. The
-basic Python build is:
+selected backend first, and apply only the documented build variables. Render
+the target-defining variables in the same invocation so build defaults cannot
+select another runtime or backend:
 
 ```bash
+DP_VARIANT="<cpu|cuda|rocm>" \
+DP_ENABLE_TENSORFLOW="<0|1>" \
+DP_ENABLE_PYTORCH="<0|1>" \
 "<absolute-python>" -m pip install "<absolute-source-directory>"
 ```
+
+Enable only the TensorFlow or PyTorch compiled support requested by the user.
+For a Python-only JAX or Paddle installation, set both backend variables to
+`0` unless the matching documentation requires compiled support. Add the
+documented `CUDAToolkit_ROOT` or `ROCM_ROOT` to the same invocation when the
+selected runtime requires an explicit toolkit root.
 
 Keep source, build, and install locations distinct.
 
@@ -177,12 +196,14 @@ release.
 
 ### C/C++ interface and LAMMPS
 
-For C/C++, follow the backend-specific section of the matching source-install
-page; do not guess CMake options or backend library roots. For LAMMPS, use a
-packaged `lmp` when it satisfies the request. Otherwise follow the matching
-built-in or plugin instructions after the C/C++ interface succeeds. Enable
-Kokkos only when the requested LAMMPS runtime requires it, and select the
-architecture supported by that exact LAMMPS/Kokkos source tree.
+For C/C++, choose the backend-enabled or backend-neutral section of the
+matching source-install page; do not guess CMake options or backend library
+roots. A backend-neutral build must set `ALLOW_NO_BACKEND=ON`, build only the
+C/C++ libraries, and provide a compatible backend plugin at runtime. For
+LAMMPS, use a packaged `lmp` when it satisfies the request. Otherwise follow
+the matching built-in or plugin instructions after the C/C++ interface
+succeeds. Enable Kokkos only when the requested LAMMPS runtime requires it,
+and select the architecture supported by that exact LAMMPS/Kokkos source tree.
 
 ## 4. Verify the requested interface
 
@@ -193,8 +214,9 @@ An installation is complete only after the requested public interface runs:
 1. Import the selected backend (`deepmd.pt`, `deepmd.tf`, `deepmd.jax`, or
    `deepmd.pd`) and run one minimal tensor operation on the requested device.
 1. Run the installed `dp --version` and backend-specific help.
-1. For C/C++, confirm the installed headers/libraries and unresolved dynamic
-   dependencies before testing a client.
+1. For C/C++, confirm the installed headers/libraries, then load a built
+   library or run a linked client so the platform loader resolves its dynamic
+   dependencies.
 1. For LAMMPS, run the selected binary with `-h`, require the exact DeePMD pair
    style needed by the model, and run a short documented example.
 1. For Docker, perform all applicable checks inside the selected image.
