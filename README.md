@@ -105,18 +105,27 @@ one of the recommended general-purpose sizes:
 
 ```bash
 dp pretrained download DPA4-Neo-OMat24-v20260805
+curl -fsSL \
+    https://huggingface.co/deepmodelingcommunity/DPA4-OMat24/resolve/main/DPA4-Neo-OMat24-v20260805.json \
+    -o input_finetune.json
+```
+
+The [DPA4 OMat24 release][dpa4-omat24] provides Nano, Mini, Neo, Air, and Plus
+checkpoints together with their matching training configurations. The downloaded
+`input_finetune.json` matches the Neo checkpoint above; for another size or
+version, use the correspondingly named JSON file. Keep its complete `model`
+section unchanged, including the full-periodic-table `type_map`; replace the
+training and validation data, and use a smaller learning rate for fine-tuning.
+Then run:
+
+```bash
 dp --pt train input_finetune.json \
     --finetune ~/.cache/deepmd/pretrained/models/DPA4-Neo-OMat24-v20260805.pt
 ```
 
-The [DPA4 OMat24 release][dpa4-omat24] provides Nano, Mini, Neo, Air, and Plus
-checkpoints together with their matching training configurations. Start
-`input_finetune.json` from the configuration for the selected checkpoint. Keep
-its complete `model` section unchanged, including the full-periodic-table
-`type_map`; replace the training and validation data, and use a smaller learning
-rate for fine-tuning. These are PyTorch single-task checkpoints, so no model
-branch selection is needed. They target inorganic materials in the OMat24
-chemical space; validate accuracy before using them outside that domain.
+These are PyTorch single-task checkpoints, so no model branch selection is
+needed. They target inorganic materials in the OMat24 chemical space; validate
+accuracy before using them outside that domain.
 
 The [fine-tuning guide][finetune] covers full-model adaptation. [DPA-ADAPT]
 reuses supported pretrained DPA representations for downstream
