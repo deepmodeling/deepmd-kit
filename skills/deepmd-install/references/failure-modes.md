@@ -17,6 +17,16 @@ For downloads, retain the HTTP status, file size, and content type. An HTML
 error page is not an installer or archive. Reassemble split offline assets in
 the documented order and verify a published checksum when one exists.
 
+## A rendered value changes the command
+
+Stop if a dynamic value is interpolated directly into shell source. Prefer an
+argument array with shell evaluation disabled. To check a shell-string
+renderer, print its resulting argument vector instead of executing the target
+and test literal values such as `path with spaces`, `$(printf injected)`,
+`` `printf injected` ``, `x;printf injected`, and `-n`. Each value must remain
+one unchanged argument, and no nested command may execute. Reject NUL, newline,
+and other control characters rather than trying to quote them.
+
 ## Python, pip, and dp identify different environments
 
 Run these checks with the selected absolute interpreter:

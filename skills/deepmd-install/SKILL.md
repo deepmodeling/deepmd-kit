@@ -63,9 +63,15 @@ Read [`references/official-docs.md`](references/official-docs.md) for the URL
 map, version-selection rules, exact repository paths, and network fallback.
 Use the docs matching the selected version, not `latest` for an older release.
 
-The commands below are route summaries. Before execution, replace every
-placeholder with an observed or user-selected value and apply any changed
-requirements from the matching official page.
+The commands below describe executable and argument boundaries; they are not
+text-substitution templates. Pass dynamic values through an argument array
+with shell evaluation disabled, such as a process API's `shell=False`, and
+pass environment variables through a process environment map. If only a shell
+string is available, escape each complete value with the target shell's
+canonical quoting (`shlex.quote` for POSIX). Reject NUL, newline, and other
+control characters; double quotes alone are not a safety boundary. Keep
+option-looking inputs behind the documented option boundary. Apply any changed
+requirements from the matching official page before execution.
 
 ## 3. Choose one installation path
 
@@ -82,10 +88,14 @@ the backend tab in the official easy-install page:
 | Paddle     | Install the documented Paddle package first, then `deepmd-kit`                             |
 
 Add `lmp` or `ipi` to the extras only when requested and supported by the
-selected backend and platform. Install through the absolute target Python:
+selected backend and platform. Normalize the selected release tag to its
+package version, for example `v3.1.3` to `3.1.3`, and append an exact `==`
+constraint to the DeePMD-kit requirement after any extras. Install through the
+absolute target Python:
 
 ```bash
-"<absolute-python>" -m pip install "<requirement-from-the-matching-docs>"
+"<absolute-python>" -m pip install \
+    "<deepmd-requirement-with-extras>==<selected-release-version>"
 ```
 
 ### conda
@@ -94,12 +104,14 @@ Use conda-forge for a released package when the user prefers conda:
 
 ```bash
 "<absolute-conda-or-mamba>" create -n "<environment-name>" \
-    -c conda-forge deepmd-kit
+    -c conda-forge "deepmd-kit==<selected-release-version>"
 ```
 
-Add `lammps` or distributed-training packages only when requested. Follow the
-linked conda-forge CUDA guidance rather than inventing a toolkit pin. After
-creation, resolve the environment's absolute Python before verification.
+Normalize the selected release tag as for pip and use Conda's exact `==`
+MatchSpec. Add `lammps` or distributed-training packages only when requested.
+Follow the linked conda-forge CUDA guidance rather than inventing a toolkit
+pin. After creation, resolve the environment's absolute Python before
+verification.
 
 ### dp1s
 
@@ -211,6 +223,10 @@ An installation is complete only after the requested public interface runs:
 
 1. Print `sys.executable`, `sys.prefix`, `deepmd.__version__`, and
    `deepmd.__file__` with the selected absolute Python.
+1. For pip or conda, normalize the selected release tag and
+   `deepmd.__version__` with `packaging.version.Version(...).public`; fail if
+   they differ. For source, verify the resolved Git commit and installation
+   origin separately.
 1. Import the selected backend (`deepmd.pt`, `deepmd.tf`, `deepmd.jax`, or
    `deepmd.pd`) and run one minimal tensor operation on the requested device.
 1. Run the installed `dp --version` and backend-specific help.
