@@ -8,6 +8,7 @@ from __future__ import (
     annotations,
 )
 
+import threading
 from dataclasses import (
     dataclass,
 )
@@ -796,6 +797,7 @@ def _cached_wignerd_panel_backward(threads: int) -> Callable:
 
 
 _TABLE_CACHE: dict[tuple[str, int], tuple[torch.Tensor, ...]] = {}
+_TABLE_CACHE_LOCK = threading.Lock()
 
 
 def _device_cache_key(device: torch.device) -> tuple[str, int]:
@@ -807,8 +809,11 @@ def _get_lmax3_tables(device: torch.device) -> tuple[torch.Tensor, ...]:
     key = _device_cache_key(device)
     tables = _TABLE_CACHE.get(key)
     if tables is None:
-        tables = _build_l2_l3_tables(torch.float32, device)
-        _TABLE_CACHE[key] = tables
+        with _TABLE_CACHE_LOCK:
+            tables = _TABLE_CACHE.get(key)
+            if tables is None:
+                tables = _build_l2_l3_tables(torch.float32, device)
+                _TABLE_CACHE[key] = tables
     return tables
 
 

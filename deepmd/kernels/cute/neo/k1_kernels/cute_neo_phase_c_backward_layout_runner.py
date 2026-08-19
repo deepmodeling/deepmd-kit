@@ -175,7 +175,6 @@ class CuteNeoPhaseCBackwardLayout:
         focus_alpha: torch.Tensor,
         dst_ptr: torch.Tensor,
         rotate_inv_rescale: torch.Tensor,
-        logits: torch.Tensor,
         edge_gate: torch.Tensor,
         z_bias_raw: torch.Tensor,
         group_max: torch.Tensor,
@@ -225,7 +224,6 @@ class CuteNeoPhaseCBackwardLayout:
             (DEGREE_COUNT,),
             device=device,
         )
-        _require_tensor("logits", logits, (edge_count, N_FOCUS), device=device)
         _require_tensor("edge_gate", edge_gate, (edge_count,), device=device)
         _require_tensor("z_bias_raw", z_bias_raw, (N_FOCUS,), device=device)
         _require_tensor("group_max", group_max, (node_count, N_FOCUS), device=device)
@@ -296,7 +294,6 @@ class CuteNeoPhaseCBackwardLayout:
                 ("focus_alpha", focus_alpha),
                 ("dst_ptr", dst_ptr),
                 ("rotate_inv_rescale", rotate_inv_rescale),
-                ("logits", logits),
                 ("edge_gate", edge_gate),
                 ("z_bias_raw", z_bias_raw),
                 ("group_max", group_max),
@@ -361,7 +358,6 @@ class CuteNeoPhaseCBackwardLayout:
             focus_alpha,
             dst_ptr,
             rotate_inv_rescale,
-            logits,
             edge_gate,
             z_bias_raw,
             group_max,

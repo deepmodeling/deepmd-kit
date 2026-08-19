@@ -6,38 +6,19 @@ from __future__ import (
     annotations,
 )
 
-import importlib.util
-import sys
 import unittest
-from pathlib import (
-    Path,
-)
 
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-HELPER_PATH = REPO_ROOT / "deepmd/kernels/cute/neo/k1_gate_structural.py"
-
-
-def _load_module(path: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(name, None)
-    return module
+from deepmd.kernels.cute.neo import (
+    k1_gate_structural,
+)
 
 
 class TestStructuralGateHelpers(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not HELPER_PATH.is_file():
-            raise AssertionError(f"structural gate helper is missing: {HELPER_PATH}")
-        cls.helper = _load_module(HELPER_PATH, "structural_gate_helper_test")
+        cls.helper = k1_gate_structural
 
     def setUp(self):
         torch.manual_seed(20260703)

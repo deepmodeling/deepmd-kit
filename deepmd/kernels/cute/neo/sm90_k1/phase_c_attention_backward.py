@@ -681,7 +681,6 @@ def run_grouped_expanded_final_phase_c_attention_adjoint(
     focus_eps: float,
     focus_tau: float,
     label_smoothing: float,
-    max_degree: int,
     qk_scale: float = QK_SCALE,
     outputs: GroupedExpandedFinalPhaseCAttentionAdjointOutputs | None = None,
 ) -> GroupedExpandedFinalPhaseCAttentionAdjointOutputs:
@@ -696,10 +695,6 @@ def run_grouped_expanded_final_phase_c_attention_adjoint(
         raise RuntimeError("strict FP32 requires allow_tf32=False")
     if torch.get_float32_matmul_precision() != "highest":
         raise RuntimeError("strict FP32 requires float32 matmul precision 'highest'")
-    if max_degree < 0 or max_degree > MAX_EDGES_PER_NODE:
-        raise ValueError(
-            f"max_degree must be in [0,{MAX_EDGES_PER_NODE}], got {max_degree}"
-        )
 
     node_count = int(dst_ptr.numel() - 1)
     edge_count = int(src.numel())
@@ -758,6 +753,15 @@ def run_grouped_expanded_final_phase_c_attention_adjoint(
     )
     for name, tensor, shape, dtype in expected_inputs:
         _require_tensor(name, tensor, shape, dtype, device)
+    if dst_ptr.numel() > 1:
+        destination_degrees = dst_ptr[1:] - dst_ptr[:-1]
+        torch._assert_async(
+            torch.all(
+                (destination_degrees >= 0) & (destination_degrees <= MAX_EDGES_PER_NODE)
+            ),
+            "SM90 Phase-C backward requires destination degrees in "
+            f"[0, {MAX_EDGES_PER_NODE}]",
+        )
 
     if outputs is None:
         outputs = allocate_grouped_expanded_final_phase_c_attention_adjoint_outputs(

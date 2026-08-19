@@ -265,11 +265,19 @@ def _combined_radial_weight(radial_hidden_proj, radial_degree_mixer):
     cache = getattr(radial_hidden_proj, "_deepmd_cute_neo_radial_combined", None)
     key = (
         hidden_weight.data_ptr(),
-        mixer_weight.data_ptr(),
         hidden_weight._version,
-        mixer_weight._version,
         hidden_weight.dtype,
         hidden_weight.device,
+        tuple(hidden_weight.shape),
+        tuple(hidden_weight.stride()),
+        hidden_weight.storage_offset(),
+        mixer_weight.data_ptr(),
+        mixer_weight._version,
+        mixer_weight.dtype,
+        mixer_weight.device,
+        tuple(mixer_weight.shape),
+        tuple(mixer_weight.stride()),
+        mixer_weight.storage_offset(),
     )
     if cache is not None and cache[0] == key:
         return cache[1]
@@ -308,19 +316,45 @@ def run_neo_phase_a_radial_forward_packed_direct(
             f"expected radial_feat_m0 shape {(edge_count, 4, 32)}, "
             f"got {tuple(radial_feat_m0.shape)}"
         )
+    device = x_wide.device
+    if device.type != "cuda":
+        raise ValueError("packed Phase-A/radial forward requires CUDA tensors")
+    if src.device != device or src.dtype not in (torch.int32, torch.int64):
+        raise ValueError("src must be an int32 or int64 tensor on the input device")
+    if src.data_ptr() % 16:
+        raise ValueError("src must be 16-byte aligned")
+    source_tensors = (
+        ("x_wide", x_wide),
+        ("D_full", D_full),
+        ("radial_feat_m0", radial_feat_m0),
+        ("radial_hidden_proj.weight", radial_hidden_proj.weight),
+        ("radial_degree_mixer.weight", radial_degree_mixer.weight),
+        ("radial_degree_mixer.channel_basis", radial_degree_mixer.channel_basis),
+    )
+    for name, tensor in source_tensors:
+        if tensor.device != device or tensor.dtype != torch.float32:
+            raise ValueError(f"{name} must be FP32 on {device}")
+        if tensor.data_ptr() % 16:
+            raise ValueError(f"{name} must be 16-byte aligned")
     if radial_hidden_proj.bias is not None:
         raise NotImplementedError("collapsed radial mixer expects no hidden bias")
+    if tuple(radial_hidden_proj.weight.shape) != (32, 64):
+        raise NotImplementedError("collapsed radial mixer expects a (32,64) projection")
     if radial_degree_mixer.mode != "degree_channel" or radial_degree_mixer.rank != 1:
         raise NotImplementedError(
             "collapsed radial mixer expects degree_channel rank=1"
         )
     if tuple(radial_degree_mixer.weight.shape) != (4 * 64, 25):
         raise NotImplementedError("collapsed radial mixer expects lmax=3,mmax=1,C=64")
+    if tuple(radial_degree_mixer.channel_basis.shape) != (64,):
+        raise NotImplementedError("collapsed radial mixer expects 64 channel weights")
 
     combined_weight = _combined_radial_weight(
         radial_hidden_proj,
         radial_degree_mixer,
     )
+    if not combined_weight.is_contiguous() or combined_weight.data_ptr() % 16:
+        raise ValueError("combined radial weight must be contiguous and aligned")
     kernel = _compiled_neo_phase_a_radial_forward_packed_direct()
     out = torch.empty(
         edge_count,

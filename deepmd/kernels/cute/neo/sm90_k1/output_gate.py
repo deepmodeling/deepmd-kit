@@ -144,7 +144,7 @@ def _require_tensor(
     if tuple(tensor.shape) != shape:
         raise ValueError(f"{name} must have shape {shape}, got {tuple(tensor.shape)}")
     if tensor.dtype != torch.float32 or tensor.device != device:
-        raise ValueError(f"{name} must be contiguous FP32 on {device}")
+        raise ValueError(f"{name} must be FP32 on {device}")
     if not tensor.is_contiguous() or tensor.data_ptr() % 16:
         raise ValueError(f"{name} must be contiguous and 16-byte aligned")
 

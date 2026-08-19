@@ -32,6 +32,7 @@ from typing import (
 
 import cutlass
 import cutlass.cute as cute
+import cutlass.utils
 from cuda.bindings.driver import (
     CUstream,
 )
@@ -58,6 +59,9 @@ DEGREE_COUNT = 16
 REDUCED_COUNT = 10
 FOCUS_COUNT = 2
 CHANNELS = 32
+
+if PACKED_WIGNER_VALUES != 46 or PACKED_WIGNER_VALUES > 2 * CHANNELS:
+    raise RuntimeError("one-pass Neo Phase-C requires the 46-value Wigner layout")
 HIDDEN = FOCUS_COUNT * CHANNELS
 PHASE_WIDTH = REDUCED_COUNT * HIDDEN
 OUTPUT_WIDTH = DEGREE_COUNT * HIDDEN

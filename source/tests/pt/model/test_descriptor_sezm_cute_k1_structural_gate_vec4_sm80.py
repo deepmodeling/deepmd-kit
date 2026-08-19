@@ -7,7 +7,7 @@ from __future__ import (
 )
 
 import ast
-import importlib.util
+import importlib
 import math
 import random
 import struct
@@ -15,20 +15,10 @@ import unittest
 from pathlib import (
     Path,
 )
-from typing import (
-    TYPE_CHECKING,
-)
-
-if TYPE_CHECKING:
-    from types import (
-        ModuleType,
-    )
-
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CUTE_ROOT = REPO_ROOT / "deepmd/kernels/cute/neo"
 KERNEL_PATH = CUTE_ROOT / "k1_kernels/cute_neo_gate_split_structural_vec4_sm80.py"
-WRAPPER_PATH = CUTE_ROOT / "k1_gate_structural.py"
 DYNAMIC_EDGE_COUNTS = (0, 1, 7, 8, 9, 31, 32, 33)
 
 
@@ -155,6 +145,51 @@ def _backward_reference(
     return grad_y, grad_logits
 
 
+def _vec4_backward_model(
+    grad_out: list[float],
+    y: list[float],
+    logits: list[float],
+    edge_count: int,
+) -> tuple[list[float], list[float]]:
+    grad_y = [0.0] * len(y)
+    grad_logits = [0.0] * len(logits)
+    rows = edge_count * 2
+    for block_row in range((rows + 15) // 16):
+        for row_slot in range(16):
+            row = block_row * 16 + row_slot
+            if row >= rows:
+                continue
+            edge, focus = divmod(row, 2)
+            row_base = row * 10 * 32
+            logits_base = (focus * edge_count + edge) * 3 * 32
+            for channel_group in range(8):
+                channel_base = channel_group * 4
+                for lane in range(4):
+                    channel = channel_base + lane
+                    y0 = _f32(y[row_base + channel])
+                    sig0 = _sigmoid_f32(y0)
+                    grad0 = _f32(grad_out[row_base + channel])
+                    inner = _f32(_f32(1.0) + _f32(y0 * _f32(_f32(1.0) - sig0)))
+                    grad_y[row_base + channel] = _f32(_f32(grad0 * sig0) * inner)
+                for gate_index in range(3):
+                    for lane in range(4):
+                        channel = channel_base + lane
+                        gate_offset = logits_base + gate_index * 32 + channel
+                        gate = _sigmoid_f32(logits[gate_offset])
+                        grad_logit = _f32(0.0)
+                        for repeat in range(3):
+                            degree = 1 + gate_index + repeat * 3
+                            index = row_base + degree * 32 + channel
+                            gout = _f32(grad_out[index])
+                            grad_y[index] = _f32(gout * gate)
+                            term = _f32(gout * _f32(y[index]))
+                            term = _f32(term * gate)
+                            term = _f32(term * _f32(_f32(1.0) - gate))
+                            grad_logit = _f32(grad_logit + term)
+                        grad_logits[gate_offset] = grad_logit
+    return grad_y, grad_logits
+
+
 def _module_constants(tree: ast.Module) -> dict[str, object]:
     def constant_value(node: ast.expr, namespace: dict[str, object]) -> object:
         if isinstance(node, ast.Constant):
@@ -187,16 +222,8 @@ def _module_constants(tree: ast.Module) -> dict[str, object]:
     return constants
 
 
-def _load_wrapper_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "_deepmd_test_k1_gate_structural",
-        WRAPPER_PATH,
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load {WRAPPER_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def _load_wrapper_module():
+    return importlib.import_module("deepmd.kernels.cute.neo.k1_gate_structural")
 
 
 class TestSM80StructuralGateVec4Contract(unittest.TestCase):
@@ -257,14 +284,20 @@ class TestSM80StructuralGateVec4Arithmetic(unittest.TestCase):
                 logits = [
                     _f32(rng.uniform(-4.0, 4.0)) for _ in range(2 * edge_count * 3 * 32)
                 ]
-                grad_y, grad_logits = _backward_reference(
+                expected_grad_y, expected_grad_logits = _backward_reference(
                     grad_out,
                     y,
                     logits,
                     edge_count,
                 )
-                self.assertEqual(len(grad_y), values)
-                self.assertEqual(len(grad_logits), len(logits))
+                actual_grad_y, actual_grad_logits = _vec4_backward_model(
+                    grad_out,
+                    y,
+                    logits,
+                    edge_count,
+                )
+                self.assertEqual(actual_grad_y, expected_grad_y)
+                self.assertEqual(actual_grad_logits, expected_grad_logits)
 
 
 try:

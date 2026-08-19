@@ -614,9 +614,17 @@ class NeoFullCuteBackward:
             radial_scratch = getattr(self, "structural_scratch", None)
             if radial_scratch is None:
                 radial_scratch = next(
-                    cache.logits
-                    for cache in self.stack_caches
-                    if cache.logits is not None
+                    (
+                        cache.logits
+                        for cache in self.stack_caches
+                        if cache.logits is not None
+                    ),
+                    None,
+                )
+            if radial_scratch is None:
+                raise RuntimeError(
+                    "Neo K1 backward requires a reusable radial scratch buffer; "
+                    "no stack layer stored gate logits"
                 )
             if self.phase_c_stack.device.type == "cuda":
                 stream = self.torch.cuda.current_stream(self.phase_c_stack.device)
@@ -843,6 +851,7 @@ class NeoFullCuteBackward:
             self.group_max,
             self.denom,
         )
+        self.attn_logits = None
         x_wide_down = self.x_wide.detach()
         from .k1_kernels.cute_neo_phase_c_onepass import (
             run_neo_phase_c_onepass_output_gate,

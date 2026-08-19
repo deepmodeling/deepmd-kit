@@ -17,6 +17,9 @@ from typing import (
 from .compile_cache import (
     device_aware_lru_cache,
 )
+from .k1_wigner_layout import (
+    PACKED_VALUE_COUNT,
+)
 
 if TYPE_CHECKING:
     from torch import (
@@ -29,7 +32,7 @@ REDUCED_COUNT = 10
 HIDDEN = 64
 FOCUS_COUNT = 2
 FOCUS_HIDDEN = 32
-PACKED_WIGNER_VALUES = 46
+PACKED_WIGNER_VALUES = PACKED_VALUE_COUNT
 RADIAL_WIDTH = 4 * FOCUS_HIDDEN
 COMPACT_WIDTH = 25
 PROJECTION_INPUT_WIDTH = COMPACT_WIDTH + FOCUS_COUNT
@@ -239,6 +242,8 @@ def run_neo_radial_phase_a_backward_node_tiled(
     The kernel recomputes Phase A, fuses the focus-source adjoint, uses
     four-lane warp reductions with a 68-float shared row pitch, and packs the
     27-column radial projection input for one strict-FP32 matrix call.
+    ``grad_out_focus`` is repacked in place as projection workspace and must
+    not be reused after this function returns.
     """
     import torch
 

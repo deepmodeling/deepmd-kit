@@ -189,7 +189,8 @@ pip install deepmd-kit
 
 ::::::
 
-Optional CuTe inference kernels are available on Linux for the PyTorch backend:
+Optional CuTe inference kernels are available on Linux with Python 3.11 or
+newer for the PyTorch backend:
 
 ```bash
 pip install "deepmd-kit[torch,cute]"

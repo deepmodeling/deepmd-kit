@@ -352,7 +352,8 @@ differentiated region.
 NOTE 10 -- Tail dummy edges
 ---------------------------
 
-The edge-schema builders append two masked edges at the end of every batch.
+The edge-schema builders append two masked edges to every batch. They remain
+trailing unless a later destination sort permutes them with the real edges.
 Real edge compaction happens via
 ``torch.nonzero(valid_mask)``, whose output length is data-dependent
 and can be zero in sparse or single-atom systems (e.g. isolated-atom
@@ -362,9 +363,9 @@ would fall back to concrete shape specialization and break
 ``dynamic=True``.  A pair of dummy slots also gives Inductor's batched
 matmul lowering a static ``E >= 2`` edge-axis bound, avoiding
 data-dependent layout guards on ``E == 1`` that would otherwise cause
-an extra recompile when the first batch contains no real edges.  Each
-dummy's ``edge_mask`` is ``False`` so it contributes exactly zero to
-every downstream sum or gather.
+an extra recompile when the first batch contains no real edges. Each dummy's
+``edge_mask`` is ``False`` wherever sorting places it, so it contributes
+exactly zero to every downstream sum or gather.
 
 NOTE 11 -- Edge-vector leaf (gather outside the AD region)
 ----------------------------------------------------------
@@ -918,6 +919,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         module._core_compute_pending_compile_t0 = None
         module._core_compute_pending_compile_key = None
         module._dens_pending_compile_t0 = None
+        k1_invalidator = None
+        for child in module.modules():
+            if not (
+                hasattr(child, "_deepmd_cute_k1_state")
+                or hasattr(child, "_deepmd_cute_gate_expand_contract")
+            ):
+                continue
+            if k1_invalidator is None:
+                from deepmd.kernels.cute.neo.k1 import (
+                    invalidate_cute_k1_state,
+                )
+
+                k1_invalidator = invalidate_cute_k1_state
+            k1_invalidator(child)
         # Shared callables can contain make_fx get_attr constants, including
         # prepared CuTe readout folds. A checkpoint load therefore invalidates
         # the process-level cache as well as this instance's local slots.
@@ -3076,7 +3091,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         edge_vec
             Edge vectors with shape (E+2, 3).
         edge_mask
-            Boolean mask with shape (E+2,).  The two trailing elements are ``False``.
+            Boolean mask with shape (E+2,). The two padded elements are
+            ``False``. They are trailing only when sorting is disabled;
+            destination sorting may move them into the interior, so consumers
+            must select valid edges through this mask rather than by position.
         edge_scatter_index
             Scatter-domain (src, dst) indices with shape (2, E+2), aligned
             1:1 with ``edge_index`` and ``edge_vec``.

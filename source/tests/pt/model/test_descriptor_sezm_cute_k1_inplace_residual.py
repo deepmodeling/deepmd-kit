@@ -6,41 +6,20 @@ from __future__ import (
     annotations,
 )
 
-import importlib.util
-import sys
 import unittest
-from functools import (
-    lru_cache,
-)
-from pathlib import (
-    Path,
-)
 
 import torch
 from torch.utils._python_dispatch import (
     TorchDispatchMode,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-IMPLEMENTATION_PATH = REPO_ROOT / "deepmd/kernels/cute/neo/k1_so2linear.py"
+from deepmd.kernels.cute.neo import (
+    k1_so2linear,
+)
 
 
-@lru_cache(maxsize=1)
 def _load_candidate():
-    assert IMPLEMENTATION_PATH.is_file(), (
-        f"in-place residual module is missing: {IMPLEMENTATION_PATH}"
-    )
-    name = "sezm_cute_k1_inplace_residual_test"
-    spec = importlib.util.spec_from_file_location(name, IMPLEMENTATION_PATH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load {IMPLEMENTATION_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(name, None)
-    return module
+    return k1_so2linear
 
 
 def _out_of_place_reference(grad_out, residual, w0_t, wpair_t):

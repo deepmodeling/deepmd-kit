@@ -6,14 +6,8 @@ from __future__ import (
     annotations,
 )
 
-import importlib.util
-import sys
 import unittest
-from pathlib import (
-    Path,
-)
 from types import (
-    ModuleType,
     SimpleNamespace,
 )
 from unittest import (
@@ -22,32 +16,8 @@ from unittest import (
 
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-CUTE_PATH = REPO_ROOT / "deepmd/kernels/cute/neo"
-_TEST_PACKAGE = "sezm_cute_k1_radial_projection_contract_test"
-
-
-def _load_cute_source_module(name: str) -> ModuleType:
-    qualified_name = f"{_TEST_PACKAGE}.{name}"
-    spec = importlib.util.spec_from_file_location(
-        qualified_name,
-        CUTE_PATH / f"{name}.py",
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load {name}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[qualified_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-_package = ModuleType(_TEST_PACKAGE)
-_package.__path__ = [str(CUTE_PATH)]
-sys.modules[_TEST_PACKAGE] = _package
-_load_cute_source_module("compile_cache")
-_RADIAL_PROJECTION = _load_cute_source_module("k1_radial_phase_a_node")
-_load_cute_source_module("runtime_policy")
-_K1_RUNNER = _load_cute_source_module("k1_runner")
+from deepmd.kernels.cute.neo import k1_radial_phase_a_node as _RADIAL_PROJECTION
+from deepmd.kernels.cute.neo import k1_runner as _K1_RUNNER
 
 COMPACT_WIDTH = _RADIAL_PROJECTION.COMPACT_WIDTH
 FOCUS_COUNT = _RADIAL_PROJECTION.FOCUS_COUNT

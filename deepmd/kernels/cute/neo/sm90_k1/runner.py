@@ -600,7 +600,6 @@ def _runner_backward(
         focus_eps=float(so2.focus_compete_norm.eps),
         focus_tau=float(so2.focus_softmax_tau),
         label_smoothing=float(so2.focus_label_smoothing),
-        max_degree=128,
         qk_scale=CHANNELS**-0.5,
         outputs=fused_outputs,
     )

@@ -482,6 +482,7 @@ class _RunnerState:
 
 _REGISTRY: dict[int, _RegistryEntry] = {}
 _NEXT_HANDLE = 1
+_REGISTRY_LOCK = threading.Lock()
 _PACKED_RUNNER_CACHE: dict[tuple[str, int | None, int], _RunnerState] = {}
 _PACKED_RUNNER_CACHE_LOCK = threading.Lock()
 
@@ -523,19 +524,21 @@ def _compile_output_gate_backward(
 def register_cute_k1_block(block: Any, config: Any) -> int:
     """Register a DeePMD block/config pair and return a stable integer handle."""
     global _NEXT_HANDLE
-    handle = _NEXT_HANDLE
-    _NEXT_HANDLE += 1
 
     def remove_collected_entry(block_ref: weakref.ReferenceType[Any]) -> None:
-        entry = _REGISTRY.get(handle)
-        if entry is not None and entry._block_ref is block_ref:
-            _REGISTRY.pop(handle, None)
+        with _REGISTRY_LOCK:
+            entry = _REGISTRY.get(handle)
+            if entry is not None and entry._block_ref is block_ref:
+                _REGISTRY.pop(handle, None)
 
-    _REGISTRY[handle] = _RegistryEntry(
-        block=block,
-        config=config,
-        on_collect=remove_collected_entry,
-    )
+    with _REGISTRY_LOCK:
+        handle = _NEXT_HANDLE
+        _NEXT_HANDLE += 1
+        _REGISTRY[handle] = _RegistryEntry(
+            block=block,
+            config=config,
+            on_collect=remove_collected_entry,
+        )
     return handle
 
 
@@ -543,7 +546,8 @@ def invalidate_cute_k1_state(block: Any) -> None:
     """Release a block's registered CuTe state after its modules change."""
     state = getattr(block, "_deepmd_cute_k1_state", None)
     if isinstance(state, _RegisteredK1State):
-        _REGISTRY.pop(state.handle, None)
+        with _REGISTRY_LOCK:
+            _REGISTRY.pop(state.handle, None)
     if hasattr(block, "_deepmd_cute_k1_state"):
         delattr(block, "_deepmd_cute_k1_state")
     if hasattr(block, "_deepmd_cute_gate_expand_contract"):
@@ -568,15 +572,16 @@ def _register_cute_k1_state(
     _validate_gate_expand_index(block)
     old_state = getattr(block, "_deepmd_cute_k1_state", None)
     if isinstance(old_state, _RegisteredK1State):
-        old_entry = _REGISTRY.get(old_state.handle)
-        if (
-            old_state.device_index == device_index
-            and old_state.config == config
-            and old_entry is not None
-            and old_entry.block is block
-        ):
-            return old_state
-        _REGISTRY.pop(old_state.handle, None)
+        with _REGISTRY_LOCK:
+            old_entry = _REGISTRY.get(old_state.handle)
+            if (
+                old_state.device_index == device_index
+                and old_state.config == config
+                and old_entry is not None
+                and old_entry.block is block
+            ):
+                return old_state
+            _REGISTRY.pop(old_state.handle, None)
     if not _module_state_is_aligned(block):
         # Module parameters and buffers are frozen for this inference path, so
         # cache a failed static contract until explicit state invalidation.
@@ -1074,7 +1079,6 @@ def _final_manual_backward(runner: Any, grad_out: Tensor) -> tuple[Tensor, Tenso
         grad_post_norm_in.squeeze(2).unsqueeze(2),
     ).squeeze(2)
 
-    grad_x_wide_down = None
     if so2.message_node_grid_product is not None:
         if runner.packed_message_grid:
             message_grid_product = runner.message_grid_product
@@ -1099,14 +1103,13 @@ def _final_manual_backward(runner: Any, grad_out: Tensor) -> tuple[Tensor, Tenso
                 grad_post_mix,
             )
         grad_out_gate_flat.add_(grad_post_mix)
-        if grad_x_wide_down is None:
-            grad_x_wide_down = torch.zeros(
-                n_node,
-                16 * 64,
-                device=x_wide.device,
-                dtype=x_wide.dtype,
-            ).view(n_node, 16, 64)
-            grad_x_wide_down.add_(grad_grid_context)
+        grad_x_wide_down = torch.zeros(
+            n_node,
+            16 * 64,
+            device=x_wide.device,
+            dtype=x_wide.dtype,
+        ).view(n_node, 16, 64)
+        grad_x_wide_down.add_(grad_grid_context)
     else:
         grad_out_gate_flat = grad_post_mix
         grad_x_wide_down = torch.zeros(
@@ -1354,7 +1357,8 @@ def _build_runner(
     here and repair contiguous offset views without introducing a Dynamo graph
     break above the op.
     """
-    entry = _REGISTRY[int(handle)]
+    with _REGISTRY_LOCK:
+        entry = _REGISTRY[int(handle)]
     config = entry.config
     if config.native_sm90_path:
         from .sm90_k1.runner import NeoSm90K1Runner as Runner
@@ -1611,7 +1615,6 @@ def _runner_backward_manual(
         runner.focus_alpha,
         runner.dst_ptr_i32,
         runner.rotate,
-        runner.attn_logits.detach().contiguous(),
         runner.edge_gate,
         so2.adamw_attn_z_bias_raw.detach().reshape(2).float().contiguous(),
         runner.group_max,
@@ -1992,9 +1995,10 @@ def _maybe_run_prepared_cute_k1(
     state = getattr(block, "_deepmd_cute_k1_state", None)
     if not isinstance(state, _RegisteredK1State):
         return None
-    entry = _REGISTRY.get(state.handle)
-    if entry is None or entry.block is not block:
-        return None
+    with _REGISTRY_LOCK:
+        entry = _REGISTRY.get(state.handle)
+        if entry is None or entry.block is not block:
+            return None
     d_full = edge_cache.D_packed
     dt_full = d_full
     destinations_sorted = bool(getattr(edge_cache, "destinations_sorted", False))

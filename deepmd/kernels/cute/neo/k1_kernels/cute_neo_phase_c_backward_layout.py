@@ -70,7 +70,6 @@ class NeoPhaseCBackwardLayoutParams:
     focus_alpha: cute.Tensor
     dst_ptr: cute.Tensor
     rotate_inv_rescale: cute.Tensor
-    logits: cute.Tensor
     edge_gate: cute.Tensor
     z_bias_raw: cute.Tensor
     group_max: cute.Tensor
@@ -445,7 +444,6 @@ def neo_phase_c_backward_layout_jit(
     focus_alpha: cute.Tensor,
     dst_ptr: cute.Tensor,
     rotate_inv_rescale: cute.Tensor,
-    logits: cute.Tensor,
     edge_gate: cute.Tensor,
     z_bias_raw: cute.Tensor,
     group_max: cute.Tensor,
@@ -473,7 +471,6 @@ def neo_phase_c_backward_layout_jit(
         focus_alpha=focus_alpha,
         dst_ptr=dst_ptr,
         rotate_inv_rescale=rotate_inv_rescale,
-        logits=logits,
         edge_gate=edge_gate,
         z_bias_raw=z_bias_raw,
         group_max=group_max,
@@ -580,12 +577,6 @@ def compile_neo_phase_c_backward_layout(
         stride_order=(0,),
         **FAKE_TENSOR_KW,
     )
-    fake_logits = make_fake_compact_tensor(
-        cutlass.Float32,
-        (edge_count, N_FOCUS),
-        stride_order=(1, 0),
-        **FAKE_TENSOR_KW,
-    )
     fake_edge_gate = make_fake_compact_tensor(
         cutlass.Float32,
         (edge_count,),
@@ -680,7 +671,6 @@ def compile_neo_phase_c_backward_layout(
         fake_focus_alpha,
         fake_dst_ptr,
         fake_rotate,
-        fake_logits,
         fake_edge_gate,
         fake_z_bias,
         fake_group_max,

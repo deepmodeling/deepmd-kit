@@ -6,40 +6,18 @@ from __future__ import (
     annotations,
 )
 
-import importlib.util
-import sys
 import unittest
-from functools import (
-    lru_cache,
-)
-from pathlib import (
-    Path,
-)
 from types import (
     SimpleNamespace,
 )
 
 import torch
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-GIE_PATH = REPO_ROOT / "deepmd/kernels/cute/neo/gie.py"
+from deepmd.kernels.cute.neo import gie as gie_module
 
 
-@lru_cache(maxsize=1)
 def _load_gie_module():
-    if not GIE_PATH.is_file():
-        raise FileNotFoundError(GIE_PATH)
-    name = "sezm_cute_gie_contract_test"
-    spec = importlib.util.spec_from_file_location(name, GIE_PATH)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load {GIE_PATH}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(name, None)
-    return module
+    return gie_module
 
 
 def _degree_slots(lmax: int, *, device: torch.device) -> torch.Tensor:

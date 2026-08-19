@@ -267,9 +267,6 @@ class TestK1DstPtrTorch(unittest.TestCase):
         k1 = importlib.import_module("deepmd.kernels.cute.neo.k1")
         prior_registry = dict(k1._REGISTRY)
         prior_next_handle = k1._NEXT_HANDLE
-        k1._REGISTRY.clear()
-        k1._PACKED_RUNNER_CACHE.clear()
-        torch._dynamo.reset()
 
         def cleanup():
             torch._dynamo.reset()
@@ -279,6 +276,9 @@ class TestK1DstPtrTorch(unittest.TestCase):
             k1._NEXT_HANDLE = prior_next_handle
 
         self.addCleanup(cleanup)
+        k1._REGISTRY.clear()
+        k1._PACKED_RUNNER_CACHE.clear()
+        torch._dynamo.reset()
         block = torch.nn.Module()
         config = k1.NeoK1RuntimeConfig()
         runtime_handles = []

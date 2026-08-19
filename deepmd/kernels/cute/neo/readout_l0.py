@@ -284,7 +284,9 @@ def _readout_input_fold_cache_matches(
         cache is not None
         and len(cache) == 2
         and len(cache[0]) == len(sources)
-        and all(cached is current for cached, current in zip(cache[0], sources))
+        and all(
+            cached is current for cached, current in zip(cache[0], sources, strict=True)
+        )
         and cache[1] == cache_key
         and all(
             isinstance(getattr(output_ffn, name, None), torch.Tensor)
@@ -437,7 +439,11 @@ def prepare_sm80_readout_input_fold(
     folded_weights = _build_sm80_readout_input_fold(output_ffn)
     _synchronize_sm80_readout_input_fold_build(folded_weights)
     _ensure_sm80_readout_input_fold_load_hook(output_ffn)
-    for name, tensor in zip(_READOUT_INPUT_FOLD_BUFFERS, folded_weights):
+    for name, tensor in zip(
+        _READOUT_INPUT_FOLD_BUFFERS,
+        folded_weights,
+        strict=True,
+    ):
         _set_nonpersistent_buffer(output_ffn, name, tensor)
     setattr(
         output_ffn,
@@ -496,12 +502,15 @@ def _get_prepared_sm80_readout_input_fold(
     sources = _readout_input_fold_sources(output_ffn)
     cached_sources, cache_key = cache
     if (
-        any(cached is not current for cached, current in zip(cached_sources, sources))
+        any(
+            cached is not current
+            for cached, current in zip(cached_sources, sources, strict=True)
+        )
         or any(
             source.dtype != cached[2]
             or source.device != cached[3]
             or tuple(source.shape) != cached[4]
-            for source, cached in zip(sources, cache_key)
+            for source, cached in zip(sources, cache_key, strict=True)
         )
         or any(
             weight.dtype != torch.float32

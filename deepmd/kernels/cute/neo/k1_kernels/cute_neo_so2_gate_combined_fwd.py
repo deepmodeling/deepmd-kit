@@ -46,6 +46,7 @@ FOCUS_COUNT = 2
 M0_WIDTH = 4 * 32
 PAIR_WIDTH = 6 * 32
 FULL_WIDTH = M0_WIDTH + PAIR_WIDTH
+DEFAULT_STREAM = cuda.CUstream(cuda.CUstream_flags.CU_STREAM_DEFAULT)
 
 
 def _supports_combined_forward(compute_capability: tuple[int, int]) -> bool:
@@ -112,7 +113,7 @@ class CuteNeoSO2GateCombined:
         mGate: cute.Tensor,
         mY: cute.Tensor,
         mOut: cute.Tensor,
-        stream: cuda.CUstream = cuda.CUstream(cuda.CUstream_flags.CU_STREAM_DEFAULT),
+        stream: cuda.CUstream = DEFAULT_STREAM,
     ):
         sA_layout = cute.make_layout(
             (TILE_M, TILE_K, STAGES),

@@ -748,6 +748,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         object.__setattr__(model, "_embedding_task_buf_order", ("task",))
         object.__setattr__(model, "compiled_dens_compute", local_callable)
         model._dens_compiled = True
+        model._deepmd_cute_k1_state = False
 
         with (
             mock.patch.dict(
@@ -768,6 +769,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             self.assertIsNone(model._embedding_task_buf_order)
             self.assertIsNone(model.compiled_dens_compute)
             self.assertFalse(model._dens_compiled)
+            self.assertFalse(hasattr(model, "_deepmd_cute_k1_state"))
             self.assertEqual(sezm_model_module._SEZM_COMPILE_CACHE, {})
             self.assertEqual(sezm_model_module._SEZM_TASK_BUF_ORDER, {})
 

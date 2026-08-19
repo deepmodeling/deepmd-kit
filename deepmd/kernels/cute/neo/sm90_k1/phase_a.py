@@ -75,6 +75,7 @@ CTA_SHARED_BYTES = (
 )
 
 FAKE_TENSOR_KW = {"assumed_align": 16, "use_32bit_stride": True}
+DEFAULT_STREAM = cuda.CUstream(cuda.CUstream_flags.CU_STREAM_DEFAULT)
 
 __all__ = [
     "CTA_SHARED_BYTES",
@@ -172,7 +173,7 @@ class CuteNeoPhaseAPersistentComplexFP32:
         channel_basis,
         m0,
         m1_ri,
-        stream: cuda.CUstream = cuda.CUstream(cuda.CUstream_flags.CU_STREAM_DEFAULT),
+        stream: cuda.CUstream = DEFAULT_STREAM,
     ):
         d_layout = cute.make_layout(
             (EDGE_TILE, PACKED_VALUE_COUNT),

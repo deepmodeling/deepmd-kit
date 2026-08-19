@@ -12,6 +12,7 @@ from typing import (
 
 import cutlass
 import cutlass.cute as cute
+import cutlass.utils
 from cuda.bindings.driver import (
     CUstream,
 )

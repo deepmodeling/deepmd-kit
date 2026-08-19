@@ -218,9 +218,10 @@ class _Sm90GauntForward:
                 linear = tidx + slot * THREADS
                 row = linear >> 6
                 scalar_channel = linear & (CHANNELS - 1)
-                value = left[node, row, scalar_channel].to(cutlass.Float32)
                 if cutlass.const_expr(side == 1):
                     value = right[node, row, scalar_channel].to(cutlass.Float32)
+                else:
+                    value = left[node, row, scalar_channel].to(cutlass.Float32)
                 operands[side, row, scalar_channel] = value
         cute.arch.sync_threads()
 
@@ -309,8 +310,8 @@ def run_sm90_gaunt_forward(
     schedule: Sm90GauntSchedule,
 ) -> torch.Tensor:
     """Evaluate the exact normalized-Gaunt product on SM90."""
-    _validate_dense(left, right)
     output = torch.empty_like(left)
+    _validate_dense(left, right, output)
     with torch.cuda.device(left.device):
         _compiled_sm90_gaunt_forward(schedule)(left, right, output)
     return output

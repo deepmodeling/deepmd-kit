@@ -263,6 +263,10 @@ def project_neo_radial_input_adjoint_fp32(
     is introduced: the first matrix product is the compact radial adjoint and
     the degree-zero slice receives the independent attention-logit adjoint.
     """
+    if torch.backends.cuda.matmul.allow_tf32:
+        raise RuntimeError("strict FP32 requires allow_tf32=False")
+    if torch.get_float32_matmul_precision() != "highest":
+        raise RuntimeError("strict FP32 requires float32 matmul precision 'highest'")
     edge_count = grad_compact.shape[0]
     device = grad_compact.device
     _expect_fp32_cuda(
