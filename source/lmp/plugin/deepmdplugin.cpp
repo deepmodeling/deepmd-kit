@@ -8,6 +8,9 @@
 #include "fix_dplr.h"
 #include "lammpsplugin.h"
 #include "pair_deepmd.h"
+#ifdef LMP_KOKKOS
+#include "pair_deepmd_kokkos.h"
+#endif
 #include "pair_deepspin.h"
 #include "version.h"
 #if LAMMPS_VERSION_NUMBER >= 20220328
@@ -17,6 +20,11 @@
 using namespace LAMMPS_NS;
 
 static Pair* pairdeepmd(LAMMPS* lmp) { return new PairDeepMD(lmp); }
+#ifdef LMP_KOKKOS
+static Pair* pairdeepmdkokkos(LAMMPS* lmp) {
+  return new PairDeepMDKokkos<LMPDeviceType>(lmp);
+}
+#endif
 static Pair* pairdeepspin(LAMMPS* lmp) { return new PairDeepSpin(lmp); }
 
 static Compute* computedeepmdtensoratom(LAMMPS* lmp, int narg, char** arg) {
@@ -47,6 +55,26 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmd;
   plugin.handle = handle;
   (*register_plugin)(&plugin, lmp);
+
+#ifdef LMP_KOKKOS
+  plugin.version = LAMMPS_VERSION;
+  plugin.style = "pair";
+  plugin.name = "deepmd/kk";
+  plugin.info = "deepmd Kokkos pair style " STR_GIT_SUMM;
+  plugin.author = "DeepModeling";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmdkokkos;
+  plugin.handle = handle;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.version = LAMMPS_VERSION;
+  plugin.style = "pair";
+  plugin.name = "deepmd/kk/device";
+  plugin.info = "deepmd Kokkos device pair style " STR_GIT_SUMM;
+  plugin.author = "DeepModeling";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepmdkokkos;
+  plugin.handle = handle;
+  (*register_plugin)(&plugin, lmp);
+#endif
 
   plugin.version = LAMMPS_VERSION;
   plugin.style = "pair";
