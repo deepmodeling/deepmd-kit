@@ -72,6 +72,7 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
     if os.environ.get("DP_ENABLE_NATIVE_OPTIMIZATION", "0") == "1":
         cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
     dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
+    dp_lammps_kokkos = os.environ.get("DP_ENABLE_LAMMPS_KOKKOS", "0")
     dp_ipi = os.environ.get("DP_ENABLE_IPI", "0")
     if dp_lammps_version != "" or dp_ipi == "1":
         cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
@@ -81,6 +82,13 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
 
     if dp_lammps_version != "":
         cmake_args.append(f"-DLAMMPS_VERSION={dp_lammps_version}")
+    if dp_lammps_kokkos == "1":
+        if dp_lammps_version == "":
+            raise RuntimeError(
+                "DP_ENABLE_LAMMPS_KOKKOS=1 requires DP_LAMMPS_VERSION to build "
+                "the LAMMPS plugin"
+            )
+        cmake_args.append("-DDEEPMD_LAMMPS_KOKKOS:BOOL=TRUE")
     if dp_ipi == "1":
         cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
         extra_scripts["dp_ipi"] = "deepmd.entrypoints.ipi:dp_ipi"
