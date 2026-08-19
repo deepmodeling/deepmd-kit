@@ -194,18 +194,12 @@ def test_convert_regular_pt_dpa1_preserves_dense_semantics(tmp_path) -> None:
     from deepmd.infer import (
         DeepPot,
     )
-    from deepmd.pt.utils.serialization import (
-        deserialize_to_file as deserialize_to_pt,
-    )
-    from deepmd.pt.utils.serialization import (
-        serialize_from_file as serialize_from_pt,
-    )
+    from deepmd.pt.utils.serialization import deserialize_to_file as deserialize_to_pt
+    from deepmd.pt.utils.serialization import serialize_from_file as serialize_from_pt
 
     data = _build_dpa1_data()
     descriptor_variables = data["model"]["descriptor"]["@variables"]
-    descriptor_variables["davg"] = np.full_like(
-        descriptor_variables["davg"], 0.01
-    )
+    descriptor_variables["davg"] = np.full_like(descriptor_variables["davg"], 0.01)
     source_model = tmp_path / "model.pth"
     converted_model = tmp_path / "model.pt2"
     deserialize_to_pt(str(source_model), copy.deepcopy(data))
