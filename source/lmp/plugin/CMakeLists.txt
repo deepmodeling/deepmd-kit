@@ -123,6 +123,7 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     target_compile_definitions(${libname} PRIVATE LMP_KOKKOS)
     target_include_directories(${libname} PRIVATE ${LAMMPS_HEADER_DIR}/KOKKOS)
     target_link_libraries(${libname} PUBLIC Kokkos::kokkos)
+    kokkos_compilation(TARGET ${libname})
   endif()
 
   # link: libdeepmd
