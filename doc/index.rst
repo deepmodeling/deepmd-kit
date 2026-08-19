@@ -276,8 +276,8 @@ New and noteworthy
       :link-type: doc
       :shadow: sm
 
-      Give AI agents reproducible guidance for training, fine-tuning,
-      inference, and LAMMPS workflows.
+      Give AI agents reproducible guidance for installation, training,
+      fine-tuning, inference, and LAMMPS workflows.
 
 Documentation map
 =================
