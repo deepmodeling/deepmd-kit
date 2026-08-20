@@ -44,6 +44,45 @@ WEIGHT_KEY = "weight"
 POOL_MASK_KEY = "pool_mask"
 MANIFEST_NAME = "manifest.json"
 
+# ``target`` becomes the ``set.*/{target}.npy`` filename, so it must not collide
+# with a tensor the writer emits itself: depending on the write order the labels
+# would either overwrite that tensor or be overwritten by it, both silently.
+_RESERVED_TARGET_NAMES = frozenset(
+    {
+        "coord",
+        "box",
+        "real_atom_types",
+        "fparam",
+        "type",
+        "type_map",
+        GROUP_ID_KEY,
+        WEIGHT_KEY,
+        POOL_MASK_KEY,
+    }
+)
+
+
+def _validate_target_name(target: str) -> str:
+    """Reject targets that cannot safely become a ``set.*`` filename."""
+    name = str(target)
+    if not name or name.strip() != name:
+        raise DPADataError(
+            f"target {target!r} must be a non-empty name without surrounding "
+            "whitespace; it is used as a set.*/<target>.npy filename."
+        )
+    if "/" in name or "\\" in name or name in (".", ".."):
+        raise DPADataError(
+            f"target {target!r} must be a plain name, not a path; it is joined "
+            "onto the set.* directory to form a filename."
+        )
+    if name in _RESERVED_TARGET_NAMES:
+        raise DPADataError(
+            f"target {target!r} collides with a tensor the grouped writer emits "
+            f"({', '.join(sorted(_RESERVED_TARGET_NAMES))}). The labels and that "
+            "tensor would overwrite each other in set.*/. Pick another name."
+        )
+    return name
+
 
 @dataclass(frozen=True)
 class SiteSelector:
@@ -194,6 +233,19 @@ class ComponentSpec:
         return mask
 
     def validate(self) -> None:
+        weight = float(self.weight)
+        if not np.isfinite(weight):
+            raise DPADataError(
+                f"component weight is {self.weight!r}; weights must be finite "
+                "because they are the numerator and denominator of weighted "
+                "group pooling."
+            )
+        if weight < 0.0:
+            raise DPADataError(
+                f"component weight is {weight}; weights must be non-negative. "
+                "A negative weight subtracts a component's embedding from its "
+                "own group instead of down-weighting it."
+            )
         if self.coords.shape != (len(self.symbols), 3):
             raise DPADataError(
                 f"coords has shape {self.coords.shape}; expected "
@@ -201,6 +253,20 @@ class ComponentSpec:
             )
         self.normalized_box()
         mask = self.normalized_pool_mask()
+        if not np.all(np.isfinite(mask)):
+            raise DPADataError(
+                "pool_mask contains non-finite values (NaN or inf); pooling "
+                "would propagate them through the whole frame embedding."
+            )
+        if np.any(mask < 0.0):
+            raise DPADataError(
+                "pool_mask contains negative values. The grouped forward path "
+                "keeps only mask > 0 in the numerator but still adds every "
+                "entry to the pooling denominator, so a negative weight "
+                "silently rescales the atom embeddings that were retained."
+            )
+        # Negative and non-finite entries are rejected above, so a zero sum now
+        # means every entry is exactly zero.
         if float(mask.sum()) == 0.0:
             raise DPADataError(
                 "pool_mask is all-zero: every atom of this component is excluded "
@@ -274,7 +340,7 @@ class Assembly:
         type_map: Sequence[str] | None = None,
         schema: str = "dpa_adapt.assembly.v1",
     ) -> None:
-        self.property_name = str(target)
+        self.property_name = _validate_target_name(target)
         self.type_map = [str(t) for t in type_map] if type_map is not None else None
         self.schema = schema
         self.groups: list[GroupSpec] = []
@@ -442,6 +508,14 @@ def _write_group_system(
         raise DPADataError(f"Group {group.key!r} has no components.")
     for component in group.components:
         component.validate()
+    # Individually valid (non-negative) weights can still sum to zero. Group
+    # pooling clamps that denominator, so an all-zero group would silently
+    # serialize to a zero embedding instead of failing.
+    if not any(float(c.weight) > 0.0 for c in group.components):
+        raise DPADataError(
+            f"Group {group.key!r} has no component with a positive weight; "
+            "weighted pooling over it is undefined."
+        )
 
     # Components in a group may differ in size and composition (e.g. OER
     # O*/OH*/OOH*).  Pad every frame up to the group's max atom count with

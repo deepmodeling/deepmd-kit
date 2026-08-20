@@ -35,6 +35,12 @@ if TYPE_CHECKING:
     )
 
 
+# Placeholder label for rows read with require_labels=False. The caller has
+# already been told (via GroupedDataset.get_labels) that no labels exist; this
+# only keeps the (group_id, weight, label) row shape uniform.
+_NO_LABEL = np.zeros((1,), dtype=float)
+
+
 def load_or_extract(*args: object, **kwargs: object) -> np.ndarray:
     """Delegate to finetuner.load_or_extract without a module import cycle."""
     import importlib
@@ -55,6 +61,7 @@ class GroupedDataset:
         target_key: str | list[str] = "property",
         fmt: str | None = None,
         cache: bool = True,
+        require_labels: bool = True,
     ) -> None:
         self.data = data
         self.pretrained = pretrained
@@ -65,6 +72,9 @@ class GroupedDataset:
         # is split into a list before reaching here.
         keys = [target_key] if isinstance(target_key, str) else list(target_key)
         self.target_keys = [_resolve_label_key(key) for key in keys]
+        # predict() runs on data that often carries no set.*/<target>.npy at
+        # all; it only needs the pooled embeddings.
+        self.require_labels = bool(require_labels)
         self.fmt = fmt
         self.cache = cache
 
@@ -75,6 +85,13 @@ class GroupedDataset:
         return self._embeddings
 
     def get_labels(self) -> np.ndarray:
+        if not self.require_labels:
+            raise DPADataError(
+                "This GroupedDataset was built with require_labels=False, so "
+                "set.*/<target>.npy was never read and no labels are "
+                "available. Rebuild it with require_labels=True to score "
+                "against labels."
+            )
         return self._labels
 
     def _build(self) -> tuple[np.ndarray, np.ndarray]:
@@ -91,7 +108,9 @@ class GroupedDataset:
                     "set.*/group_id.npy can be read."
                 )
             source_path = Path(source)
-            system_frames = _read_system_group_rows(source_path, self.target_keys)
+            system_frames = _read_system_group_rows(
+                source_path, self.target_keys, require_labels=self.require_labels
+            )
             # group_id.npy is scoped to one DeePMD system.  Many assembly writers
             # naturally use group_id=0 in every system, so remap each system's
             # local ids into a process-wide id space before offline aggregation.
@@ -221,7 +240,10 @@ def _unique_paths(paths: Iterable[Path]) -> list[Path]:
 
 
 def _read_system_group_rows(
-    source_path: Path, target_keys: list[str]
+    source_path: Path,
+    target_keys: list[str],
+    *,
+    require_labels: bool = True,
 ) -> list[tuple[int, float, np.ndarray]]:
     """Read (group_id, weight, label) rows for one system.
 
@@ -230,6 +252,10 @@ def _read_system_group_rows(
     A single key keeps that column's own shape (unchanged from before
     multi-target support); several keys are stacked into one row per frame,
     same as ``_load_labels()``'s ``np.column_stack``.
+
+    With *require_labels* false the label files are not read at all and each
+    row carries a zero placeholder. ``predict()`` only needs the pooled
+    embeddings, and prediction data is frequently unlabeled.
     """
     rows: list[tuple[int, float, np.ndarray]] = []
     set_dirs = sorted(source_path.glob("set.*"))
@@ -239,20 +265,29 @@ def _read_system_group_rows(
     for set_dir in set_dirs:
         group_id_path = set_dir / "group_id.npy"
         weight_path = set_dir / "weight.npy"
-        label_paths = [set_dir / f"{key}.npy" for key in target_keys]
+        label_paths = (
+            [set_dir / f"{key}.npy" for key in target_keys] if require_labels else []
+        )
         missing = [str(p) for p in (group_id_path, *label_paths) if not p.is_file()]
         if missing:
             raise DPADataError(f"Grouped input is missing required files: {missing}.")
 
         group_ids = np.asarray(np.load(str(group_id_path)), dtype=np.int64).reshape(-1)
         label_arrays = [np.asarray(np.load(str(path))) for path in label_paths]
-        n_frames = label_arrays[0].shape[0]
-        for key, arr, path in zip(target_keys, label_arrays, label_paths, strict=True):
-            if arr.shape[0] != n_frames:
-                raise DPADataError(
-                    f"{path} has {arr.shape[0]} frames; expected {n_frames} "
-                    f"(from {label_paths[0]}, key={target_keys[0]!r} vs {key!r})."
-                )
+        if label_arrays:
+            n_frames = label_arrays[0].shape[0]
+        else:
+            # No label file to size the system by; group_id is per-frame.
+            n_frames = int(group_ids.shape[0])
+        if label_arrays:
+            for key, arr, path in zip(
+                target_keys, label_arrays, label_paths, strict=True
+            ):
+                if arr.shape[0] != n_frames:
+                    raise DPADataError(
+                        f"{path} has {arr.shape[0]} frames; expected {n_frames} "
+                        f"(from {label_paths[0]}, key={target_keys[0]!r} vs {key!r})."
+                    )
         if weight_path.is_file():
             weight = np.asarray(np.load(str(weight_path)), dtype=float).reshape(-1)
         else:
@@ -266,7 +301,9 @@ def _read_system_group_rows(
                 f"{weight_path} has shape {weight.shape}; expected ({n_frames},)."
             )
         for frame_idx in range(n_frames):
-            if len(label_arrays) == 1:
+            if not label_arrays:
+                label = _NO_LABEL
+            elif len(label_arrays) == 1:
                 label = np.asarray(label_arrays[0][frame_idx])
             else:
                 label = np.concatenate(

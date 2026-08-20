@@ -593,26 +593,34 @@ class MFTFineTuner:
         limitation of ``dp --pt test`` itself, not specific to MFT.
         """
         for sys_path in systems:
+            # Group ids are system-scoped, not set-scoped: one group may have
+            # its frames split across set.000/set.001/... Counting per set dir
+            # would see each of those frames alone and wave the group through,
+            # so accumulate the whole system before counting.
+            per_set_ids = []
             for set_dir in sorted(_glob.glob(os.path.join(sys_path, "set.*"))):
                 group_id_path = os.path.join(set_dir, "group_id.npy")
                 if not os.path.isfile(group_id_path):
                     continue
-                group_ids = np.load(group_id_path).reshape(-1)
-                _, counts = np.unique(group_ids, return_counts=True)
-                if np.any(counts > 1):
-                    raise RuntimeError(
-                        "MFT evaluate()/predict() cannot score a "
-                        "group_property head against "
-                        f"{set_dir}: it contains a group spanning more than "
-                        "one frame, but `dp --pt test` evaluates frame-by-"
-                        "frame and silently treats every frame as its own "
-                        "group, so the reported numbers would not match what "
-                        "the model was trained on. This is a known gap in "
-                        "`dp --pt test`'s group_property support (not "
-                        "specific to MFT); scoring multi-frame assemblies "
-                        "requires a group-aware evaluator, which does not "
-                        "exist yet."
-                    )
+                per_set_ids.append(np.load(group_id_path).reshape(-1))
+            if not per_set_ids:
+                continue
+            group_ids = np.concatenate(per_set_ids)
+            _, counts = np.unique(group_ids, return_counts=True)
+            if np.any(counts > 1):
+                raise RuntimeError(
+                    "MFT evaluate()/predict() cannot score a "
+                    "group_property head against "
+                    f"{sys_path}: it contains a group spanning more than "
+                    "one frame, but `dp --pt test` evaluates frame-by-"
+                    "frame and silently treats every frame as its own "
+                    "group, so the reported numbers would not match what "
+                    "the model was trained on. This is a known gap in "
+                    "`dp --pt test`'s group_property support (not "
+                    "specific to MFT); scoring multi-frame assemblies "
+                    "requires a group-aware evaluator, which does not "
+                    "exist yet."
+                )
 
     def evaluate(self, test_data: str | list[str]) -> dict:
         """

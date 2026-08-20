@@ -135,3 +135,43 @@ def test_pool_descriptor_is_nan_safe_for_masked_atoms():
 def test_pooling_primitives_canonical_constant():
     # guards against accidental reordering that would shift feature columns
     assert POOLING_PRIMITIVES == ("mean", "sum", "std", "max", "min")
+
+
+def test_masked_std_matches_unmasked_std_for_an_all_ones_mask():
+    """_pool_mask_for_system returns None for systems without virtual atoms, so
+    the masked and unmasked std branches can feed the same feature matrix and
+    must use the same divisor. torch.std is the sample (N-1) convention.
+    """
+    torch = pytest.importorskip("torch")
+    torch.set_default_device("cpu")
+
+    from dpa_adapt.finetuner import (
+        _pool_descriptor,
+    )
+
+    descrpt = torch.tensor(
+        [[[1.0, 5.0], [2.0, 7.0], [4.0, 11.0]]],
+        dtype=torch.float64,
+    )
+    unmasked = _pool_descriptor(descrpt, ("std",), None)
+    masked = _pool_descriptor(descrpt, ("std",), torch.ones(1, 3, dtype=torch.float64))
+    torch.testing.assert_close(masked, unmasked)
+
+
+def test_masked_std_of_a_single_kept_atom_is_zero():
+    """One retained atom leaves no spread to measure. torch.std gives NaN there
+    and the unmasked path maps it to 0, so the masked path must not blow up on
+    an N-1 divisor of zero either.
+    """
+    torch = pytest.importorskip("torch")
+    torch.set_default_device("cpu")
+
+    from dpa_adapt.finetuner import (
+        _pool_descriptor,
+    )
+
+    descrpt = torch.tensor([[[1.0, 5.0], [2.0, 7.0]]], dtype=torch.float64)
+    mask = torch.tensor([[1.0, 0.0]], dtype=torch.float64)
+    out = _pool_descriptor(descrpt, ("std",), mask)
+    assert torch.isfinite(out).all()
+    torch.testing.assert_close(out, torch.zeros_like(out))

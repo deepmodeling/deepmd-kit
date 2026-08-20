@@ -410,3 +410,28 @@ def test_predict_allows_group_property_head():
     with pytest.raises(Exception) as exc_info:
         t.predict("some/data")
     assert "only supported for downstream_task_type" not in str(exc_info.value)
+
+
+def test_check_no_multi_frame_groups_spans_set_directories(tmp_path):
+    """Group ids are system-scoped, not set-scoped. A group whose frames are
+    split across set.000/set.001 shows up once per set dir, so counting each
+    set dir on its own would wave it through even though `dp --pt test` would
+    still score it frame-by-frame.
+    """
+    sys_dir = tmp_path / "sys_split"
+    _write_group_id(sys_dir / "set.000", [0, 1])
+    _write_group_id(sys_dir / "set.001", [0, 2])  # group 0 continues here
+    ft = _make_group_property_finetuner(tmp_path)
+    with pytest.raises(RuntimeError, match="spanning more than one frame"):
+        ft._check_no_multi_frame_groups([str(sys_dir)])
+
+
+def test_check_no_multi_frame_groups_allows_distinct_ids_per_set(tmp_path):
+    """The aggregation must not create false positives: distinct ids in each
+    set dir are still one frame per group once concatenated.
+    """
+    sys_dir = tmp_path / "sys_disjoint"
+    _write_group_id(sys_dir / "set.000", [0, 1])
+    _write_group_id(sys_dir / "set.001", [2, 3])
+    ft = _make_group_property_finetuner(tmp_path)
+    ft._check_no_multi_frame_groups([str(sys_dir)])  # must not raise

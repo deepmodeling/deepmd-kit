@@ -128,7 +128,14 @@ def _pool_descriptor(descrpt: Any, primitives: Any, mask: Any = None) -> Any:
                 parts.append(torch.nan_to_num(descrpt.std(dim=1), nan=0.0))
             else:
                 mean = (descrpt * m).sum(dim=1, keepdim=True) / count.unsqueeze(1)
-                var = (((descrpt - mean) ** 2) * m).sum(dim=1) / count
+                # Sample divisor (N-1), matching torch.std in the unmasked
+                # branch: _pool_mask_for_system returns None for systems with
+                # no virtual atoms, so both branches can feed the same feature
+                # matrix and must agree. clamp_min(1) keeps a single-atom frame
+                # at 0 instead of dividing by zero (torch.std gives NaN there,
+                # which nan_to_num also maps to 0).
+                denom = (count - 1.0).clamp_min(1.0)
+                var = (((descrpt - mean) ** 2) * m).sum(dim=1) / denom
                 parts.append(torch.nan_to_num(torch.sqrt(var), nan=0.0))
         elif prim == "max":
             if mask is None:
@@ -1874,6 +1881,9 @@ class DPAFineTuner:
                 type_map=self.type_map or None,
                 target_key=self._target_key,
                 fmt=fmt,
+                # predict() consumes only the pooled embeddings, and prediction
+                # data routinely has no set.*/<target>.npy to read.
+                require_labels=False,
             )
             raw = self.predictor.predict(dataset.get_embeddings())
             predictions = np.asarray(raw).reshape(-1, self._task_dim)

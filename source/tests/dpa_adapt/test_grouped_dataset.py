@@ -206,3 +206,56 @@ def test_plain_input_keeps_existing_fit_path(monkeypatch, tmp_path):
     model.fit(str(sys_dir), target_key="energy")
 
     assert called == [(str(sys_dir), "energy")]
+
+
+def test_grouped_dataset_without_labels(monkeypatch, tmp_path):
+    """predict() runs on data that frequently carries no set.*/<target>.npy.
+    With require_labels=False the label file is never read, so the pooled
+    embeddings still come out and get_labels() says why it has nothing.
+    """
+    import pytest
+
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+
+    parent = tmp_path / "data"
+    sys_a = _write_system(
+        parent, "a", label=4.0, group_id=0, weight=[0.5, 0.5], n_frames=2
+    )
+    # Prediction data: no labels on disk at all.
+    (sys_a / "set.000" / "property.npy").unlink()
+    (sys_a / "set.000" / "energy.npy").unlink()
+
+    rows = {str(sys_a.resolve()): np.array([[2.0, 0.0], [0.0, 8.0]])}
+    monkeypatch.setattr(
+        "dpa_adapt.grouped._offline.load_or_extract",
+        lambda systems, **kw: np.vstack([rows[s._dpa_source] for s in systems]),
+    )
+
+    dataset = GroupedDataset(str(parent), pretrained="fake.pt", require_labels=False)
+    embeddings = dataset.get_embeddings()
+    assert embeddings.shape[0] == 1  # one group
+    np.testing.assert_allclose(embeddings[0], [1.0, 4.0])
+
+    with pytest.raises(DPADataError, match="require_labels=False"):
+        dataset.get_labels()
+
+
+def test_grouped_dataset_still_requires_labels_by_default(monkeypatch, tmp_path):
+    import pytest
+
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+
+    parent = tmp_path / "data"
+    sys_a = _write_system(parent, "a", label=4.0, group_id=0, n_frames=1)
+    (sys_a / "set.000" / "property.npy").unlink()
+
+    monkeypatch.setattr(
+        "dpa_adapt.grouped._offline.load_or_extract",
+        lambda systems, **kw: np.zeros((1, 2)),
+    )
+    with pytest.raises(DPADataError, match="missing required files"):
+        GroupedDataset(str(parent), pretrained="fake.pt")

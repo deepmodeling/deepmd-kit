@@ -148,3 +148,35 @@ def test_finetuner_calibrate_applies_and_freezes(tmp_path: Path) -> None:
 
     assert hasattr(loaded, "raw_predictions")
     assert loaded.predictions.shape == (5, 1)
+
+
+def _write_set(set_dir: Path, *, nframes: int, with_fparam: bool) -> None:
+    set_dir.mkdir(parents=True, exist_ok=True)
+    np.save(set_dir / "coord.npy", np.zeros((nframes, 6)))
+    np.save(set_dir / "box.npy", np.tile(np.eye(3).ravel(), (nframes, 1)))
+    np.save(set_dir / "weight.npy", np.ones((nframes,), dtype=float))
+    if with_fparam:
+        np.save(set_dir / "fparam.npy", np.ones((nframes, 2), dtype=float))
+
+
+def test_calibrator_reports_a_set_missing_fparam_before_the_first_one_with_it(
+    tmp_path: Path,
+) -> None:
+    """``any_fparam`` only flips once a set carrying fparam.npy has been read,
+    so a set *ahead* of it silently contributes no fparam row. The mismatch has
+    to be reported as the intended message, not as a concatenate shape error.
+    """
+    from dpa_adapt.calibrator import (
+        _feature_rows_from_data,
+    )
+
+    sys_dir = tmp_path / "sys"
+    sys_dir.mkdir(parents=True, exist_ok=True)
+    (sys_dir / "type.raw").write_text("0\n1\n")
+    (sys_dir / "type_map.raw").write_text("H\nO\n")
+    # sorted() visits set.000 first: no fparam there, fparam only in set.001.
+    _write_set(sys_dir / "set.000", nframes=2, with_fparam=False)
+    _write_set(sys_dir / "set.001", nframes=2, with_fparam=True)
+
+    with pytest.raises(ValueError, match=r"fparam\.npy must be present for every set"):
+        _feature_rows_from_data(str(sys_dir), fmt=None, expected_rows=4)

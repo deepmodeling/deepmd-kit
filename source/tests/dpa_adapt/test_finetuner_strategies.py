@@ -576,3 +576,65 @@ def test_extract_features_uses_per_frame_real_atom_types_for_grouped_systems(
 
     assert len(seen_atype) == 1
     np.testing.assert_array_equal(seen_atype[0].numpy(), real_types)
+
+
+def _check_against_schema(fitting_net: dict) -> None:
+    """Run one fitting_net dict through the same dargs strict-mode check that
+    ``dp --pt train`` applies to input.json.
+    """
+    from dargs import (
+        Argument,
+    )
+    from deepmd.utils.argcheck import (
+        fitting_group_property,
+        fitting_property,
+    )
+
+    builder = (
+        fitting_group_property
+        if fitting_net["type"] == "group_property"
+        else fitting_property
+    )
+    payload = {k: v for k, v in fitting_net.items() if k != "type"}
+    Argument("fitting_net", dict, builder()).check_value(payload, strict=True)
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_build_fitting_net_matches_its_schema(grouped, tmp_path):
+    """``fitting_group_property()`` drops the property-schema fields the grouped
+    head has no wiring for (intensive, resnet_dt, ...), and dargs strict mode
+    rejects unknown keys. The defaults DPATrainer injects must therefore not
+    carry them into a grouped config -- otherwise grouped `dp train` dies during
+    input validation. Mirrors test_mft_grouped_config's equivalent check for the
+    MFT config builder.
+    """
+    from dpa_adapt.trainer import (
+        DPATrainer,
+    )
+
+    trainer = DPATrainer(
+        property_name="cloud_point",
+        task_dim=1,
+        intensive=True,
+        grouped=grouped,
+        train_systems=str(tmp_path),
+        valid_systems=str(tmp_path),
+        type_map=["H", "C", "O"],
+    )
+    fn = trainer._build_fitting_net()
+
+    assert fn["type"] == ("group_property" if grouped else "property")
+    unsupported = {
+        "numb_aparam",
+        "default_fparam",
+        "resnet_dt",
+        "intensive",
+        "distinguish_types",
+    }
+    if grouped:
+        assert not (unsupported & fn.keys())
+    else:
+        # the ungrouped property head still gets them
+        assert fn["intensive"] is True
+        assert "resnet_dt" in fn
+    _check_against_schema(fn)

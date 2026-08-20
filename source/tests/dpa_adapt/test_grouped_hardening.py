@@ -187,3 +187,105 @@ def test_write_disambiguates_groups_with_colliding_sanitized_names(tmp_path):
         for s in systems
     )
     assert labels == [1.0, 2.0]
+
+
+def test_negative_pool_mask_rejected():
+    """A negative entry passes an all-zero sum check but still lands in the
+    pooling denominator, silently rescaling the atoms that were kept.
+    """
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        ComponentSpec,
+    )
+
+    comp = ComponentSpec.from_arrays(
+        [[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"], pool_mask=[1.0, -0.5]
+    )
+    with pytest.raises(DPADataError, match="negative"):
+        comp.validate()
+
+
+def test_non_finite_pool_mask_rejected():
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        ComponentSpec,
+    )
+
+    comp = ComponentSpec.from_arrays(
+        [[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"], pool_mask=[1.0, np.nan]
+    )
+    with pytest.raises(DPADataError, match="non-finite"):
+        comp.validate()
+
+
+@pytest.mark.parametrize(
+    ("weight", "match"),
+    [(-1.0, "non-negative"), (float("nan"), "finite"), (float("inf"), "finite")],
+)
+def test_invalid_component_weight_rejected(weight, match):
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        ComponentSpec,
+    )
+
+    comp = ComponentSpec.from_arrays(
+        [[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"], weight=weight
+    )
+    with pytest.raises(DPADataError, match=match):
+        comp.validate()
+
+
+def test_all_zero_group_weights_rejected(tmp_path):
+    """Each weight is individually valid, but the group sums to zero and group
+    pooling clamps that denominator, so it would serialize a zero embedding.
+    """
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        Assembly,
+    )
+
+    a = Assembly(target="y", type_map=["H", "O"])
+    g = a.group(label=1.0)
+    g.add([[0.0, 0.0, 0.0], [1.1, 0.0, 0.0]], ["H", "O"], weight=0.0)
+    g.add([[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]], ["H", "O"], weight=0.0)
+    with pytest.raises(DPADataError, match="positive weight"):
+        a.write(tmp_path / "out")
+
+
+@pytest.mark.parametrize(
+    "target", ["coord", "box", "group_id", "weight", "pool_mask", "fparam", "type_map"]
+)
+def test_reserved_target_name_rejected(target):
+    """``target`` becomes set.*/<target>.npy, so a tensor name the writer emits
+    itself would collide -- one of the two silently overwrites the other.
+    """
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        Assembly,
+    )
+
+    with pytest.raises(DPADataError, match="collides"):
+        Assembly(target=target)
+
+
+@pytest.mark.parametrize("target", ["a/b", "..", "", " y"])
+def test_path_like_target_rejected(target):
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        Assembly,
+    )
+
+    with pytest.raises(DPADataError):
+        Assembly(target=target)

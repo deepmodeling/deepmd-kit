@@ -105,6 +105,18 @@ _VALID_LOSSES = ("mse", "smooth_mae")
 # fitting/loss to the ``group_property`` head.
 _GROUP_MARKERS = ("group_id", "weight", "pool_mask")
 
+# Property-schema fields that ``deepmd.utils.argcheck.fitting_group_property()``
+# removes because GroupPropertyFittingNet has no wiring for them. dargs strict
+# mode rejects unknown keys, so the defaults we inject must not carry them into
+# a grouped config. A user who passes one explicitly still gets the loud error.
+_GROUPED_UNSUPPORTED_DEFAULTS = (
+    "numb_aparam",
+    "default_fparam",
+    "resnet_dt",
+    "intensive",
+    "distinguish_types",
+)
+
 
 def _first_set_dir(systems: list) -> str | None:
     """Return the first ``set.*`` directory across the resolved systems."""
@@ -449,6 +461,8 @@ class DPATrainer:
             # tanh saturates at that scale and the head collapses to a constant.
             # Default to GELU (a user override via fitting_net_params still wins).
             fn["activation_function"] = "gelu"
+            for key in _GROUPED_UNSUPPORTED_DEFAULTS:
+                fn.pop(key, None)
         # NB: dim_case_embd is intentionally NOT injected for FT/LP. The paper
         # qm9_gap input.json omits it: single-task `--finetune` (without
         # --model-branch) copies only the backbone and random-inits the

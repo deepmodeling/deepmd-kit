@@ -18,6 +18,13 @@ from dpa_adapt.utils.dotdict import (
 )
 
 
+# Internal key carrying the per-committee-member (or per-tree) predictions from
+# _predict_with_uncertainty to _apply_calibrator, which pops it before the
+# result is returned. Calibrating the members individually is what keeps
+# `uncertainty` on the same scale as the calibrated `predictions`.
+_MEMBERS_KEY = "_members"
+
+
 def _unwrap_multioutput(est: Any) -> Any:
     """If *est* is a ``MultiOutputRegressor``, return the wrapped estimator."""
     from sklearn.multioutput import (
@@ -327,14 +334,39 @@ class DPAPredictor:
         data: str | list[str] | None = None,
         fmt: str | None = None,
     ) -> DotDict:
+        # Per-member predictions handed over by _predict_with_uncertainty so
+        # the calibrator can be applied before the spread is measured. Popped
+        # unconditionally: it is never part of the public result.
+        members = result.pop(_MEMBERS_KEY, None)
         if calibrated and self._calibrator is not None:
             raw_predictions = np.asarray(result.predictions)
             result["raw_predictions"] = raw_predictions
-            result["predictions"] = self._calibrator.predict_from_arrays(
-                raw_predictions,
-                data=data,
-                fmt=fmt,
-            )
+            if members is None:
+                result["predictions"] = self._calibrator.predict_from_arrays(
+                    raw_predictions,
+                    data=data,
+                    fmt=fmt,
+                )
+            else:
+                # Calibrating only the mean would leave `uncertainty` on the
+                # raw model's scale -- for a ridge calibrator y = a*x + b the
+                # spread has to scale by |a|. Calibrate every committee member
+                # (or tree) and re-measure mean and spread on that scale.
+                calibrated_members = np.stack(
+                    [
+                        np.asarray(
+                            self._calibrator.predict_from_arrays(
+                                np.asarray(member).reshape(raw_predictions.shape),
+                                data=data,
+                                fmt=fmt,
+                            )
+                        ).reshape(raw_predictions.shape)
+                        for member in np.asarray(members)
+                    ]
+                )
+                result["raw_uncertainty"] = np.asarray(result.uncertainty)
+                result["predictions"] = np.mean(calibrated_members, axis=0)
+                result["uncertainty"] = np.std(calibrated_members, axis=0)
         return result
 
     def calibrate(
@@ -369,6 +401,7 @@ class DPAPredictor:
                 {
                     "predictions": np.mean(tree_preds, axis=0),
                     "uncertainty": np.std(tree_preds, axis=0),
+                    _MEMBERS_KEY: tree_preds,
                 }
             )
 
@@ -386,6 +419,7 @@ class DPAPredictor:
                 {
                     "predictions": np.mean(preds, axis=0),
                     "uncertainty": np.std(preds, axis=0),
+                    _MEMBERS_KEY: preds,
                 }
             )
 

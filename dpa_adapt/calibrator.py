@@ -253,10 +253,6 @@ def _feature_rows_from_data(
                 frame_stats.append(_stats_for_weights(weights[frame : frame + 1]))
                 if fparam is not None:
                     frame_fparams.append(fparam[frame])
-                elif any_fparam:
-                    raise ValueError(
-                        "fparam.npy must be present for every set when Calibrator uses fparam."
-                    )
 
             for local_gid in group_ids:
                 if int(local_gid) not in local_to_global:
@@ -270,6 +266,16 @@ def _feature_rows_from_data(
                         None if fparam is None else fparam[frame],
                     )
                 )
+
+    # ``any_fparam`` only turns True once a set carrying fparam.npy has been
+    # read, so a set *before* that one contributes no fparam row and cannot be
+    # caught while looping. Compare the collected row counts once every system
+    # has been read, otherwise the gap only surfaces as an opaque concatenate
+    # shape error further down.
+    if any_fparam and len(frame_fparams) != len(frame_stats):
+        raise ValueError(
+            "fparam.npy must be present for every set when Calibrator uses fparam."
+        )
 
     if any_grouped:
         group_ids = sorted({record[0] for record in grouped_records})
