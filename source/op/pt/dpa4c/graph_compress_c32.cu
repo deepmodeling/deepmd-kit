@@ -3,7 +3,7 @@
 // Compiled specializations of the compressed DPA4C descriptor for a scalar
 // width of 32 channels.
 
-#include "dpa4c_graph_compress_kernel.cuh"
+#include "graph_compress_kernel.cuh"
 
 namespace deepmd_dpa4c {
 

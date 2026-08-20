@@ -430,21 +430,36 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
         )
 
     def test_auto_resolution(self) -> None:
-        # (device, nv, vesin, nf, expected, warns)
+        # (device, nv, cell, vesin, nf, expected, warns)
+        #
+        # ``cell`` is the native threaded CPU search; it takes precedence over
+        # ``vesin`` on a CPU host at any frame count, because it batches no
+        # worse and its search is an order of magnitude faster.
         cases = (
-            ("cpu", False, True, 1, "vesin", False),
-            ("cpu", False, True, 4, "dense", False),
-            ("cpu", False, False, 1, "dense", False),
-            ("cuda", True, True, 1, "nv", False),
-            ("cuda", True, True, 4, "nv", False),
-            ("cuda", False, True, 1, "vesin", False),
-            ("cuda", False, True, 4, "dense", True),
-            ("cuda", False, False, 1, "dense", True),
+            ("cpu", False, True, True, 1, "cell", False),
+            ("cpu", False, True, True, 4, "cell", False),
+            ("cpu", False, False, True, 1, "vesin", False),
+            ("cpu", False, False, True, 4, "dense", False),
+            ("cpu", False, False, False, 1, "dense", False),
+            ("cuda", True, True, True, 1, "nv", False),
+            ("cuda", True, True, True, 4, "nv", False),
+            ("cuda", False, True, True, 1, "vesin", False),
+            ("cuda", False, True, True, 4, "dense", True),
+            ("cuda", False, True, False, 1, "dense", True),
         )
-        for device_type, nv_available, vesin_available, nf, expected, warns in cases:
+        for (
+            device_type,
+            nv_available,
+            cell_available,
+            vesin_available,
+            nf,
+            expected,
+            warns,
+        ) in cases:
             with self.subTest(
                 device_type=device_type,
                 nv_available=nv_available,
+                cell_available=cell_available,
                 vesin_available=vesin_available,
                 nf=nf,
             ):
@@ -456,6 +471,10 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                     mock.patch(
                         "deepmd.pt.utils.nv_nlist.is_nv_available",
                         return_value=nv_available,
+                    ),
+                    mock.patch(
+                        "deepmd.pt_expt.utils.cell_graph_builder.is_cell_search_available",
+                        return_value=cell_available,
                     ),
                     mock.patch(
                         "deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available",

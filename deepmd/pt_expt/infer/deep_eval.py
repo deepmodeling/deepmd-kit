@@ -2557,8 +2557,8 @@ class DeepEval(DeepEvalBackend):
         call-time via
         :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
         using the batch frame count (vesin only when ``nf == 1``);
-        ``dense``/``ase`` run backend-agnostic (numpy); ``vesin``/``nv`` run
-        on-device (torch, O(N)). All backends emit the SAME neighbor set
+        ``dense``/``ase`` run backend-agnostic (numpy); ``cell``/``vesin``/``nv``
+        run on-device (torch, O(N)), and ``cell`` threads its search. All backends emit the SAME neighbor set
         (carry-all, sel-free), so the selection is a pure performance choice
         and results are unchanged. The result is canonicalized to the
         destination-major graph-form ``.pt2`` ABI after construction.
@@ -2573,6 +2573,47 @@ class DeepEval(DeepEvalBackend):
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
         # ``applyPairExclusion`` and the eager dpmodel/pt_expt build path).
         pair_excl = self._model_pair_excl()
+        # The fused builder writes the whole destination-major payload from one
+        # search. It applies only where nothing has to be filtered or masked
+        # afterwards, because it has no stage in which to do so, and only for
+        # the frozen artifact this class feeds: its displacements come from the
+        # search rather than from a differentiable recomputation.
+        if (
+            method == "cell"
+            and pair_excl is None
+            and np.asarray(coord_input).shape[0] == 1
+            and not (np.asarray(atom_types) < 0).any()
+        ):
+            from deepmd.pt_expt.utils.cell_graph_builder import (
+                build_neighbor_graph_fused,
+            )
+
+            edge_dtype = (
+                torch.float32
+                if self.metadata.get("graph_edge_dtype") == "float32"
+                else torch.float64
+            )
+            return build_neighbor_graph_fused(
+                torch.as_tensor(
+                    np.asarray(coord_input).reshape(-1, 3),
+                    dtype=torch.float64,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    np.asarray(atom_types).reshape(-1),
+                    dtype=torch.int64,
+                    device=device,
+                ),
+                torch.as_tensor(
+                    np.asarray(box_input).reshape(3, 3),
+                    dtype=torch.float64,
+                    device=device,
+                )
+                if box_input is not None
+                else None,
+                self._rcut,
+                edge_dtype=edge_dtype,
+            )
         if method == "dense":
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph,
@@ -2599,7 +2640,7 @@ class DeepEval(DeepEvalBackend):
                 canonicalize=True,
                 pair_excl=pair_excl,
             )
-        if method in ("vesin", "nv"):
+        if method in ("cell", "vesin", "nv"):
             cc = torch.as_tensor(coord_input, dtype=torch.float64, device=device)
             aa = torch.as_tensor(
                 np.asarray(atom_types), dtype=torch.int64, device=device
@@ -2609,6 +2650,19 @@ class DeepEval(DeepEvalBackend):
                 if box_input is not None
                 else None
             )
+            if method == "cell":
+                from deepmd.pt_expt.utils.cell_graph_builder import (
+                    build_neighbor_graph_cell,
+                )
+
+                return build_neighbor_graph_cell(
+                    cc,
+                    aa,
+                    bb,
+                    self._rcut,
+                    canonicalize=True,
+                    pair_excl=pair_excl,
+                )
             if method == "vesin":
                 from deepmd.pt_expt.utils.vesin_graph_builder import (
                     build_neighbor_graph_vesin,
@@ -2636,7 +2690,7 @@ class DeepEval(DeepEvalBackend):
             )
         raise ValueError(
             f"unknown neighbor_graph_method {method!r}; "
-            "use 'auto', 'dense', 'ase', 'vesin', or 'nv'"
+            "use 'auto', 'dense', 'ase', 'cell', 'vesin', or 'nv'"
         )
 
     def _model_pair_excl(self) -> "PairExcludeMask | None":

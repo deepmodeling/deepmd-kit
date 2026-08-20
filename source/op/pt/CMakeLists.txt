@@ -3,6 +3,39 @@ option(
   DEEPMD_CUDA_PORTABLE_PTX
   "Embed a lowest-supported PTX fallback in the PyTorch CUDA operator library"
   ON)
+
+# Graph-lower operators of the CPU backend. The schemas are declared in their
+# own translation units so that an operator stays visible when the CUDA half is
+# absent, and each instruction-set instantiation is compiled with only that
+# level's flags: the library ships in a wheel and in the LAMMPS deployment tree,
+# so it must load on a host older than the one that built it and select its
+# kernels through CPUID at run time.
+set(DPA4C_CPU_ISA_SRC
+    dpa4c/graph_compress_cpu_scalar.cc dpa4c/graph_compress_cpu_avx2.cc
+    dpa4c/graph_compress_cpu_avx512.cc)
+list(
+  APPEND
+  OP_SRC
+  graph_ops_schema.cc
+  cpu/allocator_policy.cc
+  cpu/edge_force_virial_cpu.cc
+  cpu/graph_fitting_cpu.cc
+  cpu/neighbor_search_cpu.cc
+  dpa4c/ops.cc
+  dpa4c/graph_compress_cpu.cc
+  ${DPA4C_CPU_ISA_SRC})
+# The architecture level is pinned per unit rather than added to it: the project
+# may be configured with ENABLE_NATIVE_OPTIMIZATION, and a trailing -march wins,
+# so this is what keeps the fallback units free of instructions the dispatcher
+# promised the host would not need.
+set_source_files_properties(dpa4c/graph_compress_cpu_scalar.cc
+                            PROPERTIES COMPILE_OPTIONS "-march=x86-64")
+set_source_files_properties(dpa4c/graph_compress_cpu_avx2.cc
+                            PROPERTIES COMPILE_OPTIONS "-march=x86-64-v3")
+set_source_files_properties(
+  dpa4c/graph_compress_cpu_avx512.cc
+  PROPERTIES COMPILE_OPTIONS
+             "-march=x86-64-v4;-mprefer-vector-width=512;-mtune=native")
 # Fused graph-lower inference operators (CUDA / cuBLAS). They include ATen CUDA
 # headers and link libtorch_cuda, so they build only against a CUDA-enabled
 # PyTorch (DEEPMD_TORCH_HAS_CUDA); against a CPU-only torch they are omitted and
@@ -53,6 +86,10 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
       dpa4/so2_conv_bwd_c64_l4.cu
       dpa4/so2_conv_bwd_c64_l5.cu
       dpa4/so2_conv_bwd_c64_l6.cu)
+  set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC
+      dpa4c/graph_compress.cu dpa4c/graph_compress_c8.cu
+      dpa4c/graph_compress_c16.cu dpa4c/graph_compress_c32.cu
+      dpa4c/graph_compress_c64.cu dpa4c/graph_compress_c128.cu)
   set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
       dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
       dpa1_graph_compress_c32.cu dpa1_graph_compress_c64.cu
@@ -63,12 +100,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     dpa1_graph_descriptor.cu
     dpa1_graph_compress.cu
     ${DPA1_GRAPH_COMPRESS_KERNEL_SRC}
-    dpa4c_graph_compress.cu
-    dpa4c_graph_compress_c8.cu
-    dpa4c_graph_compress_c16.cu
-    dpa4c_graph_compress_c32.cu
-    dpa4c_graph_compress_c64.cu
-    dpa4c_graph_compress_c128.cu
+    ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     graph_fitting.cu
     edge_force_virial.cu
     dpa1_graph_energy_force.cu
@@ -114,9 +146,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   set_source_files_properties(${DPA4_SO2_CONV_KERNEL_SRC}
                               PROPERTIES COMPILE_OPTIONS "--threads=2")
   set_source_files_properties(
-    ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} dpa4c_graph_compress_c8.cu
-    dpa4c_graph_compress_c16.cu dpa4c_graph_compress_c32.cu
-    dpa4c_graph_compress_c64.cu dpa4c_graph_compress_c128.cu
+    ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})

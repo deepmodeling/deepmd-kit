@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Bindings for the fused energy fitting operator of the graph lower.
 
-The CUDA operator ``deepmd::graph_fitting`` (see
-``source/op/pt/graph_fitting.cu``) evaluates the whole energy fitting
-network on the flat node axis -- cuBLAS GEMMs with the bias / activation /
-residual epilogues fused into single elementwise kernels -- and returns the
+The operator ``deepmd::graph_fitting`` evaluates the whole energy fitting
+network on the flat node axis -- GEMMs with the bias / activation / residual
+epilogues fused into the surrounding elementwise pass -- and returns the
 per-atom energy in fp64. The registered backward chains the layer dgrads from
 the saved pre-activations, exposing the descriptor gradient that the force /
-virial assembly differentiates through.
+virial assembly differentiates through. The CUDA kernel is
+``source/op/pt/graph_fitting.cu`` and the CPU kernel
+``source/op/pt/graph_fitting_cpu.cc``.
 
 The operator is descriptor-agnostic: any graph-lowered energy model whose
 fitting is a plain MLP over the flat node axis (see
@@ -52,6 +53,9 @@ import torch
 from deepmd.pt_expt.kernels.triton.dpa1.activation import (
     ACT_CODES,
 )
+from deepmd.pt_expt.kernels.utils import (
+    operator_available,
+)
 
 __all__ = [
     "FittingArguments",
@@ -79,14 +83,14 @@ def node_tile() -> int:
 
 
 def op_available() -> bool:
-    """Whether every C++ fitting operator used by this module is loaded."""
-    operators = (
-        getattr(torch.ops.deepmd, "graph_fitting", None),
-        getattr(torch.ops.deepmd, "graph_fitting_backward", None),
-        getattr(torch.ops.deepmd, "graph_fitting_energy_gradient", None),
-    )
+    """Whether the backend device carries every fitting operator used here."""
     return all(
-        isinstance(operator, torch._ops.OpOverloadPacket) for operator in operators
+        operator_available(name)
+        for name in (
+            "graph_fitting",
+            "graph_fitting_backward",
+            "graph_fitting_energy_gradient",
+        )
     )
 
 
@@ -310,106 +314,21 @@ def _backward(ctx: Any, d_e: torch.Tensor, d_saved: Any) -> tuple:
 # ======================================================================
 # CPU reference implementations
 # ======================================================================
-def _activation_derivative(pre: torch.Tensor, act: int) -> torch.Tensor:
-    """Return the activation derivative at the given pre-activation."""
-    if act == 0:
-        return 1.0 - torch.tanh(pre) ** 2
-    sigmoid = torch.sigmoid(pre)
-    return sigmoid * (1.0 + pre * (1.0 - sigmoid))
-
-
-def _cpu_forward(
-    x: torch.Tensor,
-    atype: torch.Tensor,
-    ws: list[torch.Tensor],
-    bs: list[torch.Tensor],
-    resnets: list[int],
-    w_head: torch.Tensor,
-    b_head: torch.Tensor,
-    bias_atom_e: torch.Tensor,
-    act: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    pres = []
-    cur = x.to(torch.float32)
-    for w, b, res in zip(ws, bs, resnets, strict=True):
-        pre = cur @ w
-        pres.append(pre)
-        if b.numel():
-            pre = pre + b
-        a = torch.tanh(pre) if act == 0 else torch.nn.functional.silu(pre)
-        cur = a + cur if (res and w.shape[0] == w.shape[1]) else a
-    e = (cur @ w_head[:, None]).to(torch.float64)
-    if b_head.numel():
-        e = e + b_head.to(torch.float64)
-    e = e + bias_atom_e[atype][:, None]
-    # Chunk layout mirrors the CUDA op: the pre-activation of each layer as a
-    # contiguous row-major (N, w_l) block, before the bias.
-    saved = torch.cat([t.reshape(-1) for t in pres])
-    return e, saved
-
-
-def _cpu_backward(
-    d_e: torch.Tensor,
-    saved: torch.Tensor,
-    ws: list[torch.Tensor],
-    bs: list[torch.Tensor],
-    resnets: list[int],
-    w_head: torch.Tensor,
-    act: int,
-) -> torch.Tensor:
-    total_width = sum(int(w.shape[1]) for w in ws)
-    n_node = saved.shape[0] // total_width
-    offset = [0]
-    for w in ws:
-        offset.append(offset[-1] + int(w.shape[1]))
-    dh = d_e.to(torch.float32) * w_head
-    for layer in range(len(ws) - 1, -1, -1):
-        pre = saved[offset[layer] * n_node : offset[layer + 1] * n_node].reshape(
-            n_node, int(ws[layer].shape[1])
-        )
-        if bs[layer].numel():
-            pre = pre + bs[layer]
-        dpre = dh * _activation_derivative(pre, act)
-        dx = dpre @ ws[layer].t()
-        if resnets[layer] and ws[layer].shape[0] == ws[layer].shape[1]:
-            dx = dx + dh
-        dh = dx
-    return dh
-
-
-def _cpu_energy_gradient(
-    x: torch.Tensor,
-    atype: torch.Tensor,
-    ws: list[torch.Tensor],
-    bs: list[torch.Tensor],
-    resnets: list[int],
-    w_head: torch.Tensor,
-    b_head: torch.Tensor,
-    bias_atom_e: torch.Tensor,
-    act: int,
-    seed: torch.Tensor,
-    tile: int,
-) -> torch.Tensor:
-    energy, saved = _cpu_forward(
-        x, atype, ws, bs, resnets, w_head, b_head, bias_atom_e, act
-    )
-    x.copy_(_cpu_backward(seed.reshape(-1, 1), saved, ws, bs, resnets, w_head, act))
-    return energy
-
-
 # ======================================================================
 # Registration and the public wrapper
 # ======================================================================
-_cpu_library: torch.library.Library | None = None
+_registered = False
 
 
 def ensure_registered() -> None:
-    """Register the fake / backward / CPU implementations for the ops.
+    """Register the meta and autograd implementations for the ops.
 
-    Idempotent; a no-op when the C++ operator library is not loaded.
+    Both devices implement the network in C++, so only the shapes and the
+    autograd rule are described here. Idempotent; a no-op when the operator
+    library is not loaded.
     """
-    global _cpu_library
-    if _cpu_library is not None or not op_available():
+    global _registered
+    if _registered or not op_available():
         return
     torch.library.register_fake("deepmd::graph_fitting")(_forward_fake)
     torch.library.register_fake("deepmd::graph_fitting_backward")(_backward_fake)
@@ -419,10 +338,7 @@ def ensure_registered() -> None:
     torch.library.register_autograd(
         "deepmd::graph_fitting", _backward, setup_context=_setup_context
     )
-    _cpu_library = torch.library.Library("deepmd", "IMPL")
-    _cpu_library.impl("graph_fitting", _cpu_forward, "CPU")
-    _cpu_library.impl("graph_fitting_backward", _cpu_backward, "CPU")
-    _cpu_library.impl("graph_fitting_energy_gradient", _cpu_energy_gradient, "CPU")
+    _registered = True
 
 
 def energy_and_input_gradient(

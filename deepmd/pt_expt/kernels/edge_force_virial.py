@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Bindings for the fused force / virial assembly of the graph lower.
 
-The CUDA operator ``deepmd::edge_force_virial`` (see
-``source/op/pt/edge_force_virial.cu``) scatters the per-edge energy gradient
-``g_e = dE/d(edge_vec)`` into per-atom force, per-atom virial (optional) and
-per-frame virial through destination/source CSR reductions, replacing the array-API
+The operator ``deepmd::edge_force_virial`` scatters the per-edge energy
+gradient ``g_e = dE/d(edge_vec)`` into per-atom force, per-atom virial
+(optional) and per-frame virial through destination/source CSR reductions,
+replacing the array-API
 :func:`~deepmd.dpmodel.utils.neighbor_graph.edge_force_virial` chain of
 ``index_add`` / outer-product / ``segment_sum`` kernels. It is
 descriptor-agnostic: any graph-lowered model whose force path differentiates
-the energy w.r.t. ``edge_vec`` can dispatch here.
+the energy w.r.t. ``edge_vec`` can dispatch here. The CUDA kernel is
+``source/op/pt/edge_force_virial.cu`` and the CPU kernel
+``source/op/pt/edge_force_virial_cpu.cc``.
 
 Usage and pitfalls
 ------------------
@@ -29,6 +31,10 @@ Usage and pitfalls
 
 import torch
 
+from deepmd.pt_expt.kernels.utils import (
+    operator_available,
+)
+
 __all__ = [
     "canonical_edge_force_virial",
     "canonical_op_available",
@@ -41,21 +47,18 @@ __all__ = [
 
 
 def op_available() -> bool:
-    """Whether the C++ ``deepmd::edge_force_virial`` op is loaded."""
-    op = getattr(torch.ops.deepmd, "edge_force_virial", None)
-    return isinstance(op, torch._ops.OpOverloadPacket)
+    """Whether the backend device carries ``deepmd::edge_force_virial``."""
+    return operator_available("edge_force_virial")
 
 
 def canonical_op_available() -> bool:
-    """Whether the compact canonical force operator is loaded."""
-    op = getattr(torch.ops.deepmd, "canonical_edge_force_virial", None)
-    return isinstance(op, torch._ops.OpOverloadPacket)
+    """Whether the backend device carries the compact canonical force operator."""
+    return operator_available("canonical_edge_force_virial")
 
 
 def frame_scalar_sum_available() -> bool:
-    """Whether the C++ ``deepmd::frame_scalar_sum`` op is loaded."""
-    op = getattr(torch.ops.deepmd, "frame_scalar_sum", None)
-    return isinstance(op, torch._ops.OpOverloadPacket)
+    """Whether the backend device carries ``deepmd::frame_scalar_sum``."""
+    return operator_available("frame_scalar_sum")
 
 
 def _frame_scalar_sum_fake(
@@ -63,24 +66,6 @@ def _frame_scalar_sum_fake(
     n_node_per_frame: torch.Tensor,
 ) -> torch.Tensor:
     return node_scalar.new_empty(n_node_per_frame.shape[0], 1)
-
-
-def _frame_scalar_sum_cpu(
-    node_scalar: torch.Tensor,
-    n_node_per_frame: torch.Tensor,
-) -> torch.Tensor:
-    offsets = torch.cat(
-        [
-            torch.zeros(1, dtype=torch.int64, device=n_node_per_frame.device),
-            torch.cumsum(n_node_per_frame.to(torch.int64), 0),
-        ]
-    )
-    return torch.stack(
-        [
-            node_scalar[offsets[frame] : offsets[frame + 1]].sum(0)
-            for frame in range(n_node_per_frame.shape[0])
-        ]
-    )
 
 
 def frame_scalar_sum(
@@ -166,116 +151,18 @@ def _canonical_fake(
     )
 
 
-def _cpu(
-    g_e: torch.Tensor,
-    edge_vec: torch.Tensor,
-    edge_index: torch.Tensor,
-    edge_mask: torch.Tensor,
-    destination_order: torch.Tensor,
-    destination_row_ptr: torch.Tensor,
-    source_order: torch.Tensor,
-    source_row_ptr: torch.Tensor,
-    n_node_per_frame: torch.Tensor,
-    edge_spin_gradient: torch.Tensor,
-    node_capacity: int,
-    want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    from deepmd.dpmodel.utils.neighbor_graph import edge_force_virial as reference
-
-    force, atom_virial, virial = reference(
-        g_e,
-        edge_vec,
-        edge_index,
-        edge_mask,
-        n_node_per_frame,
-        node_capacity=node_capacity,
-    )
-    if not want_atom_virial:
-        atom_virial = atom_virial.new_zeros(0, 3, 3)
-    if _has_spin_cotangent(edge_spin_gradient):
-        # A masked edge carries no force and no moment, so the two reductions
-        # must agree on which edges exist.
-        contribution = edge_spin_gradient
-        if edge_mask.numel():
-            contribution = contribution * edge_mask[:, None].to(contribution.dtype)
-        magnetic_force = torch.zeros(
-            node_capacity, 3, dtype=g_e.dtype, device=g_e.device
-        ).index_add_(0, edge_index[0], contribution)
-    else:
-        magnetic_force = g_e.new_empty(0)
-    return force, atom_virial, virial, magnetic_force
-
-
-def _canonical_cpu(
-    g_e: torch.Tensor,
-    edge_vec: torch.Tensor,
-    destination_row_ptr: torch.Tensor,
-    source_row_ptr: torch.Tensor,
-    source_order: torch.Tensor,
-    n_node_per_frame: torch.Tensor,
-    edge_spin_gradient: torch.Tensor,
-    node_capacity: int,
-    want_atom_virial: bool,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    physical_edge_count = int(destination_row_ptr[-1].item())
-    node_count = destination_row_ptr.shape[0] - 1
-    destination = torch.repeat_interleave(
-        torch.arange(node_count, dtype=torch.int64, device=edge_vec.device),
-        destination_row_ptr[1:] - destination_row_ptr[:-1],
-        output_size=physical_edge_count,
-    )
-    source_by_row = torch.repeat_interleave(
-        torch.arange(node_count, dtype=torch.int64, device=edge_vec.device),
-        source_row_ptr[1:] - source_row_ptr[:-1],
-        output_size=physical_edge_count,
-    )
-    source = torch.zeros(
-        edge_vec.shape[0],
-        dtype=torch.int64,
-        device=edge_vec.device,
-    )
-    source[source_order[:physical_edge_count].to(torch.int64)] = source_by_row
-    destination_storage = torch.zeros_like(source)
-    destination_storage[:physical_edge_count] = destination
-    edge_index = torch.stack((source, destination_storage))
-    edge_mask = (
-        torch.arange(
-            edge_vec.shape[0],
-            dtype=torch.int64,
-            device=edge_vec.device,
-        )
-        < physical_edge_count
-    )
-    return _cpu(
-        g_e,
-        edge_vec,
-        edge_index,
-        edge_mask,
-        torch.arange(
-            edge_vec.shape[0],
-            dtype=torch.int64,
-            device=edge_vec.device,
-        ),
-        destination_row_ptr,
-        source_order,
-        source_row_ptr,
-        n_node_per_frame,
-        edge_spin_gradient,
-        node_capacity,
-        want_atom_virial,
-    )
-
-
-_cpu_library: torch.library.Library | None = None
+_registered = False
 
 
 def ensure_registered() -> None:
-    """Register the fake and CPU implementations for the op.
+    """Register the meta implementations the export tracer needs.
 
-    Idempotent; a no-op when the C++ operator library is not loaded.
+    Both devices implement the assembly in C++, so only the shapes are
+    described here. Idempotent; a no-op when the operator library is not
+    loaded.
     """
-    global _cpu_library
-    if _cpu_library is not None or not op_available():
+    global _registered
+    if _registered or not op_available():
         return
     torch.library.register_fake("deepmd::edge_force_virial")(_fake)
     if canonical_op_available():
@@ -284,16 +171,7 @@ def ensure_registered() -> None:
         )
     if frame_scalar_sum_available():
         torch.library.register_fake("deepmd::frame_scalar_sum")(_frame_scalar_sum_fake)
-    _cpu_library = torch.library.Library("deepmd", "IMPL")
-    _cpu_library.impl("edge_force_virial", _cpu, "CPU")
-    if frame_scalar_sum_available():
-        _cpu_library.impl("frame_scalar_sum", _frame_scalar_sum_cpu, "CPU")
-    if canonical_op_available():
-        _cpu_library.impl(
-            "canonical_edge_force_virial",
-            _canonical_cpu,
-            "CPU",
-        )
+    _registered = True
 
 
 def edge_force_virial(

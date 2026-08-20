@@ -5,6 +5,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.common import (
+    get_xp_precision,
+)
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
@@ -13,15 +16,16 @@ from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
-from deepmd.pt_expt.kernels.utils import (
-    use_amp_infer,
-)
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    use_amp_infer,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -197,6 +201,42 @@ class DescrptDPA4(DescrptDPA4DP):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # The fused CUDA convolution rebuilds the packed Wigner rows from the
+        # edge quaternions inside its operator, so the dense per-edge matrices
+        # are only needed when some block falls back to another value path.
+        # Cross-focus competition still reads the dense rows for its scalar
+        # gate, and training always uses the reference path.
+        self._wigner_free_conv = bool(self.blocks) and all(
+            getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
+            and not block.so2_conv._cuda_conv_fn._compete
+            for block in self.blocks
+        )
+
+        # The envelope and the radial basis are both functions of the pair
+        # distance and are cheap enough that the compiler inlines them into
+        # every consumer and re-evaluates them there. Behind an operator
+        # boundary the chain runs once per step.
+        self._cuda_radial_fn = None
+        self._cuda_wigner_fn = None
+        if cuda_infer_level() >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+            from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
+                make_cuda_wigner_dense,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
+            # The dense Wigner pair otherwise costs five full-size passes
+            # over the (E, D, D) tensors; the fused build pays only the
+            # output writes.
+            self._cuda_wigner_fn = make_cuda_wigner_dense(
+                self.mp_init_lmax,
+                get_xp_precision(torch, self.compute_precision),
+            )
+
         # Persisted graph-routing knob (first-class training configuration):
         # ``disable_graph_lower()`` used to flip only the plain dpmodel bool,
         # which a Trainer checkpoint restart silently reset (the fresh model
@@ -221,6 +261,38 @@ class DescrptDPA4(DescrptDPA4DP):
         )
         self.use_amp_infer = use_amp_infer()
         _promote_trainable_tree(self)
+
+    def _shared_wigner_runs(self, edge_cache: Any, lmax: int) -> torch.Tensor | None:
+        """
+        Zonal coupling taken from the packed runs the convolution already builds.
+
+        The fused convolution stages a packed block-diagonal Wigner run per
+        edge whose degree-``l`` ``m = 0`` row occupies entries ``l ** 2`` to
+        ``(l + 1) ** 2``. That is the same quantity as
+        ``Dt_full[:, row(l, m), col(l, 0)]``, so degrees ``1..lmax`` are one
+        contiguous slice and the rotation algebra runs once per step instead of
+        twice. The runs are cached on the edge cache, so whichever consumer
+        comes first pays for them.
+
+        Parameters
+        ----------
+        edge_cache : EdgeCache
+            The step's edge feature cache.
+        lmax : int
+            Highest degree the coupling must cover.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
+            no convolution supplies runs of at least this degree.
+        """
+        if not self._wigner_free_conv or edge_cache.csr_cache is None:
+            return None
+        fused = self.blocks[0].so2_conv._cuda_conv_fn
+        if fused is None or lmax > self.lmax:
+            return None
+        return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA4":

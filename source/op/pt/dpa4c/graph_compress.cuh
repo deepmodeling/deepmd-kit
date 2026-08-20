@@ -20,7 +20,7 @@
 
 #include <cstdint>
 
-#include "dpa4c_graph_compress_launch.h"
+#include "graph_compress_launch.h"
 
 namespace deepmd_dpa4c {
 

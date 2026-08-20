@@ -46,6 +46,9 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+    GeometricInitialEmbedding,
+)
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     SO2Convolution,
     SO2Linear,
@@ -58,6 +61,7 @@ from deepmd.pt.train.wrapper import (
 )
 from deepmd.pt.utils.compile_compat import (
     build_inductor_compile_options,
+    traced_output_keys,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -852,15 +856,29 @@ def _export_with_comm_artifact(
 # float32 reference, and a frozen archive is what runs molecular dynamics, so
 # it defaults to exact float32.
 _FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
+_FREEZE_DISABLED_LEVELS = {"DP_CUTILE_INFER": "0", "DP_CUTE_INFER": "0"}
 
 
-def _apply_kernel_level_defaults() -> None:
+def _apply_kernel_level_defaults(target_device: torch.device) -> None:
     """Pin the inference kernel levels this archive is compiled against.
 
     The levels are read once at model construction time and baked into the
-    exported graph, so they are fixed here, before the checkpoint is loaded. An
-    explicit setting in the environment always wins.
+    exported graph, so they are fixed here, before the checkpoint is loaded. A
+    CPU target disables accelerator-only paths; for a CUDA target an explicit
+    Triton or CUDA setting in the environment always wins. cuTile and CuTe are
+    Python-only eager backends and are disabled for every frozen archive.
     """
+    if target_device.type != "cuda":
+        for name in (
+            "DP_TRITON_INFER",
+            "DP_CUDA_INFER",
+            "DP_CUTILE_INFER",
+            "DP_CUTE_INFER",
+        ):
+            os.environ[name] = "0"
+        log.info("Freezing for CPU with accelerator-only DPA4 paths disabled.")
+        return
+    os.environ.update(_FREEZE_DISABLED_LEVELS)
     chosen = {}
     for name, default in _FREEZE_KERNEL_LEVELS.items():
         explicit = os.environ.get(name)
@@ -905,19 +923,19 @@ def freeze_sezm_to_pt2(
 
     Notes
     -----
-    The accelerated kernel levels are baked into the archive. Without an
-    explicit ``DP_TRITON_INFER`` or ``DP_CUDA_INFER`` in the environment the
-    archive is built at ``DP_TRITON_INFER=2`` and ``DP_CUDA_INFER=1``, which is
-    the fastest combination that keeps every operator in exact float32.
+    The accelerated kernel levels are baked into the archive. A CPU archive
+    disables accelerator-only paths. For a CUDA archive without an explicit
+    ``DP_TRITON_INFER`` or ``DP_CUDA_INFER`` in the environment, the defaults
+    are ``DP_TRITON_INFER=2`` and ``DP_CUDA_INFER=1``, which is the fastest
+    combination that keeps every operator in exact float32.
     """
-    _apply_kernel_level_defaults()
-
     from torch._inductor import (
         aoti_compile_and_package,
     )
     from torch._inductor import config as inductor_config
 
     target_device = device if device is not None else DEVICE
+    _apply_kernel_level_defaults(target_device)
 
     raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict, params = _extract_state_and_params(raw)
@@ -935,16 +953,16 @@ def freeze_sezm_to_pt2(
     model.eval()
     model.to("cpu")
 
-    # The SO(2) linear mixer selects its block-diagonal vs dense matmul from a
-    # Python device branch that make_fx resolves at trace time. Since tracing
-    # always runs on CPU, pin the choice to the AOTI target device: non-CPU
-    # targets bake the block-diagonal contraction (which skips the structural
-    # off-|m| zeros); CPU targets keep the dense einsum that dodges the Inductor
-    # AVX2 codegen bug.
+    # Device-dependent Python branches resolve on the CPU tracing inputs, so
+    # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
+    # contraction, while CUDA targets also bake the fused GIE scatter.
     force_block_diag = target_device.type != "cpu"
+    force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
         if isinstance(module, SO2Linear):
             module._force_block_diag_matmul = force_block_diag
+        if isinstance(module, GeometricInitialEmbedding):
+            module._force_fused_scatter = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.
@@ -963,12 +981,10 @@ def freeze_sezm_to_pt2(
     log.info("Tracing the lower graph on CPU (make_fx)...")
     traced = model.forward_common_lower_exportable(*sample_inputs_cpu)
 
-    # Output key order is taken from a concrete run; Python dict order
-    # is stable and matches what DeepPotPTExpt::extract_outputs zips
-    # against AOTIModelPackageLoader::run's output vector.
-    with torch.no_grad():
-        sample_out = traced(*sample_inputs_cpu)
-    output_keys = list(sample_out.keys())
+    # Output key order is read from the static FX output node. A CUDA-target
+    # trace may already contain CUDA-only custom operators and therefore must
+    # not be replayed on the CPU tracing inputs.
+    output_keys = traced_output_keys(traced)
 
     log.info("Exporting the traced graph (torch.export)...")
     exported = torch.export.export(

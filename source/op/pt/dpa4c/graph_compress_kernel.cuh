@@ -11,7 +11,7 @@
 
 #include <stdexcept>
 
-#include "dpa4c_graph_compress.cuh"
+#include "graph_compress.cuh"
 
 namespace deepmd_dpa4c {
 

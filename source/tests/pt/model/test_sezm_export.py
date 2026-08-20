@@ -32,6 +32,7 @@ import torch
 from packaging.version import parse as parse_version
 
 from deepmd.pt.entrypoints.freeze_pt2 import (
+    _apply_kernel_level_defaults,
     _build_dynamic_shapes,
     _build_with_comm_dynamic_shapes,
     _collect_metadata,
@@ -98,6 +99,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -116,13 +120,16 @@ _REQUIRED_OUTPUT_KEYS = {
     "energy_derv_c_redu",
 }
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
-    (2, 11),
-    (2, 12),
-}
+_SKIP_OFF_COMPILE_TORCH = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
+_SUPPORTED_COMPILE_TORCH_TEXT = ", ".join(
+    f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH
+)
 _SKIP_OFF_COMPILE_TORCH_REASON = (
-    "SeZM's torch.compile/export path is only supported on torch 2.11.x and "
-    f"2.12.x; current torch is {torch.__version__}."
+    "SeZM's torch.compile/export path is only supported on torch "
+    f"{_SUPPORTED_COMPILE_TORCH_TEXT}; current torch is {torch.__version__}."
 )
 
 
@@ -611,8 +618,7 @@ class _FrozenPt2Fixture(_ClearDefaultDeviceTestCase):
             super().tearDownClass()
 
 
-# TODO: Re-enable after CI upgrades PyTorch to 2.11.
-@unittest.skip("CI PyTorch 2.10 may segfault in native AOTI compile/runtime code.")
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMExportArchive(_FrozenPt2Fixture):
     """AOTI ``.pt2`` archive structure + load-and-run smoke.
 
@@ -706,8 +712,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
             self.assertTrue(torch.isfinite(out_map[key]).all().item())
 
 
-# TODO: Re-enable after CI upgrades PyTorch to 2.11.
-@unittest.skip("CI PyTorch 2.10 may segfault in native AOTI compile/runtime code.")
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMViaDeepPot(_FrozenPt2Fixture):
     """Integration through the standard :class:`deepmd.infer.DeepPot` entry.
 
@@ -876,6 +881,93 @@ class TestSeZMViaDeepPot(_FrozenPt2Fixture):
 
 class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
     """Error paths: detector rejections and CLI-level ``NotImplementedError``s."""
+
+    def test_cpu_target_disables_accelerator_kernel_levels(self) -> None:
+        """A CPU artifact must not retain a GPU-only inference backend."""
+        names = (
+            "DP_TRITON_INFER",
+            "DP_CUDA_INFER",
+            "DP_CUTILE_INFER",
+            "DP_CUTE_INFER",
+        )
+        with mock.patch.dict(os.environ, dict.fromkeys(names, "3")):
+            _apply_kernel_level_defaults(torch.device("cpu"))
+            self.assertTrue(all(os.environ[name] == "0" for name in names))
+
+    def test_cuda_target_preserves_explicit_and_fills_missing_levels(self) -> None:
+        """CUDA defaults fill only kernel levels absent from the environment."""
+        with mock.patch.dict(
+            os.environ,
+            {"DP_TRITON_INFER": "3"},
+            clear=True,
+        ):
+            _apply_kernel_level_defaults(torch.device("cuda"))
+            self.assertEqual(os.environ["DP_TRITON_INFER"], "3")
+            self.assertEqual(os.environ["DP_CUDA_INFER"], "1")
+            self.assertEqual(os.environ["DP_CUTILE_INFER"], "0")
+            self.assertEqual(os.environ["DP_CUTE_INFER"], "0")
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_cuda_target_reads_output_keys_without_replaying_trace(self) -> None:
+        """A CPU trace containing CUDA-only operators is never executed on CPU."""
+        try:
+            import deepmd.pt.cxx_op  # noqa: F401
+        except ImportError:
+            self.skipTest("DeePMD-kit CUDA operators are unavailable")
+        from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+            op_available as edge_radial_available,
+        )
+
+        if not edge_radial_available():
+            self.skipTest("The DPA4 edge-radial CUDA operator is unavailable")
+
+        captured_targets: set[str] = set()
+
+        def fake_compile(
+            exported: torch.export.ExportedProgram,
+            package_path: str,
+        ) -> None:
+            captured_targets.update(
+                str(node.target) for node in exported.graph_module.graph.nodes
+            )
+            with zipfile.ZipFile(package_path, "w") as archive:
+                archive.writestr("model/data.pkl", b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            params = _tiny_sezm_model_params()
+            params["descriptor"]["precision"] = "float32"
+            params["descriptor"]["channels"] = 32
+            params["fitting_net"]["precision"] = "float32"
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
+            out_path = tmp_path / "cuda_trace.pt2"
+            levels = {
+                "DP_TRITON_INFER": "0",
+                "DP_CUDA_INFER": "1",
+                "DP_CUTILE_INFER": "0",
+                "DP_CUTE_INFER": "0",
+            }
+            with (
+                mock.patch.dict(os.environ, levels),
+                mock.patch(
+                    "torch._inductor.aoti_compile_and_package",
+                    side_effect=fake_compile,
+                ),
+                mock.patch(
+                    "deepmd.pt.entrypoints.freeze_pt2._export_with_comm_artifact",
+                    return_value=b"",
+                ),
+            ):
+                freeze_sezm_to_pt2(
+                    str(ckpt_path),
+                    str(out_path),
+                    device=torch.device("cuda"),
+                )
+
+        self.assertTrue(
+            any("dpa4_edge_radial" in target for target in captured_targets)
+        )
 
     def test_metadata_records_ntypes_when_type_map_is_empty(self) -> None:
         """Metadata-only loaders need ntypes even when no type names are exported."""

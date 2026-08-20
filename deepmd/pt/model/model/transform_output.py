@@ -304,10 +304,10 @@ def edge_energy_deriv(
     frame_virial: torch.Tensor | None = None
     use_fused_cuda = False
     if cuda_infer_level() >= 1 and not create_graph and g.is_cuda:
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial as fused_edge_force_virial,
         )
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             op_available as fused_scatter_available,
         )
 
@@ -342,7 +342,7 @@ def edge_energy_deriv(
                 src_order,
                 src_row_ptr,
                 n_node_per_frame,
-                edge_vec.new_empty(0, 3),
+                edge_vec.new_empty(0),
                 n_ext,
                 True,
             )

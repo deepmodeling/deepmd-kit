@@ -46,7 +46,7 @@ def canonical_model_eligible(model: Any) -> bool:
     from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
         mega_eligible,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_eligible,
     )
 
@@ -210,7 +210,9 @@ def _generic_topology(
 
 
 def _cpu_forward(*args: Any) -> tuple[torch.Tensor, ...]:
-    from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import _cpu_forward as generic_forward
+    from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
+        _cpu_forward as generic_forward,
+    )
 
     edge_vec, source, destination_row_ptr, *tail = args
     edge_index, edge_mask, destination_order = _generic_topology(
@@ -313,14 +315,14 @@ def dpa1_canonical_compress_energy_force(
     from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
         mega_eligible,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         canonical_edge_force_virial,
         canonical_op_available,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         ensure_registered as ensure_force_registered,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
     )
 
@@ -376,7 +378,7 @@ def dpa1_canonical_compress_energy_force(
         (int(se.lmax) + 1) ** 2,
     )
 
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_operator_arguments,
     )
 
@@ -394,7 +396,7 @@ def dpa1_canonical_compress_energy_force(
     )
     energy_seed = ownership[:, None].to(atom_energy_raw.dtype)
     atom_energy = atom_energy_raw * energy_seed
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         frame_scalar_sum,
     )
 

@@ -51,6 +51,7 @@ def neighbor_graph_from_ijs(
     *,
     with_csr: bool = False,
     canonicalize: bool = False,
+    destination_sorted: bool = False,
 ) -> NeighborGraph:
     """Convert a sparse ``(i, j, S)`` edge list into a :class:`NeighborGraph`.
 
@@ -85,6 +86,9 @@ def neighbor_graph_from_ijs(
     canonicalize
         Whether to reorder every edge field into destination-major form. Implies
         ``with_csr=True``.
+    destination_sorted
+        Whether ``i`` already ascends, so that the destination grouping holds
+        without a sort. A search that walks its centers in order provides this.
 
     Returns
     -------
@@ -144,6 +148,7 @@ def neighbor_graph_from_ijs(
         edge_mask,
         int(coord_flat.shape[0]),
         canonicalize=canonicalize,
+        destination_sorted=destination_sorted,
     )
     return NeighborGraph(
         n_node=n_node,
@@ -154,5 +159,5 @@ def neighbor_graph_from_ijs(
         destination_row_ptr=destination_row_ptr,
         source_order=source_order,
         source_row_ptr=source_row_ptr,
-        destination_sorted=canonicalize,
+        destination_sorted=canonicalize or destination_sorted,
     )

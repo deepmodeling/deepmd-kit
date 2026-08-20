@@ -190,7 +190,9 @@ _SUPPORTED_FOCUS_DIMS = (32, 64)
 _MAX_LMAX = 6
 
 
-def edge_csr(key: torch.Tensor, n_node: int) -> tuple[torch.Tensor, torch.Tensor]:
+def edge_csr(
+    key: torch.Tensor, n_node: int | torch.SymInt
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Build the CSR view of one endpoint array.
 
@@ -198,7 +200,7 @@ def edge_csr(key: torch.Tensor, n_node: int) -> tuple[torch.Tensor, torch.Tensor
     ----------
     key : torch.Tensor
         Endpoint indices with shape (E,).
-    n_node : int
+    n_node : int or torch.SymInt
         Number of nodes the endpoints index into.
 
     Returns
@@ -209,7 +211,7 @@ def edge_csr(key: torch.Tensor, n_node: int) -> tuple[torch.Tensor, torch.Tensor
         is what makes the operator's segment reductions bitwise reproducible.
     """
     order = torch.argsort(key, dim=0, stable=True)
-    counts = torch.bincount(key, minlength=n_node)
+    counts = key.new_zeros(n_node).scatter_add(0, key, torch.ones_like(key))
     row_ptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
     return order, row_ptr
 
@@ -743,6 +745,7 @@ class SO2ConvCuda:
         store = edge_cache.csr_cache if edge_cache.csr_cache is not None else {}
         if "dst" not in store:
             store["dst"] = edge_csr(edge_cache.dst, n_node)
+        if "src" not in store:
             store["src"] = edge_csr(edge_cache.src, n_node)
         csr = store["dst"] + store["src"]
         runs = self.edge_runs(edge_cache)

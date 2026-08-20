@@ -16,15 +16,16 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
-from deepmd.pt_expt.kernels.utils import (
-    cuda_infer_level,
-    use_amp_infer,
-)
 from deepmd.pt_expt.common import (
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.pt_expt.kernels.utils import (
+    fused_energy_force_enabled,
+    fused_operators_enabled,
+    use_amp_infer,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -168,17 +169,17 @@ class DescrptDPA4C(DescrptDPA4CDP):
             self.compress
             and not self.training
             and not self.exclude_types
-            and cuda_infer_level() >= 1
+            and fused_operators_enabled()
             and graph.destination_order is not None
             and graph.destination_row_ptr is not None
         ):
-            from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+            from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
                 dpa4c_graph_compress,
                 mega_eligible,
                 op_available,
             )
 
-            if op_available() and mega_eligible(self):
+            if op_available(self.spin is not None) and mega_eligible(self):
                 # The operator conditions the moment on device from its frozen
                 # per-type table, so it takes the raw input rather than the
                 # output of ``SpinChannels.conditioned_spin``.
@@ -478,7 +479,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
                 "This DPA4C was not built with `add_chg_spin_ebd`, so it has "
                 "no charge state to apply."
             )
-        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             build_charge_state_artifacts,
         )
 
@@ -571,7 +572,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         del min_nbor_dist, table_extrapolate, table_stride_2, check_frequency
         if self.compress:
             raise ValueError("Compression is already enabled.")
-        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             build_compression_artifacts,
         )
 
@@ -607,24 +608,24 @@ class DescrptDPA4C(DescrptDPA4CDP):
             self.training
             or not self.compress
             or bool(self.exclude_types)
-            or cuda_infer_level() < 2
+            or not fused_energy_force_enabled()
             or graph.destination_order is None
             or graph.destination_row_ptr is None
             or graph.source_order is None
             or graph.source_row_ptr is None
         ):
             return None
-        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             dpa4c_graph_compress_energy_force,
             ef_op_available,
             mega_eligible,
         )
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
         if (
-            not ef_op_available()
+            not ef_op_available(self.spin is not None)
             or not mega_eligible(self)
             or not fitting_eligible(fitting)
         ):

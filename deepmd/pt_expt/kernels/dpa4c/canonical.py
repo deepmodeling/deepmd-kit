@@ -12,6 +12,11 @@ from typing import (
 
 import torch
 
+from deepmd.pt_expt.kernels.utils import (
+    backend_device_type,
+    operator_available,
+)
+
 if TYPE_CHECKING:
     from deepmd.pt_expt.utils.canonical_graph import (
         CanonicalGraph,
@@ -21,7 +26,16 @@ _cpu_library: torch.library.Library | None = None
 
 
 def canonical_model_eligible(model: Any) -> bool:
-    """Return whether a model can use the compact source-only graph ABI."""
+    """Return whether a model can use the compact source-only graph ABI.
+
+    The compact ABI exists so that a device-resident neighbor list can reach
+    the descriptor without a host round trip, which is a property of the
+    CUDA / Kokkos deployment. Only that backend implements its operators, so
+    a CPU target keeps the generic graph lower, whose operators it does
+    implement and whose extra cost is one index tensor.
+    """
+    if backend_device_type() != "cuda":
+        return False
     atomic_model = getattr(model, "atomic_model", None)
     descriptor = getattr(atomic_model, "descriptor", None)
     fitting = getattr(atomic_model, "fitting_net", None)
@@ -41,10 +55,10 @@ def canonical_model_eligible(model: Any) -> bool:
         return False
     if getattr(atomic_model, "atom_excl", None) is not None:
         return False
-    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         mega_eligible,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_eligible,
     )
 
@@ -52,26 +66,15 @@ def canonical_model_eligible(model: Any) -> bool:
 
 
 def op_available() -> bool:
-    """Return whether the complete compact DPA4C operator suite is loaded."""
-    forward = getattr(torch.ops.deepmd, "dpa4c_canonical_compress", None)
-    backward = getattr(
-        torch.ops.deepmd,
-        "dpa4c_canonical_compress_backward",
-        None,
-    )
-    backward_inplace = getattr(
-        torch.ops.deepmd,
-        "dpa4c_canonical_compress_backward_inplace",
-        None,
-    )
-    energy_gradient = getattr(
-        torch.ops.deepmd,
-        "dpa4c_canonical_compress_energy_gradient",
-        None,
-    )
+    """Return whether the backend device carries the compact DPA4C suite."""
     return all(
-        isinstance(operator, torch._ops.OpOverloadPacket)
-        for operator in (forward, backward, backward_inplace, energy_gradient)
+        operator_available(name)
+        for name in (
+            "dpa4c_canonical_compress",
+            "dpa4c_canonical_compress_backward",
+            "dpa4c_canonical_compress_backward_inplace",
+            "dpa4c_canonical_compress_energy_gradient",
+        )
     )
 
 
@@ -120,7 +123,7 @@ def _forward_fake(
         eps,
         degree_floor,
     )
-    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         descriptor_profile,
     )
 
@@ -203,8 +206,8 @@ def _cpu_energy_gradient(
     *args: Any,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Reference sequence of the fused operator, evaluated in one run."""
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import _cpu_backward as fitting_backward
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import _cpu_forward as fitting_forward
+    from deepmd.pt_expt.kernels.graph_fitting import _cpu_backward as fitting_backward
+    from deepmd.pt_expt.kernels.graph_fitting import _cpu_forward as fitting_forward
 
     descriptor_args = args[:_DESCRIPTOR_ARGUMENT_COUNT]
     ws, bs, resnets, w_head, b_head, bias_atom_e, act, seed, _tile = args[
@@ -263,7 +266,9 @@ _DESCRIPTOR_ARGUMENT_COUNT = 23
 
 
 def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
-    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import _cpu_forward as generic_forward
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        _reference_forward as generic_forward,
+    )
 
     edge_vec, source, destination_row_ptr, atype, *tail = args
     edge_index, edge_mask, destination_order = _generic_topology(
@@ -284,8 +289,8 @@ def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
 
 
 def _cpu_backward(*args: Any) -> torch.Tensor:
-    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
-        _cpu_backward as generic_backward,
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        _reference_backward as generic_backward,
     )
 
     descriptor_gradient, state, edge_vec, source, destination_row_ptr, atype, *tail = (
@@ -418,24 +423,24 @@ def dpa4c_canonical_compress_energy_force(
     ValueError
         If the model or the compiled operators do not support the compact path.
     """
-    from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         compressed_operator_arguments,
         mega_eligible,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         canonical_edge_force_virial,
         canonical_op_available,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         ensure_registered as ensure_force_registered,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         frame_scalar_sum,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_operator_arguments,
         node_tile,
     )

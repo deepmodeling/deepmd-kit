@@ -50,7 +50,7 @@ def _forward_fake(
     dst_order: torch.Tensor,
     dst_rowptr: torch.Tensor,
     node_scale: torch.Tensor,
-    node_count: int,
+    node_count: int | torch.SymInt,
 ) -> torch.Tensor:
     del dst, dst_order, dst_rowptr, node_scale
     return zonal.new_empty((node_count, zonal.shape[1] + 1, radial.shape[2]))
@@ -106,7 +106,7 @@ def zonal_scatter(
     dst_order: torch.Tensor,
     dst_rowptr: torch.Tensor,
     node_scale: torch.Tensor,
-    node_count: int,
+    node_count: int | torch.SymInt,
 ) -> torch.Tensor:
     """
     Reduce the geometric initial message onto its destination nodes.
@@ -128,7 +128,7 @@ def zonal_scatter(
     node_scale : torch.Tensor
         Smooth degree normalization with shape (node_count,), applied on the way
         out. It descends from the cutoff envelope and is differentiated.
-    node_count : int
+    node_count : int or torch.SymInt
         Number of destination nodes.
 
     Returns

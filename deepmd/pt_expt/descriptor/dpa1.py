@@ -20,6 +20,13 @@ from deepmd.dpmodel.utils.env_mat_stat import (
 from deepmd.dpmodel.utils.type_embed import (
     remap_atype_to_padding,
 )
+from deepmd.pt_expt.common import (
+    register_buffer_replacing_slot,
+    torch_module,
+)
+from deepmd.pt_expt.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
     dpa1_graph_compress,
 )
@@ -54,13 +61,6 @@ from deepmd.pt_expt.kernels.triton.env_mat import env_mat as _env_mat_triton
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     triton_infer_level,
-)
-from deepmd.pt_expt.common import (
-    register_buffer_replacing_slot,
-    torch_module,
-)
-from deepmd.pt_expt.descriptor.base_descriptor import (
-    BaseDescriptor,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -1131,7 +1131,7 @@ class DescrptDPA1(DescrptDPA1DP):
             ``(energy, atom_energy, force, virial, atom_virial, force_mag)``,
             or ``None``.
         """
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 

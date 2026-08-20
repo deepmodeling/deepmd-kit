@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""pt_expt Wigner-D calculator with an opt-in fused Triton monomial fast path.
+"""pt_expt Wigner-D calculator with an opt-in accelerated monomial fast path.
 
 The dpmodel :class:`WignerDCalculator` is array-API only and evaluates the
 degree ``l >= 2`` monomial design matrices through the dense power-table chain.
@@ -7,14 +7,9 @@ This wrapper injects the reference pt inference fast path around the two
 monomial hot paths -- the shared ``l >= 3`` kernel and the ``l = 2`` degree-4
 contraction -- mirroring ``deepmd.pt.model.descriptor.sezm_nn.wignerd``.
 
-The fused monomial operator is sourced from the central
-:mod:`deepmd.pt_expt.kernels.triton.sezm.wigner_monomials` package and gated by the
-integer inference level ``DP_TRITON_INFER`` (see
-:func:`deepmd.pt_expt.kernels.utils.triton_infer_level`); the fast path requires level
-``>= 1``.  It runs only during inference (``not self.training``) on CUDA, and
-the operator self-guards Triton availability and falls back to an eager
-reference off CUDA / on fp64, so importing this module is safe on CPU-only
-environments; training and CPU / fp64 inference use the dpmodel dense path.
+The monomial operator is supplied by the selected Triton or cuTile inference
+backend. It runs only during inference (``not self.training``) on CUDA; training
+and CPU inference use the dpmodel dense path.
 """
 
 from __future__ import (
@@ -37,18 +32,19 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
-from deepmd.pt_expt.kernels.utils import (
-    triton_infer_level,
-)
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
+)
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
+    use_cutile_infer,
 )
 
 
 @torch_module
 class WignerDCalculator(WignerDCalculatorDP):
-    """Wigner-D calculator with an opt-in fused Triton monomial inference path."""
+    """Wigner-D calculator with an opt-in accelerated monomial inference path."""
 
     def __init__(
         self,
@@ -58,10 +54,6 @@ class WignerDCalculator(WignerDCalculatorDP):
         precision: str = DEFAULT_PRECISION,
     ) -> None:
         super().__init__(lmax, eps=eps, precision=precision)
-        # Inference fast-path gate (``DP_TRITON_INFER >= 1``): read once at
-        # construction so it is a compile-time constant in the traced
-        # (``make_fx``) graph, and it only takes effect during inference.
-        self._use_triton_monomials = triton_infer_level() >= 1
         if self.lmax >= 2:
             # Flatten the monomial exponent tables to Python constants in
             # eager context: the fused monomial operator bakes them into the
@@ -74,6 +66,10 @@ class WignerDCalculator(WignerDCalculatorDP):
                     self._monomial_exponents_flat[exp_name] = [
                         int(v) for v in exps.reshape(-1).tolist()
                     ]
+            # The monomial basis routes through whichever accelerated backend
+            # is selected; the two gates are mutually exclusive.
+            self._use_cutile_monomials = use_cutile_infer()
+            self._use_triton_monomials = triton_infer_level() >= 1
             # The l = 2 contraction tensor collapsed onto the 35 unique
             # degree-4 monomials: column m of the coefficient matrix sums
             # C_l2[:, :, p] over the 4^4 index tuples p whose component
@@ -109,21 +105,26 @@ class WignerDCalculator(WignerDCalculatorDP):
 
         On the CUDA inference path the fused operator evaluates the monomials
         in registers with the exponent table baked in at compile time (see
-        :mod:`deepmd.pt_expt.kernels.triton.sezm.wigner_monomials`); construction-time
-        solves and CPU targets keep the dense power-table chain.
+        :mod:`.triton.wigner_monomials`); construction-time solves and CPU
+        targets keep the dense power-table chain.
         """
-        exps = self._monomial_exponents_flat.get(exp_name)
+        exponents = self._monomial_exponents_flat.get(exp_name)
         if (
-            self._use_triton_monomials
-            and exps is not None
+            exponents is not None
             and edge_quaternion.is_cuda
             and not self.training
+            and (self._use_triton_monomials or self._use_cutile_monomials)
         ):
-            from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
-                wigner_monomials,
-            )
+            if self._use_cutile_monomials:
+                from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
+            else:
+                from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
 
-            return wigner_monomials(edge_quaternion, exps, max_power)
+            return monomial_basis(edge_quaternion, exponents, max_power)
         return super()._monomial_matrix(edge_quaternion, exp_name, max_power)
 
     def _compute_l2_block(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
@@ -134,24 +135,29 @@ class WignerDCalculator(WignerDCalculatorDP):
         outer product with a monomial evaluation and one ``(E, 35) x (35, 25)``
         product with no large intermediate.
         """
-        exps = self._monomial_exponents_flat.get("exp_l2")
+        exponents = self._monomial_exponents_flat.get("exp_l2")
         if (
-            self._use_triton_monomials
-            and exps is not None
+            exponents is not None
             and edge_quaternion.is_cuda
             and not self.training
+            and (self._use_triton_monomials or self._use_cutile_monomials)
         ):
-            from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
-                wigner_monomials,
-            )
+            if self._use_cutile_monomials:
+                from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
+            else:
+                from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
 
-            monomials = wigner_monomials(edge_quaternion, exps, 4)
-            # ``_l2_monomial_coeff`` is stored as the fp64 dpmodel constant; cast
-            # it to the monomial dtype so the fused fp32 path multiplies operands
-            # of one dtype (mirrors the base's runtime cast of the Wigner
-            # constants to the edge dtype).
-            coeff = self._l2_monomial_coeff.to(monomials.dtype)
-            return torch.matmul(monomials, coeff).view(-1, 5, 5)
+            monomials = monomial_basis(edge_quaternion, exponents, 4)
+            # The dpmodel-derived coefficient stays fp64, so it follows the
+            # base calculator's runtime cast to the edge compute dtype.
+            D_flat = torch.matmul(
+                monomials, self._l2_monomial_coeff.to(monomials.dtype)
+            )
+            return D_flat.view(edge_quaternion.shape[0], 5, 5)
         return super()._compute_l2_block(edge_quaternion)
 
 

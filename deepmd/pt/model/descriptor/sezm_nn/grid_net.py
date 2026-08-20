@@ -714,7 +714,10 @@ class BaseGridNet(nn.Module):
         # The operator is instantiated per coefficient-slot count, which this
         # projector fixes, so the choice is made once here rather than per call.
         self._grid_pair_fn = None
-        if cuda_infer_level() >= 1:
+        if (
+            cuda_infer_level() >= 1
+            and self.projector.to_grid_mat.dtype is torch.float32
+        ):
             from deepmd.pt_expt.kernels.cuda.dpa4.grid_pair import (
                 SUPPORTED_SLOTS,
                 grid_pair,
@@ -808,9 +811,9 @@ class BaseGridNet(nn.Module):
         The final SeZM readout consumes only ``l=0``. SO(3) Haar orthogonality
         reduces its quadratic grid projection to a weighted coefficient inner
         product. Other projectors restrict the inverse grid projection to the
-        scalar row. CUDA inference keeps the full fused pair projection because
-        materializing a scalar-only fallback grid would be slower than that
-        fused operator.
+        scalar row. Accelerated inference keeps the full fused pair projection
+        because materializing a scalar-only fallback grid would be slower than
+        that fused operator.
         """
         if self._grid_pair_fn is not None and not self.training:
             return self._slice_scalar_layout(self.forward(query, context))

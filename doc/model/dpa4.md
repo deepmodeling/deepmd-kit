@@ -539,17 +539,19 @@ through its mixing stack and is the faster of the two on Blackwell, at the cost
 of being unavailable to the frozen `.pt2` route.
 
 > [!IMPORTANT]
-> Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
-> an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
-> CUDA operator level (`DP_CUDA_INFER`), the matmul precision (`DP_TF32_INFER`),
-> and inference AMP (`DP_AMP_INFER`) are captured into the graph at export time
-> and are **not** re-evaluated when the `.pt2` is later loaded by ASE or LAMMPS.
+> Set these variables **before** running `dp --pt freeze` or
+> `dp --pt-expt freeze`. The exported `.pt2` is an AOTInductor artifact, so the
+> SO(2) rotation branch (`DP_TRITON_INFER`), the CUDA operator level
+> (`DP_CUDA_INFER`), the matmul precision (`DP_TF32_INFER`), and inference AMP
+> (`DP_AMP_INFER`) are captured into the graph at export time and are **not**
+> re-evaluated when the `.pt2` is later loaded by ASE or LAMMPS.
 > When `DP_TRITON_INFER` and `DP_CUDA_INFER` are unset, freezing uses
 > `DP_TRITON_INFER=2` with `DP_CUDA_INFER=1` rather than the plain `0` of Python
 > inference: that is the fastest combination in which every operator is exact
 > float32, which is what a molecular dynamics archive should default to. The
 > chosen levels and whether each came from the environment or the default are
-> logged at export.
+> logged at export. A CPU-targeted archive disables GPU-only inference paths
+> and keeps the reference CPU implementation regardless of these settings.
 > `DP_CUTILE_INFER` is the exception:
 > its kernels are JIT compiled at runtime and do not bake into the artifact, so
 > it applies to Python inference only and has no effect on a frozen model. A frozen `.pt2` runs a forward-only
@@ -574,10 +576,12 @@ ordinary TorchScript freeze path is not used. Run the standard freeze command:
 dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
-The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`. Unless the
-environment says otherwise the archive is built at `DP_TRITON_INFER=2` and
-`DP_CUDA_INFER=1`, the fastest all-float32 combination; set either variable to
-override, for instance `DP_CUDA_INFER=2` on a part with a large float32 peak.
+The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`. The
+pt_expt backend uses the same kernel-level policy for a DPA4/SeZM `.pt2`.
+Unless the environment says otherwise, a CUDA archive is built at
+`DP_TRITON_INFER=2` and `DP_CUDA_INFER=1`, the fastest all-float32 combination;
+set either variable to override, for instance `DP_CUDA_INFER=2` on a part with
+a large float32 peak. A CPU archive uses the reference CPU paths.
 
 ### Single GPU
 

@@ -624,15 +624,24 @@ class TestDPA4CSpin:
             assert layer.autocast_output is False
 
     def test_compression_covers_the_spin_families(self) -> None:
-        """The compiled operator carries spin, so eligibility ignores it.
+        """Spin follows the degree profile, so compression covers it.
 
         Every spin width follows the degree profile rather than a parameter of
         its own, so a spin-conditioned descriptor is covered by the same
         structural set as a spin-free one and its frozen tables are built
         alongside the geometric caches.
+
+        Whether a device can consume them is a separate question, answered by
+        ``op_available``: the CUDA kernels carry the magnetic backward and the
+        CPU kernels do not, so a spin-conditioned descriptor keeps the
+        reference path on a CPU host while the tables are built either way.
         """
-        from deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress import (
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
             mega_eligible,
+            op_available,
+        )
+        from deepmd.pt_expt.kernels.utils import (
+            backend_device_type,
         )
 
         single = DescrptDPA4C(
@@ -646,6 +655,9 @@ class TestDPA4CSpin:
             use_spin=[True, False],
         ).to(env.DEVICE)
         assert mega_eligible(single)
+        assert op_available(spin=True) == (
+            op_available() and backend_device_type() == "cuda"
+        )
         single.enable_compression(0.5)
         assert single.compress
         assert single.compress_spin_pair.shape == (

@@ -1179,6 +1179,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         self.blocks = blocks
 
+        # Accelerated backends may replace the distance-to-radial chain and the
+        # packed Wigner-D construction. The array-API reference leaves these
+        # hooks unbound and always retains the dense Wigner matrices.
+        self._cuda_radial_fn = None
+        self._cuda_wigner_fn = None
+        self._wigner_free_conv = False
+
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
         if self.use_full_attn_res:
@@ -1554,6 +1561,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 self._gate_partial_exchange, comm_dict=comm_dict
             )
         # === Step 3. Build edge cache once (sparse edges) ===
+        training = self._in_training_mode()
         edge_cache = _edge_cache_from_arrays(
             type_ebed=type_ebed,
             edge_index=edge_index,
@@ -1566,14 +1574,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             bridging_switch=self.bridging_switch,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
+            fused_radial=None if training else self._cuda_radial_fn,
+            fused_wigner=None if training else self._cuda_wigner_fn,
             # Random local-Z roll is a training-only augmentation; the model
-            # is roll-equivariant, so inference fixes gamma. Mirrors pt's
-            # ``random_gamma=self.random_gamma and self.training`` via the
-            # ``_in_training_mode`` runtime hook (False here; the pt_expt
-            # wrapper overrides it with the torch module's training flag).
-            random_gamma=self.random_gamma and self._in_training_mode(),
+            # is roll-equivariant, so inference fixes gamma.
+            random_gamma=self.random_gamma and training,
             wigner_calc=self.wigner_calc,
-            build_wigner=self._need_full_wigner,
+            build_wigner=self._need_full_wigner
+            and (training or not self._wigner_free_conv),
             node_partial_exchange=node_partial_exchange,
         )
 
@@ -1872,7 +1880,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
-        return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        if self.so3_readout == "none":
+            return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        return x_ro[:, 0:1, :, :] + self.output_ffn.call_scalar(x_ro)
 
     def _edge_quaternion(self, edge_cache: EdgeCache) -> Array:
         """
@@ -1899,6 +1909,37 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         return edge_quat
 
+    def _shared_wigner_runs(
+        self,
+        edge_cache: EdgeCache,
+        lmax: int,
+    ) -> Array | None:
+        """
+        Zonal coupling taken from the packed runs the convolution already builds.
+
+        The fused convolution stages a packed block-diagonal Wigner run per
+        edge whose degree-``l`` ``m = 0`` row occupies entries ``l ** 2`` to
+        ``(l + 1) ** 2``. That is the same quantity as
+        ``Dt_full[:, row(l, m), col(l, 0)]``, so degrees ``1..lmax`` are one
+        contiguous slice and the rotation algebra runs once per step instead of
+        twice. The runs are cached on the edge cache, so whichever consumer
+        comes first pays for them.
+
+        Parameters
+        ----------
+        edge_cache : EdgeCache
+            The step's edge feature cache.
+        lmax : int
+            Highest degree the coupling must cover.
+
+        Returns
+        -------
+        Array or None
+            Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
+            no convolution supplies runs of at least this degree.
+        """
+        return None
+
     def _build_gie_zonal_coupling(
         self,
         edge_cache: EdgeCache,
@@ -1917,6 +1958,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            shared = self._shared_wigner_runs(edge_cache, calc.lmax)
+            if shared is not None:
+                return shared
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None

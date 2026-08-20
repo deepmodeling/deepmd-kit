@@ -24,12 +24,13 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     compact_nodes,
     expand_node_values,
 )
-from deepmd.pt_expt.kernels.utils import (
-    cuda_infer_level,
-)
 from deepmd.pt_expt.common import (
     auto_wrapped_class,
     torch_module,
+)
+from deepmd.pt_expt.kernels.utils import (
+    fused_energy_force_enabled,
+    fused_operators_enabled,
 )
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
@@ -691,7 +692,7 @@ def make_model(
             # The fused pipeline emits the magnetic force as a value for a
             # descriptor that declares native spin, and returns nothing when it
             # cannot serve the request at all.
-            if not self.training and cuda_infer_level() >= 2:
+            if not self.training and fused_energy_force_enabled():
                 fused = _fused_energy_force_graph(
                     self, graph, atype, do_atomic_virial, spin
                 )
@@ -948,7 +949,7 @@ def make_model(
             _desc = getattr(self.atomic_model, "descriptor", None)
             with_csr = (
                 not self.training
-                and cuda_infer_level() >= 1
+                and fused_operators_enabled()
                 and _desc is not None
                 and _desc.get_geo_compress()
             )

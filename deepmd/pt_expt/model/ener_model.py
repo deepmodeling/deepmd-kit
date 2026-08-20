@@ -176,10 +176,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             dpa1_canonical_compress_energy_force,
         )
-        from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
+        from deepmd.pt_expt.kernels.dpa4c.canonical import (
             canonical_model_eligible as dpa4c_canonical_eligible,
         )
-        from deepmd.pt_expt.kernels.cuda.dpa4c.canonical import (
+        from deepmd.pt_expt.kernels.dpa4c.canonical import (
             dpa4c_canonical_compress_energy_force,
         )
         from deepmd.pt_expt.utils.canonical_graph import (

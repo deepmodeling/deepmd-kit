@@ -32,10 +32,10 @@ from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
 from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
     ensure_registered as ensure_descriptor_registered,
 )
-from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+from deepmd.pt_expt.kernels.edge_force_virial import (
     ensure_registered as ensure_force_registered,
 )
-from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+from deepmd.pt_expt.kernels.graph_fitting import (
     ensure_registered as ensure_fitting_registered,
 )
 from deepmd.pt_expt.kernels.triton.dpa1.activation import (
@@ -323,7 +323,7 @@ def dpa1_graph_energy_force(
         The pt_expt descriptor module; must satisfy ``desc._fused_eligible("cuda")``.
     fit : EnergyFittingNet
         The pt_expt fitting module; must satisfy
-        :func:`~deepmd.pt_expt.kernels.cuda.graph_fitting.fitting_eligible`.
+        :func:`~deepmd.pt_expt.kernels.graph_fitting.fitting_eligible`.
     graph : NeighborGraph
         The lowered neighbor graph (``edge_vec``, ``edge_index``, ``edge_mask``,
         ``n_node``) with destination/source CSR permutations.
@@ -369,7 +369,7 @@ def dpa1_graph_energy_force(
         smooth = 0
     w1, w2, w3 = (layer.w.contiguous() for layer in layers)
 
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_operator_arguments,
     )
 

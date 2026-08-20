@@ -34,6 +34,7 @@ from __future__ import (
     annotations,
 )
 
+import copy
 import json
 import os
 import zipfile
@@ -57,6 +58,7 @@ from deepmd.pt_expt.model.model import (
 from deepmd.pt_expt.utils import env as _env
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
+    _trace_and_export,
     build_synthetic_graph_inputs,
     deserialize_to_file,
 )
@@ -109,6 +111,287 @@ _DPA4_CONFIG = {
         "seed": 1,
     },
 }
+
+
+def test_dpa4_fp32_cpu_export_runs_without_cuda_only_ops(monkeypatch) -> None:
+    """CPU tracing suppresses GPU-only DPA4 paths and preserves dynamic replay."""
+    try:
+        import deepmd.pt.cxx_op  # noqa: F401
+    except ImportError:
+        pass
+
+    monkeypatch.setenv("DP_TRITON_INFER", "2")
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    monkeypatch.setenv("DP_CUTILE_INFER", "0")
+    monkeypatch.setenv("DP_CUTE_INFER", "0")
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config["descriptor"]["precision"] = "float32"
+    config["fitting_net"]["precision"] = "float32"
+    model = get_model(config).to("cpu").eval()
+
+    exported, _, _, _ = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="graph",
+        do_atomic_virial=True,
+    )
+    cuda_only_ops = (
+        "dpa4_edge_radial",
+        "dpa4_wigner_dense",
+        "dpa4_grid_pair",
+        "dpa4_zonal_scatter",
+        "edge_force_virial",
+    )
+    targets = {str(node.target) for node in exported.graph_module.graph.nodes}
+    assert all(not any(op in target for target in targets) for op in cuda_only_ops)
+
+    sample = build_synthetic_graph_inputs(
+        model,
+        e_max=None,
+        nframes=1,
+        nloc=6,
+        dtype=torch.float64,
+        device=torch.device("cpu"),
+    )
+    output = exported.module()(*sample)
+    assert output
+    assert all(
+        value is None or bool(torch.isfinite(value).all()) for value in output.values()
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_dpa4_fp32_cuda_export_runs_with_fast_ops(monkeypatch) -> None:
+    """CPU tracing preserves the CUDA fast operators for a CUDA target."""
+    try:
+        import deepmd.pt.cxx_op  # noqa: F401
+    except ImportError:
+        pytest.skip("DeePMD-kit CUDA operators are unavailable")
+    from deepmd.pt_expt.kernels.cuda import (
+        edge_force_virial,
+    )
+    from deepmd.pt_expt.kernels.cuda.dpa4 import (
+        edge_radial,
+        grid_pair,
+        wigner_dense,
+        zonal_scatter,
+    )
+
+    if not all(
+        module.op_available()
+        for module in (
+            edge_force_virial,
+            edge_radial,
+            grid_pair,
+            wigner_dense,
+            zonal_scatter,
+        )
+    ):
+        pytest.skip("The DPA4 CUDA operator set is incomplete")
+
+    monkeypatch.setenv("DP_TRITON_INFER", "0")
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    monkeypatch.setenv("DP_CUTILE_INFER", "0")
+    monkeypatch.setenv("DP_CUTE_INFER", "0")
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config["descriptor"]["precision"] = "float32"
+    config["descriptor"]["channels"] = 32
+    config["fitting_net"]["precision"] = "float32"
+    model = get_model(config).to("cpu").eval()
+    data = {"model": model.serialize()}
+    data["model"] = jitter_zero_arrays(data["model"], np.random.default_rng(103))
+
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cuda"))
+    exported, _, _, _ = _trace_and_export(
+        data,
+        lower_kind="graph",
+        do_atomic_virial=True,
+    )
+    targets = {str(node.target) for node in exported.graph_module.graph.nodes}
+    required_ops = (
+        "dpa4_edge_radial",
+        "dpa4_wigner_dense",
+        "dpa4_grid_pair",
+        "dpa4_zonal_scatter",
+        "edge_force_virial",
+    )
+    assert all(any(op in target for target in targets) for op in required_ops)
+
+    sample = build_synthetic_graph_inputs(
+        model,
+        e_max=None,
+        nframes=1,
+        nloc=6,
+        dtype=torch.float64,
+        device=torch.device("cuda"),
+    )
+    output = exported.module()(*sample)
+    assert all(
+        value is None or bool(torch.isfinite(value).all()) for value in output.values()
+    )
+    assert torch.max(torch.abs(output["force"])).item() > 1e-6
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+def test_dpa4_triton_force_assembly_survives_cpu_trace(monkeypatch) -> None:
+    """A Triton-only CUDA target keeps force assembly through the CPU trace."""
+    from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
+        FORCE_ASSEMBLY_TRITON_AVAILABLE,
+    )
+
+    if not FORCE_ASSEMBLY_TRITON_AVAILABLE:
+        pytest.skip("Triton force assembly is unavailable")
+
+    monkeypatch.setenv("DP_TRITON_INFER", "1")
+    monkeypatch.setenv("DP_CUDA_INFER", "0")
+    monkeypatch.setenv("DP_CUTILE_INFER", "0")
+    monkeypatch.setenv("DP_CUTE_INFER", "0")
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cpu"))
+    model = get_model(copy.deepcopy(_DPA4_CONFIG)).to("cpu").eval()
+    data = {"model": model.serialize()}
+    data["model"] = jitter_zero_arrays(data["model"], np.random.default_rng(105))
+
+    monkeypatch.setattr(_env, "DEVICE", torch.device("cuda"))
+    exported, _, _, _ = _trace_and_export(
+        data,
+        lower_kind="graph",
+        do_atomic_virial=True,
+    )
+    targets = {str(node.target) for node in exported.graph_module.graph.nodes}
+    assert any("sezm_triton.edge_force_assembly" in target for target in targets)
+
+    sample = build_synthetic_graph_inputs(
+        model,
+        e_max=None,
+        nframes=1,
+        nloc=6,
+        dtype=torch.float64,
+        device=torch.device("cuda"),
+    )
+    output = exported.module()(*sample)
+    assert all(
+        value is None or bool(torch.isfinite(value).all()) for value in output.values()
+    )
+    assert torch.max(torch.abs(output["force"])).item() > 1e-6
+
+
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="AOTInductor compile is slow (minutes); run locally only by default.",
+)
+@pytest.mark.parametrize(
+    "target_device",
+    [
+        pytest.param(torch.device("cpu"), id="cpu"),
+        pytest.param(torch.device("cuda"), id="cuda"),
+    ],
+)
+def test_dpa4_fp32_aoti_package_runs_on_target(
+    monkeypatch,
+    tmp_path,
+    target_device,
+) -> None:
+    """CPU tracing produces runnable CPU and CUDA packages for their target."""
+    if target_device.type == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA is required")
+    try:
+        import deepmd.pt.cxx_op  # noqa: F401
+    except ImportError:
+        if target_device.type == "cuda":
+            pytest.skip("DeePMD-kit CUDA operators are unavailable")
+    from torch._inductor import (
+        aoti_compile_and_package,
+        aoti_load_package,
+    )
+
+    from deepmd.pt.utils.compile_compat import (
+        build_inductor_compile_options,
+        patch_inductor_force_int64_indexing,
+    )
+    from deepmd.pt_expt.kernels.cuda import (
+        edge_force_virial,
+    )
+    from deepmd.pt_expt.kernels.cuda.dpa4 import (
+        edge_radial,
+        grid_pair,
+        wigner_dense,
+        zonal_scatter,
+    )
+
+    cuda_modules = (
+        edge_force_virial,
+        edge_radial,
+        grid_pair,
+        wigner_dense,
+        zonal_scatter,
+    )
+    if target_device.type == "cuda" and not all(
+        module.op_available() for module in cuda_modules
+    ):
+        pytest.skip("The DPA4 CUDA operator set is incomplete")
+
+    monkeypatch.setenv("DP_TRITON_INFER", "0")
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    monkeypatch.setenv("DP_CUTILE_INFER", "0")
+    monkeypatch.setenv("DP_CUTE_INFER", "0")
+    monkeypatch.setattr(_env, "DEVICE", target_device)
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config["descriptor"]["precision"] = "float32"
+    config["descriptor"]["channels"] = 32
+    config["fitting_net"]["precision"] = "float32"
+    model = get_model(config).to("cpu").eval()
+    data = {"model": model.serialize()}
+    data["model"] = jitter_zero_arrays(data["model"], np.random.default_rng(104))
+
+    exported, _, _, output_keys = _trace_and_export(
+        data,
+        lower_kind="graph",
+        do_atomic_virial=True,
+    )
+    targets = {str(node.target) for node in exported.graph_module.graph.nodes}
+    cuda_only_ops = (
+        "dpa4_edge_radial",
+        "dpa4_wigner_dense",
+        "dpa4_grid_pair",
+        "dpa4_zonal_scatter",
+        "edge_force_virial",
+    )
+    if target_device.type == "cuda":
+        assert all(any(op in target for target in targets) for op in cuda_only_ops)
+    else:
+        assert all(not any(op in target for target in targets) for op in cuda_only_ops)
+
+    patch_inductor_force_int64_indexing()
+    compile_options = build_inductor_compile_options(inference=True)
+    compile_options["assert_indirect_indexing"] = False
+    if target_device.type == "cuda":
+        compile_options["realize_opcount_threshold"] = 0
+    package_path = str(tmp_path / f"dpa4_fp32_{target_device.type}.pt2")
+    aoti_compile_and_package(
+        exported,
+        package_path=package_path,
+        inductor_configs=compile_options,
+    )
+    compiled = aoti_load_package(package_path)
+
+    sample = build_synthetic_graph_inputs(
+        model,
+        e_max=None,
+        nframes=1,
+        nloc=8,
+        dtype=torch.float64,
+        device=target_device,
+    )
+    result = compiled(*sample)
+    output = (
+        dict(result.items())
+        if hasattr(result, "items")
+        else dict(zip(output_keys, result, strict=True))
+    )
+    assert output
+    assert all(bool(torch.isfinite(value).all()) for value in output.values())
+    assert torch.max(torch.abs(output["force"])).item() > 1e-6
 
 
 @pytest.mark.skipif(
@@ -379,8 +662,8 @@ def test_dpa4_freeze_to_pt2(tmp_path, lower_kind, expected_input_kind) -> None:
 # =============================================================================
 # Task 6: graph-kind ``.pt2`` freeze for the NATIVE-spin DPA4 wrapper
 # (``NativeSpinEnergyModel``, type ``native_spin``) -- spin rides the
-# NeighborGraph lower ONLY (no dense/nlist lower, no with-comm sidecar: see
-# ``_needs_with_comm_artifact``'s native-spin first rule). The VIRTUAL-atom
+# NeighborGraph lower ONLY (no dense/nlist lower; the graph lower carries the
+# same with-comm feature-exchange sidecar as spin-free DPA4). The VIRTUAL-atom
 # spin scheme (``SpinModel``, type ``spin_ener``) has no graph-lower
 # implementation at all and must keep raising ``NotImplementedError``.
 # =============================================================================
@@ -436,7 +719,7 @@ def _freeze_native_spin(model_file) -> None:
     reason="AOTInductor compile is slow (minutes); run locally only by default.",
 )
 def test_native_spin_graph_freeze(tmp_path) -> None:
-    """Native-spin DPA4 freezes to a graph-kind .pt2: metadata + no sidecar."""
+    """Native-spin DPA4 freezes to a graph-kind .pt2 with its comm sidecar."""
     model_file = tmp_path / "dpa4_spin_graph.pt2"
     _freeze_native_spin(model_file)
 
@@ -466,7 +749,7 @@ def test_native_spin_graph_freeze(tmp_path) -> None:
     assert "force_mag" in md["output_keys"]
     for key in ("atom_energy", "energy", "force", "virial"):
         assert key in md["output_keys"]
-    assert not any(n.endswith("forward_lower_with_comm.pt2") for n in names)
+    assert any(n.endswith("forward_lower_with_comm.pt2") for n in names)
 
 
 def test_native_spin_nlist_deserialize_rejected(tmp_path) -> None:

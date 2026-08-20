@@ -133,7 +133,7 @@ def flash_atten_aggregate_reference(
     rescale: Tensor,
     alpha: Tensor,
     dst: Tensor,
-    n_nodes: int,
+    n_nodes: int | torch.SymInt,
     lmax: int,
     n_head: int,
 ) -> Tensor:
@@ -153,7 +153,7 @@ def flash_atten_aggregate_reference(
         Envelope-gated softmax weight with shape ``(E, F, H)``.
     dst : Tensor
         Destination node indices with shape ``(E,)``.
-    n_nodes : int
+    n_nodes : int or torch.SymInt
         Number of destination nodes ``N``.
     lmax : int
         Maximum degree.
@@ -702,7 +702,7 @@ def _launch_forward(
     alpha: Tensor,
     order: Tensor,
     row_ptr: Tensor,
-    n_nodes,
+    n_nodes: int | torch.SymInt,
     lmax: int,
     n_head: int,
 ) -> Tensor:
@@ -886,7 +886,7 @@ def _forward_impl(
             rescale,
             alpha,
             dst,
-            int(row_ptr.shape[0] - 1),
+            row_ptr.shape[0] - 1,
             int(lmax),
             int(n_head),
         )
@@ -1043,9 +1043,8 @@ def flash_atten_aggregate(
         Envelope-gated softmax weight with shape ``(E, F, H)``.
     order : Tensor
         Destination-sorted edge permutation with shape ``(E,)``, the segment
-        order of the forward reduction. The step builds it once
-        (:func:`deepmd.pt.model.descriptor.sezm_nn.edge_cache.cached_edge_csr`)
-        and every segment consumer shares it.
+        order of the forward reduction. The active descriptor backend builds
+        it once with ``cached_edge_csr`` and every segment consumer shares it.
     row_ptr : Tensor
         Row offsets with shape ``(N + 1,)`` matching ``order``; its length also
         carries the (SymInt) node count ``N`` for the output allocation and the

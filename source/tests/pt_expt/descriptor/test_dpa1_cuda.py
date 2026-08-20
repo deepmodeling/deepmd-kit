@@ -7,9 +7,9 @@ through three fused CUDA operator suites (see ``source/op/pt``):
 * ``deepmd::dpa1_graph_descriptor`` -- the descriptor mega kernels
   (:mod:`deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor`);
 * ``deepmd::graph_fitting`` -- the fused energy fitting network
-  (:mod:`deepmd.pt_expt.kernels.cuda.graph_fitting`);
+  (:mod:`deepmd.pt_expt.kernels.graph_fitting`);
 * ``deepmd::edge_force_virial`` -- the fused force / virial assembly
-  (:mod:`deepmd.pt_expt.kernels.cuda.edge_force_virial`).
+  (:mod:`deepmd.pt_expt.kernels.edge_force_virial`).
 
 Covered properties:
 
@@ -1098,7 +1098,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         return fit
 
     def _assert_parity(self, fit) -> None:
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1139,7 +1139,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         )
 
     def test_timestep_falls_back(self) -> None:
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1151,7 +1151,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         The operator has no representation for a layer timestep and would
         evaluate the network without it, so the conversion refuses instead.
         """
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_operator_arguments,
         )
 
@@ -1159,11 +1159,11 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
             fitting_operator_arguments(self._build(resnet_dt=True))
 
     def test_fparam_falls_back(self) -> None:
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
-            fitting_eligible,
-        )
         from deepmd.pt_expt.fitting.ener_fitting import (
             EnergyFittingNet,
+        )
+        from deepmd.pt_expt.kernels.graph_fitting import (
+            fitting_eligible,
         )
 
         fit = EnergyFittingNet(
@@ -1178,7 +1178,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         self.assertFalse(fitting_eligible(fit))
 
     def test_width_doubling_residual_falls_back(self) -> None:
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1191,7 +1191,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         self.assertFalse(fitting_eligible(fit))
 
     def test_float64_parameters_fall_back(self) -> None:
-        from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1263,7 +1263,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         from deepmd.pt_expt.kernels.cuda.dpa1.graph_energy_force import (
             dpa1_graph_energy_force,
         )
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1442,7 +1442,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             )
 
     def test_fused_energy_uses_owned_nodes_only(self) -> None:
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1573,7 +1573,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             dpa1_graph_compress_energy_force,
             mega_eligible,
         )
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1957,7 +1957,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
         n_node,
         total,
     ):
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1994,7 +1994,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             NeighborGraph,
             build_edge_csr,
         )
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             canonical_edge_force_virial,
             edge_force_virial,
         )
@@ -2081,7 +2081,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
         removes. Both are checked against the CPU implementation on the same
         graph.
         """
-        from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 

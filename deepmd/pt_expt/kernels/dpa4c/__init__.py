@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Fused compressed CUDA operators for the DPA4C graph lower."""
+"""Fused compressed operators for the DPA4C graph lower.
+
+The bindings are device neutral: the CUDA kernels live in
+``source/op/pt/dpa4c/*.cu`` and the CPU kernels in
+``source/op/pt/dpa4c/*_cpu.cc``, and the dispatcher selects between them.
+"""
 
 from .canonical import (
     canonical_model_eligible,

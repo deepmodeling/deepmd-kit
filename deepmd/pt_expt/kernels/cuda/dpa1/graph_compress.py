@@ -844,7 +844,7 @@ def dpa1_graph_compress_energy_force(
         and ``desc._fused_eligible("cuda")``.
     fit : EnergyFittingNet
         The pt_expt fitting module (see
-        :func:`~deepmd.pt_expt.kernels.cuda.graph_fitting.fitting_eligible`).
+        :func:`~deepmd.pt_expt.kernels.graph_fitting.fitting_eligible`).
     graph : NeighborGraph
         The lowered neighbor graph (``edge_vec``, ``edge_index``, ``edge_mask``,
         ``n_node``) with destination/source CSR. ``destination_sorted`` must be
@@ -875,13 +875,13 @@ def dpa1_graph_compress_energy_force(
     atom_virial : torch.Tensor
         Per-atom virial with shape (N, 3, 3) when requested, else empty (0, 3, 3).
     """
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         edge_force_virial,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         ensure_registered as ensure_force_registered,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
     )
 
@@ -947,7 +947,7 @@ def dpa1_graph_compress_energy_force(
         float(se.nnei),
         (int(se.lmax) + 1) ** 2,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         fitting_operator_arguments,
     )
 
@@ -967,7 +967,7 @@ def dpa1_graph_compress_energy_force(
     owned = ownership[:, None].to(atom_energy_raw.dtype)
     energy_seed = owned
     atom_energy = atom_energy_raw * owned
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         frame_scalar_sum,
     )
 

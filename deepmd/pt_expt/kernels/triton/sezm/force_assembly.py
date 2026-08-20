@@ -102,7 +102,7 @@ if FORCE_ASSEMBLY_TRITON_AVAILABLE:
         The virial lanes address the ``(3, 3)`` outer product through a
         padded 16-lane index ``(k, j) = (lane // 4, lane % 4)`` so both the
         force and virial rows stay vectorized; the outer product
-        ``-0.5 * g_k * v_j`` is recomputed per edge in registers and never
+        ``-g_k * v_j`` is recomputed per edge in registers and never
         materialized.  Accumulation runs in float64.
         """
         node = tl.program_id(0).to(tl.int64)

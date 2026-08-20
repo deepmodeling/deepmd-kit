@@ -4,9 +4,9 @@
 
 The force on an extended atom is the sum of the energy gradient over the edges
 that end on it minus the sum over the edges that start on it, and the per-atom
-virial is the corresponding sum of ``-0.5 * g (x) v`` outer products. Both are
-expressed as two segmented reductions over pre-built CSR topologies, one per
-endpoint, rather than as four scatters: the segmented form is contention free
+virial is the sum of ``-g (x) v`` outer products attributed in full to the
+source endpoint. Both are expressed as segmented reductions over pre-built CSR
+topologies rather than as three scatters: the segmented form is contention free
 and, because each node's contributions are summed in one block, the summation
 order is fixed.
 
@@ -14,27 +14,28 @@ Accumulation is in float64. The outer product is recomputed per edge from the
 three-component gradient and displacement and is never materialized, which
 removes an ``(E, 9)`` intermediate.
 
-Operator boundary
------------------
-The kernel is exposed as a functional ``custom_op`` paired with an explicit
-closed-form backward operator, so it survives the ``make_fx`` force-autograd
-trace and can be replayed under :func:`torch.no_grad` when the frozen inference
-graph runs. A closed form -- rather than a nested :func:`torch.autograd.grad` --
-is required because the backward operator is dispatched below autograd during
-that replay. A ``custom_op`` is opaque to Inductor: nothing inside it fuses with
-the surrounding graph and its buffers are invisible to the memory planner, so
-only tensors that must cross the boundary do.
+The operator is inference-only in practice: the caller keeps the reference
+path whenever the force graph must remain differentiable (``create_graph``),
+so no autograd formula is registered.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import math
 
 import torch
-from torch import Tensor
+from torch import (
+    Tensor,
+)
 
-from ..common import CUTILE_AVAILABLE
-from .tile_configs import tile_config
+from ..common import (
+    CUTILE_AVAILABLE,
+)
+from .tile_configs import (
+    tile_config,
+)
 
 if CUTILE_AVAILABLE:
     import cuda.tile as ct
@@ -60,6 +61,7 @@ if CUTILE_AVAILABLE:
         virial,
         sign: ct.Constant[float],
         accumulate: ct.Constant[int],
+        compute_virial: ct.Constant[int],
         BE: ct.Constant[int],
         NODES: ct.Constant[int],
     ):
@@ -90,7 +92,8 @@ if CUTILE_AVAILABLE:
             start = ct.extract(starts, (index,), (1,)).item()
             stop = ct.extract(stops, (index,), (1,)).item()
             acc_force = ct.zeros((4,), dtype=ct.float64)
-            acc_virial = ct.zeros((4, 4), dtype=ct.float64)
+            if compute_virial:
+                acc_virial = ct.zeros((4, 4), dtype=ct.float64)
             for position in range(start, stop, BE):
                 slot = position + ct.arange(BE, dtype=ct.int32)
                 live = slot < stop
@@ -104,30 +107,29 @@ if CUTILE_AVAILABLE:
                     )
                     * keep
                 )
-                v = (
-                    ct.load_advanced_indexing(
-                        edge_vec,
-                        (entry, ct.Slice(0, 4)),
-                        padding_mode=ct.PaddingMode.ZERO,
-                    )
-                    * keep
-                )
                 acc_force = acc_force + ct.sum(g.astype(ct.float64), axis=0)
-                outer = g.reshape((BE, 4, 1)) * v.reshape((BE, 1, 4))
-                acc_virial = acc_virial - 0.5 * ct.sum(outer.astype(ct.float64), axis=0)
+                if compute_virial:
+                    v = (
+                        ct.load_advanced_indexing(
+                            edge_vec,
+                            (entry, ct.Slice(0, 4)),
+                            padding_mode=ct.PaddingMode.ZERO,
+                        )
+                        * keep
+                    )
+                    outer = g.reshape((BE, 4, 1)) * v.reshape((BE, 1, 4))
+                    acc_virial = acc_virial - ct.sum(outer.astype(ct.float64), axis=0)
             node = base + index
             out_force = (acc_force * sign).astype(ct.float32)
-            out_virial = acc_virial.astype(ct.float32).reshape((1, 16))
             if accumulate:
                 out_force = out_force + ct.reshape(
                     ct.load(force, (node, 0), (1, 4), padding_mode=ct.PaddingMode.ZERO),
                     (4,),
                 )
-                out_virial = out_virial + ct.load(
-                    virial, (node, 0), (1, 16), padding_mode=ct.PaddingMode.ZERO
-                )
             ct.store(force, (node, 0), ct.reshape(out_force, (1, 4)))
-            ct.store(virial, (node, 0), out_virial)
+            if compute_virial:
+                out_virial = acc_virial.astype(ct.float32).reshape((1, 16))
+                ct.store(virial, (node, 0), out_virial)
 
 
 def _launch_forward(
@@ -174,9 +176,9 @@ def _launch_forward(
     force = grad.new_empty((n_ext, 4))
     virial = grad.new_empty((n_ext, 16))
     stream = torch.cuda.current_stream()
-    for order, row_ptr, sign, accumulate in (
-        (dst_order, dst_row_ptr, 1.0, 0),
-        (src_order, src_row_ptr, -1.0, 1),
+    for order, row_ptr, sign, accumulate, compute_virial in (
+        (dst_order, dst_row_ptr, 1.0, 0, 0),
+        (src_order, src_row_ptr, -1.0, 1, 1),
     ):
         ct.launch(
             stream,
@@ -191,6 +193,7 @@ def _launch_forward(
                 virial,
                 sign,
                 accumulate,
+                compute_virial,
                 config.tile,
                 NODES_PER_BLOCK,
             ),

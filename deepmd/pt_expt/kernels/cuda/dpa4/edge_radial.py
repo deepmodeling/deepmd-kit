@@ -247,11 +247,14 @@ def make_cuda_edge_radial(envelope: Any, basis: Any) -> EdgeRadialCuda | None:
     -------
     EdgeRadialCuda or None
         ``None`` when the operator is absent, the two modules disagree on the
-        cutoff, or an envelope order is outside the staged series limit.
+        cutoff, the compute precision is unsupported, or an envelope order is
+        outside the staged series limit.
     """
     if not op_available():
         return None
     if float(envelope.rcut) != float(basis.rcut):
+        return None
+    if basis.adam_freqs.dtype is not torch.float32:
         return None
     if not supported(int(envelope.p), int(basis.envelope.p)):
         return None

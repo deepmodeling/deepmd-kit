@@ -50,6 +50,7 @@ __all__ = [
     "relax_views_to_reshapes",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
+    "traced_output_keys",
 ]
 
 
@@ -295,6 +296,41 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     return torch.cat([t, *([last] * repeats)], dim=dim)
 
 
+def traced_output_keys(traced: torch.fx.GraphModule) -> list[str]:
+    """Read dictionary output keys from the static FX graph structure.
+
+    Replaying a CPU-traced graph is not a valid way to inspect its output when
+    the target archive contains CUDA-only custom operators. Their fake kernels
+    make tracing and export device-independent, but their real dispatch remains
+    CUDA-only. The output dictionary itself is static and preserved on the FX
+    ``output`` node, so no execution is required.
+
+    Parameters
+    ----------
+    traced : torch.fx.GraphModule
+        The traced module whose output node carries the static dictionary.
+
+    Returns
+    -------
+    list[str]
+        Output keys in the insertion order recorded by FX.
+
+    Raises
+    ------
+    RuntimeError
+        If the graph does not contain exactly one output node.
+    TypeError
+        If the graph output is not a dictionary with string keys.
+    """
+    output_nodes = [node for node in traced.graph.nodes if node.op == "output"]
+    if len(output_nodes) != 1:
+        raise RuntimeError(f"Expected one FX output node, found {len(output_nodes)}")
+    output = output_nodes[0].args[0]
+    if not isinstance(output, dict) or not all(isinstance(key, str) for key in output):
+        raise TypeError("The traced model must return a dictionary with string keys")
+    return list(output)
+
+
 def strip_saved_tensor_detach(
     gm: torch.fx.GraphModule, *, remove_all: bool = False
 ) -> None:
@@ -477,6 +513,22 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # Dynamo with real hints from the first call and measurably benefits
         # from the pass, so it keeps the upstream default.
         compile_options["reorder_for_peak_memory"] = False
+        # The C++ backend parallelizes a loop only when its size hint reaches
+        # ``cpp.min_chunk_size`` elements per thread. An inference graph is
+        # traced on a synthetic system of a few dozen atoms, so every loop over
+        # the node or edge axis carries that hint no matter how large the
+        # deployed system is, and the default threshold leaves the whole graph
+        # serial: a 4096-atom DPA4C step measures 1.27 s against 0.11 s once
+        # the loops are parallel. The axes this threshold guards are always
+        # system sized at run time, so the guard is removed rather than
+        # retuned.
+        compile_options["cpp.min_chunk_size"] = 1
+        # Resolve the thread count at run time instead of baking the freezing
+        # host's into the generated code. A deployed artifact is routinely
+        # loaded on a machine with a different core count, and an artifact
+        # frozen under the DeePMD-kit thread defaults would otherwise pin
+        # every parallel region to those.
+        compile_options["cpp.dynamic_threads"] = True
     try:
         from torch._inductor import config as inductor_config
 

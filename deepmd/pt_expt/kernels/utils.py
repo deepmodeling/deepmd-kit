@@ -3,9 +3,14 @@
 Environment-variable gates for the SeZM/DPA4 hardware-accelerated kernels.
 
 This module centralizes the opt-in selectors that route inference through the
-custom Triton, CuTe and hand-written CUDA kernel packages. The gates are read
-once at model construction time so that they become compile-time constants in
-the traced (``make_fx``) graph.
+custom Triton, CuTe, CUDA and CPU kernel packages. The gates are read once at
+model construction time so that they become compile-time constants in the
+traced (``make_fx``) graph.
+
+A kernel package that exists for more than one device is selected by
+:func:`fused_operators_enabled` and :func:`fused_energy_force_enabled`, which
+resolve against the device the graph will execute on. A package that exists
+only on CUDA keeps :func:`cuda_infer_level`.
 """
 
 from __future__ import (
@@ -13,6 +18,8 @@ from __future__ import (
 )
 
 import os
+
+import torch
 
 _INFER_TRUE = ("1", "true", "yes", "on")
 
@@ -169,6 +176,89 @@ def cuda_infer_level() -> int:
             f"DP_CUDA_INFER must be one of {CUDA_INFER_LEVELS}, got {level}"
         )
     return level
+
+
+def backend_device_type() -> str:
+    """Return the device type the graph will execute on.
+
+    Every export traces on CPU and moves the program to the backend device
+    afterwards, so an operator selection cannot read the device of a traced
+    tensor. It reads the backend device instead, which is the one the
+    artifact is built for and the one an eager session runs on.
+
+    Returns
+    -------
+    str
+        ``"cuda"`` or ``"cpu"``.
+    """
+    from deepmd.pt_expt.utils.env import (
+        DEVICE,
+    )
+
+    return DEVICE.type
+
+
+def fused_operators_enabled() -> bool:
+    """Return whether the fused graph operators may serve an inference call.
+
+    The CUDA operators trade throughput against arithmetic in ways that
+    depend on the part and the checkpoint, so they are opt-in through
+    :func:`cuda_infer_level`. The CPU operators carry no such trade: they
+    replace an Inductor lowering of the same arithmetic and are strictly
+    faster wherever they apply, so they need no gate. Whether they apply at
+    all is decided by :func:`operator_available` and by each operator's own
+    eligibility predicate.
+
+    Returns
+    -------
+    bool
+        Whether the descriptor, fitting and force-assembly operators of the
+        backend device are selectable.
+    """
+    return cuda_infer_level() >= 1 if backend_device_type() == "cuda" else True
+
+
+def fused_energy_force_enabled() -> bool:
+    """Return whether the end-to-end energy-force operator may serve a call.
+
+    The operator collapses the descriptor, the fitting and the analytic force
+    and virial assembly into one call that returns the force as a value
+    instead of through an autograd tape.
+
+    Returns
+    -------
+    bool
+        Whether the composition is selectable on the backend device.
+    """
+    return cuda_infer_level() >= 2 if backend_device_type() == "cuda" else True
+
+
+def operator_available(name: str) -> bool:
+    """Return whether an operator carries a kernel for the backend device.
+
+    The operator library is one shared object whose CUDA half is compiled
+    only against a CUDA-enabled PyTorch, and whose CPU half is always
+    present. Asking the dispatcher for the backend device's key therefore
+    answers both "is the library loaded" and "was this half built", which a
+    plain attribute lookup on ``torch.ops.deepmd`` cannot distinguish.
+
+    Parameters
+    ----------
+    name
+        Unqualified operator name inside the ``deepmd`` library.
+
+    Returns
+    -------
+    bool
+        Whether the operator is registered for the backend device.
+    """
+    if not isinstance(
+        getattr(torch.ops.deepmd, name, None),
+        torch._ops.OpOverloadPacket,
+    ):
+        return False
+    key = "CUDA" if backend_device_type() == "cuda" else "CPU"
+    return torch._C._dispatch_has_kernel_for_dispatch_key(f"deepmd::{name}", key)
 
 
 def use_cute_infer() -> bool:

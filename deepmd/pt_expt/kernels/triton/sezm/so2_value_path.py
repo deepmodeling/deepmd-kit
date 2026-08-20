@@ -2397,7 +2397,7 @@ class _TritonSO2ValuePath:
         csr = None if store is None else store.get("src")
         if csr is None:
             src_order = torch.argsort(src, dim=0, stable=True)
-            counts = torch.bincount(src, minlength=x.shape[0])
+            counts = src.new_zeros(x.shape[0]).scatter_add(0, src, torch.ones_like(src))
             src_rowptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
         else:
             src_order, src_rowptr = csr

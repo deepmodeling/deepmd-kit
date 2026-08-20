@@ -463,6 +463,46 @@ class SO3Linear(NativeOP):
 
         return out
 
+    def call_scalar(self, x: Any) -> Any:
+        """Project only the ``l=0`` coefficient.
+
+        Parameters
+        ----------
+        x : Array
+            Input features with shape ``(N, D, F, C_in)``.
+
+        Returns
+        -------
+        Array
+            Scalar output with shape ``(N, 1, F, C_out)``.
+
+        Notes
+        -----
+        Degree-wise weights never mix distinct ``(l, m)`` coefficients. A
+        scalar-only consumer can therefore select the input and weight before
+        the contraction instead of computing and discarding all ``l > 0``
+        outputs.
+        """
+        xp = array_api_compat.array_namespace(x)
+        weight = xp.reshape(
+            xp_asarray_nodetach(xp, self.weight[0], device=array_api_compat.device(x)),
+            (self.in_channels, self.n_focus, self.out_channels),
+        )
+        out = xp.matmul(
+            xp.permute_dims(x[:, 0:1, :, :], (1, 2, 0, 3)),
+            xp.permute_dims(weight, (1, 0, 2)),
+        )
+        out = xp.permute_dims(out, (2, 0, 1, 3))
+        if self.mlp_bias:
+            bias = xp.reshape(
+                xp_asarray_nodetach(
+                    xp, self.bias[...], device=array_api_compat.device(x)
+                ),
+                (self.n_focus, self.out_channels),
+            )
+            out = out + bias[None, None, ...]
+        return out
+
     def serialize(self) -> dict[str, Any]:
         """Serialize the SO3Linear to a dict."""
         variables = {"weight": to_numpy_array(self.weight)}

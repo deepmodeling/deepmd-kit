@@ -213,7 +213,10 @@ class GeometricInitialEmbedding(nn.Module):
         # (E, D-1, C) tensor that dominates the cost of this module. The fused
         # operator keeps it in registers and reduces through the destination CSR.
         self._cuda_scatter = False
-        if cuda_infer_level() >= 1:
+        # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
+        # freeze pins it to the AOTI target because tracing always runs on CPU.
+        self._force_fused_scatter: bool | None = None
+        if cuda_infer_level() >= 1 and self.dtype is torch.float32:
             from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
                 op_available,
                 supported,
@@ -281,12 +284,10 @@ class GeometricInitialEmbedding(nn.Module):
         # The fused operator spans this broadcast and the scatter of Step 5, so
         # it takes over whenever nothing else joins the message in between.
         if (
-            self._cuda_scatter
-            and not self.training
+            self._can_fuse_scatter(zonal_coupling)
             and spin_l1_message is None
             and edge_cache.edge_src_gate is None
             and edge_cache.csr_cache is not None
-            and zonal_coupling.is_cuda
         ):
             return self.forward_fused_scatter(
                 n_nodes, edge_cache, radial_feat, zonal_coupling
@@ -328,9 +329,18 @@ class GeometricInitialEmbedding(nn.Module):
         out.mul_(edge_cache.inv_sqrt_deg)
         return out
 
+    def _can_fuse_scatter(self, zonal_coupling: torch.Tensor) -> bool:
+        """Return whether the fused scatter serves the runtime or trace target."""
+        target_is_cuda = (
+            zonal_coupling.is_cuda
+            if self._force_fused_scatter is None
+            else self._force_fused_scatter
+        )
+        return self._cuda_scatter and not self.training and target_is_cuda
+
     def forward_fused_scatter(
         self,
-        n_nodes: int,
+        n_nodes: int | torch.SymInt,
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         zonal_coupling: torch.Tensor,
@@ -340,7 +350,7 @@ class GeometricInitialEmbedding(nn.Module):
 
         Parameters
         ----------
-        n_nodes : int
+        n_nodes : int or torch.SymInt
             Number of nodes (nf * nloc).
         edge_cache : EdgeFeatureCache
             Per-edge cache supplying the destination endpoint, its CSR view and

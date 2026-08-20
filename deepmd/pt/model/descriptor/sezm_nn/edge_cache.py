@@ -87,9 +87,9 @@ class EdgeFeatureCache(NamedTuple):
         Lazy cache for projected Dt matrices keyed by a normalized
         ``"lmax:mmax"`` identifier.
     csr_cache
-        Lazy cache for the CSR views the fused CUDA convolution walks, keyed by
-        endpoint role (``"dst"`` or ``"src"``). Built once per step and shared
-        by every interaction block.
+        Lazy cache for endpoint CSR views used by segmented accelerated
+        operators, keyed by endpoint role (``"dst"`` or ``"src"``). Built once
+        per step and shared by every consumer.
     edge_src_gate
         Optional per-edge Source Freeze Propagation Gate (SFPG) weight with
         shape (E, 1). Equals ``eta[src]`` where
@@ -121,7 +121,7 @@ class EdgeFeatureCache(NamedTuple):
 
 
 def cached_edge_csr(
-    edge_cache: EdgeFeatureCache, endpoint: str, n_node: int
+    edge_cache: EdgeFeatureCache, endpoint: str, n_node: int | torch.SymInt
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return the CSR view of one edge endpoint, built once per step.
 
@@ -137,7 +137,7 @@ def cached_edge_csr(
         The step's edge feature cache.
     endpoint : str
         ``"dst"`` or ``"src"``.
-    n_node : int
+    n_node : int or torch.SymInt
         Number of nodes the endpoint indexes into.
 
     Returns
@@ -154,7 +154,7 @@ def cached_edge_csr(
         return cached
     key = getattr(edge_cache, endpoint)
     order = torch.argsort(key, dim=0, stable=True)
-    counts = torch.bincount(key, minlength=n_node)
+    counts = key.new_zeros(n_node).scatter_add(0, key, torch.ones_like(key))
     row_ptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
     if store is not None:
         store[endpoint] = (order, row_ptr)
@@ -972,6 +972,8 @@ def edge_cache_to_dtype(
     if _edge_quat is not None:
         edge_quat = _edge_quat.to(dtype=dtype)
 
+    # CSR views contain only integer topology. Preserve them across the dtype
+    # conversion so every accelerated consumer shares the per-step sort.
     return EdgeFeatureCache(
         src=cache.src,
         dst=cache.dst,
@@ -985,7 +987,7 @@ def edge_cache_to_dtype(
         Dt_full=Dt_full,
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
-        csr_cache=None if cache.csr_cache is None else {},
+        csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
     )

@@ -196,14 +196,19 @@ def _assert_compile_grads_match(
     *,
     ctx: str = "",
 ) -> None:
-    for (name_uc, p_uc), (_, p_c) in zip(
+    for (name_uc, p_uc), (name_c, p_c) in zip(
         model_uc.named_parameters(),
         model_c.named_parameters(),
         strict=True,
     ):
-        if p_uc.grad is None:
+        testcase.assertEqual(name_c, name_uc, msg=f"{ctx}parameter order mismatch")
+        testcase.assertEqual(
+            p_c.grad is None,
+            p_uc.grad is None,
+            msg=f"{ctx}gradient presence mismatch on {name_uc}",
+        )
+        if p_uc.grad is None or p_c.grad is None:
             continue
-        testcase.assertIsNotNone(p_c.grad, msg=f"{ctx}grad is None for {name_uc}")
         torch.testing.assert_close(
             p_c.grad,
             p_uc.grad,
@@ -822,15 +827,37 @@ class TestCompiledConsistency(unittest.TestCase):
         so loss.backward() requires second-order differentiation through the
         make_fx-decomposed backward ops.
         """
+        self._check_gradient_consistency()
+
+    def test_compiled_dpa4_gradients_match_uncompiled(self) -> None:
+        """Compiled DPA4 scalar readout preserves outputs and force-loss gradients."""
+        model = copy.deepcopy(_MODEL_DPA4)
+        model["descriptor"].update(
+            {
+                "l_schedule": [1, 1],
+                "so3_readout": "mlp",
+                "precision": "float64",
+                "use_amp": False,
+            }
+        )
+        model["fitting_net"]["precision"] = "float64"
+        self._check_gradient_consistency(model)
+
+    def _check_gradient_consistency(self, model: dict | None = None) -> None:
+        """Compare compiled and eager loss graphs from identical parameters."""
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
         )
 
         config_uc = _make_config(self.data_dir, numb_steps=1)
+        if model is not None:
+            config_uc["model"] = copy.deepcopy(model)
         config_uc = update_deepmd_input(config_uc, warning=False)
         config_uc = normalize(config_uc)
 
         config_c = _make_config(self.data_dir, numb_steps=1)
+        if model is not None:
+            config_c["model"] = copy.deepcopy(model)
         config_c["training"]["enable_compile"] = True
         config_c = update_deepmd_input(config_c, warning=False)
         config_c = normalize(config_c)
@@ -857,16 +884,18 @@ class TestCompiledConsistency(unittest.TestCase):
                 input_dict, label_dict = trainer_uc.get_data(is_train=True)
                 cur_lr = trainer_uc.scheduler.get_last_lr()[0]
 
-                _, loss_uc, _ = trainer_uc.wrapper(
+                out_uc, loss_uc, _ = trainer_uc.wrapper(
                     **input_dict,
                     cur_lr=cur_lr,
                     label=label_dict,
                 )
-                _, loss_c, _ = trainer_c.wrapper(
+                out_c, loss_c, _ = trainer_c.wrapper(
                     **input_dict,
                     cur_lr=cur_lr,
                     label=label_dict,
                 )
+                _assert_compile_predictions_match(self, out_c, out_uc)
+                torch.testing.assert_close(loss_c, loss_uc, **_COMPILE_TOL)
                 loss_uc.backward()
                 loss_c.backward()
 

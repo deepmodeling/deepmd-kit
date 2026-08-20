@@ -52,6 +52,10 @@ from deepmd.dpmodel.descriptor.dpa4c_nn import (
     derive_spin_channels,
     packed_l2_to_stf,
 )
+from deepmd.pt_expt.kernels.utils import (
+    backend_device_type,
+    operator_available,
+)
 from deepmd.utils.charge_state import (
     validate_charge_state,
 )
@@ -108,24 +112,50 @@ _INV_SQRT_FIVE = 1.0 / math.sqrt(5.0)
 _BIS222_SCALE = math.sqrt(12.0 / 35.0)
 
 
-def op_available() -> bool:
-    """Return whether the compiled DPA4C compressed operator is loaded."""
-    op = getattr(torch.ops.deepmd, "dpa4c_graph_compress", None)
-    return isinstance(op, torch._ops.OpOverloadPacket)
+def op_available(spin: bool = False) -> bool:
+    """Return whether the backend device carries the DPA4C compressed operator.
+
+    Native spin is a compiled variant of the same operator rather than a
+    separate one, so it needs no separate availability probe -- except on the
+    CPU, whose kernels carry no magnetic branch: those families need a
+    source-major counterpart of the destination scan, and no CPU deployment
+    asks for them yet. A spin-conditioned descriptor therefore keeps the
+    reference path there.
+
+    Parameters
+    ----------
+    spin
+        Whether the caller needs the native-spin variant.
+
+    Returns
+    -------
+    bool
+        Whether the operator is registered for the backend device.
+    """
+    if spin and backend_device_type() != "cuda":
+        return False
+    return operator_available("dpa4c_graph_compress") and operator_available(
+        "dpa4c_graph_compress_backward"
+    )
 
 
-def ef_op_available() -> bool:
-    """Return whether the descriptor, fitting, and force operators are loaded."""
+def ef_op_available(spin: bool = False) -> bool:
+    """Return whether the descriptor, fitting, and force operators are present.
+
+    Parameters
+    ----------
+    spin
+        Whether the caller needs the native-spin variant.
+
+    Returns
+    -------
+    bool
+        Whether every operator of the fused energy-force route is registered.
+    """
     return (
-        op_available()
-        and isinstance(
-            getattr(torch.ops.deepmd, "graph_fitting", None),
-            torch._ops.OpOverloadPacket,
-        )
-        and isinstance(
-            getattr(torch.ops.deepmd, "edge_force_virial", None),
-            torch._ops.OpOverloadPacket,
-        )
+        op_available(spin)
+        and operator_available("graph_fitting")
+        and operator_available("edge_force_virial")
     )
 
 
@@ -137,6 +167,11 @@ def mega_eligible(descriptor: Any) -> bool:
     a spin-conditioned descriptor is eligible on exactly the conditions a
     spin-free one is. Each condition below is a width the compiled operator
     specializes on.
+
+    Eligibility is a property of the descriptor alone: it decides whether the
+    compression artifacts are worth building, which a snapshot does once for
+    every device that may later consume it. Whether a device has the kernel to
+    consume them is ``op_available``.
 
     Parameters
     ----------
@@ -1082,7 +1117,7 @@ def _contract_coupling(
     return (value @ third).reshape(nodes, rank_1 * rank_2 * rank_3)
 
 
-def _cpu_descriptor(
+def _reference_descriptor(
     edge_vec: torch.Tensor,
     edge_index: torch.Tensor,
     edge_mask: torch.Tensor,
@@ -1261,7 +1296,7 @@ def _cpu_descriptor(
     # === Step 5. Reduce and contract the native spin families ===
     spin_blocks: list[torch.Tensor] = []
     if has_spin:
-        magnitude, coordination, spin_vector, spin_tensor = _cpu_spin_moments(
+        magnitude, coordination, spin_vector, spin_tensor = _reference_spin_moments(
             spin,
             spin_pair,
             spin_type,
@@ -1309,7 +1344,7 @@ def _cpu_descriptor(
     return (descriptor - output_mean[None, :]) * output_inv_std[None, :]
 
 
-def _cpu_spin_moments(
+def _reference_spin_moments(
     spin: torch.Tensor,
     spin_pair: torch.Tensor,
     spin_type: torch.Tensor,
@@ -1510,9 +1545,9 @@ def _closed_form_222_coordinate(profile: DescriptorProfile) -> int:
 # === Custom-operator registration ===
 
 
-def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
+def _reference_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
     """CPU custom-op implementation returning descriptor and opaque state."""
-    descriptor = _cpu_descriptor(
+    descriptor = _reference_descriptor(
         *args[:16],
         *args[19:],
         spin=args[16],
@@ -1624,7 +1659,7 @@ def _backward_fake(
     )
 
 
-def _cpu_backward(
+def _reference_backward(
     descriptor_gradient: torch.Tensor,
     state: torch.Tensor,
     edge_vec: torch.Tensor,
@@ -1645,7 +1680,7 @@ def _cpu_backward(
     value = edge_vec.detach().clone().requires_grad_(True)
     moment = spin.detach().clone().requires_grad_(has_spin)
     with torch.enable_grad():
-        descriptor = _cpu_descriptor(
+        descriptor = _reference_descriptor(
             value,
             *args[:15],
             *args[18:],
@@ -1704,7 +1739,7 @@ def _backward(
             "moment through the registered autograd: closing the magnetic "
             "force needs the source CSR, which the operator schema does not "
             "carry. Call "
-            "`deepmd.pt_expt.kernels.cuda.dpa4c.graph_compress.dpa4c_graph_compress`, "
+            "`deepmd.pt_expt.kernels.dpa4c.graph_compress.dpa4c_graph_compress`, "
             "which supplies it."
         )
     edge_gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
@@ -1716,13 +1751,18 @@ def _backward(
     return (edge_gradient,) + (None,) * 25
 
 
-_cpu_library: torch.library.Library | None = None
+_registered = False
 
 
 def ensure_registered() -> None:
-    """Register fake, CPU, and autograd implementations once."""
-    global _cpu_library
-    if _cpu_library is not None or not op_available():
+    """Register the fake and autograd implementations once.
+
+    Both devices implement the operator in C++, so the only Python-side
+    registrations are the meta shapes ``torch.export`` needs and the autograd
+    rule that connects the analytical backward.
+    """
+    global _registered
+    if _registered or not op_available():
         return
     torch.library.register_fake("deepmd::dpa4c_graph_compress")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4c_graph_compress_backward")(_backward_fake)
@@ -1731,13 +1771,7 @@ def ensure_registered() -> None:
         _backward,
         setup_context=_setup_context,
     )
-    _cpu_library = torch.library.Library("deepmd", "IMPL")
-    _cpu_library.impl("dpa4c_graph_compress", _cpu_forward, "CPU")
-    _cpu_library.impl(
-        "dpa4c_graph_compress_backward",
-        _cpu_backward,
-        "CPU",
-    )
+    _registered = True
 
 
 def compressed_operator_arguments(
@@ -1998,13 +2032,13 @@ def dpa4c_graph_compress_energy_force(
     ValueError
         If the graph lacks destination or source CSR topology.
     """
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         edge_force_virial,
     )
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         ensure_registered as ensure_force_registered,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
     )
 
@@ -2113,10 +2147,10 @@ def fitting_energy_and_gradient(
     descriptor_gradient
         Cotangent of the invariant descriptor with shape ``(N, D)``.
     """
-    from deepmd.pt_expt.kernels.cuda.edge_force_virial import (
+    from deepmd.pt_expt.kernels.edge_force_virial import (
         frame_scalar_sum,
     )
-    from deepmd.pt_expt.kernels.cuda.graph_fitting import (
+    from deepmd.pt_expt.kernels.graph_fitting import (
         energy_and_input_gradient,
     )
 
