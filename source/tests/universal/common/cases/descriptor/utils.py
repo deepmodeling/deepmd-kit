@@ -27,6 +27,42 @@ class DescriptorTestCase(TestCaseSingleFrameWithNlist):
     def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
+    def test_capability_contract(self) -> None:
+        """Pin the ``BaseDescriptor`` capability-method contract.
+
+        Every capability query is declared on ``make_base_descriptor`` with a
+        concrete default (never probed via ``getattr(..., <fallback>)`` duck
+        typing), so ALL descriptors must answer direct method calls.
+        Eligibility values differ per descriptor/backend, so the assertions
+        are invariant-based; descriptor-specific ``True`` branches are pinned
+        in the implementing descriptors' own test files.
+        """
+        assert isinstance(self.module.uses_graph_lower(), bool)
+        assert isinstance(self.module.uses_compact_edge_pairs(), bool)
+        assert isinstance(self.module.supports_native_spin(), bool)
+        assert isinstance(self.module.supports_charge_spin(), bool)
+        # Table hook must be callable on every descriptor (``None`` when the
+        # descriptor embeds types internally or has no graph lower).
+        self.module.graph_type_embedding_table()
+        # Pinned postcondition: after the escape hatch, the graph lower is
+        # off -- a no-op on descriptors without one.
+        self.module.disable_graph_lower()
+        assert self.module.uses_graph_lower() is False
+        # chg-spin family: concrete base defaults, never probed (issue #5897).
+        assert isinstance(self.module.get_dim_chg_spin(), int)
+        dcs = self.module.get_default_chg_spin()
+        # Backend-agnostic: dpmodel returns a list, frozen pt returns a
+        # torch.Tensor -- pin the shape contract, not the container type.
+        assert dcs is None or len(dcs) == self.module.get_dim_chg_spin()
+        # has_default_chg_spin was merged into get_default_chg_spin: the
+        # predicate is ``get_default_chg_spin() is not None``. The absence
+        # of ``has_default_chg_spin`` on the dpmodel side is pinned in
+        # source/tests/universal/dpmodel/descriptor/test_descriptor.py --
+        # pt is frozen and still declares the (now-redundant) method.
+        # Geometric-compression state query: base default False, the
+        # dpa1/dpa2 families override from their ``geo_compress`` attribute.
+        assert isinstance(self.module.get_geo_compress(), bool)
+
     def test_forward_consistency(self) -> None:
         ret = []
         for module in self.modules_to_test:

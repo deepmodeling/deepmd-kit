@@ -23,6 +23,7 @@
 #include "neighbor.h"
 #include "output.h"
 #include "update.h"
+#include "utils.h"
 #if LAMMPS_VERSION_NUMBER >= 20210831
 // in lammps #2902, fix_ttm members turns from private to protected
 #define USE_TTM 1
@@ -260,8 +261,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       if (!(eflag_atom || cvflag_atom)) {
         try {
           deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
-                            dtype, dbox, nghost, lmp_list, ago, fparam,
-                            daparam);
+                            dtype, dbox, nghost, lmp_list, ago, fparam, daparam,
+                            charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -273,7 +274,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
         try {
           deep_spin.compute(dener, dforce, dforce_mag, dvirial, deatom, dvatom,
                             dcoord, dspin, dtype, dbox, nghost, lmp_list, ago,
-                            fparam, daparam);
+                            fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -316,9 +317,9 @@ void PairDeepSpin::compute(int eflag, int vflag) {
       vector<vector<double>> all_atom_virial;
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_spin_model_devi.compute(all_energy, all_force, all_force_mag,
-                                       all_virial, dcoord, dspin, dtype, dbox,
-                                       nghost, lmp_list, ago, fparam, daparam);
+          deep_spin_model_devi.compute(
+              all_energy, all_force, all_force_mag, all_virial, dcoord, dspin,
+              dtype, dbox, nghost, lmp_list, ago, fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -327,7 +328,7 @@ void PairDeepSpin::compute(int eflag, int vflag) {
           deep_spin_model_devi.compute(
               all_energy, all_force, all_force_mag, all_virial, all_atom_energy,
               all_atom_virial, dcoord, dspin, dtype, dbox, nghost, lmp_list,
-              ago, fparam, daparam);
+              ago, fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -506,7 +507,8 @@ void PairDeepSpin::compute(int eflag, int vflag) {
     if (numb_models == 1) {
       try {
         deep_spin.compute(dener, dforce, dforce_mag, dvirial, dcoord, dspin,
-                          dtype, dbox);
+                          dtype, dbox, vector<double>(), vector<double>(),
+                          charge_spin);
       } catch (deepmd_compat::deepmd_exception& e) {
         error->one(FLERR, e.what());
       }
@@ -552,6 +554,7 @@ static bool is_key(const string& input) {
   keys.push_back("aparam");
   keys.push_back("fparam_from_compute");
   keys.push_back("aparam_from_compute");
+  keys.push_back("charge_spin");
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
@@ -595,6 +598,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
     numb_types_spin = deep_spin.numb_types_spin();
     dim_fparam = deep_spin.dim_fparam();
     dim_aparam = deep_spin.dim_aparam();
+    dim_chg_spin = deep_spin.dim_chg_spin();
   } else {
     try {
       deep_spin.init(arg[0], get_node_rank(), get_file_content(arg[0]));
@@ -608,11 +612,13 @@ void PairDeepSpin::settings(int narg, char** arg) {
     numb_types_spin = deep_spin_model_devi.numb_types_spin();
     dim_fparam = deep_spin_model_devi.dim_fparam();
     dim_aparam = deep_spin_model_devi.dim_aparam();
+    dim_chg_spin = deep_spin_model_devi.dim_chg_spin();
     assert(cutoff == deep_spin.cutoff() * dist_unit_cvt_factor);
     assert(numb_types == deep_spin.numb_types());
     assert(numb_types_spin == deep_spin.numb_types_spin());
     assert(dim_fparam == deep_spin.dim_fparam());
     assert(dim_aparam == deep_spin.dim_aparam());
+    assert(dim_chg_spin == deep_spin.dim_chg_spin());
   }
 
   out_freq = 100;
@@ -622,6 +628,7 @@ void PairDeepSpin::settings(int narg, char** arg) {
   eps = 0.;
   fparam.clear();
   aparam.clear();
+  charge_spin.clear();
   while (iarg < narg) {
     if (!is_key(arg[iarg])) {
       error->all(FLERR,
@@ -661,6 +668,17 @@ void PairDeepSpin::settings(int narg, char** arg) {
         aparam.push_back(atof(arg[iarg + 1 + ii]));
       }
       iarg += 1 + dim_aparam;
+    } else if (string(arg[iarg]) == string("charge_spin")) {
+      for (int ii = 0; ii < dim_chg_spin; ++ii) {
+        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
+          char tmp[1024];
+          sprintf(tmp, "Illegal charge_spin, the dimension should be %d",
+                  dim_chg_spin);
+          error->all(FLERR, tmp);
+        }
+        charge_spin.push_back(atof(arg[iarg + 1 + ii]));
+      }
+      iarg += 1 + dim_chg_spin;
     } else if (string(arg[iarg]) == string("ttm")) {
 #ifdef USE_TTM
       for (int ii = 0; ii < 1; ++ii) {
@@ -708,25 +726,26 @@ void PairDeepSpin::settings(int narg, char** arg) {
       out_each = 1;
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal relative, not provided");
+      }
       out_rel = 1;
-      eps = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
+      eps = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
+            ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("relative_v")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal relative_v, not provided");
+      }
       out_rel_v = 1;
-      eps_v = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
+      eps_v = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
+              ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
-      virtual_len.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        virtual_len[ii] = atof(arg[iarg + ii + 1]);
-      }
-      iarg += numb_types_spin + 1;
+      parse_spin_vector_option(virtual_len, "virtual_len", iarg, narg, arg,
+                               is_key);
     } else if (string(arg[iarg]) == string("spin_norm")) {
-      spin_norm.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        spin_norm[ii] = atof(arg[iarg + ii + 1]);
-      }
-      iarg += numb_types_spin + 1;
+      parse_spin_vector_option(spin_norm, "spin_norm", iarg, narg, arg, is_key);
     }
   }
 
@@ -742,6 +761,22 @@ void PairDeepSpin::settings(int narg, char** arg) {
     error->all(
         FLERR,
         "fparam and fparam_from_compute should NOT be set simultaneously");
+  }
+
+  // A charge/spin condition named on the pair_style line holds for the whole
+  // run, so it is handed to the model once here instead of being resupplied
+  // every step.  This is also what lets a compressed model serve it at all:
+  // there the condition lives inside frozen tables, which are rebuilt here
+  // and cannot be rebuilt per step at a sensible cost.
+  if (!charge_spin.empty()) {
+    try {
+      deep_spin.set_charge_spin(charge_spin);
+      if (numb_models > 1) {
+        deep_spin_model_devi.set_charge_spin(charge_spin);
+      }
+    } catch (deepmd_compat::deepmd_exception& e) {
+      error->one(FLERR, e.what());
+    }
   }
 
   if (comm->me == 0) {

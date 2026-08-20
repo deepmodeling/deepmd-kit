@@ -48,6 +48,8 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
+    compact_nodes,
+    expand_node_values,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -269,6 +271,10 @@ def make_model(
                 check_frequency,
             )
 
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Delegates to the atomic model."""
+            return bool(self.atomic_model.compression_needs_min_nbor_dist())
+
         def call_common(
             self,
             coord: Array,
@@ -281,6 +287,7 @@ def make_model(
             charge_spin: Array | None = None,
             neighbor_list: NeighborList | None = None,
             neighbor_graph_method: str | None = None,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -308,6 +315,23 @@ def make_model(
             coord_corr_for_virial
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
+
+            charge_spin
+                Frame-level charge/spin FiLM conditioning, ``(nf, 2)`` or
+                ``None``. Both the dense (nlist) and NeighborGraph lowers
+                consume it (currently only DPA4/SeZM); the graph route no
+                longer forces this model onto dense (former ``cs -> dense``
+                gate removed) -- it threads through
+                ``_call_common_graph``/``call_lower_graph`` to the
+                descriptor's ``call_graph``, gated per-descriptor by
+                ``supports_charge_spin``.
+
+            spin
+                Per-local-atom spin, ``(nf, nloc, 3)``, or ``None``. Only the
+                NeighborGraph lower consumes it (native magnetic conditioning,
+                e.g. DPA4/SeZM); the dense (nlist) route has no spin support
+                and raises if ``spin`` is supplied without a graph
+                ``neighbor_graph_method``.
 
             neighbor_list
                 Neighbor-list construction strategy for the DENSE-nlist path
@@ -350,10 +374,15 @@ def make_model(
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, cs, input_prec = self._input_type_cast(
-                coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            cc, bb, fp, ap, cs, sp, input_prec = self._input_type_cast(
+                coord,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
             )
-            del coord, box, fparam, aparam, charge_spin
+            del coord, box, fparam, aparam, charge_spin, spin
             graph_method = self._resolve_graph_method(neighbor_graph_method)
             # ``neighbor_list`` is a DENSE-nlist strategy; the graph path cannot
             # consume it. Reject an explicit graph+nlist combination, and
@@ -367,10 +396,13 @@ def make_model(
                         "pass one or the other"
                     )
                 graph_method = None
-            # the graph lower does not consume charge_spin yet -> keep those
-            # models on dense (a None check, so it stays jit/export-safe)
-            if cs is not None:
-                graph_method = None
+            # model-level spin rides ONLY the NeighborGraph lower
+            if sp is not None and graph_method is None:
+                raise NotImplementedError(
+                    "model-level spin rides only the NeighborGraph lower; the "
+                    "dense (nlist) route has no spin support -- use a graph "
+                    "neighbor_graph_method"
+                )
             if graph_method is not None:
                 # carry-all NeighborGraph energy forward (Option B / decision #17)
                 model_predict = self._call_common_graph(
@@ -381,6 +413,8 @@ def make_model(
                     ap,
                     graph_method,
                     do_atomic_virial,
+                    spin=sp,
+                    charge_spin=cs,
                 )
             else:
                 # legacy dense-nlist path (builds the extended quartet)
@@ -400,7 +434,7 @@ def make_model(
                     charge_spin=cs,
                     neighbor_list=neighbor_list,
                     # exclusion is a nlist-BUILD transform (decision #18/A4)
-                    pair_excl=getattr(self.atomic_model, "pair_excl", None),
+                    pair_excl=self.atomic_model.pair_excl,
                 )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -445,6 +479,8 @@ def make_model(
             ap: Array | None,
             method: str,
             do_atomic_virial: bool = False,
+            spin: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             """Carry-all graph forward (opt-in, Option B).
 
@@ -469,6 +505,16 @@ def make_model(
                 the carry-all builder, ``"dense"`` or ``"ase"``.
             do_atomic_virial
                 whether to calculate the atomic virial.
+            spin
+                Per-local-atom spin, ``(nf, nloc, 3)``, or ``None``. Flattened
+                to the flat node axis ``(N, 3)`` and forwarded unchanged to
+                :meth:`call_lower_graph`.
+            charge_spin
+                Frame-level charge/spin conditioning, ``(nf, 2)`` or ``None``.
+                Unflattened (per-frame, not per-node) and forwarded unchanged
+                to :meth:`call_lower_graph`, whose ``n_node`` here is always
+                the rectangular ``full(nf, nloc)`` this method builds -- the
+                one shape the descriptor's per-frame FiLM division requires.
 
             Returns
             -------
@@ -477,9 +523,7 @@ def make_model(
                 (``<var>`` per-atom, ``<var>_redu`` reduced, derivative
                 name-holders ``None``, plus the int ``mask``).
             """
-            descriptor = getattr(self.atomic_model, "descriptor", None)
-            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            if not (self.mixed_types() and uses_graph_lower()):
+            if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
                 raise NotImplementedError(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
                     "graph lower (e.g. dpa1 attn_layer=0)"
@@ -489,7 +533,7 @@ def make_model(
             # is constructed, so the graph lower / exported ``.pt2`` consumes an
             # already-excluded ``edge_mask`` and never re-applies it. Mirrors the
             # pt_expt eager path and the C++ ``applyPairExclusion`` at build.
-            pair_excl = getattr(self.atomic_model, "pair_excl", None)
+            pair_excl = self.atomic_model.pair_excl
             if method == "dense":
                 ng = build_neighbor_graph(
                     cc, atype, bb, self.get_rcut(), pair_excl=pair_excl
@@ -505,12 +549,21 @@ def make_model(
                 )
             xp = array_api_compat.array_namespace(atype)
             nf, nloc = atype.shape[:2]
+            n_padded = nf * nloc
+            atype_flat = xp.reshape(atype, (n_padded,))
+            # A batch of unequal atom counts arrives padded to a common width
+            # with phantom atoms (atype < 0). The builders leave them out of
+            # every edge, so dropping them from the node axis costs nothing and
+            # spares the network from evaluating them. On a batch of uniform
+            # atom count the mask is all true and this is a renumbering by the
+            # identity.
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
             # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
             # derivative name-holders ``None``, plus int ``mask``), like the
             # dense ``call_common``.  ``call_lower_graph`` masks virtual atoms
             # (atype<0) and sets the real int mask.
             model_predict = self.call_lower_graph(
-                atype=xp.reshape(atype, (nf * nloc,)),
+                atype=xp.take(atype_flat, node_index, axis=0),
                 n_node=ng.n_node,
                 edge_index=ng.edge_index,
                 edge_vec=ng.edge_vec,
@@ -518,23 +571,38 @@ def make_model(
                 fparam=fp,
                 # graph-lower ABI: aparam is FLAT on the node axis, (N, nda).
                 aparam=(
-                    xp.reshape(ap, (nf * nloc, ap.shape[-1]))
+                    xp.take(
+                        xp.reshape(ap, (n_padded, ap.shape[-1])), node_index, axis=0
+                    )
                     if ap is not None
                     else None
                 ),
+                spin=(
+                    xp.take(xp.reshape(spin, (n_padded, 3)), node_index, axis=0)
+                    if spin is not None
+                    else None
+                ),
+                charge_spin=charge_spin,
             )
-            # Public ABI is rectangular (nf, nloc, *); the lower is flat
-            # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.
-            # public call_common always passes rectangular (nf,nloc) coord/atype (N == nf*nloc), so this unravel always applies; ragged graphs reach call_lower_graph/forward_common_lower_graph directly (no unravel) and stay flat (N,*).
+            # Public ABI is rectangular (nf, nloc, *); the lower is flat over
+            # the real atoms. Scatter per-atom keys back onto the padded width
+            # here at the boundary, where a phantom slot reads zero, which is
+            # what a masked-out atom contributed there before.
+            # Only the rectangular entry reaches this scatter; the ragged
+            # one keeps the flat axis its caller handed over.
+            n_real = node_index.shape[0]
             for k in list(model_predict.keys()):
                 v = model_predict[k]
                 # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
                 if (
                     v is not None
                     and not k.endswith("_redu")
-                    and v.shape[:1] == (nf * nloc,)
+                    and v.shape[:1] == (n_real,)
                 ):
-                    model_predict[k] = xp.reshape(v, (nf, nloc, *v.shape[1:]))
+                    model_predict[k] = xp.reshape(
+                        expand_node_values(v, node_index, n_padded),
+                        (nf, nloc, *v.shape[1:]),
+                    )
             return model_predict
 
         def call_common_lower(
@@ -594,7 +662,7 @@ def make_model(
                 nlist,
                 extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             )
-            cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
+            cc_ext, _, fp, ap, cs, _, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             del extended_coord, fparam, aparam, charge_spin
@@ -656,6 +724,7 @@ def make_model(
             aparam: Array | None = None,
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Model-level graph forward (no type cast). Analogue of the dense
             :meth:`forward_common_atomic`.
@@ -694,6 +763,10 @@ def make_model(
                 Optional MPI communication metadata.
             charge_spin
                 Charge/spin conditioning.
+            spin
+                Per-node spin vectors, flat (N, 3), or ``None``. Forwarded
+                unchanged to the atomic model's ``forward_common_atomic_graph``
+                (and, from there, the descriptor's ``call_graph``).
 
             Returns
             -------
@@ -710,7 +783,12 @@ def make_model(
                 n_local=n_local,
             )
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
-                graph, atype, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+                graph,
+                atype,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
             )
             return fit_output_to_model_output_graph(
                 atomic_ret,
@@ -732,6 +810,7 @@ def make_model(
             aparam: Array | None = None,
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
+            spin: Array | None = None,
         ) -> dict[str, Array]:
             """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
@@ -769,14 +848,22 @@ def make_model(
                 Optional MPI communication metadata.
             charge_spin
                 Charge/spin conditioning.
+            spin
+                Per-node spin vectors, flat (N, 3), or ``None``. Cast to the
+                model precision alongside the other node inputs and forwarded
+                unchanged to :meth:`forward_common_atomic_graph`.
 
             Returns
             -------
             dict
                 The standard model dict in the INPUT precision.
             """
-            edge_vec, _, fparam, aparam, cs, input_prec = self._input_type_cast(
-                edge_vec, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+            edge_vec, _, fparam, aparam, cs, sp, input_prec = self._input_type_cast(
+                edge_vec,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
             )
             model_predict = self.forward_common_atomic_graph(
                 atype,
@@ -789,6 +876,7 @@ def make_model(
                 aparam=aparam,
                 comm_dict=comm_dict,
                 charge_spin=cs,
+                spin=sp,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -852,7 +940,16 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             charge_spin: Array | None = None,
-        ) -> tuple[Array, Array | None, Array | None, Array | None, Array | None, Any]:
+            spin: Array | None = None,
+        ) -> tuple[
+            Array,
+            Array | None,
+            Array | None,
+            Array | None,
+            Array | None,
+            Array | None,
+            Any,
+        ]:
             """Cast the input data to global float type."""
             xp = array_api_compat.array_namespace(coord)
             input_dtype = coord.dtype
@@ -864,11 +961,11 @@ def make_model(
             ###
             _lst: list[Array | None] = [
                 xp.astype(vv, input_dtype) if vv is not None else None
-                for vv in [box, fparam, aparam, charge_spin]
+                for vv in [box, fparam, aparam, charge_spin, spin]
             ]
-            box, fparam, aparam, charge_spin = _lst
+            box, fparam, aparam, charge_spin, spin = _lst
             if input_dtype == global_dtype:
-                return coord, box, fparam, aparam, charge_spin, input_dtype
+                return coord, box, fparam, aparam, charge_spin, spin, input_dtype
             else:
                 return (
                     xp.astype(coord, global_dtype),
@@ -878,6 +975,7 @@ def make_model(
                     xp.astype(charge_spin, global_dtype)
                     if charge_spin is not None
                     else None,
+                    xp.astype(spin, global_dtype) if spin is not None else None,
                     input_dtype,
                 )
 
@@ -1060,10 +1158,6 @@ def make_model(
         def get_dim_chg_spin(self) -> int:
             """Get the dimension of charge_spin input."""
             return self.atomic_model.get_dim_chg_spin()
-
-        def has_default_chg_spin(self) -> bool:
-            """Check if the model has default charge_spin values."""
-            return self.atomic_model.has_default_chg_spin()
 
         def get_default_chg_spin(self) -> list[float] | None:
             """Get the default charge_spin values."""

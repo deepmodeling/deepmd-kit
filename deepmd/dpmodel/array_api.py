@@ -11,6 +11,10 @@ from packaging.version import (
     Version,
 )
 
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
+
 # Type alias for array_api compatible arrays
 Array = np.ndarray | Any  # Any to support JAX, PyTorch, etc. arrays
 
@@ -27,22 +31,28 @@ def xp_asarray_nodetach(
     ``torch.asarray`` detaches its input from the autograd graph, so calling
     ``xp.asarray`` on a weight attribute that is already a backend tensor
     (e.g. a ``torch.nn.Parameter`` registered by the pt_expt backend)
-    silently breaks gradient flow to that weight.  This helper converts
-    genuine non-backend data (numpy arrays, python scalars/lists) via
-    ``xp.asarray``; backend tensors are returned as-is, with an optional
-    differentiable dtype cast via ``xp.astype``.
+    silently breaks gradient flow to that weight. Backend tensors already in
+    ``xp`` are therefore returned as-is, with an optional differentiable dtype
+    cast via ``xp.astype``.
 
-    The ``device`` argument only applies to the conversion path: backend
-    tensors are assumed to already live on the working device (they are
-    created together with the inputs).
+    An array from another namespace cannot retain its autograd graph. It is
+    converted through NumPy before entering ``xp``; this also performs the
+    required device-to-host copy when a CUDA-backed model constant is consumed
+    by a NumPy statistics path.
+
+    The ``device`` argument only applies to the conversion path. Arrays already
+    in ``xp`` are assumed to live on the working device because model buffers
+    and inputs are moved together.
     """
-    if isinstance(obj, np.ndarray) or not array_api_compat.is_array_api_obj(obj):
-        if dtype is None:
-            return xp.asarray(obj, device=device)
-        return xp.asarray(obj, dtype=dtype, device=device)
-    if dtype is not None and obj.dtype != dtype:
-        obj = xp.astype(obj, dtype)
-    return obj
+    if array_api_compat.is_array_api_obj(obj):
+        if array_api_compat.array_namespace(obj) is xp:
+            if dtype is not None and obj.dtype != dtype:
+                obj = xp.astype(obj, dtype)
+            return obj
+        obj = to_numpy_array(obj)
+    if dtype is None:
+        return xp.asarray(obj, device=device)
+    return xp.asarray(obj, dtype=dtype, device=device)
 
 
 # array api adds take_along_axis in https://github.com/data-apis/array-api/pull/816
@@ -201,6 +211,22 @@ def xp_add_at(x: Array, indices: Array, values: Array) -> Array:
         import torch
 
         return torch.index_add(x, 0, indices, values)
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
+        values_tensor = values.unwrap()
+        # unsorted_segment_sum rather than scatter_nd: both accumulate repeated
+        # indices, but scatter_nd rejects a destination with no elements even
+        # when the updates are empty too, which a descriptor call with zero
+        # edges legitimately produces.
+        updates = tf.math.unsorted_segment_sum(
+            values_tensor,
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        return xp.asarray(x_tensor + updates)
     else:
         # Fallback for array_api_strict: use basic indexing only
         # may need a more efficient way to do this
@@ -270,6 +296,52 @@ def xp_maximum_at(x: Array, indices: Array, values: Array) -> Array:
         return torch.scatter_reduce(
             x, 0, index, values, reduce="amax", include_self=True
         )
+    elif getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        x_tensor = x.unwrap()
+        indices_tensor = tf.reshape(tf.cast(indices.unwrap(), tf.int64), (-1,))
+        values_tensor = values.unwrap()
+        reduced = tf.math.unsorted_segment_max(
+            values_tensor,
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        if values_tensor.dtype.is_floating:
+            # TensorFlow uses the lowest finite value as the identity of
+            # unsorted_segment_max. Restore the true maximum-at identity when
+            # every update for a touched segment element is negative infinity.
+            all_negative_infinity = (
+                tf.math.unsorted_segment_min(
+                    tf.cast(
+                        tf.math.is_inf(values_tensor) & (values_tensor < 0),
+                        tf.int32,
+                    ),
+                    indices_tensor,
+                    tf.shape(x_tensor, out_type=tf.int64)[0],
+                )
+                > 0
+            )
+            reduced = tf.where(
+                all_negative_infinity,
+                tf.cast(float("-inf"), values_tensor.dtype),
+                reduced,
+            )
+        segment_counts = tf.math.unsorted_segment_sum(
+            tf.ones_like(indices_tensor, dtype=tf.int32),
+            indices_tensor,
+            tf.shape(x_tensor, out_type=tf.int64)[0],
+        )
+        touched = segment_counts > 0
+        touched_shape = tf.concat(
+            [
+                tf.reshape(tf.shape(x_tensor, out_type=tf.int64)[0], (1,)),
+                tf.ones(tf.rank(x_tensor) - 1, dtype=tf.int64),
+            ],
+            axis=0,
+        )
+        touched = tf.reshape(touched, touched_shape)
+        return xp.asarray(tf.where(touched, tf.maximum(x_tensor, reduced), x_tensor))
     else:
         # Fallback for array_api_strict: basic indexing only.
         n = indices.shape[0]
@@ -332,6 +404,59 @@ def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     # Standard item assignment for NumPy, array-api-strict, etc.
     x[mask] = values
     return x
+
+
+def xp_uniform(like: Array, size: int, low: float = 0.0, high: float = 1.0) -> Array:
+    """Draw ``size`` uniform samples in ``[low, high)`` on ``like``'s device.
+
+    Each backend uses its own generator: TensorFlow draws with
+    ``tf.random.uniform`` so traced graphs advance the runtime RNG, torch draws
+    with ``torch.rand`` (so ``setup_seed`` replays it without a host copy), and
+    other backends use :mod:`deepmd.utils.random`. Draws are therefore not
+    comparable across backends -- use only for a per-forward random stream,
+    never where a parity test looks.
+
+    Parameters
+    ----------
+    like : Array
+        Reference array supplying backend, dtype and device.
+    size : int
+        Number of samples to draw.
+    low : float
+        Lower bound of the interval.
+    high : float
+        Upper bound of the interval, exclusive.
+
+    Returns
+    -------
+    Array
+        Samples of shape ``(size,)`` matching ``like``.
+    """
+    xp = array_api_compat.array_namespace(like)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        sample_shape = tf.reshape(tf.cast(size, tf.int32), (1,))
+        samples = tf.random.uniform(
+            sample_shape,
+            minval=low,
+            maxval=high,
+            dtype=like.dtype,
+        )
+        return xp.asarray(samples)
+    if array_api_compat.is_torch_array(like):
+        import torch
+
+        return (
+            torch.rand(size, dtype=like.dtype, device=like.device) * (high - low) + low
+        )
+    from deepmd.utils import random as dp_random
+
+    drawn = np.asarray(dp_random.random(size)) * (high - low) + low
+    return xp.astype(
+        xp_asarray_nodetach(xp, drawn, device=array_api_compat.device(like)),
+        like.dtype,
+    )
 
 
 def xp_bincount(x: Array, weights: Array | None = None, minlength: int = 0) -> Array:

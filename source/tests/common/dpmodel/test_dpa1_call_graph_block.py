@@ -19,7 +19,7 @@ from deepmd.dpmodel.utils.nlist import (
 
 
 class TestDpa1BlockCallGraph:
-    def _make(self, sel, type_one_side=False):
+    def _make(self, sel, type_one_side=False, lmax=1):
         return DescrptDPA1(
             rcut=4.0,
             rcut_smth=0.5,
@@ -29,6 +29,7 @@ class TestDpa1BlockCallGraph:
             axis_neuron=2,
             neuron=[6, 12],
             type_one_side=type_one_side,
+            lmax=lmax,
         )
 
     def setup_method(self) -> None:
@@ -39,14 +40,15 @@ class TestDpa1BlockCallGraph:
 
     @pytest.mark.parametrize("type_one_side", [False, True])  # tebd concat branch
     @pytest.mark.parametrize("sel", [[20], [3]])  # non-binding AND binding
-    def test_block_graph_equals_dense_any_sel(self, sel, type_one_side) -> None:
+    @pytest.mark.parametrize("lmax", [1, 2, 3, 4])
+    def test_block_graph_equals_dense_any_sel(self, sel, type_one_side, lmax) -> None:
         """Graph block output is bit-exact with the dense block on the same nlist.
 
         ``type_one_side`` toggles the concat branch in the block: when True the
         per-edge feature concatenates only the NEIGHBOR tebd (no center tebd),
         so both the graph and dense paths must agree for either branch.
         """
-        dd = self._make(sel, type_one_side=type_one_side)
+        dd = self._make(sel, type_one_side=type_one_side, lmax=lmax)
         blk = dd.se_atten
         # build the dense nlist exactly as the descriptor would
         (
@@ -180,7 +182,13 @@ class TestDpa1BlockCallGraphStrip:
         self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
         self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
 
-    def _make(self, type_one_side: bool, smooth: bool, attn_layer: int) -> DescrptDPA1:
+    def _make(
+        self,
+        type_one_side: bool,
+        smooth: bool,
+        attn_layer: int,
+        lmax: int = 1,
+    ) -> DescrptDPA1:
         return DescrptDPA1(
             rcut=4.0,
             rcut_smth=0.5,
@@ -192,6 +200,7 @@ class TestDpa1BlockCallGraphStrip:
             tebd_input_mode="strip",
             type_one_side=type_one_side,
             smooth_type_embedding=smooth,
+            lmax=lmax,
         )
 
     def _assert_parity(self, dd: DescrptDPA1, compact: bool) -> None:
@@ -240,9 +249,10 @@ class TestDpa1BlockCallGraphStrip:
         "type_one_side", [False, True]
     )  # two-side vs one-side strip table
     @pytest.mark.parametrize("smooth", [False, True])  # gg_t switch-smoothing branch
-    def test_strip_attn0_equals_dense(self, type_one_side, smooth) -> None:
+    @pytest.mark.parametrize("lmax", [1, 2, 3, 4])
+    def test_strip_attn0_equals_dense(self, type_one_side, smooth, lmax) -> None:
         """attn_layer=0: no attention, so strip parity is bit-exact for both smooth values."""
-        dd = self._make(type_one_side, smooth, attn_layer=0)
+        dd = self._make(type_one_side, smooth, attn_layer=0, lmax=lmax)
         self._assert_parity(dd, compact=True)
 
     @pytest.mark.parametrize(
@@ -252,3 +262,29 @@ class TestDpa1BlockCallGraphStrip:
         """attn_layer=2, smooth=False: bit-exact (avoids by-design smooth softmax divergence)."""
         dd = self._make(type_one_side, smooth=False, attn_layer=2)
         self._assert_parity(dd, compact=False)
+
+    def test_virtual_center_uses_real_type_for_graph_statistics(self) -> None:
+        """Graph normalization clamps virtual centers before real-only stats."""
+        dd = self._make(type_one_side=True, smooth=False, attn_layer=0)
+        dd.se_atten.mean[0, :, :] = 0.25
+        dd.se_atten.mean[1, :, :] = -0.5
+        coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]])
+        nlist = np.array([[[1, -1], [0, -1]]], dtype=np.int64)
+        mapping = np.array([[0, 1]], dtype=np.int64)
+        graph = from_dense_quartet(coord, nlist, mapping, compact=False)
+        type_embedding = dd.type_embedding.call()
+
+        actual, _ = dd.se_atten.call_graph(
+            graph,
+            np.array([-1, 1], dtype=np.int64),
+            type_embedding=type_embedding,
+        )
+        expected, _ = dd.se_atten.call_graph(
+            graph,
+            np.array([0, 1], dtype=np.int64),
+            type_embedding=type_embedding,
+        )
+
+        self_value = actual[0]
+        assert np.isfinite(self_value).all()
+        np.testing.assert_allclose(self_value, expected[0])

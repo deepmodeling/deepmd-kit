@@ -25,6 +25,7 @@
 #include "neighbor.h"
 #include "output.h"
 #include "update.h"
+#include "utils.h"
 #if LAMMPS_VERSION_NUMBER >= 20210831
 // in lammps #2902, fix_ttm members turns from private to protected
 #define USE_TTM 1
@@ -826,25 +827,26 @@ void PairDeepMD::settings(int narg, char** arg) {
       out_each = 1;
       iarg += 1;
     } else if (string(arg[iarg]) == string("relative")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal relative, not provided");
+      }
       out_rel = 1;
-      eps = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
+      eps = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
+            ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("relative_v")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR, "Illegal relative_v, not provided");
+      }
       out_rel_v = 1;
-      eps_v = atof(arg[iarg + 1]) / ener_unit_cvt_factor;
+      eps_v = utils::numeric(FLERR, arg[iarg + 1], false, lmp) /
+              ener_unit_cvt_factor;
       iarg += 2;
     } else if (string(arg[iarg]) == string("virtual_len")) {
-      virtual_len.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        virtual_len[ii] = atof(arg[iarg + ii + 1]);
-      }
-      iarg += numb_types_spin + 1;
+      parse_spin_vector_option(virtual_len, "virtual_len", iarg, narg, arg,
+                               is_key);
     } else if (string(arg[iarg]) == string("spin_norm")) {
-      spin_norm.resize(numb_types_spin);
-      for (int ii = 0; ii < numb_types_spin; ++ii) {
-        spin_norm[ii] = atof(arg[iarg + ii + 1]);
-      }
-      iarg += numb_types_spin + 1;
+      parse_spin_vector_option(spin_norm, "spin_norm", iarg, narg, arg, is_key);
     }
   }
 
@@ -869,6 +871,22 @@ void PairDeepMD::settings(int narg, char** arg) {
     error->all(FLERR,
                "fparam_from_compute and fparam_from_fix should NOT be set "
                "simultaneously");
+  }
+
+  // A charge/spin condition named on the pair_style line holds for the whole
+  // run, so it is handed to the model once here instead of being resupplied
+  // every step.  This is also what lets a compressed model serve it at all:
+  // there the condition lives inside frozen tables, which are rebuilt here
+  // and cannot be rebuilt per step at a sensible cost.
+  if (!charge_spin.empty()) {
+    try {
+      deep_pot.set_charge_spin(charge_spin);
+      if (numb_models > 1) {
+        deep_pot_model_devi.set_charge_spin(charge_spin);
+      }
+    } catch (deepmd_compat::deepmd_exception& e) {
+      error->one(FLERR, e.what());
+    }
   }
 
   if (comm->me == 0) {

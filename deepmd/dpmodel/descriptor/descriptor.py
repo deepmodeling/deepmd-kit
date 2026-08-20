@@ -37,6 +37,12 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     local_cluster = False
 
+    # Stat-behavior flags with concrete defaults so stat machinery can read
+    # them on any block without getattr probes; blocks that configure them
+    # assign instance attributes in __init__ (issue #5897).
+    set_davg_zero: bool = False
+    set_stddev_constant: bool = False
+
     def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         if cls is DescriptorBlock:
             try:
@@ -109,6 +115,37 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
         raise NotImplementedError
+
+    def set_stat_mean_and_stddev(
+        self,
+        mean: Array,
+        stddev: Array,
+    ) -> None:
+        """Update the normalization arrays of the descriptor block.
+
+        Parameters
+        ----------
+        mean
+            Mean of the environment matrix.
+        stddev
+            Standard deviation of the environment matrix.
+
+        Returns
+        -------
+        None
+        """
+        self["davg"] = mean
+        self["dstd"] = stddev
+
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
+        """Return the normalization arrays of the descriptor block.
+
+        Returns
+        -------
+        tuple[Array, Array]
+            Mean and standard deviation of the environment matrix.
+        """
+        return self["davg"], self["dstd"]
 
     def share_params(
         self, base_class: Any, shared_level: Any, resume: bool = False

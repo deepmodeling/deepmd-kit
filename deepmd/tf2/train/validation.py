@@ -13,7 +13,6 @@ from typing import (
 import numpy as np
 
 from deepmd.dpmodel.train.validation import (
-    LOG_COLUMN_ORDER,
     FullValidatorBase,
 )
 from deepmd.tf2.common import (
@@ -76,7 +75,7 @@ class TF2FullValidator(FullValidatorBase):
         aggregated = weighted_average([metric for metric in system_metrics if metric])
         return {
             metric_key: float(aggregated[metric_key])
-            for _, metric_key in LOG_COLUMN_ORDER
+            for metric_key, _, _ in self.table_column_specs
             if metric_key in aggregated
         }
 

@@ -13,7 +13,14 @@ from deepmd.dpmodel.loss.loss import (
 )
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
+    masked_pair_mean,
     per_frame_component_mean,
+)
+from deepmd.dpmodel.utils.neighbor_graph.graph import (
+    frame_id_from_n_node,
+)
+from deepmd.dpmodel.utils.neighbor_graph.segment import (
+    segment_sum,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -24,6 +31,15 @@ from deepmd.utils.loss import (
 from deepmd.utils.version import (
     check_version_compatibility,
 )
+
+
+def _huber_from_residual(residual: Array, delta: float = 1.0) -> Array:
+    xp = array_api_compat.array_namespace(residual)
+    abs_error = xp.abs(residual)
+    quadratic_loss = 0.5 * residual**2
+    linear_loss = delta * (abs_error - 0.5 * delta)
+    loss = xp.where(abs_error <= delta, quadratic_loss, linear_loss)
+    return xp.mean(loss)
 
 
 def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) -> Array:
@@ -38,13 +54,7 @@ def custom_huber_loss(predictions: Array, targets: Array, delta: float = 1.0) ->
        \delta(|e|-\tfrac12\delta),& |e|>\delta.
        \end{cases}
     """
-    xp = array_api_compat.array_namespace(predictions, targets)
-    error = targets - predictions
-    abs_error = xp.abs(error)
-    quadratic_loss = 0.5 * error**2
-    linear_loss = delta * (abs_error - 0.5 * delta)
-    loss = xp.where(abs_error <= delta, quadratic_loss, linear_loss)
-    return xp.mean(loss)
+    return _huber_from_residual(targets - predictions, delta)
 
 
 class EnergyLoss(Loss):
@@ -107,6 +117,10 @@ class EnergyLoss(Loss):
         The prefactor of generalized force loss at the end of the training.
     numb_generalized_coord : int
         The dimension of generalized coordinates.
+    start_pref_h : float
+        The prefactor of Hessian loss at the start of the training.
+    limit_pref_h : float
+        The prefactor of Hessian loss at the end of the training.
     use_default_pf : bool
         If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided.
         This allows using the prefactor force loss (pf) without requiring atom_pref.npy files.
@@ -159,6 +173,8 @@ class EnergyLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
         use_huber: bool = False,
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
@@ -191,12 +207,15 @@ class EnergyLoss(Loss):
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
         self.numb_generalized_coord = numb_generalized_coord
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_f = self.start_pref_f != 0.0 or self.limit_pref_f != 0.0
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
         self.has_pf = self.start_pref_pf != 0.0 or self.limit_pref_pf != 0.0
         self.has_gf = self.start_pref_gf != 0.0 or self.limit_pref_gf != 0.0
+        self.has_h = self.start_pref_h != 0.0 or self.limit_pref_h != 0.0
         if self.has_gf and self.numb_generalized_coord < 1:
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
@@ -219,8 +238,15 @@ class EnergyLoss(Loss):
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
             raise RuntimeError(
-                "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
+                "Huber loss is not implemented for force with atom_pref, generalized force and relative force."
             )
+        if self.use_huber and self.has_h:
+            raise RuntimeError("Huber loss is not implemented for hessian.")
+
+    @property
+    def supports_ragged_batches(self) -> bool:
+        """Whether the configured terms accept a flat per-node batch axis."""
+        return not (self.has_gf or self.has_h)
 
     def call(
         self,
@@ -241,45 +267,78 @@ class EnergyLoss(Loss):
         including all enabled prefactors and any configured Huber terms.
         """
         energy = model_dict["energy"]
-        force = model_dict["force"]
-        virial = model_dict["virial"]
-        atom_ener = model_dict["atom_energy"]
-        energy_hat = label_dict["energy"]
-        force_hat = label_dict["force"]
-        virial_hat = label_dict["virial"]
-        atom_ener_hat = label_dict["atom_ener"]
-        atom_pref = label_dict["atom_pref"]
-        find_energy = label_dict["find_energy"]
-        find_force = label_dict["find_force"]
-        find_virial = label_dict["find_virial"]
-        find_atom_ener = label_dict["find_atom_ener"]
-        find_atom_pref = (
-            label_dict["find_atom_pref"] if not self.use_default_pf else 1.0
-        )
-        xp = array_api_compat.array_namespace(
-            energy,
-            force,
-            virial,
-            atom_ener,
-            energy_hat,
-            force_hat,
-            virial_hat,
-            atom_ener_hat,
-            atom_pref,
-        )
+        xp = array_api_compat.array_namespace(energy)
 
-        # Per-frame mask: recover real-atom count per frame when mask is provided.
-        # maskf[nf, nloc] = 1.0 for real atoms, 0.0 for ghosts.
-        if "mask" in model_dict:
-            maskf = xp.astype(model_dict["mask"], energy.dtype)  # [nf, nloc]
-            real_natoms = xp.sum(maskf, axis=-1)  # [nf]
-            inv = xp.reshape(1.0 / real_natoms, (-1,))  # [nf]
-            _nf = maskf.shape[0]
+        force_required = (
+            self.has_f or self.has_pf or self.relative_f is not None or self.has_gf
+        )
+        if self.has_e:
+            energy_hat = label_dict["energy"]
+            find_energy = label_dict["find_energy"]
+        if force_required:
+            force = model_dict["force"]
+            force_hat = label_dict["force"]
+            find_force = label_dict["find_force"]
+        if self.has_v:
+            virial = model_dict["virial"]
+            virial_hat = label_dict["virial"]
+            find_virial = label_dict["find_virial"]
+        if self.has_ae:
+            atom_ener = model_dict["atom_energy"]
+            atom_ener_hat = label_dict["atom_ener"]
+            find_atom_ener = label_dict["find_atom_ener"]
+        if self.has_pf:
+            atom_pref = label_dict["atom_pref"]
+            find_atom_pref = (
+                label_dict["find_atom_pref"] if not self.use_default_pf else 1.0
+            )
+
+        # Two things about a batch decide how its terms reduce, and the node
+        # axis states them differently.
+        #
+        # ``inv``, the reciprocal included-atom count of each frame, is what
+        # the extensive frame-level terms (energy, virial) divide by.
+        # ``maskf`` marks both padded rows and model-excluded atom types for
+        # the per-atom terms. A rectangular batch carries a two-dimensional
+        # mask whose row sums give the counts. A ragged batch carries the same
+        # information on its flat node axis, with ``n_node`` defining the
+        # frame segments.
+        maskf = (
+            xp.astype(model_dict["mask"], energy.dtype)
+            if "mask" in model_dict
+            else None
+        )
+        is_ragged = "n_node" in model_dict
+        frame_id = None
+        included_n_node = None
+        inv = None
+        if is_ragged:
+            n_node = model_dict["n_node"]
+            _nf = n_node.shape[0]
+            if maskf is None:
+                included_n_node = xp.astype(n_node, energy.dtype)
+            else:
+                frame_id = frame_id_from_n_node(n_node, n_total=maskf.shape[0])
+                included_n_node = segment_sum(xp.reshape(maskf, (-1,)), frame_id, _nf)
+        elif maskf is not None:
+            included_n_node = xp.reshape(xp.sum(maskf, axis=-1), (-1,))
             _nloc = maskf.shape[1]
-        else:
-            # inv, _nf, _nloc are only read inside ``if maskf is not None`` guards,
-            # so leaving them unset here is safe (and avoids dead-store warnings).
-            maskf = None
+        if included_n_node is not None:
+            has_included_node = included_n_node > 0
+            safe_included_n_node = xp.where(
+                has_included_node,
+                included_n_node,
+                xp.ones_like(included_n_node),
+            )
+            inv = xp.where(
+                has_included_node,
+                1.0 / safe_included_n_node,
+                xp.zeros_like(included_n_node),
+            )
+        if maskf is not None:
+            _node_shape = maskf.shape
+        if inv is not None:
+            _nf = inv.shape[0]
 
         if self.enable_atom_ener_coeff:
             # when ener_coeff (\nu) is defined, the energy is defined as
@@ -290,10 +349,17 @@ class EnergyLoss(Loss):
             # A + B -> C + D
             # E = - E(A) - E(B) + E(C) + E(D)
             # A, B, C, D could be put far away from each other
+            atom_ener = model_dict["atom_energy"]
             atom_ener_coeff = label_dict["atom_ener_coeff"]
             atom_ener_coeff = xp.reshape(atom_ener_coeff, atom_ener.shape)
-            energy = xp.sum(atom_ener_coeff * atom_ener, axis=1)
-        if self.has_f or self.has_pf or self.relative_f or self.has_gf:
+            weighted_atom_ener = atom_ener_coeff * atom_ener
+            if is_ragged:
+                if frame_id is None:
+                    frame_id = frame_id_from_n_node(n_node, n_total=atom_ener.shape[0])
+                energy = segment_sum(weighted_atom_ener, frame_id, _nf)
+            else:
+                energy = xp.sum(weighted_atom_ener, axis=1)
+        if force_required:
             force_reshape = xp.reshape(force, (-1,))
             force_hat_reshape = xp.reshape(force_hat, (-1,))
             diff_f = force_hat_reshape - force_reshape
@@ -313,21 +379,33 @@ class EnergyLoss(Loss):
         atom_norm = 1.0 / natoms
         atom_norm_ener = 1.0 / natoms
         lr_ratio = learning_rate / self.starter_learning_rate
-        pref_e = find_energy * (
-            self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * lr_ratio
-        )
-        pref_f = find_force * (
-            self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * lr_ratio
-        )
-        pref_v = find_virial * (
-            self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * lr_ratio
-        )
-        pref_ae = find_atom_ener * (
-            self.limit_pref_ae + (self.start_pref_ae - self.limit_pref_ae) * lr_ratio
-        )
-        pref_pf = find_atom_pref * (
-            self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
-        )
+        if self.has_e:
+            pref_e = find_energy * (
+                self.limit_pref_e + (self.start_pref_e - self.limit_pref_e) * lr_ratio
+            )
+        if self.has_f:
+            pref_f = find_force * (
+                self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * lr_ratio
+            )
+        if self.has_v:
+            pref_v = find_virial * (
+                self.limit_pref_v + (self.start_pref_v - self.limit_pref_v) * lr_ratio
+            )
+        if self.has_ae:
+            pref_ae = find_atom_ener * (
+                self.limit_pref_ae
+                + (self.start_pref_ae - self.limit_pref_ae) * lr_ratio
+            )
+        if self.has_pf:
+            effective_find_pf = find_force * find_atom_pref
+            pref_pf = effective_find_pf * (
+                self.limit_pref_pf
+                + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
+            )
+        if self.has_h:
+            pref_h = (
+                self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * lr_ratio
+            )
 
         loss = 0
         more_loss = {}
@@ -338,7 +416,7 @@ class EnergyLoss(Loss):
         if self.has_e:
             if self.loss_func == "mse":
                 l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
-                if maskf is not None:
+                if inv is not None:
                     # Idiom 2 (extensive): per-frame normalization by real-atom count.
                     se = xp.square(energy - energy_hat)  # [nf, k]
                     per_frame = per_frame_component_mean(se)  # [nf]
@@ -370,7 +448,7 @@ class EnergyLoss(Loss):
                     )
             elif self.loss_func == "mae":
                 l1_ener_loss = xp.mean(xp.abs(energy - energy_hat))
-                if maskf is not None:
+                if inv is not None:
                     abs_e = xp.abs(energy - energy_hat)  # [nf, k]
                     per_frame_ae = per_frame_component_mean(abs_e)  # [nf]
                     l1_ener_masked = xp.mean(per_frame_ae * inv)
@@ -388,7 +466,7 @@ class EnergyLoss(Loss):
                     f"Loss type {self.loss_func} is not implemented for energy loss."
                 )
             if mae:
-                if maskf is not None:
+                if inv is not None:
                     per_frame_ae = per_frame_component_mean(xp.abs(energy - energy_hat))
                     mae_e = xp.mean(per_frame_ae * inv)
                 else:
@@ -401,13 +479,17 @@ class EnergyLoss(Loss):
                 l2_force_loss = xp.mean(xp.square(diff_f))
                 if maskf is not None:
                     # Idiom 1 (per-atom masked mean, ncomp=3).
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))  # [nf, nloc, 3]
-                    maskf_col = xp.reshape(maskf, (_nf, _nloc, 1))  # [nf, nloc, 1]
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
                     # Masked MSE computed for rmse_f display regardless of use_huber.
                     l2_force_masked = masked_atom_mean(xp.square(diff_f_3d), maskf, 3)
                     if not self.use_huber:
                         loss += pref_f * l2_force_masked
                     else:
+                        # ``f_use_norm`` selects the residual an atom
+                        # contributes: three independent components, or the
+                        # single L2 norm of its force-error vector. That choice
+                        # sets the label count per atom, which is exactly the
+                        # ``ncomp`` the pooled reduction divides by.
                         if not self.f_use_norm:
                             abs_e = xp.abs(diff_f_3d)
                             quad = 0.5 * xp.square(diff_f_3d)
@@ -416,33 +498,30 @@ class EnergyLoss(Loss):
                             )
                             huber_elem = xp.where(
                                 abs_e <= self._huber_delta_force, quad, lin
-                            )
-                            huber_masked = huber_elem * maskf_col
+                            )  # [nf, nloc, 3]
+                            huber_ncomp = 3
                         else:
-                            diff_3 = xp.reshape(force_hat - force, (_nf, _nloc, 3))
                             norm_2d = xp.reshape(
                                 xp.linalg.vector_norm(
-                                    xp.reshape(diff_3, (-1, 3)), axis=1
+                                    xp.reshape(diff_f_3d, (-1, 3)), axis=1
                                 ),
-                                (_nf, _nloc),
+                                _node_shape,
                             )
                             abs_n = norm_2d
                             quad_n = 0.5 * xp.square(norm_2d)
                             lin_n = self._huber_delta_force * (
                                 abs_n - 0.5 * self._huber_delta_force
                             )
-                            huber_n = xp.where(
-                                abs_n <= self._huber_delta_force, quad_n, lin_n
+                            huber_elem = xp.reshape(
+                                xp.where(
+                                    abs_n <= self._huber_delta_force, quad_n, lin_n
+                                ),
+                                (*_node_shape, 1),
                             )
-                            huber_masked = xp.reshape(huber_n * maskf, (_nf, _nloc, 1))
-                        per_frame_sum = xp.sum(
-                            xp.reshape(huber_masked, (_nf, -1)), axis=-1
+                            huber_ncomp = 1
+                        l_huber_masked = masked_atom_mean(
+                            huber_elem, maskf, huber_ncomp
                         )
-                        if not self.f_use_norm:
-                            per_frame_dof = xp.sum(maskf, axis=-1) * 3
-                        else:
-                            per_frame_dof = xp.sum(maskf, axis=-1)
-                        l_huber_masked = xp.mean(per_frame_sum / per_frame_dof)
                         loss += pref_f * l_huber_masked
                     more_loss["rmse_f"] = self.display_if_exist(
                         xp.sqrt(l2_force_masked), find_force
@@ -452,19 +531,17 @@ class EnergyLoss(Loss):
                         loss += pref_f * l2_force_loss
                     else:
                         if not self.f_use_norm:
-                            l_huber_loss = custom_huber_loss(
-                                xp.reshape(force, (-1,)),
-                                xp.reshape(force_hat, (-1,)),
+                            l_huber_loss = _huber_from_residual(
+                                diff_f,
                                 delta=self._huber_delta_force,
                             )
                         else:
-                            force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                            force_diff_3 = xp.reshape(diff_f, (-1, 3))
                             force_diff_norm = xp.reshape(
                                 xp.linalg.vector_norm(force_diff_3, axis=1), (-1, 1)
                             )
-                            l_huber_loss = custom_huber_loss(
+                            l_huber_loss = _huber_from_residual(
                                 force_diff_norm,
-                                xp.zeros_like(force_diff_norm),
                                 delta=self._huber_delta_force,
                             )
                         loss += pref_f * l_huber_loss
@@ -473,19 +550,20 @@ class EnergyLoss(Loss):
                     )
             elif self.loss_func == "mae":
                 if maskf is not None:
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
                     if not self.f_use_norm:
                         l1_force_masked = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                     else:
-                        diff_3 = xp.reshape(force_hat - force, (_nf, _nloc, 3))
                         norm_2d = xp.reshape(
-                            xp.linalg.vector_norm(xp.reshape(diff_3, (-1, 3)), axis=1),
-                            (_nf, _nloc),
+                            xp.linalg.vector_norm(
+                                xp.reshape(diff_f_3d, (-1, 3)), axis=1
+                            ),
+                            _node_shape,
                         )
-                        masked_norm = norm_2d * maskf
-                        per_frame_sum = xp.sum(masked_norm, axis=-1)
-                        per_frame_dof = xp.sum(maskf, axis=-1)
-                        l1_force_masked = xp.mean(per_frame_sum / per_frame_dof)
+                        # One L2 norm per atom, hence one label per atom.
+                        l1_force_masked = masked_atom_mean(
+                            xp.reshape(norm_2d, (*_node_shape, 1)), maskf, 1
+                        )
                     loss += pref_f * l1_force_masked
                     more_loss["mae_f"] = self.display_if_exist(
                         l1_force_masked, find_force
@@ -494,7 +572,7 @@ class EnergyLoss(Loss):
                     if not self.f_use_norm:
                         l1_force_loss = xp.mean(xp.abs(diff_f))
                     else:
-                        force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
+                        force_diff_3 = xp.reshape(diff_f, (-1, 3))
                         l1_force_loss = xp.mean(
                             xp.linalg.vector_norm(force_diff_3, axis=1)
                         )
@@ -508,7 +586,7 @@ class EnergyLoss(Loss):
                 )
             if mae:
                 if maskf is not None:
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
                     mae_f = masked_atom_mean(xp.abs(diff_f_3d), maskf, 3)
                 else:
                     mae_f = xp.mean(xp.abs(diff_f))
@@ -520,7 +598,7 @@ class EnergyLoss(Loss):
                 l2_virial_loss = xp.mean(
                     xp.square(virial_hat_reshape - virial_reshape),
                 )
-                if maskf is not None:
+                if inv is not None:
                     # Idiom 2 (extensive, k=9): per-frame normalization.
                     v2d = xp.reshape(virial, (_nf, 9))
                     v_hat_2d = xp.reshape(virial_hat, (_nf, 9))
@@ -554,7 +632,7 @@ class EnergyLoss(Loss):
                     )
             elif self.loss_func == "mae":
                 l1_virial_loss = xp.mean(xp.abs(virial_hat_reshape - virial_reshape))
-                if maskf is not None:
+                if inv is not None:
                     v2d = xp.reshape(virial, (_nf, 9))
                     v_hat_2d = xp.reshape(virial_hat, (_nf, 9))
                     per_frame_v = per_frame_component_mean(
@@ -575,7 +653,7 @@ class EnergyLoss(Loss):
                     f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
             if mae:
-                if maskf is not None:
+                if inv is not None:
                     v2d = xp.reshape(virial, (_nf, 9))
                     v_hat_2d = xp.reshape(virial_hat, (_nf, 9))
                     per_frame_v = per_frame_component_mean(xp.abs(v_hat_2d - v2d))
@@ -594,11 +672,10 @@ class EnergyLoss(Loss):
                 )
                 if maskf is not None:
                     # Idiom 1 (per-atom masked mean, ncomp=1).
-                    ae_2d = xp.reshape(atom_ener, (_nf, _nloc))
-                    ae_hat_2d = xp.reshape(atom_ener_hat, (_nf, _nloc))
-                    per_frame_dof = xp.sum(maskf, axis=-1)  # [nf]
+                    ae_2d = xp.reshape(atom_ener, _node_shape)
+                    ae_hat_2d = xp.reshape(atom_ener_hat, _node_shape)
                     l2_ae_masked = masked_atom_mean(
-                        xp.square(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                        xp.square(ae_hat_2d - ae_2d)[..., None], maskf, 1
                     )
                     if not self.use_huber:
                         loss += pref_ae * l2_ae_masked
@@ -613,9 +690,9 @@ class EnergyLoss(Loss):
                         huber_ae = xp.where(
                             abs_ae <= self._huber_delta_energy, quad_ae, lin_ae
                         )
-                        huber_ae_masked = huber_ae * maskf
-                        per_frame_sum_h = xp.sum(huber_ae_masked, axis=-1)
-                        l_huber_ae_masked = xp.mean(per_frame_sum_h / per_frame_dof)
+                        l_huber_ae_masked = masked_atom_mean(
+                            huber_ae[..., None], maskf, 1
+                        )
                         loss += pref_ae * l_huber_ae_masked
                     more_loss["rmse_ae"] = self.display_if_exist(
                         xp.sqrt(l2_ae_masked), find_atom_ener
@@ -638,10 +715,10 @@ class EnergyLoss(Loss):
                     xp.abs(atom_ener_hat_reshape - atom_ener_reshape)
                 )
                 if maskf is not None:
-                    ae_2d = xp.reshape(atom_ener, (_nf, _nloc))
-                    ae_hat_2d = xp.reshape(atom_ener_hat, (_nf, _nloc))
+                    ae_2d = xp.reshape(atom_ener, _node_shape)
+                    ae_hat_2d = xp.reshape(atom_ener_hat, _node_shape)
                     l1_ae_masked = masked_atom_mean(
-                        xp.abs(ae_hat_2d - ae_2d)[:, :, None], maskf, 1
+                        xp.abs(ae_hat_2d - ae_2d)[..., None], maskf, 1
                     )
                     loss += pref_ae * l1_ae_masked
                     more_loss["mae_ae"] = self.display_if_exist(
@@ -665,45 +742,57 @@ class EnergyLoss(Loss):
                 )
                 if maskf is not None:
                     # Idiom 1 with pref weight (ncomp=3).
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
-                    pf_3d = xp.reshape(atom_pref, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
+                    pf_3d = xp.reshape(atom_pref, (*_node_shape, 3))
                     l2_pf_masked = masked_atom_mean(
                         xp.square(diff_f_3d) * pf_3d, maskf, 3
                     )
                     loss += pref_pf * l2_pf_masked
                     more_loss["rmse_pf"] = self.display_if_exist(
-                        xp.sqrt(l2_pf_masked), find_atom_pref
+                        xp.sqrt(l2_pf_masked), effective_find_pf
                     )
                 else:
                     loss += pref_pf * l2_pref_force_loss
                     more_loss["rmse_pf"] = self.display_if_exist(
-                        xp.sqrt(l2_pref_force_loss), find_atom_pref
+                        xp.sqrt(l2_pref_force_loss), effective_find_pf
                     )
             elif self.loss_func == "mae":
                 l1_pref_force_loss = xp.mean(
                     xp.multiply(xp.abs(diff_f), atom_pref_reshape)
                 )
                 if maskf is not None:
-                    diff_f_3d = xp.reshape(diff_f, (_nf, _nloc, 3))
-                    pf_3d = xp.reshape(atom_pref, (_nf, _nloc, 3))
+                    diff_f_3d = xp.reshape(diff_f, (*_node_shape, 3))
+                    pf_3d = xp.reshape(atom_pref, (*_node_shape, 3))
                     l1_pf_masked = masked_atom_mean(xp.abs(diff_f_3d) * pf_3d, maskf, 3)
                     loss += pref_pf * l1_pf_masked
                     more_loss["mae_pf"] = self.display_if_exist(
-                        l1_pf_masked, find_atom_pref
+                        l1_pf_masked, effective_find_pf
                     )
                 else:
                     loss += pref_pf * l1_pref_force_loss
                     more_loss["mae_pf"] = self.display_if_exist(
-                        l1_pref_force_loss, find_atom_pref
+                        l1_pref_force_loss, effective_find_pf
                     )
             else:
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for atom prefactor force loss."
                 )
         if self.has_gf:
+            if is_ragged:
+                # ``natoms`` below is one number for the whole batch, which a
+                # padded batch can honour and a concatenated one cannot: its
+                # frames differ in atom count, so ``drdq``, stored per frame
+                # against a common atom axis, has no shape to take.
+                raise NotImplementedError(
+                    "the generalized force loss requires every frame of a "
+                    "batch to hold the same number of atoms; a batch whose "
+                    "frames are concatenated cannot provide the common atom "
+                    "axis its ``drdq`` label is stored against"
+                )
             find_drdq = label_dict["find_drdq"]
             drdq = label_dict["drdq"]
-            pref_gf = find_drdq * (
+            effective_find_gf = find_force * find_drdq
+            pref_gf = effective_find_gf * (
                 self.limit_pref_gf
                 + (self.start_pref_gf - self.limit_pref_gf) * lr_ratio
             )
@@ -739,8 +828,48 @@ class EnergyLoss(Loss):
             l2_gen_force_loss = xp.mean(xp.square(diff_gen_force))
             loss += pref_gf * l2_gen_force_loss
             more_loss["rmse_gf"] = self.display_if_exist(
-                xp.sqrt(l2_gen_force_loss), find_drdq
+                xp.sqrt(l2_gen_force_loss), effective_find_gf
             )
+        hessian = model_dict.get("hessian", model_dict.get("energy_derv_r_derv_r"))
+        if self.has_h and hessian is not None and "hessian" in label_dict:
+            if is_ragged:
+                raise NotImplementedError(
+                    "the hessian loss requires a rectangular atom axis"
+                )
+            find_hessian = label_dict.get("find_hessian", 0.0)
+            if maskf is not None:
+                hessian_shape = (_nf, _nloc * 3, _nloc * 3)
+                diff_h = xp.reshape(label_dict["hessian"], hessian_shape) - xp.reshape(
+                    hessian, hessian_shape
+                )
+                # A Hessian element couples two Cartesian atom components, so
+                # it is valid only when both corresponding atoms are real.
+                l2_hessian_loss = masked_pair_mean(xp.square(diff_h), maskf, ncomp=3)
+            else:
+                diff_h = xp.reshape(label_dict["hessian"], (-1,)) - xp.reshape(
+                    hessian,
+                    (-1,),
+                )
+                l2_hessian_loss = xp.mean(xp.square(diff_h))
+            mae_h = None
+            if self.loss_func == "mae" or mae:
+                if maskf is not None:
+                    mae_h = masked_pair_mean(xp.abs(diff_h), maskf, ncomp=3)
+                else:
+                    mae_h = xp.mean(xp.abs(diff_h))
+            if self.loss_func == "mse":
+                loss += pref_h * find_hessian * l2_hessian_loss
+            elif self.loss_func == "mae":
+                loss += pref_h * find_hessian * mae_h
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for hessian loss."
+                )
+            more_loss["rmse_h"] = self.display_if_exist(
+                xp.sqrt(l2_hessian_loss), find_hessian
+            )
+            if mae:
+                more_loss["mae_h"] = self.display_if_exist(mae_h, find_hessian)
 
         self.l2_l = loss
         more_loss["rmse"] = xp.sqrt(loss)
@@ -750,54 +879,60 @@ class EnergyLoss(Loss):
     @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
-        label_requirement = []
-        label_requirement.append(
-            DataRequirementItem(
-                "energy",
-                ndof=1,
-                atomic=False,
-                must=False,
-                high_prec=True,
+        label_requirement: list[DataRequirementItem] = []
+        if self.has_e:
+            label_requirement.append(
+                DataRequirementItem(
+                    "energy",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=True,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "force",
-                ndof=3,
-                atomic=True,
-                must=False,
-                high_prec=False,
+        if self.has_f or self.has_pf or self.relative_f is not None or self.has_gf:
+            label_requirement.append(
+                DataRequirementItem(
+                    "force",
+                    ndof=3,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "virial",
-                ndof=9,
-                atomic=False,
-                must=False,
-                high_prec=False,
+        if self.has_v:
+            label_requirement.append(
+                DataRequirementItem(
+                    "virial",
+                    ndof=9,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "atom_ener",
-                ndof=1,
-                atomic=True,
-                must=False,
-                high_prec=False,
+        if self.has_ae:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_ener",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
             )
-        )
-        label_requirement.append(
-            DataRequirementItem(
-                "atom_pref",
-                ndof=1,
-                atomic=True,
-                must=False,
-                high_prec=False,
-                repeat=3,
-                default=1.0,
+        if self.has_pf:
+            label_requirement.append(
+                DataRequirementItem(
+                    "atom_pref",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                    repeat=3,
+                    default=1.0,
+                    source_policy="default" if self.use_default_pf else "tracked",
+                )
             )
-        )
         if self.has_gf > 0:
             label_requirement.append(
                 DataRequirementItem(
@@ -817,6 +952,18 @@ class EnergyLoss(Loss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
+                )
+            )
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                    special_shape="hessian",
                 )
             )
         return label_requirement
@@ -829,9 +976,12 @@ class EnergyLoss(Loss):
         dict
             The serialized loss module
         """
-        return {
+        data = {
             "@class": "EnergyLoss",
-            "@version": 4,
+            # Version 5 identifies the opt-in Hessian fields. Keep ordinary
+            # energy losses at version 4 so readers that already support the
+            # standard schema remain interoperable across backends.
+            "@version": 5 if self.has_h else 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -855,6 +1005,12 @@ class EnergyLoss(Loss):
             "use_default_pf": self.use_default_pf,
             "intensive_ener_virial": self.intensive_ener_virial,
         }
+        if self.has_h:
+            # Keep the established cross-backend serialization unchanged for
+            # ordinary energy losses; Hessian-only fields are an opt-in schema.
+            data["start_pref_h"] = self.start_pref_h
+            data["limit_pref_h"] = self.limit_pref_h
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "Loss":
@@ -872,9 +1028,15 @@ class EnergyLoss(Loss):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 4, 1)
+        check_version_compatibility(version, 5, 1)
         data.pop("@class")
         # Backward compatibility: version 1-2 used legacy normalization
         if version < 3:
             data.setdefault("intensive_ener_virial", False)
+        # Version 5 introduced explicit Hessian prefactors. Older payloads
+        # represent an ordinary energy loss unless these development fields
+        # were already present.
+        if version < 5:
+            data.setdefault("start_pref_h", 0.0)
+            data.setdefault("limit_pref_h", 0.0)
         return cls(**data)

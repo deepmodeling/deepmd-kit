@@ -14,7 +14,7 @@ import torch
 
 if TYPE_CHECKING:
     from deepmd.pt_expt.utils.canonical_graph import (
-        DPA1CanonicalGraph,
+        CanonicalGraph,
     )
 
 __all__ = [
@@ -34,12 +34,12 @@ def canonical_model_eligible(model: Any) -> bool:
     fitting = getattr(atomic_model, "fitting_net", None)
     if descriptor is None or fitting is None:
         return False
-    if not bool(getattr(descriptor, "geo_compress", False)):
+    if not descriptor.get_geo_compress():
         return False
     eligible = getattr(descriptor, "_fused_eligible", None)
     if not callable(eligible) or not bool(eligible("cuda")):
         return False
-    if getattr(atomic_model, "pair_excl", None) is not None:
+    if atomic_model.pair_excl is not None:
         return False
     if getattr(atomic_model, "atom_excl", None) is not None:
         return False
@@ -70,6 +70,7 @@ def _forward_fake(
     type_embedding: torch.Tensor,
     average: torch.Tensor,
     inverse_stddev: torch.Tensor,
+    degree_gain: torch.Tensor,
     table: torch.Tensor,
     gate_table: torch.Tensor,
     type_one_side: int,
@@ -86,12 +87,14 @@ def _forward_fake(
     rcut_smooth: float,
     protection: float,
     neighbors: float,
+    basis_dim: int,
 ) -> tuple[torch.Tensor, ...]:
     del (
         source,
         destination_row_ptr,
         average,
         inverse_stddev,
+        degree_gain,
         gate_table,
         type_one_side,
         smooth,
@@ -117,7 +120,7 @@ def _forward_fake(
             width,
             3,
         ),
-        edge_vec.new_empty(node_count, 4, width),
+        edge_vec.new_empty(node_count, basis_dim, width),
     )
 
 
@@ -131,6 +134,7 @@ def _backward_fake(
     atype: torch.Tensor,
     average: torch.Tensor,
     inverse_stddev: torch.Tensor,
+    degree_gain: torch.Tensor,
     table: torch.Tensor,
     gate_table: torch.Tensor,
     type_one_side: int,
@@ -155,6 +159,7 @@ def _backward_fake(
         atype,
         average,
         inverse_stddev,
+        degree_gain,
         table,
         gate_table,
         type_one_side,
@@ -198,7 +203,7 @@ def _generic_topology(
     )
     destination_order = torch.arange(
         source.shape[0],
-        dtype=source.dtype,
+        dtype=torch.int64,
         device=source.device,
     )
     return edge_index, edge_mask, destination_order
@@ -218,9 +223,9 @@ def _cpu_forward(*args: Any) -> tuple[torch.Tensor, ...]:
         edge_mask,
         destination_order,
         destination_row_ptr,
-        *tail[:11],
+        *tail[:12],
         True,
-        *tail[11:],
+        *tail[12:],
     )
 
 
@@ -245,9 +250,9 @@ def _cpu_backward(*args: Any) -> torch.Tensor:
         edge_mask,
         destination_order,
         destination_row_ptr,
-        *tail[:8],
+        *tail[:9],
         True,
-        *tail[8:],
+        *tail[9:],
     )
 
 
@@ -272,7 +277,7 @@ def ensure_registered() -> None:
 def dpa1_canonical_compress_energy_force(
     desc: Any,
     fit: Any,
-    graph: DPA1CanonicalGraph,
+    graph: CanonicalGraph,
     atype: torch.Tensor,
     type_embedding: torch.Tensor,
     ownership: torch.Tensor,
@@ -329,6 +334,11 @@ def dpa1_canonical_compress_energy_force(
     compress_data = desc.compress_data[0].contiguous()
     gate_table = desc.type_embd_data.contiguous()
     inverse_stddev = torch.reciprocal(se.stddev[:, 0, :]).contiguous()
+    degree_gain = (
+        se.adam_degree_gain_raw.to(torch.float32).contiguous()
+        if se.adam_degree_gain_raw is not None
+        else compress_data.new_empty(0)
+    )
     from torch.fx.experimental.proxy_tensor import (
         disable_proxy_modes_tracing,
     )
@@ -346,6 +356,7 @@ def dpa1_canonical_compress_energy_force(
         type_embedding,
         se.mean[:, 0, :].contiguous(),
         inverse_stddev,
+        degree_gain,
         compress_data,
         gate_table,
         int(se.type_one_side),
@@ -362,58 +373,41 @@ def dpa1_canonical_compress_energy_force(
         float(se.rcut_smth),
         float(se.env_protection),
         float(se.nnei),
+        (int(se.lmax) + 1) ** 2,
     )
 
-    *hidden, head = fit.nets[0].layers
-    empty = hidden[0].w.new_empty(0)
-    weights = [layer.w.contiguous() for layer in hidden]
-    residuals = [1 if layer.resnet else 0 for layer in hidden]
-    from deepmd.kernels.triton.dpa1.activation import (
-        ACT_CODES,
+    from deepmd.kernels.cuda.graph_fitting import (
+        fitting_operator_arguments,
     )
 
+    network = fitting_operator_arguments(fit)
     atom_energy_raw, fitting_saved = torch.ops.deepmd.graph_fitting(
         descriptor,
         atype,
-        weights,
-        [layer.b.contiguous() if layer.b is not None else empty for layer in hidden],
-        [
-            layer.idt.contiguous() if layer.idt is not None else empty
-            for layer in hidden
-        ],
-        residuals,
-        head.w.reshape(-1).contiguous(),
-        (
-            head.b.reshape(-1).to(torch.float32).contiguous()
-            if head.b is not None
-            else empty
-        ),
+        network.weights,
+        network.biases,
+        network.residuals,
+        network.head_weight,
+        network.head_bias,
         atom_bias.to(torch.float64).contiguous(),
-        ACT_CODES[str(hidden[0].activation_function).lower()],
+        network.activation,
     )
     energy_seed = ownership[:, None].to(atom_energy_raw.dtype)
     atom_energy = atom_energy_raw * energy_seed
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        frame_id_from_n_node,
+    from deepmd.kernels.cuda.edge_force_virial import (
+        frame_scalar_sum,
     )
 
-    frame_index = frame_id_from_n_node(
-        graph.n_node,
-        n_total=atom_energy.shape[0],
-    )
-    energy = torch.zeros(
-        graph.n_node.shape[0],
-        1,
-        dtype=atom_energy.dtype,
-        device=atom_energy.device,
-    ).index_add_(0, frame_index, atom_energy)
+    energy = frame_scalar_sum(atom_energy, graph.n_node)
     del descriptor
     descriptor_gradient = torch.ops.deepmd.graph_fitting_backward(
         energy_seed,
         fitting_saved,
-        weights,
-        residuals,
-        head.w.reshape(-1).contiguous(),
+        network.weights,
+        network.biases,
+        network.residuals,
+        network.head_weight,
+        network.activation,
     )
     del fitting_saved
     edge_gradient = torch.ops.deepmd.dpa1_canonical_compress_backward(
@@ -426,6 +420,7 @@ def dpa1_canonical_compress_energy_force(
         atype,
         se.mean[:, 0, :].contiguous(),
         inverse_stddev,
+        degree_gain,
         compress_data,
         gate_table,
         int(se.type_one_side),
@@ -441,13 +436,14 @@ def dpa1_canonical_compress_energy_force(
         float(se.env_protection),
         float(se.nnei),
     )
-    force, atom_virial, virial = canonical_edge_force_virial(
+    force, atom_virial, virial, _ = canonical_edge_force_virial(
         edge_gradient,
         graph.edge_vec,
         graph.destination_row_ptr,
         graph.source_row_ptr,
         graph.source_order,
         graph.n_node,
+        graph.edge_vec.new_empty(0),
         atype.shape[0],
         do_atomic_virial,
     )

@@ -8,9 +8,11 @@ import torch
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingSwitch as BridgingSwitchDP
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
 from deepmd.kernels.utils import (
     use_amp_infer,
 )
@@ -40,6 +42,32 @@ register_dpmodel_mapping(SwiGLUDP, lambda v: SwiGLU())
 class C3CutoffEnvelope(C3CutoffEnvelopeDP):
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
+
+
+@torch_module
+class InnerClamp(InnerClampDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+# InnerClamp/BridgingSwitch are parameter-free (scalar bridging radii only,
+# no serialize()); rebuild fresh from the stored constructor arguments.
+register_dpmodel_mapping(
+    InnerClampDP,
+    lambda v: InnerClamp(v.r_inner, v.r_outer),
+)
+
+
+@torch_module
+class BridgingSwitch(BridgingSwitchDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+register_dpmodel_mapping(
+    BridgingSwitchDP,
+    lambda v: BridgingSwitch(v.r_inner, v.r_outer),
+)
 
 
 # C3CutoffEnvelope carries only scalar configuration (cutoff radius and
@@ -115,6 +143,11 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     # skips the missing buffer, so listing both concrete subclasses is safe)
     "S2GridNet": ("residual_scale",),
     "SO3GridNet": ("residual_scale",),
+    # dpa4_nn.grid_net frame mixing, built only by ``mode="cross"`` grid nets.
+    # Unlike the surrounding projections these are plain numpy arrays rather
+    # than NativeLayer objects, so they need an explicit entry here.
+    "FrameExpand": ("weight",),
+    "FrameContract": ("weight",),
     # descriptor-level FiLM strengths
     "DescrptDPA4": ("film_scale_strength_log", "film_shift_strength_log"),
 }
@@ -164,6 +197,28 @@ class DescrptDPA4(DescrptDPA4DP):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        # Persisted graph-routing knob (first-class training configuration):
+        # ``disable_graph_lower()`` used to flip only the plain dpmodel bool,
+        # which a Trainer checkpoint restart silently reset (the fresh model
+        # is rebuilt from config before ``load_state_dict``, and neither the
+        # state-dict keys nor ``_extra_state.model_params`` carried the
+        # choice) -- on a binding-sel system that switched the training
+        # equation and gradients without warning.  A persistent buffer rides
+        # every pt_expt state_dict, so save/restart round-trips it.
+        torch.nn.Module.register_buffer(
+            self,
+            "graph_lower_disabled",
+            torch.zeros((), dtype=torch.bool, device="cpu"),
+        )
+        # Persisted descriptor version, for the same reason: pt_expt rebuilds
+        # the module from config before loading, so without a buffer every
+        # checkpoint would come back claiming the semantics of the running
+        # code and silently skip ``_migrate_variables``.
+        torch.nn.Module.register_buffer(
+            self,
+            "version_tensor",
+            torch.tensor(self.version, dtype=torch.float64, device="cpu"),
+        )
         self.use_amp_infer = use_amp_infer()
         _promote_trainable_tree(self)
 
@@ -172,7 +227,113 @@ class DescrptDPA4(DescrptDPA4DP):
         # deserialize assigns numpy arrays after __init__, which demotes
         # promoted Parameters back to buffers; re-promote at the end.
         obj = super().deserialize(data)
+        # The buffer carries the version of the restored variables, not the
+        # version the fresh construction started from.
+        obj.version_tensor.fill_(obj.version)
         return _promote_trainable_tree(obj)
+
+    def _in_training_mode(self) -> bool:
+        """Torch runtime hook for the training-only random local-Z roll.
+
+        Overrides the dpmodel default (``False``) with the torch module's
+        ``training`` flag, restoring pt's ``random_gamma=self.random_gamma
+        and self.training`` semantics: train-mode forwards draw a fresh
+        gamma per call, eval/export forwards fix gamma (the export path
+        calls ``model.eval()`` before tracing).
+        """
+        return bool(self.training)
+
+    def _gate_partial_exchange(
+        self,
+        partials: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Reverse-accumulate ghost partials to owners, then broadcast back.
+
+        ``border_op_backward`` sums each ghost row into its owner across
+        ranks and zeroes the ghost rows; ``border_op`` refills them with the
+        completed owner values. Both ops carry autograd (the two are
+        transposes), so gate gradients cross ranks (issue #5906).
+
+        Parameters
+        ----------
+        partials
+            (n_nodes, 2) float tensor of [log_eta, zero_count] partials.
+        comm_dict
+            The border-exchange control tensors.
+
+        Returns
+        -------
+        torch.Tensor
+            The globally completed (n_nodes, 2) tensor.
+        """
+        # border_op exchanges rows by raw pointer arithmetic; a strided
+        # view would corrupt the exchange.
+        p = partials.contiguous()
+        comm_args = (
+            comm_dict["send_list"],
+            comm_dict["send_proc"],
+            comm_dict["recv_proc"],
+            comm_dict["send_num"],
+            comm_dict["recv_num"],
+        )
+        tail = (
+            comm_dict["communicator"],
+            comm_dict["nlocal"],
+            comm_dict["nghost"],
+        )
+        p = torch.ops.deepmd_export.border_op_backward(*comm_args, p, *tail)
+        p = torch.ops.deepmd_export.border_op(*comm_args, p, *tail)
+        return p
+
+    def disable_graph_lower(self) -> None:
+        """Persisted variant of the dpmodel escape hatch (see base class).
+
+        The buffer (and the routing bool) are PER-TASK state: multi-task
+        ``share_params`` shares network submodules, not this buffer, so
+        disabling the graph lower on one task branch does not propagate to
+        branches sharing the same descriptor weights -- each branch owns
+        its routing decision.
+        """
+        super().disable_graph_lower()
+        self.graph_lower_disabled.fill_(True)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # Back-compat: checkpoints written before the knob was persisted lack
+        # the buffer; default to the fresh module's value (graph enabled)
+        # instead of failing the strict load.
+        key = prefix + "graph_lower_disabled"
+        if key not in state_dict:
+            state_dict[key] = self.graph_lower_disabled.detach().clone()
+        else:
+            # Re-sync the dpmodel-side routing bool from the RESTORED value
+            # here, at load time, where the incoming tensor is real.  The
+            # routing predicate itself must stay a plain python bool:
+            # ``uses_graph_lower()`` runs inside traced forwards (the dense
+            # adapter gate), and reading the buffer there would emit a
+            # data-dependent ``bool(FakeTensor)`` guard that breaks
+            # torch.export (GuardOnDataDependentSymNode Eq(u0, 1)).
+            self._graph_lower_disabled = bool(state_dict[key])
+
+        # Back-compat: checkpoints predating the version buffer were written
+        # under version 1.1, the last one released before it existed.
+        version_key = prefix + "version_tensor"
+        if version_key not in state_dict:
+            state_dict[version_key] = self.version_tensor.new_tensor(1.1)
+        state_dict[version_key] = self.version_tensor.new_tensor(
+            self._migrate_variables(
+                state_dict, float(state_dict[version_key].item()), prefix
+            )
+        )
+
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+        self.version = float(self.version_tensor.item())
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
@@ -186,18 +347,17 @@ class DescrptDPA4(DescrptDPA4DP):
         geometry, edge cache, radial, env-seed, GIE and output FFN stages stay
         in fp32 (or higher). The dpmodel base stores ``use_amp`` only as a
         config flag and never autocasts (array-API has no autocast), so the
-        real automatic mixed precision lives here. ``x`` is the node-feature
-        tensor entering the blocks; its device equals the working device, so
-        autocast engages when ``self.use_amp`` is set, the inputs live on a
-        CUDA device, and either the module is training or eval-time AMP was
-        opted in through ``DP_AMP_INFER`` (captured once at construction as
-        ``self.use_amp_infer``).
+        real automatic mixed precision lives here.
+
+        Training follows ``use_amp`` and evaluation follows ``DP_AMP_INFER``
+        (captured once at construction as ``use_amp_infer``). The two are
+        independent: mixed precision at inference is a throughput choice that
+        must not require a model to have been trained with it. ``x`` is the
+        node-feature tensor entering the blocks, and its device is the working
+        device.
         """
-        if (
-            self.use_amp
-            and x.device.type == "cuda"
-            and (self.training or self.use_amp_infer)
-        ):
+        enabled = self.use_amp if self.training else self.use_amp_infer
+        if enabled and x.device.type == "cuda":
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
                 return super()._forward_blocks(x, *args, **kwargs)
         return super()._forward_blocks(x, *args, **kwargs)

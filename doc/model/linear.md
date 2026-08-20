@@ -1,8 +1,8 @@
-## Linear model {{ tensorflow_icon }} {{ pytorch_icon }}
+## Linear model {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and
+> PyTorch-Exportable {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 One can linearly combine existing models with arbitrary coefficients:
 

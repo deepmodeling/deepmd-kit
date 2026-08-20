@@ -30,7 +30,7 @@ def _zbl_config() -> dict:
         "use_srtab": SRTAB,
         "sw_rmin": 0.2,
         "sw_rmax": 4.0,
-        "smin_alpha": 0.1,
+        "smin_alpha": 0.37,
         # ZBL wraps a linear atomic model, which requires a mixed-type descriptor
         "descriptor": {
             "type": "se_atten",
@@ -68,6 +68,7 @@ class TestJAXZBLModelFactory(unittest.TestCase):
         dp_atomic = model.atomic_model.models[0]
         self.assertEqual(dp_atomic.descriptor.get_type_map(), data["type_map"])
         self.assertEqual(dp_atomic.fitting_net.get_type_map(), data["type_map"])
+        self.assertEqual(model.atomic_model.smin_alpha, data["smin_alpha"])
 
 
 if __name__ == "__main__":

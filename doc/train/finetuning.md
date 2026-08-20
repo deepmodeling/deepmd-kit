@@ -1,8 +1,8 @@
 # Finetune the pre-trained model {{ tensorflow_icon }} {{ pytorch_icon }} {{ paddle_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow {{ tensorflow_icon }}, TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, Paddle {{ paddle_icon }}
 
 Pretraining-and-finetuning is a widely used approach in other fields such as Computer Vision (CV) or Natural Language Processing (NLP)
 to vastly reduce the training cost, while it's not trivial in potential models.
@@ -28,11 +28,10 @@ $ dp train input.json --finetune pretrained.pb
 The command above will change the energy bias in the last layer of the fitting net in `pretrained.pb`,
 according to the training dataset in input.json.
 
-:::{warning}
-Note that in TensorFlow, model parameters including the `type_map` will be overwritten based on those in the pre-trained model.
-Please ensure you are familiar with the configurations in the pre-trained model, especially `type_map`, before starting the fine-tuning process.
-The elements in the training dataset must be contained in the pre-trained dataset.
-:::
+> [!WARNING]
+> Note that in TensorFlow, model parameters including the `type_map` will be overwritten based on those in the pre-trained model.
+> Please ensure you are familiar with the configurations in the pre-trained model, especially `type_map`, before starting the fine-tuning process.
+> The elements in the training dataset must be contained in the pre-trained dataset.
 
 The finetune procedure will inherit the model structures in `pretrained.pb`,
 and thus it will ignore the model parameters in `input.json`,
@@ -105,13 +104,12 @@ one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask
 $ dp --pt train input.json --finetune multitask_pretrained.pt --model-branch CHOOSEN_BRANCH
 ```
 
-:::{note}
-One can check the available model branches in multi-task pre-trained model by referring to the documentation of the pre-trained model or by using the following command:
-
-```bash
-$ dp --pt show multitask_pretrained.pt model-branch
-```
-:::
+> [!NOTE]
+> One can check the available model branches in multi-task pre-trained model by referring to the documentation of the pre-trained model or by using the following command:
+>
+> ```bash
+> dp --pt show multitask_pretrained.pt model-branch
+> ```
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
 If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
@@ -250,13 +248,48 @@ one can select a specific branch (e.g., `CHOOSEN_BRANCH`) included in `multitask
 $ dp --pd train input.json --finetune multitask_pretrained.pd --model-branch CHOOSEN_BRANCH
 ```
 
-:::{note}
-One can check the available model branches in multi-task pre-trained model by refering to the documentation of the pre-trained model or by using the following command:
-
-```bash
-$ dp --pd show multitask_pretrained.pd model-branch
-```
-:::
+> [!NOTE]
+> One can check the available model branches in multi-task pre-trained model by referring to the documentation of the pre-trained model or by using the following command:
+>
+> ```bash
+> dp --pd show multitask_pretrained.pd model-branch
+> ```
 
 This command will start fine-tuning based on the pre-trained model's descriptor and the selected branch's fitting net.
 If --model-branch is not set or set to "RANDOM", a randomly initialized fitting net will be used.
+
+## TensorFlow 2 Implementation {{ tensorflow_icon }}
+
+TensorFlow 2 fine-tuning reuses the same `--finetune` flag as the legacy
+TensorFlow backend:
+
+```bash
+dp --tf2 train input.json --finetune pretrained.tf2
+```
+
+The pre-trained model is a `.tf2` training checkpoint directory (or its
+checkpoint prefix). A frozen `.savedmodeltf` export cannot be fine-tuned,
+because it does not carry the structured variable metadata required to restore
+the model. The same command-line options as the legacy TensorFlow backend apply:
+`--model-branch` selects a branch in a multi-task pre-trained model, and
+`--use-pretrain-script` copies the descriptor/fitting parameters from the
+pre-trained model.
+
+## PyTorch-Exportable Implementation {{ pytorch_icon }}
+
+The PyTorch-Exportable backend implements fine-tuning with `--finetune`, and a
+pre-trained model can be either a `.pt` training checkpoint or a frozen `.pte`
+/ `.pt2` model:
+
+```bash
+dp --pt-expt train input.json --finetune pretrained.pt
+dp --pt-expt train input.json --finetune frozen_model.pte
+```
+
+Both single-task and multi-task fine-tuning are supported; multi-task
+fine-tuning uses the `finetune_head` field in each {ref}`model_dict <model/model_dict>` branch. Distributed fine-tuning works under
+[`torchrun`](parallel-training.md#pytorch-exportable-implementation) like
+regular PyTorch-Exportable training. `--use-pretrain-script` requires the
+pre-trained model to embed full model parameters: a `.pte` file frozen with
+older code that lacks `model_def_script` must be re-frozen before it can be
+used with that option.

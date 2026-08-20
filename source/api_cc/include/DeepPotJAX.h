@@ -110,6 +110,33 @@ class DeepPotJAX : public DeepPotBackend {
     assert(inited);
     return dchgspin;
   };
+  /**
+   * @brief Fix the charge/spin condition served when a call names none.
+   *
+   * This backend reads the condition as an ordinary per-call input and falls
+   * back to the state loaded from the model whenever a call omits it, so
+   * installing a new state means replacing that fallback. Without this the
+   * inherited no-op would report success while every later evaluation kept
+   * using the model's own default.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) override {
+    assert(inited);
+    if (dchgspin == 0) {
+      throw deepmd::deepmd_exception(
+          "this model does not support a charge/spin condition");
+    }
+    if (static_cast<int>(charge_spin.size()) != dchgspin) {
+      throw deepmd::deepmd_exception("the charge/spin condition carries " +
+                                     std::to_string(charge_spin.size()) +
+                                     " values but the model expects " +
+                                     std::to_string(dchgspin));
+    }
+    require_addressable_charge_spin(charge_spin);
+    default_chg_spin_ = charge_spin;
+    has_default_chg_spin_ = true;
+  };
 
   // forward to template class
   void computew(std::vector<double>& ener,
@@ -276,6 +303,10 @@ class DeepPotJAX : public DeepPotBackend {
   bool do_message_passing;
   // has default fparam
   bool has_default_fparam_;
+  // Frame parameters embedded in the exported model. The JAX SavedModel
+  // signatures require a concrete tensor, so the C++ API materializes these
+  // values when callers omit fparam.
+  std::vector<double> default_fparam_;
   // Model-level pair-exclusion keep table (flat (ntypes+1)^2), built once in
   // init from the exported ``get_pair_exclude_types``. Empty => no exclusion.
   // The exported ``call_lower_*`` consumes a pre-excluded nlist (decision

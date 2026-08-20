@@ -1,8 +1,9 @@
 # Fit energy {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
 
 In this section, we will take `$deepmd_source_dir/examples/water/se_e2_a/input.json` as an example of the input file.
 
@@ -152,9 +153,8 @@ If one does not want to train with virial, then he/she may set the virial prefac
 
 ### Prefactor force loss with default atom preference
 
-:::{note}
-**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 When using the prefactor force loss (controlled by {ref}`start_pref_pf <loss[ener]/start_pref_pf>` and {ref}`limit_pref_pf <loss[ener]/limit_pref_pf>`), the training data typically requires an `atom_pref.npy` file in each system directory to specify per-atom prefactors $q_k$. If `atom_pref.npy` is not provided, the {ref}`use_default_pf <loss[ener]/use_default_pf>` option can be set to `true` to use a default atom preference of 1.0 for all atoms:
 
@@ -174,6 +174,6 @@ When using the prefactor force loss (controlled by {ref}`start_pref_pf <loss[ene
 
 This allows using the prefactor force loss without requiring `atom_pref.npy` files. When `atom_pref.npy` is provided in the training data, it will be used as-is regardless of the `use_default_pf` setting.
 
-Note that `use_default_pf` is only effective for the PyTorch and DP (NumPy reference) backends. The TensorFlow and Paddle backends raise `NotImplementedError` when `use_default_pf` is set to `true`.
+Note that `use_default_pf` is only effective for the PyTorch-TorchScript and DP (NumPy reference) backends. The TensorFlow and Paddle backends raise `NotImplementedError` when `use_default_pf` is set to `true`.
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

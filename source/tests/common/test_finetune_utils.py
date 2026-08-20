@@ -30,6 +30,14 @@ def _model_config(
     }
 
 
+def _native_spin_model_config(
+    type_map: list[str], use_spin: list[bool | int | str]
+) -> dict:
+    config = _model_config(type_map)
+    config["spin"] = {"scheme": "native", "use_spin": use_spin}
+    return config
+
+
 def test_descriptor_normalization_uses_descriptor_type_count():
     assert finetune._infer_synthetic_type_count({"sel": [16, 24, 32]}) == 3
     assert finetune._infer_synthetic_type_count({"exclude_types": [[0, 3]]}) == 4
@@ -321,3 +329,52 @@ def test_finetune_rule_builder_single_task_target_picks_first_of_several_branche
     ).build()
 
     assert links["Default"].get_model_branch() == "first"
+
+
+def test_finetune_rule_builder_accepts_compatible_native_spin_transfers():
+    compatible_pairs = (
+        (
+            _native_spin_model_config(["Fe", "C"], [False, False]),
+            _native_spin_model_config(["Fe", "C"], [True, False]),
+        ),
+        (
+            _native_spin_model_config(["Fe", "C"], ["Fe"]),
+            _native_spin_model_config(["C", "Fe"], ["Fe"]),
+        ),
+        (
+            _native_spin_model_config(["Fe", "C"], ["Fe"]),
+            _native_spin_model_config(["Fe", "C", "O"], ["Fe"]),
+        ),
+    )
+    for pretrained, target in compatible_pairs:
+        finetune.FinetuneRuleBuilder(
+            pretrained,
+            target,
+            change_model_params=False,
+        ).build()
+
+
+def test_finetune_rule_builder_rejects_non_native_spin_pretraining():
+    try:
+        finetune.FinetuneRuleBuilder(
+            _model_config(["Fe", "C"]),
+            _native_spin_model_config(["Fe", "C"], [True, False]),
+            change_model_params=False,
+        ).build()
+    except ValueError as exc:
+        assert "requires a native-spin pretrained model" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_finetune_rule_builder_rejects_changed_magnetic_element_set():
+    try:
+        finetune.FinetuneRuleBuilder(
+            _native_spin_model_config(["Fe", "C"], ["Fe"]),
+            _native_spin_model_config(["Fe", "C"], ["C"]),
+            change_model_params=False,
+        ).build()
+    except ValueError as exc:
+        assert "active magnetic element set" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")

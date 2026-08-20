@@ -200,22 +200,33 @@ class TestDpa2GraphLower:
     # 1. routing/parity: proves the Task-7 generic plumbing works for DPA2.
     # ------------------------------------------------------------------
     def test_force_virial_parity_vs_legacy(self) -> None:
-        """Default-flip ``forward_common`` (graph) matches
-        ``neighbor_graph_method="legacy"`` (dense) bit-tight at non-binding
-        sel with repformer attention off.
+        """The compact graph path matches dense and unpadded evaluation.
+
+        A padded input exercises the graph path's compact-gather-scatter
+        round trip. At non-binding ``sel`` with repformer attention disabled,
+        it must match both the legacy dense route on the padded input and the
+        graph route on the equivalent input with the phantom suffix removed.
         """
         model = self._make_model()  # non-binding sel, attention off
         model.eval()
         box = self.cell.reshape(1, 9)
+        padded_atype = self.atype.clone()
+        padded_atype[:, -2:] = -1
+        nreal = self.natoms - 2
 
         graph = model.forward_common(
-            self.coord.clone().requires_grad_(True), self.atype, box
+            self.coord.clone().requires_grad_(True), padded_atype, box
         )
         legacy = model.forward_common(
             self.coord.clone().requires_grad_(True),
-            self.atype,
+            padded_atype,
             box,
             neighbor_graph_method="legacy",
+        )
+        unpadded = model.forward_common(
+            self.coord[:, :nreal].clone().requires_grad_(True),
+            self.atype[:, :nreal],
+            box,
         )
         tol = {"rtol": 1e-10, "atol": 1e-10}
         torch.testing.assert_close(graph["energy_redu"], legacy["energy_redu"], **tol)
@@ -224,6 +235,21 @@ class TestDpa2GraphLower:
         )
         torch.testing.assert_close(
             graph["energy_derv_c_redu"], legacy["energy_derv_c_redu"], **tol
+        )
+        torch.testing.assert_close(graph["energy_redu"], unpadded["energy_redu"], **tol)
+        torch.testing.assert_close(
+            graph["energy_derv_r"][:, :nreal],
+            unpadded["energy_derv_r"],
+            **tol,
+        )
+        torch.testing.assert_close(
+            graph["energy_derv_r"][:, nreal:],
+            torch.zeros_like(graph["energy_derv_r"][:, nreal:]),
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            graph["energy_derv_c_redu"], unpadded["energy_derv_c_redu"], **tol
         )
 
     def test_graph_native_hessian_matches_dense(self) -> None:
@@ -255,14 +281,42 @@ class TestDpa2GraphLower:
         assert _model_uses_graph_lower(model) is True
 
         box = self.cell.reshape(1, 9)
+        padded_atype = self.atype.clone()
+        padded_atype[:, -2:] = -1
+        nreal = self.natoms - 2
+        nreal_coord = nreal * 3
         # ``EnergyModel.forward`` exposes the Hessian under the ``"hessian"``
         # key (translated from ``energy_derv_r_derv_r``); it would KeyError if
         # the graph route failed to produce it.
         graph_out = model.forward(
-            self.coord.clone().requires_grad_(True), self.atype, box=box
+            self.coord.clone().requires_grad_(True), padded_atype, box=box
         )
         assert "hessian" in graph_out
         assert graph_out["hessian"].shape == (1, self.natoms * 3, self.natoms * 3)
+
+        unpadded_out = model.forward(
+            self.coord[:, :nreal].clone().requires_grad_(True),
+            self.atype[:, :nreal],
+            box=box,
+        )
+        torch.testing.assert_close(
+            graph_out["hessian"][:, :nreal_coord, :nreal_coord],
+            unpadded_out["hessian"],
+            rtol=1e-9,
+            atol=1e-9,
+        )
+        torch.testing.assert_close(
+            graph_out["hessian"][:, nreal_coord:],
+            torch.zeros_like(graph_out["hessian"][:, nreal_coord:]),
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            graph_out["hessian"][:, :, nreal_coord:],
+            torch.zeros_like(graph_out["hessian"][:, :, nreal_coord:]),
+            rtol=0,
+            atol=0,
+        )
 
         # dense reference on the SAME weights via the escape hatch.
         ref_model = self._make_model()
@@ -272,7 +326,7 @@ class TestDpa2GraphLower:
         ref_model.enable_hessian()
         assert _model_uses_graph_lower(ref_model) is False
         dense_out = ref_model.forward(
-            self.coord.clone().requires_grad_(True), self.atype, box=box
+            self.coord.clone().requires_grad_(True), padded_atype, box=box
         )
         torch.testing.assert_close(
             graph_out["hessian"], dense_out["hessian"], rtol=1e-9, atol=1e-9
@@ -280,6 +334,21 @@ class TestDpa2GraphLower:
         # Hessian symmetry (a genuine second derivative, not a shape artifact).
         h = graph_out["hessian"][0]
         torch.testing.assert_close(h, h.transpose(-1, -2), rtol=1e-9, atol=1e-9)
+
+    def test_hessian_model_rejects_a_ragged_axis(self) -> None:
+        """A flat node axis cannot encode per-frame Hessian pair dimensions."""
+        model = self._make_model().eval()
+        model.enable_hessian()
+        box = self.cell.reshape(1, 9)
+        n_node = torch.tensor([self.natoms], dtype=torch.int64, device=self.device)
+
+        with pytest.raises(NotImplementedError, match="rectangular atom axis"):
+            model.forward_ragged(
+                self.coord.reshape(-1, 3).requires_grad_(True),
+                self.atype.reshape(-1),
+                n_node,
+                box=box,
+            )
 
     def test_disable_graph_lower_escape_hatch(self) -> None:
         """``descriptor.disable_graph_lower()`` is the documented legacy-dense
@@ -601,7 +670,9 @@ class TestDpa2GraphLower:
         model = self._make_model().to("cpu")
         model.eval()
 
-        compiled_lower, buf_order = _trace_and_compile_graph(model, None, None, None)
+        compiled_lower, buf_order = _trace_and_compile_graph(
+            model, None, None, None, None
+        )
         assert isinstance(compiled_lower, torch.nn.Module)
         assert buf_order == ()
 
@@ -619,7 +690,7 @@ class TestDpa2GraphLower:
         atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
 
         compiled_out = compiled_lower(
-            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs
+            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs, None
         )
         eager = model.forward_common_lower_graph(
             atype,
@@ -892,7 +963,7 @@ class TestDpa2GraphLower:
         model = self._make_model(repinit_nsel=10, repformer_nsel=6).to("cpu")
         model.eval()
 
-        compiled_lower, _ = _trace_and_compile_graph(model, None, None, None)
+        compiled_lower, _ = _trace_and_compile_graph(model, None, None, None, None)
 
         sample = build_synthetic_graph_inputs(
             model,
@@ -907,7 +978,7 @@ class TestDpa2GraphLower:
         )
         atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
         compiled_out = compiled_lower(
-            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs
+            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs, None
         )
         eager = model.forward_common_lower_graph(
             atype,
@@ -1011,9 +1082,9 @@ class TestDpa2GraphLower:
         )
 
         # (b) compiled-training path (fparam threaded through the compile)
-        compiled_lower, _ = _trace_and_compile_graph(model, fp, None, None)
+        compiled_lower, _ = _trace_and_compile_graph(model, fp, None, None, None)
         compiled_out = compiled_lower(
-            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs
+            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs, None
         )
         ctol = {"rtol": 1e-10, "atol": 1e-10}
         torch.testing.assert_close(compiled_out["energy"], ref["energy_redu"], **ctol)

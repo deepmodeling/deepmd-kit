@@ -117,12 +117,25 @@ class DPAtomicModel(BaseAtomicModel):
         super().__init__(type_map, **kwargs)
         self.descriptor = descriptor
         self.fitting_net = fitting
-        if hasattr(self.fitting_net, "reinit_exclude"):
-            self.fitting_net.reinit_exclude(self.atom_exclude_types)
+        self.fitting_net.reinit_exclude(self.atom_exclude_types)
         self.type_map = type_map
-        self.add_chg_spin_ebd: bool = getattr(
-            self.descriptor, "add_chg_spin_ebd", False
-        )
+        self.add_chg_spin_ebd: bool = self.descriptor.has_chg_spin_ebd()
+        # Structural capability: only descriptors with a native spin
+        # conditioning mechanism (currently DPA4) accept a ``spin`` kwarg on
+        # ``call_graph`` at all -- unlike ``charge_spin``, which every
+        # descriptor's dense ``call()`` accepts (and ignores) for interface
+        # stability, the graph-native ``call_graph`` signature is
+        # per-descriptor, so ``forward_atomic_graph`` must not pass the
+        # keyword to a descriptor whose ``call_graph`` does not declare it
+        # (that would be a ``TypeError``, not a no-op). Queried via the
+        # ``supports_native_spin`` capability method declared on
+        # ``BaseDescriptor`` (concrete default ``False``; DPA4 overrides).
+        self._supports_native_spin: bool = self.descriptor.supports_native_spin()
+        # Same capability method as ``supports_native_spin`` above, for the
+        # frame-level ``charge_spin`` FiLM kwarg: only DPA4's ``call_graph``
+        # declares it; other descriptors' ``call_graph`` would ``TypeError``
+        # on an unconditional ``charge_spin=`` kwarg.
+        self.supports_charge_spin: bool = self.descriptor.supports_charge_spin()
         super().init_out_stat()
 
     def has_chg_spin_ebd(self) -> bool:
@@ -135,17 +148,47 @@ class DPAtomicModel(BaseAtomicModel):
             return self.descriptor.get_dim_chg_spin()
         return 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        if self.add_chg_spin_ebd:
-            return self.descriptor.has_default_chg_spin()
-        return False
-
     def get_default_chg_spin(self) -> list[float] | None:
         """Get the default charge_spin values."""
-        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+        if self.add_chg_spin_ebd:
             return self.descriptor.get_default_chg_spin()
         return None
+
+    def uses_graph_lower(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.uses_graph_lower())
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.has_message_passing_across_ranks())
+
+    def supports_edge_parallel(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.supports_edge_parallel())
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.dense_lower_supports_comm())
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.uses_compact_edge_pairs())
+
+    def graph_edge_dtype(self) -> str:
+        """Delegates to this model's own descriptor."""
+        return str(self.descriptor.graph_edge_dtype())
+
+    def supports_graph_export(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.supports_graph_export())
+
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Delegates to this model's own descriptor."""
+        return bool(self.descriptor.compression_needs_min_nbor_dist())
+
+    def supports_native_spin(self) -> bool:
+        """Delegates to this model's own descriptor (cached at construction)."""
+        return self._supports_native_spin
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
@@ -301,6 +344,7 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        spin: Array | None = None,
         comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
@@ -321,8 +365,14 @@ class DPAtomicModel(BaseAtomicModel):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded to the
+            descriptor's ``call_graph`` only when
+            ``self.supports_charge_spin`` (currently DPA4 only); ignored (not
+            forwarded, never a ``TypeError``) for descriptors without that
+            capability, keeping the interface stable for all of them.
+        spin
+            flat (N, 3) per-node spin, forwarded to the descriptor's
+            ``call_graph``; None for spin-less models.
         comm_dict
             MPI communication metadata forwarded to the descriptor's
             ``call_graph`` (the message-passing part). ``None`` for
@@ -342,9 +392,24 @@ class DPAtomicModel(BaseAtomicModel):
         )
 
         xp = array_api_compat.array_namespace(graph.edge_vec)
-        type_embedding = self.descriptor.type_embedding.call()
+        # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
+        # embeds types internally from ``atype`` and returns None.
+        type_embedding = self.descriptor.graph_type_embedding_table()
+        # Only forward the ``spin``/``charge_spin`` keyword to descriptors
+        # whose ``call_graph`` declares it.  Queried through the public
+        # capability -- an override must reach THIS call site too, so the
+        # cached field stays behind the method.
+        spin_kwargs = {"spin": spin} if self.supports_native_spin() else {}
+        charge_spin_kwargs = (
+            {"charge_spin": charge_spin} if self.supports_charge_spin else {}
+        )
         gg, rot_mat = self.descriptor.call_graph(
-            graph, atype, type_embedding=type_embedding, comm_dict=comm_dict
+            graph,
+            atype,
+            type_embedding=type_embedding,
+            comm_dict=comm_dict,
+            **spin_kwargs,
+            **charge_spin_kwargs,
         )
         fparam_node = None
         if fparam is not None:

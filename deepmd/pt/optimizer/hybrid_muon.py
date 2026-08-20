@@ -6,8 +6,8 @@ HybridMuon is a hybrid optimizer that automatically combines Muon and Adam.
 Routing is controlled by parameter dimensionality, parameter names, and
 ``muon_mode``:
 
-- Parameters whose final effective name segment contains ``bias``
-  (case-insensitive), or starts with ``adam_`` (case-insensitive): Adam.
+- Parameters whose final effective name segment is ``b``, contains ``bias``,
+  or starts with ``adam_`` (case-insensitive): Adam.
 - Parameters whose final effective name segment starts with ``adamw_``
   (case-insensitive): Adam with decoupled weight decay (AdamW-style).
   The final effective segment means the last non-numeric segment in the full
@@ -715,7 +715,7 @@ def get_adam_route(
     effective name segment after stripping trailing numeric ParameterList
     indices):
 
-    1. Contains ``"bias"`` -> ``"adam"`` (no weight decay).
+    1. Is ``"b"`` or contains ``"bias"`` -> ``"adam"`` (no weight decay).
     2. Starts with ``"adam_"`` -> ``"adam"`` (no weight decay).
        Typical: norm scales, radial frequencies.
     3. Starts with ``"adamw_"`` -> ``"adamw"`` (decoupled weight decay).
@@ -730,7 +730,7 @@ def get_adam_route(
     while leaf_name_idx > 0 and name_segments[leaf_name_idx].isdigit():
         leaf_name_idx -= 1
     leaf_name = name_segments[leaf_name_idx]
-    if "bias" in leaf_name:
+    if leaf_name == "b" or "bias" in leaf_name:
         return "adam"
     if leaf_name.startswith("adam_"):
         return "adam"
@@ -808,9 +808,9 @@ class HybridMuonOptimizer(Optimizer):
 
     This optimizer applies different update rules based on parameter dimensionality,
     parameter names, and ``muon_mode``:
-    - Parameters with final effective name segment containing ``bias``
-      (case-insensitive), or starting with ``adam_`` (case-insensitive):
-      standard Adam update.
+    - Parameters with final effective name segment equal to ``b``, containing
+      ``bias``, or starting with ``adam_`` (case-insensitive): standard Adam
+      update.
     - Parameters with final effective name segment starting with ``adamw_``
       (case-insensitive): Adam with decoupled weight decay (AdamW-style).
     - 1D parameters: standard Adam update.
@@ -826,8 +826,8 @@ class HybridMuonOptimizer(Optimizer):
         ``(m, n)`` slice.
 
     Naming convention for explicit Adam routing:
-    - Parameters representing bias terms should include ``bias`` in their
-      final effective name segment (case-insensitive).
+    - Parameters representing bias terms should use ``b`` or include ``bias``
+      in their final effective name segment (case-insensitive).
     - Parameters that are not semantic bias but should still use Adam should
       use an ``adam_`` prefix in their final effective name segment
       (case-insensitive).
@@ -887,10 +887,10 @@ class HybridMuonOptimizer(Optimizer):
         - ``"slice"``: >=3D parameters use per-slice Muon routing on last two dims.
     named_parameters : iterable[tuple[str, torch.Tensor]] | None
         Optional named parameter iterable used for name-based routing.
-        Parameters with final effective name segment containing ``bias``
-        (case-insensitive), or starting with ``adam_`` (case-insensitive),
-        are forced to Adam (no weight decay). Parameters starting with
-        ``adamw_`` are forced to AdamW-style decoupled decay path.
+        Parameters with final effective name segment equal to ``b``, containing
+        ``bias``, or starting with ``adam_`` (case-insensitive) are forced to
+        Adam (no weight decay). Parameters starting with ``adamw_`` are forced
+        to AdamW-style decoupled decay path.
     enable_gram : bool
         Enable the compiled Gram Newton-Schulz path for rectangular Muon
         matrices. Square matrices continue to use the current standard
@@ -1502,7 +1502,7 @@ class HybridMuonOptimizer(Optimizer):
         Classify parameters into Muon, Adam, and AdamW routes (static routing).
 
         Routing logic:
-        - name-based ``adam_`` prefix or contains ``bias`` → Adam (no decay)
+        - name-based ``b``, ``bias``, or ``adam_`` route → Adam (no decay)
         - name-based ``adamw_`` prefix → AdamW (decoupled weight decay)
         - effective shape rank <2 → Adam (no decay)
         - non-matrix effective shape for current muon_mode → AdamW (decoupled)

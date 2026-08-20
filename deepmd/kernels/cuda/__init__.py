@@ -16,9 +16,12 @@ Modules
     / one backward kernel.
 :mod:`.graph_fitting`
     Descriptor-agnostic fused energy fitting network on the flat node axis
-    (cuBLAS GEMMs with fused bias / activation / timestep / residual
-    epilogues).
+    (cuBLAS GEMMs with fused bias / activation / residual epilogues).
 :mod:`.edge_force_virial`
     Descriptor-agnostic force / atom-virial / per-frame-virial assembly from
     the per-edge energy gradient.
+:mod:`.dpa4c.graph_compress`
+    DPA4C compressed descriptor: radial spline lookup, two packed moment
+    reductions, factorized angular feedback, invariant readout, and analytical
+    edge-vector backward.
 """

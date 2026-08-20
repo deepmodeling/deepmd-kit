@@ -108,7 +108,7 @@ function:
   (``edge_vec.detach().requires_grad_(True)``), so neighbor construction,
   shift application and coordinate gathers live outside the autograd region
   (NOTE 11).
-* The SeZM descriptor and the analytical ZBL term (``InterPotential``)
+* The SeZM descriptor and the analytical ZBL term (``InnerPotential``)
   both consume that edge-vector leaf, so the energy depends on coordinates
   *only* through ``edge_vec``.
 * The fitting network predicts per-atom energy; ``apply_out_stat`` adds
@@ -760,8 +760,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self.bridging_method: str = str(bridging_method).upper()
         self.bridging_r_inner = float(bridging_r_inner)
         self.bridging_r_outer = float(bridging_r_outer)
-        self.inter_potential: InterPotential | None = (
-            InterPotential(type_map=self.get_type_map(), mode=self.bridging_method)
+        self.inter_potential: InnerPotential | None = (
+            InnerPotential(type_map=self.get_type_map(), mode=self.bridging_method)
             if self.bridging_method != "NONE"
             else None
         )
@@ -769,6 +769,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     # =========================================================================
     # Forward Methods
     # =========================================================================
+
+    def _sanitize_atom_types(
+        self,
+        atype: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return lookup-safe atom types and the physical-atom mask.
+
+        Phantom atoms use a negative type sentinel for rectangular mixed-nloc
+        padding. Every type-table lookup receives the safe tensor, while the
+        mask keeps the substituted row from acquiring physical meaning.
+        """
+        real_atom = self.atomic_model.make_atom_mask(atype)
+        safe_atype = torch.where(real_atom, atype, torch.zeros_like(atype))
+        return safe_atype, real_atom
 
     def forward(
         self,
@@ -955,6 +969,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         charge_spin: torch.Tensor | None = None,
         spin: torch.Tensor | None = None,
         embedding_only: bool = False,
+        atomic_output_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Return model prediction using standard neighbor list.
@@ -983,6 +998,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             clean `dens` batches may not provide corruption masks.
         charge_spin
             Frame-level charge and spin conditions with shape `(nf, 2)`.
+        atomic_output_only
+            Whether to stop after assembling complete atomic outputs.
 
         Returns
         -------
@@ -1007,7 +1024,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
             # === Step 2. Build geometry schema ===
             with nvtx_range("SeZM/build_neighbor_list"):
-                if self.get_active_mode() == "dens":
+                if self.get_active_mode() == "dens" and not atomic_output_only:
                     # extended_coord: (nf, nall, 3), extended_atype: (nf, nall)
                     # nlist: (nf, nloc, nsel), mapping: (nf, nall)
                     extended_coord, extended_atype, nlist, mapping = (
@@ -1017,7 +1034,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     edge_schema = self.build_neighbor_list(cc, atype, bb)
 
             # === Step 3. Run the model compute path ===
-            if self.get_active_mode() == "dens":
+            if self.get_active_mode() == "dens" and not atomic_output_only:
                 return self.forward_common_lower_dens(
                     extended_coord,
                     extended_atype,
@@ -1044,6 +1061,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 spin=spin,
                 input_prec=input_prec,
                 embedding_only=embedding_only,
+                atomic_output_only=atomic_output_only,
             )
 
     def forward_common_lower(
@@ -1064,6 +1082,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         input_prec: torch.dtype | None = None,
         use_compile: bool | None = None,
         embedding_only: bool = False,
+        atomic_output_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Run the conservative SeZM lower interface on explicit edge vectors.
@@ -1111,6 +1130,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         should_compile = (
             self.should_use_compile() if use_compile is None else use_compile
         )
+        if atomic_output_only:
+            should_compile = False
         if comm_dict is not None:
             if extended_atype is None:
                 raise ValueError(
@@ -1248,6 +1269,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         extended_coord_corr=extended_coord_corr,
                         spin=spin,
                         embedding_only=embedding_only,
+                        atomic_output_only=atomic_output_only,
                     )
         return self._output_type_cast(model_predict, input_prec)
 
@@ -1393,6 +1415,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         spin: torch.Tensor | None = None,
         embedding_only: bool = False,
         conservative: bool = True,
+        atomic_output_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Compute SeZM lower outputs from the unified edge-vector schema.
@@ -1446,6 +1469,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             fitting keeps this enabled. Non-conservative property fitting
             disables it, so fitting outputs are reduced by their output
             definition without constructing edge-force gradients.
+        atomic_output_only
+            Whether computation stops after assembling complete atomic outputs,
+            before reductions and coordinate derivatives. Used by
+            output-statistics prediction.
 
         Returns
         -------
@@ -1470,14 +1497,53 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # scatter indices below.  The embedding path produces no force, so it
         # keeps ``edge_vec`` detached and never allocates an autograd leaf. The
         # same forward-only treatment is used by non-conservative property heads.
-        if conservative and not embedding_only:
+        if conservative and not embedding_only and not atomic_output_only:
             edge_vec = edge_vec.detach().requires_grad_(True)
 
         # Native spin: the per-atom spin is a second autograd leaf, so the
         # magnetic force -dE/dspin is produced by the same backward that
         # scatters the edge gradient into force/virial.
-        if spin is not None and conservative and not embedding_only:
+        if (
+            spin is not None
+            and conservative
+            and not embedding_only
+            and not atomic_output_only
+        ):
             spin = spin.detach().requires_grad_(True)
+
+        # === Atom mask ===
+        # Phantom atoms (atype < 0) pad a mixed-nloc batch to a rectangular
+        # shape and stand for no physical site. The edge builders keep them out
+        # of every edge, so the networks see them as isolated nodes, and the
+        # mask below zeroes whatever those nodes produce. Their type is still
+        # read as a table index by the type embedding, the fitting bias and the
+        # exclusion masks, none of which has a row for it. ``atype`` is
+        # therefore rebound to a sanitized copy for the remainder of this
+        # method, which is where a phantom would otherwise reach such a table.
+        # The substitute type is immaterial: it reaches no real atom through
+        # any edge, and the mask discards everything it produces.
+        atype, real_atom = self._sanitize_atom_types(atype)
+        atom_mask = real_atom.to(torch.int32)
+        if self.atomic_model.atom_excl is not None:
+            atom_mask = atom_mask * self.atomic_model.atom_excl(atype)
+
+        if comm_dict is None:
+            descriptor_atype = atype
+            descriptor_real_atom = real_atom
+        elif extended_atype is None:
+            raise ValueError("`extended_atype` is required with `comm_dict`.")
+        else:
+            # Ghost atoms carry the type of the local atom they image, so this
+            # sanitizes the phantoms among them on the same grounds as above.
+            descriptor_atype, descriptor_real_atom = self._sanitize_atom_types(
+                extended_atype
+            )
+        inter_potential_edge_mask = self._make_inter_potential_edge_mask(
+            descriptor_atype,
+            descriptor_real_atom,
+            edge_index,
+            edge_mask,
+        )
 
         # === Step 2. Descriptor forward ===
         # ``extended_atype`` spans the extended region on the parallel path and
@@ -1489,7 +1555,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         with nvtx_range("SeZM/descriptor"):
             descriptor, _ = descriptor_model.forward_with_edges(
                 extended_coord=coord,
-                extended_atype=extended_atype if comm_dict is not None else atype,
+                extended_atype=descriptor_atype,
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
@@ -1498,11 +1564,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 comm_dict=comm_dict,
                 nloc=nloc,
             )
-
-        # === Atom mask ===
-        atom_mask = self.atomic_model.make_atom_mask(atype).to(torch.int32)
-        if self.atomic_model.atom_excl is not None:
-            atom_mask = atom_mask * self.atomic_model.atom_excl(atype)
 
         # === Step 3. Fitting net ===
         # The same fitting forward serves both modes; ``embedding_only`` only asks
@@ -1528,9 +1589,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             structural_feature = (
                 atomic_feature * atom_mask[:, :, None].to(atomic_feature.dtype)
             ).sum(dim=1)
+            # The per-atom outputs are zeroed on the phantom rows alone, so
+            # that a padded batch reports nothing for a slot holding no atom.
+            # Excluded atoms, which ``atom_mask`` also covers, keep their
+            # per-atom embeddings and are dropped from the pooled sum only.
+            real = real_atom[:, :, None]
             return {
-                "descriptor": descriptor,
-                "atomic_feature": atomic_feature,
+                "descriptor": descriptor * real.to(descriptor.dtype),
+                "atomic_feature": atomic_feature * real.to(atomic_feature.dtype),
                 "structural_feature": structural_feature,
             }
 
@@ -1538,8 +1604,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         with nvtx_range("SeZM/apply_out_stat"):
             fit_ret = self.atomic_model.apply_out_stat(fit_ret, atype)
 
-        # === Step 4. Apply atom mask ===
-        for key in fit_ret.keys():
+        # === Step 4. Inject analytical pair potential (edge form) ===
+        # ZBL is evaluated from ``edge_vec`` (the autograd leaf) so its force
+        # and virial flow through the same edge backward as the learned energy.
+        if self.inter_potential is not None and "energy" in fit_ret:
+            fit_ret["energy"] = fit_ret["energy"] + self.inter_potential(
+                edge_vec=edge_vec,
+                edge_index=edge_index,
+                atype_flat=descriptor_atype.reshape(-1),
+                edge_mask=inter_potential_edge_mask,
+                n_node=nf * nloc,
+                real_type_count=self._get_inter_potential_real_type_count(),
+            ).view(nf, nloc, 1)
+
+        # === Step 5. Apply atom mask to the complete physical output ===
+        for key in fit_ret:
             out_shape = fit_ret[key].shape
             flat_dim = 1
             for axis_size in out_shape[2:]:
@@ -1550,6 +1629,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             ).view(out_shape)
         fit_ret["mask"] = atom_mask
 
+        if atomic_output_only:
+            return fit_ret
+
         if not conservative:
             return fit_output_to_model_output(
                 fit_ret,
@@ -1559,19 +1641,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 mask=fit_ret["mask"],
                 extended_coord_corr=extended_coord_corr,
             )
-
-        # === Step 5. Inject analytical pair potential (edge form) ===
-        # ZBL is evaluated from ``edge_vec`` (the autograd leaf) so its force
-        # and virial flow through the same edge backward as the learned energy.
-        if self.inter_potential is not None and "energy" in fit_ret:
-            fit_ret["energy"] = fit_ret["energy"] + self.inter_potential(
-                edge_vec=edge_vec,
-                edge_index=edge_index,
-                atype_flat=atype.reshape(-1),
-                edge_mask=edge_mask,
-                n_node=nf * nloc,
-                real_type_count=self._get_inter_potential_real_type_count(),
-            ).view(nf, nloc, 1)
 
         # === Step 6. Force / virial via edge-force scatter ===
         # A single ``autograd.grad(energy, edge_vec)`` inside
@@ -2780,7 +2849,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             1:1 with ``edge_index`` and ``edge_vec``.
         """
         nloc = nlist.shape[1]
-        atype = torch.empty(
+        atype = torch.zeros(
             (nlist.shape[0], nloc),
             dtype=torch.long,
             device=extended_coord.device,
@@ -2962,6 +3031,63 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         return force_input, noise_mask
 
     # =========================================================================
+    # Output Statistics
+    # =========================================================================
+
+    def predict_atomic_outputs_for_stat(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Predict complete atomic outputs for residual output statistics.
+
+        Parameters
+        ----------
+        coord
+            Local coordinates with shape (nf, nloc, 3) in Å.
+        atype
+            Local atom types with shape (nf, nloc).
+        box
+            Simulation cells with shape (nf, 9), or ``None``.
+        fparam
+            Optional frame parameters.
+        aparam
+            Optional atomic parameters.
+        charge_spin
+            Optional frame-level charge and spin conditions.
+        spin
+            Optional native per-atom spin vectors.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Complete atomic outputs evaluated without compilation or
+            coordinate derivatives.
+        """
+        with (
+            self.preserve_training_state(),
+            torch.no_grad(),
+            self.tf32_precision_ctx(),
+        ):
+            outputs = self.forward_common(
+                coord,
+                atype,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+                atomic_output_only=True,
+            )
+            return {key: value.detach() for key, value in outputs.items()}
+
+    # =========================================================================
     # Output Post-Processing
     # =========================================================================
 
@@ -3030,18 +3156,17 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def supports_edge_parallel(self) -> bool:
         """Whether the edge-based LAMMPS multi-rank with-comm artifact applies.
 
-        Cross-rank ghost-feature exchange is well-defined only for the
-        conservative non-bridging path: analytical ZBL bridging and its Source
-        Freeze Propagation gate fold each node's full outgoing-edge set, which a
-        single rank cannot observe for ghost owners. The native spin scheme
-        reuses the edge_vec interface and therefore participates; only the
-        deepspin (virtual-atom) scheme uses the nlist interface and is excluded
-        by the freeze entry point's edge_vec gate.
+        Delegates to the descriptor capability. Bridging participates since
+        issue #5906: the Source Freeze Propagation Gate's per-node partials
+        are completed across ranks (``_gate_partial_exchange``) and the
+        analytical ZBL injection reads extended types, so the parallel path
+        reproduces the folded one. The native spin scheme reuses the
+        edge_vec interface and therefore participates; only the deepspin
+        (virtual-atom) scheme uses the nlist interface and is excluded by
+        the freeze entry point's edge_vec gate.
         """
-        if self.inter_potential is not None:
-            return False
         descriptor = self.atomic_model.descriptor
-        return bool(descriptor.has_message_passing_across_ranks())
+        return bool(descriptor.supports_edge_parallel())
 
     def export_lower_input_kind(self) -> str:
         """Return the ABI consumed by the exported ``.pt2`` lower graph.
@@ -3116,6 +3241,59 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     # =========================================================================
     # Bridging Helpers
     # =========================================================================
+
+    def _make_inter_potential_edge_mask(
+        self,
+        atype: torch.Tensor,
+        real_atom: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build the complete validity mask for analytical pair energies.
+
+        Parameters
+        ----------
+        atype
+            Lookup-safe atom types with shape (nf, nall).
+        real_atom
+            Physical-atom mask with shape (nf, nall).
+        edge_index
+            Edge source and destination indices with shape (2, E).
+        edge_mask
+            Base edge-validity mask with shape (E,).
+
+        Returns
+        -------
+        torch.Tensor
+            Boolean analytical-potential mask with shape (E,).
+        """
+        if self.inter_potential is None:
+            return edge_mask
+
+        src = edge_index[0]
+        dst = edge_index[1]
+        atype_flat = atype.reshape(-1)
+        real_atom_flat = real_atom.reshape(-1)
+        keep = (
+            edge_mask
+            & real_atom_flat.index_select(0, src)
+            & real_atom_flat.index_select(0, dst)
+        )
+
+        descriptor = self.atomic_model.descriptor
+        if descriptor.exclude_types:
+            keep = keep & descriptor._edge_type_keep_mask(atype_flat, src, dst)
+
+        atom_excl = self.atomic_model.atom_excl
+        if atom_excl is not None:
+            atom_is_included = atom_excl(atype).to(torch.bool).reshape(-1)
+            keep = (
+                keep
+                & atom_is_included.index_select(0, src)
+                & atom_is_included.index_select(0, dst)
+            )
+
+        return keep
 
     def _get_inter_potential_real_type_count(self) -> int:
         """Return the real-type count used to mask analytical pair potentials."""
@@ -3231,6 +3409,30 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     # =========================================================================
 
     @contextmanager
+    def preserve_training_state(self) -> Generator[None, None, None]:
+        """
+        Evaluate temporarily and restore every module training flag.
+
+        Yields
+        ------
+        None
+            Control while the complete module tree is in evaluation mode.
+        """
+        training_states = [
+            (submodule, submodule.training) for submodule in self.modules()
+        ]
+        root_training = self.training
+        self.eval()
+        try:
+            yield
+        finally:
+            # ``train`` invokes module-specific cache invalidation hooks before
+            # the exact per-module flags are restored below.
+            self.train(root_training)
+            for submodule, training in training_states:
+                submodule.training = training
+
+    @contextmanager
     def tf32_precision_ctx(self) -> Generator[None, None, None]:
         """Context manager to temporarily set TF32 matmul precision.
 
@@ -3255,7 +3457,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
 
 # =============================================================================
-# InterPotential: analytical pair potentials for bridging
+# InnerPotential: analytical pair potentials for bridging
 # =============================================================================
 
 # fmt: off
@@ -3290,7 +3492,7 @@ _KE_EV_A = 14.3996  # Coulomb constant in eV·Å
 _A_BOHR = 0.5291772109  # Bohr radius in Å
 
 
-class InterPotential(torch.nn.Module):
+class InnerPotential(torch.nn.Module):
     """
     Analytical pair potential module for Zone bridging.
 
@@ -3320,7 +3522,7 @@ class InterPotential(torch.nn.Module):
         super().__init__()
         mode = mode.upper()
         if mode != "ZBL":
-            raise ValueError(f"Unknown InterPotential mode: {mode}")
+            raise ValueError(f"Unknown InnerPotential mode: {mode}")
         self.mode = mode
         self.ntypes_real = len(type_map)
 

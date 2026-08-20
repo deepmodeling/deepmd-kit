@@ -1,8 +1,12 @@
-# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
+# Interpolation or combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
-:::{note}
-**Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
-:::
+> [!NOTE]
+> **Short-range interpolation backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable {{ pytorch_icon }}, JAX
+> {{ jax_icon }}, DP {{ dpmodel_icon }}
+>
+> **Linear-combination backends**: TensorFlow {{ tensorflow_icon }}, PyTorch-TorchScript and
+> PyTorch-Exportable {{ pytorch_icon }}, DP {{ dpmodel_icon }}
 
 ## Theory
 
@@ -45,7 +49,8 @@ In the range $[r_a, r_b]$, the DP model smoothly switched off and the pairwise p
 where the scale $\alpha_s$ is a tunable scale of the interatomic distance $r_{ij}$.
 The pairwise potential $u^{\textrm{pair}}(r)$ is defined by a user-defined table that provides the value of $u^{\textrm{pair}}$ on an evenly discretized grid from 0 to the cutoff distance.[^1]
 
-DeePMD-kit also supports combination with a pairwise potential {{ tensorflow_icon }}:
+DeePMD-kit also supports combination with a pairwise potential
+{{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}:
 
 ```math
   E_i = E_i^{\mathrm{DP}} + E_i^{\mathrm{pair}},
@@ -60,9 +65,8 @@ in the order of Type_0-Type_0, Type_0-Type_1, ..., Type_0-Type_N, Type_1-Type_1,
 
 The interaction should be smooth at the cut-off distance.
 
-:::{note}
-In instances where the interaction at the cut-off distance is not delineated within the table file, extrapolation will be conducted utilizing the available interaction data. This extrapolative procedure guarantees a smooth transition from the table-provided value to `0` whenever feasible.
-:::
+> [!NOTE]
+> In instances where the interaction at the cut-off distance is not delineated within the table file, extrapolation will be conducted utilizing the available interaction data. This extrapolative procedure guarantees a smooth transition from the table-provided value to `0` whenever feasible.
 
 ## Interpolation with a short-range pairwise potential
 
@@ -78,7 +82,7 @@ In instances where the interaction at the cut-off distance is not delineated wit
 
 {ref}`sw_rmin <model/sw_rmin>` and {ref}`sw_rmax <model/sw_rmax>` must be smaller than the cutoff radius of the DP model.
 
-## Combination with a pairwise potential {{ tensorflow_icon }}
+## Combination with a pairwise potential {{ tensorflow_icon }} {{ pytorch_icon }} {{ dpmodel_icon }}
 
 To combine with a pairwise potential, use the [linear model](./linear.md):
 
@@ -102,11 +106,10 @@ To combine with a pairwise potential, use the [linear model](./linear.md):
 
 The {ref}`rcut <model[pairtab]/rcut>` can be larger than that of the DP model.
 
-:::{note}
-The above example shows a example of combining D3 dispersion.
-However, it is more efficient to train a model using plain DFT calculations without the dispersion correction, and add the dispersion correction during the simulation via the LAMMPS [`pair_style dispersion/d3` command](https://docs.lammps.org/pair_dispersion_d3.html#pair-style-dispersion-d3-command).
-Training against data with dispersion directly is discouraged.
-See the [D3 dispersion section](../third-party/lammps-command.md#d3-dispersion) for details.
-:::
+> [!NOTE]
+> The above example shows an example of combining D3 dispersion.
+> However, it is more efficient to train a model using plain DFT calculations without the dispersion correction, and add the dispersion correction during the simulation via the LAMMPS [`pair_style dispersion/d3` command](https://docs.lammps.org/pair_dispersion_d3.html#pair-style-dispersion-d3-command).
+> Training against data with dispersion directly is discouraged.
+> See the [D3 dispersion section](../third-party/lammps-command.md#d3-dispersion) for details.
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

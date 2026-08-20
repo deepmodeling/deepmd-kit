@@ -1,8 +1,7 @@
 # Use deep potential with ASE
 
-:::{note}
-See [Environment variables](../env.md) for the runtime environment variables.
-:::
+> [!NOTE]
+> See [Environment variables](../env.md) for the runtime environment variables.
 
 Deep potential can be set up as a calculator with ASE to obtain potential energies and forces.
 
@@ -25,7 +24,7 @@ print(water.get_forces())
 ```
 :::
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```python
 from ase import Atoms

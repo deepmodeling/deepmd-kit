@@ -167,6 +167,77 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has default frame parameters."""
         return False
 
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this atomic model supports the NeighborGraph lower.
+
+        Generic capability (concrete default ``False``): the model layer
+        consults it for graph-route eligibility without assuming anything
+        about the atomic model's internal architecture. Implementations
+        answer from their own structure (e.g. a descriptor+fitting model
+        delegates to its descriptor; a composition supports it iff ALL its
+        children do).
+        """
+        return False
+
+    def supports_native_spin(self) -> bool:
+        """Returns whether this atomic model consumes a per-atom spin input.
+
+        Generic capability (concrete default ``False``), the twin of
+        :meth:`uses_graph_lower`: the model layer asks the atomic model
+        directly instead of reaching into it for a descriptor, so the answer
+        stays correct for architectures with no descriptor at all (analytical
+        terms) and for compositions.
+        """
+        return False
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Whether multi-rank inference needs a cross-rank ghost exchange.
+
+        Generic capability (concrete default ``False``): the export layer
+        consults it instead of reaching for a descriptor, so the answer
+        stays correct for descriptor-less models and compositions.
+        """
+        return False
+
+    def supports_edge_parallel(self) -> bool:
+        """Whether this atomic model can run under MPI domain decomposition.
+
+        Default ``True``; a model folding state no single rank observes
+        (e.g. SFPG bridging before its exchange lands) overrides to False.
+        """
+        return True
+
+    def dense_lower_supports_comm(self) -> bool:
+        """Whether the DENSE (nlist) lower implements comm_dict exchange.
+
+        Default ``True`` — dense comm is the production multi-rank path for
+        dpa2/dpa3; DPA4's dense adapter raises on comm_dict and overrides
+        via its descriptor.
+        """
+        return True
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """Whether the graph lower emits compact ``center_edge_pairs``
+        (drives the torch>=2.6 unbacked-SymInt export guard).
+        """
+        return False
+
+    def graph_edge_dtype(self) -> str:
+        """Edge-geometry dtype the graph deployment artifact accepts.
+
+        ``"float64"`` is the model-agnostic ABI; geometrically compressed
+        float32 descriptors override to ``"float32"``.
+        """
+        return "float64"
+
+    def supports_graph_export(self) -> bool:
+        """Whether an exportable graph-lower implementation exists.
+
+        A compressed descriptor without its fused opaque operator cannot be
+        traced through the reference tabulation kernel.
+        """
+        return True
+
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return None
@@ -178,10 +249,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def get_dim_chg_spin(self) -> int:
         """Get the dimension of charge_spin input."""
         return 0
-
-    def has_default_chg_spin(self) -> bool:
-        """Check if the model has default charge_spin values."""
-        return False
 
     def get_default_chg_spin(self) -> list[float] | None:
         """Get the default charge_spin values."""
@@ -381,6 +448,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
         charge_spin: Array | None = None,
+        spin: Array | None = None,
         comm_dict: dict | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
@@ -405,8 +473,14 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         aparam
             atomic parameter. N x nda
         charge_spin
-            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
-            the interface stays stable for charge/spin-conditioned descriptors.
+            frame-level charge/spin conditioning, forwarded unchanged to
+            :meth:`forward_atomic_graph`, which only passes it on to the
+            descriptor's ``call_graph`` for descriptors that declare
+            ``supports_charge_spin`` (currently DPA4 only).
+        spin
+            flat (N, 3) per-node spin, forwarded unchanged to
+            :meth:`forward_atomic_graph` (and, from there, the descriptor's
+            ``call_graph``); None for spin-less models.
         comm_dict
             MPI communication metadata forwarded to :meth:`forward_atomic_graph`
             (and, from there, the descriptor's ``call_graph``). ``None`` for
@@ -426,6 +500,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
+            spin=spin,
             comm_dict=comm_dict,
         )
         return self._finalize_atomic_ret(ret_dict, output_mask, atype)
@@ -727,7 +802,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             delta_bias, out_std = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
@@ -740,7 +815,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             bias_out, std_out = compute_output_stats(
                 sample_merged,
                 self.get_ntypes(),
-                keys=list(self.atomic_output_def().keys()),
+                keys=self.bias_keys,
                 stat_file_path=stat_file_path,
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
@@ -774,9 +849,26 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.out_std = out_std_data
 
     def _get_forward_wrapper_func(self) -> Callable[..., dict[str, np.ndarray]]:
-        """Get a forward wrapper of the atomic model for output bias calculation."""
+        """Get a forward wrapper of the atomic model for output bias calculation.
+
+        The wrapper starts from raw coordinates and therefore has to construct
+        the neighbor representation itself. It builds the one this model
+        declares through :meth:`uses_graph_lower`: a carry-all
+        ``NeighborGraph`` for graph-native models, whose neighbor count follows
+        the geometry, or the fixed-capacity neighbor list sized by
+        :meth:`get_sel` otherwise. Sizing a dense list from ``get_sel`` is not
+        merely wasteful for a graph-native model -- such a model reports no
+        finite capacity, so the allocation is unbounded.
+
+        A native-spin model conditions on a per-atom magnetic moment, which the
+        wrapper forwards on the graph route alone: that scheme implements only
+        the graph lower, so the dense route never carries a moment.
+        """
         import array_api_compat
 
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
         from deepmd.dpmodel.utils.nlist import (
             extend_input_and_build_neighbor_list,
         )
@@ -788,6 +880,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             fparam: np.ndarray | None = None,
             aparam: np.ndarray | None = None,
             charge_spin: np.ndarray | None = None,
+            spin: np.ndarray | None = None,
         ) -> dict[str, np.ndarray]:
             # Get reference array to determine the target array type and device
             # Use out_bias as reference since it's always present
@@ -809,32 +902,73 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 aparam = xp.asarray(aparam, device=device)
             if charge_spin is not None:
                 charge_spin = xp.asarray(charge_spin, device=device)
+            if spin is not None:
+                spin = xp.asarray(spin, device=device)
 
-            (
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-            ) = extend_input_and_build_neighbor_list(
-                coord,
-                atype,
-                self.get_rcut(),
-                self.get_sel(),
-                mixed_types=self.mixed_types(),
-                box=box,
-                # exclusion is a nlist-BUILD transform (decision #18/A4);
-                # forward_common_atomic consumes a pre-excluded nlist.
-                pair_excl=self.pair_excl,
-            )
-            atomic_ret = self.forward_common_atomic(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping=mapping,
-                fparam=fparam,
-                aparam=aparam,
-                charge_spin=charge_spin,
-            )
+            if self.uses_graph_lower():
+                nframes, nloc = atype.shape
+                # Pair exclusion is a neighbor-BUILD transform (decision
+                # #18/A4) on both routes; the graph builder folds it into
+                # ``edge_mask``.
+                graph = build_neighbor_graph(
+                    coord,
+                    atype,
+                    box,
+                    self.get_rcut(),
+                    pair_excl=self.pair_excl,
+                )
+                atomic_ret = self.forward_common_atomic_graph(
+                    graph,
+                    xp.reshape(atype, (-1,)),
+                    fparam=fparam,
+                    aparam=(
+                        xp.reshape(
+                            aparam,
+                            (nframes * nloc, self.get_dim_aparam()),
+                        )
+                        if aparam is not None
+                        else None
+                    ),
+                    charge_spin=charge_spin,
+                    spin=None if spin is None else xp.reshape(spin, (-1, 3)),
+                )
+                # The graph route works on a flat node axis; restore the
+                # per-frame layout the dense route returns.
+                atomic_ret = {
+                    kk: xp.reshape(vv, (nframes, nloc, *vv.shape[1:]))
+                    for kk, vv in atomic_ret.items()
+                }
+            else:
+                if spin is not None:
+                    raise NotImplementedError(
+                        "native-spin output-bias calibration requires the "
+                        "NeighborGraph lower"
+                    )
+                (
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    coord,
+                    atype,
+                    self.get_rcut(),
+                    self.get_sel(),
+                    mixed_types=self.mixed_types(),
+                    box=box,
+                    # exclusion is a nlist-BUILD transform (decision #18/A4);
+                    # forward_common_atomic consumes a pre-excluded nlist.
+                    pair_excl=self.pair_excl,
+                )
+                atomic_ret = self.forward_common_atomic(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
             # Convert outputs back to numpy arrays
             return {kk: to_numpy_array(vv) for kk, vv in atomic_ret.items()}
 

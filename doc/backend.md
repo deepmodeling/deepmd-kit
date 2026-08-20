@@ -2,10 +2,16 @@
 
 ## Supported backends
 
-DeePMD-kit supports multiple backends: TensorFlow and PyTorch.
+DeePMD-kit supports seven backends: TensorFlow, TensorFlow 2,
+PyTorch-TorchScript, PyTorch-Exportable, JAX, Paddle, and the NumPy-based DP
+reference backend.
 To use DeePMD-kit, you must install at least one backend.
 Each backend does not support all features.
-In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, and Paddle {{ paddle_icon }} icons are used to mark whether a backend supports a feature.
+In the documentation, TensorFlow and TensorFlow 2 share
+{{ tensorflow_icon }}, while PyTorch-TorchScript and PyTorch-Exportable share
+{{ pytorch_icon }}. JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, and DP
+{{ dpmodel_icon }} use separate icons. Support notes spell out the exact backend
+variant when the two implementations in a framework family differ.
 
 ### TensorFlow {{ tensorflow_icon }}
 
@@ -15,24 +21,90 @@ In the documentation, TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon 
 [TensorFlow](https://tensorflow.org) 2.8 is the first version to support Python 3.10.
 DeePMD-kit does not use the TensorFlow v2 API but uses the TensorFlow v1 API (`tf.compat.v1`) in the graph mode.
 
-### PyTorch {{ pytorch_icon }}
+### TensorFlow 2 {{ tensorflow_icon }}
+
+- Model filename extension: `.savedmodeltf`
+- Checkpoint directory extension: `.tf2`
+
+The TensorFlow 2 backend uses the TensorFlow v2 eager API. Select it with
+`dp --tf2` (alias `dp --tensorflow2`). It supports training, including
+multi-task training and fine-tuning. Freezing, compression, and testing use a
+`.savedmodeltf` export and therefore require graph-traceable model code.
+Training stores checkpoints in a directory named after the `save_ckpt` prefix
+with `.tf2` appended, such as `model.ckpt.tf2`.
+
+For training, set
+{ref}`training.enable_compile <training/enable_compile>` to `true` to enable
+XLA compilation of the formatted lower-forward path. Setting
+[`DP_JIT`](env.md#envvar-DP_JIT) enables the same model-level default and also
+applies it to SavedModel export. Depending on the workload, compilation may
+improve or reduce performance.
+
+### PyTorch-TorchScript {{ pytorch_icon }}
 
 - Model filename extension: `.pth`
 - Checkpoint filename extension: `.pt`
 
-[PyTorch](https://pytorch.org/) 2.1 or above is required.
-While `.pth` and `.pt` are the same in the PyTorch package, they have different meanings in the DeePMD-kit to distinguish the model and the checkpoint.
+[PyTorch](https://pytorch.org/) 2.1 or above is required. Select this backend
+with `dp --pt`. It uses TorchScript for most frozen models; DPA4/SeZM uses a
+separate AOTInductor export path. Because PyTorch has deprecated TorchScript,
+DeePMD-kit will deprecate this backend and replace it with PyTorch-Exportable.
+
+While `.pth` and `.pt` are the same in the PyTorch package, they have different
+meanings in DeePMD-kit: `.pth` stores a frozen model, while `.pt` stores a
+training checkpoint.
+
+### PyTorch-Exportable {{ pytorch_icon }}
+
+- Model filename extensions: `.pte`, `.pt2`
+- Checkpoint filename extension: `.pt`
+
+Select this backend with `dp --pt-expt` (alias
+`dp --pytorch-exportable`). It uses PyTorch with the backend-independent model
+implementation and supports training, including multi-task training and
+fine-tuning, freezing, change-bias, and testing. Compression support and export
+requirements are documented on the corresponding descriptor pages. Training
+can read LMDB datasets, and Python inference can use the optional vesin
+neighbor-list implementation.
+
+Freezing exports a `torch.export` model. The dense neighbor-list lower form
+normally uses `.pte`, while the graph lower form uses an AOTInductor `.pt2`
+package. Use `--lower-kind graph` to request graph-native export for an eligible
+model; graph-capable DPA models may select that form automatically. The `.pt`
+checkpoint format uses DP-model parameter names ending in `.w` and `.b`, which
+allows DeePMD-kit to distinguish it from a PyTorch-TorchScript checkpoint,
+whose parameter names end in `.matrix` and `.bias`.
+
+The `.pt2` suffix identifies an AOTInductor package, but not its lower-input
+ABI. A DPA4/SeZM model frozen with `dp --pt freeze` normally uses the legacy
+`edge_vec` ABI (`lower_input_kind: edge_vec`); its deepspin virtual-atom variant
+uses the dense `nlist` ABI instead. A graph model frozen with
+`dp --pt-expt freeze --lower-kind graph` uses the NeighborGraph ABI
+(`lower_input_kind: graph`). The `dp --pt-expt compress` workflow can instead
+export a compressed DPA-1 model through the compact canonical
+`dpa1_canonical` ABI (`lower_input_kind: dpa1_canonical`) when the canonical
+compression is eligible. All variants are loaded for inference by the
+PyTorch-Exportable runtime, which reads this metadata to select the correct
+input path. The `--lower-kind` option controls only the PyTorch-Exportable
+freeze route; see the [DPA4 export documentation](model/dpa4.md#freeze-to-pt2)
+for the separate DPA4/SeZM AOTInductor export route.
 
 ### JAX {{ jax_icon }}
 
-- Model filename extension: `.xlo`, `.savedmodel`
-- Checkpoint filename extension: `.jax`
+- DeepEval model filename extensions: `.hlo`, `.savedmodel`
+- Checkpoint and lossless serialization extension: `.jax`
 
 [JAX](https://jax.readthedocs.io/) 0.4.33 or above is required.
-Both `.xlo` and `.jax` are customized format extensions defined in DeePMD-kit, since JAX has no convention for file extensions.
+Both `.hlo` and `.jax` are customized format extensions defined in DeePMD-kit, since JAX has no convention for file extensions.
 `.savedmodel` is the TensorFlow [SavedModel format](https://www.tensorflow.org/guide/saved_model) generated by [JAX2TF](https://www.tensorflow.org/guide/jax2tf), which needs the installation of TensorFlow.
 Only the `.savedmodel` format supports C++ inference, which needs the TensorFlow C++ interface.
 The model is device-specific, so that the model generated on the GPU device cannot be run on the CPUs.
+
+JAX supports training with `dp --jax train`; training checkpoints use the
+`.jax` extension. Freezing can write a DeepEval-compatible `.hlo` or
+`.savedmodel` model, or a lossless `.jax` serialization for checkpoint
+round-tripping and JAX-MD. The normal `dp test`/`DeepPot` route does not load
+`.jax` serializations.
 
 ### Paddle {{ paddle_icon }}
 
@@ -45,9 +117,8 @@ The `.pd` extension is used for model checkpoint storage, which is commonly util
 
 ### DP {{ dpmodel_icon }}
 
-:::{note}
-This backend is only for development and should not take into production.
-:::
+> [!NOTE]
+> This backend is only for development and should not take into production.
 
 - Model filename extension: `.dp`, `.yaml`, `.yml`
 
@@ -65,12 +136,20 @@ NumPy 1.21 or above is required.
 
 ### Training
 
-When training and freezing a model, you can use `dp --tf`, `dp --pt` or `dp --pd` in the command line to switch the backend.
+When training and freezing a model, use `dp --tf`, `dp --tf2`, `dp --pt`,
+`dp --pt-expt`, `dp --jax`, or `dp --pd` in the command line to switch the
+backend.
 
 ### Inference
 
 When doing inference, DeePMD-kit detects the backend from the model filename.
 For example, when the model filename ends with `.pb` (the ProtoBuf file), DeePMD-kit will consider it using the TensorFlow backend.
+The same detection covers TensorFlow 2 `.savedmodeltf` models and
+PyTorch-Exportable `.pte` and `.pt2` runtime formats. In particular, `.pt2`
+selects the PyTorch-Exportable inference loader even when the file was produced
+by the DPA4/SeZM `dp --pt freeze` route described above; the archive metadata
+then selects its `edge_vec`, dense `nlist`, NeighborGraph, or compact
+`dpa1_canonical` ABI.
 
 ## Convert model files between backends
 

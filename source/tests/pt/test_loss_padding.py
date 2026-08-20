@@ -1,28 +1,26 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for mixed_type loss padding-mask support in the pt backend.
+"""Padding-mask behaviour of the pt backend losses.
 
-Task 1: verify that TaskLoss._inject_atom_mask correctly recovers the per-atom
-mask from atype (ghost atoms have atype < 0) so that later tasks can exclude
-them from loss reductions.
+A batch may hold frames of unequal atom count, padded to a common width with
+slots whose ``atype`` is negative. ``TaskLoss._inject_atom_mask`` recovers the
+per-atom mask from ``atype``, and every loss term must then reduce over the
+real atoms alone.
 
 Harness
 -------
-assert_grad_accum_invariant  -- reusable by Tasks 2-5 to check the
-    grad-accumulation invariant: loss on a padded multi-frame batch must equal
-    mean_over_frames(per_frame_loss).
+``assert_grad_accum_invariant`` checks that the loss of a padded two-frame
+batch equals the weighted mean of the frames' individual losses. The weights
+express how much each frame counts: frame-level terms (energy, virial) weigh
+frames equally, while per-atom terms (force, atomic energy, dos, tensor) weigh
+them by their label count, so a caller passes the frames' atom counts there.
 
-Scope / follow-ups (mixed_type padding fix, PR #5738)
-----------------------------------------------------
-- The TF backend loss is not covered here and still has the mixed_type
-  dilution behavior; tracked in deepmodeling/deepmd-kit#5760.
-- The pt-only losses ``dens``/``population``/``denoise`` are out of scope;
-  tracked in deepmodeling/deepmd-kit#5761.
-- ``ener_spin``'s ``force_mag`` MAE now uses a batch-size-independent mean
-  reduction (frames/atoms/xyz), consistent with force_mag MSE and force_real
-  MAE; the grad-accum invariant is asserted by the test below.
+Not covered: the TF backend, which still dilutes mixed_type losses
+(deepmodeling/deepmd-kit#5760), and the pt-only ``population`` and ``denoise``
+losses (deepmodeling/deepmd-kit#5761).
 """
 
 import numpy as np
+import pytest
 import torch
 
 from deepmd.pt.loss.dos import (
@@ -64,14 +62,24 @@ def assert_grad_accum_invariant(
     make_batch_A,
     make_batch_B,
     make_padded_batch,
+    frame_weights: tuple[float, float] = (1.0, 1.0),
     rtol: float = 1e-5,
     atol: float = 1e-6,
 ) -> None:
-    """Assert that padded-batch loss == mean(per_frame_loss) for two frames.
+    """Assert that a padded batch scores the weighted mean of its frames.
 
-    The grad-accumulation invariant: a padded batch of [frame_A (NA real atoms
-    padded to NP) + frame_B (NB==NP real atoms)] must yield the same loss as
-    processing each frame separately and averaging.
+    A padded batch of [frame_A (NA real atoms padded to NP) + frame_B (NB==NP
+    real atoms)] must yield the same loss as processing each frame separately
+    and combining them under the weights the term assigns to a frame:
+
+    - **Frame-level terms** (energy, virial, global dos/cdf, global tensor,
+      property) carry a fixed number of labels per frame, so the frames weigh
+      equally and the reference is the plain mean.  Pass the default weights.
+    - **Per-atom terms** (force, atomic energy, atomic prefactor force, atomic
+      dos/cdf, local tensor) carry labels in proportion to a frame's atom
+      count, and the loss pools them, so the reference is the atom-weighted
+      mean.  Pass ``frame_weights=(NA, NB)``; the per-atom component count
+      cancels out of the ratio.
 
     Parameters
     ----------
@@ -84,6 +92,8 @@ def assert_grad_accum_invariant(
     make_padded_batch : callable
         Returns ``(model_pred, label, natoms)`` for the 2-frame padded batch
         (nf=2, nloc=NP; frame A is padded with NP-NA ghost rows).
+    frame_weights : tuple[float, float]
+        Weight of frame A and frame B in the reference combination.
     rtol : float
         Relative tolerance for ``torch.isclose``.
     atol : float
@@ -95,7 +105,8 @@ def assert_grad_accum_invariant(
 
     loss_A = loss_fn(pred_A, label_A, natoms_A)
     loss_B = loss_fn(pred_B, label_B, natoms_B)
-    ref = 0.5 * (loss_A + loss_B)
+    weight_A, weight_B = frame_weights
+    ref = (weight_A * loss_A + weight_B * loss_B) / (weight_A + weight_B)
 
     loss_pad = loss_fn(pred_pad, label_pad, natoms_pad)
 
@@ -216,7 +227,9 @@ class TestPTDOSLossAtomicGradAccum:
                 NP,
             )
 
-        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+        assert_grad_accum_invariant(
+            self._loss_fn, make_A, make_B, make_padded, frame_weights=(NA, NB)
+        )
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same loss as no mask (non-mixed batch)."""
@@ -404,7 +417,9 @@ class TestPTTensorLossLocalGradAccum:
                 NP,
             )
 
-        assert_grad_accum_invariant(self._loss_fn, make_A, make_B, make_padded)
+        assert_grad_accum_invariant(
+            self._loss_fn, make_A, make_B, make_padded, frame_weights=(NA, NB)
+        )
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same loss as no mask (non-mixed batch)."""
@@ -779,7 +794,13 @@ class TestPTEnergyLossForceGradAccum:
     Covers: mse, mae, huber; plus non-mixed no-op.
     """
 
-    def _make_loss(self, loss_func="mse", use_huber=False, f_use_norm=False):
+    def _make_loss(
+        self,
+        loss_func="mse",
+        use_huber=False,
+        f_use_norm=False,
+        relative_f=None,
+    ):
         return EnergyStdLoss(
             starter_learning_rate=1.0,
             start_pref_e=0.0,
@@ -791,6 +812,7 @@ class TestPTEnergyLossForceGradAccum:
             loss_func=loss_func,
             use_huber=use_huber,
             f_use_norm=f_use_norm,
+            relative_f=relative_f,
         )
 
     def _run_invariant(self, loss_obj, f_A, f_A_hat, f_B, f_B_hat):
@@ -826,6 +848,7 @@ class TestPTEnergyLossForceGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -853,6 +876,56 @@ class TestPTEnergyLossForceGradAccum:
         self._run_invariant(
             self._make_loss("mse", use_huber=True), f_A, f_A_hat, f_B, f_B_hat
         )
+
+    @pytest.mark.parametrize(
+        ("loss_func", "use_huber"), [("mae", False), ("mse", True)]
+    )
+    def test_f_use_norm_grad_accum(self, loss_func, use_huber):
+        """One L2 norm per atom weighs frames the same way three components do.
+
+        ``f_use_norm`` changes how many labels an atom contributes, so it also
+        changes the divisor of the pooled reduction; the frame weights it
+        produces must still follow the atom counts.
+        """
+        f_A = _t(NA, 3)
+        f_A_hat = _t(NA, 3)
+        f_B = _t(NB, 3)
+        f_B_hat = _t(NB, 3)
+        self._run_invariant(
+            self._make_loss(loss_func, use_huber=use_huber, f_use_norm=True),
+            f_A,
+            f_A_hat,
+            f_B,
+            f_B_hat,
+        )
+
+    @pytest.mark.parametrize("masked", [False, True])
+    def test_relative_force_norm_uses_normalized_residual(self, masked):
+        """Vector-norm losses consume the relative-force residual."""
+        relative_f = 1.0
+        prediction = torch.zeros(1, 2, 3, dtype=torch.float64, device="cpu")
+        label_force = torch.tensor(
+            [[[3.0, 4.0, 0.0], [0.0, 0.0, 2.0]]],
+            dtype=torch.float64,
+            device="cpu",
+        )
+        model_pred = {"force": prediction}
+        if masked:
+            model_pred["mask"] = torch.ones(1, 2, dtype=torch.float64, device="cpu")
+        label = {"force": label_force, "find_force": 1.0}
+        loss_obj = self._make_loss(
+            "mae",
+            f_use_norm=True,
+            relative_f=relative_f,
+        )
+
+        actual = _ener_loss_fn(loss_obj, model_pred, label, 2)
+        label_norm = torch.linalg.vector_norm(label_force, dim=-1)
+        residual_norm = label_norm / (label_norm + relative_f)
+        # The loss is assembled on the training device, while the inputs above
+        # are built on the host like every other case in this file.
+        expected = residual_norm.mean().to(actual.device)
+        torch.testing.assert_close(actual, expected)
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same force loss as no mask."""
@@ -1036,6 +1109,7 @@ class TestPTEnergyLossAtomEnerGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -1159,6 +1233,7 @@ class TestPTEnergyLossAtomPrefGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -1592,6 +1667,7 @@ class TestPTEnerSpinLossForceRealGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):
@@ -1867,6 +1943,7 @@ class TestPTEnerSpinLossAtomEnerGradAccum:
             make_A,
             make_B,
             make_padded,
+            frame_weights=(NA, NB),
         )
 
     def test_mse_grad_accum(self):

@@ -22,6 +22,10 @@ class _LinearToyModel(torch.nn.Module):
         self.fail_forward = fail_forward
         self.last_requires_grad: tuple[bool, ...] | None = None
 
+    def has_spin(self) -> bool:
+        """Mirror the base-model capability contract (concrete, no getattr probe)."""
+        return False
+
     def forward(
         self,
         coord: torch.Tensor,

@@ -36,6 +36,8 @@ from deepmd.dpmodel.utils.seed import (
 )
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
+    remap_atype_to_padding,
+    take_type_embedding,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -204,6 +206,11 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self.trainable = trainable
         self.precision = precision
         self.compress = False
+        # tebd-compression slot: declared here so presence is a class
+        # property, not a runtime accident (issue #5897); optionally
+        # populated by deserialize() (only present in compressed models
+        # that carry type embedding compression data).
+        self.type_embd_data = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -398,7 +405,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            take_type_embedding(type_embedding, xp.reshape(atype_ext, (-1,))),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -461,7 +468,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
                     "compress_info": [to_numpy_array(i) for i in self.compress_info],
                 },
             }
-            if hasattr(self, "type_embd_data"):
+            if self.type_embd_data is not None:
                 compress_dict["@variables"]["type_embd_data"] = to_numpy_array(
                     self.type_embd_data
                 )
@@ -791,15 +798,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
-        if path is None or not path.is_dir():
-            if callable(merged):
-                # only get data for once
-                sampled = merged()
-            else:
-                sampled = merged
-        else:
-            sampled = []
-        env_mat_stat.load_or_compute_stats(sampled, path)
+        env_mat_stat.load_or_compute_stats(merged, path)
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
@@ -933,6 +932,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             nei_type = xp_take_along_axis(atype_ext, nlist_index, axis=1)
             # nfnl x nnei
             nei_type = xp.reshape(nei_type, (nf * nloc, nnei))
+            nei_type = remap_atype_to_padding(nei_type, ntypes_with_padding)
 
             # nfnl x nnei x nnei
             nei_type_i = xp.tile(nei_type[:, :, np.newaxis], (1, 1, nnei))

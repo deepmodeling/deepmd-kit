@@ -19,6 +19,9 @@ from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 
+from .ener_model import (
+    EnergyModel,
+)
 from .make_model import (
     _pad_nlist_for_export,
     make_model,
@@ -30,8 +33,21 @@ from .model import (
 DPLinearModel_ = make_model(LinearEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
-@BaseModel.register("linear_ener")
+@BaseModel.register("linear_ener")  # config type
+@BaseModel.register("linear")  # wire type emitted by the flat serialize
 class LinearEnergyModel(DPModelCommon, DPLinearModel_):
+    # The graph .pt2 exportable is energy-contract machinery (public-key
+    # translation over the CM's forward_common_lower_graph_exportable),
+    # identical for any energy model -- reuse EnergyModel's verbatim so
+    # compositions (e.g. analytical bridging) freeze like standard models.
+    forward_lower_graph_exportable = EnergyModel.forward_lower_graph_exportable
+    # Same ownership for the with-comm twin: it is the SAME energy contract
+    # plus the border-exchange inputs, so a bridged composition gets the
+    # multi-rank artifact through the same alias (issue #5906).
+    forward_lower_graph_exportable_with_comm = (
+        EnergyModel.forward_lower_graph_exportable_with_comm
+    )
+
     def __init__(
         self,
         *args: Any,
@@ -208,6 +224,9 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
         type_map = local_jdata_cpy["type_map"]
         min_nbor_dist = None
         for idx, sub_model in enumerate(local_jdata_cpy["models"]):
+            if sub_model.get("type") == "inner_potential":
+                # analytical child: no descriptor, no selection to update
+                continue
             if "tab_file" not in sub_model:
                 sub_model, temp_min = DPModelCommon.update_sel(
                     train_data, type_map, local_jdata_cpy["models"][idx]

@@ -5,6 +5,7 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_asarray_nodetach,
     xp_take_along_axis,
     xp_take_first_n,
 )
@@ -55,7 +56,11 @@ class AtomExcludeMask:
         lead = atype.shape  # (nf, natom) dense | (N,) graph
         return xp.reshape(
             xp.take(
-                xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
+                xp_asarray_nodetach(
+                    xp,
+                    self.type_mask[...],
+                    device=array_api_compat.device(atype),
+                ),
                 xp.reshape(atype, (-1,)),
                 axis=0,
             ),
@@ -151,7 +156,11 @@ class PairExcludeMask:
         type_ij_flat = xp.reshape(type_ij, (-1,))
         mask = xp.reshape(
             xp.take(
-                xp.asarray(self.type_mask[...], device=array_api_compat.device(nlist)),
+                xp_asarray_nodetach(
+                    xp,
+                    self.type_mask[...],
+                    device=array_api_compat.device(nlist),
+                ),
                 type_ij_flat,
             ),
             (nf, nloc, nnei),
@@ -185,7 +194,11 @@ class PairExcludeMask:
         dst_t = xp.take(atype, edge_index[1, :], axis=0)
         type_ij = dst_t * (self.ntypes + 1) + src_t
         return xp.take(
-            xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
+            xp_asarray_nodetach(
+                xp,
+                self.type_mask[...],
+                device=array_api_compat.device(atype),
+            ),
             type_ij,
             axis=0,
         )

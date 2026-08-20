@@ -17,8 +17,11 @@ import zipfile
 import pytest
 import torch
 
+from deepmd.pt_expt.model.graph_lower import (
+    graph_edge_dtype,
+)
 from deepmd.pt_expt.utils.serialization import (
-    _graph_edge_dtype,
+    _needs_with_comm_artifact,
     _supports_graph_export,
     deserialize_to_file,
 )
@@ -136,7 +139,16 @@ def test_graph_pt2_small_sel_exports() -> None:
 def test_compressed_graph_uses_compute_precision_edge_geometry(
     statistics_dtype: torch.dtype, expected: str
 ) -> None:
-    """Compressed DPA1 graph geometry follows descriptor compute precision."""
+    """Compressed DPA1 graph geometry follows descriptor compute precision.
+
+    The stub borrows the REAL capability methods (dpmodel
+    ``DescrptDPA1.graph_edge_dtype``, pt_expt
+    ``DescrptDPA1.supports_graph_export``) and the real DPAtomicModel-style
+    delegation, so the helpers are tested through the capability seam they
+    consume in production (issue #5906 Task 4).
+    """
+    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as _DPDescrptDPA1
+    from deepmd.pt_expt.descriptor.dpa1 import DescrptDPA1 as _PEDescrptDPA1
 
     class _Descriptor:
         geo_compress = True
@@ -149,14 +161,23 @@ def test_compressed_graph_uses_compute_precision_edge_geometry(
         def _fused_eligible(self, backend: str) -> bool:
             return backend == "cuda" and self.se_atten.mean.dtype == torch.float32
 
+        graph_edge_dtype = _DPDescrptDPA1.graph_edge_dtype
+        supports_graph_export = _PEDescrptDPA1.supports_graph_export
+
     class _AtomicModel:
         descriptor = _Descriptor()
+
+        def graph_edge_dtype(self) -> str:
+            return str(self.descriptor.graph_edge_dtype())
+
+        def supports_graph_export(self) -> bool:
+            return bool(self.descriptor.supports_graph_export())
 
     class _Model:
         atomic_model = _AtomicModel()
 
-    assert _graph_edge_dtype(_Model(), "graph") == expected
-    assert _graph_edge_dtype(_Model(), "nlist") == "float64"
+    assert graph_edge_dtype(_Model(), "graph") == expected
+    assert graph_edge_dtype(_Model(), "nlist") == "float64"
     assert _supports_graph_export(_Model()) is (statistics_dtype == torch.float32)
 
 
@@ -213,6 +234,10 @@ class _FakeAtomicModel:
     def __init__(self, n_attn: int) -> None:
         self.descriptor = _FakeDesc(n_attn)
 
+    def uses_compact_edge_pairs(self) -> bool:
+        # mirrors DPAtomicModel's capability delegation (issue #5906 Task 4)
+        return self.descriptor.uses_compact_edge_pairs()
+
 
 class _FakeModel:
     def __init__(self, n_attn: int) -> None:
@@ -257,19 +282,36 @@ def test_graph_trace_version_guard_passes(monkeypatch, version, n_attn) -> None:
     check_graph_trace_torch_version(_FakeModel(n_attn))
 
 
-def test_graph_trace_version_guard_tolerates_no_descriptor(monkeypatch) -> None:
-    """Composite models without a single descriptor pass (dense route anyway)."""
+def test_graph_trace_version_guard_checks_compositions(monkeypatch) -> None:
+    """Compositions answer by aggregation and are NOT exempt (issue #5906).
+
+    The old defensive fallthrough silently passed any model without a
+    single ``.descriptor``; a linear composition whose child emits compact
+    pairs must now trip the torch < 2.6 guard like the child itself would.
+    """
     import torch
 
     from deepmd.pt_expt.utils.serialization import (
         check_graph_trace_torch_version,
     )
 
-    class _NoDesc:
-        pass
+    class _FakeLinearAtomicModel:
+        def __init__(self, children) -> None:
+            self.models = children
+
+        def uses_compact_edge_pairs(self) -> bool:
+            return any(m.uses_compact_edge_pairs() for m in self.models)
+
+    class _FakeLinearModel:
+        def __init__(self, n_attns) -> None:
+            self.atomic_model = _FakeLinearAtomicModel(
+                [_FakeAtomicModel(n) for n in n_attns]
+            )
 
     monkeypatch.setattr(torch, "__version__", "2.5.1")
-    check_graph_trace_torch_version(_NoDesc())
+    with pytest.raises(RuntimeError, match=r"torch >= 2\.6"):
+        check_graph_trace_torch_version(_FakeLinearModel([0, 2]))
+    check_graph_trace_torch_version(_FakeLinearModel([0, 0]))
 
 
 @pytest.mark.parametrize(
@@ -352,3 +394,99 @@ DPA2_GUARD_CONFIG = {
     },
     "fitting_net": {"neuron": [8, 8], "seed": 1},
 }
+
+
+def _build_model(model_kind: str) -> torch.nn.Module:
+    """Build a small pt_expt model for ``_needs_with_comm_artifact`` tests.
+
+    No AOTI compile is involved — the caller only inspects the returned
+    model's descriptor capability methods.
+
+    Parameters
+    ----------
+    model_kind : str
+        ``"dpa4"`` (bridging-free SeZM, config shared with
+        ``test_dpa4_export.py``), ``"dpa2"`` (``DPA2_GUARD_CONFIG`` above),
+        or ``"linear-two-dpa2"`` (a linear composition of two
+        ``DPA2_GUARD_CONFIG`` children -- capability aggregation,
+        issue #5906 Task 4).
+
+    Returns
+    -------
+    torch.nn.Module
+        The constructed pt_expt model, on CPU, in eval mode.
+    """
+    from deepmd.pt_expt.model.get_model import get_model as get_pt_expt_model
+
+    if model_kind == "dpa4":
+        from ..model.test_dpa4_export import (
+            _DPA4_CONFIG,
+        )
+
+        config = _DPA4_CONFIG
+    elif model_kind == "dpa2":
+        config = DPA2_GUARD_CONFIG
+    elif model_kind == "linear-two-dpa2":
+        from deepmd.pt_expt.model.get_model import (
+            get_linear_model,
+        )
+
+        child = {
+            "descriptor": DPA2_GUARD_CONFIG["descriptor"],
+            "fitting_net": DPA2_GUARD_CONFIG["fitting_net"],
+        }
+        config = {
+            "type_map": DPA2_GUARD_CONFIG["type_map"],
+            "models": [copy.deepcopy(child), copy.deepcopy(child)],
+            "weights": "mean",
+        }
+        model = get_linear_model(config)
+        model.to("cpu")
+        model.eval()
+        return model
+    else:
+        raise ValueError(f"unknown model_kind {model_kind!r}")
+    model = get_pt_expt_model(copy.deepcopy(config))
+    model.to("cpu")
+    model.eval()
+    return model
+
+
+@pytest.mark.parametrize(
+    "model_kind,lower_kind,expected",
+    [
+        ("dpa4", "graph", True),  # graph lower has real border exchange now
+        (
+            "dpa4",
+            "nlist",
+            False,
+        ),  # dense lower is comm-less: no artifact, no trace crash
+        (
+            "dpa2",
+            "nlist",
+            True,
+        ),  # dense with-comm is dpa2's production MP path — unchanged
+        ("dpa2", "graph", True),  # graph with-comm unchanged
+        (
+            "linear-two-dpa2",
+            "graph",
+            True,
+        ),  # composition aggregates children (issue #5906 Task 4)
+        (
+            "linear-two-dpa2",
+            "nlist",
+            True,
+        ),  # dpa2 children's dense lower supports comm -> composition does
+    ],
+)
+def test_needs_with_comm_artifact_kind_aware(model_kind, lower_kind, expected) -> None:
+    """``_needs_with_comm_artifact`` is lower-kind-aware for DPA4, unchanged for dpa2.
+
+    DPA4's graph lower carries a real per-layer ``border_op`` exchange, but
+    its dense (nlist) lower adapter raises on ``comm_dict`` — so the dense
+    kind must not request a with-comm artifact (it would crash the trace).
+    dpa2 implements comm on both lowers (no ``dense_lower_supports_comm``
+    override), so both kinds stay ``True``.
+    """
+    model = _build_model(model_kind)
+    assert _needs_with_comm_artifact(model, lower_kind) is expected

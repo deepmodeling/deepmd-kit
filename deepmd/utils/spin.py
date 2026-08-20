@@ -8,6 +8,51 @@ from deepmd.env import (
 )
 
 
+def normalize_spin_use_spin(use_spin: list, type_map: list[str]) -> list[bool]:
+    """Normalize ``use_spin`` to a per-type boolean list.
+
+    Three equivalent forms are accepted: a per-type boolean list, a list of
+    magnetic type indices, or a list of magnetic element symbols. The index
+    and symbol forms are expanded against ``type_map``, so a large type map
+    only needs its magnetic species named. Pure: the inputs are not
+    modified.
+
+    Parameters
+    ----------
+    use_spin : list
+        The ``spin.use_spin`` configuration value, in any of the three
+        accepted forms.
+    type_map : list[str]
+        The model's type map, defining the per-type order and (for the
+        symbol form) the element names.
+
+    Returns
+    -------
+    list[bool]
+        The per-type boolean form, of length ``len(type_map)``.
+
+    Raises
+    ------
+    ValueError
+        If a symbol in ``use_spin`` is absent from ``type_map``.
+    """
+    if use_spin and isinstance(use_spin[0], str):
+        type_index = {name: idx for idx, name in enumerate(type_map)}
+        unknown = [name for name in use_spin if name not in type_index]
+        if unknown:
+            raise ValueError(
+                f"spin.use_spin references element(s) {unknown} absent from type_map."
+            )
+        use_spin = [type_index[name] for name in use_spin]
+    # ``bool`` is a subclass of ``int``; an already-boolean list is passed
+    # through while an index list is scattered into a per-type mask.
+    if not use_spin or not isinstance(use_spin[0], bool):
+        mask = np.full(len(type_map), False, dtype=bool)
+        mask[use_spin] = True
+        return mask.tolist()
+    return [bool(flag) for flag in use_spin]
+
+
 class Spin:
     """Class for spin, mainly processes the spin type-related information.
     Atom types can be split into three kinds:
@@ -22,7 +67,7 @@ class Spin:
     use_spin: list[bool]
                 A list of boolean values indicating whether to use atomic spin for each atom type.
                 True for spin and False for not. List of bool values with shape of [ntypes].
-    virtual_scale: list[float], float
+    virtual_scale: list[float], float, optional
                 The scaling factor to determine the virtual distance
                 between a virtual atom representing spin and its corresponding real atom
                 for each atom type with spin. This factor is defined as the virtual distance
@@ -30,6 +75,9 @@ class Spin:
                 The virtual coordinate is defined as the real coordinate plus spin * virtual_scale.
                 List of float values with shape of [ntypes] or [ntypes_spin] or one single float value for all types,
                 only used when use_spin is True for each atom type.
+                This is a device of the virtual-atom (deepspin) scheme alone. The native
+                scheme creates no virtual atom, so it leaves this unset and the virtual
+                scale accessors then raise rather than report a fabricated distance.
     allow_missing_label: bool
                 Whether a training system that lacks a ``spin`` data file is admitted by
                 filling its per-atom spin with zeros instead of raising. Supported only by
@@ -40,7 +88,7 @@ class Spin:
     def __init__(
         self,
         use_spin: list[bool],
-        virtual_scale: list[float] | float,
+        virtual_scale: list[float] | float | None = None,
         allow_missing_label: bool = False,
     ) -> None:
         type_dtype = np.int32
@@ -63,31 +111,84 @@ class Spin:
             np.arange(self.ntypes_real, dtype=type_dtype) + self.ntypes_real
         )
         self.input_type = np.arange(self.ntypes_real * 2, dtype=type_dtype)
-        if isinstance(virtual_scale, list):
-            if len(virtual_scale) == self.ntypes_real:
-                self.virtual_scale = virtual_scale
-            elif len(virtual_scale) == self.ntypes_spin:
-                self.virtual_scale = np.zeros(
-                    self.ntypes_real, dtype=GLOBAL_NP_FLOAT_PRECISION
-                )
-                self.virtual_scale[self.use_spin] = virtual_scale
-            else:
-                raise ValueError(
-                    f"Invalid length of virtual_scale for spin atoms"
-                    f": Expected {self.ntypes_real} or {self.ntypes_spin} but got {len(virtual_scale)}!"
-                )
-        elif isinstance(virtual_scale, float):
-            self.virtual_scale = [virtual_scale for _ in range(self.ntypes_real)]
+        if virtual_scale is None:
+            self.virtual_scale = None
+            self.virtual_scale_mask = None
         else:
-            raise ValueError(f"Invalid virtual scale type: {type(virtual_scale)}")
-        self.virtual_scale = np.array(self.virtual_scale)
-        self.virtual_scale_mask = (self.virtual_scale * self.use_spin).reshape([-1])
+            self.virtual_scale = self._expand_virtual_scale(virtual_scale)
+            self.virtual_scale_mask = (self.virtual_scale * self.use_spin).reshape([-1])
         self.pair_exclude_types = []
         self.init_pair_exclude_types_placeholder()
         self.atom_exclude_types_ps = []
         self.init_atom_exclude_types_placeholder_spin()
         self.atom_exclude_types_p = []
         self.init_atom_exclude_types_placeholder()
+
+    def _expand_virtual_scale(self, virtual_scale: list[float] | float) -> np.ndarray:
+        """Expand ``virtual_scale`` into one value per real atom type.
+
+        Parameters
+        ----------
+        virtual_scale : list[float] or float
+            One value per real type, one value per magnetic type (scattered
+            onto the magnetic types), or a single value shared by all types.
+
+        Returns
+        -------
+        np.ndarray
+            The per-real-type virtual scale, with shape ``(ntypes_real,)``.
+
+        Raises
+        ------
+        ValueError
+            If the list length matches neither the real nor the magnetic type
+            count, or if the value is neither a list nor a float.
+        """
+        if isinstance(virtual_scale, list):
+            if len(virtual_scale) == self.ntypes_real:
+                expanded = virtual_scale
+            elif len(virtual_scale) == self.ntypes_spin:
+                expanded = np.zeros(self.ntypes_real, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                expanded[self.use_spin] = virtual_scale
+            else:
+                raise ValueError(
+                    f"Invalid length of virtual_scale for spin atoms"
+                    f": Expected {self.ntypes_real} or {self.ntypes_spin} but got {len(virtual_scale)}!"
+                )
+        elif isinstance(virtual_scale, float):
+            expanded = [virtual_scale for _ in range(self.ntypes_real)]
+        else:
+            raise ValueError(f"Invalid virtual scale type: {type(virtual_scale)}")
+        return np.array(expanded)
+
+    @staticmethod
+    def _require_virtual_scale(value: np.ndarray | None) -> np.ndarray:
+        """Return a virtual-scale table, rejecting an unconfigured one.
+
+        Parameters
+        ----------
+        value : np.ndarray or None
+            The table to return, or None when ``virtual_scale`` was not
+            configured.
+
+        Returns
+        -------
+        np.ndarray
+            The table unchanged.
+
+        Raises
+        ------
+        ValueError
+            If the table is absent.
+        """
+        if value is None:
+            raise ValueError(
+                "`spin.virtual_scale` is not configured. It is required by the "
+                "virtual-atom (deepspin) scheme, which places a virtual atom at "
+                "this distance from its real atom; the native scheme has no "
+                "virtual atoms and never reads it."
+            )
+        return value
 
     def get_ntypes_real(self) -> int:
         """Returns the number of real atom types."""
@@ -111,7 +212,7 @@ class Spin:
 
     def get_virtual_scale(self) -> np.ndarray:
         """Returns the list of magnitude of atomic spin for each atom type."""
-        return self.virtual_scale
+        return self._require_virtual_scale(self.virtual_scale)
 
     def init_pair_exclude_types_placeholder(self) -> None:
         """
@@ -199,14 +300,16 @@ class Spin:
         Return the virtual scale mask of shape [ntypes],
         with spin types being its virtual scale, and non-spin types being 0.
         """
-        return self.virtual_scale_mask
+        return self._require_virtual_scale(self.virtual_scale_mask)
 
     def serialize(
         self,
     ) -> dict:
         return {
             "use_spin": self.use_spin.tolist(),
-            "virtual_scale": self.virtual_scale.tolist(),
+            "virtual_scale": (
+                None if self.virtual_scale is None else self.virtual_scale.tolist()
+            ),
         }
 
     @classmethod

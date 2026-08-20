@@ -5,6 +5,10 @@ import bisect
 import copy
 import functools
 import logging
+from collections.abc import (
+    Iterable,
+    Iterator,
+)
 from concurrent.futures import (
     ThreadPoolExecutor,
     as_completed,
@@ -14,6 +18,7 @@ from pathlib import (
 )
 from typing import (
     Any,
+    Literal,
 )
 
 import numpy as np
@@ -30,6 +35,8 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+DataRequirementSourcePolicy = Literal["tracked", "default", "derived"]
 
 
 class DeepmdData:
@@ -159,6 +166,7 @@ class DeepmdData:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
     ) -> "DeepmdData":
         """Add a data item that to be loaded.
 
@@ -187,11 +195,14 @@ class DeepmdData:
             the dtype of data, overwrites `high_prec` if provided
         output_natoms_for_type_sel : bool, optional
             if True and type_sel is True, the atomic dimension will be natoms instead of nsel
+        special_shape : str, optional
+            Name of a loader-defined non-standard shape contract. ``"hessian"``
+            stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
         """
         # normalize key: "atomic_" prefix -> "atom_", same convention as _load_set output
         if key.startswith("atomic_"):
             key = "atom_" + key[7:]
-        self.data_dict[key] = {
+        data_config = {
             "ndof": ndof,
             "atomic": atomic,
             "must": must,
@@ -203,6 +214,11 @@ class DeepmdData:
             "dtype": dtype,
             "output_natoms_for_type_sel": output_natoms_for_type_sel,
         }
+        if special_shape is not None:
+            # Preserve the established dictionary schema for ordinary labels;
+            # only non-standard tensors need this extra shape contract.
+            data_config["special_shape"] = special_shape
+        self.data_dict[key] = data_config
         return self
 
     def reduce(self, key_out: str, key_in: str) -> "DeepmdData":
@@ -337,6 +353,44 @@ class DeepmdData:
         if self.modifier is not None:
             self.modifier.modify_data(ret, self)
         return ret
+
+    def iter_test(
+        self,
+        *,
+        chunk_atoms: int,
+        numb_test: float = float("inf"),
+    ) -> Iterator[dict]:
+        """Yield the test data in chunks of at most ``chunk_atoms`` atoms.
+
+        The complete test system is materialized first, so chunking here bounds
+        the evaluation batch and its predictions rather than source-data memory.
+
+        Parameters
+        ----------
+        chunk_atoms : int
+            Upper bound on the number of atoms per chunk. A chunk always
+            carries at least one frame, however many atoms it has.
+        numb_test : float, optional
+            Upper bound on the number of frames served. A non-finite bound
+            serves the whole test set.
+
+        Yields
+        ------
+        dict
+            One chunk of test data, keyed as :meth:`get_test`.
+        """
+        if not hasattr(self, "test_set"):
+            self._load_test_set(self.shuffle_test)
+        total = int(self.test_set["type"].shape[0])
+        if np.isfinite(numb_test):
+            total = min(total, int(numb_test))
+        step = max(1, int(chunk_atoms) // max(1, self.natoms))
+        for begin in range(0, total, step):
+            idx = np.arange(begin, min(begin + step, total), dtype=np.int64)
+            chunk = self._get_subdata(self.test_set, idx=idx)
+            if self.modifier is not None:
+                self.modifier.modify_data(chunk, self)
+            yield chunk
 
     def get_ntypes(self) -> int:
         """Number of atom types in the system."""
@@ -735,6 +789,7 @@ class DeepmdData:
                     output_natoms_for_type_sel=self.data_dict[kk][
                         "output_natoms_for_type_sel"
                     ],
+                    special_shape=self.data_dict[kk].get("special_shape"),
                 )
         for kk in self.data_dict.keys():
             if self.data_dict[kk]["reduce"] is not None:
@@ -811,7 +866,9 @@ class DeepmdData:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
     ) -> np.ndarray:
+        is_hessian = special_shape == "hessian" or key == "hessian"
         if atomic:
             natoms = self.natoms
             idx_map = self.idx_map
@@ -839,7 +896,19 @@ class DeepmdData:
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
-                if atomic:
+                if is_hessian:
+                    natoms = self.natoms
+                    idx_map = self.idx_map
+                    data = data.reshape(nframes, 3 * natoms, 3 * natoms)
+                    num_chunks, chunk_size = len(idx_map), 3
+                    idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
+                    idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
+                    idx_map_hess = idx_map_hess[idx_map].flatten()
+                    data = data[:, idx_map_hess, :]
+                    data = data[:, :, idx_map_hess]
+                    data = data.reshape([nframes, -1])
+                    ndof = 9 * natoms * natoms
+                elif atomic:
                     if type_sel is not None:
                         # check the data shape is nsel or natoms
                         if data.size == nframes * natoms_sel * ndof_:
@@ -871,24 +940,9 @@ class DeepmdData:
                                 f"({nframes}, {natoms_sel}, {ndof_}) or"
                                 f"({nframes}, {natoms}, {ndof_})"
                             )
-                    if key == "hessian":
-                        data = data.reshape(nframes, 3 * natoms, 3 * natoms)
-                        # get idx_map for hessian
-                        num_chunks, chunk_size = len(idx_map), 3
-                        idx_map_hess = np.arange(num_chunks * chunk_size)  # pylint: disable=no-explicit-dtype
-                        idx_map_hess = idx_map_hess.reshape(num_chunks, chunk_size)
-                        idx_map_hess = idx_map_hess[idx_map]
-                        idx_map_hess = idx_map_hess.flatten()
-                        data = data[:, idx_map_hess, :]
-                        data = data[:, :, idx_map_hess]
-                        data = data.reshape([nframes, -1])
-                        ndof = (
-                            3 * ndof * 3 * ndof
-                        )  # size of hessian is 3Natoms * 3Natoms
-                    else:
-                        data = data.reshape([nframes, natoms, -1])
-                        data = data[:, idx_map, :]
-                        data = data.reshape([nframes, -1])
+                    data = data.reshape([nframes, natoms, -1])
+                    data = data[:, idx_map, :]
+                    data = data.reshape([nframes, -1])
                 data = np.reshape(data, [nframes, ndof])
             except ValueError as err_message:
                 explanation = "This error may occur when your label mismatch its name, i.e. you might store global tensor in `atomic_tensor.npy` or atomic tensor in `tensor.npy`."
@@ -901,7 +955,9 @@ class DeepmdData:
         elif must:
             raise RuntimeError(f"{path} not found!")
         else:
-            if atomic and type_sel is not None and not output_natoms_for_type_sel:
+            if is_hessian:
+                ndof = 9 * self.natoms * self.natoms
+            elif atomic and type_sel is not None and not output_natoms_for_type_sel:
                 ndof = ndof_ * natoms_sel
             data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:
@@ -928,8 +984,12 @@ class DeepmdData:
         """
         vv = self.data_dict[key]
         path = self._get_data_path(set_dir, key)
+        is_hessian = vv.get("special_shape") == "hessian" or key == "hessian"
 
-        if vv["atomic"]:
+        if is_hessian:
+            natoms = self.natoms
+            idx_map = self.idx_map
+        elif vv["atomic"]:
             natoms = self.natoms
             idx_map = self.idx_map
             # if type_sel, then revise natoms and idx_map
@@ -962,7 +1022,9 @@ class DeepmdData:
                 raise RuntimeError(f"{path} not found!")
 
             # Create a default array based on requirements
-            if vv["atomic"]:
+            if is_hessian:
+                data = np.full([9 * natoms * natoms], vv["default"], dtype=dtype)
+            elif vv["atomic"]:
                 if vv["type_sel"] is not None and not vv["output_natoms_for_type_sel"]:
                     natoms = natoms_sel
                 data = np.full([natoms, ndof], vv["default"], dtype=dtype)
@@ -986,7 +1048,17 @@ class DeepmdData:
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
-            if vv["atomic"]:
+            if is_hessian:
+                data = data.reshape(3 * natoms, 3 * natoms)
+                num_chunks, chunk_size = len(idx_map), 3
+                idx_map_hess = np.arange(num_chunks * chunk_size, dtype=int).reshape(
+                    num_chunks, chunk_size
+                )
+                idx_map_hess = idx_map_hess[idx_map].flatten()
+                data = data[idx_map_hess, :]
+                data = data[:, idx_map_hess]
+                data = data.reshape(-1)
+            elif vv["atomic"]:
                 # Handle type_sel logic
                 if vv["type_sel"] is not None:
                     if mmap_obj.shape[1] == natoms_sel * ndof:
@@ -1011,23 +1083,9 @@ class DeepmdData:
                             f"The shape of the data {key} in {set_dir} has width {mmap_obj.shape[1]}, which doesn't match either ({natoms_sel * ndof}) or ({natoms * ndof})"
                         )
 
-                # Handle special case for Hessian
-                if key == "hessian":
-                    data = data.reshape(3 * natoms, 3 * natoms)
-                    num_chunks, chunk_size = len(idx_map), 3
-                    idx_map_hess = np.arange(
-                        num_chunks * chunk_size, dtype=int
-                    ).reshape(num_chunks, chunk_size)
-                    idx_map_hess = idx_map_hess[idx_map].flatten()
-                    data = data[idx_map_hess, :]
-                    data = data[:, idx_map_hess]
-                    data = data.reshape(-1)
-                    # size of hessian is 3Natoms * 3Natoms
-                    # ndof = 3 * ndof * 3 * ndof
-                else:
-                    # data should be 2D here: [natoms, ndof]
-                    data = data.reshape([natoms, -1])
-                    data = data[idx_map, :]
+                # data should be 2D here: [natoms, ndof]
+                data = data.reshape([natoms, -1])
+                data = data[idx_map, :]
             else:
                 data = data.reshape([ndof])
 
@@ -1140,6 +1198,16 @@ class DataRequirementItem:
         the dtype of data, overwrites `high_prec` if provided
     output_natoms_for_type_sel : bool, optional
         if True and type_sel is True, the atomic dimension will be natoms instead of nsel
+    special_shape : str, optional
+        Name of a loader-defined non-standard shape contract. ``"hessian"``
+        stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
+    source_policy : {"tracked", "default", "derived"}, optional
+        How source availability affects the consumer. ``"tracked"`` keeps
+        source presence in the ``find_*`` contract. ``"default"`` treats the
+        configured default as valid input and reports the resolved field
+        available. ``"derived"`` computes the value from structural frame
+        data. Only optional tracked fields require availability-homogeneous
+        batching.
     """
 
     def __init__(
@@ -1154,7 +1222,19 @@ class DataRequirementItem:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
+        source_policy: DataRequirementSourcePolicy = "tracked",
     ) -> None:
+        if source_policy not in {"tracked", "default", "derived"}:
+            raise ValueError(
+                "source_policy must be 'tracked', 'default', or 'derived', "
+                f"got {source_policy!r}"
+            )
+        if must and source_policy != "tracked":
+            raise ValueError(
+                f"mandatory data requirement {key!r} cannot use "
+                f"source_policy={source_policy!r}"
+            )
         self.key = key
         self.ndof = ndof
         self.atomic = atomic
@@ -1165,10 +1245,12 @@ class DataRequirementItem:
         self.default = default
         self.dtype = dtype
         self.output_natoms_for_type_sel = output_natoms_for_type_sel
+        self.special_shape = special_shape
+        self.source_policy = source_policy
         self.dict = self.to_dict()
 
     def to_dict(self) -> dict:
-        return {
+        data = {
             "key": self.key,
             "ndof": self.ndof,
             "atomic": self.atomic,
@@ -1179,7 +1261,11 @@ class DataRequirementItem:
             "default": self.default,
             "dtype": self.dtype,
             "output_natoms_for_type_sel": self.output_natoms_for_type_sel,
+            "source_policy": self.source_policy,
         }
+        if self.special_shape is not None:
+            data["special_shape"] = self.special_shape
+        return data
 
     def __getitem__(self, key: str) -> np.ndarray:
         if key not in self.dict:
@@ -1193,3 +1279,12 @@ class DataRequirementItem:
 
     def __repr__(self) -> str:
         return f"DataRequirementItem({self.dict})"
+
+
+def has_data_requirement(requirements: Iterable[DataRequirementItem], key: str) -> bool:
+    """Return whether a collection requests data identified by ``key``.
+
+    Consumers should use requirement items as the contract with losses instead
+    of reinterpreting loss-specific configuration such as prefactors.
+    """
+    return any(item.key == key for item in requirements)

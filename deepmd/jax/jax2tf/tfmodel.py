@@ -41,6 +41,32 @@ def decode_list_of_bytes(list_of_bytes: list[bytes]) -> list[str]:
     return [x.decode() for x in list_of_bytes]
 
 
+def _decode_default_chg_spin(
+    has_default: bool, default_chg_spin: list[float]
+) -> list[float] | None:
+    """Decode the exported default charge-spin values.
+
+    The exporter always writes a ``get_default_chg_spin`` tensor next to
+    the boolean marker, using an EMPTY tensor when the model has no
+    default. Normalize the no-default case to ``None`` so the wrapper
+    upholds the live-model invariant
+    ``get_default_chg_spin() is None == no default``.
+
+    Parameters
+    ----------
+    has_default : bool
+        The boolean marker exported by ``has_default_chg_spin``.
+    default_chg_spin : list[float]
+        The decoded ``get_default_chg_spin`` tensor values.
+
+    Returns
+    -------
+    list[float] | None
+        The default values, or ``None`` when the artifact has none.
+    """
+    return default_chg_spin if has_default else None
+
+
 class TFModelWrapper(tf.Module):
     def __init__(
         self,
@@ -93,10 +119,13 @@ class TFModelWrapper(tf.Module):
             if hasattr(self.model, "has_default_chg_spin")
             else False
         )
-        self.default_chg_spin = (
-            self.model.get_default_chg_spin().numpy().tolist()
-            if hasattr(self.model, "get_default_chg_spin")
-            else None
+        self.default_chg_spin = _decode_default_chg_spin(
+            self._has_default_chg_spin,
+            (
+                self.model.get_default_chg_spin().numpy().tolist()
+                if hasattr(self.model, "get_default_chg_spin")
+                else []
+            ),
         )
         # property models only (absent for other model types).
         if hasattr(self.model, "get_var_name"):

@@ -35,9 +35,6 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.dpmodel.utils.stat import (
-    _require_stat_file_items,
-)
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -50,6 +47,9 @@ from deepmd.utils.finetune import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.stat_file import (
+    load_required_items,
 )
 
 from .base_fitting import (
@@ -264,14 +264,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             return
         # stat fparam
         if self.numb_fparam > 0:
-            _require_stat_file_items(stat_file_path, ["fparam"])
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "fparam").is_file()
-            ):
-                fparam_stats = self._load_param_stats_from_file(
-                    stat_file_path, "fparam", self.numb_fparam
+            cached = load_required_items(stat_file_path, ["fparam"])
+            if cached is not None:
+                fparam_stats = self._load_param_stats(
+                    cached["fparam"], "fparam", self.numb_fparam
                 )
             else:
                 sampled = merged() if callable(merged) else merged
@@ -323,14 +319,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         # stat aparam
         if self.numb_aparam > 0:
-            _require_stat_file_items(stat_file_path, ["aparam"])
-            if (
-                stat_file_path is not None
-                and stat_file_path.is_dir()
-                and (stat_file_path / "aparam").is_file()
-            ):
-                aparam_stats = self._load_param_stats_from_file(
-                    stat_file_path, "aparam", self.numb_aparam
+            cached = load_required_items(stat_file_path, ["aparam"])
+            if cached is not None:
+                aparam_stats = self._load_param_stats(
+                    cached["aparam"], "aparam", self.numb_aparam
                 )
             else:
                 sampled = merged() if callable(merged) else merged
@@ -402,14 +394,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         fp.save_numpy(arr)
 
     @staticmethod
-    def _load_param_stats_from_file(
-        stat_file_path: DPPath,
+    def _load_param_stats(
+        arr: np.ndarray,
         name: str,
         numb: int,
     ) -> list[StatItem]:
-        fp = stat_file_path / name
-        arr = fp.load_numpy()
-        assert arr.shape == (numb, 3)
+        if arr.shape != (numb, 3):
+            raise ValueError(
+                f"Invalid {name} statistics shape {arr.shape}; expected ({numb}, 3)."
+            )
         return [
             StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
             for ii in range(numb)
@@ -671,8 +664,16 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.numb_fparam > 0 and fparam is None:
             # use default fparam
             assert self.default_fparam_tensor is not None
+            # Fitting statistics remain NumPy for portable serialization.
+            # Materialize constants next to the runtime descriptor instead of
+            # asking a backend namespace to reshape a foreign array directly.
+            default_fparam_tensor = xp.asarray(
+                self.default_fparam_tensor,
+                dtype=descriptor.dtype,
+                device=array_api_compat.device(descriptor),
+            )
             fparam = xp.tile(
-                xp.reshape(self.default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
+                xp.reshape(default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
             )
 
         # check fparam dim, concate to input descriptor
@@ -685,7 +686,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"input fparam: cannot reshape {fparam.shape} "
                     f"into ({nf}, {self.numb_fparam})."
                 ) from e
-            fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
+            fparam_device = array_api_compat.device(fparam)
+            fparam_avg = xp.asarray(
+                self.fparam_avg,
+                dtype=fparam.dtype,
+                device=fparam_device,
+            )
+            fparam_inv_std = xp.asarray(
+                self.fparam_inv_std,
+                dtype=fparam.dtype,
+                device=fparam_device,
+            )
+            fparam = (fparam - fparam_avg) * fparam_inv_std
             fparam = xp.tile(
                 xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
             )
@@ -708,7 +720,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"input aparam: cannot reshape {aparam.shape} "
                     f"into ({nf}, {nloc}, {self.numb_aparam})."
                 ) from e
-            aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
+            aparam_device = array_api_compat.device(aparam)
+            aparam_avg = xp.asarray(
+                self.aparam_avg,
+                dtype=aparam.dtype,
+                device=aparam_device,
+            )
+            aparam_inv_std = xp.asarray(
+                self.aparam_inv_std,
+                dtype=aparam.dtype,
+                device=aparam_device,
+            )
+            aparam = (aparam - aparam_avg) * aparam_inv_std
             xx = xp.concat(
                 [xx, aparam],
                 axis=-1,
@@ -721,9 +744,12 @@ class GeneralFitting(NativeOP, BaseFitting):
 
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
-            case_embd = xp.tile(
-                xp.reshape(self.case_embd[...], (1, 1, -1)), (nf, nloc, 1)
+            case_embd_buffer = xp.asarray(
+                self.case_embd,
+                dtype=descriptor.dtype,
+                device=array_api_compat.device(descriptor),
             )
+            case_embd = xp.tile(xp.reshape(case_embd_buffer, (1, 1, -1)), (nf, nloc, 1))
             xx = xp.concat(
                 [xx, case_embd],
                 axis=-1,
@@ -778,9 +804,14 @@ class GeneralFitting(NativeOP, BaseFitting):
                 outs -= self.nets[()](xx_zeros)
             if self.eval_return_middle_output and len(self.neuron) > 0:
                 middle_outs = self.nets[()].call_until_last(xx)
+        bias_atom_e = xp.asarray(
+            self.bias_atom_e,
+            dtype=outs.dtype,
+            device=array_api_compat.device(outs),
+        )
         outs += xp.reshape(
             xp.take(
-                xp.astype(self.bias_atom_e[...], outs.dtype),
+                bias_atom_e,
                 xp.reshape(atype, (-1,)),
                 axis=0,
             ),

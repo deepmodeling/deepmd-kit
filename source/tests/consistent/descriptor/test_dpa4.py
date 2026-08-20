@@ -20,8 +20,10 @@ from deepmd.utils.argcheck import (
 
 from ..common import (
     INSTALLED_ARRAY_API_STRICT,
+    INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -37,6 +39,14 @@ if INSTALLED_PT_EXPT:
     from deepmd.pt_expt.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4PTExpt
 else:
     DescrptDPA4PTExpt = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4TF2
+else:
+    DescrptDPA4TF2 = None
+if INSTALLED_JAX:
+    from deepmd.jax.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4JAX
+else:
+    DescrptDPA4JAX = None
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4Strict
 else:
@@ -144,6 +154,10 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             "grid_mlp": grid_mlp,
             "so3_readout": so3_readout,
             "random_gamma": False,
+            # JAX currently supports DPA4 without the backend-specific AMP
+            # policy. Keep cross-backend consistency cases within that shared
+            # feature subset; AMP behavior has dedicated backend tests.
+            "use_amp": False,
             "precision": precision,
             "trainable": False,
             "seed": 20251208,
@@ -155,16 +169,18 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
 
     skip_dp = False
     skip_tf = True
-    skip_jax = True
+    skip_tf2 = not INSTALLED_TF2 or DescrptDPA4TF2 is None
+    skip_jax = not INSTALLED_JAX or DescrptDPA4JAX is None
     skip_pd = True
     skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
 
     tf_class = DescrptDPA4TF
+    tf2_class = DescrptDPA4TF2
     dp_class = DescrptDPA4DP
     pt_class = DescrptDPA4PT
     pt_expt_class = DescrptDPA4PTExpt
-    jax_class = None
+    jax_class = DescrptDPA4JAX
     pd_class = None
     array_api_strict_class = DescrptDPA4Strict
     args: ClassVar[list] = [
@@ -232,6 +248,26 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        return self.eval_jax_descriptor(
+            jax_obj,
             self.natoms,
             self.coords,
             self.atype,
