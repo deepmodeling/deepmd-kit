@@ -17,7 +17,6 @@ from dpa_adapt.utils.dotdict import (
     DotDict,
 )
 
-
 # Internal key carrying the per-committee-member (or per-tree) predictions from
 # _predict_with_uncertainty to _apply_calibrator, which pops it before the
 # result is returned. Calibrating the members individually is what keeps

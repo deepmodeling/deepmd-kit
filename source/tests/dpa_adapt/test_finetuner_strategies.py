@@ -585,6 +585,7 @@ def _check_against_schema(fitting_net: dict) -> None:
     from dargs import (
         Argument,
     )
+
     from deepmd.utils.argcheck import (
         fitting_group_property,
         fitting_property,
