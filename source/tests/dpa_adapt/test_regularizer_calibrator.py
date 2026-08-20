@@ -25,7 +25,6 @@ from dpa_adapt import (
     DPAPredictor,
     Regularizer,
 )
-
 from source.tests.dpa_adapt.test_predictor import (
     _make_npy_system,
     _mock_extract_features,

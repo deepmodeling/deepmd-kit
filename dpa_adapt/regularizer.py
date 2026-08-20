@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Training-time regularizer configuration for DPA-ADAPT."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from collections.abc import (
     Mapping,

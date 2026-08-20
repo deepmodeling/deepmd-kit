@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Post-training prediction calibration."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from dataclasses import (
     dataclass,
