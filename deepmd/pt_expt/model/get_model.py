@@ -8,21 +8,22 @@ constructed objects are ``torch.nn.Module`` subclasses.
 
 import copy
 import logging
-from typing import (
-    TYPE_CHECKING,
-)
 
-from deepmd.dpmodel.atomic_model.dp_atomic_model import (
-    DPAtomicModel,
+from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
+from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+    LinearEnergyAtomicModel as LinearEnergyAtomicModelDP,
 )
 from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
-    PairTabAtomicModel,
+    PairTabAtomicModel as PairTabAtomicModelDP,
 )
 from deepmd.dpmodel.model.model_factory import (
     BackendModelFactory,
 )
 from deepmd.dpmodel.model.model_factory import (
     get_spin_model as get_spin_model_from_factory,
+)
+from deepmd.pt_expt.common import (
+    auto_wrapped_class,
 )
 from deepmd.pt_expt.descriptor import (
     BaseDescriptor,
@@ -45,21 +46,25 @@ from deepmd.pt_expt.model.native_spin_model import (
 from deepmd.pt_expt.model.spin_ener_model import (
     SpinEnergyModel,
 )
+from deepmd.utils.bridging import (
+    expand_bridging_method,
+)
 from deepmd.utils.spin import (
     Spin,
     normalize_spin_use_spin,
 )
 
-if TYPE_CHECKING:
-    from deepmd.pt_expt.model.dp_linear_model import (
-        LinearEnergyModel,
-    )
-
 log = logging.getLogger(__name__)
 
-# Warn at most once per process for backend-ignored switches (keyed by name).
+# Warn at most once per process for backend-relocated switches (keyed by name).
 _WARNED_ONCE: set[str] = set()
 
+
+# wrapped atomic classes: constructed directly so live children keep their
+# runtime state (see the auto_wrapped_class invariant)
+DPAtomicModel = auto_wrapped_class(DPAtomicModelDP)
+PairTabAtomicModel = auto_wrapped_class(PairTabAtomicModelDP)
+LinearEnergyAtomicModel = auto_wrapped_class(LinearEnergyAtomicModelDP)
 
 _model_factory = BackendModelFactory(
     descriptor_base=BaseDescriptor,
@@ -69,6 +74,7 @@ _model_factory = BackendModelFactory(
     atomic_model=DPAtomicModel,
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
+    linear_atomic_model=LinearEnergyAtomicModel,
 )
 get_zbl_model = _model_factory.get_zbl_model
 
@@ -80,27 +86,27 @@ def get_sezm_model(data: dict) -> BaseModel:
     training configs are interchangeable between the pt and pt_expt backends.
     In addition to the ``SeZM``/``sezm``/``dpa4`` aliases accepted by pt,
     pt_expt also accepts ``DPA4``.
-    Supported SeZM extensions: analytical bridging (e.g. ZBL), composed by
-    :func:`_compose_bridging`, and native-scheme spin, routed to
-    :func:`get_native_spin_model`; the two combine.
+    Supported SeZM extension: native-scheme spin, routed to
+    :func:`get_native_spin_model`. Analytical bridging is a ``linear_ener``
+    composition and routes through :func:`get_linear_model` instead (the
+    ``bridging_method`` sugar expands to that form in :func:`get_model`);
+    this builder rejects the flag.
 
     Still unsupported here, each raising ``NotImplementedError``: the
-    virtual-atom (``deepspin``) spin scheme, ``lora``, ``use_compile``, and
+    virtual-atom (``deepspin``) spin scheme, ``lora``, and
     ``preset_out_bias``.
 
     Notes
     -----
-    ``enable_tf32`` is accepted but ignored: the pt backend uses it to toggle
-    TF32 matmul precision, while the pt_expt backend always runs at full
-    ("highest") matmul precision, which is numerically conservative.
+    ``model.use_compile`` and ``model.enable_tf32`` are accepted but ignored.
+    The pt backend hangs both switches off the model because only SeZM
+    implements the compile and precision paths there, whereas pt_expt applies
+    them to every model and so reads them from ``training.enable_compile`` and
+    ``training.enable_tf32``. Requesting the relocated compile switch warns
+    once; ``enable_tf32`` cannot, because normalization fills its model-level
+    default in on every run and an explicit request is indistinguishable.
     """
     data = copy.deepcopy(data)
-    if bool(data.get("enable_tf32", True)) and "enable_tf32" not in _WARNED_ONCE:
-        log.warning(
-            "`enable_tf32` has no effect on the pt_expt backend, which "
-            "always runs at full ('highest') matmul precision; ignoring it."
-        )
-        _WARNED_ONCE.add("enable_tf32")
     if "spin" in data:
         if str(data["spin"].get("scheme", "deepspin")) != "native":
             raise NotImplementedError(
@@ -109,19 +115,25 @@ def get_sezm_model(data: dict) -> BaseModel:
                 "scheme 'native' instead."
             )
         return get_native_spin_model(data)
-    # Analytical bridging (e.g. ZBL): the radii feed the DESCRIPTOR's
-    # InnerClamp/BridgingSwitch (mirrors pt's builder); the method builds the
-    # atomic model's InnerPotential at construction below.
     bridging_method = str(data.get("bridging_method", "none"))
-    bridging_enabled = bridging_method.lower() not in ("none", "")
+    if bridging_method.lower() not in ("none", ""):
+        raise ValueError(
+            "`bridging_method` is not supported by the DPA4/SeZM builder: "
+            "analytical bridging builds a linear composition. Route the "
+            "config through `get_model` (which expands the flag), or spell "
+            'the composition explicitly with `type: "linear_ener"` and an '
+            "`inner_potential` sub-model."
+        )
     if data.get("lora") is not None:
         raise NotImplementedError(
             "`lora` is not supported for DPA4/SeZM in the pt_expt backend."
         )
-    if data.get("use_compile"):
-        raise NotImplementedError(
-            "`use_compile` is not supported for DPA4/SeZM in the pt_expt backend."
+    if data.get("use_compile") and "use_compile" not in _WARNED_ONCE:
+        log.warning(
+            "`model.use_compile` has no effect on the pt_expt backend; "
+            "set `training.enable_compile` instead."
         )
+        _WARNED_ONCE.add("use_compile")
     if data.get("preset_out_bias"):
         raise NotImplementedError(
             "`preset_out_bias` is not supported for DPA4/SeZM in the pt_expt backend."
@@ -129,9 +141,6 @@ def get_sezm_model(data: dict) -> BaseModel:
     data.pop("type", None)
     data.setdefault("descriptor", {})
     data.setdefault("fitting_net", {})
-    if bridging_enabled:
-        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
-        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
     data["descriptor"].setdefault("type", "dpa4")
     data["fitting_net"].setdefault("type", "dpa4_ener")
     # the DPA4/SeZM model type is a fixed descriptor/fitting contract; reject
@@ -164,74 +173,13 @@ def get_sezm_model(data: dict) -> BaseModel:
     data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
 
     descriptor, fitting, _ = _model_factory.get_model_components(data)
-    model = DPA4EnergyModel(
+    return DPA4EnergyModel(
         descriptor=descriptor,
         fitting=fitting,
         type_map=data["type_map"],
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=pair_exclude_types,
     )
-    if bridging_enabled:
-        return _compose_bridging(model, data, bridging_method)
-    return model
-
-
-def _compose_bridging(
-    model: BaseModel, data: dict, bridging_method: str
-) -> "LinearEnergyModel":
-    """Compose the learned model with its analytical bridging term.
-
-    Composition, not a flag (first-principles design): the analytical
-    bridging term is its own atomic model, summed with the learned one by
-    the existing linear composition machinery. The ONE owner of the
-    composition build for this backend: :func:`get_sezm_model`
-    (``type: "dpa4"``/``"sezm"``) is its only caller, because bridging
-    yields a composition and so is not expressible on a non-composite
-    model type -- :func:`get_standard_model` rejects it. Issue #5948
-    tracks spelling the composition explicitly as ``linear_ener``.
-
-    Parameters
-    ----------
-    model
-        The learned backbone model (its descriptor already carries the
-        bridging radii injected by the caller).
-    data
-        The model config (``type_map`` and the exclusion lists are read).
-    bridging_method
-        The analytical bridging mode (e.g. ``"ZBL"``).
-
-    Returns
-    -------
-    LinearEnergyModel
-        A composition over ``[learned, InnerPotential]``.
-    """
-    from deepmd.dpmodel.atomic_model.inner_potential import (
-        InnerPotentialAtomicModel,
-    )
-    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-        LinearEnergyAtomicModel,
-    )
-    from deepmd.pt_expt.model.dp_linear_model import (
-        LinearEnergyModel,
-    )
-
-    descriptor = model.atomic_model.descriptor
-    zbl_atomic = InnerPotentialAtomicModel(
-        type_map=data["type_map"],
-        mode=bridging_method,
-        rcut=descriptor.get_rcut(),
-        sel=descriptor.get_sel(),
-    )
-    composed = LinearEnergyAtomicModel(
-        models=[model.atomic_model, zbl_atomic],
-        type_map=data["type_map"],
-        weights="sum",
-        # Both exclusions belong to the composition: its children share one
-        # graph, so "excluded" must cover the analytical term too.
-        atom_exclude_types=data.get("atom_exclude_types", []),
-        pair_exclude_types=data.get("pair_exclude_types", []),
-    )
-    return LinearEnergyModel(atomic_model_=composed)
 
 
 def get_standard_model(data: dict) -> BaseModel:
@@ -240,15 +188,15 @@ def get_standard_model(data: dict) -> BaseModel:
     ``bridging_method`` is rejected here rather than honored. Analytical
     bridging is a COMPOSITION -- it yields a ``LinearEnergyModel`` over
     ``[learned, InnerPotential]`` -- so a builder that accepted it would
-    return a model of a different kind than the one requested. pt_expt
-    keeps exactly one bridging owner, :func:`get_sezm_model`
-    (``type: "dpa4"``/``"sezm"``), so the composition and its
-    ``exclude_types`` reconciliation cannot drift between two builders.
+    return a model of a different kind than the one requested. The ONE
+    owner of the flag is the shared
+    :func:`deepmd.utils.bridging.expand_bridging_method` normalizer,
+    applied in :func:`get_model`; the composition itself is built by
+    :func:`get_linear_model`.
 
     Rejecting is deliberate over silently ignoring: dropping a bridging
     term without a word yields a physically different model than the config
-    asks for. Issue #5948 tracks replacing the flag with an explicit
-    ``linear_ener`` composition, at which point this restriction is moot.
+    asks for.
 
     Parameters
     ----------
@@ -271,8 +219,10 @@ def get_standard_model(data: dict) -> BaseModel:
         raise ValueError(
             "`bridging_method` is not supported for a standard model in the "
             "pt_expt backend: analytical bridging builds a linear "
-            'composition, not a standard model. Use model `type: "dpa4"` '
-            '(or `"sezm"`) with the same descriptor and fitting net.'
+            "composition, not a standard model. Route the config through "
+            "`get_model` (which expands the flag), or spell the composition "
+            'explicitly with `type: "linear_ener"` and an `inner_potential` '
+            "sub-model."
         )
     return _model_factory.get_standard_model(data)
 
@@ -306,7 +256,6 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
     spin = Spin(
         use_spin=use_spin,
-        virtual_scale=spin_cfg.get("virtual_scale", 1.0),
         allow_missing_label=spin_cfg.get("allow_missing_label", False),
     )
     data["descriptor"]["use_spin"] = use_spin
@@ -341,8 +290,44 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     return NativeSpinEnergyModel(atomic_model_=backbone_model.atomic_model, spin=spin)
 
 
+def _dpa4_family_child_builder(sub: dict) -> "BaseModel | None":
+    """Route DPA4/SeZM linear children through the family builder.
+
+    A ``linear_ener`` child of the DPA4/SeZM model type must get exactly
+    the semantics of a standalone ``type: "dpa4"`` model -- the
+    descriptor/fitting type defaults, the exclusion consistency check, and
+    the loud rejections of unsupported options (``lora``, ``use_compile``,
+    ``preset_out_bias``) -- instead of the generic component build that
+    would silently ignore them. Returns ``None`` for non-DPA4-family
+    children so the shared builder uses its generic path.
+
+    Parameters
+    ----------
+    sub : dict
+        The sub-model config (``type_map`` and any derived clamp radii
+        already injected by the shared linear builder).
+    """
+    family_types = ("dpa4", "sezm")
+    model_type = str(sub.get("type", "standard")).lower()
+    descriptor = sub.get("descriptor")
+    descriptor_type = (
+        str(descriptor.get("type", "")).lower() if isinstance(descriptor, dict) else ""
+    )
+    if model_type not in family_types and descriptor_type not in family_types:
+        return None
+    return get_sezm_model(sub).atomic_model
+
+
 def get_linear_model(model_params: dict) -> BaseModel:
-    """Get a linear energy model from a config dictionary.
+    """Get a linear energy model from a ``linear_ener`` config dictionary.
+
+    Children with a ``descriptor`` build as learned atomic models;
+    ``pairtab`` children build as pair-tabulation atomic models; an
+    ``inner_potential`` child builds the analytical bridging term, with
+    the learned sibling descriptor's ``inner_clamp_r_inner``/``_outer``
+    derived from the child's ``r_inner``/``r_outer`` (issue #5948). A
+    top-level ``spin`` section (scheme ``native``) wraps the composition
+    as a :class:`NativeSpinEnergyModel`.
 
     Parameters
     ----------
@@ -354,42 +339,37 @@ def get_linear_model(model_params: dict) -> BaseModel:
     )
 
     model_params = copy.deepcopy(model_params)
-    weights = model_params.get("weights", "mean")
-    list_of_models = []
-    ntypes = len(model_params["type_map"])
-    for sub_model_params in model_params["models"]:
-        if "type_map" not in sub_model_params:
-            sub_model_params["type_map"] = model_params["type_map"]
-        if "descriptor" in sub_model_params:
-            sub_model_params["descriptor"]["ntypes"] = ntypes
-            descriptor, fitting, _ = _model_factory.get_model_components(
-                sub_model_params
+    spin = None
+    if "spin" in model_params:
+        spin_cfg = model_params.pop("spin")
+        if str(spin_cfg.get("scheme", "deepspin")) != "native":
+            raise NotImplementedError(
+                "Spin linear_ener models support only spin scheme 'native' "
+                "in the pt_expt backend."
             )
-            list_of_models.append(
-                DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
-            )
-        else:
-            assert (
-                "type" in sub_model_params and sub_model_params["type"] == "pairtab"
-            ), "Sub-models in LinearEnergyModel must be a DPModel or a PairTable Model"
-            list_of_models.append(
-                PairTabAtomicModel(
-                    sub_model_params["tab_file"],
-                    sub_model_params["rcut"],
-                    sub_model_params["sel"],
-                    type_map=model_params["type_map"],
-                )
-            )
-
-    atom_exclude_types = model_params.get("atom_exclude_types", [])
-    pair_exclude_types = model_params.get("pair_exclude_types", [])
-    return LinearEnergyModel(
-        models=list_of_models,
-        type_map=model_params["type_map"],
-        weights=weights,
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
+        use_spin = normalize_spin_use_spin(
+            spin_cfg["use_spin"], model_params["type_map"]
+        )
+        spin = Spin(
+            use_spin=use_spin,
+            virtual_scale=spin_cfg.get("virtual_scale", 1.0),
+            allow_missing_label=spin_cfg.get("allow_missing_label", False),
+        )
+        for sub in model_params["models"]:
+            if "descriptor" in sub:
+                sub["descriptor"]["use_spin"] = use_spin
+    composed = _model_factory.get_linear_atomic_model(
+        model_params,
+        descriptor_child_builder=_dpa4_family_child_builder,
     )
+    if spin is not None:
+        if not composed.supports_native_spin():
+            raise NotImplementedError(
+                "spin scheme 'native' requires an atomic model declaring "
+                "supports_native_spin()"
+            )
+        return NativeSpinEnergyModel(atomic_model_=composed, spin=spin)
+    return LinearEnergyModel(atomic_model_=composed)
 
 
 def get_spin_model(data: dict) -> SpinEnergyModel:
@@ -414,6 +394,15 @@ def get_model(data: dict) -> BaseModel:
     data : dict
         The data to construct the model.
     """
+    data = expand_bridging_method(data)
+    if data.get("lora") is not None:
+        # The expansion keeps trainer-owned `lora` at the composition top
+        # level (the pt trainer reads it there); pt_expt has no LoRA
+        # support, so reject it here instead of silently training a plain
+        # full model.
+        raise NotImplementedError(
+            "`lora` is not supported for DPA4/SeZM in the pt_expt backend."
+        )
     return _model_factory.get_model(
         data,
         standard_model_factory=get_standard_model,

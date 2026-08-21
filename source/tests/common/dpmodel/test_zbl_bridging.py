@@ -76,6 +76,29 @@ def test_builder_composes_linear_model():
     assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
 
 
+def test_third_child_without_common_route_raises():
+    """[learned, inner_potential, pairtab] has no common execution route
+    (pairtab is dense-only, the bridged pair is graph-only): the builder
+    must reject it at construction like the pt backend does.
+    """
+    cfg = {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": ["Ni", "O"],
+        "models": [
+            {
+                "type": "dpa4",
+                "descriptor": copy.deepcopy(ZBL_CONFIG["descriptor"]),
+                "fitting_net": copy.deepcopy(ZBL_CONFIG["fitting_net"]),
+            },
+            {"type": "inner_potential", "mode": "ZBL"},
+            {"type": "pairtab", "tab_file": "unused.txt", "rcut": 4.0, "sel": 8},
+        ],
+    }
+    with pytest.raises(ValueError, match="exactly one learned"):
+        get_model(cfg)
+
+
 def test_zbl_child_equals_composition_minus_learned():
     """Composition energy == learned child + analytical child (exact sum)."""
     model = get_model(copy.deepcopy(ZBL_CONFIG))
@@ -396,7 +419,7 @@ class TestCompositionForwardsConditioningCapabilities:
         """``has_default_*`` must not fall through to the base either."""
         bridged = self._model(bridging=True)
         plain = self._model(bridging=False)
-        assert bridged.has_default_chg_spin() == plain.has_default_chg_spin()
+        assert bridged.get_default_chg_spin() == plain.get_default_chg_spin()
         assert bridged.has_default_fparam() == plain.has_default_fparam()
         assert bridged.get_default_fparam() == plain.get_default_fparam()
 
@@ -629,3 +652,289 @@ class TestCompositionForwardsStatCapabilities:
         assert bridged.atomic_model.get_compute_stats_distinguish_types() == any(
             c.get_compute_stats_distinguish_types() for c in children
         )
+
+
+def test_set_by_statistic_fits_raw_labels_by_definition():
+    """Semantic pin (issue #5927): ``set-by-statistic`` is E_model-blind.
+
+    ``E = E_model + E_bias``; the set mode defines ``E_bias`` as the
+    per-type statistic of the raw labels, independent of ``E_model`` --
+    the composition-level fit ignores the learned child and equally
+    ignores the analytical ZBL child. Children compute no output
+    statistics of their own (the composition is the one owner). Use
+    ``change-by-statistic`` for a calibration that compensates
+    ``E_model``.
+    """
+    model = get_model(copy.deepcopy(ZBL_CONFIG))
+    rng = np.random.default_rng(5)
+    coord = rng.uniform(1.0, 2.5, size=(1, 4, 3))
+    box = (np.eye(3) * 8.0).reshape(1, 9)
+    samples, labels, counts_rows = [], [], []
+    for types in ([[0, 0, 1, 1]], [[0, 1, 1, 1]]):
+        counts = np.bincount(np.asarray(types[0]), minlength=2)
+        label = float(rng.normal())
+        samples.append(
+            {
+                "coord": coord,
+                "atype": np.array(types),
+                "box": box,
+                "energy": np.array([[label]]),
+                "find_energy": np.float32(1.0),
+                "natoms": np.array([[4, 4, *counts]]),
+            }
+        )
+        labels.append(label)
+        counts_rows.append(counts)
+    # Seed a nonzero bias: `set` must DISCARD it (an accidental additive
+    # implementation would shift the result by the seed). The dpmodel bias
+    # storage is separate from pt's, so the pin is mirrored here.
+    model.atomic_model.out_bias = np.ones_like(model.atomic_model.out_bias)
+    model.atomic_model.compute_or_load_out_stat(samples)
+    bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    raw_fit = np.linalg.solve(np.array(counts_rows, dtype=np.float64), np.array(labels))
+    np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+    # Idempotence: repeating the call from the fitted state must land on
+    # the same raw-label fit again.
+    model.atomic_model.compute_or_load_out_stat(samples)
+    repeated_bias = np.asarray(model.atomic_model.out_bias).reshape(-1)[:2]
+    np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
+
+
+def _canonical_config() -> dict:
+    """``ZBL_CONFIG`` spelled canonically (issue #5948): an explicit
+    ``linear_ener`` composition with an ``inner_potential`` sub-model.
+    """
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["fitting_net"]["seed"] = 7
+    return {
+        "type": "linear_ener",
+        "weights": "sum",
+        "type_map": cfg["type_map"],
+        "models": [
+            {
+                "type": "standard",
+                "descriptor": cfg["descriptor"],
+                "fitting_net": cfg["fitting_net"],
+            },
+            {
+                "type": "inner_potential",
+                "mode": "ZBL",
+                "r_inner": 0.8,
+                "r_outer": 1.2,
+            },
+        ],
+    }
+
+
+class TestCanonicalComposition:
+    """The canonical ``linear_ener`` + ``inner_potential`` spelling."""
+
+    def test_canonical_config_composes(self) -> None:
+        model = get_model(_canonical_config())
+        assert type(model) is LinearEnergyModel
+        am = model.atomic_model
+        assert isinstance(am, LinearEnergyAtomicModel)
+        assert am.weights == "sum"
+        assert isinstance(am.models[1], InnerPotentialAtomicModel)
+        # the composition derives the learned sibling's clamp window from
+        # the inner_potential child: one source of truth for the radii
+        dp_child = am.models[0]
+        assert dp_child.descriptor.inner_clamp is not None
+        assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
+        assert dp_child.descriptor.bridging_switch is not None
+
+    def test_canonical_matches_sugar_energy(self) -> None:
+        """Same seeds, both spellings: bit-identical construction, so the
+        energies must be exactly equal.
+        """
+        sugar = copy.deepcopy(ZBL_CONFIG)
+        sugar["fitting_net"]["seed"] = 7
+        m_sugar = get_model(sugar)
+        m_canon = get_model(_canonical_config())
+        coord, atype, box = _close_pair_inputs()
+        e_sugar = m_sugar.call_common(
+            coord, atype, box=box, neighbor_graph_method="dense"
+        )["energy_redu"]
+        e_canon = m_canon.call_common(
+            coord, atype, box=box, neighbor_graph_method="dense"
+        )["energy_redu"]
+        np.testing.assert_array_equal(e_canon, e_sugar)
+
+    def test_canonical_serialize_matches_sugar(self) -> None:
+        """Both spellings serialize to the same wire dict: the flag is
+        sugar, not a different model.
+        """
+        sugar = copy.deepcopy(ZBL_CONFIG)
+        sugar["fitting_net"]["seed"] = 7
+        d_sugar = get_model(sugar).serialize()
+        d_canon = get_model(_canonical_config()).serialize()
+
+        def _strip_arrays(obj):
+            if isinstance(obj, dict):
+                return {k: _strip_arrays(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_strip_arrays(v) for v in obj]
+            if isinstance(obj, np.ndarray):
+                return ("ndarray", obj.shape)
+            return obj
+
+        assert _strip_arrays(d_canon) == _strip_arrays(d_sugar)
+
+    def test_two_inner_children_raise(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"].append(dict(cfg["models"][1]))
+        with pytest.raises(ValueError, match="at most one"):
+            get_model(cfg)
+
+    def test_inner_without_learned_sibling_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"] = [cfg["models"][1]]
+        with pytest.raises(ValueError, match="exactly one learned"):
+            get_model(cfg)
+
+    def test_standard_builder_rejects_the_flag(self) -> None:
+        """Direct standard construction with the flag fails fast instead of
+        silently dropping the analytical term.
+        """
+        from deepmd.dpmodel.model.model import (
+            get_standard_model,
+        )
+
+        with pytest.raises(ValueError, match="bridging_method"):
+            get_standard_model(copy.deepcopy(ZBL_CONFIG))
+
+
+class TestCanonicalCompositionGuards:
+    """Fail-fast guards of the shared linear builder."""
+
+    def test_mean_weights_with_inner_child_raise(self) -> None:
+        """`weights: "mean"` would silently halve both energy terms."""
+        cfg = _canonical_config()
+        cfg["weights"] = "mean"
+        with pytest.raises(ValueError, match="sum"):
+            get_model(cfg)
+
+    def test_nested_bridging_flag_on_child_raises(self) -> None:
+        """A `bridging_method` flag on a linear child must not be dropped."""
+        cfg = _canonical_config()
+        cfg["models"] = [cfg["models"][0]]
+        cfg["models"][0]["bridging_method"] = "ZBL"
+        with pytest.raises(ValueError, match="sub-model"):
+            get_model(cfg)
+
+    def test_inner_child_with_descriptor_raises_cleanly(self) -> None:
+        """A child carrying both `type: inner_potential` and a descriptor is
+        a configuration error, not a KeyError.
+        """
+        cfg = _canonical_config()
+        cfg["models"][1]["descriptor"] = {"type": "dpa4"}
+        with pytest.raises(ValueError, match="must not carry"):
+            get_model(cfg)
+
+    def test_canonical_rejects_mismatched_learned_type_map(self) -> None:
+        """A remapped learned-child type_map builds a model the graph
+        route rejects on every forward; fail at construction instead.
+        """
+        cfg = _canonical_config()
+        cfg["models"][0]["type_map"] = list(reversed(cfg["type_map"]))
+        with pytest.raises(ValueError, match="type_map"):
+            get_model(cfg)
+
+    def test_canonical_conflicting_top_level_option_raises(self) -> None:
+        """A learned-owned option set differently at both levels must
+        fail loudly instead of one value silently winning.
+        """
+        cfg = _canonical_config()
+        cfg["data_stat_protect"] = 0.123
+        cfg["models"][0]["data_stat_protect"] = 0.456
+        with pytest.raises(ValueError, match="data_stat_protect"):
+            get_model(cfg)
+
+    def test_update_sel_dispatches_and_skips_inner_child(self, monkeypatch) -> None:
+        """``BaseModel.update_sel`` dispatches ``linear_ener`` to a
+        composite implementation that updates the learned child and
+        skips the analytical one (the default neighbor-stat phase would
+        otherwise crash with ``KeyError: 'descriptor'``).
+        """
+        from deepmd.dpmodel.model.dp_model import (
+            DPModelCommon,
+        )
+        from deepmd.utils.argcheck import (
+            model_args,
+        )
+
+        seen = []
+
+        def _fake_update_sel(train_data, type_map, sub):
+            seen.append(copy.deepcopy(sub))
+            return sub, 0.9
+
+        monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+        cfg = model_args().normalize_value(_canonical_config(), trim_pattern="_*")
+        updated, min_dist = BaseModel.update_sel(None, cfg["type_map"], cfg)
+        assert min_dist == 0.9
+        assert len(seen) == 1  # only the learned child
+        assert "descriptor" in seen[0]
+        assert updated["models"][1]["type"] == "inner_potential"
+
+
+class TestConsumeOrRejectGuards:
+    """Every key this route accepts is either consumed or loudly rejected;
+    the pt backend's consumers (trainer `lora`, linear `shared_dict`) do
+    not exist here, so silence would build a different model than asked.
+    """
+
+    def test_top_level_lora_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(cfg)
+
+    def test_expanded_sugar_with_lora_raises(self) -> None:
+        """The sugar expansion keeps trainer-owned `lora` at the top level;
+        dpmodel has no trainer to consume it.
+        """
+        from deepmd.utils.bridging import (
+            expand_bridging_method,
+        )
+
+        cfg = copy.deepcopy(ZBL_CONFIG)
+        cfg["type"] = "dpa4"
+        cfg["bridging_method"] = "ZBL"
+        cfg["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(expand_bridging_method(cfg))
+
+    def test_nonempty_shared_dict_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["shared_dict"] = {"my_descriptor": "descriptor"}
+        with pytest.raises(NotImplementedError, match="shared_dict"):
+            get_model(cfg)
+
+    def test_empty_shared_dict_is_fine(self) -> None:
+        """Strict normalization always inserts `shared_dict: {}`; the
+        default CLI path must keep building.
+        """
+        cfg = _canonical_config()
+        cfg["shared_dict"] = {}
+        get_model(cfg)
+
+    def test_child_level_lora_raises(self) -> None:
+        cfg = _canonical_config()
+        cfg["models"][0]["lora"] = {"rank": 2}
+        with pytest.raises(NotImplementedError, match="lora"):
+            get_model(cfg)
+
+    def test_non_dpa4_learned_sibling_raises_cleanly(self) -> None:
+        """Same family restriction as the pt builder: without it the clamp
+        injection dies on an obscure unknown-kwarg TypeError.
+        """
+        cfg = _canonical_config()
+        cfg["models"][0]["descriptor"] = {
+            "type": "se_e2_a",
+            "rcut": 4.0,
+            "rcut_smth": 3.5,
+            "sel": [8, 8],
+        }
+        with pytest.raises(NotImplementedError, match="DPA4/SeZM"):
+            get_model(cfg)

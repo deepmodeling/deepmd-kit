@@ -1421,6 +1421,10 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             g1 = xp.concat([g1, g1_inp], axis=-1)
         return g1, rot_mat, g2, h2, sw
 
+    def get_geo_compress(self) -> bool:
+        """Return whether geometric tabulated compression is active."""
+        return self.geo_compress
+
     def serialize(self) -> dict:
         repinit = self.repinit
         repformers = self.repformers

@@ -2,10 +2,8 @@
 """Tests for the DPA4/SeZM model-type dispatch in pt_expt ``get_model``."""
 
 import copy
-import logging
 import unittest
 
-import pytest
 import torch
 
 from deepmd.pt_expt.model import (
@@ -93,6 +91,44 @@ class TestGetModelDPA4(unittest.TestCase):
         ret = model(coord, atype, cell.reshape(1, 9))
         self.assertEqual(ret["energy"].shape, (1, 1))
         self.assertEqual(ret["force"].shape, (1, 5, 3))
+
+    def test_graph_hessian_preserves_charge_spin(self) -> None:
+        """The Hessian is evaluated on the explicitly conditioned energy surface."""
+        config = _make_raw_model_config()
+        config["descriptor"]["add_chg_spin_ebd"] = True
+        model = get_model(config).to(self.device).eval()
+        model.enable_hessian()
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]],
+            dtype=torch.float64,
+            device=self.device,
+            requires_grad=True,
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.int64, device=self.device)
+        box = (5.0 * torch.eye(3, dtype=torch.float64, device=self.device)).reshape(
+            1, 9
+        )
+        charge_spin = torch.tensor(
+            [[0.0, 1.0]], dtype=torch.float64, device=self.device
+        )
+
+        graph = model.call_common(coord, atype, box, charge_spin=charge_spin)
+        dense = model.call_common(
+            coord,
+            atype,
+            box,
+            charge_spin=charge_spin,
+            neighbor_graph_method="legacy",
+        )
+
+        graph_hessian = graph["energy_derv_r_derv_r"]
+        self.assertEqual(graph_hessian.shape, (1, 1, 6, 6))
+        torch.testing.assert_close(
+            graph_hessian,
+            dense["energy_derv_r_derv_r"],
+            rtol=1e-10,
+            atol=1e-10,
+        )
 
     def test_get_model_type_aliases(self) -> None:
         """All model-type aliases route to the SeZM path."""
@@ -195,12 +231,13 @@ class TestGetModelDPA4(unittest.TestCase):
         """pt-only SeZM model-level features fail fast with NotImplementedError.
 
         ``bridging_method`` is no longer in this list: it is supported as an
-        atomic-model composition (see ``test_zbl_bridging.py``).
+        atomic-model composition (see ``test_zbl_bridging.py``). Neither is
+        ``use_compile``, which pt_expt relocated to ``training.enable_compile``
+        and merely warns about.
         """
         cases = {
             "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
             "lora": ({"rank": 4}, "`lora` is not supported"),
-            "use_compile": (True, "`use_compile` is not supported"),
             "preset_out_bias": (
                 {"energy": [None, 1.0]},
                 "`preset_out_bias` is not supported",
@@ -271,53 +308,6 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertIsInstance(model, EnergyModel)
 
 
-# `enable_tf32` toggles TF32 matmul precision in pt but is ignored by pt_expt
-# (always "highest" precision); a truthy value must emit a warn-once message.
-@pytest.mark.parametrize("enable_tf32", [True, False])  # truthy warns, falsy silent
-def test_enable_tf32_warns_once(enable_tf32, monkeypatch) -> None:
-    import importlib
-
-    # the package __init__ rebinds the name ``get_model`` to the function, so
-    # ``import ...get_model as`` would shadow the submodule; load it explicitly
-    gm_mod = importlib.import_module("deepmd.pt_expt.model.get_model")
-
-    # reset the warn-once set so the assertion is deterministic regardless of
-    # test ordering (other get_sezm_model calls may have already warned)
-    monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
-
-    # Count emissions on the EMITTING logger with our own handler rather than
-    # through caplog: caplog reads a root handler, so whatever global logging
-    # state earlier tests left behind (set_log_handles flips the ``deepmd``
-    # logger's propagate off and installs its own handlers) changes how many
-    # records reach it -- zero when propagation is off, more than one when the
-    # record is seen through several attached handlers.  A handler on the
-    # emitting logger sees exactly one record per ``log.warning`` call.
-    records: list[logging.LogRecord] = []
-
-    class _Collect(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            records.append(record)
-
-    handler = _Collect(level=logging.WARNING)
-    old_level = gm_mod.log.level
-    gm_mod.log.setLevel(logging.WARNING)
-    gm_mod.log.addHandler(handler)
-    try:
-        gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
-        matches = [r for r in records if "enable_tf32" in r.getMessage()]
-        if enable_tf32:
-            assert len(matches) == 1, [r.getMessage() for r in records]
-            # a second call must NOT warn again (warn-once per process)
-            records.clear()
-            gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
-            assert not [r for r in records if "enable_tf32" in r.getMessage()]
-        else:
-            assert not matches, [r.getMessage() for r in records]
-    finally:
-        gm_mod.log.removeHandler(handler)
-        gm_mod.log.setLevel(old_level)
-
-
 class TestNativeSpinErrorTranslation(unittest.TestCase):
     """Only the unexpected-``use_spin`` TypeError becomes the capability error."""
 
@@ -329,6 +319,108 @@ class TestNativeSpinErrorTranslation(unittest.TestCase):
         raw["fitting_net"]["bogus_option"] = 1
         with self.assertRaisesRegex(TypeError, "bogus_option"):
             get_model(raw)
+
+
+class TestUseAmpSurvivesAssembly(unittest.TestCase):
+    """``use_amp`` is runtime policy: it must survive model ASSEMBLY without
+    entering the portable serialization record (which the JAX deserializer
+    rejects for ``use_amp: true``). The wrapping of the atomic model must
+    therefore not round-trip the constructed descriptor through
+    ``serialize()``/``deserialize()``.
+    """
+
+    def test_get_model_keeps_use_amp_false(self) -> None:
+        model = get_model(
+            _make_raw_model_config(
+                descriptor={
+                    "sel": 20,
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "n_radial": 4,
+                    "lmax": 1,
+                    "mmax": 1,
+                    "n_blocks": 1,
+                    "precision": "float64",
+                    "seed": 1,
+                    "use_amp": False,
+                }
+            )
+        )
+        assert model.atomic_model.descriptor.use_amp is False
+
+    def test_get_model_keeps_the_use_amp_default(self) -> None:
+        model = get_model(_make_raw_model_config())
+        assert model.atomic_model.descriptor.use_amp is True
+
+    def test_standard_type_keeps_use_amp_false(self) -> None:
+        """The plain `standard` route wraps through the same boundary."""
+        cfg = _make_raw_model_config(
+            descriptor={
+                "type": "dpa4",
+                "sel": 20,
+                "rcut": 4.0,
+                "channels": 8,
+                "n_radial": 4,
+                "lmax": 1,
+                "mmax": 1,
+                "n_blocks": 1,
+                "precision": "float64",
+                "seed": 1,
+                "use_amp": False,
+            },
+            fitting_net={
+                "type": "dpa4_ener",
+                "precision": "float64",
+                "seed": 1,
+            },
+        )
+        del cfg["type"]
+        model = get_model(cfg)
+        assert model.atomic_model.descriptor.use_amp is False
+
+    def test_bridged_composition_keeps_use_amp_false(self) -> None:
+        """The ZBL composition path must be lossless too: the learned child
+        is a live module, not a serialize round-trip rebuild.
+        """
+        model = get_model(
+            _make_raw_model_config(
+                descriptor={
+                    "sel": 20,
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "n_radial": 4,
+                    "lmax": 1,
+                    "mmax": 1,
+                    "n_blocks": 1,
+                    "precision": "float64",
+                    "seed": 1,
+                    "use_amp": False,
+                },
+                bridging_method="ZBL",
+            )
+        )
+        assert model.atomic_model.models[0].descriptor.use_amp is False
+
+    def test_linear_ener_child_keeps_use_amp_false(self) -> None:
+        """The explicit `linear_ener` route builds its children as wrapped
+        modules directly -- same lossless rule as the bridged path.
+        """
+        base = _make_raw_model_config()
+        child_descriptor = dict(base["descriptor"], type="dpa4", use_amp=False)
+        child_fitting = dict(base["fitting_net"], type="dpa4_ener")
+        model = get_model(
+            {
+                "type": "linear_ener",
+                "type_map": base["type_map"],
+                "models": [
+                    {
+                        "descriptor": child_descriptor,
+                        "fitting_net": child_fitting,
+                    }
+                ],
+            }
+        )
+        assert model.atomic_model.models[0].descriptor.use_amp is False
 
 
 if __name__ == "__main__":

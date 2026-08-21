@@ -217,17 +217,18 @@ def spin_args() -> list[Argument]:
         "Required for the `deepspin` scheme; ignored by the `native` scheme."
     )
     doc_scheme = (
-        "The spin implementation scheme, only effective for the DPA4/SeZM model. "
+        "The spin implementation scheme, only effective for descriptors that declare "
+        "native spin support (currently DPA4/SeZM and DPA4C). "
         "`native` injects the per-atom spin vector as an equivariant feature "
-        "(l=0 magnitude and l=1 direction) directly into the descriptor and "
+        "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
         "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
         "representation and is the default. Other models always use the `deepspin` scheme."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
-        "per-atom spin with zeros instead of raising. Supported only by the SeZM/DPA4 "
-        "spin model; defaults to false."
+        "per-atom spin with zeros instead of raising. Supported only by the native "
+        "spin models (SeZM/DPA4 and DPA4C); defaults to false."
     )
 
     return [
@@ -288,6 +289,8 @@ class ArgsPlugin:
             the name of a descriptor
         alias : list[str], optional
             the list of aliases of this descriptor
+        doc : str, optional
+            the descriptor documentation prefix
 
         Returns
         -------
@@ -445,6 +448,149 @@ def descrpt_se_a_args() -> list[Argument]:
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
+    "dpa4c",
+    alias=["DPA4C"],
+    doc=supported_backends("pt_expt")
+    + "DPA4C is the compact and compressible degree-wise descriptor of the DPA4 family.",
+)
+def descrpt_dpa4c_args() -> list[Argument]:
+    """Return the DPA4C descriptor arguments."""
+    return [
+        Argument(
+            "rcut",
+            float,
+            optional=True,
+            default=6.0,
+            doc="The outer cutoff radius.",
+        ),
+        Argument(
+            "channels",
+            int,
+            optional=True,
+            default=32,
+            doc=(
+                "Scalar degree-zero and edge channel width. Supported values "
+                "are 8, 16, 32, 64, and 128. This is the primary scaling "
+                "knob: it widens the edge features, the per-atom angular "
+                "state, and the descriptor output together. The fitting "
+                "network is sized against it; the released grades pair "
+                "channels 8, 32, 64, and 128 with fitting hidden widths 96, "
+                "192, 256, and 384."
+            ),
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            default=2,
+            doc="Maximum angular degree. Supported values are 2, 3, and 4.",
+        ),
+        Argument(
+            "basis_type",
+            str,
+            optional=True,
+            default="bessel",
+            doc="DPA4 radial basis type: `bessel` or `gaussian`.",
+        ),
+        Argument(
+            "n_radial",
+            int,
+            optional=True,
+            default=16,
+            doc=(
+                "Number of DPA4 radial basis functions forming the fixed "
+                "analytic radial input."
+            ),
+        ),
+        Argument(
+            "radial_modes",
+            int,
+            optional=True,
+            default=0,
+            doc=(
+                "Number of shared radial mode profiles that every ordered "
+                "atom-type pair mixes with its own coefficients. Zero leaves "
+                "each pair with a rescaled copy of one shared radial "
+                "function; larger values let each pair select its own radial "
+                "shape."
+            ),
+        ),
+        Argument(
+            "use_amp",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "If True, run the per-edge stage under bfloat16 automatic "
+                "mixed precision on CUDA during training. This lowers the "
+                "dominant activation footprint, which scales with the edge "
+                "count. The destination reduction and the invariant readout "
+                "stay in the descriptor precision. Evaluation and inference "
+                "are governed independently by the `DP_AMP_INFER` environment "
+                "variable, so a model trained in full precision can still "
+                "infer under mixed precision, and the reverse."
+            ),
+        ),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc="Ordered atom-type pairs excluded from the descriptor.",
+        ),
+        Argument(
+            "precision",
+            str,
+            optional=True,
+            default="float32",
+            doc="Floating-point precision of descriptor parameters.",
+        ),
+        Argument(
+            "trainable",
+            bool,
+            optional=True,
+            default=True,
+            doc="Whether descriptor parameters are trainable.",
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "Whether to condition the descriptor on the frame-level "
+                "`charge_spin` input `[charge, multiplicity]` of shape "
+                "`[nframes, 2]`. The embedded condition is added to the "
+                "center type embedding and to the hidden state of the "
+                "ordered type-pair encoder, so it changes how a given "
+                "geometry maps to the degree-wise moments. This is unrelated "
+                "to `model.spin`, which carries a per-atom magnetic moment."
+            ),
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=(
+                "Fallback `[charge, multiplicity]` used when `charge_spin` is "
+                "absent from the input data. Only read when "
+                "`add_chg_spin_ebd` is enabled. Compression folds this value "
+                "into the frozen tables, so a compressed model evaluates "
+                "exactly this charge state and requires the option to be set."
+            ),
+        ),
+        Argument(
+            "seed",
+            [int, None],
+            optional=True,
+            default=None,
+            doc="Random seed for parameter initialization.",
         ),
     ]
 
@@ -3245,7 +3391,10 @@ model_args_plugin = ArgsPlugin()
 hybrid_model_args_plugin = ArgsPlugin()
 
 
-def model_args(exclude_hybrid: bool = False) -> list[Argument]:
+def model_args(
+    exclude_hybrid: bool = False,
+    extra_model_types: "list[Argument] | None" = None,
+) -> list[Argument]:
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
@@ -3387,6 +3536,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [
                     *model_args_plugin.get_all_argument(),
                     *hybrid_models,
+                    *(extra_model_types or []),
                 ],
                 optional=True,
                 default_tag="standard",
@@ -3443,11 +3593,59 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
         + "Standard model, which contains a descriptor and a fitting.",
     )
     return ca
+
+
+def _bridging_method_args() -> list[Argument]:
+    """The concise analytical-bridging arguments, shared by the model types
+    that accept the ``bridging_method`` sugar (``dpa4`` and ``standard``).
+    """
+    doc_bridging_method = (
+        "Short-range bridging method. Currently supports 'ZBL'. "
+        "The value is case-insensitive; set it to 'None' to disable bridging. "
+        "This concise form is the recommended interface; it expands to the "
+        "equivalent explicit `linear_ener` composition over the learned "
+        "model and an `inner_potential` sub-model."
+    )
+    doc_bridging_r_inner = (
+        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
+        "Only used when `bridging_method` is enabled. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
+        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
+    )
+    doc_bridging_r_outer = (
+        "Outer clamping radius in Å. The transition zone "
+        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
+        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
+    )
+    return [
+        Argument(
+            "bridging_method",
+            str,
+            optional=True,
+            default="None",
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
+        ),
+        Argument(
+            "bridging_r_inner",
+            float,
+            optional=True,
+            default=0.5,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
+        ),
+        Argument(
+            "bridging_r_outer",
+            float,
+            optional=True,
+            default=0.8,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
+        ),
+    ]
 
 
 @model_args_plugin.register(
@@ -3485,21 +3683,6 @@ def sezm_model_args() -> Argument:
         "This training-time setting is independent of `use_compile`; eval-time "
         "TF32 is controlled separately by `validating.tf32_infer` or "
         "`DP_TF32_INFER`."
-    )
-    doc_bridging_method = (
-        "Short-range bridging method. Currently supports 'ZBL'. "
-        "The value is case-insensitive; set it to 'None' to disable bridging."
-    )
-    doc_bridging_r_inner = (
-        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
-        "Only used when `bridging_method` is enabled. "
-        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
-        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
-    )
-    doc_bridging_r_outer = (
-        "Outer clamping radius in Å. The transition zone "
-        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
-        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
     )
     doc_lora_rank = "LoRA rank; adapters are injected on every SO3Linear and SO2Linear."
     doc_lora_alpha = (
@@ -3600,27 +3783,7 @@ def sezm_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "pt_expt") + doc_info,
             ),
-            Argument(
-                "bridging_method",
-                str,
-                optional=True,
-                default="None",
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
-            ),
-            Argument(
-                "bridging_r_inner",
-                float,
-                optional=True,
-                default=0.5,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
-            ),
-            Argument(
-                "bridging_r_outer",
-                float,
-                optional=True,
-                default=0.8,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
-            ),
+            *_bridging_method_args(),
             Argument(
                 "lora",
                 dict,
@@ -3704,6 +3867,44 @@ def pairtab_model_args() -> Argument:
     return ca
 
 
+def inner_potential_model_args() -> Argument:
+    """Child-only model type: NOT registered in ``model_args_plugin``, so
+    ``model.type: "inner_potential"`` is rejected at the top level; it is
+    injected only into the ``linear_ener`` ``models`` variant.
+    """
+    doc_mode = (
+        "The analytical pair-potential formula. Currently supports 'zbl' "
+        "(case-insensitive)."
+    )
+    doc_r_inner = (
+        "Inner clamping radius in Å, applied to the learned sibling's "
+        "descriptor: ML descriptor distances below this radius are frozen. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the "
+        "same value so frames with atom pairs closer than `r_inner` are "
+        "skipped during training."
+    )
+    doc_r_outer = (
+        "Outer clamping radius in Å, applied to the learned sibling's "
+        "descriptor. The transition zone `[r_inner, r_outer]` uses a "
+        "C^3-continuous septic Hermite polynomial."
+    )
+    ca = Argument(
+        "inner_potential",
+        dict,
+        [
+            Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
+            Argument("r_inner", float, optional=True, default=0.5, doc=doc_r_inner),
+            Argument("r_outer", float, optional=True, default=0.8, doc=doc_r_outer),
+        ],
+        doc=supported_backends("pt", "pt_expt")
+        + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
+        "only as a sub-model of a `linear_ener` composition; the clamping "
+        "radii are derived onto the learned sibling's descriptor at build "
+        "time.",
+    )
+    return ca
+
+
 @hybrid_model_args_plugin.register("linear_ener")
 def linear_ener_model_args() -> Argument:
     doc_weights = (
@@ -3712,7 +3913,11 @@ def linear_ener_model_args() -> Argument:
         'If "sum", the weights are set to be 1.'
     )
     doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
-    models_args = model_args(exclude_hybrid=True)
+    models_args = model_args(
+        exclude_hybrid=True,
+        # child-only model type: valid inside `models`, rejected at top level
+        extra_model_types=[inner_potential_model_args()],
+    )
     models_args.name = "models"
     models_args.fold_subdoc = True
     models_args.set_dtype(list)
@@ -5169,6 +5374,7 @@ def training_data_args() -> list[
 - string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
 - string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
 - string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
+- string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model and needs no configuration of its own: a descriptor reading a flat node axis (the graph route of the PyTorch Exportable backend) takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms with `atype = -1` that the neighbor list, the model and the loss all skip. Unlike `"max:N"`, which leaves an under-filled batch whenever an nloc group is small, this keeps every batch close to `N` atoms. A lone frame with nloc > `N` still forms a batch of its own.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -5264,7 +5470,8 @@ def validation_data_args() -> list[
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
 - string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
-- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.'
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
+- string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model: a descriptor reading a flat node axis takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms that the neighbor list, the model and the loss all skip.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
@@ -5417,8 +5624,10 @@ def training_args(
         "set, checkpoints are written to the working directory."
     )
     doc_max_ckpt_keep = (
-        "The maximum number of checkpoints to keep. "
-        "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
+        "The maximum number of recent periodic checkpoints to keep for the "
+        "regular checkpoint family. The EMA checkpoint family inherits this "
+        "value by default unless `ema_ckpt_keep` overrides it. The oldest "
+        "checkpoints are deleted when a family's retention window is exceeded. "
         "Defaults to 5."
     )
     doc_ckpt_keep_ratio = (
@@ -5440,7 +5649,9 @@ def training_args(
     doc_ema_ckpt_keep = (
         "The maximum number of periodic EMA checkpoints to keep. "
         "EMA checkpoints use the same prefix-based cleanup rule as regular "
-        "training checkpoints, but with an EMA-specific checkpoint prefix."
+        "training checkpoints, but with an EMA-specific checkpoint prefix. "
+        "When unset, it inherits `max_ckpt_keep`, so both checkpoint families "
+        "retain the same number by default."
     )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
@@ -5508,7 +5719,9 @@ def training_args(
         "50% more communication (3x model size) due to parameter all-gather in "
         "both forward and backward passes. "
         "Default is 0. Requires distributed launch via torchrun. "
-        "Currently supports single-task training; does not support LKF or change_bias_after_training."
+        "Currently supports single-task training; does not support LKF or change_bias_after_training. "
+        "In the PyTorch Exportable backend, stages 2 and 3 additionally exclude "
+        "`enable_compile`, whose traced graph cannot carry sharded parameters."
     )
     doc_neighbor_graph_method = (
         "Select the carry-all neighbor-graph builder for graph-eligible PyTorch "
@@ -5591,7 +5804,7 @@ def training_args(
             [str, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_save_dir,
+            doc=supported_backends("pt", "pt_expt") + doc_save_dir,
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
@@ -5602,7 +5815,7 @@ def training_args(
             [float, None],
             optional=True,
             default=None,
-            doc=supported_backends("pt") + doc_ckpt_keep_ratio,
+            doc=supported_backends("pt", "pt_expt") + doc_ckpt_keep_ratio,
             extra_check=lambda x: x is None or 0.0 < x < 1.0,
             extra_check_errmsg="must be a fraction in the open interval (0, 1)",
         ),
@@ -5611,24 +5824,24 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_enable_ema,
+            doc=supported_backends("pt", "pt_expt") + doc_enable_ema,
         ),
         Argument(
             "ema_decay",
             float,
             optional=True,
             default=0.999,
-            doc=supported_backends("pt") + doc_ema_decay,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_decay,
             extra_check=lambda x: 0.0 <= x < 1.0,
             extra_check_errmsg="must be greater than or equal to 0 and less than 1",
         ),
         Argument(
             "ema_ckpt_keep",
-            int,
+            [int, None],
             optional=True,
-            default=3,
-            doc=supported_backends("pt") + doc_ema_ckpt_keep,
-            extra_check=lambda x: x > 0,
+            default=None,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_ckpt_keep,
+            extra_check=lambda x: x is None or x > 0,
             extra_check_errmsg="must be greater than 0",
         ),
         Argument(
@@ -5712,7 +5925,7 @@ def training_args(
             int,
             optional=True,
             default=0,
-            doc=supported_backends("pt") + doc_zero_stage,
+            doc=supported_backends("pt", "pt_expt") + doc_zero_stage,
         ),
         Argument(
             "neighbor_graph_method",
@@ -5735,6 +5948,19 @@ def training_args(
             "kernel fusion. TensorFlow 2 enables XLA jit_compile for the "
             "formatted lower-forward path. "
             "The first training step will be slower due to one-time compilation.",
+        ),
+        Argument(
+            "enable_tf32",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt")
+            + "Enable TF32 matmul precision for CUDA training forwards. "
+            "Independent of `enable_compile`; eval-time TF32 is controlled "
+            "separately by `validating.tf32_infer` or `DP_TF32_INFER`. The "
+            "PyTorch backend takes the same switch as `model.enable_tf32`, "
+            "because there only the SeZM model implements the compile and "
+            "precision path, while here it applies to every model.",
         ),
     ]
 
@@ -5907,10 +6133,13 @@ def validating_args() -> Argument:
         "Metric used to determine the best checkpoint during full validation. "
         "The string is case-insensitive. For energy training the supported "
         f"values are {energy_metrics}; for spin-energy training they are "
-        f"{spin_metrics}. `E` and `V` are per-atom metrics, `F` and `FR` use "
+        f"{spin_metrics}. `E` and `V` are per-atom metrics, `S` is stress, the "
+        "negated virial divided by the cell volume, `F` and `FR` use "
         "component-wise force errors, and `FM` uses magnetic-force errors, "
         "matching `dp test`. The corresponding loss prefactors must not both "
-        "be 0."
+        "be 0; `S` and `V` are two presentations of the virial and both "
+        "require `start_pref_v` and `limit_pref_v`. The validation log reports "
+        "whichever of `S` and `V` is selected, defaulting to `S`."
     )
     doc_full_val_file = "The file for writing full validation results only. This file is independent from `training.disp_file`."
     doc_full_val_start = (
@@ -5922,13 +6151,12 @@ def validating_args() -> Argument:
     )
     doc_compiled_infer = (
         "Whether to route eval-time forwards (including full validation) "
-        "through the DPA4/SeZM `torch.compile` path instead of eager. When `true`, "
-        "this flag is translated into `DP_COMPILE_INFER=1` at trainer "
-        "startup before any model is constructed, which is the env var SeZM "
-        "samples inside `SeZMModel.__init__`. A manually exported "
-        "`DP_COMPILE_INFER` takes precedence over this option. Only "
-        "meaningful when `model.use_compile=true`; has no effect on models "
-        "that do not implement the SeZM-style eval compile path."
+        "through `torch.compile` instead of eager. When `true`, this flag is "
+        "translated into `DP_COMPILE_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_COMPILE_INFER` takes "
+        "precedence over this option. In the PyTorch backend it applies when "
+        "`model.use_compile=true`; in the PyTorch Exportable backend it applies "
+        "when `training.enable_compile=true`."
     )
     doc_tf32_infer = (
         "Whether to enable TF32 `high` matmul precision for eval-time forwards "
@@ -5936,16 +6164,17 @@ def validating_args() -> Argument:
         "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_TF32_INFER` takes "
         "precedence over this option. This does not affect training forwards, "
-        "which are controlled by `model.enable_tf32`."
+        "which are controlled by `model.enable_tf32` (PyTorch) or "
+        "`training.enable_tf32` (PyTorch Exportable)."
     )
     doc_amp_infer = (
         "Whether to enable bf16 automatic mixed precision for eval-time forwards "
         "(including regular validation and full validation). When `true`, this "
         "flag is translated into `DP_AMP_INFER=1` at trainer startup before any "
         "model is constructed. A manually exported `DP_AMP_INFER` takes "
-        "precedence over this option. This only affects SeZM/DPA4 descriptors "
-        "with `descriptor.use_amp=true`; training AMP remains controlled by "
-        "`descriptor.use_amp`."
+        "precedence over this option. This controls SeZM/DPA4 inference "
+        "independently of `descriptor.use_amp`; training AMP remains controlled "
+        "by `descriptor.use_amp`."
     )
     args = [
         Argument(
@@ -5960,7 +6189,7 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_ema_full_validation,
+            doc=supported_backends("pt", "pt_expt") + doc_ema_full_validation,
         ),
         Argument(
             "validation_freq",
@@ -6024,21 +6253,21 @@ def validating_args() -> Argument:
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_compiled_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_compiled_infer,
         ),
         Argument(
             "tf32_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_tf32_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_tf32_infer,
         ),
         Argument(
             "amp_infer",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_amp_infer,
+            doc=supported_backends("pt", "pt_expt") + doc_amp_infer,
         ),
     ]
     return Argument(

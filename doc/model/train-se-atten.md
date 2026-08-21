@@ -1,7 +1,10 @@
 # Descriptor `"se_atten"` {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ paddle_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: TensorFlow {{ tensorflow_icon }}, PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: TensorFlow and TensorFlow 2
+> {{ tensorflow_icon }}, PyTorch-TorchScript and PyTorch-Exportable
+> {{ pytorch_icon }}, JAX {{ jax_icon }}, Paddle {{ paddle_icon }}, DP
+> {{ dpmodel_icon }}
 
 ![ALT](../images/model_se_atten.png "model_se_atten")
 
@@ -201,7 +204,7 @@ DPA-1 supports both the [standard data format](../data/system.md) and the [mixed
 
 Model compression is supported only when the descriptor attention depth {ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` is 0 and {ref}`tebd_input_mode <model[standard]/descriptor[se_atten]/tebd_input_mode>` is `"strip"`. Attention layers higher than 0 cannot be compressed in the TensorFlow implementation because the geometric part is tabulated from the static computation graph.
 
-### PyTorch {{ pytorch_icon }}
+### PyTorch-TorchScript {{ pytorch_icon }}
 
 Model compression is supported for any {ref}`attn_layer <model[standard]/descriptor[se_atten_v2]/attn_layer>` value when {ref}`tebd_input_mode <model[standard]/descriptor[se_atten_v2]/tebd_input_mode>` is `"strip"`. When `attn_layer` is 0, both the type embedding and geometric parts are compressed. When `attn_layer` is not 0, only the type embedding is compressed while the geometric part keeps the neural network implementation (a warning is emitted during compression).
 
@@ -210,6 +213,29 @@ In the pt_expt CUDA graph lower, automatic fused routing is limited to `lmax`
 CUDA specializations are retained for experimental builds enabled with
 `DEEPMD_ENABLE_DPA1_HIGH_LMAX=ON`; the production eligibility gate continues
 to route those descriptors through the portable reference path.
+
+### PyTorch-Exportable {{ pytorch_icon }}
+
+Executable compression is limited to graph-lowered DPA-1 models with
+{ref}`attn_layer <model[standard]/descriptor[se_atten]/attn_layer>` set to `0`
+and {ref}`tebd_input_mode <model[standard]/descriptor[se_atten]/tebd_input_mode>`
+set to `"strip"`. The fused CUDA table operator also requires no excluded type
+pairs, float32 descriptor statistics and tables, `neuron[-1] <= 256`, and
+`axis_neuron <= min(16, neuron[-1])`. A matching `.pt2` export embeds the
+tabulated operator.
+
+For other models, `dp --pt-expt compress` records compressed state in
+`model.json` but leaves the executable inference graph unchanged, so the
+resulting `.pte` or `.pt2` file is not a deployment compression artifact. The
+export-specific entrypoint uses the same table strides and
+minimum-neighbor-distance fallback as the native-model compression helpers.
+
+### JAX {{ jax_icon }}
+
+Use `.jax` for the general lossless compressed serialization path. A compressed
+DPA-1 model can be exported to StableHLO `.hlo` only when
+{ref}`type_one_side <model[standard]/descriptor[se_atten]/type_one_side>` is
+`true`.
 
 ## Training example
 

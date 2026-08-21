@@ -99,6 +99,37 @@ def _build_frame_degree_index(
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 
+def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
+    """Contract ``einsum("ndfi,dio->ndfo")`` batched over the degree axis.
+
+    Parameters
+    ----------
+    xp : Any
+        The array namespace of ``coeff``.
+    coeff : Array
+        Coefficients with shape ``(N, D, F, i)``.
+    weight : Array
+        Per-degree weights with shape ``(D, i, o)``.
+
+    Returns
+    -------
+    Array
+        Contracted coefficients with shape ``(N, D, F, o)``.
+
+    Notes
+    -----
+    Batching over the ``(D, F)`` axes, not over ``N``: expanding ``weight``
+    across ``F`` costs ``D*F*i*o`` elements, whereas batching over ``N``
+    (or collapsing ``N*F``, which needs a materialized permuted copy of
+    ``coeff``) touches ``N*D*F*i`` elements — a factor ``N/o`` more. No
+    reshape is involved, so an empty ``N`` batch (empty graph/edge set, or
+    a distributed rank owning no nodes) flows through naturally.
+    """
+    coeff_df = xp.permute_dims(coeff, (1, 2, 0, 3))  # (D, F, N, i)
+    out = xp.matmul(coeff_df, weight[:, None, :, :])  # (D, F, N, o)
+    return xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, o)
+
+
 def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
     """
     Apply a channel-only linear map to each Wigner-D frame independently.
@@ -493,9 +524,8 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # einsum "ndfi,dio->ndfo" as a broadcast batched matmul:
-        # (N, D, F, i) @ (1, D, i, o) -> (N, D, F, o)
-        return xp.matmul(coeff, weight[None, ...])
+        # Batched over the (D, F) axes, never over N -- see the helper's note.
+        return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameContract to a dict."""
@@ -575,9 +605,8 @@ class FrameExpand(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # einsum "ndfi,dio->ndfo" as a broadcast batched matmul:
-        # (N, D, F, i) @ (1, D, i, o) -> (N, D, F, o)
-        return xp.matmul(coeff, weight[None, ...])
+        # Batched over the (D, F) axes, never over N -- see the helper's note.
+        return _degree_batched_matmul(xp, coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameExpand to a dict."""

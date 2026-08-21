@@ -1,7 +1,14 @@
-# Fit other properties {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
+# Fit other properties {{ tensorflow_icon }} {{ pytorch_icon }} {{ jax_icon }} {{ dpmodel_icon }}
 
 > [!NOTE]
-> **Supported backends**: PyTorch {{ pytorch_icon }}, JAX {{ jax_icon }}, DP {{ dpmodel_icon }}
+> **Supported backends**: TensorFlow 2 {{ tensorflow_icon }}, PyTorch-TorchScript and
+> PyTorch-Exportable {{ pytorch_icon }}, JAX {{ jax_icon }}, DP
+> {{ dpmodel_icon }}
+>
+> These icons report fitting/model implementation availability. JAX provides
+> the property implementation for model conversion and inference, but
+> `dp --jax train` currently accepts only the energy loss and cannot train a
+> property model.
 
 Here we present an API to DeepProperty model, which can be used to fit other properties like band gap, bulk modulus, critical temperature, etc.
 
@@ -119,7 +126,7 @@ The training command is the same as `ener` mode, i.e.
 
 ::::{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 dp --pt train input.json
@@ -152,7 +159,7 @@ We can use `dp test` to infer the properties for given frames.
 
 ::::{tab-set}
 
-:::{tab-item} PyTorch {{ pytorch_icon }}
+:::{tab-item} PyTorch-TorchScript {{ pytorch_icon }}
 
 ```bash
 

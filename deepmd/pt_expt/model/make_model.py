@@ -20,14 +20,21 @@ from deepmd.dpmodel.model.make_model import make_model as make_model_dp
 from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    compact_nodes,
+    expand_node_values,
+)
 from deepmd.kernels.utils import (
     cuda_infer_level,
 )
 from deepmd.pt_expt.common import (
+    auto_wrapped_class,
     torch_module,
 )
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
+    build_ragged_neighbor_graph,
+    resolve_neighbor_graph_method,
 )
 from deepmd.pt_expt.utils.graph_csr import (
     validate_graph_csr_for_export,
@@ -81,6 +88,7 @@ def _fused_energy_force_graph(
     graph: Any,
     atype: torch.Tensor,
     do_atomic_virial: bool,
+    spin: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor] | None:
     """End-to-end energy / force / virial via fused inference operators.
 
@@ -109,10 +117,13 @@ def _fused_energy_force_graph(
         output_mask,
         atom_bias,
         do_atomic_virial,
+        spin,
     )
     if out is None:
         return None
-    energy, atom_energy, force, virial, atom_virial = out
+    # Every implementation returns the same six outputs; a descriptor without
+    # native spin leaves the magnetic force empty.
+    energy, atom_energy, force, virial, atom_virial, force_mag = out
     n = atype.shape[0]
     nf = graph.n_node.shape[0]
     var = fit.var_name
@@ -123,6 +134,12 @@ def _fused_energy_force_graph(
         var + "_derv_c_redu": virial.reshape(nf, 1, 9),
         "mask": output_mask.to(torch.int32),
     }
+    if force_mag.ndim == 2:
+        ret[var + "_derv_r_mag"] = force_mag.reshape(n, 1, 3)
+    elif spin is not None:
+        # A moment was supplied but this descriptor emits no magnetic force,
+        # so the fused result is incomplete and the caller must fall back.
+        return None
     if do_atomic_virial:
         ret[var + "_derv_c"] = atom_virial.reshape(n, 1, 9)
     return ret
@@ -190,6 +207,8 @@ def _cal_hessian_ext(
         Atomic parameters. Shape: [nf, nloc, nap] or None.
     create_graph
         Whether to create graph for higher-order derivatives.
+    charge_spin
+        Frame-level charge and spin conditioning. Shape: [nf, ncs] or None.
 
     Returns
     -------
@@ -311,7 +330,9 @@ class _WrapperForwardEnergyGraph:
         pair_excl: Any,
         rcut: float,
         fparam: torch.Tensor | None,  # (1, ndf) or None
-        aparam: torch.Tensor | None,  # (1, nloc, nda) or None
+        aparam: torch.Tensor | None,  # (nloc, nda) or None
+        spin: torch.Tensor | None,  # (nloc, 3) or None
+        charge_spin: torch.Tensor | None,  # (1, 2) or None
     ) -> None:
         self.model = model
         self.kk = kk
@@ -324,6 +345,8 @@ class _WrapperForwardEnergyGraph:
         self.rcut = rcut
         self.fparam = fparam
         self.aparam = aparam
+        self.spin = spin
+        self.charge_spin = charge_spin
 
     def __call__(self, coord_flat: torch.Tensor) -> torch.Tensor:
         cc = coord_flat.reshape(1, self.nloc, 3)
@@ -334,11 +357,9 @@ class _WrapperForwardEnergyGraph:
             ng,
             self.atype.reshape(-1),
             fparam=self.fparam,
-            # graph-lower ABI: aparam is FLAT on the node axis, (N, nda)
-            # (N == nloc for the single-frame carry-all graph).
-            aparam=(
-                self.aparam.reshape(self.nloc, -1) if self.aparam is not None else None
-            ),
+            aparam=self.aparam,
+            spin=self.spin,
+            charge_spin=self.charge_spin,
         )
         # atomic_ret[kk]: flat (N, *def), N == nloc for a single-frame carry-all
         # graph (all nodes owned); reduced output = sum over the node axis.
@@ -355,6 +376,8 @@ def _cal_hessian_ext_graph(
     box: torch.Tensor | None,
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
+    spin: torch.Tensor | None,
+    charge_spin: torch.Tensor | None,
     method: str,
     pair_excl: Any,
     rcut: float,
@@ -363,37 +386,68 @@ def _cal_hessian_ext_graph(
     """Graph twin of :func:`_cal_hessian_ext`.
 
     Computes the Hessian of the reduced output w.r.t. the LOCAL coordinates on
-    the carry-all graph route. Returns shape ``[nf, *vdef.shape, nloc*3,
-    nloc*3]`` -- the local-only counterpart of the dense extended Hessian,
-    already in the same final layout the dense route reaches after
+    the carry-all graph route. Each frame is differentiated only over its real
+    nodes; phantom rows are restored as zero rows and columns at the public
+    rectangular boundary. Returns shape ``[nf, *vdef.shape, nloc*3, nloc*3]``
+    -- the local-only counterpart of the dense extended Hessian, already in
+    the same final layout the dense route reaches after
     ``communicate_extended_output`` folds ``nall -> nloc`` (the graph route
     reduces over owned nodes, so no fold is needed). Node axis is
     atom-major/xyz-minor, matching the dense final reshape.
     """
     nf, nloc, _ = coord.shape
     vsize = math.prod(vdef.shape)
-    coord_flat = coord.reshape(nf, nloc * 3)
+    aparam_by_node = aparam.reshape(nf, nloc, -1) if aparam is not None else None
+    spin_by_node = spin.reshape(nf, nloc, 3) if spin is not None else None
+    charge_spin_by_frame = (
+        charge_spin.reshape(1, -1)
+        if charge_spin is not None and charge_spin.ndim == 1
+        else charge_spin
+    )
     hessians = []
     for ii in range(nf):
+        node_index = torch.nonzero(atype[ii] >= 0, as_tuple=False).reshape(-1)
+        n_real = node_index.shape[0]
+        coord_flat = coord[ii, node_index].reshape(n_real * 3)
+        atype_frame = atype[ii : ii + 1, node_index]
+        aparam_frame = (
+            aparam_by_node[ii, node_index] if aparam_by_node is not None else None
+        )
+        spin_frame = spin_by_node[ii, node_index] if spin_by_node is not None else None
+        charge_spin_frame = None
+        if charge_spin_by_frame is not None:
+            frame_index = 0 if charge_spin_by_frame.shape[0] == 1 else ii
+            charge_spin_frame = charge_spin_by_frame[frame_index : frame_index + 1]
         for ci in range(vsize):
             wrapper = _WrapperForwardEnergyGraph(
-                model,
-                kk,
-                ci,
-                nloc,
-                atype[ii : ii + 1],
-                box[ii : ii + 1] if box is not None else None,
-                method,
-                pair_excl,
-                rcut,
-                fparam[ii : ii + 1] if fparam is not None else None,
-                aparam[ii : ii + 1] if aparam is not None else None,
+                model=model,
+                kk=kk,
+                ci=ci,
+                nloc=n_real,
+                atype=atype_frame,
+                box=box[ii : ii + 1] if box is not None else None,
+                method=method,
+                pair_excl=pair_excl,
+                rcut=rcut,
+                fparam=fparam[ii : ii + 1] if fparam is not None else None,
+                aparam=aparam_frame,
+                spin=spin_frame,
+                charge_spin=charge_spin_frame,
             )
             hess = torch.autograd.functional.hessian(
                 wrapper,
-                coord_flat[ii],
+                coord_flat,
                 create_graph=create_graph,
-            )  # (nloc*3, nloc*3)
+            )  # (n_real*3, n_real*3)
+            if n_real != nloc:
+                component_index = (
+                    node_index[:, None] * 3
+                    + torch.arange(3, dtype=node_index.dtype, device=node_index.device)
+                ).reshape(-1)
+                hess = expand_node_values(hess, component_index, nloc * 3)
+                hess = expand_node_values(
+                    hess.transpose(0, 1), component_index, nloc * 3
+                ).transpose(0, 1)
             hessians.append(hess)
     return torch.stack(hessians).reshape(nf, *vdef.shape, nloc * 3, nloc * 3)
 
@@ -422,7 +476,9 @@ def make_model(
         The model.
 
     """
-    DPModel = make_model_dp(T_AtomicModel)
+    # wrapped atomic class: live descriptor/fitting keep their runtime
+    # state (see the auto_wrapped_class invariant)
+    DPModel = make_model_dp(auto_wrapped_class(T_AtomicModel))
 
     @torch_module
     class CM(DPModel, *T_Bases):
@@ -632,10 +688,13 @@ def make_model(
             )
             # Level 2 emits force as a value through the inference-only custom
             # operator pipeline. Ineligible models use the autograd lower.
-            # The fused pipeline has no mag output, so spin-conditioned models
-            # always take the autograd lower below.
-            if not self.training and cuda_infer_level() >= 2 and spin is None:
-                fused = _fused_energy_force_graph(self, graph, atype, do_atomic_virial)
+            # The fused pipeline emits the magnetic force as a value for a
+            # descriptor that declares native spin, and returns nothing when it
+            # cannot serve the request at all.
+            if not self.training and cuda_infer_level() >= 2:
+                fused = _fused_energy_force_graph(
+                    self, graph, atype, do_atomic_virial, spin
+                )
                 if fused is not None:
                     return fused
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
@@ -710,6 +769,116 @@ def make_model(
                 return getattr(self, "neighbor_graph_method", "dense")
             return None
 
+        def call_common_ragged(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
+            spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Model forward over a batch whose node axis is already flat.
+
+            The rectangular :meth:`call_common` pads frames of unequal atom
+            count to a common width and unpads its output again. A caller that
+            holds the frames concatenated skips both: the node axis it passes
+            in is the one the graph lower works on, and the per-atom outputs
+            come back on it.
+
+            Parameters
+            ----------
+            coord : torch.Tensor
+                Local coordinates with shape ``(N, 3)``, frame-major over
+                ``n_node``.
+            atype : torch.Tensor
+                Local atom types with shape ``(N,)``.
+            n_node : torch.Tensor
+                Atoms per frame with shape ``(nf,)``.
+            box : torch.Tensor or None, optional
+                Simulation cell with shape ``(nf, 3, 3)``, or ``None`` for
+                non-periodic.
+            fparam : torch.Tensor or None, optional
+                Frame parameter with shape ``(nf, ndf)``.
+            aparam : torch.Tensor or None, optional
+                Atomic parameter with shape ``(N, nda)``.
+            do_atomic_virial : bool, default: False
+                Whether to compute the atomic virial.
+            charge_spin : torch.Tensor or None, optional
+                Frame-level charge/spin conditioning with shape ``(nf, 2)``.
+            spin : torch.Tensor or None, optional
+                Native spin with shape ``(N, 3)``. Virtual-atom spin models do
+                not expose this ragged entry.
+
+            Returns
+            -------
+            dict[str, torch.Tensor]
+                The standard model dict. Per-atom keys keep the flat ``(N, *)``
+                axis; per-frame keys have leading dimension ``nf``.
+
+            Raises
+            ------
+            NotImplementedError
+                If the model has no graph lower to read a flat node axis with,
+                or if its outputs require a rectangular pair axis.
+            """
+            if not (self.mixed_types() and self.atomic_model.uses_graph_lower()):
+                raise NotImplementedError(
+                    "a flat node axis requires a mixed_types descriptor with a "
+                    "graph lower; this model reads a rectangular one, so its "
+                    "batches must be padded to a common atom count"
+                )
+            if any(
+                vdef.reducible and vdef.r_hessian
+                for vdef in self.atomic_output_def().get_data().values()
+            ):
+                raise NotImplementedError(
+                    "Hessian outputs require a rectangular atom axis; a flat "
+                    "node axis cannot represent their per-frame pair dimensions"
+                )
+            # The trainer resolves ``auto`` once and installs the concrete
+            # builder on the model. A model reached outside it has none, and
+            # resolving against its own device is what keeps that case from
+            # silently taking the CPU builder on a GPU.
+            method = getattr(self, "neighbor_graph_method", None)
+            if method is None:
+                method = resolve_neighbor_graph_method("auto", coord.device)
+            graph = build_ragged_neighbor_graph(
+                method,
+                coord,
+                atype,
+                n_node,
+                box,
+                self.get_rcut(),
+                getattr(self.atomic_model, "pair_excl", None),
+            )
+            predict = self.forward_common_lower_graph(
+                atype,
+                graph.n_node,
+                graph.n_node,
+                graph.edge_index,
+                graph.edge_vec,
+                graph.edge_mask,
+                graph.destination_order,
+                graph.destination_row_ptr,
+                graph.source_order,
+                graph.source_row_ptr,
+                destination_sorted=graph.destination_sorted,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+            )
+            # The per-atom mask a rectangular batch carries is what tells the
+            # loss each frame's real atom count. Nothing here is padded, so the
+            # counts are stated outright instead.
+            predict["n_node"] = graph.n_node
+            return predict
+
         def _call_common_graph(
             self,
             cc: torch.Tensor,
@@ -780,17 +949,33 @@ def make_model(
             with_csr = (
                 not self.training
                 and cuda_infer_level() >= 1
-                and bool(getattr(_desc, "geo_compress", False))
+                and _desc is not None
+                and _desc.get_geo_compress()
             )
-            pair_excl = getattr(self.atomic_model, "pair_excl", None)
+            pair_excl = self.atomic_model.pair_excl
             ng = build_neighbor_graph_for_method(
                 method, cc, atype, bb, rcut, pair_excl, with_csr=with_csr
             )
             nf, nloc = atype.shape[:2]
-            atype_flat = atype.reshape(nf * nloc)
+            n_padded = nf * nloc
+            atype_flat = atype.reshape(n_padded)
+            # A batch of unequal atom counts arrives padded to a common width
+            # with phantom atoms (atype < 0). The builders leave them out of
+            # every edge, so dropping them from the node axis costs nothing and
+            # spares the network from evaluating them. On a batch of uniform
+            # atom count the mask is all true and this is a renumbering by the
+            # identity.
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_flat = atype_flat[node_index]
             # graph-lower ABI: aparam/spin are FLAT on the node axis, (N, nda)/(N, 3).
-            ap_flat = ap.reshape(nf * nloc, ap.shape[-1]) if ap is not None else None
-            spin_flat = spin.reshape(nf * nloc, 3) if spin is not None else None
+            ap_flat = (
+                ap.reshape(n_padded, ap.shape[-1])[node_index]
+                if ap is not None
+                else None
+            )
+            spin_flat = (
+                spin.reshape(n_padded, 3)[node_index] if spin is not None else None
+            )
             model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
@@ -810,11 +995,14 @@ def make_model(
                 charge_spin=charge_spin,
             )
             # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
-            # outputs (N = nf * nloc for a carry-all rectangular graph).
-            # Unravel to rectangular ``(nf, nloc, *)`` at the public I/O boundary
-            # so that callers receive the same shape as the dense ``call_common``.
-            N = nf * nloc
-            # public call_common always passes rectangular (nf,nloc) coord/atype (N == nf*nloc), so this unravel always applies; ragged graphs reach call_lower_graph/forward_common_lower_graph directly (no unravel) and stay flat (N,*).
+            # outputs over the real atoms. Scatter them back onto the padded
+            # width and unravel to rectangular ``(nf, nloc, *)`` at the public
+            # I/O boundary, so that callers receive the same shape as the dense
+            # ``call_common``. A phantom slot reads zero, which is what a
+            # masked-out atom contributed there before.
+            N = node_index.shape[0]
+            # Only the rectangular entry reaches this scatter; the ragged
+            # one keeps the flat axis its caller handed over.
             for k in list(model_predict.keys()):
                 v = model_predict[k]
                 # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
@@ -823,11 +1011,15 @@ def make_model(
                     and not k.endswith("_redu")
                     and v.shape[:1] == torch.Size([N])
                 ):
-                    model_predict[k] = v.reshape(nf, nloc, *v.shape[1:])
+                    model_predict[k] = expand_node_values(
+                        v, node_index, n_padded
+                    ).reshape(nf, nloc, *v.shape[1:])
             # Graph-native Hessian (parallel to the dense ``forward_common_atomic``
-            # loop): differentiate the reduced output w.r.t. the LOCAL coords by
-            # rebuilding the graph inside the wrapper. Added AFTER the unravel so
-            # its ``(nf, *def, nloc, 3, nloc, 3)`` shape is returned as-is.
+            # loop): differentiate the reduced output w.r.t. the compact LOCAL
+            # coordinates by rebuilding the graph inside the wrapper, then restore
+            # phantom rows and columns at the public rectangular boundary. Added
+            # AFTER the unravel so its ``(nf, *def, nloc, 3, nloc, 3)`` shape is
+            # returned as-is.
             # Eager-only, like the dense Hessian (autograd.functional.hessian
             # does not export/compile).
             aod = self.atomic_output_def()
@@ -835,17 +1027,19 @@ def make_model(
                 vdef = aod[kk]
                 if vdef.reducible and vdef.r_hessian:
                     model_predict[get_hessian_name(kk)] = _cal_hessian_ext_graph(
-                        self,
-                        kk,
-                        vdef,
-                        cc,
-                        atype,
-                        bb,
-                        fp,
-                        ap,
-                        method,
-                        pair_excl,
-                        rcut,
+                        model=self,
+                        kk=kk,
+                        vdef=vdef,
+                        coord=cc,
+                        atype=atype,
+                        box=bb,
+                        fparam=fp,
+                        aparam=ap,
+                        spin=spin,
+                        charge_spin=charge_spin,
+                        method=method,
+                        pair_excl=pair_excl,
+                        rcut=rcut,
                         create_graph=self.training,
                     )
             return model_predict
@@ -930,7 +1124,7 @@ def make_model(
 
             Parameters
             ----------
-            extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial
+            extended_coord, extended_atype, nlist, mapping, fparam, aparam, do_atomic_virial, charge_spin
                 Sample inputs with representative shapes (used for tracing).
             **make_fx_kwargs
                 Extra keyword arguments forwarded to ``make_fx``
@@ -941,7 +1135,7 @@ def make_model(
             torch.nn.Module
                 A traced module whose ``forward`` accepts
                 ``(extended_coord, extended_atype, nlist, mapping,
-                fparam, aparam)`` and returns a dict with the same keys
+                fparam, aparam, charge_spin)`` and returns a dict with the same keys
                 as ``call_common_lower``.
             """
             model = self

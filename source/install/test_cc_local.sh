@@ -134,10 +134,24 @@ else:
 	# exports NO with-comm artifact (single-rank only by construction).
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
 	PID14=$!
+	# Native-spin DPA4C: the archives above all ship a with-comm artifact
+	# and are therefore served by DeepSpinPTExpt, which leaves
+	# NativeSpinPTExpt -- the class the dispatch selects for a native-spin
+	# archive without one -- uncovered. DPA4C keeps its messaging local and
+	# so reaches it. The compiled graph calls CUDA-only operators, so the
+	# fixture is generated only where the C++ suite has a GPU; the tests
+	# built on it skip when it is absent.
+	if [ "${DP_VARIANT}" = "cuda" ]; then
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
+		PID15=$!
+	fi
 	wait $PID11
 	wait $PID12
 	wait $PID13
 	wait $PID14
+	if [ "${DP_VARIANT}" = "cuda" ]; then
+		wait $PID15
+	fi
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir

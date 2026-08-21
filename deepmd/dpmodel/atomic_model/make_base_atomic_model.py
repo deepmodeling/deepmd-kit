@@ -84,6 +84,14 @@ def make_base_atomic_model(
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.get_nsel()
 
+        def get_pair_exclude_types(self) -> list[tuple[int, int]]:
+            """Return the excluded atom-type pairs of this atomic model.
+
+            Always set by ``__init__`` (empty list when no exclusion is
+            configured); an empty return means the pair-exclusion mask is off.
+            """
+            return self.pair_exclude_types
+
         @abstractmethod
         def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
@@ -181,6 +189,17 @@ def make_base_atomic_model(
                 The overflow check frequency
             """
             raise NotImplementedError("This atomi model doesn't support compression!")
+
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Whether :meth:`enable_compression` consumes ``min_nbor_dist``.
+
+            Returns
+            -------
+            bool
+                Concrete default ``True``, so a model that does not report
+                otherwise keeps the neighbor-statistics pass.
+            """
+            return True
 
         def make_atom_mask(
             self,

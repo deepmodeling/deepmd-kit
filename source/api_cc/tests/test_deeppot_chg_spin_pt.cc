@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 #include "DeepPot.h"
@@ -98,6 +99,60 @@ TYPED_TEST_SUITE(TestInferDeepPotChgSpinPt, ValueTypes);
 TYPED_TEST(TestInferDeepPotChgSpinPt, dim_chg_spin) {
   deepmd::DeepPot& dp = this->dp;
   EXPECT_EQ(dp.dim_chg_spin(), 2);
+}
+
+// Charge and multiplicity index one row each of an embedding table, and
+// neither the gather nor the kernel bounds-checks the row, so a state the
+// tables cannot address has to be refused where it is installed.
+TYPED_TEST(TestInferDeepPotChgSpinPt,
+           set_charge_spin_takes_addressable_states) {
+  deepmd::DeepPot& dp = this->dp;
+  EXPECT_NO_THROW(dp.set_charge_spin({0.0, 1.0}));
+  EXPECT_NO_THROW(dp.set_charge_spin({-100.0, 0.0}));
+  EXPECT_NO_THROW(dp.set_charge_spin({99.0, 99.0}));
+}
+
+TYPED_TEST(TestInferDeepPotChgSpinPt,
+           set_charge_spin_refuses_fractional_states) {
+  deepmd::DeepPot& dp = this->dp;
+  EXPECT_THROW(dp.set_charge_spin({0.5, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({0.0, 1.5}), deepmd::deepmd_exception);
+}
+
+TYPED_TEST(TestInferDeepPotChgSpinPt,
+           set_charge_spin_refuses_states_off_table) {
+  deepmd::DeepPot& dp = this->dp;
+  EXPECT_THROW(dp.set_charge_spin({-101.0, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({100.0, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({0.0, -1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({0.0, 100.0}), deepmd::deepmd_exception);
+
+  // A NaN compares false against every bound, so it is refused only because
+  // the range test asks the value to be inside rather than outside.
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  EXPECT_THROW(dp.set_charge_spin({nan, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({0.0, nan}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({inf, 1.0}), deepmd::deepmd_exception);
+  EXPECT_THROW(dp.set_charge_spin({-inf, 1.0}), deepmd::deepmd_exception);
+}
+
+// An installed state has to reach the evaluations that follow it, and a
+// refused one has to leave the installed one alone: a caller that handles
+// the exception would otherwise evaluate against a state nobody chose.
+TYPED_TEST(TestInferDeepPotChgSpinPt, set_charge_spin_holds_for_later_calls) {
+  using VALUETYPE = TypeParam;
+  deepmd::DeepPot& dp = this->dp;
+  dp.set_charge_spin(this->charge_spin_explicit);
+
+  double installed, after_refusal;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute(installed, force, virial, this->coord, this->atype, this->box);
+  EXPECT_LT(fabs(installed - this->expected_tot_e_explicit), EPSILON);
+
+  EXPECT_THROW(dp.set_charge_spin({0.5, 1.0}), deepmd::deepmd_exception);
+  dp.compute(after_refusal, force, virial, this->coord, this->atype, this->box);
+  EXPECT_DOUBLE_EQ(installed, after_refusal);
 }
 
 TYPED_TEST(TestInferDeepPotChgSpinPt, cpu_build_nlist_explicit) {

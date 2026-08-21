@@ -47,6 +47,12 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
 
     local_cluster = False
 
+    # Stat-behavior flags with concrete defaults so stat machinery can read
+    # them on any block without getattr probes; blocks that configure them
+    # assign instance attributes in __init__ (issue #5897).
+    set_davg_zero: bool = False
+    set_stddev_constant: bool = False
+
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is DescriptorBlock:
             try:
@@ -145,8 +151,7 @@ class DescriptorBlock(paddle.nn.Layer, ABC, make_plugin_registry("DescriptorBloc
             # link buffers
             if hasattr(self, "mean"):
                 if not resume and (
-                    not getattr(self, "set_stddev_constant", False)
-                    or not getattr(self, "set_davg_zero", False)
+                    not self.set_stddev_constant or not self.set_davg_zero
                 ):
                     # in case of change params during resume
                     base_env = EnvMatStatSe(base_class)

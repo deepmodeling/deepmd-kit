@@ -124,7 +124,7 @@ class TensorLoss(Loss):
             diff = xp.reshape(local_pred - local_label, (-1, self.tensor_size))
             diff = diff * atomic_weight
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=tensor_size).
                 maskf = xp.astype(model_dict["mask"], diff.dtype)  # [nf, natoms]
                 diff3d = xp.reshape(
                     diff, (local_pred.shape[0], natoms, self.tensor_size)
@@ -197,6 +197,7 @@ class TensorLoss(Loss):
                     must=False,
                     high_prec=False,
                     default=1.0,
+                    source_policy="default",
                 )
             )
         return label_requirement

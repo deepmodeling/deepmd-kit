@@ -303,6 +303,15 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 check_frequency,
             )
 
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Required as soon as ANY child consumes it.
+
+        The statistic is measured once and handed to every child, so a single
+        child that tabulates from the shortest observed distance keeps the
+        neighbor-statistics pass for the whole composition.
+        """
+        return any(m.compression_needs_min_nbor_dist() for m in self.models)
+
     def uses_graph_lower(self) -> bool:
         """Graph-capable iff EVERY child supports the graph lower.
 
@@ -723,19 +732,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Children that actually consume ``fparam``."""
         return [m for m in self.models if m.get_dim_fparam() > 0]
 
-    def has_default_chg_spin(self) -> bool:
-        """Whether every active child shares one default charge/spin."""
-        return self._agreed_default(
-            self._chg_spin_consumers(),
-            lambda m: m.has_default_chg_spin(),
-            lambda m: m.get_default_chg_spin(),
-        )[0]
-
     def get_default_chg_spin(self) -> "Array | None":
         """The shared default charge/spin conditions, if the children agree."""
         return self._agreed_default(
             self._chg_spin_consumers(),
-            lambda m: m.has_default_chg_spin(),
+            lambda m: m.get_default_chg_spin() is not None,
             lambda m: m.get_default_chg_spin(),
         )[1]
 

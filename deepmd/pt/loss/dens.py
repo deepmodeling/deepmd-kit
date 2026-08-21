@@ -4,7 +4,6 @@ from typing import (
 )
 
 import torch
-import torch.nn.functional as F
 
 from deepmd.pt.loss.ener import (
     EnergyStdLoss,
@@ -164,9 +163,18 @@ class DeNSLoss(EnergyStdLoss):
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
+        torch.Tensor,
         bool,
     ]:
-        """Build noisy coordinates and mixed targets for one forward pass."""
+        """Build noisy coordinates and mixed targets for one forward pass.
+
+        Returns the corrupted and clean atom subsets as two masks. Both are
+        restricted to real atoms: a mixed-nloc batch is padded to a rectangular
+        shape with phantom slots that carry no physical site, and a phantom is
+        neither corrupted nor clean. The two masks are built independently
+        rather than as complements of one another, since complements over the
+        padded width would hand every phantom to the clean subset.
+        """
         atype = input_dict["atype"]
         nf, nloc = atype.shape[:2]
         coord_raw = input_dict["coord"]
@@ -185,22 +193,22 @@ class DeNSLoss(EnergyStdLoss):
             ).item()
             < self.dens_prob
         )
+        real_mask = atype >= 0
         noise_mask = torch.zeros((nf, nloc), dtype=torch.bool, device=coord.device)
         noise_vec = torch.zeros_like(coord)
         if use_dens:
             if self.dens_corrupt_ratio is None:
-                noise_mask = torch.ones(
-                    (nf, nloc), dtype=torch.bool, device=coord.device
-                )
+                noise_mask = real_mask
             else:
                 noise_mask = (
                     torch.rand(
                         (nf, nloc), dtype=GLOBAL_PT_FLOAT_PRECISION, device=coord.device
                     )
                     < self.dens_corrupt_ratio
-                )
+                ) & real_mask
             noise_vec = torch.randn_like(coord) * self.dens_std
             noise_vec = noise_vec * noise_mask.unsqueeze(-1)
+        clean_mask = real_mask & ~noise_mask
         coord_model = coord + noise_vec
 
         # DeNS predicts normalized noise epsilon / sigma for corrupted atoms.
@@ -214,7 +222,14 @@ class DeNSLoss(EnergyStdLoss):
         model_input["noise_mask"] = noise_mask
         if use_dens:
             model_input["force_input"] = force_label
-        return model_input, force_label, noise_target, noise_mask, use_dens
+        return (
+            model_input,
+            force_label,
+            noise_target,
+            noise_mask,
+            clean_mask,
+            use_dens,
+        )
 
     @staticmethod
     def _get_sezm_atomic_model(model: torch.nn.Module) -> Any:
@@ -270,8 +285,14 @@ class DeNSLoss(EnergyStdLoss):
         learning_rate: float,
         mae: bool = False,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
-        """Return loss on SeZM `dens` energy and direct-force/noise outputs."""
-        model_input, force_label, noise_target, noise_mask, use_dens = (
+        """Return loss on SeZM `dens` energy and direct-force/noise outputs.
+
+        ``natoms`` is the padded width of the batch and is superseded here by
+        the per-frame real atom count read off ``atype``; it remains in the
+        signature to satisfy the shared loss interface.
+        """
+        del natoms
+        model_input, force_label, noise_target, noise_mask, clean_mask, use_dens = (
             self._prepare_dens_inputs(
                 input_dict,
                 label,
@@ -288,7 +309,14 @@ class DeNSLoss(EnergyStdLoss):
 
         loss = force_label.new_zeros((), dtype=env.GLOBAL_PT_FLOAT_PRECISION)
         more_loss: dict[str, torch.Tensor] = {}
-        atom_norm = 1.0 / natoms
+        # The energy terms are extensive, so a frame's residual is divided by
+        # that frame's own real atom count; a mixed-nloc batch pads to a common
+        # width with phantom atoms that belong to no system. The factor is
+        # therefore applied inside the mean over frames, where on a batch of
+        # uniform atom count it reduces to the scalar ``1 / natoms``.
+        inv_natoms = 1.0 / (input_dict["atype"] >= 0).sum(dim=-1, keepdim=True).to(
+            dtype=force_label.dtype
+        )  # [nf, 1]
 
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred.get("energy_norm", model_pred["energy"])
@@ -318,24 +346,23 @@ class DeNSLoss(EnergyStdLoss):
                         l2_ener_loss.detach(),
                         find_energy,
                     )
-                loss += atom_norm * (pref_e * l2_ener_loss)
-                rmse_e = (
-                    torch.mean(torch.square(energy_pred_phys - energy_label)).sqrt()
-                    * atom_norm
+                loss += pref_e * torch.mean(
+                    torch.square(energy_pred - energy_label_norm) * inv_natoms
                 )
+                rmse_e = torch.mean(
+                    torch.square(energy_pred_phys - energy_label) * inv_natoms**2
+                ).sqrt()
                 more_loss["rmse_e"] = self.display_if_exist(
                     rmse_e.detach(),
                     find_energy,
                 )
             elif self.loss_func == "mae":
-                l1_ener_loss = F.l1_loss(
-                    energy_pred.reshape(-1),
-                    energy_label_norm.reshape(-1),
-                    reduction="mean",
+                l1_ener_loss = torch.mean(
+                    torch.abs(energy_pred - energy_label_norm) * inv_natoms
                 )
-                loss += atom_norm * (pref_e * l1_ener_loss)
-                mae_e = (
-                    torch.mean(torch.abs(energy_pred_phys - energy_label)) * atom_norm
+                loss += pref_e * l1_ener_loss
+                mae_e = torch.mean(
+                    torch.abs(energy_pred_phys - energy_label) * inv_natoms
                 )
                 more_loss["mae_e"] = self.display_if_exist(
                     mae_e.detach(),
@@ -346,8 +373,8 @@ class DeNSLoss(EnergyStdLoss):
                     f"Loss type {self.loss_func} is not implemented for `dens` energy loss."
                 )
             if mae:
-                mae_e = (
-                    torch.mean(torch.abs(energy_pred_phys - energy_label)) * atom_norm
+                mae_e = torch.mean(
+                    torch.abs(energy_pred_phys - energy_label) * inv_natoms
                 )
                 more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
                 mae_e_all = torch.mean(torch.abs(energy_pred_phys - energy_label))
@@ -386,10 +413,17 @@ class DeNSLoss(EnergyStdLoss):
             else:
                 force_pred_phys = atomic_model.denorm_dens_force(clean_force_pred_norm)
             force_target_norm = atomic_model.norm_dens_force(force_label)
-            clean_mask = ~noise_mask
             noise_only_mask = noise_mask if use_dens else torch.zeros_like(noise_mask)
-            clean_fraction = clean_mask.to(dtype=GLOBAL_PT_FLOAT_PRECISION).mean()
-            noise_fraction = noise_only_mask.to(dtype=GLOBAL_PT_FLOAT_PRECISION).mean()
+            # Each subset loss averages over its own atoms and is then scaled
+            # by that subset's share, so the two recombine into one average
+            # over the real atoms. The share is taken against the real-atom
+            # count rather than the padded width, or phantom slots would
+            # dilute both terms by the padding fraction.
+            real_count = (
+                (input_dict["atype"] >= 0).sum().to(dtype=GLOBAL_PT_FLOAT_PRECISION)
+            )
+            clean_fraction = clean_mask.sum() / real_count
+            noise_fraction = noise_only_mask.sum() / real_count
             clean_force_loss = self._compute_force_subset_loss(
                 clean_force_pred_norm[clean_mask].reshape(-1, 3),
                 force_target_norm[clean_mask].reshape(-1, 3),

@@ -360,18 +360,25 @@ class ReducedEquivariantRMSNorm(NativeOP):
         self.trainable = bool(trainable)
         prec = PRECISION_DICT[self.precision.lower()]
 
-        self.degree_index_m = np.asarray(degree_index_m, dtype=np.int64)
+        # A backend wrapping this module holds array attributes as framework
+        # tensors, possibly on an accelerator, and the caller's index table is
+        # one of them. Normalize it to NumPy once, then drive the setup below
+        # from that local binding rather than from the stored attribute: the
+        # numpy-only surface it relies on (``.size``, boolean-mask assignment)
+        # does not survive the backend's conversion either.
+        degree_index_m = to_numpy_array(degree_index_m).astype(np.int64, copy=False)
+        self.degree_index_m = degree_index_m
 
         # Pre-fuse degree balancing and channel averaging into a single weight:
         #   w_d = 1 / (n_coeff_l * (lmax+1) * C)
         # where n_coeff_l is the number of retained coefficients for degree l in
         # the reduced layout.
-        weights = np.zeros(self.degree_index_m.size, dtype=prec)
+        weights = np.zeros(degree_index_m.size, dtype=prec)
         scale = 1.0 / ((self.lmax + 1) * self.channels)
         for l in range(self.lmax + 1):
             n_coeff_l = 2 * min(l, self.mmax) + 1
             w_l = scale / float(n_coeff_l)
-            weights[self.degree_index_m == l] = w_l
+            weights[degree_index_m == l] = w_l
         if np.any(weights == 0):
             raise ValueError(
                 "ReducedEquivariantRMSNorm: balance_weight has zeros; "
@@ -411,7 +418,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
         # === Step 2. Compute a shared degree-balanced RMS ===
         balance_weight = xp_asarray_nodetach(xp, self.balance_weight, device=device)
         mean_variance = xp.sum(x0 * x0, axis=(2, 3)) * balance_weight[0]
-        if self.degree_index_m.size > 1:
+        if xt.shape[2] > 0:
             mean_variance = mean_variance + xp.sum(
                 (xt * xt) * balance_weight[1:][None, None, :, None], axis=(2, 3)
             )
@@ -419,7 +426,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
         inv_rms = inv_rms[:, :, None, None]  # (F, E, 1, 1)
 
         x0 = x0 * inv_rms
-        if self.degree_index_m.size > 1:
+        if xt.shape[2] > 0:
             xt = xt * inv_rms
 
         # === Step 3. Apply per-degree affine parameters ===
@@ -428,7 +435,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
         expanded_scale = xp.take(adam_scale, degree_index_m, axis=1)
         expanded_scale = expanded_scale[:, None, ...]  # (F, 1, D_m_trunc, C)
         x0 = x0 * expanded_scale[:, :, :1, :]
-        if self.degree_index_m.size > 1:
+        if xt.shape[2] > 0:
             xt = xt * expanded_scale[:, :, 1:, :]
 
         # === Step 4. Add scalar bias and restore layout ===
@@ -438,7 +445,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
         )  # (F, 1, 1, C)
         x0 = x0 + bias0
 
-        out = x0 if self.degree_index_m.size == 1 else xp.concat([x0, xt], axis=2)
+        out = x0 if xt.shape[2] == 0 else xp.concat([x0, xt], axis=2)
         out = xp.astype(out, in_dtype)
         return out
 

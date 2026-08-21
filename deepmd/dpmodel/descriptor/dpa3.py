@@ -33,6 +33,12 @@ from deepmd.dpmodel.utils.type_embed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.charge_state import (
+    CHARGE_OFFSET,
+    CHARGE_TABLE_ROWS,
+    MULTIPLICITY_TABLE_ROWS,
+    validate_charge_state,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -468,11 +474,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
         self.use_econf_tebd = use_econf_tebd
         self.add_chg_spin_ebd = add_chg_spin_ebd
-        if default_chg_spin is not None and len(default_chg_spin) != 2:
-            raise ValueError(
-                "default_chg_spin must have exactly 2 values [charge, spin]"
-            )
-        self.default_chg_spin = default_chg_spin
+        self.default_chg_spin = (
+            None
+            if default_chg_spin is None
+            else validate_charge_state(default_chg_spin)
+        )
         self.use_tebd_bias = use_tebd_bias
         self.use_loc_mapping = use_loc_mapping
         self.type_map = type_map
@@ -494,18 +500,16 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
         if self.add_chg_spin_ebd:
             self.cs_activation_fn = get_activation_fn(activation_function)
-            # -100 ~ 100 is a conservative bound
             self.chg_embedding = TypeEmbedNet(
-                ntypes=200,
+                ntypes=CHARGE_TABLE_ROWS,
                 neuron=[self.tebd_dim],
                 padding=True,
                 activation_function="Linear",
                 precision=precision,
                 seed=child_seed(seed, 3),
             )
-            # 100 is a conservative upper bound
             self.spin_embedding = TypeEmbedNet(
-                ntypes=100,
+                ntypes=MULTIPLICITY_TABLE_ROWS,
                 neuron=[self.tebd_dim],
                 padding=True,
                 activation_function="Linear",
@@ -543,9 +547,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns the dimension of charge_spin input."""
         return 2 if self.add_chg_spin_ebd else 0
 
-    def has_default_chg_spin(self) -> bool:
-        """Returns whether default charge_spin values are set."""
-        return self.default_chg_spin is not None
+    def has_chg_spin_ebd(self) -> bool:
+        """Return whether a frame charge/spin condition is configured."""
+        return self.add_chg_spin_ebd
 
     def get_default_chg_spin(self) -> list[float] | None:
         """Returns the default charge_spin values."""
@@ -759,7 +763,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             assert self.spin_embedding is not None
             chg_tebd = self.chg_embedding.call()
             spin_tebd = self.spin_embedding.call()
-            charge = xp.astype(charge_spin[:, 0], xp.int64) + 100
+            charge = xp.astype(charge_spin[:, 0], xp.int64) + CHARGE_OFFSET
             spin = xp.astype(charge_spin[:, 1], xp.int64)
             chg_ebd = xp.reshape(
                 xp.take(chg_tebd, xp.reshape(charge, (-1,)), axis=0),

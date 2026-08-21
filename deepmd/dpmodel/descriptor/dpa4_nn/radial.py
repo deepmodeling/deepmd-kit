@@ -465,6 +465,11 @@ class RadialBasis(NativeOP):
         Floating-point precision for the radial basis frequencies and outputs.
     exponent : int, optional
         Exponent for the C^3 cutoff envelope polynomial. Default is 7.
+    apply_envelope : bool, optional
+        Whether :meth:`call` multiplies the raw basis by the C³ envelope.
+        The default ``True`` preserves the DPA4 radial contract. Consumers that
+        apply one shared envelope after combining radial and type features may
+        request the raw basis with ``False``.
     """
 
     def __init__(
@@ -474,6 +479,7 @@ class RadialBasis(NativeOP):
         n_radial: int = 10,
         precision: str = DEFAULT_PRECISION,
         exponent: int = 7,
+        apply_envelope: bool = True,
     ) -> None:
         self.rcut = float(rcut)
         if self.rcut <= 0.0:
@@ -486,6 +492,7 @@ class RadialBasis(NativeOP):
             raise ValueError("`basis_type` must be either 'bessel' or 'gaussian'")
         self.precision = precision
         self.exponent = int(exponent)
+        self.apply_envelope = bool(apply_envelope)
         prec = PRECISION_DICT[self.precision.lower()]
         self.pi_tensor = math.pi
 
@@ -517,8 +524,9 @@ class RadialBasis(NativeOP):
         Returns
         -------
         Array
-            Radial basis multiplied by C^3 cutoff envelope with shape (N, n_rbf).
-            The output is smoothly truncated to zero at r = rcut.
+            Radial basis with shape ``(N, n_radial)``. When
+            ``apply_envelope=True``, the output includes the C³ envelope and
+            vanishes smoothly at ``rcut``; otherwise it is the raw basis.
         """
         xp = array_api_compat.array_namespace(r)
         freqs = xp_asarray_nodetach(
@@ -542,9 +550,10 @@ class RadialBasis(NativeOP):
             dr = r - freqs  # (N, n_rbf)
             raw = xp.exp(dr * dr * self.gaussian_coeff)  # (N, n_rbf)
 
-        # === Step 2. Apply C^3 envelope for smooth cutoff ===
-        envelope = self.envelope(r)  # (N, 1)
-        return raw * envelope
+        # === Step 2. Apply the optional C³ envelope ===
+        if self.apply_envelope:
+            return raw * self.envelope(r)
+        return raw
 
     def serialize(self) -> dict[str, Any]:
         """Serialize RadialBasis including trainable frequencies."""
@@ -556,6 +565,7 @@ class RadialBasis(NativeOP):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "exponent": self.exponent,
+                "apply_envelope": self.apply_envelope,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
             },
             "@variables": {"adam_freqs": to_numpy_array(self.adam_freqs)},
@@ -578,6 +588,7 @@ class RadialBasis(NativeOP):
             n_radial=int(config["n_radial"]),
             basis_type=str(config.get("basis_type", "bessel")),
             exponent=int(config.get("exponent", 7)),
+            apply_envelope=bool(config.get("apply_envelope", True)),
             precision=precision,
         )
         if variables is not None:

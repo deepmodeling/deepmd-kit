@@ -73,6 +73,10 @@ from .lora import (
     merge_lora_into_base,
     strip_lora_from_extra_state,
 )
+from .mlp import (
+    SwiGLUMLP,
+    resolve_swiglu_hidden_width,
+)
 from .norm import (
     EquivariantRMSNorm,
     ReducedEquivariantRMSNorm,
@@ -159,6 +163,7 @@ __all__ = [
     "SeZMTypeEmbedding",
     "SpinEmbedding",
     "SwiGLU",
+    "SwiGLUMLP",
     "WignerDCalculator",
     "apply_lora_to_sezm",
     "build_cartesian_basis",
@@ -189,6 +194,7 @@ __all__ = [
     "quaternion_z_rotation",
     "resolve_s2_grid_resolution",
     "resolve_so3_grid",
+    "resolve_swiglu_hidden_width",
     "safe_norm",
     "segment_envelope_gated_softmax",
     "so3_packed_index",

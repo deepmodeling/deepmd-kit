@@ -773,6 +773,39 @@ bool validate_model_devi_nframes(DP_DeepBaseModelDevi* dp, const int nframes) {
 
 }  // namespace
 
+namespace deepmd {
+namespace c_api_internal {
+
+/**
+ * @brief Copy a charge/spin condition supplied by a C caller.
+ *
+ * The C boundary carries a bare pointer, so the element count the caller
+ * passes alongside it is the only thing standing between a short array and a
+ * read past its end, or a long one and a silent truncation. Callers invoke
+ * this inside DP_REQUIRES_OK so that a mismatch is reported through
+ * DP_*CheckOK rather than unwinding into C.
+ */
+std::vector<double> copy_charge_spin(const double* charge_spin,
+                                     const int numb_chg_spin,
+                                     const int dim_chg_spin) {
+  if (numb_chg_spin != dim_chg_spin) {
+    throw deepmd::deepmd_exception(
+        "the charge/spin condition carries " + std::to_string(numb_chg_spin) +
+        " values but the model expects " + std::to_string(dim_chg_spin));
+  }
+  if (numb_chg_spin == 0) {
+    return {};
+  }
+  if (charge_spin == nullptr) {
+    throw deepmd::deepmd_exception(
+        "the charge/spin condition pointer is null for a non-empty input");
+  }
+  return std::vector<double>(charge_spin, charge_spin + numb_chg_spin);
+}
+
+}  // namespace c_api_internal
+}  // namespace deepmd
+
 template <typename VALUETYPE>
 void DP_DeepPotModelDeviCompute_variant(
     DP_DeepPotModelDevi* dp,
@@ -1789,11 +1822,11 @@ void DP_DeepPotComputeCanonicalGraphGPU(DP_DeepPot* dp,
                                         double* d_force,
                                         double* d_atom_virial,
                                         const int64_t* d_atype,
-                                        const int64_t* d_source,
+                                        const uint32_t* d_source,
                                         const float* d_edge_vec,
                                         const int64_t* d_destination_row_ptr,
                                         const int64_t* d_source_row_ptr,
-                                        const int64_t* d_source_order,
+                                        const uint32_t* d_source_order,
                                         const int nloc,
                                         const int nall_nodes,
                                         const int64_t edge_storage) {
@@ -2171,6 +2204,46 @@ void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
       dp, nframes, natoms, coord, spin, atype, cell, nghost, nlist, ago, fparam,
       aparam, energy, force, force_mag, virial, atomic_energy, atomic_virial,
       charge_spin);
+}
+
+void DP_DeepSpinComputeCanonicalGraphGPU(DP_DeepSpin* dp,
+                                         double* d_atom_energy,
+                                         double* d_force,
+                                         double* d_force_mag,
+                                         double* d_atom_virial,
+                                         const int64_t* d_atype,
+                                         const uint32_t* d_source,
+                                         const float* d_edge_vec,
+                                         const int64_t* d_destination_row_ptr,
+                                         const int64_t* d_source_row_ptr,
+                                         const uint32_t* d_source_order,
+                                         const float* d_spin,
+                                         const int nloc,
+                                         const int nall_nodes,
+                                         const int64_t edge_storage) {
+  DP_REQUIRES_OK(
+      dp, dp->dp.compute_canonical_graph_gpu(
+              d_atom_energy, d_force, d_force_mag, d_atom_virial, d_atype,
+              d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+              d_source_order, d_spin, nloc, nall_nodes, edge_storage));
+}
+
+bool DP_DeepSpinUsesCanonicalGraphInference(DP_DeepSpin* dp) {
+  try {
+    return dp->dp.uses_canonical_graph_inference();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
+bool DP_DeepSpinUsesNativeSpinScheme(DP_DeepSpin* dp) {
+  try {
+    return dp->dp.uses_native_spin_scheme();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
 }
 
 // end multiple frames
@@ -2717,7 +2790,23 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp) {
 
 int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp) { return dp->dp.dim_chg_spin(); }
 
+void DP_DeepPotSetChargeSpin(DP_DeepPot* dp,
+                             const double* charge_spin,
+                             const int numb_chg_spin) {
+  DP_REQUIRES_OK(
+      dp, dp->dp.set_charge_spin(deepmd::c_api_internal::copy_charge_spin(
+              charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
+}
+
 int DP_DeepSpinGetDimChgSpin(DP_DeepSpin* dp) { return dp->dp.dim_chg_spin(); }
+
+void DP_DeepSpinSetChargeSpin(DP_DeepSpin* dp,
+                              const double* charge_spin,
+                              const int numb_chg_spin) {
+  DP_REQUIRES_OK(
+      dp, dp->dp.set_charge_spin(deepmd::c_api_internal::copy_charge_spin(
+              charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
+}
 
 bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp) {
   return DP_DeepBaseModelIsAParamNAll(static_cast<DP_DeepBaseModel*>(dp));
@@ -2757,6 +2846,14 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp) {
   return dp->dp.dim_chg_spin();
+}
+
+void DP_DeepPotModelDeviSetChargeSpin(DP_DeepPotModelDevi* dp,
+                                      const double* charge_spin,
+                                      const int numb_chg_spin) {
+  DP_REQUIRES_OK(
+      dp, dp->dp.set_charge_spin(deepmd::c_api_internal::copy_charge_spin(
+              charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
 }
 
 bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp) {
@@ -2836,6 +2933,14 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp) {
 
 int DP_DeepSpinModelDeviGetDimChgSpin(DP_DeepSpinModelDevi* dp) {
   return dp->dp.dim_chg_spin();
+}
+
+void DP_DeepSpinModelDeviSetChargeSpin(DP_DeepSpinModelDevi* dp,
+                                       const double* charge_spin,
+                                       const int numb_chg_spin) {
+  DP_REQUIRES_OK(
+      dp, dp->dp.set_charge_spin(deepmd::c_api_internal::copy_charge_spin(
+              charge_spin, numb_chg_spin, dp->dp.dim_chg_spin())));
 }
 
 bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp) {

@@ -129,33 +129,30 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
         )
 
-    def has_default_chg_spin(self) -> bool:
-        """Returns whether the descriptor has a default charge_spin value."""
+    def has_chg_spin_ebd(self) -> bool:
+        """Returns whether any sub-descriptor carries a charge/spin condition."""
+        return any(descrpt.has_chg_spin_ebd() for descrpt in self.descrpt_list)
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin value, or None.
+
+        ``None`` unless every sub-descriptor that supports charge_spin
+        (``get_dim_chg_spin() > 0``) agrees on the same default value.
+        """
         default_chg_spin = None
         found_chg_spin = False
         for descrpt in self.descrpt_list:
             if descrpt.get_dim_chg_spin() == 0:
                 continue
             found_chg_spin = True
-            if not descrpt.has_default_chg_spin():
-                return False
             child_default_chg_spin = descrpt.get_default_chg_spin()
             if child_default_chg_spin is None:
-                return False
+                return None
             if default_chg_spin is None:
                 default_chg_spin = child_default_chg_spin
             elif child_default_chg_spin != default_chg_spin:
-                return False
-        return found_chg_spin
-
-    def get_default_chg_spin(self) -> list[float] | None:
-        """Returns the default charge_spin value, or None."""
-        if not self.has_default_chg_spin():
-            return None
-        for descrpt in self.descrpt_list:
-            if descrpt.get_dim_chg_spin() > 0:
-                return descrpt.get_default_chg_spin()
-        return None
+                return None
+        return default_chg_spin if found_chg_spin else None
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""

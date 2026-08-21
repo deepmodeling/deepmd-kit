@@ -103,6 +103,34 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             model_ret, atype, do_atomic_virial=do_atomic_virial
         )
 
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        spin: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Return native-spin predictions on a flat, frame-segmented node axis."""
+        model_ret = self.call_common_ragged(
+            coord,
+            atype,
+            n_node,
+            box=box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+            spin=spin,
+        )
+        return self._translate_eager_call(
+            model_ret, atype, do_atomic_virial=do_atomic_virial
+        )
+
     def forward_lower_graph_exportable(
         self,
         atype: torch.Tensor,
@@ -275,6 +303,94 @@ class NativeSpinEnergyModel(make_native_spin_model(EnergyModel)):
             fparam,
             aparam,
             charge_spin,
+        )
+
+    def forward_lower_canonical_graph_exportable(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        n_local: torch.Tensor,
+        source: torch.Tensor,
+        edge_vec: torch.Tensor,
+        destination_row_ptr: torch.Tensor,
+        source_row_ptr: torch.Tensor,
+        source_order: torch.Tensor,
+        spin: torch.Tensor,
+        *,
+        do_atomic_virial: bool,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace the compact canonical spin lower into an exportable module.
+
+        THIS METHOD OWNS the positional ``.pt2`` ABI for compact canonical
+        spin models (mirrored verbatim by the C++ / serialization seams):
+        ``spin`` sits at index 8, directly after the dual-CSR block, which is
+        the same placement rule the graph ABI uses at index 10. The compact ABI
+        has no conditional tail, so index 8 is the last slot.
+
+        The magnetic force is a value here rather than an autograd result: the
+        fused operator emits the on-site half from the node kernel and the
+        neighbour half per edge, and the deployment path reduces the second
+        onto source nodes. ``mask_mag`` is derived from the types by the same
+        single owner the eager translation uses.
+
+        Parameters
+        ----------
+        atype, n_node, n_local, source, edge_vec
+            Compact graph node and edge tensors.
+        destination_row_ptr, source_row_ptr, source_order
+            Compact dual-CSR topology.
+        spin
+            ``(N, 3)`` per-node moment. Ghost rows carry their owner's moment.
+        do_atomic_virial
+            Whether the traced output includes per-node virial.
+        **make_fx_kwargs
+            Additional arguments passed to :func:`make_fx`.
+
+        Returns
+        -------
+        torch.nn.Module
+            Traced nine-input compact deployment module whose output dict adds
+            ``force_mag`` and ``mask_mag`` to the spin-free key set.
+        """
+        model = self
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            n_local: torch.Tensor,
+            source: torch.Tensor,
+            edge_vec: torch.Tensor,
+            destination_row_ptr: torch.Tensor,
+            source_row_ptr: torch.Tensor,
+            source_order: torch.Tensor,
+            spin: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            result = model.forward_lower_canonical_graph(
+                atype,
+                n_node,
+                n_local,
+                source,
+                edge_vec,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                do_atomic_virial=do_atomic_virial,
+                spin=spin,
+            )
+            result["mask_mag"] = model._spin_active_mask(atype)
+            return result
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype,
+            n_node,
+            n_local,
+            source,
+            edge_vec,
+            destination_row_ptr,
+            source_row_ptr,
+            source_order,
+            spin,
         )
 
     def forward_lower_graph_exportable_with_comm(

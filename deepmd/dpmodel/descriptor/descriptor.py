@@ -37,6 +37,12 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     local_cluster = False
 
+    # Stat-behavior flags with concrete defaults so stat machinery can read
+    # them on any block without getattr probes; blocks that configure them
+    # assign instance attributes in __init__ (issue #5897).
+    set_davg_zero: bool = False
+    set_stddev_constant: bool = False
+
     def __new__(cls, *args: Any, **kwargs: Any) -> Any:
         if cls is DescriptorBlock:
             try:

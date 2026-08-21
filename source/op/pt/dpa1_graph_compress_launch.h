@@ -18,6 +18,7 @@ namespace deepmd_dpa1_compress {
 enum class IndexKind : int {
   kInt32 = 0,
   kInt64 = 1,
+  kUInt32 = 2,
 };
 
 struct Arguments {

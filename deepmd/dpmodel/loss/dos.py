@@ -159,7 +159,7 @@ class DOSLoss(Loss):
             )
             diff3d = local_pred - local_label  # [nf, natoms, numb_dos]
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
                 l2_local_loss_dos = masked_atom_mean(
                     xp.square(diff3d), maskf, self.numb_dos
@@ -184,7 +184,7 @@ class DOSLoss(Loss):
             )
             diff3d = local_pred_cdf - local_label_cdf  # [nf, natoms, numb_dos]
             if "mask" in model_dict:
-                # idiom 1: per-frame masked mean, then average over frames
+                # Idiom 1 (per-atom masked mean, ncomp=numb_dos).
                 maskf = xp.astype(model_dict["mask"], diff3d.dtype)  # [nf, natoms]
                 l2_local_loss_cdf = masked_atom_mean(
                     xp.square(diff3d), maskf, self.numb_dos

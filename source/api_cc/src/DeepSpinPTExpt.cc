@@ -20,7 +20,10 @@
 #include "errors.h"
 #include "neighbor_list.h"
 
+using deepmd::ptexpt::check_call_charge_spin;
+using deepmd::ptexpt::check_charge_spin_domain;
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_chg_spin_table_ranges;
 using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -145,6 +148,8 @@ void DeepSpinPTExpt::init(const std::string& model,
     }
   }
   default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
+  chg_spin_table_ranges_ = read_chg_spin_table_ranges(metadata, dchgspin);
+  check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -289,6 +294,22 @@ void DeepSpinPTExpt::init(const std::string& model,
 }
 
 DeepSpinPTExpt::~DeepSpinPTExpt() {}
+
+void DeepSpinPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
+  assert(inited);
+  if (dchgspin == 0) {
+    throw deepmd::deepmd_exception(
+        "this model was not frozen with a charge/spin condition");
+  }
+  if (static_cast<int>(charge_spin.size()) != dchgspin) {
+    throw deepmd::deepmd_exception("the charge/spin condition carries " +
+                                   std::to_string(charge_spin.size()) +
+                                   " values but the model expects " +
+                                   std::to_string(dchgspin));
+  }
+  check_charge_spin_domain(charge_spin, chg_spin_table_ranges_);
+  default_chg_spin_ = charge_spin;
+}
 
 std::vector<torch::Tensor> DeepSpinPTExpt::run_model(
     const torch::Tensor& coord,
@@ -595,6 +616,10 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         "and is off by default for .pt2. To enable it, regenerate with: "
         "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
   }
+  // A single-frame call names at most one charge state, and only one this
+  // model can serve.
+  check_call_charge_spin(charge_spin, /*nframes=*/1, dchgspin, dchgspin > 0,
+                         default_chg_spin_, chg_spin_table_ranges_);
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -740,6 +765,21 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     }
   }
 
+  // Edge and graph lowers fold ghost neighbours onto local owners before the
+  // model runs. Dense lowers consume the extended neighbor list directly and
+  // retain their established identity-mapping fallback.
+  const bool folds_ghosts_to_local =
+      lower_input_is_edge_ || lower_input_is_graph_;
+  if (folds_ghosts_to_local && !use_with_comm && nghost_real > 0 &&
+      !atom_map_present) {
+    throw deepmd::deepmd_exception(
+        "This .pt2 lower folds ghost neighbours onto their local owners, "
+        "which needs an owner for each of the " +
+        std::to_string(nghost_real) +
+        " ghost atoms: add `atom_modify map yes` to the LAMMPS input, or, as "
+        "a C++ API caller, set inlist.mapping before compute().");
+  }
+
   // LAMMPS sets ago=0 on every nlist rebuild, so ago>0 implies the cached
   // mapping and nlist tensors are still valid — see DeepPotPTExpt.cc for
   // the same rationale.
@@ -868,38 +908,23 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // Build charge_spin tensor: use the runtime value when provided, fall back
-  // to default_chg_spin_ stored in the .pt2 metadata.  Mirrors
-  // DeepPotPTExpt::compute -- these spin paths are single-frame, so the
-  // runtime vector must hold exactly dim_chg_spin values.
+  // Build charge_spin tensor: the condition supplied with the call when there
+  // is one, otherwise the state in force.
   at::Tensor charge_spin_tensor;
   if (dchgspin > 0) {
-    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
-    if (!charge_spin.empty()) {
-      if (static_cast<int>(charge_spin.size()) != dchgspin) {
-        throw deepmd::deepmd_exception(
-            "charge_spin has " + std::to_string(charge_spin.size()) +
-            " values but the model expects dim_chg_spin=" +
-            std::to_string(dchgspin) + ".");
-      }
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(charge_spin.data()),
-                           {1, static_cast<std::int64_t>(charge_spin.size())},
-                           dbl_options)
-              .clone()
-              .to(device);
-    } else if (!default_chg_spin_.empty()) {
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
-                           {1, dchgspin}, dbl_options)
-              .clone()
-              .to(device);
-    } else {
+    const std::vector<double>& condition =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
+    if (condition.empty()) {
       throw deepmd::deepmd_exception(
           "charge_spin is empty and no default_chg_spin is available in the "
           ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
           "model with a default charge/spin value.");
     }
+    charge_spin_tensor =
+        torch::from_blob(const_cast<double*>(condition.data()), {1, dchgspin},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   }
 
   // Phase 4 dispatch: route to with-comm artifact in multi-rank mode.
@@ -1371,6 +1396,10 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         "and is off by default for .pt2. To enable it, regenerate with: "
         "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
   }
+  // A single-frame call names at most one charge state, and only one this
+  // model can serve.
+  check_call_charge_spin(charge_spin, /*nframes=*/1, dchgspin, dchgspin > 0,
+                         default_chg_spin_, chg_spin_table_ranges_);
   int natoms = atype.size();
 
   torch::Device device(torch::kCUDA, gpu_id);
@@ -1543,38 +1572,23 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // Build charge_spin tensor: use the runtime value when provided, fall back
-  // to default_chg_spin_ stored in the .pt2 metadata.  Mirrors
-  // DeepPotPTExpt::compute -- these spin paths are single-frame, so the
-  // runtime vector must hold exactly dim_chg_spin values.
+  // Build charge_spin tensor: the condition supplied with the call when there
+  // is one, otherwise the state in force.
   at::Tensor charge_spin_tensor;
   if (dchgspin > 0) {
-    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
-    if (!charge_spin.empty()) {
-      if (static_cast<int>(charge_spin.size()) != dchgspin) {
-        throw deepmd::deepmd_exception(
-            "charge_spin has " + std::to_string(charge_spin.size()) +
-            " values but the model expects dim_chg_spin=" +
-            std::to_string(dchgspin) + ".");
-      }
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(charge_spin.data()),
-                           {1, static_cast<std::int64_t>(charge_spin.size())},
-                           dbl_options)
-              .clone()
-              .to(device);
-    } else if (!default_chg_spin_.empty()) {
-      charge_spin_tensor =
-          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
-                           {1, dchgspin}, dbl_options)
-              .clone()
-              .to(device);
-    } else {
+    const std::vector<double>& condition =
+        charge_spin.empty() ? default_chg_spin_ : charge_spin;
+    if (condition.empty()) {
       throw deepmd::deepmd_exception(
           "charge_spin is empty and no default_chg_spin is available in the "
           ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
           "model with a default charge/spin value.");
     }
+    charge_spin_tensor =
+        torch::from_blob(const_cast<double*>(condition.data()), {1, dchgspin},
+                         torch::TensorOptions().dtype(torch::kFloat64))
+            .clone()
+            .to(device);
   }
 
   // 5. Run the .pt2 model: native spin uses the energy edge ABI plus the
