@@ -164,3 +164,34 @@ def test_no_systems_found_raises(tmp_path):
     (tmp_path / "empty").mkdir()
     with pytest.raises(DPADataError):
         mark_groups(tmp_path / "empty")
+
+
+@pytest.mark.parametrize("weight", [0.0, -1.0, float("nan"), float("inf")])
+def test_mark_groups_rejects_degenerate_weight(tmp_path, weight):
+    """weight.npy drives weighted group pooling. A constant positive value
+    cancels under group_reduce="mean", but zero collapses the denominator the
+    model divides by, a negative value flips the group embedding's sign, and a
+    non-finite value poisons it. mark_groups is the second writer path (also
+    reachable as `dpa-adapt data mark-groups --weight`), so it needs the same
+    guard the Assembly writer has.
+    """
+    from dpa_adapt.data.errors import (
+        DPADataError,
+    )
+    from dpa_adapt.grouped import (
+        mark_groups,
+    )
+
+    sys_dir = tmp_path / "sys"
+    set_dir = sys_dir / "set.000"
+    set_dir.mkdir(parents=True)
+    (sys_dir / "type.raw").write_text("0\n1\n")
+    (sys_dir / "type_map.raw").write_text("H\nO\n")
+    np.save(set_dir / "coord.npy", np.zeros((2, 6)))
+    np.save(set_dir / "property.npy", np.zeros((2, 1)))
+
+    with pytest.raises(DPADataError, match="weight must be"):
+        mark_groups(str(sys_dir), target="property", group_by="system", weight=weight)
+
+    # nothing was written before the guard fired
+    assert not (set_dir / "weight.npy").exists()

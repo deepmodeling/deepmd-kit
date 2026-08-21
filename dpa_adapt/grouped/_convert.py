@@ -134,6 +134,24 @@ def mark_groups(
         )
     if isinstance(group_by, int) and group_by < 1:
         raise DPADataError(f"group_by size must be >= 1; got {group_by}.")
+    if weight is not None:
+        # weight.npy is the numerator and denominator of weighted group pooling.
+        # A constant positive value cancels out under group_reduce="mean", but
+        # zero collapses the denominator, a negative value flips the group
+        # embedding's sign, and a non-finite value poisons it. Reject them here,
+        # before any file is written, rather than at training time.
+        weight_value = float(weight)
+        if not np.isfinite(weight_value):
+            raise DPADataError(
+                f"weight must be finite; got {weight!r}. It is written to every "
+                "frame's weight.npy and drives weighted group pooling."
+            )
+        if weight_value <= 0.0:
+            raise DPADataError(
+                f"weight must be > 0; got {weight_value}. Zero collapses the "
+                "per-group weight sum that group pooling divides by, and a "
+                "negative weight flips the sign of the group embedding."
+            )
 
     return [
         _process_system(

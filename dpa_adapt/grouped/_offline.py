@@ -39,6 +39,10 @@ if TYPE_CHECKING:
 # already been told (via GroupedDataset.get_labels) that no labels exist; this
 # only keeps the (group_id, weight, label) row shape uniform.
 _NO_LABEL = np.zeros((1,), dtype=float)
+# Every label-less row shares this one array (np.asarray does not copy an
+# ndarray), so keep it read-only: a stray in-place write would otherwise reach
+# every row at once.
+_NO_LABEL.setflags(write=False)
 
 
 def load_or_extract(*args: object, **kwargs: object) -> np.ndarray:
