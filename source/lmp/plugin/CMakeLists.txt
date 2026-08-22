@@ -122,7 +122,35 @@ if(DEFINED LAMMPS_SOURCE_ROOT OR DEFINED LAMMPS_VERSION)
     find_package(Kokkos CONFIG REQUIRED)
     target_compile_definitions(${libname} PRIVATE LMP_KOKKOS)
     target_include_directories(${libname} PRIVATE ${LAMMPS_HEADER_DIR}/KOKKOS)
-    target_link_libraries(${libname} PUBLIC Kokkos::kokkos)
+
+    # A runtime LAMMPS plugin must use the Kokkos runtime already linked into
+    # liblammps. Linking the static Kokkos libraries here creates a second
+    # CUDA runtime instance and corrupts its shutdown state when the plugin is
+    # unloaded. Import only the compile/link flags needed for Kokkos device
+    # code; unresolved Kokkos symbols are resolved by liblammps at load time.
+    get_target_property(_kokkos_include_dirs Kokkos::kokkos
+                        INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(_kokkos_compile_definitions Kokkos::kokkoscore
+                        INTERFACE_COMPILE_DEFINITIONS)
+    get_target_property(_kokkos_compile_options Kokkos::kokkoscore
+                        INTERFACE_COMPILE_OPTIONS)
+    get_target_property(_kokkos_link_options Kokkos::kokkoscore
+                        INTERFACE_LINK_OPTIONS)
+    get_target_property(_kokkos_compile_features Kokkos::kokkoscore
+                        INTERFACE_COMPILE_FEATURES)
+    target_include_directories(${libname} SYSTEM PRIVATE
+                               ${_kokkos_include_dirs})
+    target_compile_definitions(${libname} PRIVATE
+                               ${_kokkos_compile_definitions})
+    target_compile_options(${libname} PRIVATE ${_kokkos_compile_options})
+    target_link_options(${libname} PRIVATE ${_kokkos_link_options})
+    target_compile_features(${libname} PRIVATE ${_kokkos_compile_features})
+    if(TARGET Kokkos::CUDA)
+      target_link_libraries(${libname} PRIVATE Kokkos::CUDA)
+    endif()
+    if(TARGET Kokkos::LIBDL)
+      target_link_libraries(${libname} PRIVATE Kokkos::LIBDL)
+    endif()
   endif()
 
   # link: libdeepmd
