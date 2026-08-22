@@ -28,6 +28,14 @@ PairStyle(dpa4spin/kk/host,PairDPA4SpinKokkos<LMPHostType>);
 
 namespace LAMMPS_NS {
 
+// LAMMPS 22Jul2025 exposes reverse-communication buffers as X_FLOAT; newer
+// releases use a fixed double buffer for Kokkos pair styles.
+#if LAMMPS_VERSION_NUMBER < 20260704
+using DPA4SpinKokkosCommBuffer = DAT::tdual_xfloat_1d;
+#else
+using DPA4SpinKokkosCommBuffer = DAT::tdual_double_1d;
+#endif
+
 // GPU-resident inference for exported native-spin ``.pt2`` models whose forward
 // consumes the compact canonical graph: a dual-CSR neighbor topology with
 // uint32 indices and float32 edge vectors, plus the per-node magnetic moment.
@@ -64,10 +72,10 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // overrides serve the host-staged path.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
-  int pack_reverse_comm_kokkos(int, int, DAT::tdual_double_1d&) override;
+  int pack_reverse_comm_kokkos(int, int, DPA4SpinKokkosCommBuffer&) override;
   void unpack_reverse_comm_kokkos(int,
                                   DAT::tdual_int_1d,
-                                  DAT::tdual_double_1d&) override;
+                                  DPA4SpinKokkosCommBuffer&) override;
 
   // Gather the per-node magnetic moment from the Kokkos ``sp`` array. Public
   // because it launches an extended device lambda, which CUDA forbids inside
@@ -94,8 +102,14 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
 
   // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
   // downstream per-atom computes/dumps see it after the device-to-host sync).
+  // The transformed accumulator view was added after the 22Jul2025 release.
+#if LAMMPS_VERSION_NUMBER < 20260704
+  DAT::tdual_double_1d k_eatom;
+  typename AT::t_double_1d d_eatom;
+#else
   DAT::ttransform_kkacc_1d k_eatom;
   typename AT::t_kkacc_1d d_eatom;
+#endif
 
   bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // force reverse communication selected host staging

@@ -28,6 +28,14 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 
 namespace LAMMPS_NS {
 
+// LAMMPS 22Jul2025 exposes reverse-communication buffers as X_FLOAT; newer
+// releases use a fixed double buffer for Kokkos pair styles.
+#if LAMMPS_VERSION_NUMBER < 20260704
+using DeepMDKokkosCommBuffer = DAT::tdual_xfloat_1d;
+#else
+using DeepMDKokkosCommBuffer = DAT::tdual_double_1d;
+#endif
+
 // GPU-resident inference for exported ``.pt2`` models whose forward consumes
 // an explicit edge graph: both the graph-input form (a compact, unpadded
 // neighbor graph) and the edge-input form. Both are dispatched through
@@ -64,10 +72,10 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // host-staged path.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
-  int pack_reverse_comm_kokkos(int, int, DAT::tdual_double_1d&) override;
+  int pack_reverse_comm_kokkos(int, int, DeepMDKokkosCommBuffer&) override;
   void unpack_reverse_comm_kokkos(int,
                                   DAT::tdual_int_1d,
-                                  DAT::tdual_double_1d&) override;
+                                  DeepMDKokkosCommBuffer&) override;
 
   // Build the device edge graph of the edge-input schema from the Kokkos full
   // neighbor list, returning the edge count. Public because it launches
@@ -101,8 +109,14 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 
   // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
   // downstream per-atom computes/dumps see it after the device-to-host sync).
+  // The transformed accumulator view was added after the 22Jul2025 release.
+#if LAMMPS_VERSION_NUMBER < 20260704
+  DAT::tdual_double_1d k_eatom;
+  typename AT::t_double_1d d_eatom;
+#else
   DAT::ttransform_kkacc_1d k_eatom;
   typename AT::t_kkacc_1d d_eatom;
+#endif
 
   int edge_capacity;       // allocated edges in d_edge_index / d_edge_vec
   bool edge_vec_fp32;      // model graph ABI consumes edge vectors in fp32

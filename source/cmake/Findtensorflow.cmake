@@ -256,15 +256,14 @@ if(NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
     STATUS
       "Protobuf headers are not found in the directory of TensorFlow, assuming external protobuf was used to build TensorFlow"
   )
-  if(NOT Protobuf_LIBRARY)
-    message(FATAL_ERROR "TensorFlow is not linked to protobuf")
-  endif()
-  get_filename_component(Protobuf_LIBRARY_DIRECTORY ${Protobuf_LIBRARY}
-                         DIRECTORY)
-  # assume the include directory is ../include
-  set(Protobuf_INCLUDE_DIR ${Protobuf_LIBRARY_DIRECTORY}/../include)
+  # TensorFlow 2.21 packages may not record protobuf as a direct runtime
+  # dependency. Find the external full protobuf library instead of relying on
+  # libtensorflow_framework's dependency list, which may also expose only the
+  # lite library on some platforms.
+  unset(Protobuf_LIBRARY)
   find_package(Protobuf REQUIRED)
   set(TensorFlow_INCLUDE_DIRS_GOOGLE ${Protobuf_INCLUDE_DIRS})
+  set(Protobuf_LIBRARY ${Protobuf_LIBRARIES})
 endif()
 list(APPEND TensorFlow_INCLUDE_DIRS ${TensorFlow_INCLUDE_DIRS_GOOGLE})
 
