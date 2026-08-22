@@ -53,8 +53,36 @@ Other training parameters are given in the {ref}`training <training>` section.
 The sections {ref}`training_data <training/training_data>` and {ref}`validation_data <training/validation_data>` give the training dataset and validation dataset, respectively. Taking the training dataset for example, the keys are explained below:
 
 - {ref}`systems <training/training_data/systems>` provide paths of the training data systems. DeePMD-kit allows you to provide multiple systems with different numbers of atoms. This key can be a `list` or a `str`.
-  - `str`: {ref}`systems <training/training_data/systems>` should be a valid path. It can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories.
-  - `list`: {ref}`systems <training/training_data/systems>` gives a list of paths. Each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories.
+  - `str`: {ref}`systems <training/training_data/systems>` should be a valid path. It can be a system directory path (containing `type.raw`), a parent directory path to recursively search for all system subdirectories, or an explicitly named labeled `.xyz` or `.extxyz` file.
+  - `list`: {ref}`systems <training/training_data/systems>` gives a list of paths. Each item can use any of the forms accepted for `str`, so multiple extended-XYZ files and mixtures of extended-XYZ files and existing DeePMD systems are supported.
+
+### Labeled extended-XYZ datasets
+
+An extended-XYZ file can be used directly for either training or validation; no separate conversion command or modification of `input.json` is needed:
+
+```json
+{
+  "training": {
+    "training_data": {
+      "systems": ["data/train_part_1.extxyz", "data/train_part_2.xyz"],
+      "batch_size": "auto"
+    },
+    "validation_data": {
+      "systems": "data/validation.extxyz",
+      "batch_size": "auto"
+    }
+  }
+}
+```
+
+DeePMD-kit uses `dpdata` to read every frame and to write a transparent DeePMD NumPy cache. Species and positions are read from the standard `Properties` declaration. Atomic forces may use `force` or the common `forces` property name. Total energy accepts the aliases supported by `dpdata`. A `virial`/`virials` field is retained directly; an ASE-style `stress`/`stresses` field is converted using `virial = -volume * stress`. Stress may contain nine row-major tensor components or six components in ASE Voigt order (`xx yy zz yz xz xy`). In the absence of explicit unit metadata, positions and cells are interpreted as angstrom, energy and virial as eV, forces as eV/angstrom, and stress as eV/angstrom^3. Unit metadata supported by `dpdata` is converted to those DeePMD units.
+
+Every frame must contain total energy and atomic forces. A coordinate-only XYZ file therefore fails with a label-specific error. If the configured loss has a nonzero virial prefactor, every frame must additionally contain either virial or usable stress data.
+
+Frames with different atom counts, compositions, periodicity, or available label sets are split deterministically into ordinary fixed-shape DeePMD NumPy systems in first-occurrence order. Traditional DeePMD NumPy systems distinguish only all-periodic from all-nonperiodic data, so a partially periodic field such as `pbc="T T F"` is rejected explicitly. A heterogeneous file cannot be combined with list-valued `batch_size`, explicit `sys_probs`, or indexed `auto_prob` blocks because one input path then maps to multiple internal systems; use scalar/`"auto"` batching and automatic probabilities instead.
+
+Converted data is cached under the platform temporary directory. The cache key includes the canonical source path, complete source-file hash, conversion settings, and `dpdata` version, so editing the source creates a new cache. Publication is atomic and concurrent launches coordinate through a per-key lock. Set `DEEPMD_EXTXYZ_CACHE` to use a different cache root. `rglob_patterns` continues to control only directory discovery: arbitrary `.xyz` files below a parent directory are never discovered implicitly, and an explicitly listed extended-XYZ file is never filtered by those patterns.
+
 - At each training step, DeePMD-kit randomly picks {ref}`batch_size <training/training_data/batch_size>` frame(s) from one of the systems. The probability of using a system is by default in proportion to the number of batches in the system. More options are available for automatically determining the probability of using systems. One can set the key {ref}`auto_prob <training/training_data/auto_prob>` to
   - `"prob_uniform"` all systems are used with the same probability.
   - `"prob_sys_size"` the probability of using a system is proportional to its size (number of frames).
