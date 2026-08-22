@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Backend-independent conversion of external training data."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import hashlib
 import json
@@ -12,9 +14,15 @@ import shutil
 import tempfile
 import time
 import uuid
-from collections import OrderedDict
-from copy import deepcopy
-from pathlib import Path
+from collections import (
+    OrderedDict,
+)
+from copy import (
+    deepcopy,
+)
+from pathlib import (
+    Path,
+)
 from typing import (
     Any,
 )

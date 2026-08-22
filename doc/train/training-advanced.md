@@ -64,7 +64,10 @@ An extended-XYZ file can be used directly for either training or validation; no 
 {
   "training": {
     "training_data": {
-      "systems": ["data/train_part_1.extxyz", "data/train_part_2.xyz"],
+      "systems": [
+        "data/train_part_1.extxyz",
+        "data/train_part_2.xyz"
+      ],
       "batch_size": "auto"
     },
     "validation_data": {
