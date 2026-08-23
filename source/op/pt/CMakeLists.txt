@@ -86,6 +86,14 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
       dpa4/so2_conv_bwd_c64_l4.cu
       dpa4/so2_conv_bwd_c64_l5.cu
       dpa4/so2_conv_bwd_c64_l6.cu)
+  set(DPA4_ROTATE_MIX_TRAIN_KERNEL_SRC
+      dpa4/rotate_mix_train_l1.cu dpa4/rotate_mix_train_l2.cu
+      dpa4/rotate_mix_train_l3.cu dpa4/rotate_mix_train_l4.cu
+      dpa4/rotate_mix_train_l5.cu dpa4/rotate_mix_train_l6.cu)
+  set(DPA4_SO2_CONV_TRAIN_KERNEL_SRC
+      dpa4/so2_conv_train_l1.cu dpa4/so2_conv_train_l2.cu
+      dpa4/so2_conv_train_l3.cu dpa4/so2_conv_train_l4.cu
+      dpa4/so2_conv_train_l5.cu dpa4/so2_conv_train_l6.cu)
   set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC
       dpa4c/graph_compress.cu dpa4c/graph_compress_c8.cu
       dpa4c/graph_compress_c16.cu dpa4c/graph_compress_c32.cu
@@ -106,6 +114,11 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     dpa1_graph_energy_force.cu
     dpa4/so2_conv.cu
     ${DPA4_SO2_CONV_KERNEL_SRC}
+    dpa4/mixing_train.cu
+    dpa4/rotate_mix_train.cu
+    ${DPA4_ROTATE_MIX_TRAIN_KERNEL_SRC}
+    dpa4/so2_conv_train.cu
+    ${DPA4_SO2_CONV_TRAIN_KERNEL_SRC}
     dpa4/grid_pair.cu
     dpa4/zonal_scatter.cu
     dpa4/edge_radial.cu
@@ -132,7 +145,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     set_property(TARGET deepmd_op_pt PROPERTY CUDA_ARCHITECTURES
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
-  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublas)
+  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublas CUDA::cublasLt)
   # libtorch headers require C++17; the CUDA sources must match.
   set_target_properties(deepmd_op_pt PROPERTIES CUDA_STANDARD 17
                                                 CUDA_STANDARD_REQUIRED ON)

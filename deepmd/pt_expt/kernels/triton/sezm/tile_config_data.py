@@ -295,6 +295,28 @@ BUILTIN_TILE_CONFIGS: dict[
             (128, 5): (8, 16, 1),
             (128, 6): (8, 16, 2),
         },
+        # Backward pointwise kernel under the training profile (bf16, with
+        # in-kernel layer-input recovery and gate-logit store).
+        "point_train": {
+            (32, 1): (64, 4, 2),
+            (32, 2): (16, 4, 1),
+            (32, 3): (32, 8, 1),
+            (64, 3): (8, 4, 2),
+            (64, 4): (8, 4, 1),
+            (64, 5): (16, 8, 2),
+            (96, 4): (8, 16, 1),
+            (128, 2): (32, 16, 2),
+        },
+        # Second order of the gated activation (training double backward).
+        "gated_second_order": {
+            (32, 1): (64, 8, 2),
+            (32, 2): (16, 4, 2),
+            (32, 3): (8, 2, 1),
+            (64, 3): (8, 16, 1),
+            (64, 4): (8, 16, 2),
+            (64, 5): (8, 16, 2),
+            (128, 2): (64, 16, 1),
+        },
         # Fused gate recompute + backward pointwise win list.
         "point_recompute": {
             (32, 1): (64, 8, 1),

@@ -23,6 +23,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 import os
 from typing import (
     Any,
@@ -32,6 +33,8 @@ import torch
 from packaging.version import (
     Version,
 )
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "AM_PREFIX",
@@ -44,6 +47,7 @@ __all__ = [
     "get_task_buffer_values",
     "is_prime",
     "next_safe_prime",
+    "patch_inductor_autotune_benchmark_tolerance",
     "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
@@ -117,6 +121,12 @@ def apply_global_compile_patches() -> None:
     # supported PyTorch versions and is independent of runtime shapes.
     patch_inductor_force_int64_indexing()
 
+    # Let GEMM autotuning survive a candidate whose benchmark harness is
+    # broken; only the opt-in ``max_autotune_gemm`` (``DP_TUNE_TRAIN=2``)
+    # runs those benchmarks.
+    if int(os.environ.get("DP_TUNE_TRAIN", "0") or "0") >= 2:
+        patch_inductor_autotune_benchmark_tolerance()
+
     # The symbolic-divisibility regression was introduced in PyTorch 2.12; the
     # 2.11 backend evaluates the same predicate correctly and must not be
     # patched.
@@ -152,6 +162,47 @@ def patch_inductor_force_int64_indexing() -> None:
     # forces int64 indexing in every generated kernel.
     SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
     SIMDScheduling._dp_force_int64_patched = True
+
+
+def patch_inductor_autotune_benchmark_tolerance() -> None:
+    """Treat a ``TypeError`` from a GEMM autotune benchmark as a lost choice.
+
+    ``AlgorithmSelectorCache.benchmark_choices`` already skips candidates that
+    fail with compile or runtime errors, but a ``TypeError`` escapes and aborts
+    the whole compilation.  On PyTorch 2.13 with ``cpp_wrapper`` enabled, the
+    in-process benchmark of some Triton matmul templates assembles one more
+    positional argument than the generated launcher accepts
+    (``'stream' must be passed as a keyword argument``), which is exactly such
+    a ``TypeError``.  The candidate is unusable either way; scoring it as
+    infinitely slow lets autotuning proceed with the remaining choices
+    (including the cuBLAS fallback) instead of failing the step.
+    """
+    try:
+        from torch._inductor.select_algorithm import (
+            AlgorithmSelectorCache,
+        )
+    except Exception:
+        return
+
+    if getattr(AlgorithmSelectorCache, "_dp_benchmark_tolerance_patched", False):
+        return
+
+    original = AlgorithmSelectorCache.benchmark_choice.__func__
+
+    @classmethod  # type: ignore[misc]
+    def tolerant_benchmark_choice(cls, choice, autotune_args) -> float:  # noqa: ANN001
+        try:
+            return original(cls, choice, autotune_args)
+        except TypeError as err:
+            log.warning(
+                "Skipping autotune choice %s: benchmark harness raised %s",
+                getattr(choice, "name", choice),
+                err,
+            )
+            return float("inf")
+
+    AlgorithmSelectorCache.benchmark_choice = tolerant_benchmark_choice
+    AlgorithmSelectorCache._dp_benchmark_tolerance_patched = True
 
 
 def check_compile_torch_version() -> None:
@@ -500,6 +551,43 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # The option is shared by the training and evaluation graphs.
         "triton.max_tiles": 1,
     }
+    # ``DP_TUNE_TRAIN`` grades the compile-time investment of the training
+    # graphs (cumulative levels; inference graphs ignore it, the AOTI export
+    # path forces its own C++ wrapper):
+    #   0  fast compilation, the default.
+    #   1  ``cpp_wrapper``: replaces the generated Python wrapper that
+    #      launches the compiled graph's kernels with a compiled C++ wrapper.
+    #      A step launches thousands of kernels, and the Python dispatch
+    #      overhead leaves the GPU idle most of the step on small
+    #      configurations (8-15% of the training step there, ~1% on the wide
+    #      shapes).  Validated for numerical parity and under multi-batch
+    #      dynamic shapes; it does not widen kernel fusion.
+    #   2  additionally ``max_autotune_gemm``: benchmarks Triton matmul
+    #      templates against the cuBLAS call for every GEMM in the graph.
+    #      The benchmarking dominates compile time (tens of minutes on the
+    #      large configurations), while its historical gains -- the batched
+    #      weight-gradient contractions that an old cuBLAS served at
+    #      percent-level efficiency -- are now covered by the split-K
+    #      algorithms of cuBLAS >= 13.6 and by the dedicated cublasLt path
+    #      of the CUDA value-path operators, leaving single-digit percent on
+    #      the narrow shapes.  A defective candidate raised during
+    #      benchmarking is skipped, not fatal (see
+    #      ``patch_inductor_autotune_benchmark_tolerance``); on a distributed
+    #      job the trainer compiles before the first collective (see
+    #      ``_precompile_outside_collectives``), so the benchmarking variance
+    #      cannot trip the NCCL watchdog.
+    tune_train = 0
+    if not inference:
+        tune_train = int(os.environ.get("DP_TUNE_TRAIN", "0") or "0")
+    if tune_train >= 1:
+        compile_options["cpp_wrapper"] = True
+        # Compile the entry (the tens-of-thousands-of-lines launch sequence)
+        # and the kernels as separate translation units, the entry at O1:
+        # measured 18 -> 11 minutes of compile time on the two-layer Pro
+        # graph with a step-time difference inside noise (99.19 vs 99.22 ms).
+        compile_options["cpp_wrapper_build_separate"] = True
+    if tune_train >= 2:
+        compile_options["max_autotune_gemm"] = True
     if inference:
         # The peak-memory reordering pass sizes buffers through
         # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is

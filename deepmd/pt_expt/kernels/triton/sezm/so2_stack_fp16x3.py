@@ -446,7 +446,7 @@ def _mixing_stack_fp16x3_impl(
     lmax: int,
     focus_dim: int,
     apply_alpha: bool,
-) -> tuple[Tensor, Tensor]:
+) -> tuple[Tensor, Tensor, Tensor]:
     if not _use_triton(u0):
         return _mixing_stack_reference(
             u0, alpha, w0_all, w1_all, gw_all, lmax, focus_dim, apply_alpha
@@ -467,7 +467,7 @@ def _mixing_stack_fp16x3_impl(
     )
     x_local = torch.empty((n_edge, n_focus, row), device=u0.device, dtype=u0.dtype)
     if _has_no_edges(n_edge):
-        return x_local, z_all
+        return x_local, z_all, u0
 
     # Weight splits are parameter-only and negligible next to the GEMMs.
     w0h, w0l = _split_fp16(w0_all)
@@ -554,6 +554,10 @@ def _mixing_stack_fp16x3_impl(
         )
         u = out
 
+    # See the fp32 operator: the final gated-layer activation is what the
+    # backward walks to recover every layer's input.
+    u_final = u
+
     # Final identity layer streams straight into the edge-major output layout.
     wrap_triton(_stack_fp16x3_m0_kernel)[grid_m0](
         u,
@@ -596,7 +600,7 @@ def _mixing_stack_fp16x3_impl(
         num_warps=w1_warps,
         num_stages=w1_stages,
     )
-    return x_local, z_all
+    return x_local, z_all, u_final
 
 
 def _mixing_stack_fp16x3_bwd_impl(
@@ -611,7 +615,7 @@ def _mixing_stack_fp16x3_bwd_impl(
     lmax: int,
     focus_dim: int,
     apply_alpha: bool,
-) -> tuple[Tensor, Tensor]:
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     if not _use_triton(grad_out):
         return _mixing_stack_backward_reference(
             grad_out,
@@ -717,17 +721,22 @@ def _mixing_stack_fp16x3_bwd_impl(
             num_stages=a_s,
         )
 
-    # === Gated layers in reverse; sig / gz buffers are reused across layers ===
+    # === Gated layers in reverse ===
+    # The per-layer pre-activation and gate-logit gradients are retained rather
+    # than reused across layers: they are the cotangents the weight gradients
+    # contract against (see the fp32 operator).
     gate_width = lmax * focus_dim
     sig = torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
-    gz = torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+    grad_z_all = torch.empty(
+        (n_gated, n_focus, n_edge, row), device=device, dtype=dtype
+    )
     use_bmm = focus_dim >= GATE_BMM_MIN_FOCUS_DIM
-    glogit = (
-        torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
-        if use_bmm
-        else sig
+    grad_logit_all = torch.empty(
+        (n_gated, n_focus, n_edge, gate_width), device=device, dtype=torch.float32
     )
     for layer in range(n_gated - 1, -1, -1):
+        gz = grad_z_all[layer]
+        glogit = grad_logit_all[layer]
         _launch_stack_point_backward(
             g_cur,
             z_all,
@@ -750,7 +759,7 @@ def _mixing_stack_fp16x3_bwd_impl(
         g_next = torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
         launch_bwd_gemms(gz, g_cur, g_next, layer, False, False, False)
         g_cur = g_next
-    return g_cur, grad_alpha
+    return g_cur, grad_alpha, grad_z_all, grad_logit_all
 
 
 # ======================================================================
@@ -770,6 +779,7 @@ def _(u0, alpha, w0_all, w1_all, gw_all, lmax, focus_dim, apply_alpha):
     return (
         u0.new_empty((n_edge, n_focus, row)),
         u0.new_empty((gw_all.shape[0], n_focus, n_edge, row)),
+        u0.new_empty((n_focus, n_edge, row)),
     )
 
 
@@ -791,21 +801,28 @@ def _(
     return (
         z_all.new_empty((n_focus, n_edge, row)),
         z_all.new_empty((n_edge, n_focus)),
+        z_all.new_empty((n_gated, n_focus, n_edge, row)),
+        z_all.new_empty(
+            (n_gated, n_focus, n_edge, lmax * focus_dim), dtype=torch.float32
+        ),
     )
 
 
 def _setup_context(ctx, inputs, output):
     u0, alpha, w0_all, w1_all, gw_all, lmax, focus_dim, apply_alpha = inputs
-    x_local, z_all = output
+    x_local, z_all, _u_final = output
     ctx.save_for_backward(alpha, x_local, z_all, w0_all, w1_all, gw_all)
     ctx.lmax = lmax
     ctx.focus_dim = focus_dim
     ctx.apply_alpha = apply_alpha
 
 
-def _backward(ctx, grad_out, grad_z_unused):
+def _backward(ctx, grad_out, grad_z_unused, grad_u_unused):
+    # This operator serves inference only (level 3), where the parameters are
+    # constants; the weight gradients the fp32 operator produces are therefore
+    # not needed here.
     alpha, x_local, z_all, w0_all, w1_all, gw_all = ctx.saved_tensors
-    grad_u0, grad_alpha = _mixing_stack_fp16x3_bwd_op(
+    grad_u0, grad_alpha, _, _ = _mixing_stack_fp16x3_bwd_op(
         grad_out.contiguous(),
         x_local,
         z_all,

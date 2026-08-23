@@ -296,7 +296,43 @@ def _backward(ctx, grad_out):
     return grad_q, None, None
 
 
+def _bwd_setup_context(ctx, inputs, output):
+    grad_out, q, exponents, max_power = inputs
+    ctx.save_for_backward(grad_out, q)
+    ctx.exponents = exponents
+    ctx.max_power = max_power
+
+
+def _bwd_backward(ctx, grad_grad_q):
+    """Second order of the monomial basis.
+
+    Unlike the rotation and mixing operators this basis is a polynomial in
+    ``q``, not a multilinear form, so the second order is a Hessian contraction
+    and cannot be assembled from the first-order kernels. The eager closed form
+    is differentiable to all orders and its operand is only ``(E, 4)``, so
+    differentiating it is exact and costs nothing measurable beside the rotation
+    kernels it feeds.
+    """
+    grad_out, q = ctx.saved_tensors
+    if grad_grad_q is None:
+        return None, None, None, None
+    with torch.enable_grad():
+        grad_out_leaf = grad_out.detach().requires_grad_()
+        q_leaf = q.detach().requires_grad_()
+        grad_q = _monomials_backward_reference(
+            grad_out_leaf, q_leaf, ctx.exponents, ctx.max_power
+        )
+        grad_grad_out, grad_q_out = torch.autograd.grad(
+            grad_q,
+            (grad_out_leaf, q_leaf),
+            grad_grad_q,
+            create_graph=torch.is_grad_enabled(),
+        )
+    return grad_grad_out, grad_q_out, None, None
+
+
 _monomials_op.register_autograd(_backward, setup_context=_setup_context)
+_monomials_bwd_op.register_autograd(_bwd_backward, setup_context=_bwd_setup_context)
 
 
 def wigner_monomials(q: Tensor, exponents: list[int], max_power: int) -> Tensor:

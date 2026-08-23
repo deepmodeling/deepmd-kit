@@ -974,8 +974,24 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                     0, n_node, (n_edge,), device="cuda", generator=generator
                 )
 
+                order = torch.argsort(dst)
+                row_ptr = torch.cat(
+                    [
+                        torch.zeros(1, device="cuda", dtype=torch.long),
+                        torch.bincount(dst, minlength=n_node).cumsum(0),
+                    ]
+                )
                 got = _flash_bwd_op(
-                    grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head
+                    grad_pre_gate,
+                    x_local,
+                    wigner_dt,
+                    rescale,
+                    alpha,
+                    order,
+                    row_ptr,
+                    dst,
+                    lmax,
+                    n_head,
                 )
                 want = _flash_atten_backward_reference(
                     grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head
@@ -1100,7 +1116,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         u0_ref = u0.double().requires_grad_(True)
         alpha_ref = alpha.double().requires_grad_(True)
-        x_ref, _ = _mixing_stack_reference(
+        x_ref, _, _ = _mixing_stack_reference(
             u0_ref,
             alpha_ref,
             w0_all.double(),
@@ -1114,7 +1130,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         u0_run = u0.clone().requires_grad_(True)
         alpha_run = alpha.clone().requires_grad_(True)
-        x_run, z_run = op(
+        x_run, z_run, _ = op(
             u0_run, alpha_run, w0_all, w1_all, gw_all, self.LMAX, self.FOCUS_DIM, True
         )
         self.assertTrue(bool(torch.isfinite(x_run).all()))
@@ -1218,7 +1234,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         lmax, focus_dim = self.LMAX, self.FOCUS_DIM
 
         def fn(u0, alpha, w0_all, w1_all, gw_all):
-            x_local, z_all = mixing_stack_fp16x3(
+            x_local, z_all, _ = mixing_stack_fp16x3(
                 u0, alpha, w0_all, w1_all, gw_all, lmax, focus_dim, True
             )
             return (x_local, z_all)
@@ -1288,7 +1304,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         def make_fn(op):
             def fn(u0, alpha, w0, w1, gw):
-                x_local, _ = op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)
+                x_local, _, _ = op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)
                 return (x_local,)
 
             return fn
@@ -1531,6 +1547,9 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         fake_specs = {
             name: replace(spec, sweep=fake_sweeps[name])
             for name, spec in sweep_tile_configs._SWEEP_SPECS.items()
+            # Training-profile families are tuned by explicit sweep runs and
+            # are outside the freeze auto-tuner under test.
+            if not spec.train_only
         }
         shape_keys = [(48, 2, 2, 1)]
         with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):

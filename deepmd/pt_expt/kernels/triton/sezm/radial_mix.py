@@ -59,6 +59,10 @@ from torch.library import (
     wrap_triton,
 )
 
+from .second_order import (
+    accumulate,
+)
+
 __all__ = [
     "RADIAL_MIX_TRITON_AVAILABLE",
     "radial_mix_block",
@@ -785,6 +789,53 @@ def _(grad_out, compact, x_local, channel_basis, lmax):
     return torch.empty_like(compact), torch.empty_like(x_local)
 
 
+def channel_basis_grad(
+    grad_out: Tensor, compact: Tensor, x_local: Tensor, lmax: int
+) -> Tensor:
+    """Contract the degree kernel and the activation against the cotangent.
+
+    The forward is trilinear,
+    ``out[e, o, c] = sum_{i, r} K[e, o, i, r] x[e, i, c] cb[r, c]``, so the
+    basis gradient ``sum_{e, o, i} K x g`` does not involve ``cb`` itself. It
+    reduces the full edge axis into an ``(R, C)`` parameter, which cuBLAS
+    handles well and no Triton kernel would improve; expressing it in ATen also
+    makes it differentiable, which the second-order path requires.
+
+    Parameters
+    ----------
+    grad_out : Tensor
+        Upstream gradient with shape ``(E, reduced_dim, C)``.
+    compact : Tensor
+        Projected radial degree kernel with shape ``(E, degree_kernel_size, R)``.
+    x_local : Tensor
+        Edge-local reduced features with shape ``(E, reduced_dim, C)``.
+    lmax : int
+        Maximum spherical-harmonic degree.
+
+    Returns
+    -------
+    Tensor
+        Gradient of the per-rank channel basis with shape ``(R, C)``.
+    """
+    n_edge = x_local.shape[0]
+    grad_basis: Tensor | None = None
+    for coeff0, comp0, num_l in _block_layout(int(lmax)):
+        # Compact storage is ``(e, l_in, l_out, r)``; contracting the output
+        # degree against the cotangent first leaves a rank-major intermediate
+        # that the final reduction consumes elementwise. Contracting the input
+        # degree instead would leave the rank axis innermost and force a
+        # transposing copy of the whole edge tensor before the reduction.
+        kernel = compact[:, comp0 : comp0 + num_l * num_l, :].reshape(
+            n_edge, num_l, num_l, -1
+        )  # (E, i, o, R)
+        x_block = x_local[:, coeff0 : coeff0 + num_l, :]  # (E, i, C)
+        g_block = grad_out[:, coeff0 : coeff0 + num_l, :]  # (E, o, C)
+        weighted = torch.einsum("eior,eoc->reic", kernel, g_block)  # (R, E, i, C)
+        term = (weighted * x_block.unsqueeze(0)).sum(dim=(1, 2), dtype=torch.float32)
+        grad_basis = term if grad_basis is None else grad_basis + term
+    return grad_basis.to(compact.dtype)
+
+
 def _radial_mix_setup_context(ctx, inputs, output):
     compact, x_local, channel_basis, lmax = inputs
     ctx.save_for_backward(compact, x_local, channel_basis)
@@ -796,14 +847,79 @@ def _radial_mix_backward(ctx, grad_out):
     grad_compact, grad_x = _radial_mix_bwd_op(
         grad_out, compact, x_local, channel_basis, ctx.lmax
     )
-    # ``channel_basis`` is a parameter; the inference force differentiates only
-    # w.r.t. coordinates, so its gradient is intentionally not produced.
-    return grad_compact, grad_x, None, None
+    grad_basis = (
+        channel_basis_grad(grad_out, compact, x_local, ctx.lmax)
+        if ctx.needs_input_grad[2]
+        else None
+    )
+    return grad_compact, grad_x, grad_basis, None
+
+
+def _radial_mix_bwd_setup_context(ctx, inputs, output):
+    grad_out, compact, x_local, channel_basis, lmax = inputs
+    ctx.save_for_backward(grad_out, compact, x_local, channel_basis)
+    ctx.lmax = lmax
+
+
+def _radial_mix_bwd_backward(ctx, grad_grad_compact, grad_grad_x):
+    """Second order of the mixer, trilinear in ``(compact, x_local, basis)``.
+
+    This operator emits only the ``compact`` and ``x_local`` gradients, so the
+    differentiated scalar is
+    ``<h_K, B_K(g, x, cb)> + <h_x, B_x(g, K, cb)>``, which the adjoint identity
+    turns into ``<g, F(h_K, x, cb)> + <g, F(K, h_x, cb)>``. Each remaining
+    derivative substitutes exactly one cotangent, so no cross terms appear and
+    every term is one existing launch.
+    """
+    grad_out, compact, x_local, channel_basis = ctx.saved_tensors
+    lmax = ctx.lmax
+    h_compact, h_x = grad_grad_compact, grad_grad_x
+    if h_compact is None and h_x is None:
+        return None, None, None, None, None
+
+    grad_grad_out: Tensor | None = None
+    grad_compact: Tensor | None = None
+    grad_x: Tensor | None = None
+    grad_basis: Tensor | None = None
+    needs_grad_out = ctx.needs_input_grad[0]
+    wants_basis = ctx.needs_input_grad[3]
+
+    if h_compact is not None:
+        if needs_grad_out:
+            grad_grad_out = _radial_mix_op(h_compact, x_local, channel_basis, lmax)
+        _, grad_x = _radial_mix_bwd_op(
+            grad_out, h_compact, x_local, channel_basis, lmax
+        )
+        if wants_basis:
+            grad_basis = channel_basis_grad(grad_out, h_compact, x_local, lmax)
+    if h_x is not None:
+        if needs_grad_out:
+            grad_grad_out = accumulate(
+                grad_grad_out, _radial_mix_op(compact, h_x, channel_basis, lmax)
+            )
+        grad_compact, _ = _radial_mix_bwd_op(
+            grad_out, compact, h_x, channel_basis, lmax
+        )
+        if wants_basis:
+            grad_basis = accumulate(
+                grad_basis, channel_basis_grad(grad_out, compact, h_x, lmax)
+            )
+    # inputs: grad_out, compact, x_local, channel_basis, lmax
+    return grad_grad_out, grad_compact, grad_x, grad_basis, None
 
 
 _radial_mix_op.register_autograd(
     _radial_mix_backward, setup_context=_radial_mix_setup_context
 )
+_radial_mix_bwd_op.register_autograd(
+    _radial_mix_bwd_backward, setup_context=_radial_mix_bwd_setup_context
+)
+
+# Under AMP the edge activations arrive in bfloat16 while ``channel_basis`` is
+# still a float32 parameter; the autocast rule aligns them the way the built-in
+# matmuls do and lets the parameter keep a float32 gradient. It is inert outside
+# an autocast region.
+_radial_mix_op.register_autocast("cuda", torch.bfloat16)
 
 
 # ======================================================================

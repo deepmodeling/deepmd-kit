@@ -38,6 +38,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    triton_train_level,
 )
 
 from .activation import (
@@ -727,6 +728,29 @@ class BaseGridNet(nn.Module):
             slots = int(self.projector.to_grid_mat.shape[1])
             if op_available() and slots in SUPPORTED_SLOTS:
                 self._grid_pair_fn = grid_pair
+        # The training form differentiates the same expression inside the
+        # force graph: a Triton tensor-core sandwich (grid-axis blocks, one
+        # resident output tile) with analytic first and second order, one
+        # kernel each. The contractions are GEMMs, so the tensor-core form
+        # outruns both the dense einsum composition and a register-resident
+        # CUDA walk on the wide SO(3) shapes. The binding follows the
+        # measured crossover: below 108 slots (the degree-5 SO(3) grid) the
+        # dense section is small and the operator's dispatch chain costs
+        # more than its kernels save on the host-bound configurations, so
+        # the narrow grids stay with the compiler.
+        self._grid_pair_train_fn = None
+        if (
+            triton_train_level() >= 1
+            and self.projector.to_grid_mat.dtype is torch.float32
+            and int(self.projector.to_grid_mat.shape[1]) >= 75
+        ):
+            from deepmd.pt_expt.kernels.triton.sezm.grid_pair import (
+                GRID_PAIR_TRITON_AVAILABLE,
+                grid_pair_train,
+            )
+
+            if GRID_PAIR_TRITON_AVAILABLE:
+                self._grid_pair_train_fn = grid_pair_train
         self.register_buffer(
             "_from_grid_t",
             self.projector.from_grid_mat.transpose(0, 1).contiguous(),
@@ -1031,13 +1055,28 @@ class BaseGridNet(nn.Module):
         torch.Tensor or None
             Coefficient result with shape (N, D, F, n_frames * C).
         """
-        if self._grid_pair_fn is None or self.training or left.shape[2] != 1:
-            return None
-        n_batch, coeff_dim = left.shape[0], left.shape[1]
-        flat_p = coeff_dim * self.n_frames
         c_wide = left.shape[3] // self.n_frames
         if c_wide % 32 != 0 or left.shape != right.shape:
             return None
+        if self.training:
+            # Training form: frame-packed operands ride through unreshaped,
+            # with analytic first and second order behind the call. The
+            # operator carries an autocast rule, so under AMP it runs the
+            # same bf16-with-fp32-accumulation regime as the dense einsum
+            # composition it replaces.
+            if self._grid_pair_train_fn is None:
+                return None
+            return self._grid_pair_train_fn(
+                left,
+                right,
+                self.projector.to_grid_mat,
+                self._from_grid_t,
+                self.n_frames,
+            )
+        if self._grid_pair_fn is None or left.shape[2] != 1:
+            return None
+        n_batch, coeff_dim = left.shape[0], left.shape[1]
+        flat_p = coeff_dim * self.n_frames
         out = self._grid_pair_fn(
             left.reshape(n_batch, flat_p, c_wide),
             right.reshape(n_batch, flat_p, c_wide),

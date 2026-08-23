@@ -2,15 +2,22 @@
 """
 Environment-variable gates for the SeZM/DPA4 hardware-accelerated kernels.
 
-This module centralizes the opt-in selectors that route inference through the
-custom Triton, CuTe, CUDA and CPU kernel packages. The gates are read once at
-model construction time so that they become compile-time constants in the
+This module centralizes the opt-in selectors that route inference and training
+through the custom Triton, CuTe, CUDA and CPU kernel packages. The gates are read
+once at model construction time so that they become compile-time constants in the
 traced (``make_fx``) graph.
 
 A kernel package that exists for more than one device is selected by
 :func:`fused_operators_enabled` and :func:`fused_energy_force_enabled`, which
 resolve against the device the graph will execute on. A package that exists
 only on CUDA keeps :func:`cuda_infer_level`.
+
+Training and inference are gated separately. An operator qualifies for inference
+as soon as it reproduces the forward and the coordinate gradient with the
+parameters held fixed, whereas training additionally requires gradients for
+every parameter it consumes and a second derivative of its own backward, which
+the force loss traverses. The two gates keep a deployed inference path frozen
+while the training path opts in independently.
 """
 
 from __future__ import (
@@ -91,6 +98,66 @@ def triton_infer_level() -> int:
             f"DP_TRITON_INFER must be one of {TRITON_INFER_LEVELS}, got {level}"
         )
     return level
+
+
+TRITON_TRAIN_LEVELS = (0, 1)
+
+
+def triton_train_level() -> int:
+    """Return the opt-in Triton training level from ``DP_TRITON_TRAIN``.
+
+    The level is read at model construction time so that it becomes a
+    compile-time constant in the traced graph. It only takes effect during
+    training and is independent of ``DP_TRITON_INFER``: an operator reaches this
+    gate only once it also produces the gradients of every parameter it consumes
+    and its backward carries an autograd formula of its own, which the
+    second-order force-loss traversal requires.
+
+    - ``0`` -- Triton disabled; training uses the dense reference path.
+    - ``1`` -- the second-order-complete universal kernels: the block-diagonal
+      rotations, the radial degree mixer, the ``SO2Linear`` block GEMM and the
+      flash-attention aggregation. Profitable on the wider shapes, where the
+      device time they save exceeds the host cost of dispatching them from a
+      backward that the compiler does not fuse.
+
+    The fused CUDA value path is a separate, mutually exclusive training
+    dispatch selected by ``DP_CUDA_TRAIN`` (see :func:`cuda_train_enabled`).
+
+    Returns
+    -------
+    int
+        The configured level in ``{0, 1}``.
+
+    Raises
+    ------
+    ValueError
+        If ``DP_TRITON_TRAIN`` is not an integer in ``{0, 1}``.
+    """
+    raw = os.environ.get("DP_TRITON_TRAIN", "0").strip()
+    try:
+        level = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"DP_TRITON_TRAIN must be an integer in {TRITON_TRAIN_LEVELS}, got {raw!r}"
+        ) from None
+    if level not in TRITON_TRAIN_LEVELS:
+        raise ValueError(
+            f"DP_TRITON_TRAIN must be one of {TRITON_TRAIN_LEVELS}, got {level}"
+        )
+    return level
+
+
+def cuda_train_enabled() -> bool:
+    """Return whether ``DP_CUDA_TRAIN`` selects the fused CUDA training path.
+
+    Read at model construction time. When enabled, every supported
+    ``SO2Convolution`` binds the fused CUDA value path (one kernel for the
+    whole value stream, analytic first and second order in the CUDA library)
+    and the value-stream dispatch prefers it over the Triton composition of
+    that stream; the attention span downstream is independent and follows
+    ``DP_TRITON_TRAIN``. The production operating point enables both.
+    """
+    return os.environ.get("DP_CUDA_TRAIN", "0").strip() == "1"
 
 
 CUDA_INFER_LEVELS = (0, 1, 2)

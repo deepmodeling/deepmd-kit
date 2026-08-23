@@ -101,6 +101,9 @@ from torch.library import (
 from .indexing import (
     build_m_major_index,
 )
+from .second_order import (
+    accumulate,
+)
 from .tile_configs import (
     flash_bwd_block_config,
     flash_bwd_edge_config,
@@ -675,6 +678,370 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
             val = tl.sum(tl.where((grp == g)[None, :] & em, gw_acc, 0.0), axis=1)
             tl.store(gw_ptr + eq * NG + g, val, mask=e_mask)
 
+    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide"])
+    @triton.jit
+    def _flash_2nd_gather_kernel(
+        xl_ptr,
+        hxl_ptr,
+        dt_ptr,
+        hdt_ptr,
+        resc_ptr,
+        w_ptr,
+        hw_ptr,
+        order_ptr,
+        row_ptr_ptr,
+        out_ptr,
+        n_node,
+        C_wide,
+        xl_se,
+        xl_sf,
+        xl_sr,
+        xl_sc,
+        hxl_se,
+        hxl_sf,
+        hxl_sr,
+        hxl_sc,
+        dt_se,
+        dt_sr,
+        dt_sk,
+        hdt_se,
+        hdt_sr,
+        hdt_sk,
+        w_se,
+        w_sf,
+        w_sh,
+        hw_se,
+        hw_sf,
+        hw_sh,
+        o_sn,
+        o_sd,
+        o_sc,
+        LMAX: tl.constexpr,
+        CF: tl.constexpr,
+        HEAD_DIM: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        """Output-cotangent term of the aggregation's second order, one pass.
+
+        The aggregation is trilinear in ``(x_local, Dt, alpha)``, so the
+        cotangent of its upstream gradient is the sum of the forward evaluated
+        at each incoming cotangent in turn:
+
+            d_gout = resc * sum_e [ Dt (alpha h_x + h_alpha x) + h_Dt (alpha x) ]
+
+        One CSR pass over the destination segment replaces the three forward
+        re-entries of the substitution form; the structure mirrors the
+        forward kernel with the rotate-back operand widened to the mixed
+        combinations above.
+        """
+        DIM: tl.constexpr = (LMAX + 1) * (LMAX + 1)
+
+        node = tl.program_id(0).to(tl.int64)
+        chan = tl.arange(0, BLOCK_C)
+        cmask = chan < C_wide
+        beg = tl.load(row_ptr_ptr + node).to(tl.int64)
+        end = tl.load(row_ptr_ptr + node + 1).to(tl.int64)
+
+        fv = tl.where(cmask, chan // CF, 0)
+        cfv = chan % CF
+        hv = cfv // HEAD_DIM
+        xl_co = fv * xl_sf + cfv * xl_sc
+        hxl_co = fv * hxl_sf + cfv * hxl_sc
+        w_col = fv * w_sf + hv * w_sh
+        hw_col = fv * hw_sf + hv * hw_sh
+
+        acc = ()
+        for _ in tl.static_range(DIM):
+            acc = acc + (tl.zeros((BLOCK_C,), dtype=tl.float32),)
+
+        for i in range(beg, end):
+            edge = tl.load(order_ptr + i).to(tl.int64)
+            wv = tl.load(w_ptr + edge * w_se + w_col, mask=cmask, other=0.0).to(
+                tl.float32
+            )
+            hwv = tl.load(hw_ptr + edge * hw_se + hw_col, mask=cmask, other=0.0).to(
+                tl.float32
+            )
+            new_acc = ()
+            for l in tl.static_range(0, LMAX + 1):
+                base = l * l
+                r0 = base + l
+                xl0 = tl.load(
+                    xl_ptr + edge * xl_se + l * xl_sr + xl_co, mask=cmask, other=0.0
+                ).to(tl.float32)
+                hx0 = tl.load(
+                    hxl_ptr + edge * hxl_se + l * hxl_sr + hxl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                # Mixed rotate-back operands: v = alpha h_x + h_alpha x pairs
+                # with Dt, and u = alpha x pairs with h_Dt.
+                v0 = wv * hx0 + hwv * xl0
+                u0 = wv * xl0
+                if l >= 1:
+                    xlm = tl.load(
+                        xl_ptr + edge * xl_se + (LMAX + l) * xl_sr + xl_co,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    xlp = tl.load(
+                        xl_ptr + edge * xl_se + (2 * LMAX + l) * xl_sr + xl_co,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    hxm = tl.load(
+                        hxl_ptr + edge * hxl_se + (LMAX + l) * hxl_sr + hxl_co,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    hxp = tl.load(
+                        hxl_ptr + edge * hxl_se + (2 * LMAX + l) * hxl_sr + hxl_co,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    vm = wv * hxm + hwv * xlm
+                    vp = wv * hxp + hwv * xlp
+                    um = wv * xlm
+                    up = wv * xlp
+                for j in tl.static_range(0, 2 * l + 1):
+                    d = base + j
+                    dt0 = tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
+                        tl.float32
+                    )
+                    hdt0 = tl.load(
+                        hdt_ptr + edge * hdt_se + d * hdt_sr + r0 * hdt_sk
+                    ).to(tl.float32)
+                    rb = dt0 * v0 + hdt0 * u0
+                    if l >= 1:
+                        dtm = tl.load(
+                            dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
+                        ).to(tl.float32)
+                        dtp = tl.load(
+                            dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
+                        ).to(tl.float32)
+                        hdtm = tl.load(
+                            hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 - 1) * hdt_sk
+                        ).to(tl.float32)
+                        hdtp = tl.load(
+                            hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 + 1) * hdt_sk
+                        ).to(tl.float32)
+                        rb += dtm * vm + dtp * vp + hdtm * um + hdtp * up
+                    new_acc = new_acc + (acc[l * l + j] + rb,)
+            acc = new_acc
+
+        for d in tl.static_range(DIM):
+            resc = tl.load(resc_ptr + d).to(tl.float32)
+            tl.store(
+                out_ptr + node * o_sn + d * o_sd + chan * o_sc,
+                acc[d] * resc,
+                mask=cmask,
+            )
+
+    @triton.autotune(configs=_BWD_CONFIGS, key=["C_wide"])
+    @triton.jit
+    def _flash_2nd_edge_kernel(
+        gp_ptr,
+        xl_ptr,
+        hxl_ptr,
+        dt_ptr,
+        hdt_ptr,
+        resc_ptr,
+        w_ptr,
+        hw_ptr,
+        dst_ptr,
+        dxl_ptr,
+        ddt_ptr,
+        dw_ptr,
+        n_edge,
+        C_wide,
+        gp_sn,
+        gp_sd,
+        gp_sc,
+        xl_se,
+        xl_sf,
+        xl_sr,
+        xl_sc,
+        hxl_se,
+        hxl_sf,
+        hxl_sr,
+        hxl_sc,
+        dt_se,
+        dt_sr,
+        dt_sk,
+        hdt_se,
+        hdt_sr,
+        hdt_sk,
+        w_se,
+        w_sf,
+        w_sh,
+        hw_se,
+        hw_sf,
+        hw_sh,
+        dxl_se,
+        dxl_sf,
+        dxl_sr,
+        dxl_sc,
+        ddt_se,
+        ddt_sr,
+        ddt_sk,
+        dw_se,
+        dw_sf,
+        dw_sh,
+        LMAX: tl.constexpr,
+        CF: tl.constexpr,
+        HEAD_DIM: tl.constexpr,
+        NFOCUS: tl.constexpr,
+        NHEAD: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        """Edge-side terms of the aggregation's second order, one pass.
+
+        Differentiating the first-order backward at the incoming cotangents
+        ``(h_x, h_Dt, h_alpha)`` gives, per edge with ``gpr`` the rescaled
+        upstream gradient at the destination,
+
+            d_x[k]    = sum_d gpr * ( Dt[d,k] h_alpha + h_Dt[d,k] alpha )
+            d_Dt[d,k] = sum_c gpr * ( h_alpha x[k] + alpha h_x[k] )
+            d_alpha   = sum_d sum_c gpr * ( (Dt h_x)[d] + (h_Dt x)[d] )
+
+        One pass over the structural non-zeros replaces the three backward
+        re-entries of the substitution form; the structure mirrors the
+        per-edge backward kernel with every operand paired against its
+        cotangent.
+        """
+        edge = tl.program_id(0).to(tl.int64)
+        n = tl.load(dst_ptr + edge).to(tl.int64)
+        chan = tl.arange(0, BLOCK_C)
+        cmask = chan < C_wide
+        fv = chan // CF
+        cfv = chan % CF
+        hv = cfv // HEAD_DIM
+        xl_co = fv * xl_sf + cfv * xl_sc
+        hxl_co = fv * hxl_sf + cfv * hxl_sc
+        dxl_co = fv * dxl_sf + cfv * dxl_sc
+        w_col = fv * w_sf + hv * w_sh
+        hw_col = fv * hw_sf + hv * hw_sh
+        grp = fv * NHEAD + hv
+
+        wv = tl.load(w_ptr + edge * w_se + w_col, mask=cmask, other=0.0).to(tl.float32)
+        hwv = tl.load(hw_ptr + edge * hw_se + hw_col, mask=cmask, other=0.0).to(
+            tl.float32
+        )
+        dw_chan = tl.zeros((BLOCK_C,), dtype=tl.float32)
+
+        for l in tl.static_range(0, LMAX + 1):
+            base = l * l
+            r0 = base + l
+            xl0 = tl.load(
+                xl_ptr + edge * xl_se + l * xl_sr + xl_co, mask=cmask, other=0.0
+            ).to(tl.float32)
+            hx0 = tl.load(
+                hxl_ptr + edge * hxl_se + l * hxl_sr + hxl_co, mask=cmask, other=0.0
+            ).to(tl.float32)
+            dxl0 = tl.zeros((BLOCK_C,), dtype=tl.float32)
+            if l >= 1:
+                xlm = tl.load(
+                    xl_ptr + edge * xl_se + (LMAX + l) * xl_sr + xl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                xlp = tl.load(
+                    xl_ptr + edge * xl_se + (2 * LMAX + l) * xl_sr + xl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                hxm = tl.load(
+                    hxl_ptr + edge * hxl_se + (LMAX + l) * hxl_sr + hxl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                hxp = tl.load(
+                    hxl_ptr + edge * hxl_se + (2 * LMAX + l) * hxl_sr + hxl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                dxlm = tl.zeros((BLOCK_C,), dtype=tl.float32)
+                dxlp = tl.zeros((BLOCK_C,), dtype=tl.float32)
+            for j in tl.static_range(0, 2 * l + 1):
+                d = base + j
+                resc = tl.load(resc_ptr + d).to(tl.float32)
+                gpr = (
+                    tl.load(
+                        gp_ptr + n * gp_sn + d * gp_sd + chan * gp_sc,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    * resc
+                )
+                grad_ha = gpr * hwv  # pairs with Dt for d_x
+                grad_a = gpr * wv  # pairs with h_Dt for d_x
+                dt0 = tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
+                    tl.float32
+                )
+                hdt0 = tl.load(hdt_ptr + edge * hdt_se + d * hdt_sr + r0 * hdt_sk).to(
+                    tl.float32
+                )
+                dxl0 += dt0 * grad_ha + hdt0 * grad_a
+                tl.store(
+                    ddt_ptr + edge * ddt_se + d * ddt_sr + r0 * ddt_sk,
+                    tl.sum(gpr * (hwv * xl0 + wv * hx0)).to(ddt_ptr.dtype.element_ty),
+                )
+                rb_mix = dt0 * hx0 + hdt0 * xl0
+                if l >= 1:
+                    dtm = tl.load(
+                        dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
+                    ).to(tl.float32)
+                    dtp = tl.load(
+                        dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
+                    ).to(tl.float32)
+                    hdtm = tl.load(
+                        hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 - 1) * hdt_sk
+                    ).to(tl.float32)
+                    hdtp = tl.load(
+                        hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 + 1) * hdt_sk
+                    ).to(tl.float32)
+                    dxlm += dtm * grad_ha + hdtm * grad_a
+                    dxlp += dtp * grad_ha + hdtp * grad_a
+                    tl.store(
+                        ddt_ptr + edge * ddt_se + d * ddt_sr + (r0 - 1) * ddt_sk,
+                        tl.sum(gpr * (hwv * xlm + wv * hxm)).to(
+                            ddt_ptr.dtype.element_ty
+                        ),
+                    )
+                    tl.store(
+                        ddt_ptr + edge * ddt_se + d * ddt_sr + (r0 + 1) * ddt_sk,
+                        tl.sum(gpr * (hwv * xlp + wv * hxp)).to(
+                            ddt_ptr.dtype.element_ty
+                        ),
+                    )
+                    rb_mix += dtm * hxm + dtp * hxp + hdtm * xlm + hdtp * xlp
+                dw_chan += gpr * rb_mix
+            tl.store(
+                dxl_ptr + edge * dxl_se + l * dxl_sr + dxl_co,
+                dxl0.to(dxl_ptr.dtype.element_ty),
+                mask=cmask,
+            )
+            if l >= 1:
+                tl.store(
+                    dxl_ptr + edge * dxl_se + (LMAX + l) * dxl_sr + dxl_co,
+                    dxlm.to(dxl_ptr.dtype.element_ty),
+                    mask=cmask,
+                )
+                tl.store(
+                    dxl_ptr + edge * dxl_se + (2 * LMAX + l) * dxl_sr + dxl_co,
+                    dxlp.to(dxl_ptr.dtype.element_ty),
+                    mask=cmask,
+                )
+
+        for g in tl.static_range(0, NFOCUS * NHEAD):
+            f = g // NHEAD
+            h = g % NHEAD
+            val = tl.sum(tl.where((grp == g) & cmask, dw_chan, 0.0))
+            tl.store(
+                dw_ptr + edge * dw_se + f * dw_sf + h * dw_sh,
+                val.to(dw_ptr.dtype.element_ty),
+            )
+
 
 # ======================================================================
 # Tile helper + zero-edge guard
@@ -915,10 +1282,17 @@ def _backward_impl(
     wigner_dt: Tensor,
     rescale: Tensor,
     alpha: Tensor,
+    order: Tensor,
+    row_ptr: Tensor,
     dst: Tensor,
     lmax: int,
     n_head: int,
 ) -> tuple[Tensor, Tensor, Tensor]:
+    # The per-edge backward addresses destinations through ``dst`` alone and does
+    # not read the CSR view. ``order`` / ``row_ptr`` are carried so that the
+    # operator's own autograd formula, which re-enters the segmented forward for
+    # the second-order term, can reach them: ``setup_context`` only sees the
+    # arguments of the operator it belongs to.
     if not _use_triton(x_local):
         return _flash_atten_backward_reference(
             grad_pre_gate,
@@ -946,6 +1320,206 @@ def _backward_impl(
     )
 
 
+def _second_order_gather_impl(
+    x_local: Tensor,
+    h_x: Tensor,
+    wigner_dt: Tensor,
+    h_wigner: Tensor,
+    rescale: Tensor,
+    alpha: Tensor,
+    h_alpha: Tensor,
+    order: Tensor,
+    row_ptr: Tensor,
+    dst: Tensor,
+    lmax: int,
+    n_head: int,
+) -> Tensor:
+    """Output-cotangent term of the second order in one CSR pass."""
+    if not _use_triton(x_local):
+        n_node = row_ptr.shape[0] - 1
+        return (
+            flash_atten_aggregate_reference(
+                h_x, wigner_dt, rescale, alpha, dst, n_node, int(lmax), int(n_head)
+            )
+            + flash_atten_aggregate_reference(
+                x_local, h_wigner, rescale, alpha, dst, n_node, int(lmax), int(n_head)
+            )
+            + flash_atten_aggregate_reference(
+                x_local,
+                wigner_dt,
+                rescale,
+                h_alpha,
+                dst,
+                n_node,
+                int(lmax),
+                int(n_head),
+            )
+        )
+    n_node = row_ptr.shape[0] - 1
+    n_focus, focus_dim = x_local.shape[1], x_local.shape[3]
+    c_wide = n_focus * focus_dim
+    dim = (int(lmax) + 1) ** 2
+    out = x_local.new_empty(n_node, dim, c_wide)
+    if _has_no_edges(x_local.shape[0]):
+        return out.zero_()
+    alpha = alpha.contiguous()
+    h_alpha = h_alpha.contiguous()
+    rescale = rescale.contiguous()
+    wrap_triton(_flash_2nd_gather_kernel)[(n_node,)](
+        x_local,
+        h_x,
+        wigner_dt,
+        h_wigner,
+        rescale,
+        alpha,
+        h_alpha,
+        order.contiguous(),
+        row_ptr.contiguous(),
+        out,
+        n_node,
+        c_wide,
+        x_local.stride(0),
+        x_local.stride(1),
+        x_local.stride(2),
+        x_local.stride(3),
+        h_x.stride(0),
+        h_x.stride(1),
+        h_x.stride(2),
+        h_x.stride(3),
+        wigner_dt.stride(0),
+        wigner_dt.stride(1),
+        wigner_dt.stride(2),
+        h_wigner.stride(0),
+        h_wigner.stride(1),
+        h_wigner.stride(2),
+        alpha.stride(0),
+        alpha.stride(1),
+        alpha.stride(2),
+        h_alpha.stride(0),
+        h_alpha.stride(1),
+        h_alpha.stride(2),
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
+        LMAX=int(lmax),
+        CF=focus_dim,
+        HEAD_DIM=focus_dim // int(n_head),
+        BLOCK_C=_tile_channels(c_wide),
+    )
+    return out
+
+
+def _second_order_edge_impl(
+    grad_pre_gate: Tensor,
+    x_local: Tensor,
+    h_x: Tensor,
+    wigner_dt: Tensor,
+    h_wigner: Tensor,
+    rescale: Tensor,
+    alpha: Tensor,
+    h_alpha: Tensor,
+    dst: Tensor,
+    lmax: int,
+    n_head: int,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Edge-side terms of the second order in one pass over the non-zeros."""
+    if not _use_triton(x_local):
+        gx_w, _, ga_w = _flash_atten_backward_reference(
+            grad_pre_gate,
+            x_local,
+            h_wigner,
+            rescale,
+            alpha,
+            dst,
+            int(lmax),
+            int(n_head),
+        )
+        gx_a, gdt_a, _ = _flash_atten_backward_reference(
+            grad_pre_gate,
+            x_local,
+            wigner_dt,
+            rescale,
+            h_alpha,
+            dst,
+            int(lmax),
+            int(n_head),
+        )
+        _, gdt_x, ga_x = _flash_atten_backward_reference(
+            grad_pre_gate, h_x, wigner_dt, rescale, alpha, dst, int(lmax), int(n_head)
+        )
+        return gx_w + gx_a, gdt_a + gdt_x, ga_w + ga_x
+    n_edge = x_local.shape[0]
+    n_focus, focus_dim = x_local.shape[1], x_local.shape[3]
+    c_wide = n_focus * focus_dim
+    d_x = torch.empty_like(x_local)
+    # The kernel writes only the structural non-zeros (three columns per
+    # degree block), so the Wigner gradient must start from zeros.
+    d_dt = torch.zeros_like(wigner_dt, memory_format=torch.contiguous_format)
+    d_alpha = torch.empty_like(alpha)
+    if _has_no_edges(n_edge):
+        return d_x, d_dt, d_alpha
+    grad_pre_gate = grad_pre_gate.contiguous()
+    alpha = alpha.contiguous()
+    h_alpha = h_alpha.contiguous()
+    rescale = rescale.contiguous()
+    wrap_triton(_flash_2nd_edge_kernel)[(n_edge,)](
+        grad_pre_gate,
+        x_local,
+        h_x,
+        wigner_dt,
+        h_wigner,
+        rescale,
+        alpha,
+        h_alpha,
+        dst.contiguous(),
+        d_x,
+        d_dt,
+        d_alpha,
+        n_edge,
+        c_wide,
+        grad_pre_gate.stride(0),
+        grad_pre_gate.stride(1),
+        grad_pre_gate.stride(2),
+        x_local.stride(0),
+        x_local.stride(1),
+        x_local.stride(2),
+        x_local.stride(3),
+        h_x.stride(0),
+        h_x.stride(1),
+        h_x.stride(2),
+        h_x.stride(3),
+        wigner_dt.stride(0),
+        wigner_dt.stride(1),
+        wigner_dt.stride(2),
+        h_wigner.stride(0),
+        h_wigner.stride(1),
+        h_wigner.stride(2),
+        alpha.stride(0),
+        alpha.stride(1),
+        alpha.stride(2),
+        h_alpha.stride(0),
+        h_alpha.stride(1),
+        h_alpha.stride(2),
+        d_x.stride(0),
+        d_x.stride(1),
+        d_x.stride(2),
+        d_x.stride(3),
+        d_dt.stride(0),
+        d_dt.stride(1),
+        d_dt.stride(2),
+        d_alpha.stride(0),
+        d_alpha.stride(1),
+        d_alpha.stride(2),
+        LMAX=int(lmax),
+        CF=focus_dim,
+        HEAD_DIM=focus_dim // int(n_head),
+        NFOCUS=n_focus,
+        NHEAD=int(n_head),
+        BLOCK_C=_tile_channels(c_wide),
+    )
+    return d_x, d_dt, d_alpha
+
+
 # ======================================================================
 # Functional triton_op + fake + autograd registration
 # ======================================================================
@@ -956,6 +1530,55 @@ _flash_op = torch.library.triton_op(
 _flash_bwd_op = torch.library.triton_op(
     "sezm_triton::flash_atten_aggregate_bwd", mutates_args=()
 )(_backward_impl)
+
+_flash_2nd_gather_op = torch.library.triton_op(
+    "sezm_triton::flash_atten_aggregate_2nd_gather", mutates_args=()
+)(_second_order_gather_impl)
+
+_flash_2nd_edge_op = torch.library.triton_op(
+    "sezm_triton::flash_atten_aggregate_2nd_edge", mutates_args=()
+)(_second_order_edge_impl)
+
+
+@_flash_2nd_gather_op.register_fake
+def _(
+    x_local,
+    h_x,
+    wigner_dt,
+    h_wigner,
+    rescale,
+    alpha,
+    h_alpha,
+    order,
+    row_ptr,
+    dst,
+    lmax,
+    n_head,
+):
+    n_focus, focus_dim = x_local.shape[1], x_local.shape[3]
+    dim = (int(lmax) + 1) ** 2
+    return x_local.new_empty(row_ptr.shape[0] - 1, dim, n_focus * focus_dim)
+
+
+@_flash_2nd_edge_op.register_fake
+def _(
+    grad_pre_gate,
+    x_local,
+    h_x,
+    wigner_dt,
+    h_wigner,
+    rescale,
+    alpha,
+    h_alpha,
+    dst,
+    lmax,
+    n_head,
+):
+    return (
+        torch.empty_like(x_local),
+        torch.empty_like(wigner_dt),
+        torch.empty_like(alpha),
+    )
 
 
 @_flash_op.register_fake
@@ -969,7 +1592,9 @@ def _(x_local, wigner_dt, rescale, alpha, order, row_ptr, dst, lmax, n_head):
 
 
 @_flash_bwd_op.register_fake
-def _(grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head):
+def _(
+    grad_pre_gate, x_local, wigner_dt, rescale, alpha, order, row_ptr, dst, lmax, n_head
+):
     return (
         torch.empty_like(x_local),
         torch.empty_like(wigner_dt),
@@ -979,19 +1604,21 @@ def _(grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head):
 
 def _setup_context(ctx, inputs, output):
     x_local, wigner_dt, rescale, alpha, order, row_ptr, dst, lmax, n_head = inputs
-    ctx.save_for_backward(x_local, wigner_dt, rescale, alpha, dst)
+    ctx.save_for_backward(x_local, wigner_dt, rescale, alpha, order, row_ptr, dst)
     ctx.lmax = lmax
     ctx.n_head = n_head
 
 
 def _backward(ctx, grad_out):
-    x_local, wigner_dt, rescale, alpha, dst = ctx.saved_tensors
+    x_local, wigner_dt, rescale, alpha, order, row_ptr, dst = ctx.saved_tensors
     grad_x_local, grad_wigner, grad_alpha = _flash_bwd_op(
         grad_out.contiguous(),
         x_local,
         wigner_dt,
         rescale,
         alpha,
+        order,
+        row_ptr,
         dst,
         ctx.lmax,
         ctx.n_head,
@@ -1002,7 +1629,147 @@ def _backward(ctx, grad_out):
     return grad_x_local, grad_wigner, None, grad_alpha, None, None, None, None, None
 
 
+def _bwd_setup_context(ctx, inputs, output):
+    (
+        grad_pre_gate,
+        x_local,
+        wigner_dt,
+        rescale,
+        alpha,
+        order,
+        row_ptr,
+        dst,
+        lmax,
+        n_head,
+    ) = inputs
+    ctx.save_for_backward(
+        grad_pre_gate, x_local, wigner_dt, rescale, alpha, order, row_ptr, dst
+    )
+    ctx.lmax = lmax
+    ctx.n_head = n_head
+
+
+def _bwd_backward(ctx, grad_grad_x_local, grad_grad_wigner, grad_grad_alpha):
+    """Second order of the aggregation, trilinear in ``(x_local, Dt, alpha)``.
+
+    Substituting all three cotangents in one backward call would create cross
+    terms, because each component of the backward still depends on two of the
+    three operands. Each call therefore substitutes exactly one cotangent and
+    contributes the two components that actually see it.
+    """
+    grad_out, x_local, wigner, rescale, alpha, order, row_ptr, dst = ctx.saved_tensors
+    lmax, n_head = ctx.lmax, ctx.n_head
+    h_x, h_wigner, h_alpha = grad_grad_x_local, grad_grad_wigner, grad_grad_alpha
+    if h_x is None and h_wigner is None and h_alpha is None:
+        return (None,) * 10
+
+    if h_x is not None and h_wigner is not None and h_alpha is not None:
+        # The force-loss trace materializes every cotangent, so this is the
+        # production branch: one gather pass and one edge pass replace the
+        # three forward and three backward re-entries of the substitution
+        # form below.
+        grad_grad_out = None
+        if ctx.needs_input_grad[0]:
+            grad_grad_out = _flash_2nd_gather_op(
+                x_local,
+                h_x,
+                wigner,
+                h_wigner,
+                rescale,
+                alpha,
+                h_alpha,
+                order,
+                row_ptr,
+                dst,
+                lmax,
+                n_head,
+            )
+        grad_x, grad_wigner, grad_alpha = _flash_2nd_edge_op(
+            grad_out,
+            x_local,
+            h_x,
+            wigner,
+            h_wigner,
+            rescale,
+            alpha,
+            h_alpha,
+            dst,
+            lmax,
+            n_head,
+        )
+        return (
+            grad_grad_out,
+            grad_x,
+            grad_wigner,
+            None,
+            grad_alpha,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+    def forward(x_arg: Tensor, w_arg: Tensor, a_arg: Tensor) -> Tensor:
+        return _flash_op(
+            x_arg, w_arg, rescale, a_arg, order, row_ptr, dst, lmax, n_head
+        )
+
+    def backward(x_arg: Tensor, w_arg: Tensor, a_arg: Tensor) -> tuple[Tensor, ...]:
+        return _flash_bwd_op(
+            grad_out, x_arg, w_arg, rescale, a_arg, order, row_ptr, dst, lmax, n_head
+        )
+
+    grad_grad_out: Tensor | None = None
+    grad_x: Tensor | None = None
+    grad_wigner: Tensor | None = None
+    grad_alpha: Tensor | None = None
+    # Each substitution costs one forward for the output-cotangent term; a graph
+    # that does not propagate past this point skips all of them.
+    needs_grad_out = ctx.needs_input_grad[0]
+
+    if h_x is not None:
+        if needs_grad_out:
+            grad_grad_out = forward(h_x, wigner, alpha)
+        _, term_wigner, term_alpha = backward(h_x, wigner, alpha)
+        grad_wigner = accumulate(grad_wigner, term_wigner)
+        grad_alpha = accumulate(grad_alpha, term_alpha)
+    if h_wigner is not None:
+        if needs_grad_out:
+            grad_grad_out = accumulate(grad_grad_out, forward(x_local, h_wigner, alpha))
+        term_x, _, term_alpha = backward(x_local, h_wigner, alpha)
+        grad_x = accumulate(grad_x, term_x)
+        grad_alpha = accumulate(grad_alpha, term_alpha)
+    if h_alpha is not None:
+        if needs_grad_out:
+            grad_grad_out = accumulate(grad_grad_out, forward(x_local, wigner, h_alpha))
+        term_x, term_wigner, _ = backward(x_local, wigner, h_alpha)
+        grad_x = accumulate(grad_x, term_x)
+        grad_wigner = accumulate(grad_wigner, term_wigner)
+
+    # inputs: grad_pre_gate, x_local, wigner_dt, rescale, alpha, order, row_ptr,
+    # dst, lmax, n_head.
+    return (
+        grad_grad_out,
+        grad_x,
+        grad_wigner,
+        None,
+        grad_alpha,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+
+
 _flash_op.register_autograd(_backward, setup_context=_setup_context)
+_flash_bwd_op.register_autograd(_bwd_backward, setup_context=_bwd_setup_context)
+
+# Under AMP the local features arrive in bfloat16 while the Wigner-D and the
+# rescale buffers are still float32; the autocast rule aligns them the way the
+# built-in matmuls do and is inert outside an autocast region.
+_flash_op.register_autocast("cuda", torch.bfloat16)
 
 
 # ======================================================================

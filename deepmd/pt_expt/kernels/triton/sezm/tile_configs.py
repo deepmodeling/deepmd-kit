@@ -107,9 +107,11 @@ __all__ = [
     "flash_bwd_block_config",
     "flash_bwd_edge_config",
     "gate_config",
+    "gated_second_order_config",
     "has_tile_config",
     "point_config",
     "point_recompute_config",
+    "point_train_config",
     "recompute_config",
     "register_tile_configs",
     "rotate_mix_bwd_block_config",
@@ -127,7 +129,9 @@ TILE_CONFIG_FAMILIES = (
     "gate",
     "recompute",
     "point",
+    "point_train",
     "point_recompute",
+    "gated_second_order",
     "rotate_mix_fwd",
     "flash_bwd_block",
     "flash_bwd_edge",
@@ -313,9 +317,55 @@ def point_config(focus_dim: int, lmax: int) -> tuple[int, int, int]:
     return _lookup("point", (focus_dim, lmax)) or _POINTWISE_FALLBACK
 
 
-def point_recompute_config(
-    focus_dim: int, lmax: int
-) -> tuple[int, int, int] | None:
+def point_train_config(focus_dim: int, lmax: int) -> tuple[int, int, int]:
+    """Return the backward pointwise launch for the training variant.
+
+    Training launches the same kernel with the layer-input recovery and the
+    gate-logit store enabled, which raises register pressure and write
+    traffic; its winning tile can differ from the inference entry by several
+    times, so the variant carries its own table. Unresolved keys fall back to
+    the inference entry, which is correct on any shape.
+
+    Parameters
+    ----------
+    focus_dim : int
+        Per-focus channel width ``Cf``.
+    lmax : int
+        Maximum spherical harmonic degree.
+
+    Returns
+    -------
+    tuple[int, int, int]
+        The swept ``(BLOCK_M, num_warps, num_stages)`` launch configuration.
+    """
+    return _lookup("point_train", (focus_dim, lmax)) or point_config(focus_dim, lmax)
+
+
+def gated_second_order_config(focus_dim: int, lmax: int) -> tuple[int, int, int]:
+    """Return ``(BLOCK_M, num_warps, num_stages)`` for the gated second order.
+
+    The kernel differentiates one gated layer's backward; like the other
+    pointwise kernels its winning tile shrinks as ``lmax * Cf`` grows, and a
+    tile on the wrong side of the spill point costs close to an order of
+    magnitude, so unresolved keys take the spill-safe pointwise fallback.
+
+    Parameters
+    ----------
+    focus_dim : int
+        Per-focus channel width ``Cf``.
+    lmax : int
+        Maximum spherical harmonic degree.
+
+    Returns
+    -------
+    tuple[int, int, int]
+        The swept launch configuration, or the spill-safe fallback for
+        unresolved keys.
+    """
+    return _lookup("gated_second_order", (focus_dim, lmax)) or _POINTWISE_FALLBACK
+
+
+def point_recompute_config(focus_dim: int, lmax: int) -> tuple[int, int, int] | None:
     """Return the fused recompute-point configuration, or ``None``.
 
     Parameters
@@ -471,9 +521,7 @@ def stack_fp16x3_configs(
     return _lookup("stack_fp16x3", (focus_dim, lmax))
 
 
-def stack_m0_gate_config(
-    focus_dim: int, lmax: int
-) -> tuple[int, int, int, int] | None:
+def stack_m0_gate_config(focus_dim: int, lmax: int) -> tuple[int, int, int, int] | None:
     """Return the fused fp32 m0-GEMM + gate launch, or ``None``.
 
     Parameters

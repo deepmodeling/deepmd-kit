@@ -81,6 +81,9 @@ from torch.library import (
 from .indexing import (
     build_m_major_index,
 )
+from .second_order import (
+    bilinear_second_order,
+)
 
 __all__ = [
     "TRITON_ROTATION_AVAILABLE",
@@ -1747,6 +1750,30 @@ def _rotate_to_local_backward(ctx, grad_out):
     return grad_x, None, grad_wigner, None, None
 
 
+def _rotate_to_local_bwd_setup_context(ctx, inputs, output):
+    grad_out, x, src, wigner, coeff_index, dim_full = inputs
+    ctx.save_for_backward(grad_out, x, src, wigner, coeff_index)
+    ctx.dim_full = dim_full
+
+
+def _rotate_to_local_bwd_backward(ctx, grad_grad_x, grad_grad_wigner):
+    """Second order of the rotation, bilinear in ``(x, wigner)``."""
+    grad_out, x, src, wigner, coeff_index = ctx.saved_tensors
+    grad_grad_out, grad_x, grad_wigner = bilinear_second_order(
+        lambda a, b: _rotate_to_local_op(a, src, b, coeff_index, ctx.dim_full),
+        lambda a, b: _rotate_to_local_bwd_op(
+            grad_out, a, src, b, coeff_index, ctx.dim_full
+        ),
+        x,
+        wigner,
+        grad_grad_x,
+        grad_grad_wigner,
+        ctx.needs_input_grad[0],
+    )
+    # inputs: grad_out, x, src, wigner, coeff_index, dim_full
+    return grad_grad_out, grad_x, None, grad_wigner, None, None
+
+
 def _rotate_back_setup_context(ctx, inputs, output):
     x_local, wigner, coeff_index, dim_full = inputs
     ctx.save_for_backward(x_local, wigner, coeff_index)
@@ -1761,11 +1788,39 @@ def _rotate_back_backward(ctx, grad_out):
     return grad_x_local, grad_wigner, None, None
 
 
+def _rotate_back_bwd_setup_context(ctx, inputs, output):
+    grad_out, x_local, wigner, coeff_index, dim_full = inputs
+    ctx.save_for_backward(grad_out, x_local, wigner, coeff_index)
+    ctx.dim_full = dim_full
+
+
+def _rotate_back_bwd_backward(ctx, grad_grad_x_local, grad_grad_wigner):
+    """Second order of the inverse rotation, bilinear in ``(x_local, wigner)``."""
+    grad_out, x_local, wigner, coeff_index = ctx.saved_tensors
+    grad_grad_out, grad_x_local, grad_wigner = bilinear_second_order(
+        lambda a, b: _rotate_back_op(a, b, coeff_index, ctx.dim_full),
+        lambda a, b: _rotate_back_bwd_op(grad_out, a, b, coeff_index, ctx.dim_full),
+        x_local,
+        wigner,
+        grad_grad_x_local,
+        grad_grad_wigner,
+        ctx.needs_input_grad[0],
+    )
+    # inputs: grad_out, x_local, wigner, coeff_index, dim_full
+    return grad_grad_out, grad_x_local, grad_wigner, None, None
+
+
 _rotate_to_local_op.register_autograd(
     _rotate_to_local_backward, setup_context=_rotate_to_local_setup_context
 )
+_rotate_to_local_bwd_op.register_autograd(
+    _rotate_to_local_bwd_backward, setup_context=_rotate_to_local_bwd_setup_context
+)
 _rotate_back_op.register_autograd(
     _rotate_back_backward, setup_context=_rotate_back_setup_context
+)
+_rotate_back_bwd_op.register_autograd(
+    _rotate_back_bwd_backward, setup_context=_rotate_back_bwd_setup_context
 )
 
 
@@ -1819,6 +1874,28 @@ def _block_to_local_backward(ctx, grad_out):
     return grad_x, None, grad_wigner, None
 
 
+def _block_to_local_bwd_setup_context(ctx, inputs, output):
+    grad_out, x, src, wigner, lmax = inputs
+    ctx.save_for_backward(grad_out, x, src, wigner)
+    ctx.lmax = lmax
+
+
+def _block_to_local_bwd_backward(ctx, grad_grad_x, grad_grad_wigner):
+    """Second order of the block rotation, bilinear in ``(x, wigner)``."""
+    grad_out, x, src, wigner = ctx.saved_tensors
+    grad_grad_out, grad_x, grad_wigner = bilinear_second_order(
+        lambda a, b: _block_to_local_op(a, src, b, ctx.lmax),
+        lambda a, b: _block_to_local_bwd_op(grad_out, a, src, b, ctx.lmax),
+        x,
+        wigner,
+        grad_grad_x,
+        grad_grad_wigner,
+        ctx.needs_input_grad[0],
+    )
+    # inputs: grad_out, x, src, wigner, lmax
+    return grad_grad_out, grad_x, None, grad_wigner, None
+
+
 def _block_back_setup_context(ctx, inputs, output):
     x_local, wigner, lmax = inputs
     ctx.save_for_backward(x_local, wigner)
@@ -1831,11 +1908,39 @@ def _block_back_backward(ctx, grad_out):
     return grad_x_local, grad_wigner, None
 
 
+def _block_back_bwd_setup_context(ctx, inputs, output):
+    grad_out, x_local, wigner, lmax = inputs
+    ctx.save_for_backward(grad_out, x_local, wigner)
+    ctx.lmax = lmax
+
+
+def _block_back_bwd_backward(ctx, grad_grad_x_local, grad_grad_wigner):
+    """Second order of the block inverse rotation, bilinear in its operands."""
+    grad_out, x_local, wigner = ctx.saved_tensors
+    grad_grad_out, grad_x_local, grad_wigner = bilinear_second_order(
+        lambda a, b: _block_back_op(a, b, ctx.lmax),
+        lambda a, b: _block_back_bwd_op(grad_out, a, b, ctx.lmax),
+        x_local,
+        wigner,
+        grad_grad_x_local,
+        grad_grad_wigner,
+        ctx.needs_input_grad[0],
+    )
+    # inputs: grad_out, x_local, wigner, lmax
+    return grad_grad_out, grad_x_local, grad_wigner, None
+
+
 _block_to_local_op.register_autograd(
     _block_to_local_backward, setup_context=_block_to_local_setup_context
 )
+_block_to_local_bwd_op.register_autograd(
+    _block_to_local_bwd_backward, setup_context=_block_to_local_bwd_setup_context
+)
 _block_back_op.register_autograd(
     _block_back_backward, setup_context=_block_back_setup_context
+)
+_block_back_bwd_op.register_autograd(
+    _block_back_bwd_backward, setup_context=_block_back_bwd_setup_context
 )
 
 
@@ -1965,9 +2070,52 @@ def _block_back_so2_backward(ctx, grad_out):
     return grad_x_local, grad_wigner, None
 
 
+def _block_back_so2_bwd_setup_context(ctx, inputs, output):
+    grad_out, x_local_4d, wigner, lmax = inputs
+    ctx.save_for_backward(grad_out, x_local_4d, wigner)
+    ctx.lmax = lmax
+
+
+def _block_back_so2_bwd_backward(ctx, grad_grad_x_local, grad_grad_wigner):
+    """Second order of the per-focus inverse rotation, bilinear in its operands."""
+    grad_out, x_local_4d, wigner = ctx.saved_tensors
+    grad_grad_out, grad_x_local, grad_wigner = bilinear_second_order(
+        lambda a, b: _block_back_so2_op(a, b, ctx.lmax),
+        lambda a, b: _block_back_so2_bwd_op(grad_out, a, b, ctx.lmax),
+        x_local_4d,
+        wigner,
+        grad_grad_x_local,
+        grad_grad_wigner,
+        ctx.needs_input_grad[0],
+    )
+    # inputs: grad_out, x_local_4d, wigner, lmax
+    return grad_grad_out, grad_x_local, grad_wigner, None
+
+
 _block_back_so2_op.register_autograd(
     _block_back_so2_backward, setup_context=_block_back_so2_setup_context
 )
+_block_back_so2_bwd_op.register_autograd(
+    _block_back_so2_bwd_backward, setup_context=_block_back_so2_bwd_setup_context
+)
+
+
+# ======================================================================
+# Autocast registration
+# ======================================================================
+# Under AMP the node features arrive in bfloat16 while the Wigner-D buffer is
+# still float32, a mix the kernels cannot consume. These rules align every
+# floating-point input to the training dtype exactly as the built-in matmuls do,
+# and they are inert outside an autocast region, so the inference and float32
+# paths keep their current numerics.
+for _rotation_op in (
+    _rotate_to_local_op,
+    _rotate_back_op,
+    _block_to_local_op,
+    _block_back_op,
+    _block_back_so2_op,
+):
+    _rotation_op.register_autocast("cuda", torch.bfloat16)
 
 
 def rotate_back_block_so2(x_local_4d: Tensor, wigner: Tensor, lmax: int) -> Tensor:

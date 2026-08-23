@@ -169,16 +169,16 @@ from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
     _rotate_mix_bwd_op,
     _rotate_mix_fwd_kernel,
     _stack_gate_kernel,
-    _stack_gemm_m0_gate_kernel,
     _stack_gemm_bwd_kernel,
+    _stack_gemm_m0_gate_kernel,
     _stack_gemm_m0_kernel,
     _stack_gemm_m1_kernel,
     _stack_point_bwd_kernel,
     _stack_recompute_kernel,
 )
 from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
-    GATE_BMM_MIN_FOCUS_DIM,
     _STACK_GEMM_DEFAULT,
+    GATE_BMM_MIN_FOCUS_DIM,
     _runtime_tile_configs,
     gate_config,
     has_tile_config,
@@ -428,20 +428,22 @@ def sweep_pointwise(
     glogit = torch.empty_like(sig) if use_bmm else sig
 
     def launch_point(bm: int, warps: int, stages: int) -> None:
-        wrap_triton(_stack_point_bwd_kernel)[
-            (triton.cdiv(n_edge, bm), n_focus)
-        ](
+        wrap_triton(_stack_point_bwd_kernel)[(triton.cdiv(n_edge, bm), n_focus)](
             grad,
             z_all,
             sig,
             gwt_all,
             gz,
             glogit,
+            grad,
+            grad,
             n_edge,
             0,
             L=lmax,
             CF=cf,
             GLOGIT_OUT=use_bmm,
+            GLOGIT_STORE=use_bmm,
+            RECOVER_INPUT=False,
             RECOMPUTE_SIG=False,
             BLOCK_M=bm,
             num_warps=warps,
@@ -508,6 +510,198 @@ def sweep_pointwise(
     return result
 
 
+def sweep_point_train(
+    cf: int,
+    lmax: int,
+    *,
+    n_focus: int = 2,
+    n_edge: int | None = None,
+    device: torch.device | str = "cuda",
+) -> SweepResult:
+    """Sweep the backward pointwise launch under the training profile.
+
+    Training launches the kernel in bf16 with the layer-input recovery and
+    the gate-logit store enabled; both raise register pressure and write
+    traffic, so the winning tile can sit far from the inference entry. The
+    gate sigmoids are recomputed in-kernel below the bmm regime, matching the
+    traversal's schedule.
+
+    Parameters
+    ----------
+    cf : int
+        Per-focus channel width ``Cf``.
+    lmax : int
+        Maximum spherical harmonic degree.
+    n_focus : int
+        Focus count of the synthetic tensors.
+    n_edge : int
+        Edge count of the synthetic tensors.
+    device : torch.device or str
+        CUDA device to sweep on.
+
+    Returns
+    -------
+    SweepResult
+        The ``point_train`` entry under ``(cf, lmax)``.
+    """
+    device = torch.device(device)
+    if n_edge is None:
+        n_edge = _saturating_edges(cf)
+    row = (3 * lmax + 1) * cf
+    gate_width = lmax * cf
+    use_bmm = cf >= GATE_BMM_MIN_FOCUS_DIM
+    dtype = torch.bfloat16
+
+    grad = torch.randn(n_focus, n_edge, row, device=device, dtype=dtype)
+    z_all = torch.randn(1, n_focus, n_edge, row, device=device, dtype=dtype)
+    gwt_all = torch.randn(1, n_focus, gate_width, cf, device=device, dtype=dtype) * 0.05
+    sig = torch.rand(n_focus, n_edge, gate_width, device=device, dtype=torch.float32)
+    u_next = torch.randn(n_focus, n_edge, row, device=device, dtype=dtype)
+    gz = torch.empty_like(grad)
+    glogit = torch.empty_like(sig)
+    u_layer = torch.empty_like(grad)
+
+    def launch(bm: int, warps: int, stages: int) -> None:
+        _stack_point_bwd_kernel[(triton.cdiv(n_edge, bm), n_focus)](
+            grad,
+            z_all,
+            sig,
+            gwt_all,
+            gz,
+            glogit,
+            u_next,
+            u_layer,
+            n_edge,
+            0,
+            L=lmax,
+            CF=cf,
+            GLOGIT_OUT=use_bmm,
+            GLOGIT_STORE=True,
+            RECOMPUTE_SIG=not use_bmm,
+            RECOVER_INPUT=True,
+            BLOCK_M=bm,
+            num_warps=warps,
+            num_stages=stages,
+        )
+
+    best_ms, best_cfg = float("inf"), None
+    for bm, w, st in itertools.product(
+        _BLOCK_M_CANDIDATES, (2, *_WARP_CANDIDATES), _STAGE_CANDIDATES
+    ):
+        try:
+            ms = _bench(lambda: launch(bm, w, st))
+        except triton.runtime.errors.OutOfResources:
+            print(f"  BM={bm:3d} warps={w:2d} stages={st}: out of resources")
+            continue
+        marker = ""
+        if ms < best_ms:
+            best_ms, best_cfg = ms, (bm, w, st)
+            marker = "  <-"
+        print(f"  BM={bm:3d} warps={w:2d} stages={st}: {ms:8.3f} ms{marker}")
+    print(f"BEST point_train[({cf}, {lmax})] = {best_cfg}  # {best_ms:.3f} ms")
+    return {"point_train": {(cf, lmax): best_cfg}}
+
+
+def sweep_gated_second_order(
+    cf: int,
+    lmax: int,
+    *,
+    n_focus: int = 2,
+    n_edge: int | None = None,
+    device: torch.device | str = "cuda",
+) -> SweepResult:
+    """Sweep the launch triple of the gated activation's second order.
+
+    The kernel is the nonlinear core of the training path's double backward;
+    its winning tile follows the same register-pressure law as the other
+    pointwise kernels. Both incoming cotangents are supplied so the sweep
+    exercises the full body, and the wide-channel regime is measured with the
+    scalar contraction delegated to the caller, matching production.
+
+    Parameters
+    ----------
+    cf : int
+        Per-focus channel width ``Cf``.
+    lmax : int
+        Maximum spherical harmonic degree.
+    n_focus : int
+        Focus count of the synthetic tensors; the winners are valid for any
+        focus count (the focus stream rides the grid batch axis).
+    n_edge : int
+        Edge count of the synthetic tensors.
+    device : torch.device or str
+        CUDA device to sweep on.
+
+    Returns
+    -------
+    SweepResult
+        The ``gated_second_order`` entry under ``(cf, lmax)``.
+    """
+    from deepmd.pt_expt.kernels.triton.sezm.gated_activation import (
+        _second_order_kernel,
+    )
+
+    device = torch.device(device)
+    if n_edge is None:
+        n_edge = _saturating_edges(cf)
+    row = (3 * lmax + 1) * cf
+    gate_width = lmax * cf
+    fold_logit = cf >= GATE_BMM_MIN_FOCUS_DIM
+
+    hz = torch.randn(n_focus, n_edge, row, device=device)
+    hq = torch.randn(n_focus, n_edge, gate_width, device=device)
+    grad = torch.randn(n_focus, n_edge, row, device=device)
+    z = torch.randn(n_focus, n_edge, row, device=device)
+    gw = torch.randn(n_focus, cf, gate_width, device=device) * 0.05
+    gwt = gw.transpose(1, 2).contiguous()
+    out_grad = torch.empty_like(grad)
+    out_z = torch.empty_like(z)
+    out_logit = torch.empty(
+        (n_focus, n_edge, gate_width), device=device, dtype=torch.float32
+    )
+
+    def launch(bm: int, warps: int, stages: int) -> None:
+        _second_order_kernel[(triton.cdiv(n_edge, bm), n_focus)](
+            hz,
+            hq,
+            grad,
+            z,
+            gw,
+            gwt,
+            out_grad,
+            out_z,
+            out_logit,
+            grad,
+            n_edge,
+            L=lmax,
+            CF=cf,
+            FOLD_LOGIT=fold_logit,
+            HAS_HZ=True,
+            HAS_HQ=True,
+            HAS_ADD=True,
+            BLOCK_M=bm,
+            num_warps=warps,
+            num_stages=stages,
+        )
+
+    best_ms, best_cfg = float("inf"), None
+    for bm, w, st in itertools.product(
+        _BLOCK_M_CANDIDATES, (2, *_WARP_CANDIDATES), _STAGE_CANDIDATES
+    ):
+        try:
+            ms = _bench(lambda: launch(bm, w, st))
+        except triton.runtime.errors.OutOfResources:
+            print(f"  BM={bm:3d} warps={w:2d} stages={st}: out of resources")
+            continue
+        marker = ""
+        if ms < best_ms:
+            best_ms, best_cfg = ms, (bm, w, st)
+            marker = "  <-"
+        print(f"  BM={bm:3d} warps={w:2d} stages={st}: {ms:8.3f} ms{marker}")
+    print(f"BEST gated_second_order[({cf}, {lmax})] = {best_cfg}  # {best_ms:.3f} ms")
+    return {"gated_second_order": {(cf, lmax): best_cfg}}
+
+
 def sweep_point_recompute(
     cf: int,
     lmax: int,
@@ -546,27 +740,29 @@ def sweep_point_recompute(
     z_all = torch.randn(1, n_focus, n_edge, row, device=device)
     gw_all = torch.randn(1, n_focus, cf, gate_width, device=device) * 0.05
     gwt_all = gw_all.transpose(2, 3).contiguous()
-    sig = torch.empty(n_focus, n_edge, gate_width, device=device)
+    sig = torch.empty(n_focus, n_edge, gate_width, device=device, dtype=torch.float32)
     grad = torch.randn(n_focus, n_edge, row, device=device)
     gz = torch.empty_like(grad)
     glogit = torch.empty_like(sig) if use_bmm else sig
 
     def launch_point(config: tuple[int, int, int], *, fused: bool) -> None:
         bm, warps, stages = config
-        wrap_triton(_stack_point_bwd_kernel)[
-            (triton.cdiv(n_edge, bm), n_focus)
-        ](
+        wrap_triton(_stack_point_bwd_kernel)[(triton.cdiv(n_edge, bm), n_focus)](
             grad,
             z_all,
             sig,
             gwt_all,
             gz,
             glogit,
+            grad,
+            grad,
             n_edge,
             0,
             L=lmax,
             CF=cf,
             GLOGIT_OUT=use_bmm,
+            GLOGIT_STORE=use_bmm,
+            RECOVER_INPUT=False,
             RECOMPUTE_SIG=fused,
             BLOCK_M=bm,
             num_warps=warps,
@@ -575,6 +771,7 @@ def sweep_point_recompute(
 
     point = point_config(cf, lmax)
     if use_bmm:
+
         def project_sigmoid() -> None:
             torch.sigmoid(torch.bmm(z_all[0, :, :, :cf], gw_all[0]), out=sig)
     else:
@@ -582,9 +779,7 @@ def sweep_point_recompute(
 
         def project_sigmoid() -> None:
             bm, warps, stages = recompute
-            wrap_triton(_stack_recompute_kernel)[
-                (triton.cdiv(n_edge, bm), n_focus)
-            ](
+            wrap_triton(_stack_recompute_kernel)[(triton.cdiv(n_edge, bm), n_focus)](
                 z_all,
                 gw_all,
                 sig,
@@ -629,10 +824,7 @@ def sweep_point_recompute(
                 for _ in range(3)
             )
         except triton.runtime.errors.OutOfResources:
-            print(
-                f"  BM={bm:3d} warps={warps:2d} stages={stages}: "
-                "out of resources"
-            )
+            print(f"  BM={bm:3d} warps={warps:2d} stages={stages}: out of resources")
             continue
         ranked.append((elapsed, config))
         print(
@@ -743,11 +935,7 @@ def _win_list_entry(
         print(f"BEST {family}[{key}]: no valid candidate; keep the per-edge kernel")
         return None
     speedup = base_ms / best[0]
-    verdict = (
-        "RECORD"
-        if speedup >= _ROUTE_WIN_SPEEDUP
-        else "keep the per-edge kernel"
-    )
+    verdict = "RECORD" if speedup >= _ROUTE_WIN_SPEEDUP else "keep the per-edge kernel"
     print(
         f"BEST {family}[{key}] = {best[1]}  # {best[0]:.3f} ms vs per-edge "
         f"{base_ms:.3f} ms ({speedup:.2f}x) -> {verdict}"
@@ -871,9 +1059,27 @@ def sweep_flash_bwd(
     rescale = torch.rand(dim, device=device, dtype=torch.float32) + 0.5
     alpha = torch.rand(n_edge, n_focus, n_head, device=device, dtype=torch.float32)
     dst = torch.randint(0, n_nodes, (n_edge,), device=device)
+    # The backward reads destinations through ``dst``; the CSR view is carried
+    # only for the operator's own second-order formula.
+    order = torch.argsort(dst)
+    row_ptr = torch.cat(
+        [
+            torch.zeros(1, device=device, dtype=torch.long),
+            torch.bincount(dst, minlength=n_nodes).cumsum(0),
+        ]
+    )
 
     reference = _flash_bwd_op(
-        grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head
+        grad_pre_gate,
+        x_local,
+        wigner_dt,
+        rescale,
+        alpha,
+        order,
+        row_ptr,
+        dst,
+        lmax,
+        n_head,
     )
 
     def launch_edge(warps: int, stages: int) -> tuple[torch.Tensor, ...]:
@@ -937,13 +1143,12 @@ def sweep_flash_bwd(
             _bench(lambda edge_cfg=edge_cfg: launch_edge(*edge_cfg), iters=8)
             for _ in range(3)
         )
-        print(
-            f"  edge warps={edge_cfg[0]} stages={edge_cfg[1]}: "
-            f"{elapsed:8.3f} ms"
-        )
+        print(f"  edge warps={edge_cfg[0]} stages={edge_cfg[1]}: {elapsed:8.3f} ms")
         edge_ranked.append((elapsed, edge_cfg))
     if not edge_ranked:
-        raise RuntimeError(f"no valid per-edge flash backward launch for {(c_wide, lmax)}")
+        raise RuntimeError(
+            f"no valid per-edge flash backward launch for {(c_wide, lmax)}"
+        )
     edge_ranked.sort()
     fastest_ms = edge_ranked[0][0]
     near_fastest = [
@@ -951,13 +1156,8 @@ def sweep_flash_bwd(
         for elapsed, config in edge_ranked
         if elapsed <= fastest_ms * _NEAR_FASTEST_FACTOR
     ]
-    base_ms, edge_winner = min(
-        near_fastest, key=lambda item: (item[1][0], item[1][1])
-    )
-    print(
-        f"BEST flash_bwd_edge[{(c_wide, lmax)}] = {edge_winner}  # "
-        f"{base_ms:.3f} ms"
-    )
+    base_ms, edge_winner = min(near_fastest, key=lambda item: (item[1][0], item[1][1]))
+    print(f"BEST flash_bwd_edge[{(c_wide, lmax)}] = {edge_winner}  # {base_ms:.3f} ms")
 
     def launch(block_e: int, warps: int, stages: int) -> tuple[torch.Tensor, ...]:
         gxl = torch.empty_like(x_local)
@@ -1013,7 +1213,9 @@ def sweep_flash_bwd(
     key = (c_wide, lmax)
     return {
         "flash_bwd_edge": {key: edge_winner},
-        "flash_bwd_block": {key: _win_list_entry("flash_bwd_block", key, best, base_ms)}
+        "flash_bwd_block": {
+            key: _win_list_entry("flash_bwd_block", key, best, base_ms)
+        },
     }
 
 
@@ -1033,7 +1235,9 @@ def _select_fp32_config(
     ranked: list[tuple[float, GemmConfig]] = []
     for config in candidates:
         try:
-            ranked.append((_bench(lambda config=config: launch(config), iters=6), config))
+            ranked.append(
+                (_bench(lambda config=config: launch(config), iters=6), config)
+            )
         except triton.runtime.errors.OutOfResources:
             continue
     if not ranked:
@@ -1053,14 +1257,9 @@ def _select_fp32_config(
     final = sorted(
         (statistics.median(times), config) for config, times in samples.items()
     )
-    default_ms = next(
-        ms for ms, config in final if config == _STACK_GEMM_DEFAULT
-    )
+    default_ms = next(ms for ms, config in final if config == _STACK_GEMM_DEFAULT)
     for ms, config in final:
-        print(
-            f"  {name} {config}: {ms:8.3f} ms "
-            f"({default_ms / ms:.3f}x vs default)"
-        )
+        print(f"  {name} {config}: {ms:8.3f} ms ({default_ms / ms:.3f}x vs default)")
     best_ms, best_config = final[0]
     if default_ms / best_ms < _STACK_WIN_SPEEDUP:
         best_ms, best_config = default_ms, _STACK_GEMM_DEFAULT
@@ -1095,17 +1294,19 @@ def sweep_fp32(
     gate_width = lmax * cf
 
     u0 = torch.randn(n_focus, n_edge, row, device=device)
-    alpha = torch.rand(n_edge, n_focus, device=device) + 0.1
+    alpha = torch.rand(n_edge, n_focus, device=device, dtype=torch.float32) + 0.1
     w0_all = torch.randn(n_layers, n_focus, m0, m0, device=device) * 0.2
     w1_all = torch.randn(n_layers, n_focus, m1, m1, device=device) * 0.2
     w0t_all = w0_all.transpose(2, 3).contiguous()
     w1t_all = w1_all.transpose(2, 3).contiguous()
     gw_all = torch.randn(n_gated, n_focus, cf, gate_width, device=device) * 0.3
     gwt_all = gw_all.transpose(2, 3).contiguous()
-    z_all = torch.empty(n_gated, n_focus, n_edge, row, device=device)
+    z_all = torch.empty(
+        n_gated, n_focus, n_edge, row, device=device, dtype=torch.float32
+    )
     focus_out = torch.empty_like(u0)
-    edge_out = torch.empty(n_edge, n_focus, row, device=device)
-    sig = torch.rand(n_focus, n_edge, gate_width, device=device)
+    edge_out = torch.empty(n_edge, n_focus, row, device=device, dtype=torch.float32)
+    sig = torch.rand(n_focus, n_edge, gate_width, device=device, dtype=torch.float32)
     grad_edge = torch.randn(n_edge, n_focus, row, device=device)
     grad_focus = torch.randn_like(u0)
     residual = torch.randn_like(u0)
@@ -1271,13 +1472,14 @@ def sweep_fp32(
         grad_check = grad_edge[:n_check].contiguous()
         fallback = (_STACK_GEMM_DEFAULT,) * 3
         install(fallback)
-        x_ref, z_ref = _mixing_stack_op(
+        x_ref, z_ref, u_ref = _mixing_stack_op(
             u_check, alpha_check, w0_all, w1_all, gw_all, lmax, cf, True
         )
-        gu_ref, ga_ref = _mixing_stack_bwd_op(
+        gu_ref, ga_ref, *_ = _mixing_stack_bwd_op(
             grad_check,
             x_ref,
             z_ref,
+            u_ref,
             alpha_check,
             w0t_all,
             w1t_all,
@@ -1288,13 +1490,14 @@ def sweep_fp32(
             True,
         )
         install(configs)
-        x_run, z_run = _mixing_stack_op(
+        x_run, z_run, u_run = _mixing_stack_op(
             u_check, alpha_check, w0_all, w1_all, gw_all, lmax, cf, True
         )
-        gu_run, ga_run = _mixing_stack_bwd_op(
+        gu_run, ga_run, *_ = _mixing_stack_bwd_op(
             grad_check,
             x_run,
             z_run,
+            u_run,
             alpha_check,
             w0t_all,
             w1t_all,
@@ -1360,9 +1563,9 @@ def sweep_m0_gate(
     u = torch.randn(n_focus, n_edge, row, device=device)
     w0 = torch.randn(1, n_focus, m0, m0, device=device) * 0.2
     gw = torch.randn(1, n_focus, cf, gate_width, device=device) * 0.05
-    z = torch.empty(1, n_focus, n_edge, row, device=device)
+    z = torch.empty(1, n_focus, n_edge, row, device=device, dtype=torch.float32)
     v = torch.empty_like(u)
-    sig = torch.empty(n_focus, n_edge, gate_width, device=device)
+    sig = torch.empty(n_focus, n_edge, gate_width, device=device, dtype=torch.float32)
     m0_cfg = stack_fp32_configs(cf, lmax)[0]
     gate_cfg = gate_config(cf, lmax)
 
@@ -1419,9 +1622,7 @@ def sweep_m0_gate(
 
         def launch() -> None:
             bm, bk, warps, stages = config
-            wrap_triton(_stack_gemm_m0_gate_kernel)[
-                (triton.cdiv(n_edge, bm), n_focus)
-            ](
+            wrap_triton(_stack_gemm_m0_gate_kernel)[(triton.cdiv(n_edge, bm), n_focus)](
                 u,
                 w0,
                 gw,
@@ -1442,7 +1643,9 @@ def sweep_m0_gate(
             launch()
             torch.cuda.synchronize()
             outputs = (z[0, :, :, :m0], v[:, :, :m0], sig)
-            error = max(_relerr(output, ref) for output, ref in zip(outputs, references))
+            error = max(
+                _relerr(output, ref) for output, ref in zip(outputs, references)
+            )
             if not all(bool(torch.isfinite(output).all()) for output in outputs):
                 continue
             if error > 5e-6:
@@ -1458,8 +1661,7 @@ def sweep_m0_gate(
     if ranked and separate_ms / ranked[0][0] >= _ROUTE_WIN_SPEEDUP:
         winner = ranked[0][1]
     print(
-        f"BEST stack_m0_gate[{(cf, lmax)}] = {winner}  # separate "
-        f"{separate_ms:.3f} ms"
+        f"BEST stack_m0_gate[{(cf, lmax)}] = {winner}  # separate {separate_ms:.3f} ms"
     )
     return {"stack_m0_gate": {(cf, lmax): winner}}
 
@@ -1625,7 +1827,7 @@ def sweep_fp16x3(
 
     # === Step 2. fp64 whole-op reference and validation harness ===
     n_check = min(_FP16X3_CHECK_EDGES, n_edge)
-    truth_x, _ = _mixing_stack_reference(
+    truth_x, _, _ = _mixing_stack_reference(
         u0[:, :n_check].double(),
         alpha[:n_check].double(),
         w0_all.double(),
@@ -1638,7 +1840,7 @@ def sweep_fp16x3(
     truth_x = truth_x.float()
     u0_ref = u0[:, :n_check].double().requires_grad_(True)
     alpha_ref = alpha[:n_check].double().requires_grad_(True)
-    x_ref, _ = _mixing_stack_reference(
+    x_ref, _, _ = _mixing_stack_reference(
         u0_ref,
         alpha_ref,
         w0_all.double(),
@@ -1702,7 +1904,7 @@ def sweep_fp16x3(
 
     u0_fp32 = u0.clone().requires_grad_(True)
     alpha_fp32 = alpha.clone().requires_grad_(True)
-    x_fp32, _ = _mixing_stack_op(
+    x_fp32, _, _ = _mixing_stack_op(
         u0_fp32, alpha_fp32, w0_all, w1_all, gw_all, lmax, cf, True
     )
     fp32_fwd_err = _relerr(x_fp32[:n_check], truth_x)
@@ -1784,10 +1986,10 @@ def sweep_fp16x3(
     def wins_against_fp32() -> bool:
         """Return whether validated fp16x3 wins the whole force path."""
         grad_speed = torch.randn(n_edge, n_focus, row, device=device)
-        x_fp32_speed, z_fp32_speed = _mixing_stack_op(
+        x_fp32_speed, z_fp32_speed, u_fp32_speed = _mixing_stack_op(
             u0, alpha, w0_all, w1_all, gw_all, lmax, cf, True
         )
-        x_fp16_speed, z_fp16_speed = _mixing_stack_fp16x3_op(
+        x_fp16_speed, z_fp16_speed, u_fp16_speed = _mixing_stack_fp16x3_op(
             u0, alpha, w0_all, w1_all, gw_all, lmax, cf, True
         )
 
@@ -1796,6 +1998,7 @@ def sweep_fp16x3(
                 grad_speed,
                 x_fp32_speed,
                 z_fp32_speed,
+                u_fp32_speed,
                 alpha,
                 w0t,
                 w1t,
@@ -1838,11 +2041,7 @@ def sweep_fp16x3(
         fp32_ms = times["fp32 forward"] + times["fp32 backward"]
         fp16_ms = times["fp16x3 forward"] + times["fp16x3 backward"]
         speedup = fp32_ms / fp16_ms
-        verdict = (
-            "RECORD"
-            if speedup >= _STACK_WIN_SPEEDUP
-            else "keep the fp32 stack"
-        )
+        verdict = "RECORD" if speedup >= _STACK_WIN_SPEEDUP else "keep the fp32 stack"
         print(
             f"[stack whole force path: fp16x3 {fp16_ms:.3f} ms vs fp32 "
             f"{fp32_ms:.3f} ms ({speedup:.3f}x) -> {verdict}; "
@@ -1869,25 +2068,26 @@ class _SweepSpec:
     key_kind: Literal["focus", "wide"]
     min_level: int = 2
     accepts_heads: bool = False
+    train_only: bool = False
 
 
 _SWEEP_SPECS = {
     "pointwise": _SweepSpec(sweep_pointwise, "gate", "focus"),
-    "point_recompute": _SweepSpec(
-        sweep_point_recompute, "point_recompute", "focus"
+    "point_recompute": _SweepSpec(sweep_point_recompute, "point_recompute", "focus"),
+    "gated_second_order": _SweepSpec(
+        sweep_gated_second_order, "gated_second_order", "focus", train_only=True
+    ),
+    "point_train": _SweepSpec(
+        sweep_point_train, "point_train", "focus", train_only=True
     ),
     "rotate_fwd": _SweepSpec(sweep_rotate_fwd, "rotate_mix_fwd", "wide"),
-    "rotate_bwd": _SweepSpec(
-        sweep_rotate_bwd, "rotate_mix_bwd_block", "wide"
-    ),
+    "rotate_bwd": _SweepSpec(sweep_rotate_bwd, "rotate_mix_bwd_block", "wide"),
     "flash_bwd": _SweepSpec(
         sweep_flash_bwd, "flash_bwd_edge", "wide", accepts_heads=True
     ),
     "fp32": _SweepSpec(sweep_fp32, "stack_fp32", "focus"),
     "m0_gate": _SweepSpec(sweep_m0_gate, "stack_m0_gate", "focus"),
-    "fp16x3": _SweepSpec(
-        sweep_fp16x3, "stack_fp16x3", "focus", min_level=3
-    ),
+    "fp16x3": _SweepSpec(sweep_fp16x3, "stack_fp16x3", "focus", min_level=3),
 }
 
 
@@ -2036,6 +2236,10 @@ def tune_missing_configs(
         c_wide = n_focus * cf
         pending: list[tuple[str, _SweepSpec]] = []
         for group, spec in _SWEEP_SPECS.items():
+            # Training-profile kernels are tuned by explicit sweep runs; the
+            # freeze auto-tuner covers the inference graph only.
+            if spec.train_only:
+                continue
             if level < spec.min_level:
                 continue
             key = (cf, lmax) if spec.key_kind == "focus" else (c_wide, lmax)

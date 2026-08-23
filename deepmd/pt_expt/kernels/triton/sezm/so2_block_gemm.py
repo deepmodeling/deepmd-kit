@@ -447,22 +447,108 @@ def _(grad_out, weight, slices_flat):
     return grad_out.new_empty((grad_out.shape[0], grad_out.shape[1], k_total))
 
 
+def block_diag_weight_grad(
+    x_flat: Tensor, grad_out: Tensor, slices_flat: list[int]
+) -> Tensor:
+    """Contract the activation against the output cotangent, block by block.
+
+    The weight gradient of the block-diagonal GEMM is the outer product
+    ``x^T g`` restricted to the diagonal blocks; the structural zeros off the
+    blocks stay zero. Each block is a single cuBLAS ``bmm`` over the edge axis,
+    which is the shape cuBLAS handles best (a tall-skinny reduction of ``E``
+    rows), so no Triton kernel is warranted here.
+
+    The blocks tile the input axis contiguously, so the assembled gradient is a
+    concatenation of zero-padded row bands rather than an in-place scatter, which
+    keeps the whole expression differentiable for the third-order path that the
+    backward's own autograd formula relies on.
+
+    Parameters
+    ----------
+    x_flat : Tensor
+        Activation with shape ``(F, E, K)``.
+    grad_out : Tensor
+        Output cotangent with shape ``(F, E, N)``.
+    slices_flat : list[int]
+        Diagonal blocks as flattened ``(in0, in1, out0, out1)`` groups.
+
+    Returns
+    -------
+    Tensor
+        Weight gradient with shape ``(F, K, N)``.
+    """
+    slices = _unflatten_slices(slices_flat)
+    n_out = max(out1 for _, _, _, out1 in slices)
+    bands = []
+    for in0, in1, out0, out1 in slices:
+        block = torch.bmm(
+            x_flat[:, :, in0:in1].transpose(1, 2), grad_out[:, :, out0:out1]
+        )  # (F, in1 - in0, out1 - out0)
+        bands.append(
+            torch.cat(
+                [
+                    block.new_zeros(block.shape[0], block.shape[1], out0),
+                    block,
+                    block.new_zeros(block.shape[0], block.shape[1], n_out - out1),
+                ],
+                dim=2,
+            )
+        )
+    return torch.cat(bands, dim=1)
+
+
 def _bd_gemm_setup_context(ctx, inputs, output):
     x_flat, weight, slices_flat = inputs
-    ctx.save_for_backward(weight)
+    ctx.save_for_backward(x_flat, weight)
     ctx.slices_flat = slices_flat
 
 
 def _bd_gemm_backward(ctx, grad_out):
-    (weight,) = ctx.saved_tensors
-    grad_x = _bd_gemm_bwd_op(grad_out, weight, ctx.slices_flat)
-    # weight is a parameter (never a function of the coordinates); the inference
-    # force differentiates only w.r.t. the activation, so its gradient is not
-    # produced. ``slices_flat`` is a static block table.
-    return grad_x, None, None
+    x_flat, weight = ctx.saved_tensors
+    needs_x, needs_weight = ctx.needs_input_grad[0], ctx.needs_input_grad[1]
+    grad_x = _bd_gemm_bwd_op(grad_out, weight, ctx.slices_flat) if needs_x else None
+    grad_weight = (
+        block_diag_weight_grad(x_flat, grad_out, ctx.slices_flat)
+        if needs_weight
+        else None
+    )
+    # ``slices_flat`` is a static block table.
+    return grad_x, grad_weight, None
+
+
+def _bd_gemm_bwd_setup_context(ctx, inputs, output):
+    grad_out, weight, slices_flat = inputs
+    ctx.save_for_backward(grad_out, weight)
+    ctx.slices_flat = slices_flat
+
+
+def _bd_gemm_bwd_backward(ctx, grad_grad_x):
+    """Second order of the GEMM, bilinear in ``(x_flat, weight)``.
+
+    The first-order backward produces only the activation gradient
+    ``B_x(g, W)``, so the second order carries a single incoming cotangent and
+    the bilinear identity reduces to one forward and one weight contraction.
+    """
+    grad_out, weight = ctx.saved_tensors
+    if grad_grad_x is None:
+        return None, None, None
+    grad_grad_out = _bd_gemm_op(grad_grad_x, weight, ctx.slices_flat)
+    grad_weight = block_diag_weight_grad(grad_grad_x, grad_out, ctx.slices_flat)
+    return grad_grad_out, grad_weight, None
 
 
 _bd_gemm_op.register_autograd(_bd_gemm_backward, setup_context=_bd_gemm_setup_context)
+_bd_gemm_bwd_op.register_autograd(
+    _bd_gemm_bwd_backward, setup_context=_bd_gemm_bwd_setup_context
+)
+
+# Under AMP the activation arrives in bfloat16 while the weight is still a
+# float32 parameter, a mix the kernel cannot consume. The autocast rule casts
+# every floating-point input to the training dtype exactly as the built-in
+# matmuls do, and because the cast is recorded by autograd the parameter still
+# accumulates a float32 gradient. It is inert outside an autocast region, so the
+# inference and float32 paths are unaffected.
+_bd_gemm_op.register_autocast("cuda", torch.bfloat16)
 
 
 # ======================================================================
