@@ -257,11 +257,31 @@ if(NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
       "Protobuf headers are not found in the directory of TensorFlow, assuming external protobuf was used to build TensorFlow"
   )
   # TensorFlow 2.21 packages may not record protobuf as a direct runtime
-  # dependency. Find the external full protobuf library instead of relying on
-  # libtensorflow_framework's dependency list, which may also expose only the
-  # lite library on some platforms.
-  unset(Protobuf_LIBRARY)
+  # dependency. If the runtime scan found protobuf, preserve that exact library
+  # and use its installation prefix to guide the header search. Otherwise, allow
+  # FindProtobuf to locate the external protobuf package normally.
+  if(Protobuf_LIBRARY)
+    set(_TensorFlow_PROTOBUF_ROOT_WAS_DEFINED FALSE)
+    if(DEFINED Protobuf_ROOT)
+      set(_TensorFlow_PROTOBUF_ROOT_WAS_DEFINED TRUE)
+      set(_TensorFlow_SAVED_PROTOBUF_ROOT "${Protobuf_ROOT}")
+    endif()
+    get_filename_component(_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY
+                           "${Protobuf_LIBRARY}" DIRECTORY)
+    get_filename_component(
+      Protobuf_ROOT "${_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY}" DIRECTORY)
+  endif()
   find_package(Protobuf REQUIRED)
+  if(DEFINED _TensorFlow_PROTOBUF_ROOT_WAS_DEFINED)
+    if(_TensorFlow_PROTOBUF_ROOT_WAS_DEFINED)
+      set(Protobuf_ROOT "${_TensorFlow_SAVED_PROTOBUF_ROOT}")
+    else()
+      unset(Protobuf_ROOT)
+    endif()
+    unset(_TensorFlow_PROTOBUF_ROOT_WAS_DEFINED)
+    unset(_TensorFlow_SAVED_PROTOBUF_ROOT)
+    unset(_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY)
+  endif()
   set(TensorFlow_INCLUDE_DIRS_GOOGLE ${Protobuf_INCLUDE_DIRS})
   set(Protobuf_LIBRARY ${Protobuf_LIBRARIES})
 endif()
