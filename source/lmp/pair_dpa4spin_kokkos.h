@@ -28,9 +28,9 @@ PairStyle(dpa4spin/kk/host,PairDPA4SpinKokkos<LMPHostType>);
 
 namespace LAMMPS_NS {
 
-// LAMMPS 22Jul2025 exposes reverse-communication buffers as X_FLOAT; newer
-// releases use a fixed double buffer for Kokkos pair styles.
-#if LAMMPS_VERSION_NUMBER < 20260704
+// LAMMPS 22Jul2025 exposes reverse-communication buffers as X_FLOAT; starting
+// with 10Sep2025, Kokkos pair styles use a fixed double buffer.
+#if LAMMPS_VERSION_NUMBER < 20250910
 using DPA4SpinKokkosCommBuffer = DAT::tdual_xfloat_1d;
 #else
 using DPA4SpinKokkosCommBuffer = DAT::tdual_double_1d;
@@ -102,8 +102,8 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
 
   // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
   // downstream per-atom computes/dumps see it after the device-to-host sync).
-  // The transformed accumulator view was added after the 22Jul2025 release.
-#if LAMMPS_VERSION_NUMBER < 20260704
+  // The transformed accumulator view was added in the 10Sep2025 release.
+#if LAMMPS_VERSION_NUMBER < 20250910
   DAT::tdual_double_1d k_eatom;
   typename AT::t_double_1d d_eatom;
 #else
