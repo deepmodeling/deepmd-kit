@@ -774,5 +774,169 @@ class TestColumnPadMergeEquivalence(unittest.TestCase):
         self.assertIn("exp_avg", optimizer.state[model.bias])
 
 
+class _MixedRouteModel(torch.nn.Module):
+    """Small model covering every optimizer route.
+
+    ``square`` exercises the square Newton-Schulz path (weight) and the Adam
+    path (bias), ``rect`` the rectangular Gram path, ``adamw_gate`` the
+    name-routed AdamW path, and ``scale`` the 1D Adam path.
+    """
+
+    def __init__(self, device: torch.device) -> None:
+        super().__init__()
+        self.square = torch.nn.Linear(32, 32, bias=True, device=device)
+        self.rect = torch.nn.Linear(32, 48, bias=False, device=device)
+        self.adamw_gate = torch.nn.Parameter(torch.randn(48, 16, device=device) * 0.1)
+        self.scale = torch.nn.Parameter(torch.ones(16, device=device))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = torch.tanh(self.square(x))
+        h = torch.tanh(self.rect(h))
+        return (h @ self.adamw_gate) * self.scale
+
+
+@unittest.skipIf(not torch.cuda.is_available(), "CUDA graph capture needs CUDA")
+class TestHybridMuonCudaGraph(unittest.TestCase):
+    """The whole-step CUDA graph must be an exact execution detail.
+
+    Every test runs a coupled trajectory -- the gradients of each step
+    depend on every earlier update -- with a per-step learning-rate
+    schedule, so the graph's device-resident scalars (learning rate,
+    bias-correction powers) are exercised against the eager execution of
+    the identical update.
+    """
+
+    N_STEPS = 8
+
+    def setUp(self) -> None:
+        self.device = torch.device("cuda")
+        torch.manual_seed(1234)
+        self.inputs = torch.randn(16, 32, device=self.device)
+        self.targets = torch.randn(16, 16, device=self.device)
+
+    def _make(self, graph_on: bool) -> tuple[torch.nn.Module, HybridMuonOptimizer]:
+        torch.manual_seed(7)
+        model = _MixedRouteModel(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            weight_decay=0.01,
+            named_parameters=list(model.named_parameters()),
+        )
+        optimizer._graph_enabled = graph_on
+        return model, optimizer
+
+    def _run(
+        self,
+        model: torch.nn.Module,
+        optimizer: HybridMuonOptimizer,
+        n_steps: int,
+        lr_decay: float = 0.8,
+    ) -> list[torch.Tensor]:
+        for step in range(n_steps):
+            for group in optimizer.param_groups:
+                group["lr"] = 0.02 * (lr_decay**step)
+            optimizer.zero_grad(set_to_none=True)
+            loss = ((model(self.inputs) - self.targets) ** 2).mean()
+            loss.backward()
+            optimizer.step()
+        torch.cuda.synchronize()
+        return [p.detach().clone() for p in model.parameters()]
+
+    def test_graph_matches_eager_trajectory(self) -> None:
+        """Graph and eager trajectories agree on a deterministic model."""
+        eager = self._run(*self._make(graph_on=False), self.N_STEPS)
+        graph_model, graph_opt = self._make(graph_on=True)
+        graph = self._run(graph_model, graph_opt, self.N_STEPS)
+        self.assertIsNotNone(graph_opt._graph, "graph was never captured")
+        # The replay re-executes the captured kernel sequence on the same
+        # operands, so on a deterministic model the trajectories are
+        # bitwise identical; any tolerance would hide a replay-frozen
+        # scalar or state tensor.
+        for pe, pg in zip(eager, graph, strict=True):
+            torch.testing.assert_close(pe, pg, rtol=0.0, atol=0.0)
+
+    def test_lr_schedule_reaches_replays(self) -> None:
+        """The device learning rate follows the host schedule across replays.
+
+        A frozen learning rate is the canonical capture bug; two schedules
+        that share the capture-time value but diverge afterwards must
+        produce different trajectories.
+        """
+        model_a, opt_a = self._make(graph_on=True)
+        flat = self._run(model_a, opt_a, self.N_STEPS, lr_decay=1.0)
+        model_b, opt_b = self._make(graph_on=True)
+        decayed = self._run(model_b, opt_b, self.N_STEPS, lr_decay=0.5)
+        max_diff = max(
+            (a - b).abs().max().item() for a, b in zip(flat, decayed, strict=True)
+        )
+        self.assertGreater(max_diff, 1e-5)
+
+    def test_bias_powers_advance_inside_graph(self) -> None:
+        """The bias-correction powers evolve across graph replays."""
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, self.N_STEPS)
+        beta1 = optimizer.param_groups[0]["adam_betas"][0]
+        pow1 = optimizer.param_groups[0]["beta1_pow_device"].item()
+        self.assertAlmostEqual(pow1, beta1**self.N_STEPS, places=6)
+
+    def test_legacy_bias_power_migration(self) -> None:
+        """Per-parameter float powers from an old checkpoint seed the group."""
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, 3)
+        state_dict = optimizer.state_dict()
+        # Rewrite the state into the legacy layout: per-parameter float
+        # powers, no group tensors.
+        for group in state_dict["param_groups"]:
+            group.pop("beta1_pow_device", None)
+            group.pop("beta2_pow_device", None)
+            group.pop("lr_device", None)
+        for state in state_dict["state"].values():
+            if "exp_avg" in state:
+                state["beta1_pow"] = 0.9**3
+                state["beta2_pow"] = 0.95**3
+
+        model2, optimizer2 = self._make(graph_on=True)
+        optimizer2.load_state_dict(state_dict)
+        optimizer2._build_param_routing()
+        optimizer2._migrate_legacy_bias_powers()
+        group = optimizer2.param_groups[0]
+        self.assertAlmostEqual(group["beta1_pow_device"].item(), 0.9**3, places=6)
+        self.assertAlmostEqual(group["beta2_pow_device"].item(), 0.95**3, places=6)
+        for state in optimizer2.state.values():
+            self.assertNotIn("beta1_pow", state)
+
+    def test_state_dict_roundtrip_resumes_trajectory(self) -> None:
+        """Save/load mid-trajectory reproduces the uninterrupted run."""
+        reference = self._run(*self._make(graph_on=True), self.N_STEPS)
+
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, 4)
+        payload = {
+            "model": model.state_dict(),
+            "opt": optimizer.state_dict(),
+        }
+
+        model2, optimizer2 = self._make(graph_on=True)
+        model2.load_state_dict(payload["model"])
+        optimizer2.load_state_dict(payload["opt"])
+        for step in range(4, self.N_STEPS):
+            for group in optimizer2.param_groups:
+                group["lr"] = 0.02 * (0.8**step)
+            optimizer2.zero_grad(set_to_none=True)
+            loss = ((model2(self.inputs) - self.targets) ** 2).mean()
+            loss.backward()
+            optimizer2.step()
+        torch.cuda.synchronize()
+        for pr, pg in zip(reference, model2.parameters(), strict=True):
+            torch.testing.assert_close(pr, pg.detach(), rtol=0.0, atol=0.0)
+
+    def test_eager_reference_path_stays_eager(self) -> None:
+        """The eager reference execution never captures a graph."""
+        model, optimizer = self._make(graph_on=False)
+        self._run(model, optimizer, 4)
+        self.assertIsNone(optimizer._graph)
+
+
 if __name__ == "__main__":
     unittest.main()
