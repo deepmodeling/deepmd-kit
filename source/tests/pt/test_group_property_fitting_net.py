@@ -21,6 +21,9 @@ pytest.importorskip("deepmd.lib")
 from deepmd.pt.model.task.group_property import (
     GroupPropertyFittingNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
 
 
 def _make(**overrides):
@@ -104,7 +107,7 @@ def test_fparam_branch_encodes_side_features_before_fusion():
     assert fn.fparam_network[0].in_features == 3
     assert fn.fparam_network[0].out_features == 5
     assert fn.network[0].in_features == 4 + 5
-    out = fn(torch.zeros(2, 4 + 3))
+    out = fn(torch.zeros(2, 4 + 3, device=env.DEVICE))
     assert out.shape == (2, 1)
 
 
@@ -124,18 +127,18 @@ def test_dim_case_embd_widens_first_layer_and_inits_zero():
     fn = _make(dim_case_embd=5)
     assert fn.network[0].in_features == 4 + 5  # dim_descrpt + dim_case_embd
     assert fn.case_embd.shape == (5,)
-    assert torch.equal(fn.case_embd, torch.zeros(5))
+    assert torch.equal(fn.case_embd, torch.zeros(5, device=env.DEVICE))
 
 
 def test_set_case_embd_produces_one_hot_row():
     fn = _make(dim_case_embd=4)
     fn.set_case_embd(2)
-    assert torch.equal(fn.case_embd, torch.eye(4)[2])
+    assert torch.equal(fn.case_embd, torch.eye(4, device=env.DEVICE)[2])
 
 
 def test_set_case_embd_changes_forward_output():
     fn = _make(dim_case_embd=3, seed=42)
-    group_embedding = torch.rand(2, 4)
+    group_embedding = torch.rand(2, 4, device=env.DEVICE)
     out_before = fn(group_embedding).detach().clone()
     fn.set_case_embd(1)
     out_after = fn(group_embedding).detach().clone()
@@ -147,7 +150,7 @@ def test_dim_case_embd_combines_with_fparam_neuron():
     # dim_descrpt(4) + fparam_neuron out(5) + dim_case_embd(4)
     assert fn.network[0].in_features == 4 + 5 + 4
     fn.set_case_embd(0)
-    out = fn(torch.zeros(2, 4 + 3))
+    out = fn(torch.zeros(2, 4 + 3, device=env.DEVICE))
     assert out.shape == (2, 1)
 
 

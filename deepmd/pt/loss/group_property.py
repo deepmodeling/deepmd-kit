@@ -70,7 +70,7 @@ class GroupPropertyLoss(TaskLoss):
         group_id = None
         if GROUP_ID_KEY in label and label.get(f"find_{GROUP_ID_KEY}", 1) is not None:
             find_group = label.get(f"find_{GROUP_ID_KEY}", 1)
-            if not torch.as_tensor(find_group).eq(0).all():
+            if not torch.as_tensor(find_group, device=frame_label.device).eq(0).all():
                 group_id = label[GROUP_ID_KEY]
         if group_id is None:
             group_id = torch.arange(

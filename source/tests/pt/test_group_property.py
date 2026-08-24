@@ -18,6 +18,9 @@ from deepmd.pt.utils.dataloader import (
     GroupCompleteBatchSampler,
     GroupDistributedBatchSampler,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.grouped import (
     GROUP_ID_KEY,
     GROUP_WEIGHT_KEY,
@@ -44,8 +47,8 @@ def _flatten_batches(batches: list[list[int]]) -> list[int]:
 class ToyGroupedModel(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.backbone = torch.nn.Linear(3, 4, bias=False)
-        self.head = torch.nn.Linear(4, 1)
+        self.backbone = torch.nn.Linear(3, 4, bias=False, device=env.DEVICE)
+        self.head = torch.nn.Linear(4, 1, device=env.DEVICE)
         self.var_name = "target"
 
     def forward(
@@ -75,7 +78,10 @@ class ToyGroupedModel(torch.nn.Module):
         weight = normalize_weight_tensor(weight, nframes).to(descriptor.dtype).detach()
         group_order, inverse = torch.unique(group_id, sorted=True, return_inverse=True)
         group_embedding = torch.zeros(
-            group_order.shape[0], frame_embedding.shape[1], dtype=frame_embedding.dtype
+            group_order.shape[0],
+            frame_embedding.shape[1],
+            dtype=frame_embedding.dtype,
+            device=frame_embedding.device,
         )
         group_embedding.index_add_(0, inverse, frame_embedding * weight[:, None])
         return {
@@ -94,16 +100,21 @@ def test_group_property_loss_trains_backbone_and_detaches_weight() -> None:
             [[1.2, 0.1, 0.0], [0.0, 1.1, 0.0]],
             [[0.0, 0.0, 1.0], [1.0, 1.0, 0.0]],
             [[0.1, 0.0, 1.2], [1.1, 0.9, 0.0]],
-        ]
+        ],
+        device=env.DEVICE,
     )
-    atype = torch.zeros((4, 2), dtype=torch.long)
-    weight = torch.tensor([[0.5], [0.5], [0.5], [0.5]], requires_grad=True)
+    atype = torch.zeros((4, 2), dtype=torch.long, device=env.DEVICE)
+    weight = torch.tensor(
+        [[0.5], [0.5], [0.5], [0.5]], requires_grad=True, device=env.DEVICE
+    )
     label = {
-        "target": torch.tensor([[1.0], [1.0], [2.0], [2.0]]),
-        GROUP_ID_KEY: torch.tensor([[0], [0], [1], [1]], dtype=torch.long),
+        "target": torch.tensor([[1.0], [1.0], [2.0], [2.0]], device=env.DEVICE),
+        GROUP_ID_KEY: torch.tensor(
+            [[0], [0], [1], [1]], dtype=torch.long, device=env.DEVICE
+        ),
         GROUP_WEIGHT_KEY: weight,
-        POOL_MASK_KEY: torch.ones((4, 2, 1)),
-        f"find_{GROUP_ID_KEY}": torch.ones(1),
+        POOL_MASK_KEY: torch.ones((4, 2, 1), device=env.DEVICE),
+        f"find_{GROUP_ID_KEY}": torch.ones(1, device=env.DEVICE),
     }
     input_dict = {
         "coord": coord,
@@ -134,15 +145,15 @@ def test_group_property_loss_rejects_inconsistent_group_labels() -> None:
     model = ToyGroupedModel()
     loss_fn = GroupPropertyLoss(task_dim=1, var_name="target", loss_func="mse")
     label = {
-        "target": torch.tensor([[1.0], [1.5]]),
-        GROUP_ID_KEY: torch.tensor([[0], [0]], dtype=torch.long),
-        GROUP_WEIGHT_KEY: torch.ones((2, 1)),
-        POOL_MASK_KEY: torch.ones((2, 1, 1)),
-        f"find_{GROUP_ID_KEY}": torch.ones(1),
+        "target": torch.tensor([[1.0], [1.5]], device=env.DEVICE),
+        GROUP_ID_KEY: torch.tensor([[0], [0]], dtype=torch.long, device=env.DEVICE),
+        GROUP_WEIGHT_KEY: torch.ones((2, 1), device=env.DEVICE),
+        POOL_MASK_KEY: torch.ones((2, 1, 1), device=env.DEVICE),
+        f"find_{GROUP_ID_KEY}": torch.ones(1, device=env.DEVICE),
     }
     input_dict = {
-        "coord": torch.ones((2, 1, 3)),
-        "atype": torch.zeros((2, 1), dtype=torch.long),
+        "coord": torch.ones((2, 1, 3), device=env.DEVICE),
+        "atype": torch.zeros((2, 1), dtype=torch.long, device=env.DEVICE),
         "box": None,
         "do_atomic_virial": False,
         "fparam": None,
@@ -250,9 +261,10 @@ def test_dploaderset_enables_group_batches_for_group_requirements(tmp_path) -> N
     req = [DataRequirementItem("target", ndof=1, atomic=False, must=True)]
     req.extend(group_data_requirements())
     data.add_data_requirement(req)
-    batches = [
-        batch[GROUP_ID_KEY].reshape(-1).tolist() for batch in data.dataloaders[0]
-    ]
+    with torch.device("cpu"):
+        batches = [
+            batch[GROUP_ID_KEY].reshape(-1).tolist() for batch in data.dataloaders[0]
+        ]
     assert batches == [[0, 0], [1, 1], [2]]
 
 
@@ -286,7 +298,8 @@ def test_dploaderset_missing_group_id_falls_back_to_one_group_per_frame(
     # 0 by the data-requirement default and is not what this fallback governs
     # (GroupPropertyLoss ignores that default via its own find_group_id check
     # and recomputes one-group-per-frame itself).
-    batch_sizes = [batch["coord"].shape[0] for batch in data.dataloaders[0]]
+    with torch.device("cpu"):
+        batch_sizes = [batch["coord"].shape[0] for batch in data.dataloaders[0]]
     # 5 frames, each its own group, batch_size=2 -> 2,2,1 (not one batch of 5)
     assert batch_sizes == [2, 2, 1]
 

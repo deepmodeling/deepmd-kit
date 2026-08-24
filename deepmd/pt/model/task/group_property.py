@@ -139,7 +139,11 @@ class GroupPropertyFittingNet(Fitting):
         ) -> list[torch.nn.Module]:
             layers: list[torch.nn.Module] = []
             for ii in range(len(dims) - 1):
-                layers.append(torch.nn.Linear(dims[ii], dims[ii + 1], dtype=self.prec))
+                layers.append(
+                    torch.nn.Linear(
+                        dims[ii], dims[ii + 1], dtype=self.prec, device=env.DEVICE
+                    )
+                )
                 if activate_last or ii < len(dims) - 2:
                     layers.append(_activation(self.activation_function))
             return layers

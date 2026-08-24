@@ -26,6 +26,9 @@ try:
     from deepmd.pt.model.task.group_property import (
         GroupPropertyFittingNet,
     )
+    from deepmd.pt.utils import (
+        env,
+    )
     from deepmd.pt.utils.grouped import (
         distributed_grouped_frame_batches,
     )
@@ -53,7 +56,9 @@ class _StubDescriptor(torch.nn.Module):
 
     def forward(self, ext_coord, ext_atype, nlist, mapping=None, charge_spin=None):
         nframes, nall = ext_atype.shape
-        idx = torch.arange(nall, dtype=ext_coord.dtype).reshape(1, nall, 1)
+        idx = torch.arange(
+            nall, dtype=ext_coord.dtype, device=ext_coord.device
+        ).reshape(1, nall, 1)
         desc = idx.expand(nframes, nall, self.dim).clone()
         return desc, None, None, None, None
 
@@ -77,7 +82,7 @@ def _model(fitting, dim=2):
 
 
 def _coords(nframes, natoms):
-    return torch.rand(nframes, natoms, 3, dtype=torch.float64)
+    return torch.rand(nframes, natoms, 3, dtype=torch.float64, device=env.DEVICE)
 
 
 def test_group_property_model_passes_charge_spin_as_descriptor_fparam():
@@ -102,18 +107,18 @@ def test_group_property_model_passes_charge_spin_as_descriptor_fparam():
     )
     out = model(
         _coords(2, 2),
-        torch.tensor([[0, 1], [0, 1]]),
+        torch.tensor([[0, 1], [0, 1]], device=env.DEVICE),
         box=None,
-        group_id=torch.tensor([[0], [1]]),
-        weight=torch.ones(2, 1),
-        pool_mask=torch.ones(2, 2),
+        group_id=torch.tensor([[0], [1]], device=env.DEVICE),
+        weight=torch.ones(2, 1, device=env.DEVICE),
+        pool_mask=torch.ones(2, 2, device=env.DEVICE),
     )
     assert torch.isfinite(out["y"]).all()
     assert descriptor.seen_fparam is not None
     assert descriptor.seen_fparam.shape == (2, 2)
     assert torch.allclose(
         descriptor.seen_fparam,
-        torch.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=torch.float64),
+        torch.tensor([[0.0, 1.0], [0.0, 1.0]], dtype=torch.float64, device=env.DEVICE),
     )
 
 
@@ -121,19 +126,20 @@ def test_group_property_model_passes_charge_spin_as_descriptor_fparam():
 def test_masked_mean_model_divides_by_mask_sum():
     model = _model(_fitting())
     coord = _coords(1, 3)
-    atype = torch.tensor([[0, 1, 0]])
-    pool_mask = torch.tensor([[1.0, 1.0, 0.0]])  # atom 2 excluded
+    atype = torch.tensor([[0, 1, 0]], device=env.DEVICE)
+    pool_mask = torch.tensor([[1.0, 1.0, 0.0]], device=env.DEVICE)  # atom 2 excluded
     out = model(
         coord,
         atype,
         box=None,
-        group_id=torch.tensor([[0]]),
-        weight=torch.tensor([[1.0]]),
+        group_id=torch.tensor([[0]], device=env.DEVICE),
+        weight=torch.tensor([[1.0]], device=env.DEVICE),
         pool_mask=pool_mask,
     )
     # per-atom features = [0,0],[1,1],[2,2]; masked mean over atoms 0,1 = [0.5,0.5]
     assert torch.allclose(
-        out["frame_embedding"], torch.tensor([[0.5, 0.5]], dtype=torch.float64)
+        out["frame_embedding"],
+        torch.tensor([[0.5, 0.5]], dtype=torch.float64, device=env.DEVICE),
     )
 
 
@@ -142,11 +148,11 @@ def test_zero_mask_rejected_by_model():
     with pytest.raises(ValueError, match="all-zero pool_mask"):
         model(
             _coords(1, 3),
-            torch.tensor([[0, 1, 0]]),
+            torch.tensor([[0, 1, 0]], device=env.DEVICE),
             box=None,
-            group_id=torch.tensor([[0]]),
-            weight=torch.tensor([[1.0]]),
-            pool_mask=torch.zeros(1, 3),
+            group_id=torch.tensor([[0]], device=env.DEVICE),
+            weight=torch.tensor([[1.0]], device=env.DEVICE),
+            pool_mask=torch.zeros(1, 3, device=env.DEVICE),
         )
 
 
@@ -154,28 +160,32 @@ def test_zero_mask_rejected_by_model():
 def test_group_reduce_mean_vs_sum_wiring():
     fitting = _fitting(group_reduce="mean")
     model = _model(fitting)
-    atype = torch.tensor([[0, 1], [0, 1]])
+    atype = torch.tensor([[0, 1], [0, 1]], device=env.DEVICE)
     coord = _coords(2, 2)
     kw = {
         "box": None,
-        "pool_mask": torch.ones(2, 2),
-        "weight": torch.tensor([[1.0], [1.0]]),
+        "pool_mask": torch.ones(2, 2, device=env.DEVICE),
+        "weight": torch.tensor([[1.0], [1.0]], device=env.DEVICE),
     }
 
     # two identical frames in one group: mean-reduce == a single-frame group
-    pred_two = model(coord, atype, group_id=torch.tensor([[0], [0]]), **kw)["y"]
+    pred_two = model(
+        coord, atype, group_id=torch.tensor([[0], [0]], device=env.DEVICE), **kw
+    )["y"]
     pred_one = model(
         coord[:1],
         atype[:1],
         box=None,
-        pool_mask=torch.ones(1, 2),
-        weight=torch.tensor([[1.0]]),
-        group_id=torch.tensor([[0]]),
+        pool_mask=torch.ones(1, 2, device=env.DEVICE),
+        weight=torch.tensor([[1.0]], device=env.DEVICE),
+        group_id=torch.tensor([[0]], device=env.DEVICE),
     )["y"]
     assert torch.allclose(pred_two, pred_one)  # mean is size-invariant
 
     fitting.group_reduce = "sum"  # same weights, sum now doubles the embedding
-    pred_sum = model(coord, atype, group_id=torch.tensor([[0], [0]]), **kw)["y"]
+    pred_sum = model(
+        coord, atype, group_id=torch.tensor([[0], [0]], device=env.DEVICE), **kw
+    )["y"]
     assert not torch.allclose(pred_sum, pred_two)
 
 
@@ -183,14 +193,16 @@ def test_single_frame_group_equivalence():
     fitting = _fitting(group_reduce="mean")
     model = _model(fitting)
     coord = _coords(3, 2)
-    atype = torch.tensor([[0, 1], [0, 1], [0, 1]])
+    atype = torch.tensor([[0, 1], [0, 1], [0, 1]], device=env.DEVICE)
     out = model(
         coord,
         atype,
         box=None,
-        group_id=torch.tensor([[0], [1], [2]]),  # each frame its own group
-        weight=torch.ones(3, 1),
-        pool_mask=torch.ones(3, 2),
+        group_id=torch.tensor(
+            [[0], [1], [2]], device=env.DEVICE
+        ),  # each frame its own group
+        weight=torch.ones(3, 1, device=env.DEVICE),
+        pool_mask=torch.ones(3, 2, device=env.DEVICE),
     )
     # singleton groups + mean + weight 1 => grouping is a no-op:
     # prediction == fitting applied to each frame embedding directly.
@@ -216,25 +228,27 @@ def test_shuffled_batch_loss_invariance():
     natoms = 2
     nframes = 5
     coord = _coords(nframes, natoms)
-    atype = torch.zeros(nframes, natoms, dtype=torch.long)
-    group_id = torch.tensor([2, 0, 2, 1, 0])
+    atype = torch.zeros(nframes, natoms, dtype=torch.long, device=env.DEVICE)
+    group_id = torch.tensor([2, 0, 2, 1, 0], device=env.DEVICE)
     # consistent per-group labels
     label_of = {0: 0.0, 1: 10.0, 2: 20.0}
-    y = torch.tensor([[label_of[int(g)]] for g in group_id], dtype=torch.float64)
+    y = torch.tensor(
+        [[label_of[int(g)]] for g in group_id], dtype=torch.float64, device=env.DEVICE
+    )
 
     def run(perm):
         inp = {"coord": coord[perm], "atype": atype[perm], "box": None}
         lab = {
             "y": y[perm],
             "group_id": group_id[perm].reshape(-1, 1).double(),
-            "weight": torch.ones(nframes, 1).double(),
-            "pool_mask": torch.ones(nframes, natoms).double(),
+            "weight": torch.ones(nframes, 1, device=env.DEVICE).double(),
+            "pool_mask": torch.ones(nframes, natoms, device=env.DEVICE).double(),
         }
         _, loss, _ = loss_fn(inp, model, lab, natoms=natoms)
         return loss
 
-    ref = run(torch.arange(nframes))
-    shuffled = run(torch.tensor([3, 0, 4, 1, 2]))
+    ref = run(torch.arange(nframes, device=env.DEVICE))
+    shuffled = run(torch.tensor([3, 0, 4, 1, 2], device=env.DEVICE))
     assert torch.allclose(ref, shuffled)
 
 
@@ -270,20 +284,22 @@ def test_padding_invariance():
         return desc(ext_coord, ext_atype, nlist, mapping=mapping)[0]
 
     torch.manual_seed(0)
-    base_coord = torch.rand(1, 8, 3, dtype=torch.float64) * 5.0
-    base_atype = torch.tensor([[0, 1, 0, 1, 0, 1, 0, 1]])
+    base_coord = torch.rand(1, 8, 3, dtype=torch.float64, device=env.DEVICE) * 5.0
+    base_atype = torch.tensor([[0, 1, 0, 1, 0, 1, 0, 1]], device=env.DEVICE)
     box = None  # non-periodic
     ref = run(base_coord, base_atype, box)[:, :8, :]
 
     # adversarial: virtual atoms placed INSIDE the cutoff of real atoms
     pad = base_coord[:, :3, :].clone()  # 3 virtual atoms among the real cloud
     pad_coord = torch.cat([base_coord, pad], dim=1)
-    pad_atype = torch.cat([base_atype, torch.full((1, 3), -1)], dim=1)
+    pad_atype = torch.cat(
+        [base_atype, torch.full((1, 3), -1, device=env.DEVICE)], dim=1
+    )
     got = run(pad_coord, pad_atype, box)[:, :8, :]
     assert torch.allclose(ref, got, atol=1e-10)
 
     # periodic case: nlist masks atype<0 regardless of coord wrapping
-    box_p = (torch.eye(3, dtype=torch.float64) * 10.0).reshape(1, 9)
+    box_p = (torch.eye(3, dtype=torch.float64, device=env.DEVICE) * 10.0).reshape(1, 9)
     ref_p = run(base_coord, base_atype, box_p)[:, :8, :]
     got_p = run(pad_coord, pad_atype, box_p)[:, :8, :]
     assert torch.allclose(ref_p, got_p, atol=1e-10)
@@ -292,7 +308,12 @@ def test_padding_invariance():
 # --------------------------------------------------------------------------- DDP
 def test_group_not_split_across_ranks():
     # 5 groups of varying size, world_size=2; assign groups (not frames) to ranks.
-    group_ids = torch.tensor([0, 0, 0, 1, 2, 2, 3, 4, 4, 4]).numpy()
+    group_ids = (
+        torch.tensor([0, 0, 0, 1, 2, 2, 3, 4, 4, 4], device=env.DEVICE)
+        .detach()
+        .cpu()
+        .numpy()
+    )
     seen: dict[int, int] = {}
     for rank in range(2):
         batches = distributed_grouped_frame_batches(
