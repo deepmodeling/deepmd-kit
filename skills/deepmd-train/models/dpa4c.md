@@ -23,7 +23,10 @@ not as a separate model scaffold:
 ```json
 {
   "model": {
-    "type_map": ["O", "H"],
+    "type_map": [
+      "O",
+      "H"
+    ],
     "descriptor": {
       "type": "dpa4c",
       "rcut": 6.0,
@@ -33,14 +36,20 @@ not as a separate model scaffold:
       "precision": "float32"
     },
     "fitting_net": {
-      "neuron": [192, 192, 192],
+      "neuron": [
+        192,
+        192,
+        192
+      ],
       "activation_function": "silu",
       "precision": "float32"
     }
   },
   "training": {
     "training_data": {
-      "systems": ["../data/data_0"],
+      "systems": [
+        "../data/data_0"
+      ],
       "batch_size": 1
     },
     "numb_steps": 1000000,

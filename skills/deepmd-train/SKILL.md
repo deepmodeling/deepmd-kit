@@ -34,7 +34,7 @@ Available model references:
 | [`models/se-e2-a.md`](models/se-e2-a.md) | The user wants a classical DeepPot-SE baseline, broad compatibility, or a smaller/established production model.                          |
 | [`models/dpa3.md`](models/dpa3.md)       | The user wants a high-accuracy DPA3/LAM workflow, large/diverse datasets, dynamic neighbor selection, or pretrained DPA3-style training. |
 | [`models/dpa4.md`](models/dpa4.md)       | The user wants the PyTorch-only DPA4/SeZM SO(3)-equivariant architecture and its `.pt2` deployment path.                                 |
-| [`models/dpa4c.md`](models/dpa4c.md)     | The user wants the compact DPA4C architecture, PyTorch Exportable training, and optional compressed `.pt2` deployment.                  |
+| [`models/dpa4c.md`](models/dpa4c.md)     | The user wants the compact DPA4C architecture, PyTorch Exportable training, and optional compressed `.pt2` deployment.                   |
 
 ## Model selection
 
