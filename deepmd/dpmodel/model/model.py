@@ -31,6 +31,9 @@ from deepmd.dpmodel.model.native_spin_model import (
 from deepmd.dpmodel.model.spin_model import (
     SpinModel,
 )
+from deepmd.utils.bridging import (
+    expand_bridging_method,
+)
 from deepmd.utils.spin import (
     Spin,
     normalize_spin_use_spin,
@@ -47,7 +50,14 @@ _model_factory = BackendModelFactory(
 )
 get_zbl_model = _model_factory.get_zbl_model
 
-_DPA4_SEZM_DESCRIPTOR_TYPES = ("dpa4", "DPA4", "sezm", "SeZM")
+_DPA4_SEZM_DESCRIPTOR_TYPES = (
+    "dpa4",
+    "DPA4",
+    "dpa4c",
+    "DPA4C",
+    "sezm",
+    "SeZM",
+)
 
 
 def get_standard_model(data: dict) -> BaseModel:
@@ -58,50 +68,67 @@ def get_standard_model(data: dict) -> BaseModel:
     data : dict
         The data to construct the model.
     """
-    data = copy.deepcopy(data)
-    # Analytical bridging (e.g. ZBL): the radii feed the DESCRIPTOR's
-    # InnerClamp/BridgingSwitch (mirrors pt's builder); the method builds the
-    # atomic model's InnerPotential below.
     bridging_method = str(data.get("bridging_method", "none"))
-    bridging_enabled = bridging_method.lower() not in ("none", "")
-    if bridging_enabled:
-        data["descriptor"]["inner_clamp_r_inner"] = data.get("bridging_r_inner", 0.5)
-        data["descriptor"]["inner_clamp_r_outer"] = data.get("bridging_r_outer", 0.8)
-    model = _model_factory.get_standard_model(data)
-    if not bridging_enabled:
-        return model
+    if bridging_method.lower() not in ("none", ""):
+        raise ValueError(
+            "`bridging_method` is not supported for a standard model: "
+            "analytical bridging builds a linear composition, not a "
+            "standard model. Route the config through `get_model` (which "
+            "expands the flag), or spell the composition explicitly with "
+            '`type: "linear_ener"` and an `inner_potential` sub-model.'
+        )
+    return _model_factory.get_standard_model(data)
 
-    descriptor = model.atomic_model.descriptor
-    atom_exclude_types = data.get("atom_exclude_types", [])
-    pair_exclude_types = data.get("pair_exclude_types", [])
-    # Composition, not a flag (first-principles design): the analytical
-    # bridging term is its own atomic model, summed with the learned one by the
-    # existing linear composition machinery.
-    from deepmd.dpmodel.atomic_model.inner_potential import (
-        InnerPotentialAtomicModel,
-    )
-    from deepmd.dpmodel.atomic_model.linear_atomic_model import (
-        LinearEnergyAtomicModel,
-    )
+
+def get_linear_model(data: dict) -> BaseModel:
+    """Build a linear energy model from a ``linear_ener`` config.
+
+    Children with a ``descriptor`` build as standard learned atomic
+    models; ``pairtab`` children build as pair-tabulation atomic models;
+    an ``inner_potential`` child builds the analytical bridging term. The
+    composition is the ONE owner of the bridging coupling: it derives the
+    learned sibling descriptor's ``inner_clamp_r_inner``/``_outer`` from
+    the ``inner_potential`` child's ``r_inner``/``r_outer``, so the radii
+    are written once in the config (issue #5948, task 2).
+
+    A top-level ``spin`` section (scheme ``native``) wraps the composed
+    atomic model as a :class:`NativeSpinEnergyModel`, with ``use_spin``
+    injected into every learned child's descriptor.
+
+    Parameters
+    ----------
+    data : dict
+        The model configuration.
+    """
     from deepmd.dpmodel.model.dp_linear_model import (
         LinearEnergyModel,
     )
 
-    zbl_atomic = InnerPotentialAtomicModel(
-        type_map=data["type_map"],
-        mode=bridging_method,
-        rcut=descriptor.get_rcut(),
-        sel=descriptor.get_sel(),
-    )
-    composed = LinearEnergyAtomicModel(
-        models=[model.atomic_model, zbl_atomic],
-        type_map=data["type_map"],
-        weights="sum",
-        # Both exclusions belong to the composition: its children share one
-        # graph, so "excluded" must cover the analytical term too.
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
-    )
+    data = copy.deepcopy(data)
+    spin = None
+    if "spin" in data:
+        spin_cfg = data.pop("spin")
+        if str(spin_cfg.get("scheme", "deepspin")) != "native":
+            raise NotImplementedError(
+                "Spin linear_ener models support only spin scheme 'native'."
+            )
+        use_spin = normalize_spin_use_spin(spin_cfg["use_spin"], data["type_map"])
+        spin = Spin(
+            use_spin=use_spin,
+            virtual_scale=spin_cfg.get("virtual_scale", 1.0),
+            allow_missing_label=spin_cfg.get("allow_missing_label", False),
+        )
+        for sub in data["models"]:
+            if "descriptor" in sub:
+                sub["descriptor"]["use_spin"] = use_spin
+    composed = _model_factory.get_linear_atomic_model(data)
+    if spin is not None:
+        if not composed.supports_native_spin():
+            raise NotImplementedError(
+                "spin scheme 'native' requires an atomic model declaring "
+                "supports_native_spin()"
+            )
+        return NativeSpinEnergyModel(atomic_model_=composed, spin=spin)
     return LinearEnergyModel(atomic_model_=composed)
 
 
@@ -135,14 +162,10 @@ def get_native_spin_model(data: dict) -> NativeSpinEnergyModel:
     eligible; the gate is that capability method, not a descriptor-type
     list.
 
-    The non-spin backbone is built by :func:`get_standard_model`, which OWNS
-    everything about assembling the atomic model -- descriptor/fitting,
-    exclusions and the analytical-bridging composition -- so ``spin`` and
-    ``bridging_method`` combine for free: the wrapper re-classes whatever
-    atomic model came back, be it a single learned model or a
-    ``LinearEnergyAtomicModel`` over ``[learned, InnerPotential]`` (the
-    analytical child accepts and ignores ``spin``; the learned child consumes
-    it).
+    The non-spin backbone is built by :func:`get_standard_model`. A spin
+    model with analytical bridging is a ``linear_ener`` composition and
+    routes through :func:`get_linear_model` instead (the ``bridging_method``
+    sugar expands to that form in :func:`get_model`).
 
     Parameters
     ----------
@@ -195,9 +218,13 @@ def get_model(data: dict) -> BaseModel:
     data : dict
         The data to construct the model.
     """
+    data = expand_bridging_method(data)
     return _model_factory.get_model(
         data,
         standard_model_factory=get_standard_model,
         spin_model_factory=get_spin_model,
         native_spin_model_factory=get_native_spin_model,
+        model_factories={
+            "linear_ener": get_linear_model,
+        },
     )

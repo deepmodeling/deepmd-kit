@@ -115,7 +115,7 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             self.sel_mix,
             self.rcut,
             add_chg_spin_ebd=True,
-            default_chg_spin=[0.5, -0.5],
+            default_chg_spin=[-1.0, 3.0],
         ).to(self.device)
         coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
         atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)

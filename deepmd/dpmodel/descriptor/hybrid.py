@@ -129,6 +129,10 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
         )
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Returns whether any sub-descriptor carries a charge/spin condition."""
+        return any(descrpt.has_chg_spin_ebd() for descrpt in self.descrpt_list)
+
     def get_default_chg_spin(self) -> list[float] | None:
         """Returns the default charge_spin value, or None.
 

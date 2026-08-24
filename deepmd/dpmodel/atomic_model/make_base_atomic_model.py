@@ -190,6 +190,17 @@ def make_base_atomic_model(
             """
             raise NotImplementedError("This atomi model doesn't support compression!")
 
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Whether :meth:`enable_compression` consumes ``min_nbor_dist``.
+
+            Returns
+            -------
+            bool
+                Concrete default ``True``, so a model that does not report
+                otherwise keeps the neighbor-statistics pass.
+            """
+            return True
+
         def make_atom_mask(
             self,
             atype: t_tensor,

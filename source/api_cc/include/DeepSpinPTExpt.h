@@ -105,6 +105,17 @@ class DeepSpinPTExpt : public DeepSpinBackend {
     assert(inited);
     return dchgspin;
   };
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   *
+   * It becomes the condition of every later forward pass that is not given
+   * one explicitly.  This backend serves models whose lower reads the
+   * condition as an ordinary input, so that stored value is the whole
+   * mechanism.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) override;
   void get_type_map(std::string& type_map);
   bool is_aparam_nall() const {
     assert(inited);
@@ -255,6 +266,8 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
   std::vector<double> default_chg_spin_;
+  /** Half-open row range of each charge-state value, from the archive. */
+  std::vector<std::pair<double, double> > chg_spin_table_ranges_;
   std::vector<bool> use_spin_;
   double rcut;
   int gpu_id;

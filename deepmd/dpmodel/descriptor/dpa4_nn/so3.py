@@ -131,10 +131,13 @@ class FocusLinear(NativeOP):
             xp, self.weight[...], device=array_api_compat.device(x)
         )
         weight = xp.reshape(weight, (self.in_channels, self.n_focus, self.out_channels))
-        # einsum "bfi,ifo->bfo" as a broadcast batched matmul:
-        # (B, F, 1, Cin) @ (1, F, Cin, Cout) -> (B, F, 1, Cout)
+        # einsum "bfi,ifo->bfo" as F independent (B, Cin) x (Cin, Cout) GEMMs.
+        # B stays the GEMM rows so the weight is used in place; making B the
+        # batch axis would broadcast it to (B, F, Cin, Cout) and leave autograd
+        # reducing that expansion.  At n_focus=1 both permutes are free views.
         weight = xp.permute_dims(weight, (1, 0, 2))  # (F, Cin, Cout)
-        out = xp.matmul(x[:, :, None, :], weight[None, ...])[..., 0, :]
+        out = xp.matmul(xp.permute_dims(x, (1, 0, 2)), weight)  # (F, B, Cout)
+        out = xp.permute_dims(out, (1, 0, 2))  # (B, F, Cout)
         if self.use_bias:
             bias = xp_asarray_nodetach(
                 xp, self.bias[...], device=array_api_compat.device(x)
@@ -439,12 +442,14 @@ class SO3Linear(NativeOP):
         weight_expanded = xp.take(weight, expand_index, axis=0)  # (D, Cin, F, Cout)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
-        # einsum "ndfi,difo->ndfo" as a broadcast batched matmul:
-        # (N, D, F, 1, Cin) @ (1, D, F, Cin, Cout) -> (N, D, F, 1, Cout)
+        # einsum "ndfi,difo->ndfo". Batch over (D, F) so N remains the GEMM
+        # row dimension: this avoids materializing N copies of the weight and
+        # the corresponding gradient reduction on every backward.
         weight_expanded = xp.permute_dims(
             weight_expanded, (0, 2, 1, 3)
         )  # (D, F, Cin, Cout)
-        out = xp.matmul(x[:, :, :, None, :], weight_expanded[None, ...])[..., 0, :]
+        out = xp.matmul(xp.permute_dims(x, (1, 2, 0, 3)), weight_expanded)
+        out = xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, Cout)
 
         # === Step 3. Add l=0 bias ===
         if self.mlp_bias:

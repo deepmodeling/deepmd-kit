@@ -28,6 +28,7 @@
 #include <cuda_runtime.h>
 
 #include <cmath>
+#include <cstdint>
 
 #include "dpa1_graph_compress_launch.h"
 
@@ -1141,6 +1142,9 @@ cudaError_t dispatch_forward_index(const Arguments& arguments,
   if (arguments.index_kind == IndexKind::kInt32) {
     return dispatch_forward_basis<Width, int>(arguments, stream);
   }
+  if (arguments.index_kind == IndexKind::kUInt32) {
+    return dispatch_forward_basis<Width, std::uint32_t>(arguments, stream);
+  }
   return dispatch_forward_basis<Width, long>(arguments, stream);
 }
 
@@ -1149,6 +1153,9 @@ cudaError_t dispatch_backward_index(const Arguments& arguments,
                                     cudaStream_t stream) {
   if (arguments.index_kind == IndexKind::kInt32) {
     return dispatch_backward_basis<Width, int>(arguments, stream);
+  }
+  if (arguments.index_kind == IndexKind::kUInt32) {
+    return dispatch_backward_basis<Width, std::uint32_t>(arguments, stream);
   }
   return dispatch_backward_basis<Width, long>(arguments, stream);
 }

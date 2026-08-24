@@ -217,17 +217,18 @@ def spin_args() -> list[Argument]:
         "Required for the `deepspin` scheme; ignored by the `native` scheme."
     )
     doc_scheme = (
-        "The spin implementation scheme, only effective for the DPA4/SeZM model. "
+        "The spin implementation scheme, only effective for descriptors that declare "
+        "native spin support (currently DPA4/SeZM and DPA4C). "
         "`native` injects the per-atom spin vector as an equivariant feature "
-        "(l=0 magnitude and l=1 direction) directly into the descriptor and "
+        "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
         "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
         "representation and is the default. Other models always use the `deepspin` scheme."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
-        "per-atom spin with zeros instead of raising. Supported only by the SeZM/DPA4 "
-        "spin model; defaults to false."
+        "per-atom spin with zeros instead of raising. Supported only by the native "
+        "spin models (SeZM/DPA4 and DPA4C); defaults to false."
     )
 
     return [
@@ -447,6 +448,149 @@ def descrpt_se_a_args() -> list[Argument]:
         ),
         Argument(
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
+    "dpa4c",
+    alias=["DPA4C"],
+    doc=supported_backends("pt_expt")
+    + "DPA4C is the compact and compressible degree-wise descriptor of the DPA4 family.",
+)
+def descrpt_dpa4c_args() -> list[Argument]:
+    """Return the DPA4C descriptor arguments."""
+    return [
+        Argument(
+            "rcut",
+            float,
+            optional=True,
+            default=6.0,
+            doc="The outer cutoff radius.",
+        ),
+        Argument(
+            "channels",
+            int,
+            optional=True,
+            default=32,
+            doc=(
+                "Scalar degree-zero and edge channel width. Supported values "
+                "are 8, 16, 32, 64, and 128. This is the primary scaling "
+                "knob: it widens the edge features, the per-atom angular "
+                "state, and the descriptor output together. The fitting "
+                "network is sized against it; the released grades pair "
+                "channels 8, 32, 64, and 128 with fitting hidden widths 96, "
+                "192, 256, and 384."
+            ),
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            default=2,
+            doc="Maximum angular degree. Supported values are 2, 3, and 4.",
+        ),
+        Argument(
+            "basis_type",
+            str,
+            optional=True,
+            default="bessel",
+            doc="DPA4 radial basis type: `bessel` or `gaussian`.",
+        ),
+        Argument(
+            "n_radial",
+            int,
+            optional=True,
+            default=16,
+            doc=(
+                "Number of DPA4 radial basis functions forming the fixed "
+                "analytic radial input."
+            ),
+        ),
+        Argument(
+            "radial_modes",
+            int,
+            optional=True,
+            default=0,
+            doc=(
+                "Number of shared radial mode profiles that every ordered "
+                "atom-type pair mixes with its own coefficients. Zero leaves "
+                "each pair with a rescaled copy of one shared radial "
+                "function; larger values let each pair select its own radial "
+                "shape."
+            ),
+        ),
+        Argument(
+            "use_amp",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "If True, run the per-edge stage under bfloat16 automatic "
+                "mixed precision on CUDA during training. This lowers the "
+                "dominant activation footprint, which scales with the edge "
+                "count. The destination reduction and the invariant readout "
+                "stay in the descriptor precision. Evaluation and inference "
+                "are governed independently by the `DP_AMP_INFER` environment "
+                "variable, so a model trained in full precision can still "
+                "infer under mixed precision, and the reverse."
+            ),
+        ),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc="Ordered atom-type pairs excluded from the descriptor.",
+        ),
+        Argument(
+            "precision",
+            str,
+            optional=True,
+            default="float32",
+            doc="Floating-point precision of descriptor parameters.",
+        ),
+        Argument(
+            "trainable",
+            bool,
+            optional=True,
+            default=True,
+            doc="Whether descriptor parameters are trainable.",
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "Whether to condition the descriptor on the frame-level "
+                "`charge_spin` input `[charge, multiplicity]` of shape "
+                "`[nframes, 2]`. The embedded condition is added to the "
+                "center type embedding and to the hidden state of the "
+                "ordered type-pair encoder, so it changes how a given "
+                "geometry maps to the degree-wise moments. This is unrelated "
+                "to `model.spin`, which carries a per-atom magnetic moment."
+            ),
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=(
+                "Fallback `[charge, multiplicity]` used when `charge_spin` is "
+                "absent from the input data. Only read when "
+                "`add_chg_spin_ebd` is enabled. Compression folds this value "
+                "into the frozen tables, so a compressed model evaluates "
+                "exactly this charge state and requires the option to be set."
+            ),
+        ),
+        Argument(
+            "seed",
+            [int, None],
+            optional=True,
+            default=None,
+            doc="Random seed for parameter initialization.",
         ),
     ]
 
@@ -3247,7 +3391,10 @@ model_args_plugin = ArgsPlugin()
 hybrid_model_args_plugin = ArgsPlugin()
 
 
-def model_args(exclude_hybrid: bool = False) -> list[Argument]:
+def model_args(
+    exclude_hybrid: bool = False,
+    extra_model_types: "list[Argument] | None" = None,
+) -> list[Argument]:
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
@@ -3389,6 +3536,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
                 [
                     *model_args_plugin.get_all_argument(),
                     *hybrid_models,
+                    *(extra_model_types or []),
                 ],
                 optional=True,
                 default_tag="standard",
@@ -3445,11 +3593,59 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
         + "Standard model, which contains a descriptor and a fitting.",
     )
     return ca
+
+
+def _bridging_method_args() -> list[Argument]:
+    """The concise analytical-bridging arguments, shared by the model types
+    that accept the ``bridging_method`` sugar (``dpa4`` and ``standard``).
+    """
+    doc_bridging_method = (
+        "Short-range bridging method. Currently supports 'ZBL'. "
+        "The value is case-insensitive; set it to 'None' to disable bridging. "
+        "This concise form is the recommended interface; it expands to the "
+        "equivalent explicit `linear_ener` composition over the learned "
+        "model and an `inner_potential` sub-model."
+    )
+    doc_bridging_r_inner = (
+        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
+        "Only used when `bridging_method` is enabled. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
+        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
+    )
+    doc_bridging_r_outer = (
+        "Outer clamping radius in Å. The transition zone "
+        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
+        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
+    )
+    return [
+        Argument(
+            "bridging_method",
+            str,
+            optional=True,
+            default="None",
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
+        ),
+        Argument(
+            "bridging_r_inner",
+            float,
+            optional=True,
+            default=0.5,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
+        ),
+        Argument(
+            "bridging_r_outer",
+            float,
+            optional=True,
+            default=0.8,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
+        ),
+    ]
 
 
 @model_args_plugin.register(
@@ -3487,21 +3683,6 @@ def sezm_model_args() -> Argument:
         "This training-time setting is independent of `use_compile`; eval-time "
         "TF32 is controlled separately by `validating.tf32_infer` or "
         "`DP_TF32_INFER`."
-    )
-    doc_bridging_method = (
-        "Short-range bridging method. Currently supports 'ZBL'. "
-        "The value is case-insensitive; set it to 'None' to disable bridging."
-    )
-    doc_bridging_r_inner = (
-        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
-        "Only used when `bridging_method` is enabled. "
-        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
-        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
-    )
-    doc_bridging_r_outer = (
-        "Outer clamping radius in Å. The transition zone "
-        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
-        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
     )
     doc_lora_rank = "LoRA rank; adapters are injected on every SO3Linear and SO2Linear."
     doc_lora_alpha = (
@@ -3602,27 +3783,7 @@ def sezm_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "pt_expt") + doc_info,
             ),
-            Argument(
-                "bridging_method",
-                str,
-                optional=True,
-                default="None",
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
-            ),
-            Argument(
-                "bridging_r_inner",
-                float,
-                optional=True,
-                default=0.5,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
-            ),
-            Argument(
-                "bridging_r_outer",
-                float,
-                optional=True,
-                default=0.8,
-                doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
-            ),
+            *_bridging_method_args(),
             Argument(
                 "lora",
                 dict,
@@ -3706,6 +3867,44 @@ def pairtab_model_args() -> Argument:
     return ca
 
 
+def inner_potential_model_args() -> Argument:
+    """Child-only model type: NOT registered in ``model_args_plugin``, so
+    ``model.type: "inner_potential"`` is rejected at the top level; it is
+    injected only into the ``linear_ener`` ``models`` variant.
+    """
+    doc_mode = (
+        "The analytical pair-potential formula. Currently supports 'zbl' "
+        "(case-insensitive)."
+    )
+    doc_r_inner = (
+        "Inner clamping radius in Å, applied to the learned sibling's "
+        "descriptor: ML descriptor distances below this radius are frozen. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the "
+        "same value so frames with atom pairs closer than `r_inner` are "
+        "skipped during training."
+    )
+    doc_r_outer = (
+        "Outer clamping radius in Å, applied to the learned sibling's "
+        "descriptor. The transition zone `[r_inner, r_outer]` uses a "
+        "C^3-continuous septic Hermite polynomial."
+    )
+    ca = Argument(
+        "inner_potential",
+        dict,
+        [
+            Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
+            Argument("r_inner", float, optional=True, default=0.5, doc=doc_r_inner),
+            Argument("r_outer", float, optional=True, default=0.8, doc=doc_r_outer),
+        ],
+        doc=supported_backends("pt", "pt_expt")
+        + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
+        "only as a sub-model of a `linear_ener` composition; the clamping "
+        "radii are derived onto the learned sibling's descriptor at build "
+        "time.",
+    )
+    return ca
+
+
 @hybrid_model_args_plugin.register("linear_ener")
 def linear_ener_model_args() -> Argument:
     doc_weights = (
@@ -3714,7 +3913,11 @@ def linear_ener_model_args() -> Argument:
         'If "sum", the weights are set to be 1.'
     )
     doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
-    models_args = model_args(exclude_hybrid=True)
+    models_args = model_args(
+        exclude_hybrid=True,
+        # child-only model type: valid inside `models`, rejected at top level
+        extra_model_types=[inner_potential_model_args()],
+    )
     models_args.name = "models"
     models_args.fold_subdoc = True
     models_args.set_dtype(list)
@@ -5930,10 +6133,13 @@ def validating_args() -> Argument:
         "Metric used to determine the best checkpoint during full validation. "
         "The string is case-insensitive. For energy training the supported "
         f"values are {energy_metrics}; for spin-energy training they are "
-        f"{spin_metrics}. `E` and `V` are per-atom metrics, `F` and `FR` use "
+        f"{spin_metrics}. `E` and `V` are per-atom metrics, `S` is stress, the "
+        "negated virial divided by the cell volume, `F` and `FR` use "
         "component-wise force errors, and `FM` uses magnetic-force errors, "
         "matching `dp test`. The corresponding loss prefactors must not both "
-        "be 0."
+        "be 0; `S` and `V` are two presentations of the virial and both "
+        "require `start_pref_v` and `limit_pref_v`. The validation log reports "
+        "whichever of `S` and `V` is selected, defaulting to `S`."
     )
     doc_full_val_file = "The file for writing full validation results only. This file is independent from `training.disp_file`."
     doc_full_val_start = (

@@ -794,7 +794,13 @@ class TestPTEnergyLossForceGradAccum:
     Covers: mse, mae, huber; plus non-mixed no-op.
     """
 
-    def _make_loss(self, loss_func="mse", use_huber=False, f_use_norm=False):
+    def _make_loss(
+        self,
+        loss_func="mse",
+        use_huber=False,
+        f_use_norm=False,
+        relative_f=None,
+    ):
         return EnergyStdLoss(
             starter_learning_rate=1.0,
             start_pref_e=0.0,
@@ -806,6 +812,7 @@ class TestPTEnergyLossForceGradAccum:
             loss_func=loss_func,
             use_huber=use_huber,
             f_use_norm=f_use_norm,
+            relative_f=relative_f,
         )
 
     def _run_invariant(self, loss_obj, f_A, f_A_hat, f_B, f_B_hat):
@@ -891,6 +898,34 @@ class TestPTEnergyLossForceGradAccum:
             f_B,
             f_B_hat,
         )
+
+    @pytest.mark.parametrize("masked", [False, True])
+    def test_relative_force_norm_uses_normalized_residual(self, masked):
+        """Vector-norm losses consume the relative-force residual."""
+        relative_f = 1.0
+        prediction = torch.zeros(1, 2, 3, dtype=torch.float64, device="cpu")
+        label_force = torch.tensor(
+            [[[3.0, 4.0, 0.0], [0.0, 0.0, 2.0]]],
+            dtype=torch.float64,
+            device="cpu",
+        )
+        model_pred = {"force": prediction}
+        if masked:
+            model_pred["mask"] = torch.ones(1, 2, dtype=torch.float64, device="cpu")
+        label = {"force": label_force, "find_force": 1.0}
+        loss_obj = self._make_loss(
+            "mae",
+            f_use_norm=True,
+            relative_f=relative_f,
+        )
+
+        actual = _ener_loss_fn(loss_obj, model_pred, label, 2)
+        label_norm = torch.linalg.vector_norm(label_force, dim=-1)
+        residual_norm = label_norm / (label_norm + relative_f)
+        # The loss is assembled on the training device, while the inputs above
+        # are built on the host like every other case in this file.
+        expected = residual_norm.mean().to(actual.device)
+        torch.testing.assert_close(actual, expected)
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same force loss as no mask."""

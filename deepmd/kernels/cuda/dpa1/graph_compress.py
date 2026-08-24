@@ -911,8 +911,6 @@ def dpa1_graph_compress_energy_force(
         lower, upper, table_max, stride0, stride1 = (
             float(x) for x in desc.compress_info[0].tolist()[:5]
         )
-    *hidden, head = fit.nets[0].layers
-    fempty = hidden[0].w.new_empty(0)
     inverse_stddev = torch.reciprocal(se.stddev[:, 0, :]).contiguous()
     degree_gain = (
         se.adam_degree_gain_raw.to(torch.float32).contiguous()
@@ -949,62 +947,40 @@ def dpa1_graph_compress_energy_force(
         float(se.nnei),
         (int(se.lmax) + 1) ** 2,
     )
-    weights = [layer.w.contiguous() for layer in hidden]
-    biases = [
-        layer.b.contiguous() if layer.b is not None else fempty for layer in hidden
-    ]
-    timesteps = [
-        layer.idt.contiguous() if layer.idt is not None else fempty for layer in hidden
-    ]
-    residuals = [1 if layer.resnet else 0 for layer in hidden]
-    head_weight = head.w.reshape(-1).contiguous()
-    head_bias = (
-        head.b.reshape(-1).to(torch.float32).contiguous()
-        if head.b is not None
-        else fempty
-    )
-    atom_bias = atom_bias.to(torch.float64).contiguous()
-    from deepmd.kernels.triton.dpa1.activation import (
-        ACT_CODES,
+    from deepmd.kernels.cuda.graph_fitting import (
+        fitting_operator_arguments,
     )
 
-    activation = ACT_CODES[str(hidden[0].activation_function).lower()]
+    network = fitting_operator_arguments(fit)
+    atom_bias = atom_bias.to(torch.float64).contiguous()
     atom_energy_raw, fitting_saved = torch.ops.deepmd.graph_fitting(
         descriptor,
         atype,
-        weights,
-        biases,
-        timesteps,
-        residuals,
-        head_weight,
-        head_bias,
+        network.weights,
+        network.biases,
+        network.residuals,
+        network.head_weight,
+        network.head_bias,
         atom_bias,
-        activation,
+        network.activation,
     )
     owned = ownership[:, None].to(atom_energy_raw.dtype)
     energy_seed = owned
     atom_energy = atom_energy_raw * owned
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        frame_id_from_n_node,
+    from deepmd.kernels.cuda.edge_force_virial import (
+        frame_scalar_sum,
     )
 
-    frame_index = frame_id_from_n_node(
-        graph.n_node,
-        n_total=atom_energy.shape[0],
-    )
-    energy = torch.zeros(
-        graph.n_node.shape[0],
-        1,
-        dtype=atom_energy.dtype,
-        device=atom_energy.device,
-    ).index_add_(0, frame_index, atom_energy)
+    energy = frame_scalar_sum(atom_energy, graph.n_node)
     del descriptor
     descriptor_gradient = torch.ops.deepmd.graph_fitting_backward(
         energy_seed,
         fitting_saved,
-        weights,
-        residuals,
-        head_weight,
+        network.weights,
+        network.biases,
+        network.residuals,
+        network.head_weight,
+        network.activation,
     )
     del fitting_saved
     edge_gradient = torch.ops.deepmd.dpa1_graph_compress_backward(
@@ -1036,7 +1012,7 @@ def dpa1_graph_compress_energy_force(
         float(se.env_protection),
         float(se.nnei),
     )
-    force, atom_virial, virial = edge_force_virial(
+    force, atom_virial, virial, _ = edge_force_virial(
         edge_gradient,
         edge_vec,
         graph.edge_index,
@@ -1046,6 +1022,7 @@ def dpa1_graph_compress_energy_force(
         graph.source_order,
         graph.source_row_ptr,
         graph.n_node,
+        edge_vec.new_empty(0),
         node_capacity,
         do_atomic_virial,
     )

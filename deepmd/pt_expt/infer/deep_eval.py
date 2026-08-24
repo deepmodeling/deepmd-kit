@@ -58,12 +58,20 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
+from deepmd.pt_expt.infer.charge_state import (
+    ChargeStateFold,
+    charge_states_per_frame,
+    single_charge_state,
+)
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
+)
+from deepmd.utils.charge_state import (
+    CHARGE_STATE_TABLE_RANGES,
 )
 from deepmd.utils.pt_checkpoint import (
     detect_pt_checkpoint_backend,
@@ -120,19 +128,6 @@ def _graph_spin_output_key(odef: "OutputVariableDef") -> str | None:
     if odef.magnetic and odef.category == OutputVariableCategory.DERV_R:
         return "force_mag"
     return _GRAPH_CATEGORY_TO_KEY.get(odef.category)
-
-
-def _reshape_charge_spin(
-    charge_spin: np.ndarray, nframes: int, dim_chg_spin: int
-) -> np.ndarray:
-    charge_spin_arr = np.asarray(charge_spin)
-    try:
-        return charge_spin_arr.reshape(nframes, dim_chg_spin)
-    except ValueError as err:
-        raise ValueError(
-            f"charge_spin must be reshape-compatible with ({nframes}, {dim_chg_spin}), "
-            f"got shape {charge_spin_arr.shape}."
-        ) from err
 
 
 def _warn_legacy_edge_vec(metadata: dict) -> None:
@@ -223,6 +218,9 @@ class DeepEval(DeepEvalBackend):
         # identifies the lower ABI.
         self._neighbor_graph_method = neighbor_graph_method
         self._is_pt2 = model_file.endswith(".pt2")
+        # Only a compressed ``.pt2`` folds its charge state into constants; a
+        # model that reads the condition as an ordinary input needs no rebuild.
+        self._charge_state_fold: ChargeStateFold | None = None
 
         if self._is_pt2:
             self._load_pt2(model_file)
@@ -247,7 +245,11 @@ class DeepEval(DeepEvalBackend):
         # where the corresponding builder knob is ``nlist_backend``.
         if neighbor_graph_method != "auto" and getattr(self, "metadata", {}).get(
             "lower_input_kind"
-        ) not in ("graph", "dpa1_canonical"):
+        ) not in (
+            "graph",
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        ):
             raise ValueError(
                 f"neighbor_graph_method={neighbor_graph_method!r} only applies to "
                 "graph-routed artifacts (lower_input_kind == 'graph'); this "
@@ -312,7 +314,11 @@ class DeepEval(DeepEvalBackend):
                 f"Unknown nlist_backend '{nlist_backend}'; "
                 "expected 'auto', 'vesin', or 'native'."
             )
-        if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
+        if self.metadata.get("lower_input_kind") in (
+            "graph",
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        ):
             if self.neighbor_list is not None:
                 raise ValueError(
                     "neighbor_list cannot be used with this graph-routed model: "
@@ -493,7 +499,9 @@ class DeepEval(DeepEvalBackend):
 
         Archive entries are located under ``model/extra/`` so that the
         PyTorch 2.11 ``load_pt2`` loader accepts the archive without the
-        "outdated pt2 file" fallback warning.
+        "outdated pt2 file" fallback warning.  A compressed charge-conditioned
+        archive carries a second compiled artifact beside the inference lower,
+        which :class:`ChargeStateFold` loads to serve a runtime condition.
         """
         import zipfile
 
@@ -535,6 +543,10 @@ class DeepEval(DeepEvalBackend):
         # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
         self._pt2_runner = aoti_load_package(model_file)
         self.exported_module = None
+
+        self._charge_state_fold = ChargeStateFold.load(
+            model_file, self.metadata, self._pt2_runner
+        )
 
     def _load_pt(self, model_file: str, head: str | None = None) -> None:
         """Load a `.pt` training checkpoint (eager mode, no torch.export)."""
@@ -696,6 +708,11 @@ class DeepEval(DeepEvalBackend):
             "has_chg_spin_ebd": model.has_chg_spin_ebd(),
             "has_default_chg_spin": model.get_default_chg_spin() is not None,
             "default_chg_spin": model.get_default_chg_spin(),
+            "chg_spin_table_ranges": (
+                [list(bounds) for bounds in CHARGE_STATE_TABLE_RANGES]
+                if model.has_chg_spin_ebd()
+                else None
+            ),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
@@ -914,25 +931,193 @@ class DeepEval(DeepEvalBackend):
         )
 
     def get_dim_chg_spin(self) -> int:
-        """Get the width of charge/spin condition inputs."""
+        """Get the width of the conditioning input of the compiled forward.
+
+        This gates whether a forward pass is handed a condition tensor, and is
+        zero both for a model that carries no charge/spin conditioning and for
+        a compressed one, whose condition lives in frozen tables rather than in
+        an input.
+        """
         if self._dpmodel is not None:
             return self._dpmodel.get_dim_chg_spin()
         return int(self.metadata.get("dim_chg_spin", 0))
 
+    def _no_runtime_condition_reason(self) -> str:
+        """Explain why the loaded model serves no runtime charge state.
+
+        A conditioning width of zero has two causes that call for different
+        answers. A model built without a charge state embedding carries no
+        condition at all. A charge-conditioned one reports zero because
+        compression folded its state into frozen tables: it still carries a
+        condition, but moving to another one means rebuilding those tables,
+        and only a ``.pt2`` archive ships that rebuild beside its inference
+        lower.
+
+        Returns
+        -------
+        str
+            The reason, phrased to complete a sentence about this model.
+        """
+        if not self.has_chg_spin_ebd():
+            return "this model carries no charge/spin conditioning."
+        return (
+            "this model's charge state is folded into its compressed tables "
+            "rather than read as an input, and the artifact it was loaded "
+            "from ships no rebuild of those tables, so it serves only the "
+            "state it was compressed against. Freeze the compressed model as "
+            "a .pt2 archive, which carries that rebuild."
+        )
+
+    def _apply_charge_state(self, charge_spin: np.ndarray | None = None) -> None:
+        """Serve a charge/spin condition that the compiled forward cannot read.
+
+        A compressed descriptor folds its condition into frozen tables that
+        reach the lower as constants, leaving the forward with no conditioning
+        argument. Rebuilding those tables is the whole mechanism for such a
+        model, and it travels with the archive rather than with the loader, so
+        a requested condition that no rebuild can reach is an error rather
+        than an argument to drop.
+
+        Rebuilding overwrites loaded module state and is therefore not safe to
+        interleave with a forward pass; evaluation is single-threaded.
+
+        Parameters
+        ----------
+        charge_spin : np.ndarray, optional
+            The requested condition. A folded model falls back to the state
+            its snapshot was frozen against when none is given.
+
+        Raises
+        ------
+        ValueError
+            If the loaded model cannot serve the requested condition.
+        """
+        fold = self._charge_state_fold
+        if fold is None:
+            if charge_spin is not None and self.get_dim_chg_spin() == 0:
+                raise ValueError(
+                    f"charge_spin was given, but {self._no_runtime_condition_reason()}"
+                )
+            return
+        if charge_spin is None:
+            charge_spin = self.metadata["default_chg_spin"]
+        fold.apply(single_charge_state(charge_spin, fold.width))
+
+    @property
+    def _dpmodel_dim_chg_spin(self) -> int:
+        """Width of the condition the deserialized model reads as an argument.
+
+        An archive that ships its model dict is deserialized into an ordinary
+        implementation beside the compiled lower, and the introspection
+        methods evaluate that one. It reads the condition as an argument even
+        where the lower reads none, so the two widths part company exactly
+        when a fold exists, and the fold carries the width.
+        """
+        if self._charge_state_fold is not None:
+            return self._charge_state_fold.width
+        return self.get_dim_chg_spin()
+
     def _make_charge_spin_input(
         self, nframes: int, charge_spin: np.ndarray | None = None
     ) -> torch.Tensor | None:
-        """Build the fixed charge/spin tensor used by exported SeZM models."""
+        """Serve a charge/spin condition and build the input the forward reads.
+
+        The condition reaches the model by one of two routes, and this takes
+        whichever the model was frozen with, so that a caller does not depend
+        on it. A forward that reads the condition as an ordinary input gets it
+        as the returned tensor; a forward compiled without that input has the
+        condition applied to its constants by :meth:`_apply_charge_state` and
+        receives no tensor.
+
+        Parameters
+        ----------
+        nframes : int
+            Number of frames the returned tensor covers.
+        charge_spin : np.ndarray, optional
+            The requested condition, reshape-compatible with
+            ``(nframes, dim_chg_spin)``. Defaults to the condition stored in
+            the model.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
+            when the compiled forward takes no conditioning input.
+
+        Raises
+        ------
+        ValueError
+            If the model reads a condition as an input and neither the caller
+            nor the model supplies one.
+        """
+        self._apply_charge_state(charge_spin)
+        return self._charge_spin_tensor(nframes, charge_spin, self.get_dim_chg_spin())
+
+    def _make_dpmodel_charge_spin_input(
+        self, nframes: int, charge_spin: np.ndarray | None = None
+    ) -> torch.Tensor | None:
+        """Build the condition the deserialized model reads.
+
+        The introspection methods evaluate that model rather than the compiled
+        lower, so they condition it through this argument; folding the state
+        into the compressed tables would not reach them, as those tables are
+        read only by the fused kernel behind the lower.
+
+        Parameters
+        ----------
+        nframes : int
+            Number of frames the returned tensor covers.
+        charge_spin : np.ndarray, optional
+            The requested condition. Defaults to the condition stored in the
+            model.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
+            for a model that carries no charge/spin conditioning.
+        """
+        return self._charge_spin_tensor(
+            nframes, charge_spin, self._dpmodel_dim_chg_spin
+        )
+
+    def _charge_spin_tensor(
+        self, nframes: int, charge_spin: np.ndarray | None, dim_chg_spin: int
+    ) -> torch.Tensor | None:
+        """Validate a condition of the given width and broadcast it per frame.
+
+        Parameters
+        ----------
+        nframes : int
+            Number of frames the returned tensor covers.
+        charge_spin : np.ndarray, optional
+            The requested condition, reshape-compatible with
+            ``(nframes, dim_chg_spin)``. Defaults to the condition stored in
+            the model.
+        dim_chg_spin : int
+            Width of the condition the consumer reads; zero if it reads none.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The condition with shape ``(nframes, dim_chg_spin)``, or ``None``
+            when the consumer takes no conditioning input.
+
+        Raises
+        ------
+        ValueError
+            If a condition is read and neither the caller nor the model
+            supplies one.
+        """
         from deepmd.pt_expt.utils.env import (
             DEVICE,
         )
 
-        dim_chg_spin = self.get_dim_chg_spin()
         if dim_chg_spin == 0:
             return None
         if charge_spin is not None:
             return torch.tensor(
-                _reshape_charge_spin(charge_spin, nframes, dim_chg_spin),
+                charge_states_per_frame(charge_spin, nframes, dim_chg_spin),
                 dtype=torch.float64,
                 device=DEVICE,
             )
@@ -945,7 +1130,11 @@ class DeepEval(DeepEvalBackend):
         if hasattr(default_chg_spin, "cpu"):
             default_chg_spin = default_chg_spin.cpu().numpy()
         return (
-            torch.tensor(default_chg_spin, dtype=torch.float64, device=DEVICE)
+            torch.tensor(
+                single_charge_state(default_chg_spin, dim_chg_spin),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
             .view(1, dim_chg_spin)
             .expand(nframes, -1)
             .contiguous()
@@ -1753,7 +1942,11 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        if self.metadata.get("lower_input_kind") in ("graph", "dpa1_canonical"):
+        if self.metadata.get("lower_input_kind") in (
+            "graph",
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        ):
             return self._eval_model_graph(
                 coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
@@ -1811,7 +2004,7 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        if self.metadata.get("lower_input_kind") == "graph":
+        if self.metadata.get("lower_input_kind") in ("graph", "dpa4c_canonical"):
             # Native-spin (NeighborGraph route): no virtual atoms and no
             # extended/nlist ABI at all -- dispatch to the graph-native fast
             # path (mirrors _eval_model's dispatch to _eval_model_graph for
@@ -2090,22 +2283,73 @@ class DeepEval(DeepEvalBackend):
             # the same axis as ``atype``/``spin`` (mirrors _eval_model_graph).
             aparam_t = aparam_t.reshape(nframes * natoms, -1)
 
-        model_inputs = (
-            atype_t,
-            n_node_t,
-            n_node_t,
-            edge_index_t,
-            edge_vec_t,
-            edge_mask_t,
-            destination_order_t,
-            destination_row_ptr_t,
-            source_order_t,
-            source_row_ptr_t,
-            spin_t,
-            fparam_t,
-            aparam_t,
-            self._make_charge_spin_input(nframes, charge_spin),
-        )
+        if self.metadata.get("lower_input_kind") == "dpa4c_canonical":
+            # The compact canonical ABI has no conditional tail, so the moment
+            # is the last slot rather than the eleventh, and any conditioning
+            # input the artifact cannot receive is an error rather than a
+            # silently dropped argument.
+            if (
+                self.get_dim_fparam() > 0
+                or self.get_dim_aparam() > 0
+                or int(self.metadata.get("dim_chg_spin", 0) or 0) > 0
+            ):
+                raise NotImplementedError(
+                    "compact canonical artifacts carry no fparam/aparam/"
+                    "charge_spin inputs; a model requiring them must not be "
+                    "frozen with a canonical lower kind."
+                )
+            # A compressed descriptor still serves a condition, through the
+            # constants its fold rewrites rather than through an argument.
+            self._apply_charge_state(charge_spin)
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                NeighborGraph,
+            )
+            from deepmd.pt_expt.utils.canonical_graph import (
+                canonical_graph_from_neighbor_graph,
+            )
+
+            compact = canonical_graph_from_neighbor_graph(
+                NeighborGraph(
+                    n_node=n_node_t,
+                    edge_index=edge_index_t,
+                    edge_vec=edge_vec_t,
+                    edge_mask=edge_mask_t,
+                    n_local=n_node_t,
+                    destination_order=destination_order_t,
+                    destination_row_ptr=destination_row_ptr_t,
+                    source_order=source_order_t,
+                    source_row_ptr=source_row_ptr_t,
+                    destination_sorted=bool(graph.destination_sorted),
+                )
+            )
+            model_inputs = (
+                atype_t,
+                compact.n_node,
+                compact.n_local,
+                compact.source,
+                compact.edge_vec,
+                compact.destination_row_ptr,
+                compact.source_row_ptr,
+                compact.source_order,
+                spin_t.to(torch.float32),
+            )
+        else:
+            model_inputs = (
+                atype_t,
+                n_node_t,
+                n_node_t,
+                edge_index_t,
+                edge_vec_t,
+                edge_mask_t,
+                destination_order_t,
+                destination_row_ptr_t,
+                source_order_t,
+                source_row_ptr_t,
+                spin_t,
+                fparam_t,
+                aparam_t,
+                self._make_charge_spin_input(nframes, charge_spin),
+            )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:
@@ -2204,7 +2448,10 @@ class DeepEval(DeepEvalBackend):
             device=DEVICE,
         )
 
-        if self.metadata.get("lower_input_kind") == "dpa1_canonical":
+        if self.metadata.get("lower_input_kind") in (
+            "dpa1_canonical",
+            "dpa4c_canonical",
+        ):
             # The canonical ABI has NO fparam/aparam/charge_spin slots; the
             # export gate (fitting_eligible) rejects such models today, so
             # this is unreachable -- assert it loudly so a future loosening
@@ -2216,11 +2463,14 @@ class DeepEval(DeepEvalBackend):
                 or int(self.metadata.get("dim_chg_spin", 0) or 0) > 0
             ):
                 raise NotImplementedError(
-                    "dpa1_canonical artifacts carry no fparam/aparam/"
+                    "compact canonical artifacts carry no fparam/aparam/"
                     "charge_spin inputs; a model requiring them must not be "
-                    "frozen with lower_kind='dpa1_canonical' (the export "
-                    "eligibility gate should have rejected it)."
+                    "frozen with a canonical lower kind (the export eligibility "
+                    "gate should have rejected it)."
                 )
+            # A compressed descriptor still serves a condition, through the
+            # constants its fold rewrites rather than through an argument.
+            self._apply_charge_state(charge_spin)
             from deepmd.dpmodel.utils.neighbor_graph import (
                 NeighborGraph,
             )
@@ -2566,6 +2816,10 @@ class DeepEval(DeepEvalBackend):
             Frame parameters, optional.
         aparam
             Atom parameters, optional.
+        charge_spin
+            Optional frame-level charge and spin conditioning.
+        **kwargs
+            Additional backend-compatible evaluation options.
 
         Returns
         -------
@@ -2595,12 +2849,16 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             _aparam_t,
-            charge_spin_t,
-            _nframes,
+            _lower_charge_spin_t,
+            nframes,
             _natoms,
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
+        # The lower's condition is not the one this path reads: it evaluates
+        # the deserialized model, which takes the condition as an argument
+        # even where the lower has it folded into constants.
+        charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, *_ = dp_am.descriptor(
                 ext_coord_t,
@@ -2635,6 +2893,10 @@ class DeepEval(DeepEvalBackend):
             Frame parameters, optional.
         aparam
             Atom parameters, optional.
+        charge_spin
+            Optional frame-level charge and spin conditioning.
+        **kwargs
+            Additional backend-compatible evaluation options.
 
         Returns
         -------
@@ -2664,12 +2926,16 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
-            charge_spin_t,
-            _nframes,
+            _lower_charge_spin_t,
+            nframes,
             natoms,
         ) = self._prepare_nlist_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
+        # The lower's condition is not the one this path reads: it evaluates
+        # the deserialized model, which takes the condition as an argument
+        # even where the lower has it folded into constants.
+        charge_spin_t = self._make_dpmodel_charge_spin_input(nframes, charge_spin)
         with torch.no_grad():
             descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
                 ext_coord_t,

@@ -84,6 +84,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 from deepmd.utils.batch_size import (
     RetrySignal,
 )
+from deepmd.utils.bridging import (
+    is_bridged_sezm_config,
+)
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
@@ -111,6 +114,10 @@ def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
     """Return whether the params describe a SeZM / DPA4 model."""
     model_type = str(model_params.get("type", "")).lower()
     if model_type in {"sezm", "dpa4", "sezm_spin"}:
+        return True
+    # canonical bridged spelling: linear_ener over [dpa4, inner_potential],
+    # realized by the pt backend as a SeZMModel
+    if is_bridged_sezm_config(model_params):
         return True
     descriptor = model_params.get("descriptor")
     if isinstance(descriptor, dict):

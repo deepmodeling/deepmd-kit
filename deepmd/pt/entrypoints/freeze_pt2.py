@@ -68,6 +68,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
 )
+from deepmd.utils.bridging import (
+    is_bridged_sezm_config,
+)
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
 )
@@ -159,12 +162,21 @@ def is_sezm_checkpoint(ckpt_path: str) -> bool:
         _, params = _extract_state_and_params(raw)
     except ValueError:
         return False
+
+    def _is_sezm_params(branch_params: dict[str, Any]) -> bool:
+        # the flag spelling and the canonical bridged linear spelling both
+        # realize a SeZMModel in the pt backend
+        return str(branch_params.get("type", "")).lower() in (
+            "sezm",
+            "dpa4",
+        ) or is_bridged_sezm_config(branch_params)
+
     if "model_dict" in params:
         return any(
-            str(branch_params.get("type", "")).lower() in ("sezm", "dpa4")
+            _is_sezm_params(branch_params)
             for branch_params in params["model_dict"].values()
         )
-    return str(params.get("type", "")).lower() in ("sezm", "dpa4")
+    return _is_sezm_params(params)
 
 
 def _select_model_head(
@@ -870,7 +882,7 @@ def freeze_sezm_to_pt2(
     state_dict, params = _select_model_head(state_dict, params, head)
 
     model_type = str(params.get("type", "")).lower()
-    if model_type not in ("sezm", "dpa4"):
+    if model_type not in ("sezm", "dpa4") and not is_bridged_sezm_config(params):
         raise ValueError(
             f"freeze_sezm_to_pt2 expects a SeZM/DPA4 checkpoint, got type={params.get('type')!r}."
         )

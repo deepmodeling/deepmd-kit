@@ -321,5 +321,107 @@ class TestNativeSpinErrorTranslation(unittest.TestCase):
             get_model(raw)
 
 
+class TestUseAmpSurvivesAssembly(unittest.TestCase):
+    """``use_amp`` is runtime policy: it must survive model ASSEMBLY without
+    entering the portable serialization record (which the JAX deserializer
+    rejects for ``use_amp: true``). The wrapping of the atomic model must
+    therefore not round-trip the constructed descriptor through
+    ``serialize()``/``deserialize()``.
+    """
+
+    def test_get_model_keeps_use_amp_false(self) -> None:
+        model = get_model(
+            _make_raw_model_config(
+                descriptor={
+                    "sel": 20,
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "n_radial": 4,
+                    "lmax": 1,
+                    "mmax": 1,
+                    "n_blocks": 1,
+                    "precision": "float64",
+                    "seed": 1,
+                    "use_amp": False,
+                }
+            )
+        )
+        assert model.atomic_model.descriptor.use_amp is False
+
+    def test_get_model_keeps_the_use_amp_default(self) -> None:
+        model = get_model(_make_raw_model_config())
+        assert model.atomic_model.descriptor.use_amp is True
+
+    def test_standard_type_keeps_use_amp_false(self) -> None:
+        """The plain `standard` route wraps through the same boundary."""
+        cfg = _make_raw_model_config(
+            descriptor={
+                "type": "dpa4",
+                "sel": 20,
+                "rcut": 4.0,
+                "channels": 8,
+                "n_radial": 4,
+                "lmax": 1,
+                "mmax": 1,
+                "n_blocks": 1,
+                "precision": "float64",
+                "seed": 1,
+                "use_amp": False,
+            },
+            fitting_net={
+                "type": "dpa4_ener",
+                "precision": "float64",
+                "seed": 1,
+            },
+        )
+        del cfg["type"]
+        model = get_model(cfg)
+        assert model.atomic_model.descriptor.use_amp is False
+
+    def test_bridged_composition_keeps_use_amp_false(self) -> None:
+        """The ZBL composition path must be lossless too: the learned child
+        is a live module, not a serialize round-trip rebuild.
+        """
+        model = get_model(
+            _make_raw_model_config(
+                descriptor={
+                    "sel": 20,
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "n_radial": 4,
+                    "lmax": 1,
+                    "mmax": 1,
+                    "n_blocks": 1,
+                    "precision": "float64",
+                    "seed": 1,
+                    "use_amp": False,
+                },
+                bridging_method="ZBL",
+            )
+        )
+        assert model.atomic_model.models[0].descriptor.use_amp is False
+
+    def test_linear_ener_child_keeps_use_amp_false(self) -> None:
+        """The explicit `linear_ener` route builds its children as wrapped
+        modules directly -- same lossless rule as the bridged path.
+        """
+        base = _make_raw_model_config()
+        child_descriptor = dict(base["descriptor"], type="dpa4", use_amp=False)
+        child_fitting = dict(base["fitting_net"], type="dpa4_ener")
+        model = get_model(
+            {
+                "type": "linear_ener",
+                "type_map": base["type_map"],
+                "models": [
+                    {
+                        "descriptor": child_descriptor,
+                        "fitting_net": child_fitting,
+                    }
+                ],
+            }
+        )
+        assert model.atomic_model.models[0].descriptor.use_amp is False
+
+
 if __name__ == "__main__":
     unittest.main()

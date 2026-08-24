@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
 
 #include "DeepBaseModel.h"
@@ -205,6 +208,72 @@ class DeepPotBackend : public DeepBaseModelBackend {
    **/
   virtual int dim_chg_spin() const { return 0; }
 
+  /**
+   * @brief Reject a charge/spin condition no embedding table can address.
+   *
+   * A descriptor embeds the condition by gathering one row of a charge table
+   * and one row of a multiplicity table, whose geometry belongs to the
+   * feature rather than to any one descriptor. Neither the gather nor the
+   * compiled kernel bounds-checks the row, so a value outside a table reads
+   * past it and a fractional value is truncated onto a neighbouring row,
+   * both of which answer for a state the caller never asked for. The bounds
+   * mirror ``deepmd/utils/charge_state.py``, which holds the same contract
+   * for the Python boundaries.
+   *
+   * Both tests are relational rather than equalities, which keeps them exact
+   * and lets a NaN, which compares false against everything, fall out of the
+   * range test rather than through it.
+   *
+   * @param[in] charge_spin The condition, as ``{charge, multiplicity}``.
+   **/
+  static void require_addressable_charge_spin(
+      const std::vector<double>& charge_spin) {
+    static const char* const names[] = {"charge", "multiplicity"};
+    static const double lows[] = {-100.0, 0.0};
+    static const double highs[] = {100.0, 100.0};
+    const std::size_t checked = std::min<std::size_t>(charge_spin.size(), 2);
+    for (std::size_t ii = 0; ii < checked; ++ii) {
+      const double value = charge_spin[ii];
+      // Flooring leaves an integer where it is and moves everything else
+      // down, so a strict drop is exactly a fractional part.
+      if (std::floor(value) < value) {
+        throw deepmd::deepmd_exception(
+            std::string("the ") + names[ii] +
+            " must be an integer, which indexes one row of its embedding "
+            "table, but is " +
+            std::to_string(value));
+      }
+      if (!(value >= lows[ii] && value < highs[ii])) {
+        throw deepmd::deepmd_exception(
+            std::string("the ") + names[ii] + " must lie in [" +
+            std::to_string(lows[ii]) + ", " + std::to_string(highs[ii]) +
+            "), which its embedding table covers, but is " +
+            std::to_string(value));
+      }
+    }
+  }
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   *
+   * An override is needed only where the condition has to be folded into state
+   * that is built ahead of the evaluations using it, as in a compressed model
+   * whose tables are specialized to one condition. A backend that reads the
+   * condition as an ordinary per-call input has nothing to install, so the
+   * default is a no-op rather than an error: the condition still reaches such
+   * a backend on every evaluation, through the charge_spin argument of
+   * computew(). The request is refused only by a model that carries no
+   * charge/spin conditioning at all, which no route can honour.
+   *
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  virtual void set_charge_spin(const std::vector<double>& charge_spin) {
+    if (dim_chg_spin() == 0) {
+      throw deepmd::deepmd_exception(
+          "this model does not support a charge/spin condition");
+    }
+  }
+
   // charge_spin-aware computew overloads.  Default implementations call the
   // existing pure-virtual overloads (ignoring charge_spin) so that backends
   // that do not support charge/spin do not need any changes.  DeepPotPTExpt
@@ -357,11 +426,11 @@ class DeepPotBackend : public DeepBaseModelBackend {
       double* d_force,
       double* d_atom_virial,
       const std::int64_t* d_atype,
-      const std::int64_t* d_source,
+      const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
       const std::int64_t* d_source_row_ptr,
-      const std::int64_t* d_source_order,
+      const std::uint32_t* d_source_order,
       const int nloc,
       const int nall_nodes,
       const std::int64_t edge_storage);
@@ -829,16 +898,22 @@ class DeepPot : public DeepBaseModel {
                                    double* d_force,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::int64_t* d_source,
+                                   const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::int64_t* d_source_order,
+                                   const std::uint32_t* d_source_order,
                                    const int nloc,
                                    const int nall_nodes,
                                    const std::int64_t edge_storage);
 
   int dim_chg_spin() const;
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin);
 
  protected:
   std::shared_ptr<deepmd::DeepPotBackend> dp;
@@ -882,6 +957,18 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   int dim_chg_spin() const {
     return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * Applied to every model, so that the deviation is taken between models
+   * under the same condition.
+   * @param[in] charge_spin The condition, of length ``dim_chg_spin()``.
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    for (unsigned ii = 0; ii < dps.size(); ++ii) {
+      dps[ii]->set_charge_spin(charge_spin);
+    }
   };
 
   /**

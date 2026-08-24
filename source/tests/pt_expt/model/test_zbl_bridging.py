@@ -702,7 +702,7 @@ def test_bridged_metadata_carries_charge_spin_dim(tmp_path) -> None:
     config = copy.deepcopy(ZBL_CONFIG)
     config["descriptor"]["add_chg_spin_ebd"] = True
     model = get_model(config).to(torch.device("cpu")).eval()
-    meta = _collect_metadata(model, is_spin=False, lower_kind="graph")
+    meta = _collect_metadata(model, lower_kind="graph")
     assert meta["dim_chg_spin"] > 0, (
         "the bridged model's metadata dropped charge_spin; the exported "
         "artifact would silently ignore the FiLM conditioning"
@@ -713,7 +713,7 @@ def test_bridged_metadata_carries_charge_spin_dim(tmp_path) -> None:
     for key in ("bridging_method", "bridging_r_inner", "bridging_r_outer"):
         plain.pop(key, None)
     plain_model = get_model(plain).to(torch.device("cpu")).eval()
-    plain_meta = _collect_metadata(plain_model, is_spin=False, lower_kind="graph")
+    plain_meta = _collect_metadata(plain_model, lower_kind="graph")
     assert meta["dim_chg_spin"] == plain_meta["dim_chg_spin"]
 
 
