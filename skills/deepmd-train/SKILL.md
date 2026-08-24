@@ -1,6 +1,6 @@
 ---
 name: deepmd-train
-description: Train DeePMD-kit models with progressive disclosure. Use when the user wants to train a DeePMD-kit potential, prepare an input.json, choose between model families such as se_e2_a/DeepPot-SE, DPA3, and DPA4/SeZM, run `dp train`, monitor learning curves, freeze checkpoints, or test trained models. Start with model selection and read only the selected model reference under `models/` when model-specific configuration is needed.
+description: Train DeePMD-kit models with progressive disclosure. Use when the user wants to train a DeePMD-kit potential, prepare an input.json, choose between model families such as se_e2_a/DeepPot-SE, DPA3, DPA4/SeZM, and DPA4C, run `dp train`, monitor learning curves, freeze checkpoints, or test trained models. Start with model selection and read only the selected model reference under `models/` when model-specific configuration is needed.
 compatibility: Requires deepmd-kit installed. The selected backend and model may require PyTorch, TensorFlow, JAX, Paddle, GPU support, or custom OP libraries.
 license: LGPL-3.0-or-later
 metadata:
@@ -34,6 +34,7 @@ Available model references:
 | [`models/se-e2-a.md`](models/se-e2-a.md) | The user wants a classical DeepPot-SE baseline, broad compatibility, or a smaller/established production model.                          |
 | [`models/dpa3.md`](models/dpa3.md)       | The user wants a high-accuracy DPA3/LAM workflow, large/diverse datasets, dynamic neighbor selection, or pretrained DPA3-style training. |
 | [`models/dpa4.md`](models/dpa4.md)       | The user wants the PyTorch-only DPA4/SeZM SO(3)-equivariant architecture and its `.pt2` deployment path.                                 |
+| [`models/dpa4c.md`](models/dpa4c.md)     | The user wants the compact DPA4C architecture, PyTorch Exportable training, and optional compressed `.pt2` deployment.                  |
 
 ## Model selection
 
@@ -53,6 +54,7 @@ Recommended defaults:
 - Choose **se_e2_a** for a robust baseline, small to medium systems, compatibility-focused workflows, or when compute is limited.
 - Choose **DPA3** for high accuracy on diverse datasets, LAM-style training, or when the user explicitly asks for DPA3, DPA-3, LiGS, dynamic neighbor selection, or pretrained DPA3 variants.
 - Choose **DPA4/SeZM** when the user explicitly requests it or wants its SO(3)-equivariant message-passing architecture and accepts a GPU-oriented, PyTorch-only workflow.
+- Choose **DPA4C** when the user explicitly requests it or prioritizes compact, high-throughput deployment, including distillation from a DPA4 teacher.
 
 ## Common workflow
 
@@ -62,7 +64,9 @@ Recommended defaults:
 dp --version
 ```
 
-For PyTorch training, use `dp --pt ...`; for TensorFlow, use `dp ...`; for other backends, confirm the installed backend first.
+For conventional PyTorch training, use `dp --pt ...`; DPA4C uses the PyTorch
+Exportable backend, `dp --pt-expt ...`. For TensorFlow, use `dp ...`; for other
+backends, confirm the installed backend first.
 
 ### 2. Confirm training data
 
@@ -114,7 +118,8 @@ dp --pt freeze -o model.pth
 dp test -m model.pth -s /path/to/test_system -n 30
 ```
 
-DPA4/SeZM checkpoints instead freeze to `.pt2`; follow `models/dpa4.md`.
+DPA4/SeZM and DPA4C checkpoints instead freeze to `.pt2`; follow the selected
+model reference. DPA4C may additionally be compressed for deployment.
 Adjust the backend and output format for other model families.
 
 ## Agent checklist

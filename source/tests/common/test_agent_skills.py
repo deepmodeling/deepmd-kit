@@ -20,6 +20,7 @@ LAMMPS_WORKFLOW = (
 )
 LAMMPS_ASSET = ROOT / "skills" / "lammps-deepmd" / "assets" / "input.nvt.lammps"
 DPA4_TRAIN_REFERENCE = ROOT / "skills" / "deepmd-train" / "models" / "dpa4.md"
+DPA4C_TRAIN_REFERENCE = ROOT / "skills" / "deepmd-train" / "models" / "dpa4c.md"
 DPA4_FREEZE_POLICY = (
     ROOT / "skills" / "deepmd-python-inference" / "references" / "dpa4-freeze-policy.md"
 )
@@ -213,6 +214,20 @@ def test_dpa4_minimal_model_configuration_normalizes() -> None:
     normalized = normalize(update_deepmd_input(config, warning=False))
 
     assert normalized["model"]["fitting_net"]["type"] == "dpa4_ener"
+
+
+def test_dpa4c_skill_routes_backend_specific_compile_options() -> None:
+    top_level = (ROOT / "skills" / "deepmd-train" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    reference = DPA4C_TRAIN_REFERENCE.read_text(encoding="utf-8")
+
+    assert "models/dpa4c.md" in top_level
+    assert "dp --pt-expt train input.json" in reference
+    assert "training.enable_compile" in reference
+    assert "training.enable_tf32" in reference
+    assert "model.use_compile" in reference
+    assert "Do not put `use_compile` under `model` for DPA4C" in reference
 
 
 def test_lammps_asset_matches_mapping_contract() -> None:
