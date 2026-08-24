@@ -13,13 +13,13 @@ pytest.importorskip("deepmd.lib")
 from deepmd.pt.loss.group_property import (
     GroupPropertyLoss,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.dataloader import (
     DpLoaderSet,
     GroupCompleteBatchSampler,
     GroupDistributedBatchSampler,
-)
-from deepmd.pt.utils import (
-    env,
 )
 from deepmd.pt.utils.grouped import (
     GROUP_ID_KEY,
