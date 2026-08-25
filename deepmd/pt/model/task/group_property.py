@@ -165,7 +165,7 @@ class GroupPropertyFittingNet(Fitting):
             # caller's global RNG state (torch.nn.Linear.reset_parameters()
             # has no generator= argument, so fork-then-seed is the way to
             # scope a seed to a plain nn.Linear-based net).
-            with torch.random.fork_rng(devices=[]):
+            with torch.random.fork_rng():
                 torch.manual_seed(seed)
                 fparam_layers, layers = _build_layers()
         self.fparam_network = torch.nn.Sequential(*fparam_layers).to(env.DEVICE)

@@ -81,6 +81,19 @@ def test_unseeded_construction_advances_the_global_rng_stream():
     )
 
 
+def test_seeded_construction_preserves_cuda_rng_state():
+    if env.DEVICE.type != "cuda" or not torch.cuda.is_available():
+        pytest.skip("CUDA RNG preservation requires CUDA device tests")
+    torch.cuda.manual_seed_all(12345)
+    before = [state.clone() for state in torch.cuda.get_rng_state_all()]
+    _make(seed=42)
+    after = torch.cuda.get_rng_state_all()
+    assert len(after) == len(before)
+    assert all(
+        torch.equal(got, expected) for got, expected in zip(after, before, strict=True)
+    )
+
+
 def test_trainable_list_freezes_only_the_named_layers():
     # neuron=[8] -> 2 Linear layers (hidden, output); freeze only the first.
     fn = _make(trainable=[False, True])

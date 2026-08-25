@@ -194,4 +194,5 @@ def test_mark_groups_rejects_degenerate_weight(tmp_path, weight):
         mark_groups(str(sys_dir), target="property", group_by="system", weight=weight)
 
     # nothing was written before the guard fired
-    assert not (set_dir / "weight.npy").exists()
+    for marker in ("group_id.npy", "pool_mask.npy", "weight.npy"):
+        assert not (set_dir / marker).exists()
