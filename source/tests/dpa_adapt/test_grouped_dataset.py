@@ -192,6 +192,47 @@ def test_grouped_fit_and_predict(monkeypatch, tmp_path):
     assert calls[0]["pooling"] == "mean"
 
 
+def test_grouped_predict_with_calibrator_accepts_unlabeled_data(monkeypatch, tmp_path):
+    parent = tmp_path / "data"
+    sys_a = _write_system(
+        parent, "a", label=4.0, group_id=0, weight=[0.7, 0.3], n_frames=2
+    )
+    rows = {
+        str(sys_a.resolve()): np.array([[2.0, 0.0], [0.0, 8.0]]),
+    }
+
+    def fake_load_or_extract(systems, **kwargs):
+        return np.vstack([rows[system._dpa_source] for system in systems])
+
+    monkeypatch.setattr(
+        "dpa_adapt.grouped._offline.load_or_extract",
+        fake_load_or_extract,
+    )
+
+    model = DPAFineTuner(
+        pretrained="fake.pt", strategy="frozen_sklearn", predictor="linear"
+    )
+    model.fit(str(parent))
+
+    class _ShiftCalibrator:
+        def predict_from_arrays(self, predictions, *, data=None, fmt=None):
+            assert data == str(parent)
+            assert fmt is None
+            return np.asarray(predictions) + 1.0
+
+    model.calibrator = _ShiftCalibrator()
+
+    # Prediction data often has no labels.  Grouped predict and the calibrated
+    # prediction path need only embeddings plus grouping markers.
+    (sys_a / "set.000" / "property.npy").unlink()
+    (sys_a / "set.000" / "energy.npy").unlink()
+
+    result = model.predict(str(parent), calibrated=True)
+
+    assert result.predictions.shape == (1, 1)
+    np.testing.assert_allclose(result.predictions, result.raw_predictions + 1.0)
+
+
 def test_plain_input_keeps_existing_fit_path(monkeypatch, tmp_path):
     sys_dir = _write_system(tmp_path, "plain", n_frames=2)
     called = []
