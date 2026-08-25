@@ -21,6 +21,7 @@ LAMMPS_WORKFLOW = (
 LAMMPS_ASSET = ROOT / "skills" / "lammps-deepmd" / "assets" / "input.nvt.lammps"
 DPA4_TRAIN_REFERENCE = ROOT / "skills" / "deepmd-train" / "models" / "dpa4.md"
 DPA4C_TRAIN_REFERENCE = ROOT / "skills" / "deepmd-train" / "models" / "dpa4c.md"
+DPA4C_MODEL_DOC = ROOT / "doc" / "model" / "dpa4c.md"
 DPA4_FREEZE_POLICY = (
     ROOT / "skills" / "deepmd-python-inference" / "references" / "dpa4-freeze-policy.md"
 )
@@ -228,6 +229,22 @@ def test_dpa4c_skill_routes_backend_specific_compile_options() -> None:
     assert "training.enable_tf32" in reference
     assert "model.use_compile" in reference
     assert "Do not put `use_compile` under `model` for DPA4C" in reference
+
+
+def test_dpa4c_export_policy_matches_model_documentation() -> None:
+    reference = DPA4C_TRAIN_REFERENCE.read_text(encoding="utf-8")
+    model_doc = DPA4C_MODEL_DOC.read_text(encoding="utf-8")
+    deployment = LAMMPS_DEPLOYMENT.read_text(encoding="utf-8")
+
+    for variable in ("DP_CUDA_INFER", "DP_TF32_INFER", "DP_AMP_INFER"):
+        assert f"export {variable}=" in reference
+        assert variable in model_doc
+    assert "`DP_CUDA_INFER` of at least `1`" in reference
+    assert "`DP_CUDA_INFER` of at least `1`" in model_doc
+    assert "same target physical compute node" in reference
+    assert "freeze `.pt2` -> compress `.pt2`" in deployment
+    assert "dp --pt-expt freeze" in deployment
+    assert "dp --pt_expt" not in deployment
 
 
 def test_lammps_asset_matches_mapping_contract() -> None:
