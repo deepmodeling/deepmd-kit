@@ -94,15 +94,29 @@ required: `channels` in `{8, 16, 32, 64, 128}`, `lmax` in `{2, 3, 4}`, and
 
 ## Freeze, compress, and test
 
+Choose the inference policy before export. The three values below are captured
+in the archive rather than re-evaluated when LAMMPS loads it. For
+molecular-dynamics production, a conservative accelerated policy is:
+
+```bash
+export DP_CUDA_INFER=1
+export DP_TF32_INFER=0
+export DP_AMP_INFER=0
+```
+
+A compressed archive needs `DP_CUDA_INFER` of at least `1` to use the fused
+path. Validate more aggressive precision settings against the target system.
+
 ```bash
 dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph
 dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2
 dp test -m compressed_model.pt2 -s /path/to/test_system -n 30
 ```
 
-Freeze and compression must run in an environment compatible with the target
-deployment runtime. Validate both the plain `.pt2` archive and, when used, the
-compressed archive before production MD.
+Keep the same target physical compute node and allocation for freeze,
+compression, validation, and production unless portability has been independently
+validated for that exact device and toolchain. Validate both the plain `.pt2`
+archive and, when used, the compressed archive before production MD.
 
 ## DPA4C checklist
 
@@ -113,6 +127,8 @@ compressed archive before production MD.
 - [ ] The first compiled step is allowed extra warm-up time.
 - [ ] The checkpoint is exported to `.pt2` and tested.
 - [ ] Compression constraints are satisfied when `dp --pt-expt compress` is used.
+- [ ] Freeze-time inference variables and the target runtime are recorded.
+- [ ] Export and production stay on the target node unless portability is proven.
 
 ## References
 

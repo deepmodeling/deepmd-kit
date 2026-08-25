@@ -49,11 +49,36 @@ MD -> production. Do not freeze in job or node A and move the archive to B unles
 portability has been independently validated for that exact device and toolchain.
 
 Two DPA4 `.pt2` export contracts exist. `dp --pt freeze` uses the DPA4-specific
-`edge_vec` ABI. `dp --pt_expt freeze --lower-kind graph` uses the NeighborGraph
+`edge_vec` ABI. `dp --pt-expt freeze --lower-kind graph` uses the NeighborGraph
 ABI. They share a suffix but are not interchangeable contracts, and a `.pt2`
 suffix alone does not prove multi-rank support. A multi-rank archive must report
 `has_comm_artifact=true` and contain
 `model/extra/forward_lower_with_comm.pt2`.
+
+## DPA4C deployment
+
+DPA4C uses the PyTorch Exportable backend. Choose the inference policy before
+export because `DP_CUDA_INFER`, `DP_TF32_INFER`, and `DP_AMP_INFER` are captured
+in the exported archive. A conservative accelerated policy for molecular
+dynamics is:
+
+```bash
+export DP_CUDA_INFER=1
+export DP_TF32_INFER=0
+export DP_AMP_INFER=0
+dp --pt-expt freeze -c model.ckpt.pt -o frozen_model --lower-kind graph
+dp --pt-expt compress -i frozen_model.pt2 -o compressed_model.pt2
+```
+
+A compressed DPA4C archive needs `DP_CUDA_INFER` of at least `1` to use the
+fused path. Higher precision-policy settings require task-specific accuracy and
+stability validation before molecular-dynamics production.
+
+Create and consume DPA4C archives on the same target physical compute node and
+allocation: inspect the native checkpoint -> freeze `.pt2` -> compress `.pt2`
+when used -> `run 0` -> bounded MD -> production. Do not export in job or node A
+and move the archive to B unless portability has been independently validated
+for that exact device and toolchain.
 
 A basic energy-model input uses:
 
@@ -124,8 +149,8 @@ workflows.
 ## Pre-production validation
 
 1. Confirm the model loads without format or backend errors.
-1. Keep DPA4 freeze, `run 0`, canary, and production on the same target physical
-   compute node and allocation unless exact artifact portability is proven.
+1. Keep DPA4/DPA4C export, `run 0`, canary, and production on the same target
+   physical compute node and allocation unless artifact portability is proven.
 1. For multi-rank execution, verify the archive's communication metadata and
    nested with-comm artifact before launching MPI.
 1. Stage `run 0` -> short NVE when physically appropriate -> short requested
@@ -140,4 +165,5 @@ workflows.
 ## References
 
 - [DPA4 export and LAMMPS](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html)
+- [DPA4C export and LAMMPS](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4c.html)
 - [DeePMD-kit LAMMPS commands](https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/lammps-command.html)
