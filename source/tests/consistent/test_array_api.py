@@ -93,6 +93,31 @@ class TestArrayConversion(unittest.TestCase):
         self.assertIs(converted, tensor)
         self.assertTrue(converted.requires_grad)
 
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_native_tensor_moves_to_a_requested_device(self) -> None:
+        """A requested device is honoured, and the move keeps the graph.
+
+        Model buffers and inputs normally travel together, so this is a no-op.
+        Tracing is the exception: a CPU export of a CUDA-resident model runs
+        CPU inputs through a module whose buffers stayed on the device, and
+        ignoring the request there surfaces as a fake-tensor device error far
+        downstream of the constant that caused it.
+        """
+        tensor = torch.nn.Parameter(
+            torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        )
+        torch_namespace = array_api_compat.array_namespace(tensor)
+
+        same = xp_asarray_nodetach(
+            torch_namespace, tensor, device=array_api_compat.device(tensor)
+        )
+        self.assertIs(same, tensor)
+
+        other = torch.device("cpu" if DEVICE.type == "cuda" else "meta")
+        moved = xp_asarray_nodetach(torch_namespace, tensor, device=other)
+        self.assertEqual(moved.device.type, other.type)
+        self.assertTrue(moved.requires_grad)
+
 
 class TestXpMaximumAtConsistent(unittest.TestCase):
     """Test maximum-at identities that differ between backend primitives."""

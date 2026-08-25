@@ -140,6 +140,11 @@ class RadialMLP(nn.Module):
 
         self.net = nn.Sequential(*modules)
 
+        # ``MLPLayer`` accepts ``trainable`` without applying it, so the flag is
+        # enforced here rather than left to a sweep in the owning descriptor.
+        for p in self.parameters():
+            p.requires_grad = self.trainable
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
@@ -456,6 +461,8 @@ class RadialBasis(nn.Module):
         Floating-point dtype for the radial basis frequencies and outputs.
     exponent : int, optional
         Exponent for the C^3 cutoff envelope polynomial. Default is 7.
+    trainable : bool, optional
+        Whether the basis frequencies are trainable. Default is True.
     """
 
     def __init__(
@@ -465,6 +472,7 @@ class RadialBasis(nn.Module):
         n_radial: int = 10,
         dtype: torch.dtype = torch.float32,
         exponent: int = 7,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.rcut = float(rcut)
@@ -503,8 +511,10 @@ class RadialBasis(nn.Module):
                 device=self.device,
                 dtype=self.dtype,
             )
+        self.trainable = bool(trainable)
         self.adam_freqs = nn.Parameter(
-            rearrange(freqs, "n_radial -> 1 n_radial"), requires_grad=True
+            rearrange(freqs, "n_radial -> 1 n_radial"),
+            requires_grad=self.trainable,
         )
         gaussian_width = self.rcut / max(self.n_radial - 1, 1)
         self.register_buffer(

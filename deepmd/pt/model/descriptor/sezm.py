@@ -913,6 +913,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             n_radial=self.n_radial,
             dtype=self.compute_dtype,  # force fp32+
             exponent=self.env_exp[0],
+            trainable=self.trainable,
         )
 
         # === Shared radial embedding: RBF -> per-l radial features ===
@@ -1127,9 +1128,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             for layer_index in range(self.readout_layers - 1)
         )
         self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
-
-        for p in self.parameters():
-            p.requires_grad = self.trainable
 
         # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP).
         self.register_buffer(

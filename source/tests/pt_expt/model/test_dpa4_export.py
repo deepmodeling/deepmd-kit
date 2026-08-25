@@ -113,6 +113,20 @@ _DPA4_CONFIG = {
 }
 
 
+# DPA4 operators that exist only as CUDA kernels, so a CPU graph must not
+# select any of them and a CUDA graph must select all of them.
+#
+# ``edge_force_virial`` is deliberately absent: it ships a CPU kernel
+# (``source/op/pt/cpu/edge_force_virial_cpu.cc``) alongside the CUDA one, so a
+# CPU graph selecting it is the intended behaviour rather than a leak.
+CUDA_ONLY_OPS = (
+    "dpa4_edge_radial",
+    "dpa4_wigner_dense",
+    "dpa4_grid_pair",
+    "dpa4_zonal_scatter",
+)
+
+
 def test_dpa4_fp32_cpu_export_runs_without_cuda_only_ops(monkeypatch) -> None:
     """CPU tracing suppresses GPU-only DPA4 paths and preserves dynamic replay."""
     try:
@@ -135,15 +149,8 @@ def test_dpa4_fp32_cpu_export_runs_without_cuda_only_ops(monkeypatch) -> None:
         lower_kind="graph",
         do_atomic_virial=True,
     )
-    cuda_only_ops = (
-        "dpa4_edge_radial",
-        "dpa4_wigner_dense",
-        "dpa4_grid_pair",
-        "dpa4_zonal_scatter",
-        "edge_force_virial",
-    )
     targets = {str(node.target) for node in exported.graph_module.graph.nodes}
-    assert all(not any(op in target for target in targets) for op in cuda_only_ops)
+    assert all(not any(op in target for target in targets) for op in CUDA_ONLY_OPS)
 
     sample = build_synthetic_graph_inputs(
         model,
@@ -167,7 +174,7 @@ def test_dpa4_fp32_cuda_export_runs_with_fast_ops(monkeypatch) -> None:
         import deepmd.pt.cxx_op  # noqa: F401
     except ImportError:
         pytest.skip("DeePMD-kit CUDA operators are unavailable")
-    from deepmd.pt_expt.kernels.cuda import (
+    from deepmd.pt_expt.kernels import (
         edge_force_virial,
     )
     from deepmd.pt_expt.kernels.cuda.dpa4 import (
@@ -309,7 +316,7 @@ def test_dpa4_fp32_aoti_package_runs_on_target(
         build_inductor_compile_options,
         patch_inductor_force_int64_indexing,
     )
-    from deepmd.pt_expt.kernels.cuda import (
+    from deepmd.pt_expt.kernels import (
         edge_force_virial,
     )
     from deepmd.pt_expt.kernels.cuda.dpa4 import (
@@ -350,17 +357,10 @@ def test_dpa4_fp32_aoti_package_runs_on_target(
         do_atomic_virial=True,
     )
     targets = {str(node.target) for node in exported.graph_module.graph.nodes}
-    cuda_only_ops = (
-        "dpa4_edge_radial",
-        "dpa4_wigner_dense",
-        "dpa4_grid_pair",
-        "dpa4_zonal_scatter",
-        "edge_force_virial",
-    )
     if target_device.type == "cuda":
-        assert all(any(op in target for target in targets) for op in cuda_only_ops)
+        assert all(any(op in target for target in targets) for op in CUDA_ONLY_OPS)
     else:
-        assert all(not any(op in target for target in targets) for op in cuda_only_ops)
+        assert all(not any(op in target for target in targets) for op in CUDA_ONLY_OPS)
 
     patch_inductor_force_int64_indexing()
     compile_options = build_inductor_compile_options(inference=True)

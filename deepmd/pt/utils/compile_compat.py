@@ -86,6 +86,29 @@ def _torch_release() -> tuple[int, int]:
 # =============================================================================
 # Common workarounds (every supported release)
 # =============================================================================
+def _inductor_autotune_log_options() -> dict[str, Any]:
+    """Return the Inductor keys that gate GEMM autotune stderr dumps.
+
+    The two streams are independent: ``Autotune Choices Stats`` follows
+    ``max_autotune_report_choices_stats``, and the per-GEMM
+    ``AUTOTUNE mm(...)`` table follows ``autotune_num_choices_displayed``.
+    Both default off.  An explicit ``TORCHINDUCTOR_*`` export is honoured
+    so a debug session can restore the dumps without a code change.
+    """
+    displayed = os.environ.get("TORCHINDUCTOR_AUTOTUNE_NUM_CHOICES_DISPLAYED", "0")
+    if displayed.lower() in ("none", "all"):
+        n_displayed: int | None = None
+    else:
+        n_displayed = int(displayed)
+    return {
+        "max_autotune_report_choices_stats": (
+            os.environ.get("TORCHINDUCTOR_MAX_AUTOTUNE_REPORT_CHOICES_STATS", "0")
+            == "1"
+        ),
+        "autotune_num_choices_displayed": n_displayed,
+    }
+
+
 def apply_global_compile_patches() -> None:
     """Apply every process-global PyTorch adjustment the compile path needs.
 
@@ -95,13 +118,22 @@ def apply_global_compile_patches() -> None:
     The symbolic-divisibility repair is applied only on releases where the
     regression exists.
     """
-    # Silence Inductor / Triton autotune console dumps.  ``torch.compile``
-    # reads these environment variables once, when its backend is first
-    # initialised, so they must be set before the first compilation; setting
-    # them afterwards has no effect in the current run.  ``setdefault``
-    # preserves any explicit user-level override.
+    # Silence Inductor / Triton autotune console dumps.  GEMM autotune
+    # writes two independent streams to stderr: ``Autotune Choices Stats``
+    # (``max_autotune_report_choices_stats``) and the per-GEMM
+    # ``AUTOTUNE mm(...)`` table (``autotune_num_choices_displayed``).
+    # Both fields are bound when ``torch._inductor.config`` is first
+    # imported, so an environment-only assignment after that import is
+    # ignored.  ``setdefault`` covers a later first import and preserves
+    # an explicit user override; the live-object write covers the
+    # already-imported case that training actually hits.
     os.environ.setdefault("TORCHINDUCTOR_MAX_AUTOTUNE_REPORT_CHOICES_STATS", "0")
+    os.environ.setdefault("TORCHINDUCTOR_AUTOTUNE_NUM_CHOICES_DISPLAYED", "0")
     os.environ.setdefault("TRITON_PRINT_AUTOTUNING", "0")
+    from torch._inductor import config as inductor_config
+
+    for key, value in _inductor_autotune_log_options().items():
+        setattr(inductor_config, key, value)
 
     # Disable DDPOptimizer graph splitting globally.  The inner
     # ``torch.compile`` calls sit *inside* a DDP-wrapped model; DDPOptimizer
@@ -534,6 +566,7 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
     """
     compile_options: dict[str, Any] = {
         "max_autotune": False,
+        **_inductor_autotune_log_options(),
         "shape_padding": True,
         "epilogue_fusion": False,
         "triton.cudagraphs": False,

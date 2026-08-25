@@ -400,12 +400,18 @@ class GridBranch(nn.Module):
             trainable=trainable,
             seed=child_seed(seed, 1),
         )
+        # A single branch makes the routing softmax identically one, so the
+        # router carries no degree of freedom: its gradient is exactly zero on
+        # every path, and the fused grid product skips it altogether. Freezing
+        # it states that, and keeps DDP from waiting for a gradient that never
+        # arrives -- which aborts the step unless ``find_unused_parameters`` is
+        # paid for. The parameter itself stays, so checkpoints round-trip.
         self.router = ChannelLinear(
             in_channels=2 * self.channels,
             out_channels=self.n_branches,
             dtype=dtype,
             bias=False,
-            trainable=trainable,
+            trainable=trainable and self.n_branches > 1,
             seed=child_seed(seed, 2),
         )
         self.out_proj = ChannelLinear(

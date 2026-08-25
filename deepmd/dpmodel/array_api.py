@@ -41,14 +41,22 @@ def xp_asarray_nodetach(
     required device-to-host copy when a CUDA-backed model constant is consumed
     by a NumPy statistics path.
 
-    The ``device`` argument only applies to the conversion path. Arrays already
-    in ``xp`` are assumed to live on the working device because model buffers
-    and inputs are moved together.
+    An array already in ``xp`` normally needs no move, since model buffers and
+    inputs travel together. Tracing breaks that: a CPU export of a
+    CUDA-resident model runs CPU inputs through a module whose buffers stayed
+    on the device, and the mismatch surfaces far downstream as a fake-tensor
+    device error. A requested ``device`` that differs is therefore honoured
+    here, which costs a comparison on the hot path and a copy only in the
+    tracing case.
     """
     if array_api_compat.is_array_api_obj(obj):
         if array_api_compat.array_namespace(obj) is xp:
             if dtype is not None and obj.dtype != dtype:
                 obj = xp.astype(obj, dtype)
+            if device is not None and array_api_compat.device(obj) != device:
+                # ``xp.asarray`` would detach, which is what this helper exists
+                # to avoid; ``to_device`` is the array-API move that does not.
+                obj = array_api_compat.to_device(obj, device)
             return obj
         obj = to_numpy_array(obj)
     if dtype is None:

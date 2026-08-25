@@ -3061,12 +3061,19 @@ class Trainer(AbstractTrainer):
         runs for tens of minutes with unbounded variance across ranks (GEMM
         autotuning benchmarks on each rank's own device), so a rank still
         compiling while its peers sit in that all-reduce trips the NCCL
-        watchdog and aborts the job. One forward and backward per task under
-        ``DDP.no_sync`` compiles exactly the graphs the optimization step
-        needs -- the compiled module is inside the DDP wrapper, so the traced
-        artifacts are identical -- while issuing no collective; a rendezvous
-        store barrier (which has no watchdog) then aligns the ranks before
-        the first real step.
+        watchdog and aborts the job. One forward and backward per task on the
+        *inner* module therefore runs first: the compiled artifacts are keyed
+        by the module and its input shapes, so warming them there is what the
+        optimization step reuses, and it issues no collective. A rendezvous
+        store barrier (which has no watchdog) then aligns the ranks before the
+        first real step.
+
+        Going through the DDP wrapper instead -- even under ``no_sync`` --
+        makes the backward run inside DDP's autograd hooks while the graph is
+        still being compiled, which aborts with a dtype mismatch on a
+        generated ``bmm`` under bf16 autocast. The inner module is the same
+        callable the wrapper delegates to, so nothing about the traced graph
+        differs.
         """
         if not (dist.is_available() and dist.is_initialized()):
             return
@@ -3076,16 +3083,16 @@ class Trainer(AbstractTrainer):
             return
         log.info("Compiling training graphs before the first collective.")
         start = time.time()
-        with self.wrapper.no_sync():
-            for task in self.training_tasks:
-                input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
-                _, loss, _ = self.wrapper(
-                    **input_dict,
-                    cur_lr=self.scheduler.get_last_lr()[0],
-                    label=label_dict,
-                    task_key=task.key,
-                )
-                loss.backward()
+        inner = self._unwrapped
+        for task in self.training_tasks:
+            input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
+            _, loss, _ = inner(
+                **input_dict,
+                cur_lr=self.scheduler.get_last_lr()[0],
+                label=label_dict,
+                task_key=task.key,
+            )
+            loss.backward()
         self.optimizer.zero_grad(set_to_none=True)
         if torch.cuda.is_available():
             torch.cuda.synchronize()

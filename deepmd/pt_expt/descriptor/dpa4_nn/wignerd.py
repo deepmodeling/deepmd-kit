@@ -124,6 +124,18 @@ class WignerDCalculator(WignerDCalculatorDP):
         # Adopted after the NumPy construction above, which consumes ``C_l2``.
         self._adopt_small_order_kernels()
 
+    def _kernel_on(self, name: str, like: torch.Tensor) -> torch.Tensor:
+        """Return a low-order kernel buffer on the device of ``like``.
+
+        The buffers travel with the module, which is the right default. A CPU
+        export of a CUDA-resident model is the exception: it traces with CPU
+        inputs while the module stays on its device, and the mismatch surfaces
+        as a fake-tensor device error deep inside the contraction. Reading them
+        through here keeps that case a no-op copy on the tracing device.
+        """
+        kernel = getattr(self, name)
+        return kernel if kernel.device == like.device else kernel.to(like.device)
+
     def _adopt_small_order_kernels(self) -> None:
         """Register the low-order polynomial kernels as buffers of this module.
 
@@ -214,9 +226,8 @@ class WignerDCalculator(WignerDCalculatorDP):
             monomials = monomial_basis(edge_quaternion, exponents, 4)
             # The dpmodel-derived coefficient stays fp64, so it follows the
             # base calculator's runtime cast to the edge compute dtype.
-            D_flat = torch.matmul(
-                monomials, self._l2_monomial_coeff.to(monomials.dtype)
-            )
+            coeff = self._kernel_on("_l2_monomial_coeff", monomials)
+            D_flat = torch.matmul(monomials, coeff.to(monomials.dtype))
             return D_flat.view(edge_quaternion.shape[0], 5, 5)
         return super()._compute_l2_block(edge_quaternion)
 

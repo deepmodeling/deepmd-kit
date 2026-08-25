@@ -8,7 +8,9 @@ stack uses split-compensated fp16 tensor cores and is held to 1e-5 relative,
 every other kernel is plain fp32 and is held to 1e-6.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import unittest
 
@@ -249,7 +251,9 @@ class TestMixingStack(unittest.TestCase):
             N_LAYERS - 1, N_FOCUS, FOCUS_DIM, LMAX * FOCUS_DIM, scale=FOCUS_DIM**-0.5
         )
         cls.packed = pack_weights(cls.w0, cls.w1, cls.gw, cls.layout)
-        cls.want, cls.pre_activation = _mixing_stack_reference(
+        # The third output is the final gated activation, which the backward
+        # reference reads as its anchor.
+        cls.want, cls.pre_activation, cls.u_final = _mixing_stack_reference(
             cls.u0.double(),
             cls.alpha.double(),
             cls.w0.double(),
@@ -266,24 +270,33 @@ class TestMixingStack(unittest.TestCase):
 
     def test_backward_matches_the_fp64_reference(self) -> None:
         grad_out = torch.randn(N_EDGE, N_FOCUS, self.layout.row, device=env.DEVICE)
-        want, _ = _mixing_stack_backward_reference(
+        # Only the input gradient is compared here. The reference also returns
+        # the parameter gradients and the per-layer surfaces the training path
+        # linearizes around, and it takes the upstream cotangents of those
+        # surfaces, which a first-order check does not supply.
+        want = _mixing_stack_backward_reference(
             grad_out.double(),
             self.want,
             self.pre_activation,
+            self.u_final,
             self.alpha.double(),
             self.w0.double().transpose(-1, -2).contiguous(),
             self.w1.double().transpose(-1, -2).contiguous(),
             self.gw.double(),
             self.gw.double().transpose(-1, -2).contiguous(),
+            None,
+            None,
             LMAX,
             FOCUS_DIM,
             False,
-        )
+        )[0]
         got = mixing_stack_backward(self.u0, grad_out, self.packed, self.layout)
         self.assertLess(_relative_error(got.double(), want), 1e-5)
 
     def test_split_representation_recovers_the_fp32_weight(self) -> None:
-        from deepmd.pt_expt.kernels.cutile.common import TAIL_SCALE
+        from deepmd.pt_expt.kernels.cutile.common import (
+            TAIL_SCALE,
+        )
 
         recovered = self.packed["w0h"].float() + self.packed["w0l"].float() / TAIL_SCALE
         padded = torch.zeros_like(recovered)

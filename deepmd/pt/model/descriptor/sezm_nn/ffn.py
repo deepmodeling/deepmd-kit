@@ -169,6 +169,7 @@ class EquivariantFFN(nn.Module):
         self.compute_dtype = get_promoted_dtype(self.dtype)
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
+        self.trainable = bool(trainable)
         self.grid_n_frames = 2 * self.kmax + 1 if self.ffn_so3_grid else 1
 
         # === Step 0. Split deterministic seeds at the module top-level ===
@@ -263,9 +264,6 @@ class EquivariantFFN(nn.Module):
             init_std=0.0,
         )
 
-        for p in self.parameters():
-            p.requires_grad = trainable
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Parameters
@@ -327,7 +325,6 @@ class EquivariantFFN(nn.Module):
         return x
 
     def serialize(self) -> dict[str, Any]:
-        trainable = all(p.requires_grad for p in self.parameters())
         state = self.state_dict()
         return {
             "@class": "EquivariantFFN",
@@ -346,7 +343,7 @@ class EquivariantFFN(nn.Module):
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
                 "mlp_bias": self.mlp_bias,
-                "trainable": trainable,
+                "trainable": self.trainable,
                 "seed": None,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
