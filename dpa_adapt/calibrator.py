@@ -277,6 +277,7 @@ def _feature_rows_from_data(
             "fparam.npy must be present for every set when Calibrator uses fparam."
         )
 
+    group_row_count = 0
     if any_grouped:
         group_ids = sorted({record[0] for record in grouped_records})
         group_stats = []
@@ -302,7 +303,8 @@ def _feature_rows_from_data(
             fparam=np.asarray(group_fparams, dtype=float) if any_fparam else None,
             group_stats=np.asarray(group_stats, dtype=float),
         )
-        if rows.group_stats.shape[0] == expected_rows:
+        group_row_count = rows.group_stats.shape[0]
+        if group_row_count == expected_rows:
             return rows
 
     frame_rows = _FeatureRows(
@@ -315,7 +317,7 @@ def _feature_rows_from_data(
     raise ValueError(
         f"Could not align calibration features to predictions: got "
         f"{frame_rows.group_stats.shape[0]} frame rows"
-        + (f" and {rows.group_stats.shape[0]} group rows" if any_grouped else "")
+        + (f" and {group_row_count} group rows" if any_grouped else "")
         + f", expected {expected_rows}."
     )
 
