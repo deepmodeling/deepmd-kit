@@ -74,7 +74,9 @@ class PairTab:
         # rmin + i * hh, so that is what must stay accurate, not each dx.
         n = vdata.shape[0]
         hh_ref = (rmax - rmin) / (n - 1)
-        deviation = np.abs(vdata[:, 0] - (rmin + hh_ref * np.arange(n)))
+        deviation = np.abs(
+            vdata[:, 0] - (rmin + hh_ref * np.arange(n, dtype=self.data_type))
+        )
         tol = 1e-2 * abs(hh_ref)
         if np.any(deviation > tol):
             bad_row = int(np.argmax(deviation > tol))
