@@ -503,20 +503,6 @@ class GridBranch(nn.Module):
         return _project_frames(coeff, self.out_proj, self.n_frames)
 
 
-def _degree_batched_matmul(coeff: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-    """Contract ``einsum("ndfi,dio->ndfo", coeff, weight)``.
-
-    Batched over the ``(D, F)`` axes, not over ``N`` (and not by collapsing
-    ``N*F``, which would materialize a permuted copy of ``coeff``):
-    expanding ``weight`` across ``F`` costs ``D*F*i*o`` elements versus
-    ``N*D*F*i`` for the coefficient copy -- a factor ``N/o`` more. No
-    reshape is involved, so an empty ``N`` batch flows through naturally.
-    """
-    coeff_df = coeff.permute(1, 2, 0, 3)  # (D, F, N, i)
-    out = torch.matmul(coeff_df, weight.unsqueeze(1))  # (D, F, N, o)
-    return out.permute(2, 0, 1, 3)  # (N, D, F, o)
-
-
 class FrameContract(nn.Module):
     """Per-degree frame/channel contraction that preserves the order index."""
 
@@ -561,7 +547,7 @@ class FrameContract(nn.Module):
     def forward(self, coeff: torch.Tensor) -> torch.Tensor:
         """Contract ``(N, D, F, K*C)`` frame coefficients to ``(N, D, F, C)``."""
         weight = self.weight.index_select(0, self.degree_index)
-        return _degree_batched_matmul(coeff, weight)
+        return torch.einsum("ndfi,dio->ndfo", coeff, weight)
 
     def forward_scalar(self, coeff: torch.Tensor) -> torch.Tensor:
         """Contract the single ``l=0`` coefficient with its frame weights.
@@ -623,7 +609,7 @@ class FrameExpand(nn.Module):
     def forward(self, coeff: torch.Tensor) -> torch.Tensor:
         """Expand ``(N, D, F, C)`` coefficients to ``(N, D, F, K*C)``."""
         weight = self.weight.index_select(0, self.degree_index)
-        return _degree_batched_matmul(coeff, weight)
+        return torch.einsum("ndfi,dio->ndfo", coeff, weight)
 
 
 class BaseGridNet(nn.Module):

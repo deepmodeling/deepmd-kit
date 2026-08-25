@@ -2228,6 +2228,7 @@ class Trainer(AbstractTrainer):
         opt_type = optimizer_params.get("type", "Adam")
         if opt_type not in ("Adam", "AdamW", "HybridMuon"):
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
+        self.opt_type = opt_type
         # LambdaLR multiplies each param group's initial learning rate by the
         # lambda value.  Warmup schedules legitimately return zero at step 0,
         # so use the nonzero schedule base as the denominator and let the
@@ -3052,9 +3053,59 @@ class Trainer(AbstractTrainer):
             probabilities=self.model_prob,
         )
 
+    def _precompile_outside_collectives(self) -> None:
+        """Trigger every training-graph compilation before the first collective.
+
+        The first optimization step both compiles the model and joins the
+        first gradient all-reduce. Compilation of the larger configurations
+        runs for tens of minutes with unbounded variance across ranks (GEMM
+        autotuning benchmarks on each rank's own device), so a rank still
+        compiling while its peers sit in that all-reduce trips the NCCL
+        watchdog and aborts the job. One forward and backward per task under
+        ``DDP.no_sync`` compiles exactly the graphs the optimization step
+        needs -- the compiled module is inside the DDP wrapper, so the traced
+        artifacts are identical -- while issuing no collective; a rendezvous
+        store barrier (which has no watchdog) then aligns the ranks before
+        the first real step.
+        """
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+        if not isinstance(self.wrapper, torch.nn.parallel.DistributedDataParallel):
+            return
+        if self.opt_type not in ("Adam", "AdamW", "HybridMuon"):
+            return
+        log.info("Compiling training graphs before the first collective.")
+        start = time.time()
+        with self.wrapper.no_sync():
+            for task in self.training_tasks:
+                input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
+                _, loss, _ = self.wrapper(
+                    **input_dict,
+                    cur_lr=self.scheduler.get_last_lr()[0],
+                    label=label_dict,
+                    task_key=task.key,
+                )
+                loss.backward()
+        self.optimizer.zero_grad(set_to_none=True)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        log.info(
+            "Training graphs ready in %.1f s; waiting for the other ranks.",
+            time.time() - start,
+        )
+        store = dist.distributed_c10d._get_default_store()
+        key = "deepmd/precompile_ready"
+        world_size = dist.get_world_size()
+        ready = int(store.add(key, 1))
+        while ready < world_size:
+            time.sleep(2)
+            ready = int(store.add(key, 0))
+        log.info("All %d ranks compiled; entering the optimization loop.", world_size)
+
     def run(self) -> None:
         """Run pt_expt training through the backend-independent trainer loop."""
         log.info("Start to train %d steps.", self.num_steps)
+        self._precompile_outside_collectives()
         try:
             super().run(self.training_tasks)
             if self.change_bias_after_training and self.num_steps > self.start_step:

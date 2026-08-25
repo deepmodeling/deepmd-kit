@@ -1047,10 +1047,22 @@ class Trainer:
                 self.wrapper = fully_shard(self.wrapper, reshard_after_forward=reshard)
             else:
                 # zero_stage=0 or 1: standard DDP (ZeRO-1 will wrap the optimizer)
+                #
+                # ``find_unused_parameters`` makes the reducer traverse the
+                # autograd graph on every iteration to find parameters that
+                # produced no gradient bucket, which it would otherwise wait
+                # for forever. Multi-task needs it, because a step uses one
+                # fitting net and leaves the others out of the graph. A
+                # single-task step reaches every parameter (an all-zero
+                # gradient still produces a bucket), so the traversal is pure
+                # overhead there. A configuration that did leave a parameter
+                # out of the graph would hang the reducer rather than fail, so
+                # an optional branch added later has to be checked against
+                # this assumption before it ships.
                 self.wrapper = DDP(
                     self.wrapper,
                     device_ids=[LOCAL_RANK],
-                    find_unused_parameters=True,
+                    find_unused_parameters=self.multi_task,
                     output_device=LOCAL_RANK,
                 )
 

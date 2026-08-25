@@ -78,6 +78,31 @@ def op_available() -> bool:
     return ops is not None and hasattr(ops, "sezm_so2_value_fwd")
 
 
+def _alpha_dtype(working: torch.dtype) -> torch.dtype:
+    """
+    Precision the competition weight and its gradient are carried in.
+
+    The weight is the backward's anchor for the whole competition head, which
+    reconstructs the softmax from it (``p = (alpha - ls/F) / (1 - ls)``) and
+    divides the traversal's weight gradient by it. Under bfloat16 that chain
+    would lose about three decimal digits, which no later promotion recovers,
+    so the anchor is kept in accumulator precision; being ``(E, F)`` scalars
+    it costs nothing next to the ``(E, F, ROW)`` surfaces. Mirrors
+    ``dpa4_sezm::alpha_dtype`` on the operator side.
+
+    Parameters
+    ----------
+    working : torch.dtype
+        Precision of the operator's surfaces.
+
+    Returns
+    -------
+    torch.dtype
+        ``torch.float64`` for a float64 pass, ``torch.float32`` otherwise.
+    """
+    return torch.float64 if working is torch.float64 else torch.float32
+
+
 def _fwd_fake(
     x,
     src,
@@ -103,7 +128,7 @@ def _fwd_fake(
         x.new_empty((n_edge, n_focus, row)),
         x.new_empty((gw_all.shape[0], n_focus, n_edge, row)),
         x.new_empty((n_focus, n_edge, row)),
-        x.new_empty((n_edge, n_focus)),
+        x.new_empty((n_edge, n_focus), dtype=_alpha_dtype(x.dtype)),
     )
 
 
@@ -1011,7 +1036,10 @@ def make_cuda_so2_value(conv: SO2Convolution) -> SO2ValueTrainCuda | None:
     if conv.n_focus * conv.so2_focus_dim > 256 or conv.n_focus > 4:
         return None
     if conv.focus_compete and conv.n_focus > 1:
-        if type(conv.focus_compete_norm).__name__ != "Identity":
+        # The identity competition norm is spelled ``nn.Identity`` on the pt
+        # backend and an unbound (``None``) hook on the dpmodel/pt_expt one.
+        norm = conv.focus_compete_norm
+        if norm is not None and type(norm).__name__ != "Identity":
             return None
     ensure_registered()
     return SO2ValueTrainCuda(conv)

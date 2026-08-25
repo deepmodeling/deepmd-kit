@@ -243,3 +243,39 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             rtol=2e-4,
             atol=2e-5,
         )
+
+
+@pytest.mark.parametrize("lmax", [2, 3, 4, 5, 6])
+def test_wigner_kernels_are_device_buffers_outside_the_state_dict(lmax: int) -> None:
+    """Hold the low-order Wigner kernels as buffers, but not as saved state.
+
+    The dpmodel calculator keeps them as NumPy arrays inside a container, which
+    the generic conversion cannot reach: every evaluation would convert them
+    again, and a NumPy to CUDA conversion is a synchronizing host-to-device
+    copy on the training hot path. Registering them as buffers moves them with
+    the module instead.
+
+    They are a pure function of ``lmax``, so they must stay out of the state
+    dict: a stored copy would both break checkpoints written before they
+    existed and let a checkpoint override a value the configuration decides.
+    """
+    calculator = WignerDCalculator(lmax)
+
+    held = [name for name, _ in calculator.named_buffers() if "_small_order_" in name]
+    assert held, "no low-order kernel was adopted as a buffer"
+    saved = [
+        key
+        for key in calculator.state_dict()
+        if "_small_order_" in key or "_l2_monomial_coeff" in key
+    ]
+    assert not saved, (
+        f"configuration-derived arrays leaked into the state dict: {saved}"
+    )
+
+    # The container must alias the buffers, since that is what the dpmodel
+    # evaluation reads; an array left behind there would keep converting.
+    for name in held:
+        kernel = getattr(
+            calculator.small_order_kernels, name.removeprefix("_small_order_")
+        )
+        assert isinstance(kernel, torch.Tensor), name

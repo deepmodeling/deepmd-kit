@@ -39,6 +39,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_einsum,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -596,20 +597,6 @@ class GridBranch(NativeOP):
         self.out_proj.weight = np.asarray(variables["out_proj.weight"], dtype=prec)
 
 
-def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
-    """Contract ``einsum("ndfi,dio->ndfo", coeff, weight)``.
-
-    Batched over the ``(D, F)`` axes, not over ``N`` (and not by collapsing
-    ``N*F``, which would materialize a permuted copy of ``coeff``):
-    expanding ``weight`` across ``F`` costs ``D*F*i*o`` elements versus
-    ``N*D*F*i`` for the coefficient copy -- a factor ``N/o`` more. No
-    reshape is involved, so an empty ``N`` batch flows through naturally.
-    """
-    coeff_df = xp.permute_dims(coeff, (1, 2, 0, 3))  # (D, F, N, i)
-    out = xp.matmul(coeff_df, weight[:, None, :, :])  # (D, F, N, o)
-    return xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, o)
-
-
 class FrameContract(NativeOP):
     """Per-degree frame/channel contraction that preserves the order index."""
 
@@ -653,8 +640,7 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # Batched over the (D, F) axes, never over N -- see the helper's note.
-        return _degree_batched_matmul(xp, coeff, weight)
+        return xp_einsum("ndfi,dio->ndfo", coeff, weight)
 
     def call_scalar(self, coeff: Any) -> Any:
         """Contract the single ``l=0`` coefficient with its frame weights.
@@ -673,7 +659,7 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(
             xp, self.weight[0:1], device=array_api_compat.device(coeff)
         )
-        return _degree_batched_matmul(xp, coeff, weight)
+        return xp_einsum("ndfi,dio->ndfo", coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameContract to a dict."""
@@ -753,8 +739,7 @@ class FrameExpand(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # Batched over the (D, F) axes, never over N -- see the helper's note.
-        return _degree_batched_matmul(xp, coeff, weight)
+        return xp_einsum("ndfi,dio->ndfo", coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameExpand to a dict."""
@@ -877,9 +862,14 @@ class BaseGridNet(NativeOP):
         # transposed so both matrices are read row-major by grid point.
         # The operator is instantiated per coefficient-slot count, which this
         # projector fixes, so the choice is made once here rather than per call.
-        # The array-API reference leaves the backend hook unbound; ``pt_expt``
-        # binds it at construction when the operator serves the slot count.
+        # The array-API reference leaves the backend hooks unbound; ``pt_expt``
+        # binds them at construction when an operator serves the slot count.
+        # The inference hook serves the compact ``(N, P, C)`` layout; the
+        # training hook differentiates the same expression inside the force
+        # graph on the frame-packed operands, with analytic first and second
+        # order.
         self._grid_pair_fn = None
+        self._grid_pair_train_fn = None
         self._from_grid_t = np.ascontiguousarray(projector.from_grid_mat.T)
 
         self.scalar_act = SwiGLU()
@@ -1214,17 +1204,27 @@ class BaseGridNet(NativeOP):
         Array or None
             Coefficient result with shape ``(N, D, F, n_frames * C)``.
         """
-        if (
-            self._grid_pair_fn is None
-            or getattr(self, "training", False)
-            or left.shape[2] != 1
-        ):
-            return None
-        n_batch, coeff_dim = left.shape[0], left.shape[1]
-        flat_p = coeff_dim * self.n_frames
         c_wide = left.shape[3] // self.n_frames
         if c_wide % 32 != 0 or left.shape != right.shape:
             return None
+        if getattr(self, "training", False):
+            # Training form: frame-packed operands ride through unreshaped,
+            # with analytic first and second order behind the call; under
+            # autocast it runs the same reduced-precision regime as the dense
+            # einsum composition it replaces.
+            if self._grid_pair_train_fn is None:
+                return None
+            return self._grid_pair_train_fn(
+                left,
+                right,
+                self.projector.to_grid_mat,
+                self._from_grid_t,
+                self.n_frames,
+            )
+        if self._grid_pair_fn is None or left.shape[2] != 1:
+            return None
+        n_batch, coeff_dim = left.shape[0], left.shape[1]
+        flat_p = coeff_dim * self.n_frames
         xp = array_api_compat.array_namespace(left, right)
         out = self._grid_pair_fn(
             xp.reshape(left, (n_batch, flat_p, c_wide)),
@@ -1260,6 +1260,14 @@ class BaseGridNet(NativeOP):
         # einsum "gdk,ndfkc->ngfc" (with to_grid reshaped (G, D, K)) as a
         # broadcast batched matmul: the contracted (d, k) axes are flattened
         # (d outer, k inner) and to_grid is already stored as (G, D*K).
+        #
+        # Two alternatives were measured on the Pro shape and both lost, so
+        # this spelling is deliberate: folding the node axis into the GEMM
+        # (`xp_einsum("gj,njc->ngc")`) costs 5 ms per step, and stating the
+        # five-axis contraction the way the pt backend does
+        # (`xp_einsum("gdk,ndfkc->ngfc")`) costs 3.6 ms. The same contraction
+        # is faster there and slower here, so the choice belongs to the graph
+        # around it rather than to the contraction itself.
         n_channels = coeff_view.shape[-1]
         coeff_dk = xp.permute_dims(coeff_view, (0, 1, 3, 2, 4))  # (N, D, K, F, C)
         coeff_flat = xp.reshape(

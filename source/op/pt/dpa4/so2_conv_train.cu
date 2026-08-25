@@ -171,6 +171,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
   const long row_w = (3 * lmax + 1) * cf;
   const long n_gated = gw_all.size(0);
   const int lg = (int)lmax * cf;
+  // The competition weight is the backward's anchor for the whole head, which
+  // reconstructs the softmax from it and divides by it; it therefore leaves
+  // the forward in accumulator precision whichever branch produced it.
+  const auto alpha_opts =
+      x.options().dtype(dpa4_sezm::alpha_dtype(x.scalar_type()));
   const size_t acc_bytes =
       x.scalar_type() == at::kDouble ? sizeof(double) : sizeof(float);
   // Bytes of tile-resident state per edge slot (including the bank-offset
@@ -211,10 +216,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
       auto p = at::softmax(logits * (1.0 / softmax_tau), 1);
       alpha_t =
           (p * (1.0 - label_smoothing) + label_smoothing / (double)n_focus)
-              .to(x.scalar_type())
+              .to(alpha_opts.dtype().toScalarType())
               .contiguous();
     } else {
-      alpha_t = at::ones({n_edge, n_focus}, x.options());
+      alpha_t = at::ones({n_edge, n_focus}, alpha_opts);
     }
     auto mix = dpa4_sezm::mixing_fwd(u0, alpha_t, w0_all, w1_all, gw_all, lmax,
                                      cf, apply_alpha);
@@ -224,7 +229,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
   auto x_out = at::empty({n_edge, n_focus, row_w}, x.options());
   auto z_all = at::empty({n_gated, n_focus, n_edge, row_w}, x.options());
   auto u_final = at::empty({n_focus, n_edge, row_w}, x.options());
-  auto alpha = at::empty({n_edge, n_focus}, x.options());
+  auto alpha = at::empty({n_edge, n_focus}, alpha_opts);
   if (n_edge == 0) {
     return {x_out, z_all, u_final, alpha};
   }
@@ -241,7 +246,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
               fc_bias_t.data_ptr<scalar_t>(), w0_all.data_ptr<scalar_t>(),
               w1_all.data_ptr<scalar_t>(), gw_all.data_ptr<scalar_t>(),
               x_out.data_ptr<scalar_t>(), z_all.data_ptr<scalar_t>(),
-              u_final.data_ptr<scalar_t>(), alpha.data_ptr<scalar_t>(), n_edge,
+              u_final.data_ptr<scalar_t>(),
+              alpha.data_ptr<typename acc_type<scalar_t>::type>(), n_edge,
               x.stride(0), x.stride(1), cf, (int)n_focus, (int)n_gated,
               apply_alpha, has_bias, (float)(1.0 / softmax_tau),
               (float)label_smoothing, (int)rank, te, n_blocks, smem_bytes,

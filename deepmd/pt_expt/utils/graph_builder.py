@@ -238,8 +238,11 @@ def build_ragged_neighbor_graph(
         torch.arange(nf, dtype=n_node.dtype, device=n_node.device), n_node
     )
     offset = torch.cumsum(n_node, 0) - n_node
+    # The node total is the leading axis of the flat coordinates, so it is read
+    # from the shape rather than from ``n_node.sum()``: summing on the device
+    # and reading the result back synchronizes the stream once per step.
     slot = (
-        torch.arange(int(n_node.sum()), dtype=n_node.dtype, device=n_node.device)
+        torch.arange(coord.shape[0], dtype=n_node.dtype, device=n_node.device)
         - offset[frame]
     )
     padded_index = frame * width + slot

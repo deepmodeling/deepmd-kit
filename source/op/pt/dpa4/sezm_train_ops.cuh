@@ -12,7 +12,26 @@
 
 #include <tuple>
 
+// Accumulator precision of the SeZM training kernels: the reduced-precision
+// working types accumulate in float, and float64 keeps its own width.
+template <typename scalar_t>
+struct acc_type {
+  using type = float;
+};
+template <>
+struct acc_type<double> {
+  using type = double;
+};
+
 namespace dpa4_sezm {
+
+// The competition weight and its gradient are carried in accumulator
+// precision rather than in the working precision of the (E, F, ROW) surfaces.
+// Both are (E, F) scalars, so the storage is negligible, and the head's
+// backward reconstructs the softmax from the weight -- p = (alpha - ls/F) /
+// (1 - ls) -- and divides by it, a chain that loses about three decimal
+// digits if the anchor is rounded to bfloat16.
+at::ScalarType alpha_dtype(at::ScalarType working);
 
 // Whole-stack gated-mixing forward: (x_local, z_all, u_final).
 std::tuple<at::Tensor, at::Tensor, at::Tensor> mixing_fwd(

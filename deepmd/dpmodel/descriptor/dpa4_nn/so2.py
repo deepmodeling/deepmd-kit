@@ -30,6 +30,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
+    xp_einsum,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -1617,6 +1618,18 @@ class SO2Convolution(NativeOP):
         self._triton_value_path = None
         self._cute_value_path = None
         self._cutile_value_path = None
+
+        # === Step 14. Optional fused training seams ===
+        # Training differentiates the convolution twice under a force loss, so
+        # its accelerated forms carry analytic backward and second-order
+        # implementations of their own: one fused kernel for the value stream
+        # up to the attention aggregation (``_cuda_value_train``), and the
+        # segmented attention softmax / flash aggregation pair for the
+        # attention span (``_flash_atten_trains`` marks the bound aggregation
+        # as training-capable). The array-API reference leaves every hook
+        # unbound and trains through the dense expression.
+        self._cuda_value_train = None
+        self._flash_atten_trains = False
         self.trainable = bool(trainable)
 
     def call(
@@ -1764,7 +1777,11 @@ class SO2Convolution(NativeOP):
             and not training
             and edge_cache.edge_src_gate is None
         )
-        run_flash = self._flash_atten_fn is not None and not training and not run_cuda
+        run_flash = (
+            self._flash_atten_fn is not None
+            and (not training or self._flash_atten_trains)
+            and not run_cuda
+        )
         if run_cuda:
             return self.forward_attention_cuda(x, edge_cache, radial_feat, x_l0_node)
         if run_flash:
@@ -2070,27 +2087,55 @@ class SO2Convolution(NativeOP):
         radial_l0 = xp.reshape(
             rad_feat[:, 0, :], (n_edge, self.attn_n_focus, self.attn_focus_dim)
         )  # (E, Fa, Ca)
-        radial_bias = xp.permute_dims(
-            xp.matmul(
-                xp.permute_dims(xp.astype(radial_l0, compute_dtype), (1, 0, 2)),
-                xp.permute_dims(
-                    xp_asarray_nodetach(
-                        xp, self.adamw_attn_logit_w[...], device=device
-                    ),
-                    (1, 0, 2),
-                ),
-            ),
-            (1, 0, 2),
+        radial_bias = xp_einsum(
+            "efi,ifo->efo",
+            xp.astype(radial_l0, compute_dtype),
+            xp_asarray_nodetach(xp, self.adamw_attn_logit_w[...], device=device),
         )  # (E, F, H)
         attn_logits = attn_logits + radial_bias
 
         # === Step 3. Envelope-gated segment softmax with a null mass ===
+        return self._attention_softmax(
+            attn_logits, edge_cache, x_l0_node.shape[0]
+        )  # (E, F, H)
+
+    def _attention_softmax(
+        self,
+        attn_logits: Array,
+        edge_cache: EdgeCache,
+        n_nodes: int,
+    ) -> Array:
+        """
+        Normalize the attention logits over each destination segment.
+
+        The dense reference below materializes the scatter/gather chain of
+        the envelope-gated softmax; accelerated backends override this seam
+        with a CSR-segmented operator whose backward and second order stay
+        in-kernel under a force loss.
+
+        Parameters
+        ----------
+        attn_logits : Array
+            Attention logits with shape (E, F, H).
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        n_nodes : int
+            Number of destination nodes.
+
+        Returns
+        -------
+        Array
+            Attention weights with shape (E, F, H).
+        """
+        xp = array_api_compat.array_namespace(attn_logits)
+        device = array_api_compat.device(attn_logits)
+        compute_dtype = get_xp_precision(xp, self.compute_precision)
         edge_src_gate = edge_cache.edge_src_gate
         return segment_envelope_gated_softmax(
             logits=attn_logits,
             edge_env=xp.astype(edge_cache.edge_env, compute_dtype),
-            dst=dst,
-            n_nodes=x_l0_node.shape[0],
+            dst=edge_cache.dst,
+            n_nodes=n_nodes,
             z_bias_raw=xp_asarray_nodetach(
                 xp, self.adamw_attn_z_bias_raw[...], device=device
             ),
@@ -2101,7 +2146,7 @@ class SO2Convolution(NativeOP):
                 else xp.astype(edge_src_gate, compute_dtype)
             ),
             edge_mask=edge_cache.edge_mask,
-        )  # (E, F, H)
+        )
 
     def attention_head_gate(self, x_l0_node: Array) -> Array:
         """
@@ -2122,17 +2167,10 @@ class SO2Convolution(NativeOP):
         compute_dtype = get_xp_precision(xp, self.compute_precision)
         normalized = self.attn_output_gate_norm(xp.astype(x_l0_node, compute_dtype))
         return xp_sigmoid(
-            xp.permute_dims(
-                xp.matmul(
-                    xp.permute_dims(normalized, (1, 0, 2)),
-                    xp.permute_dims(
-                        xp_asarray_nodetach(
-                            xp, self.adamw_attn_gate_w[...], device=device
-                        ),
-                        (1, 0, 2),
-                    ),
-                ),
-                (1, 0, 2),
+            xp_einsum(
+                "nfi,ifo->nfo",
+                normalized,
+                xp_asarray_nodetach(xp, self.adamw_attn_gate_w[...], device=device),
             )
         )
 
@@ -2314,6 +2352,14 @@ class SO2Convolution(NativeOP):
             # whole gated stack, keeping the inter-layer activations and the
             # gated-layer pre-activations off the traced graph entirely. ===
             x_local, rad_feat = self._cutile_value_path(x, edge_cache, radial_feat)
+        elif self._cuda_value_train is not None and training:
+            # === Steps 1-5 (one CUDA kernel, training). The whole value
+            # stream up to the attention aggregation runs in a single launch
+            # with analytic backward and second order; only the backward
+            # anchors reach device memory. ===
+            if self._cached_edge_csr_fn is not None:
+                self._cached_edge_csr_fn(edge_cache, "src", x.shape[0])
+            x_local, rad_feat = self._cuda_value_train(x, edge_cache, radial_feat)
         elif self._triton_value_path is not None and not training:
             # === Steps 1-5 (fused Triton operators). ``so2_rotate_mix`` folds
             # the rotation and the radial degree mixing into one edge-parallel
@@ -2332,45 +2378,16 @@ class SO2Convolution(NativeOP):
             # per-edge focus-major intermediates stay resident on chip. ===
             x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
         else:
-            # === Step 1. Rotate to edge-aligned local frame ===
-            x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
+            # === Steps 1-3. Rotation, radial mixing and the focus-major cast ===
+            x_local, rad_feat = self._rotate_mix(x, edge_cache, radial_feat)
 
-            # === Step 2. Select radial/type features for reduced layout ===
-            rad_feat = xp.take(
-                radial_feat,
-                xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
-                axis=1,
-            )  # (E, D_m, C)
-            if self.radial_hidden_proj is not None:
-                rad_feat = self.radial_hidden_proj(rad_feat)
-            if self.radial_degree_mixer is None:
-                x_local = x_local * rad_feat
-            else:
-                x_local = self.radial_degree_mixer(x_local, rad_feat)
-            if self.node_wise_grid_product is not None:
-                x_local = x_local + self.node_wise_grid_product(
-                    x_local,
-                    x_dst_local,
-                )
+            # The scalar slices the mixing stack needs are shared by every
+            # rotate-mix implementation, so they are derived here rather than
+            # inside the seam.
             rad_feat_l0_focus = xp.reshape(
                 rad_feat[:, 0, :], (n_edge, self.n_focus, self.so2_focus_dim)
             )  # (E, F, Cf)
-
-            # === Step 3. Cast to the focus-major SO(2) mixing layout (F, E, D_m, Cf) ===
-            # The mixing stack runs with the focus stream on the batch axis, the native
-            # layout of the block-diagonal batched matmul: the per-focus linear consumes
-            # it with no edge-axis transpose and writes each ``|m|`` block with no
-            # reassembly cost. This is a strided view of the reduced global buffer,
-            # materialized by the first linear's reshape exactly as any reduced-layout
-            # view would be.
             focus_gate_src: Array | None = None
-            x_local = xp.permute_dims(
-                xp.reshape(
-                    x_local,
-                    (n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim),
-                ),
-                (2, 0, 1, 3),
-            )  # (F, E, D_m, Cf), strided view
             if self.focus_compete and self.n_focus > 1:
                 focus_gate_src = x_local[:, :, 0, :]  # (F, E, Cf)
 
@@ -2568,6 +2585,77 @@ class SO2Convolution(NativeOP):
             x_dst = xp.take(x, edge_cache.dst, axis=0)  # (E, D, C_wide)
             x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
         return x_local, x_dst_local
+
+    def _rotate_mix(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> tuple[Array, Array]:
+        """
+        Rotate the source features and apply the radial degree mixing.
+
+        This is the entry stage of the SO(2) message: the gathered source
+        features are rotated into the edge frame, multiplied (or mixed) by the
+        projected radial features, and cast to the focus-major layout the
+        mixing stack consumes. Accelerated backends override this seam with a
+        single edge-parallel kernel that writes the focus-major layout
+        directly, so the degree-expanded global intermediate and its relayout
+        never reach device memory.
+
+        The mixing stack runs with the focus stream on the batch axis, the
+        native layout of the block-diagonal batched matmul: the per-focus
+        linear consumes it with no edge-axis transpose and writes each ``|m|``
+        block with no reassembly cost. The returned array is a strided view of
+        the reduced global buffer, materialized by the first linear's reshape
+        exactly as any reduced-layout view would be.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            The mixing-stack input with shape (F, E, D_m, Cf) and the
+            projected radial features with shape (E, D_m, C_wide).
+        """
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        n_edge = edge_cache.src.shape[0]
+
+        # === Step 1. Rotate to edge-aligned local frame ===
+        x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
+
+        # === Step 2. Select radial/type features for reduced layout ===
+        rad_feat = xp.take(
+            radial_feat,
+            xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
+            axis=1,
+        )  # (E, D_m, C)
+        if self.radial_hidden_proj is not None:
+            rad_feat = self.radial_hidden_proj(rad_feat)
+        if self.radial_degree_mixer is None:
+            x_local = x_local * rad_feat
+        else:
+            x_local = self.radial_degree_mixer(x_local, rad_feat)
+        if self.node_wise_grid_product is not None:
+            x_local = x_local + self.node_wise_grid_product(x_local, x_dst_local)
+
+        # === Step 3. Cast to the focus-major SO(2) mixing layout ===
+        x_local = xp.permute_dims(
+            xp.reshape(
+                x_local,
+                (n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim),
+            ),
+            (2, 0, 1, 3),
+        )  # (F, E, D_m, Cf), strided view
+        return x_local, rad_feat
 
     def _rotate_back(self, x_local: Array, edge_cache: EdgeCache, n_edge: int) -> Array:
         """

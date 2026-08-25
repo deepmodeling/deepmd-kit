@@ -32,6 +32,9 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
+from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+    WignerSmallOrderCoefficients,
+)
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
@@ -41,10 +44,37 @@ from deepmd.pt_expt.kernels.utils import (
     use_cutile_infer,
 )
 
+# Prefix under which the low-order polynomial kernels are held as buffers of
+# the calculator; the container is pointed at them (see
+# ``_adopt_small_order_kernels``).
+_SMALL_ORDER_PREFIX = "_small_order_"
+
+# Highest degree the container defines a specialized kernel for; its name set
+# saturates there.
+_MAX_SUPPORTED_LMAX = 10
+
+
+def _small_order_buffer_names() -> tuple[str, ...]:
+    """Buffer names of every low-order kernel the container can hold.
+
+    Queried from the container over the supported degree range rather than
+    listed a second time, so a kernel added there is covered here without an
+    edit. ``required_kernel_names`` is cumulative in ``lmax``, so the largest
+    degree yields the complete set.
+    """
+    names = WignerSmallOrderCoefficients.required_kernel_names(_MAX_SUPPORTED_LMAX)
+    return tuple(f"{_SMALL_ORDER_PREFIX}{name}" for name in names)
+
 
 @torch_module
 class WignerDCalculator(WignerDCalculatorDP):
     """Wigner-D calculator with an opt-in accelerated monomial inference path."""
+
+    # Every array below is a pure function of ``lmax``, rebuilt by ``__init__``.
+    # Declaring them keeps them out of the state dict, which both leaves stored
+    # checkpoints loadable and stops a checkpoint from overriding a value the
+    # configuration determines.
+    CONFIG_DERIVED_ARRAYS = ("_l2_monomial_coeff", *_small_order_buffer_names())
 
     def __init__(
         self,
@@ -91,6 +121,36 @@ class WignerDCalculator(WignerDCalculatorDP):
             # Assigned as a numpy array so ``dpmodel_setattr`` registers it as a
             # torch buffer (fp64, matching the other dpmodel Wigner constants).
             self._l2_monomial_coeff = np.stack([c.reshape(-1) for c in columns], axis=0)
+        # Adopted after the NumPy construction above, which consumes ``C_l2``.
+        self._adopt_small_order_kernels()
+
+    def _adopt_small_order_kernels(self) -> None:
+        """Register the low-order polynomial kernels as buffers of this module.
+
+        The dpmodel calculator holds them as NumPy arrays inside a plain
+        container, which the generic conversion cannot see: it inspects the
+        module's own attributes, not the contents of an object one of them
+        points to. Every evaluation then converts them again, and a NumPy to
+        CUDA conversion is a synchronizing host-to-device copy -- three of them
+        per step on the deployed degree range, each draining the pipeline.
+
+        Registering each kernel as a buffer moves it to the device once, with
+        the module. The container is then pointed at the buffers, so the
+        dpmodel evaluation reads a tensor already in the working namespace and
+        ``xp_asarray_nodetach`` returns it untouched.
+        """
+        kernels = getattr(self, "small_order_kernels", None)
+        if kernels is None:
+            return
+        for name in type(kernels).required_kernel_names(self.lmax):
+            array = getattr(kernels, name, None)
+            if array is None or isinstance(array, torch.Tensor):
+                continue
+            # Assigning the NumPy array to this module registers it as a
+            # buffer (``dpmodel_setattr``); the container then aliases it.
+            buffer_name = f"{_SMALL_ORDER_PREFIX}{name}"
+            setattr(self, buffer_name, array)
+            setattr(kernels, name, getattr(self, buffer_name))
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)

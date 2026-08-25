@@ -112,15 +112,16 @@ __global__ void mixing_gate_fwd_kernel(const scalar_t* __restrict__ u,
 // straight into the edge-major output layout.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
-__global__ void mixing_final_kernel(const scalar_t* __restrict__ u,
-                                    const scalar_t* __restrict__ z_id,
-                                    const scalar_t* __restrict__ alpha,
-                                    scalar_t* __restrict__ out,
-                                    long total,
-                                    long n_edge,
-                                    int n_focus,
-                                    int row_w,
-                                    bool apply_alpha) {
+__global__ void mixing_final_kernel(
+    const scalar_t* __restrict__ u,
+    const scalar_t* __restrict__ z_id,
+    const typename acc_type<scalar_t>::type* __restrict__ alpha,
+    scalar_t* __restrict__ out,
+    long total,
+    long n_edge,
+    int n_focus,
+    int row_w,
+    bool apply_alpha) {
   const long tid = blockIdx.x * (long)blockDim.x + threadIdx.x;
   if (tid >= total) {
     return;
@@ -274,17 +275,18 @@ __global__ void mixing_2nd_gate_kernel(const scalar_t* __restrict__ hz,
 // the same pass.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
-__global__ void mixing_2nd_final_kernel(const scalar_t* __restrict__ h,
-                                        const scalar_t* __restrict__ h_gbar_w,
-                                        const scalar_t* __restrict__ grad_out,
-                                        const scalar_t* __restrict__ alpha,
-                                        const scalar_t* __restrict__ gg_init,
-                                        scalar_t* __restrict__ grad_grad_out,
-                                        scalar_t* __restrict__ grad_alpha_in,
-                                        long n_edge,
-                                        int n_focus,
-                                        int row_w,
-                                        bool apply_alpha) {
+__global__ void mixing_2nd_final_kernel(
+    const scalar_t* __restrict__ h,
+    const scalar_t* __restrict__ h_gbar_w,
+    const scalar_t* __restrict__ grad_out,
+    const typename acc_type<scalar_t>::type* __restrict__ alpha,
+    const scalar_t* __restrict__ gg_init,
+    scalar_t* __restrict__ grad_grad_out,
+    typename acc_type<scalar_t>::type* __restrict__ grad_alpha_in,
+    long n_edge,
+    int n_focus,
+    int row_w,
+    bool apply_alpha) {
   const long row = blockIdx.x;
   if (row >= n_edge * (long)n_focus) {
     return;
@@ -321,7 +323,7 @@ __global__ void mixing_2nd_final_kernel(const scalar_t* __restrict__ h,
       acc += __shfl_down_sync(0xffffffff, acc, off);
     }
     if (threadIdx.x == 0) {
-      grad_alpha_in[row] = (scalar_t)acc;
+      grad_alpha_in[row] = acc;
     }
   }
 }
@@ -333,14 +335,15 @@ __global__ void mixing_2nd_final_kernel(const scalar_t* __restrict__ h,
 // single reduction kernel instead of a contended atomic per row element.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
-__global__ void mixing_entry_bwd_kernel(const scalar_t* __restrict__ grad_out,
-                                        const scalar_t* __restrict__ alpha,
-                                        scalar_t* __restrict__ g_focus,
-                                        long total,
-                                        long n_edge,
-                                        int n_focus,
-                                        int row_w,
-                                        bool apply_alpha) {
+__global__ void mixing_entry_bwd_kernel(
+    const scalar_t* __restrict__ grad_out,
+    const typename acc_type<scalar_t>::type* __restrict__ alpha,
+    scalar_t* __restrict__ g_focus,
+    long total,
+    long n_edge,
+    int n_focus,
+    int row_w,
+    bool apply_alpha) {
   const long tid = blockIdx.x * (long)blockDim.x + threadIdx.x;
   if (tid >= total) {
     return;
@@ -361,15 +364,19 @@ __global__ void mixing_entry_bwd_kernel(const scalar_t* __restrict__ grad_out,
 // ---------------------------------------------------------------------------
 // Alpha gradient: grad_alpha[e, f] = sum_r grad_out[e, f, r] * out[e, f, r]
 // / alpha[e, f], exact because the final store is a plain scale. One block
-// reduces one contiguous (edge, focus) row in fp32.
+// reduces one contiguous (edge, focus) row in fp32; the quotient and its
+// divisor stay in accumulator precision, since the head's closed-form
+// backward divides by this gradient's own scale again.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
-__global__ void mixing_alpha_bwd_kernel(const scalar_t* __restrict__ grad_out,
-                                        const scalar_t* __restrict__ x_local,
-                                        const scalar_t* __restrict__ alpha,
-                                        scalar_t* __restrict__ grad_alpha,
-                                        long n_rows,
-                                        int row_w) {
+__global__ void mixing_alpha_bwd_kernel(
+    const scalar_t* __restrict__ grad_out,
+    const scalar_t* __restrict__ x_local,
+    const typename acc_type<scalar_t>::type* __restrict__ alpha,
+    typename acc_type<scalar_t>::type* __restrict__ grad_alpha,
+    long n_rows,
+    int row_w) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long row = blockIdx.x;
   if (row >= n_rows) {
     return;
@@ -395,7 +402,8 @@ __global__ void mixing_alpha_bwd_kernel(const scalar_t* __restrict__ grad_out,
       acc += __shfl_down_sync(0xffffffff, acc, off);
     }
     if (threadIdx.x == 0) {
-      grad_alpha[row] = (scalar_t)(acc / fmaxf((float)alpha[row], 1e-12f));
+      const acc_t a = alpha[row];
+      grad_alpha[row] = (acc_t)acc / (a > acc_t(1e-12) ? a : acc_t(1e-12));
     }
   }
 }
@@ -614,6 +622,10 @@ void check_stack_inputs(const at::Tensor& u0,
 // ---------------------------------------------------------------------------
 namespace dpa4_sezm {
 
+at::ScalarType alpha_dtype(at::ScalarType working) {
+  return working == at::kDouble ? at::kDouble : at::kFloat;
+}
+
 // Forward: (out, z_all, u_final).
 std::tuple<at::Tensor, at::Tensor, at::Tensor> mixing_fwd(
     const at::Tensor& u0_in,
@@ -687,9 +699,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> mixing_fwd(
   const long fin_blocks = (fin_total + kThreads - 1) / kThreads;
   AT_DISPATCH_FLOATING_TYPES_AND2(
       at::kBFloat16, at::kHalf, u0.scalar_type(), "mixing_final", [&] {
+        using acc_t = typename acc_type<scalar_t>::type;
         mixing_final_kernel<scalar_t><<<fin_blocks, kThreads, 0, stream>>>(
             u_final.data_ptr<scalar_t>(), z_id.data_ptr<scalar_t>(),
-            alpha.data_ptr<scalar_t>(), x_local.data_ptr<scalar_t>(), fin_total,
+            alpha.data_ptr<acc_t>(), x_local.data_ptr<scalar_t>(), fin_total,
             n_edge, (int)n_focus, (int)row_w, apply_alpha);
       });
   DPA4_CHECK_LAUNCH("sezm_mixing_fwd final");
@@ -793,15 +806,18 @@ mixing_bwd(const at::Tensor& grad_out_in,
   // gate-slice term enters the input gradient; it is therefore computed
   // whenever the competition is active, independent of the weight
   // contractions.
-  auto grad_alpha = at::empty({n_edge, n_focus}, u_final.options());
+  auto grad_alpha = at::empty(
+      {n_edge, n_focus},
+      u_final.options().dtype(dpa4_sezm::alpha_dtype(u_final.scalar_type())));
   if (apply_alpha) {
     AT_DISPATCH_FLOATING_TYPES_AND2(
         at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_alpha_bwd",
         [&] {
+          using acc_t = typename acc_type<scalar_t>::type;
           mixing_alpha_bwd_kernel<scalar_t>
               <<<n_edge * n_focus, kThreads, 0, stream>>>(
                   grad_out.data_ptr<scalar_t>(), x_local.data_ptr<scalar_t>(),
-                  alpha.data_ptr<scalar_t>(), grad_alpha.data_ptr<scalar_t>(),
+                  alpha.data_ptr<acc_t>(), grad_alpha.data_ptr<acc_t>(),
                   n_edge * n_focus, (int)row_w);
         });
     DPA4_CHECK_LAUNCH("sezm_mixing_bwd alpha");
@@ -817,8 +833,9 @@ mixing_bwd(const at::Tensor& grad_out_in,
     AT_DISPATCH_FLOATING_TYPES_AND2(
         at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_entry_bwd",
         [&] {
+          using acc_t = typename acc_type<scalar_t>::type;
           mixing_entry_bwd_kernel<scalar_t><<<blocks, kThreads, 0, stream>>>(
-              grad_out.data_ptr<scalar_t>(), alpha.data_ptr<scalar_t>(),
+              grad_out.data_ptr<scalar_t>(), alpha.data_ptr<acc_t>(),
               g_focus.data_ptr<scalar_t>(), total, n_edge, (int)n_focus,
               (int)row_w, apply_alpha);
         });
@@ -1117,8 +1134,9 @@ mixing_bwd2(const at::Tensor& grad_out_in,
     AT_DISPATCH_FLOATING_TYPES_AND2(
         at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_bwd2_entry",
         [&] {
+          using acc_t = typename acc_type<scalar_t>::type;
           mixing_entry_bwd_kernel<scalar_t><<<blocks, kThreads, 0, stream>>>(
-              grad_out.data_ptr<scalar_t>(), alpha.data_ptr<scalar_t>(),
+              grad_out.data_ptr<scalar_t>(), alpha.data_ptr<acc_t>(),
               grad_final.data_ptr<scalar_t>(), total, n_edge, (int)n_focus,
               (int)row_w, apply_alpha);
         });
@@ -1134,21 +1152,23 @@ mixing_bwd2(const at::Tensor& grad_out_in,
   }
 
   auto grad_grad_out = at::empty({n_edge, n_focus, row_w}, grad_out.options());
-  auto grad_alpha_in =
-      at::empty({apply_alpha ? n_edge : 0, n_focus}, grad_out.options());
+  auto grad_alpha_in = at::empty(
+      {apply_alpha ? n_edge : 0, n_focus},
+      grad_out.options().dtype(dpa4_sezm::alpha_dtype(grad_out.scalar_type())));
   {
     const at::Tensor gg_init =
         ggout_init.has_value() ? ggout_init->contiguous() : at::Tensor();
     AT_DISPATCH_FLOATING_TYPES_AND2(
         at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_2nd_final",
         [&] {
+          using acc_t = typename acc_type<scalar_t>::type;
           mixing_2nd_final_kernel<scalar_t>
               <<<n_edge * n_focus, kThreads, 0, stream>>>(
                   h.data_ptr<scalar_t>(), h_gbar_w.data_ptr<scalar_t>(),
-                  grad_out.data_ptr<scalar_t>(), alpha.data_ptr<scalar_t>(),
+                  grad_out.data_ptr<scalar_t>(), alpha.data_ptr<acc_t>(),
                   gg_init.defined() ? gg_init.data_ptr<scalar_t>() : nullptr,
                   grad_grad_out.data_ptr<scalar_t>(),
-                  grad_alpha_in.data_ptr<scalar_t>(), n_edge, (int)n_focus,
+                  grad_alpha_in.data_ptr<acc_t>(), n_edge, (int)n_focus,
                   (int)row_w, apply_alpha);
         });
     DPA4_CHECK_LAUNCH("sezm_mixing_bwd2 final");
@@ -1168,7 +1188,7 @@ mixing_bwd2(const at::Tensor& grad_out_in,
                   w1t_all[n_gated].transpose(1, 2));
       y_fm.add_(u_final);
     }
-    auto ha = h_alpha.value().unsqueeze(-1);
+    auto ha = h_alpha.value().to(u_final.scalar_type()).unsqueeze(-1);
     grad_grad_out = grad_grad_out + ha * y_fm.permute({1, 0, 2});
     auto v = (ha * grad_out).permute({1, 0, 2}).contiguous();
     auto hu = at::empty_like(v);

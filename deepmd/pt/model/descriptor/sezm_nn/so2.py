@@ -727,7 +727,6 @@ class DynamicRadialDegreeMixer(nn.Module):
         # of the ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
         self.triton_infer_level = triton_infer_level()
         self.triton_train_level = triton_train_level()
-        self.use_triton_infer = self.triton_infer_level >= 1
         self._radial_mix_block = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1

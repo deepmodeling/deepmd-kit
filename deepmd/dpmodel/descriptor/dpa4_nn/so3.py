@@ -28,6 +28,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_einsum,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -131,13 +132,12 @@ class FocusLinear(NativeOP):
             xp, self.weight[...], device=array_api_compat.device(x)
         )
         weight = xp.reshape(weight, (self.in_channels, self.n_focus, self.out_channels))
-        # einsum "bfi,ifo->bfo" as F independent (B, Cin) x (Cin, Cout) GEMMs.
-        # B stays the GEMM rows so the weight is used in place; making B the
-        # batch axis would broadcast it to (B, F, Cin, Cout) and leave autograd
-        # reducing that expansion.  At n_focus=1 both permutes are free views.
-        weight = xp.permute_dims(weight, (1, 0, 2))  # (F, Cin, Cout)
-        out = xp.matmul(xp.permute_dims(x, (1, 0, 2)), weight)  # (F, B, Cout)
-        out = xp.permute_dims(out, (1, 0, 2))  # (B, F, Cout)
+        # F independent (B, Cin) x (Cin, Cout) GEMMs. Expressed as a
+        # contraction rather than as a permute / matmul / permute chain so the
+        # backend picks the execution order: the chain forces a batched matmul
+        # over F with transposing copies, while the contraction can become a
+        # single GEMM on a reshaped operand or fuse into its neighbours.
+        out = xp_einsum("bfi,ifo->bfo", x, weight)  # (B, F, Cout)
         if self.use_bias:
             bias = xp_asarray_nodetach(
                 xp, self.bias[...], device=array_api_compat.device(x)
@@ -442,14 +442,7 @@ class SO3Linear(NativeOP):
         weight_expanded = xp.take(weight, expand_index, axis=0)  # (D, Cin, F, Cout)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
-        # einsum "ndfi,difo->ndfo". Batch over (D, F) so N remains the GEMM
-        # row dimension: this avoids materializing N copies of the weight and
-        # the corresponding gradient reduction on every backward.
-        weight_expanded = xp.permute_dims(
-            weight_expanded, (0, 2, 1, 3)
-        )  # (D, F, Cin, Cout)
-        out = xp.matmul(xp.permute_dims(x, (1, 2, 0, 3)), weight_expanded)
-        out = xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, Cout)
+        out = xp_einsum("ndfi,difo->ndfo", x, weight_expanded)  # (N, D, F, Cout)
 
         # === Step 3. Add l=0 bias ===
         if self.mlp_bias:
@@ -488,11 +481,7 @@ class SO3Linear(NativeOP):
             xp_asarray_nodetach(xp, self.weight[0], device=array_api_compat.device(x)),
             (self.in_channels, self.n_focus, self.out_channels),
         )
-        out = xp.matmul(
-            xp.permute_dims(x[:, 0:1, :, :], (1, 2, 0, 3)),
-            xp.permute_dims(weight, (1, 0, 2)),
-        )
-        out = xp.permute_dims(out, (2, 0, 1, 3))
+        out = xp_einsum("ndfi,ifo->ndfo", x[:, 0:1, :, :], weight)
         if self.mlp_bias:
             bias = xp.reshape(
                 xp_asarray_nodetach(

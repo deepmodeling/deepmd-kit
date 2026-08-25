@@ -13,22 +13,12 @@
 
 #include <type_traits>
 
+#include "sezm_train_ops.cuh"
+
 namespace dpa4_sezm_kernels {
 
 constexpr int kThreads = 256;
 constexpr int kMaxFocus = 4;
-
-// Accumulation type: double inputs accumulate in double (the fp64 pass
-// serves as the ground truth in the parity harnesses), everything else in
-// fp32.
-template <typename scalar_t>
-struct acc_type {
-  using type = float;
-};
-template <>
-struct acc_type<double> {
-  using type = double;
-};
 
 template <typename acc_t>
 __device__ __forceinline__ acc_t exp_a(acc_t x) {
@@ -60,32 +50,42 @@ __device__ __forceinline__ acc_t sigmoid_a(acc_t x) {
 //   u_a, u_b [TE][F * ROW]   running activations (double buffered)
 //   sig      [TE][F * L*CF]  gate sigmoids of the current layer
 //   alp      [TE][F]         competition weights
+//
+// The competition weight leaves the kernel in accumulator precision rather
+// than the working precision of the surfaces. It is the backward's anchor for
+// the whole head: the closed-form logit gradient reconstructs the softmax from
+// it as p = (alpha - ls/F) / (1 - ls) and divides the traversal's alpha
+// gradient by it. Rounding the anchor to bfloat16 would cost about three
+// decimal digits in both, which no later promotion recovers, while the tensor
+// itself is (E, F) scalars -- negligible next to the (E, F, ROW) surfaces.
+// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 template <typename scalar_t, int L, int RANK, int TE>
-__global__ void so2_value_fwd_kernel(const scalar_t* __restrict__ x,
-                                     const long* __restrict__ src,
-                                     const scalar_t* __restrict__ wig,
-                                     const scalar_t* __restrict__ kc,
-                                     const scalar_t* __restrict__ cb,
-                                     const scalar_t* __restrict__ w_fc,
-                                     const scalar_t* __restrict__ fc_bias,
-                                     const scalar_t* __restrict__ w0_all,
-                                     const scalar_t* __restrict__ w1_all,
-                                     const scalar_t* __restrict__ gw_all,
-                                     scalar_t* __restrict__ x_out,
-                                     scalar_t* __restrict__ z_all,
-                                     scalar_t* __restrict__ u_final,
-                                     scalar_t* __restrict__ alpha_out,
-                                     long n_edge,
-                                     long x_sn,
-                                     long x_sd,
-                                     int cf,
-                                     int n_focus,
-                                     int n_gated,
-                                     bool apply_alpha,
-                                     bool has_bias,
-                                     float inv_tau,
-                                     float label_smooth) {
+__global__ void so2_value_fwd_kernel(
+    const scalar_t* __restrict__ x,
+    const long* __restrict__ src,
+    const scalar_t* __restrict__ wig,
+    const scalar_t* __restrict__ kc,
+    const scalar_t* __restrict__ cb,
+    const scalar_t* __restrict__ w_fc,
+    const scalar_t* __restrict__ fc_bias,
+    const scalar_t* __restrict__ w0_all,
+    const scalar_t* __restrict__ w1_all,
+    const scalar_t* __restrict__ gw_all,
+    scalar_t* __restrict__ x_out,
+    scalar_t* __restrict__ z_all,
+    scalar_t* __restrict__ u_final,
+    typename acc_type<scalar_t>::type* __restrict__ alpha_out,
+    long n_edge,
+    long x_sn,
+    long x_sd,
+    int cf,
+    int n_focus,
+    int n_gated,
+    bool apply_alpha,
+    bool has_bias,
+    float inv_tau,
+    float label_smooth) {
   using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
@@ -245,7 +245,7 @@ __global__ void so2_value_fwd_kernel(const scalar_t* __restrict__ x,
       if (!apply_alpha) {
         if (lane == 0) {
           alp[e * n_focus + f] = acc_t(1);
-          alpha_out[edge * n_focus + f] = (scalar_t)1;
+          alpha_out[edge * n_focus + f] = acc_t(1);
         }
         continue;
       }
@@ -280,7 +280,7 @@ __global__ void so2_value_fwd_kernel(const scalar_t* __restrict__ x,
         const acc_t a = logits[f] / denom * (acc_t(1) - (acc_t)label_smooth) +
                         (acc_t)label_smooth / (acc_t)n_focus;
         alp[e * n_focus + f] = a;
-        alpha_out[edge * n_focus + f] = (scalar_t)a;
+        alpha_out[edge * n_focus + f] = a;
       }
     }
   }
@@ -487,7 +487,7 @@ void launch_so2_value_fwd(const scalar_t* x,
                           scalar_t* x_out,
                           scalar_t* z_all,
                           scalar_t* u_final,
-                          scalar_t* alpha_out,
+                          typename acc_type<scalar_t>::type* alpha_out,
                           long n_edge,
                           long x_sn,
                           long x_sd,

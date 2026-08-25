@@ -4,6 +4,7 @@
 These wrappers inject PyTorch-runtime behavior that the array-API dpmodel
 implementation cannot express:
 
+- :mod:`activation` -- optional fused Triton gated SO(2) activation.
 - :mod:`block` -- eval-time activation checkpointing of the interaction units.
 - :mod:`edge_cache` -- shared endpoint CSR views for segmented kernels.
 - :mod:`embedding` -- optional fused CUDA geometric message scatter.
@@ -23,6 +24,7 @@ instead of the generic dpmodel wrappers.
 """
 
 from . import (  # noqa: F401
+    activation,
     block,
     edge_cache,
     embedding,

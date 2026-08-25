@@ -9,9 +9,11 @@ import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    _xp_einsum_fallback,
     xp_add_at,
     xp_asarray_nodetach,
     xp_bincount,
+    xp_einsum,
     xp_maximum_at,
     xp_scatter_sum,
     xp_setitem_at,
@@ -464,3 +466,107 @@ class TestXpUniform(unittest.TestCase):
         assert not np.allclose(a, c)
         assert a.min() >= -1.0
         assert a.max() < 1.0
+
+
+class TestXpEinsumConsistent(unittest.TestCase):
+    """Test xp_einsum consistency across backends.
+
+    The contraction ``"bfi,ifo->bfo"`` is the per-focus projection the DPA4
+    descriptor evaluates in several places. It is dispatched to each backend's
+    native ``einsum`` where one exists, which is what lets the backend choose
+    the execution order; the array-API fallback expresses the same contraction
+    as a batched matmul over the shared focus label.
+    """
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(20260825)
+        # (rows, batch, contracted) and (contracted, batch, cols)
+        self.lhs_np = rng.normal(size=(7, 3, 5))
+        self.rhs_np = rng.normal(size=(5, 3, 4))
+        self.ref = np.einsum("bfi,ifo->bfo", self.lhs_np, self.rhs_np)
+
+    def test_numpy_consistent_with_ref(self) -> None:
+        result = xp_einsum("bfi,ifo->bfo", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        result = xp_einsum(
+            "bfi,ifo->bfo",
+            torch.from_numpy(self.lhs_np),
+            torch.from_numpy(self.rhs_np),
+        )
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_consistent_with_ref(self) -> None:
+        result = xp_einsum(
+            "bfi,ifo->bfo", jnp.array(self.lhs_np), jnp.array(self.rhs_np)
+        )
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-6)
+
+    @unittest.skipUnless(
+        INSTALLED_ARRAY_API_STRICT, "array_api_strict is not installed"
+    )
+    @unittest.skipUnless(
+        sys.version_info >= (3, 9), "array_api_strict doesn't support Python<=3.8"
+    )
+    def test_array_api_strict_consistent_with_ref(self) -> None:
+        result = xp_einsum(
+            "bfi,ifo->bfo", xp.asarray(self.lhs_np), xp.asarray(self.rhs_np)
+        )
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+
+    def test_fallback_matches_the_native_contraction(self) -> None:
+        """The fallback is the reference the non-native namespaces rely on."""
+        result = _xp_einsum_fallback("bfi,ifo->bfo", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(self.ref, to_numpy_array(result), atol=1e-12)
+        # Label names carry no meaning beyond their positions.
+        renamed = _xp_einsum_fallback("efi,ifo->efo", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(self.ref, to_numpy_array(renamed), atol=1e-12)
+
+    def test_fallback_handles_the_plain_matmul(self) -> None:
+        rng = np.random.default_rng(7)
+        lhs, rhs = rng.normal(size=(6, 4)), rng.normal(size=(4, 9))
+        result = _xp_einsum_fallback("ij,jk->ik", lhs, rhs)
+        np.testing.assert_allclose(lhs @ rhs, to_numpy_array(result), atol=1e-12)
+
+    def test_implicit_form_is_rejected(self) -> None:
+        """An implicit output would be ambiguous to the fallback."""
+        with self.assertRaises(ValueError):
+            xp_einsum("bfi,ifo", self.lhs_np, self.rhs_np)
+
+    def test_fallback_reorders_the_output(self) -> None:
+        """The output order is part of the specification, not of the operands."""
+        result = _xp_einsum_fallback("bfi,ifo->bof", self.lhs_np, self.rhs_np)
+        np.testing.assert_allclose(
+            np.einsum("bfi,ifo->bof", self.lhs_np, self.rhs_np),
+            to_numpy_array(result),
+            atol=1e-12,
+        )
+
+    def test_fallback_batches_over_several_labels(self) -> None:
+        """The per-degree, per-focus projection shares two batch labels."""
+        rng = np.random.default_rng(31)
+        lhs = rng.normal(size=(6, 4, 2, 5))  # (N, D, F, Cin)
+        rhs = rng.normal(size=(4, 5, 2, 3))  # (D, Cin, F, Cout)
+        result = _xp_einsum_fallback("ndfi,difo->ndfo", lhs, rhs)
+        np.testing.assert_allclose(
+            np.einsum("ndfi,difo->ndfo", lhs, rhs),
+            to_numpy_array(result),
+            atol=1e-12,
+        )
+
+    def test_fallback_rejects_what_it_cannot_express(self) -> None:
+        """A contraction outside the implemented shape must not be approximated.
+
+        A label dropped from the output would need a reduction, a repeated
+        label a diagonal, and more than two operands a contraction path;
+        none of the three occurs in this codebase.
+        """
+        for subscripts in ("abc,def->abf", "ab,bc,cd->ad"):
+            with self.assertRaises(ValueError):
+                _xp_einsum_fallback(subscripts, self.lhs_np, self.rhs_np)
+        square = np.eye(4)
+        with self.assertRaises(ValueError):
+            _xp_einsum_fallback("ii,ij->ij", square, square)
