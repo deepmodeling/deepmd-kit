@@ -57,18 +57,46 @@ Key settings in `input.json`:
 ```json
 {
   "model": {
-    "type_map": ["Li", "Ni", "Co", "Mn", "O", "C", "H", "N", "F", "X"],
-    "descriptor": { "type": "dpa3" },
-    "fitting_net": { "type": "density", "neuron": [240, 240, 240] }
+    "type_map": [
+      "Li",
+      "Ni",
+      "Co",
+      "Mn",
+      "O",
+      "C",
+      "H",
+      "N",
+      "F",
+      "X"
+    ],
+    "descriptor": {
+      "type": "dpa3"
+    },
+    "fitting_net": {
+      "type": "density",
+      "neuron": [
+        240,
+        240,
+        240
+      ]
+    }
   },
-  "loss": { "type": "grid_density", "start_pref_d": 1, "limit_pref_d": 1 },
+  "loss": {
+    "type": "grid_density",
+    "start_pref_d": 1,
+    "limit_pref_d": 1
+  },
   "training": {
     "training_data": {
-      "systems": ["../dataset/qm9/C7H15NO_train"],
+      "systems": [
+        "../dataset/qm9/C7H15NO_train"
+      ],
       "batch_size": "auto:128"
     },
     "validation_data": {
-      "systems": ["../dataset/qm9/C7H15NO_val"],
+      "systems": [
+        "../dataset/qm9/C7H15NO_val"
+      ],
       "batch_size": 1,
       "numb_btch": 3
     }
