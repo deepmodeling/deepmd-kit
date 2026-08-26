@@ -37,6 +37,8 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
     * ``"type"`` is renamed to ``"atype"`` (int64).
     * ``"natoms_vec"`` (1-D) is tiled to 2-D ``[nframes, 2+ntypes]``
       and stored as ``"natoms"``.
+    * Non-periodic ``default_mesh`` encodings convert the zero ``box``
+      placeholder to ``None``.
     * ``find_*`` flags are converted to ``np.bool_``.
     * Metadata keys (``default_mesh``, ``sid``, ``fid``) are dropped.
 
@@ -56,6 +58,8 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
         Normalized batch dict (new dict; the input is not mutated).
     """
     out: dict[str, Any] = {}
+    default_mesh = batch.get("default_mesh")
+    is_nonperiodic = default_mesh is not None and np.size(default_mesh) in (0, 1)
 
     for key, val in batch.items():
         if key in _DROP_KEYS:
@@ -73,6 +77,9 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
             out["natoms"] = nv
         else:
             out[key] = val
+
+    if is_nonperiodic and "box" in out:
+        out["box"] = None
 
     if out.get("charge_spin") is not None and bool(out.get("find_charge_spin", True)):
         validate_charge_states(out["charge_spin"])
