@@ -19,15 +19,15 @@ import unittest
 
 import torch
 
-from deepmd.pt_expt.kernels.triton.env_mat import (
-    TRITON_AVAILABLE,
-    env_mat,
-)
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat,
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt_expt.kernels.triton.env_mat import (
+    TRITON_AVAILABLE,
+    env_mat,
 )
 
 from ...seed import (

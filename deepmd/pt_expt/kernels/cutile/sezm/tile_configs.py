@@ -36,7 +36,9 @@ CUDA device and merely untuned, so a new GPU or a new block layout runs correctl
 on first contact and can be swept afterwards.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import dataclasses
 import functools

@@ -2,16 +2,16 @@
 
 import torch
 
+from deepmd.pt.utils.preprocess import (
+    compute_exp_sw,
+    compute_smooth_weight,
+)
 from deepmd.pt_expt.kernels.triton.env_mat import (
     TRITON_AVAILABLE,
 )
 from deepmd.pt_expt.kernels.triton.env_mat import env_mat as _env_mat_triton
 from deepmd.pt_expt.kernels.utils import (
     triton_infer_level,
-)
-from deepmd.pt.utils.preprocess import (
-    compute_exp_sw,
-    compute_smooth_weight,
 )
 
 

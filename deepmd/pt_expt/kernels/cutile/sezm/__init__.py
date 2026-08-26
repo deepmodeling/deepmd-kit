@@ -25,6 +25,8 @@ padded tile extents, :mod:`.tile_configs` and :mod:`.tile_config_data` for launc
 configuration, and :mod:`.sweep_tile_configs` for regenerating it.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 __all__: list[str] = []

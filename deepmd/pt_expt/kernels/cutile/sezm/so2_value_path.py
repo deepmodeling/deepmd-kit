@@ -23,19 +23,34 @@ on a softmax over focus streams, and no deployed configuration in the DPA4
 family enables it together with more than one focus stream.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+)
 
 import torch
-from torch import Tensor
+from torch import (
+    Tensor,
+)
 
-from ..common import CUTILE_AVAILABLE, next_pow2
-from .so2_mixing_stack import so2_mixing_stack
-from .so2_rotate_mix import so2_rotate_mix
+from ..common import (
+    CUTILE_AVAILABLE,
+    next_pow2,
+)
+from .so2_mixing_stack import (
+    so2_mixing_stack,
+)
+from .so2_rotate_mix import (
+    so2_rotate_mix,
+)
 
 if TYPE_CHECKING:
-    from deepmd.pt.model.descriptor.sezm_nn.edge_cache import EdgeFeatureCache
+    from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
+        EdgeFeatureCache,
+    )
 
 __all__ = ["make_cutile_value_path"]
 

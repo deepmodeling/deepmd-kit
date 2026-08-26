@@ -42,13 +42,19 @@ the surrounding graph and its buffers are invisible to the memory planner, so
 only tensors that must cross the boundary do.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import math
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+)
 
 import torch
-from torch import Tensor
+from torch import (
+    Tensor,
+)
 
 from ..common import (
     CUTILE_AVAILABLE,
@@ -57,11 +63,17 @@ from ..common import (
     kernel_variant,
     split_fp16,
 )
-from .indexing import SO2TileLayout
-from .tile_configs import tile_config
+from .indexing import (
+    SO2TileLayout,
+)
+from .tile_configs import (
+    tile_config,
+)
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from types import (
+        ModuleType,
+    )
 
 
 if CUTILE_AVAILABLE:

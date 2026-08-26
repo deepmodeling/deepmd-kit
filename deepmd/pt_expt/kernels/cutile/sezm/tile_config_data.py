@@ -30,7 +30,9 @@ measured at production graph size -- 8000 local atoms, 216000 extended atoms and
 1.264e6 edges -- with TF32 disabled.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from .tile_configs import (
     LaunchConfig,

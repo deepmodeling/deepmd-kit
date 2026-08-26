@@ -12,7 +12,9 @@ model that shape every kernel here, and ``doc/outisli/dpa4_cutile.md`` for the
 measurements behind the design.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from .common import (
     CUTILE_AVAILABLE,

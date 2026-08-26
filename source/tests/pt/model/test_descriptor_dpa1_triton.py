@@ -32,6 +32,15 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.pt.model.descriptor import (
+    DescrptDPA1,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
 from deepmd.pt_expt.kernels.triton.dpa1.activation import (
     TRITON_AVAILABLE,
 )
@@ -50,15 +59,6 @@ from deepmd.pt_expt.kernels.triton.dpa1.se_conv import (
 from deepmd.pt_expt.kernels.triton.dpa1.tile_configs import (
     DEFAULT_CONFIG,
     resolve_conv_config,
-)
-from deepmd.pt.model.descriptor import (
-    DescrptDPA1,
-)
-from deepmd.pt.utils import (
-    env,
-)
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
 )
 
 _CUDA = torch.cuda.is_available()

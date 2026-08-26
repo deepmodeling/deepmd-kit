@@ -26,30 +26,42 @@ Saturation
     rather than the highest throughput.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import itertools
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+)
 
 import torch
 
-from .tile_configs import (
-    LaunchConfig,
-    register_tile_configs,
-    tile_config,
-)
 from . import (
     flash_atten,
     force_assembly,
     so2_mixing_stack,
     so2_rotate_mix,
 )
-from .flash_atten import build_row_ptr
-from .indexing import SO2TileLayout
-from .so2_mixing_stack import pack_weights
+from .flash_atten import (
+    build_row_ptr,
+)
+from .indexing import (
+    SO2TileLayout,
+)
+from .so2_mixing_stack import (
+    pack_weights,
+)
+from .tile_configs import (
+    LaunchConfig,
+    register_tile_configs,
+    tile_config,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import (
+        Callable,
+    )
 
 __all__ = ["sweep_layout"]
 

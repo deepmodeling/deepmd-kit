@@ -24,7 +24,9 @@ padded groups
     contraction equals the exact one.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import dataclasses
 
@@ -33,7 +35,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.indexing import (
     get_so3_dim_of_lmax,
 )
 
-from ..common import next_pow2
+from ..common import (
+    next_pow2,
+)
 
 __all__ = ["SO2TileLayout", "m_major_index", "rotation_pairs"]
 

@@ -31,11 +31,11 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
-from deepmd.pt_expt.kernels.triton.dpa1.activation import (
-    TRITON_AVAILABLE,
-)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.activation import (
+    TRITON_AVAILABLE,
 )
 
 _CUDA = torch.cuda.is_available()

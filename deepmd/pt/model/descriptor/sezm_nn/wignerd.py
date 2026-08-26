@@ -23,12 +23,12 @@ from typing import (
 import torch
 import torch.nn as nn
 
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt_expt.kernels.utils import (
     triton_infer_level,
     use_cutile_infer,
-)
-from deepmd.pt.utils import (
-    env,
 )
 from deepmd.utils.version import (
     check_version_compatibility,

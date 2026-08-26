@@ -45,22 +45,42 @@ the surrounding graph and its buffers are invisible to the memory planner, so
 only tensors that must cross the boundary do.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import math
-
-from typing import TYPE_CHECKING
+from typing import (
+    TYPE_CHECKING,
+)
 
 import torch
-from torch import Tensor
+from torch import (
+    Tensor,
+)
 
-from ..common import CUTILE_AVAILABLE, Emitter, generated_module, kernel_variant
-from .tile_configs import tile_config
-from .flash_atten import build_row_ptr
-from .indexing import SO2TileLayout, m_major_index, rotation_pairs
+from ..common import (
+    CUTILE_AVAILABLE,
+    Emitter,
+    generated_module,
+    kernel_variant,
+)
+from .flash_atten import (
+    build_row_ptr,
+)
+from .indexing import (
+    SO2TileLayout,
+    m_major_index,
+    rotation_pairs,
+)
+from .tile_configs import (
+    tile_config,
+)
 
 if TYPE_CHECKING:
-    from types import ModuleType
+    from types import (
+        ModuleType,
+    )
 
 if CUTILE_AVAILABLE:
     import cuda.tile as ct

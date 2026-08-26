@@ -52,17 +52,25 @@ Loop bounds must share one integer type.
     what :data:`BigArray` is for.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import hashlib
 import importlib.util
 import os
 import sys
 import tempfile
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import (
+        Sequence,
+    )
 
     import torch
 
