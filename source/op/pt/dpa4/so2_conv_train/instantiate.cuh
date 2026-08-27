@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // Explicit launcher instantiations of the fused SO(2) value-path training
-// forward for one spherical-harmonic degree. Included with DPA4_SCT_L
-// defined; DPA4_SCT_EXTERN prefixes the declarations in the host unit so no
-// instantiation (and no device code) lands there.
+// forward for one spherical-harmonic degree. A build shard defines
+// DPA4_SCT_TYPE to select one dtype; the host leaves it undefined and sets
+// DPA4_SCT_EXTERN to declare every dtype without emitting device code.
 
 #include <c10/util/BFloat16.h>
 #include <c10/util/Half.h>
 
-#include "so2_conv_train_kernels.cuh"
+#include "kernels.cuh"
 
 #ifndef DPA4_SCT_L
 #error "DPA4_SCT_L must name the degree of this unit"
@@ -26,10 +26,14 @@ namespace dpa4_sezm_kernels {
       long, long, int, int, int, bool, bool, float, float, int, int, long,     \
       size_t, cudaStream_t);
 
+#if defined(DPA4_SCT_TYPE)
+DPA4_SCT_ONE(DPA4_SCT_TYPE)
+#else
 DPA4_SCT_ONE(float)
 DPA4_SCT_ONE(double)
 DPA4_SCT_ONE(c10::Half)
 DPA4_SCT_ONE(c10::BFloat16)
+#endif
 
 #undef DPA4_SCT_ONE
 

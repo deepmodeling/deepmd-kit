@@ -201,14 +201,19 @@ class DescrptDPA4(DescrptDPA4DP):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        # The fused CUDA convolution rebuilds the packed Wigner rows from the
-        # edge quaternions inside its operator, so the dense per-edge matrices
-        # are only needed when some block falls back to another value path.
-        # Cross-focus competition still reads the dense rows for its scalar
-        # gate, and training always uses the reference path.
+        # The fused convolution paths consume only the three structural rows of
+        # each Wigner degree block. The dense per-edge matrices are therefore
+        # built only when some block falls back to the reference value or
+        # attention path.
         self._wigner_free_conv = bool(self.blocks) and all(
             getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
             and not block.so2_conv._cuda_conv_fn._compete
+            for block in self.blocks
+        )
+        self._packed_wigner_train = bool(self.blocks) and all(
+            getattr(block.so2_conv, "_cuda_value_train", None) is not None
+            and block.so2_conv._flash_atten_fn is not None
+            and block.so2_conv._flash_atten_trains
             for block in self.blocks
         )
 
@@ -287,9 +292,16 @@ class DescrptDPA4(DescrptDPA4DP):
             Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
             no convolution supplies runs of at least this degree.
         """
-        if not self._wigner_free_conv or edge_cache.csr_cache is None:
+        if edge_cache.csr_cache is None:
             return None
-        fused = self.blocks[0].so2_conv._cuda_conv_fn
+        if self.training:
+            if not self._packed_wigner_train:
+                return None
+            fused = self.blocks[0].so2_conv._cuda_value_train
+        else:
+            if not self._wigner_free_conv:
+                return None
+            fused = self.blocks[0].so2_conv._cuda_conv_fn
         if fused is None or lmax > self.lmax:
             return None
         return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]

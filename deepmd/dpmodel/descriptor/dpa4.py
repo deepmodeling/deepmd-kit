@@ -1185,6 +1185,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self._cuda_radial_fn = None
         self._cuda_wigner_fn = None
         self._wigner_free_conv = False
+        self._packed_wigner_train = False
 
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
@@ -1580,8 +1581,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             # is roll-equivariant, so inference fixes gamma.
             random_gamma=self.random_gamma and training,
             wigner_calc=self.wigner_calc,
-            build_wigner=self._need_full_wigner
-            and (training or not self._wigner_free_conv),
+            build_wigner=self._build_full_wigner(),
             node_partial_exchange=node_partial_exchange,
         )
 
@@ -1908,6 +1908,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 eps=self.eps,
             )
         return edge_quat
+
+    def _build_full_wigner(self) -> bool:
+        """Return whether the active execution path needs dense Wigner blocks."""
+        if not self._need_full_wigner:
+            return False
+        if self._in_training_mode():
+            return not self._packed_wigner_train
+        return not self._wigner_free_conv
 
     def _shared_wigner_runs(
         self,

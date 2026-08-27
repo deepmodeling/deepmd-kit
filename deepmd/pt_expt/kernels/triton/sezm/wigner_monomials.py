@@ -206,6 +206,130 @@ if WIGNER_MONOMIALS_TRITON_AVAILABLE:
         tl.store(gq_ptr + offs * 4 + 2, g2, mask=mask)
         tl.store(gq_ptr + offs * 4 + 3, g3, mask=mask)
 
+    @triton.jit
+    def _monomials_bwd2_kernel(
+        g_ptr,  # (E, M) first-order output cotangent
+        q_ptr,  # (E, 4)
+        h_ptr,  # (E, 4) cotangent of the first-order quaternion gradient
+        exp_ptr,  # (M, 4) int32 exponent table
+        gg_ptr,  # (E, M) cotangent of g
+        gq_ptr,  # (E, 4) Hessian contraction onto q
+        n_edge,
+        M: tl.constexpr,
+        MAXP: tl.constexpr,
+        BLOCK_E: tl.constexpr,
+        BLOCK_MONO: tl.constexpr,
+    ):
+        """Tile the analytic second order over edges and monomials.
+
+        Dynamic exponent loads keep the generated program independent of the
+        number of monomials. Each tile reduces its Hessian-vector contribution
+        over ``BLOCK_MONO`` columns before four fp32 atomic additions per edge;
+        no per-monomial Hessian surface is materialized.
+        """
+        offs_e = (tl.program_id(0) * BLOCK_E + tl.arange(0, BLOCK_E)).to(tl.int64)
+        offs_m = (tl.program_id(1) * BLOCK_MONO + tl.arange(0, BLOCK_MONO)).to(tl.int64)
+        mask_e = offs_e < n_edge
+        mask_m = offs_m < M
+        mask = mask_e[:, None] & mask_m[None, :]
+
+        q0 = tl.load(q_ptr + offs_e * 4 + 0, mask=mask_e, other=0.0)[:, None]
+        q1 = tl.load(q_ptr + offs_e * 4 + 1, mask=mask_e, other=0.0)[:, None]
+        q2 = tl.load(q_ptr + offs_e * 4 + 2, mask=mask_e, other=0.0)[:, None]
+        q3 = tl.load(q_ptr + offs_e * 4 + 3, mask=mask_e, other=0.0)[:, None]
+        v0 = tl.load(h_ptr + offs_e * 4 + 0, mask=mask_e, other=0.0)[:, None]
+        v1 = tl.load(h_ptr + offs_e * 4 + 1, mask=mask_e, other=0.0)[:, None]
+        v2 = tl.load(h_ptr + offs_e * 4 + 2, mask=mask_e, other=0.0)[:, None]
+        v3 = tl.load(h_ptr + offs_e * 4 + 3, mask=mask_e, other=0.0)[:, None]
+        e0 = tl.load(exp_ptr + offs_m * 4 + 0, mask=mask_m, other=0)[None, :]
+        e1 = tl.load(exp_ptr + offs_m * 4 + 1, mask=mask_m, other=0)[None, :]
+        e2 = tl.load(exp_ptr + offs_m * 4 + 2, mask=mask_m, other=0)[None, :]
+        e3 = tl.load(exp_ptr + offs_m * 4 + 3, mask=mask_m, other=0)[None, :]
+
+        one = tl.full((BLOCK_E, BLOCK_MONO), 1.0, dtype=tl.float32)
+        zero = tl.zeros((BLOCK_E, BLOCK_MONO), dtype=tl.float32)
+        a = tl.where(e0 == 0, one, zero)
+        b = tl.where(e1 == 0, one, zero)
+        c = tl.where(e2 == 0, one, zero)
+        d = tl.where(e3 == 0, one, zero)
+        am1 = zero
+        bm1 = zero
+        cm1 = zero
+        dm1 = zero
+        am2 = zero
+        bm2 = zero
+        cm2 = zero
+        dm2 = zero
+        pa = one
+        pb = one
+        pc = one
+        pd = one
+        pa_prev = zero
+        pb_prev = zero
+        pc_prev = zero
+        pd_prev = zero
+        for power in tl.static_range(1, MAXP + 1):
+            pa_prev2 = pa_prev
+            pb_prev2 = pb_prev
+            pc_prev2 = pc_prev
+            pd_prev2 = pd_prev
+            pa_prev = pa
+            pb_prev = pb
+            pc_prev = pc
+            pd_prev = pd
+            pa *= q0
+            pb *= q1
+            pc *= q2
+            pd *= q3
+            a = tl.where(e0 == power, pa, a)
+            b = tl.where(e1 == power, pb, b)
+            c = tl.where(e2 == power, pc, c)
+            d = tl.where(e3 == power, pd, d)
+            am1 = tl.where(e0 == power, pa_prev, am1)
+            bm1 = tl.where(e1 == power, pb_prev, bm1)
+            cm1 = tl.where(e2 == power, pc_prev, cm1)
+            dm1 = tl.where(e3 == power, pd_prev, dm1)
+            am2 = tl.where(e0 == power, pa_prev2, am2)
+            bm2 = tl.where(e1 == power, pb_prev2, bm2)
+            cm2 = tl.where(e2 == power, pc_prev2, cm2)
+            dm2 = tl.where(e3 == power, pd_prev2, dm2)
+
+        ef0 = e0.to(tl.float32)
+        ef1 = e1.to(tl.float32)
+        ef2 = e2.to(tl.float32)
+        ef3 = e3.to(tl.float32)
+        d0 = ef0 * am1 * ((b * c) * d)
+        d1 = ef1 * bm1 * ((a * c) * d)
+        d2 = ef2 * cm1 * ((a * b) * d)
+        d3 = ef3 * dm1 * ((a * b) * c)
+
+        h00 = ef0 * (ef0 - 1.0) * am2 * ((b * c) * d)
+        h11 = ef1 * (ef1 - 1.0) * bm2 * ((a * c) * d)
+        h22 = ef2 * (ef2 - 1.0) * cm2 * ((a * b) * d)
+        h33 = ef3 * (ef3 - 1.0) * dm2 * ((a * b) * c)
+        h01 = ef0 * ef1 * am1 * bm1 * (c * d)
+        h02 = ef0 * ef2 * am1 * cm1 * (b * d)
+        h03 = ef0 * ef3 * am1 * dm1 * (b * c)
+        h12 = ef1 * ef2 * bm1 * cm1 * (a * d)
+        h13 = ef1 * ef3 * bm1 * dm1 * (a * c)
+        h23 = ef2 * ef3 * cm1 * dm1 * (a * b)
+
+        g_offsets = offs_e[:, None] * M + offs_m[None, :]
+        g = tl.load(g_ptr + g_offsets, mask=mask, other=0.0)
+        tl.store(
+            gg_ptr + g_offsets,
+            v0 * d0 + v1 * d1 + v2 * d2 + v3 * d3,
+            mask=mask,
+        )
+        partial0 = tl.sum(g * (v0 * h00 + v1 * h01 + v2 * h02 + v3 * h03), axis=1)
+        partial1 = tl.sum(g * (v0 * h01 + v1 * h11 + v2 * h12 + v3 * h13), axis=1)
+        partial2 = tl.sum(g * (v0 * h02 + v1 * h12 + v2 * h22 + v3 * h23), axis=1)
+        partial3 = tl.sum(g * (v0 * h03 + v1 * h13 + v2 * h23 + v3 * h33), axis=1)
+        tl.atomic_add(gq_ptr + offs_e * 4 + 0, partial0, mask=mask_e)
+        tl.atomic_add(gq_ptr + offs_e * 4 + 1, partial1, mask=mask_e)
+        tl.atomic_add(gq_ptr + offs_e * 4 + 2, partial2, mask=mask_e)
+        tl.atomic_add(gq_ptr + offs_e * 4 + 3, partial3, mask=mask_e)
+
 
 # ======================================================================
 # Dispatch, operator registration and public API
@@ -264,6 +388,42 @@ def _backward_impl(
     return grad_q
 
 
+def _second_order_impl(
+    grad_out: Tensor,
+    q: Tensor,
+    grad_grad_q: Tensor,
+    exponents: list[int],
+    max_power: int,
+) -> tuple[Tensor, Tensor]:
+    n_edge = q.shape[0]
+    n_mono = len(exponents) // 4
+    grad_grad_out = torch.empty_like(grad_out)
+    grad_q = torch.zeros_like(q)
+    if type(n_edge) is int and n_edge == 0:
+        return grad_grad_out, grad_q
+    exponent_table = torch.tensor(exponents, dtype=torch.int32, device=q.device)
+    block_e = 16
+    block_mono = 32
+    wrap_triton(_monomials_bwd2_kernel)[
+        (triton.cdiv(n_edge, block_e), triton.cdiv(n_mono, block_mono))
+    ](
+        grad_out.contiguous(),
+        q.contiguous(),
+        grad_grad_q.contiguous(),
+        exponent_table,
+        grad_grad_out,
+        grad_q,
+        n_edge,
+        M=n_mono,
+        MAXP=int(max_power),
+        BLOCK_E=block_e,
+        BLOCK_MONO=block_mono,
+        num_warps=8,
+        num_stages=1,
+    )
+    return grad_grad_out, grad_q
+
+
 _monomials_op = torch.library.triton_op(
     "sezm_triton::wigner_monomials", mutates_args=()
 )(_forward_impl)
@@ -271,6 +431,10 @@ _monomials_op = torch.library.triton_op(
 _monomials_bwd_op = torch.library.triton_op(
     "sezm_triton::wigner_monomials_bwd", mutates_args=()
 )(_backward_impl)
+
+_monomials_bwd2_op = torch.library.triton_op(
+    "sezm_triton::wigner_monomials_bwd2", mutates_args=()
+)(_second_order_impl)
 
 
 @_monomials_op.register_fake
@@ -281,6 +445,11 @@ def _(q, exponents, max_power):
 @_monomials_bwd_op.register_fake
 def _(grad_out, q, exponents, max_power):
     return q.new_empty((q.shape[0], 4))
+
+
+@_monomials_bwd2_op.register_fake
+def _(grad_out, q, grad_grad_q, exponents, max_power):
+    return grad_out.new_empty(grad_out.shape), q.new_empty(q.shape)
 
 
 def _setup_context(ctx, inputs, output):
@@ -316,6 +485,15 @@ def _bwd_backward(ctx, grad_grad_q):
     grad_out, q = ctx.saved_tensors
     if grad_grad_q is None:
         return None, None, None, None
+    if _use_triton(q) and not torch.is_grad_enabled():
+        grad_grad_out, grad_q_out = _monomials_bwd2_op(
+            grad_out,
+            q,
+            grad_grad_q,
+            ctx.exponents,
+            ctx.max_power,
+        )
+        return grad_grad_out, grad_q_out, None, None
     with torch.enable_grad():
         grad_out_leaf = grad_out.detach().requires_grad_()
         q_leaf = q.detach().requires_grad_()

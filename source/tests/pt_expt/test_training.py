@@ -39,6 +39,7 @@ from deepmd.pt_expt.entrypoints.main import (
 from deepmd.pt_expt.model import (
     get_model,
 )
+from deepmd.pt_expt.train import training as training_module
 from deepmd.utils.argcheck import (
     normalize,
 )
@@ -68,6 +69,26 @@ EXAMPLE_DIR = os.path.join(
 # traced with the default (False) and per-atom virial is not emitted.
 _COMPILE_PRED_KEYS = ("atom_energy", "energy", "force", "virial")
 _COMPILE_TOL = {"atol": 1e-10, "rtol": 1e-10}
+
+
+def test_finalize_compiled_lower_relaxes_views(monkeypatch) -> None:
+    """The shared compile tail preserves runtime-dependent reshape semantics."""
+    graph = torch.fx.Graph()
+    value = graph.placeholder("value")
+    viewed = graph.call_function(torch.ops.aten.view.default, (value, (2, 3)))
+    graph.output(viewed)
+    traced = torch.fx.GraphModule(torch.nn.Module(), graph)
+
+    monkeypatch.setattr(training_module, "apply_global_compile_patches", lambda: None)
+    monkeypatch.setattr(torch, "compile", lambda module, **_kwargs: module)
+    compiled = training_module._finalize_compiled_lower(traced, compile_opts=None)
+
+    targets = [
+        node.target for node in compiled.graph.nodes if node.op == "call_function"
+    ]
+    assert torch.ops.aten.view.default not in targets
+    assert torch.ops.aten.reshape.default in targets
+
 
 # Descriptor configs used to extend compile-correctness tests to non-trivial
 # architectures.  ``precision: float64`` is set so the strict ``atol=rtol=1e-10``

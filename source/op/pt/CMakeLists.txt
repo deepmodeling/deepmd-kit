@@ -86,14 +86,74 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
       dpa4/so2_conv_bwd_c64_l4.cu
       dpa4/so2_conv_bwd_c64_l5.cu
       dpa4/so2_conv_bwd_c64_l6.cu)
-  set(DPA4_ROTATE_MIX_TRAIN_KERNEL_SRC
-      dpa4/rotate_mix_train_l1.cu dpa4/rotate_mix_train_l2.cu
-      dpa4/rotate_mix_train_l3.cu dpa4/rotate_mix_train_l4.cu
-      dpa4/rotate_mix_train_l5.cu dpa4/rotate_mix_train_l6.cu)
-  set(DPA4_SO2_CONV_TRAIN_KERNEL_SRC
-      dpa4/so2_conv_train_l1.cu dpa4/so2_conv_train_l2.cu
-      dpa4/so2_conv_train_l3.cu dpa4/so2_conv_train_l4.cu
-      dpa4/so2_conv_train_l5.cu dpa4/so2_conv_train_l6.cu)
+  # The rotation training kernels form a compile-time grid over degree, radial
+  # rank and scalar type. Generate one source per grid point so Ninja can
+  # compile the expensive template instantiations independently, while the
+  # maintained source remains one shard template and one instantiation header.
+  set(DPA4_ROTATE_MIX_TRAIN_KERNEL_SRC)
+  set(DPA4_RMT_GENERATED_DIR
+      "${CMAKE_CURRENT_BINARY_DIR}/dpa4/rotate_mix_train")
+  set(DPA4_RMT_INSTANTIATE_HEADER
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4/rotate_mix_train/instantiate.cuh")
+  file(MAKE_DIRECTORY "${DPA4_RMT_GENERATED_DIR}")
+  foreach(DPA4_RMT_L RANGE 1 6)
+    foreach(DPA4_RMT_RANK RANGE 0 4)
+      foreach(DPA4_RMT_DTYPE IN ITEMS f32 f64 bf16)
+        if(DPA4_RMT_DTYPE STREQUAL "f32")
+          set(DPA4_RMT_TYPE float)
+        elseif(DPA4_RMT_DTYPE STREQUAL "f64")
+          set(DPA4_RMT_TYPE double)
+        else()
+          set(DPA4_RMT_TYPE c10::BFloat16)
+        endif()
+        set(DPA4_RMT_SHARD
+            "${DPA4_RMT_GENERATED_DIR}/l${DPA4_RMT_L}_r${DPA4_RMT_RANK}_${DPA4_RMT_DTYPE}.cu"
+        )
+        configure_file(dpa4/rotate_mix_train/shard.cu.in "${DPA4_RMT_SHARD}"
+                       @ONLY)
+        list(APPEND DPA4_ROTATE_MIX_TRAIN_KERNEL_SRC "${DPA4_RMT_SHARD}")
+      endforeach()
+    endforeach()
+  endforeach()
+  unset(DPA4_RMT_SHARD)
+  unset(DPA4_RMT_TYPE)
+  unset(DPA4_RMT_DTYPE)
+  unset(DPA4_RMT_RANK)
+  unset(DPA4_RMT_L)
+  unset(DPA4_RMT_INSTANTIATE_HEADER)
+  unset(DPA4_RMT_GENERATED_DIR)
+  # The training forward has a smaller template grid over degree and scalar
+  # type. Keep the same generated-shard layout as rotate_mix_train so the four
+  # dtype instantiations of a high degree do not serialize behind one nvcc
+  # invocation.
+  set(DPA4_SO2_CONV_TRAIN_KERNEL_SRC)
+  set(DPA4_SCT_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/dpa4/so2_conv_train")
+  set(DPA4_SCT_INSTANTIATE_HEADER
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4/so2_conv_train/instantiate.cuh")
+  file(MAKE_DIRECTORY "${DPA4_SCT_GENERATED_DIR}")
+  foreach(DPA4_SCT_L RANGE 1 6)
+    foreach(DPA4_SCT_DTYPE IN ITEMS f32 f64 f16 bf16)
+      if(DPA4_SCT_DTYPE STREQUAL "f32")
+        set(DPA4_SCT_TYPE float)
+      elseif(DPA4_SCT_DTYPE STREQUAL "f64")
+        set(DPA4_SCT_TYPE double)
+      elseif(DPA4_SCT_DTYPE STREQUAL "f16")
+        set(DPA4_SCT_TYPE c10::Half)
+      else()
+        set(DPA4_SCT_TYPE c10::BFloat16)
+      endif()
+      set(DPA4_SCT_SHARD
+          "${DPA4_SCT_GENERATED_DIR}/l${DPA4_SCT_L}_${DPA4_SCT_DTYPE}.cu")
+      configure_file(dpa4/so2_conv_train/shard.cu.in "${DPA4_SCT_SHARD}" @ONLY)
+      list(APPEND DPA4_SO2_CONV_TRAIN_KERNEL_SRC "${DPA4_SCT_SHARD}")
+    endforeach()
+  endforeach()
+  unset(DPA4_SCT_SHARD)
+  unset(DPA4_SCT_TYPE)
+  unset(DPA4_SCT_DTYPE)
+  unset(DPA4_SCT_L)
+  unset(DPA4_SCT_INSTANTIATE_HEADER)
+  unset(DPA4_SCT_GENERATED_DIR)
   set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC
       dpa4c/graph_compress.cu dpa4c/graph_compress_c8.cu
       dpa4c/graph_compress_c16.cu dpa4c/graph_compress_c32.cu

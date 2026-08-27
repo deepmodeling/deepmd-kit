@@ -53,12 +53,15 @@ pytestmark = [
 # ``(lmax, n_focus, focus_dim, mixing_layers, mixer_rank, focus_compete)``
 # spanning the deployed DPA4 block shapes: the narrow two-focus block, the
 # wider rank-2 mixer, the single-focus block without a competition head (which
-# exercises the ``rank == 0`` degree-wise multiply), and the widest lmax.
+# exercises the ``rank == 0`` degree-wise multiply), and the degree-six
+# 384-channel Ultra layouts with either four 96-wide or three 128-wide focuses.
 BLOCK_SHAPES = [
     (3, 2, 32, 3, 1, True),
     (5, 2, 64, 4, 2, True),
     (3, 1, 64, 3, 0, False),
     (6, 2, 96, 4, 1, True),
+    (6, 4, 96, 4, 4, True),
+    (6, 3, 128, 4, 4, True),
 ]
 
 # Competition-head constants of the deployed configuration.
@@ -86,6 +89,19 @@ def _block_diagonal_mask(lmax: int, device: torch.device) -> torch.Tensor:
         base, width = degree * degree, 2 * degree + 1
         mask[base : base + width, base : base + width] = 1.0
     return mask
+
+
+def _pack_wigner_rows(wigner: torch.Tensor, lmax: int) -> torch.Tensor:
+    """Pack the m=0 and m=+-1 rows consumed by the reduced rotation."""
+    m0, mm, mp = [], [], []
+    for degree in range(lmax + 1):
+        start, end = degree * degree, (degree + 1) ** 2
+        row0 = start + degree
+        m0.append(wigner[:, row0, start:end])
+        if degree >= 1:
+            mm.append(wigner[:, row0 - 1, start:end])
+            mp.append(wigner[:, row0 + 1, start:end])
+    return torch.cat(m0 + mm + mp, dim=1)
 
 
 class _ValuePathCase:
@@ -257,7 +273,7 @@ class _ValuePathCase:
                     self.src,
                     self.csr[0],
                     self.csr[1],
-                    wigner,
+                    _pack_wigner_rows(wigner, self.lmax),
                     kernel_flat,
                     basis_flat,
                     compete_w if self.compete else None,

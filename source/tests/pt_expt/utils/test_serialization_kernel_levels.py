@@ -2,6 +2,10 @@
 """Kernel-level selection for pt_expt serialization."""
 
 import os
+import sys
+from types import (
+    ModuleType,
+)
 
 import pytest
 import torch
@@ -169,6 +173,53 @@ def test_level_two_graph_family_takes_priority_over_dpa4() -> None:
             "descriptors": [{"type": "SeZM"}, {"type": "dpa1"}],
         }
     )
+
+
+@pytest.mark.parametrize(
+    ("model_data", "has_value_path", "expected_call"),
+    [
+        ({"type": "dpa4"}, True, True),
+        (
+            {
+                "type": "standard",
+                "descriptor": {"type": "SeZM"},
+            },
+            True,
+            True,
+        ),
+        ({"type": "dpa1"}, True, False),
+        ({"type": "dpa4c"}, True, False),
+        (
+            {
+                "type": "hybrid",
+                "descriptors": [{"type": "SeZM"}, {"type": "dpa1"}],
+            },
+            True,
+            False,
+        ),
+        ({"type": "dpa4"}, False, False),
+    ],
+)
+def test_packed_weights_only_prepare_for_bound_dpa4_value_path(
+    monkeypatch,
+    model_data: dict,
+    has_value_path: bool,
+    expected_call: bool,
+) -> None:
+    model = torch.nn.Module()
+    conv = torch.nn.Module()
+    conv._triton_value_path = object() if has_value_path else None
+    model.add_module("conv", conv)
+
+    calls = []
+    module_name = "deepmd.pt_expt.kernels.triton.sezm.so2_value_path"
+    value_path_module = ModuleType(module_name)
+    value_path_module.prepare_triton_value_path_weights = calls.append
+    monkeypatch.setitem(sys.modules, module_name, value_path_module)
+
+    serialization._prepare_dpa4_triton_value_path_weights(model, model_data)
+
+    assert calls == ([model] if expected_call else [])
 
 
 @pytest.mark.parametrize(

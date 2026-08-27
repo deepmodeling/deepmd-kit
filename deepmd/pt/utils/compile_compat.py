@@ -564,13 +564,25 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         Keyword options accepted by ``torch.compile(options=...)`` and by
         ``torch._inductor.config.patch``.
     """
+    fusion_size_value = os.environ.get("DP_FUSION_SIZE", "8")
+    try:
+        fusion_size = int(fusion_size_value)
+    except ValueError as exc:
+        raise ValueError(
+            f"DP_FUSION_SIZE must be a positive integer, got {fusion_size_value!r}"
+        ) from exc
+    if fusion_size < 1:
+        raise ValueError(
+            f"DP_FUSION_SIZE must be a positive integer, got {fusion_size_value!r}"
+        )
+
     compile_options: dict[str, Any] = {
         "max_autotune": False,
         **_inductor_autotune_log_options(),
         "shape_padding": True,
         "epilogue_fusion": False,
         "triton.cudagraphs": False,
-        "max_fusion_size": 8,
+        "max_fusion_size": fusion_size,
         "triton.persistent_reductions": False,
         # ``mix_order_reduction`` is defective under data-dependent symbolic
         # shapes on PyTorch 2.11 and earlier (pytorch/pytorch#174379, #178080,

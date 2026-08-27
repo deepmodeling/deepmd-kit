@@ -39,57 +39,33 @@
 
 #include <tuple>
 
-#include "rotate_mix_train_kernels.cuh"
+#include "rotate_mix_train/kernels.cuh"
 #include "sezm_train_ops.cuh"
 
-// The kernel templates are instantiated in the per-degree units
-// (rotate_mix_train_l*.cu); the declarations below keep this host unit from
-// re-instantiating them, which is what dominated its build time.
+// The kernel templates are instantiated in generated (degree, rank, dtype)
+// shards; the declarations below keep this host unit from emitting device code.
 #define DPA4_RMT_EXTERN extern
 #define DPA4_RMT_L 1
-#include "rotate_mix_train_instantiate.cuh"
+#include "rotate_mix_train/instantiate.cuh"
 #undef DPA4_RMT_L
 #define DPA4_RMT_L 2
-#include "rotate_mix_train_instantiate.cuh"
+#include "rotate_mix_train/instantiate.cuh"
 #undef DPA4_RMT_L
 #define DPA4_RMT_L 3
-#include "rotate_mix_train_instantiate.cuh"
+#include "rotate_mix_train/instantiate.cuh"
 #undef DPA4_RMT_L
 #define DPA4_RMT_L 4
-#include "rotate_mix_train_instantiate.cuh"
+#include "rotate_mix_train/instantiate.cuh"
 #undef DPA4_RMT_L
 #define DPA4_RMT_L 5
-#include "rotate_mix_train_instantiate.cuh"
+#include "rotate_mix_train/instantiate.cuh"
 #undef DPA4_RMT_L
 #define DPA4_RMT_L 6
-#include "rotate_mix_train_instantiate.cuh"
+#include "rotate_mix_train/instantiate.cuh"
 #undef DPA4_RMT_L
 #undef DPA4_RMT_EXTERN
 
 using namespace dpa4_sezm_kernels;
-
-namespace {
-
-template <typename F>
-void dispatch_l(int64_t lmax, const F& f) {
-  switch (lmax) {
-#define DPA4_RM_L_CASE(L)                \
-  case L:                                \
-    f(std::integral_constant<int, L>{}); \
-    break;
-    DPA4_RM_L_CASE(1)
-    DPA4_RM_L_CASE(2)
-    DPA4_RM_L_CASE(3)
-    DPA4_RM_L_CASE(4)
-    DPA4_RM_L_CASE(5)
-    DPA4_RM_L_CASE(6)
-#undef DPA4_RM_L_CASE
-    default:
-      TORCH_CHECK(false, "sezm_rotate_mix: unsupported lmax");
-  }
-}
-
-}  // namespace
 
 // ---------------------------------------------------------------------------
 // Host entries, composed by the fused SO(2) value-path operator.
@@ -98,17 +74,17 @@ namespace dpa4_sezm {
 
 at::Tensor rotate_mix_fwd(const at::Tensor& x_in,
                           const at::Tensor& src,
-                          const at::Tensor& wigner_in,
+                          const at::Tensor& runs_in,
                           const at::Tensor& kc_in,
                           const at::Tensor& cb_in,
                           int64_t lmax,
                           int64_t n_focus,
                           int64_t rank) {
-  check_rotate_inputs(x_in, src, wigner_in, lmax, n_focus, rank,
+  check_rotate_inputs(x_in, src, runs_in, lmax, n_focus, rank,
                       "sezm_rotate_mix_fwd");
   const c10::cuda::CUDAGuard guard(x_in.device());
   const at::Tensor x = x_in.stride(2) == 1 ? x_in : x_in.contiguous();
-  const at::Tensor wigner = wigner_in.contiguous();
+  const at::Tensor runs = runs_in.contiguous();
   const at::Tensor kc = kc_in.contiguous();
   const at::Tensor cb = cb_in.contiguous();
   const long n_edge = src.size(0);
@@ -121,14 +97,15 @@ at::Tensor rotate_mix_fwd(const at::Tensor& x_in,
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, x.scalar_type(), "rotate_mix_fwd", [&] {
-        dispatch_l(lmax, [&](auto lc) {
-          launch_rotate_mix_fwd<scalar_t, decltype(lc)::value>(
+  AT_DISPATCH_FLOATING_TYPES_AND(
+      at::kBFloat16, x.scalar_type(), "rotate_mix_fwd", [&] {
+        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+          launch_rotate_mix_fwd<scalar_t, decltype(lc)::value,
+                                decltype(rc)::value>(
               x.data_ptr<scalar_t>(), src.data_ptr<long>(),
-              wigner.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
+              runs.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
               cb.data_ptr<scalar_t>(), u.data_ptr<scalar_t>(), n_edge,
-              x.stride(0), x.stride(1), cf, c_wide, (int)rank, threads, stream);
+              x.stride(0), x.stride(1), cf, c_wide, threads, stream);
         });
       });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_fwd");
@@ -139,25 +116,25 @@ std::tuple<at::Tensor, at::Tensor> rotate_mix_fwd_pair(
     const at::Tensor& x_in,
     const at::Tensor& h_gx_in,
     const at::Tensor& src,
-    const at::Tensor& wigner_in,
-    const c10::optional<at::Tensor>& h_gwig,
+    const at::Tensor& runs_in,
+    const c10::optional<at::Tensor>& h_gruns,
     const at::Tensor& kc_in,
     const c10::optional<at::Tensor>& h_gkc,
     const at::Tensor& cb_in,
     int64_t lmax,
     int64_t n_focus,
     int64_t rank) {
-  check_rotate_inputs(x_in, src, wigner_in, lmax, n_focus, rank,
+  check_rotate_inputs(x_in, src, runs_in, lmax, n_focus, rank,
                       "sezm_rotate_mix_fwd_pair");
   const c10::cuda::CUDAGuard guard(x_in.device());
   const at::Tensor x = x_in.stride(2) == 1 ? x_in : x_in.contiguous();
   const at::Tensor h_gx =
       h_gx_in.stride(2) == 1 ? h_gx_in : h_gx_in.contiguous();
-  const at::Tensor wigner = wigner_in.contiguous();
+  const at::Tensor runs = runs_in.contiguous();
   const at::Tensor kc = kc_in.contiguous();
   const at::Tensor cb = cb_in.contiguous();
-  const at::Tensor h_gwig_t =
-      h_gwig.has_value() ? h_gwig->contiguous() : at::Tensor();
+  const at::Tensor h_gruns_t =
+      h_gruns.has_value() ? h_gruns->contiguous() : at::Tensor();
   const at::Tensor h_gkc_t =
       h_gkc.has_value() ? h_gkc->contiguous() : at::Tensor();
   const long n_edge = src.size(0);
@@ -171,19 +148,19 @@ std::tuple<at::Tensor, at::Tensor> rotate_mix_fwd_pair(
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, x.scalar_type(), "rotate_mix_fwd_pair", [&] {
-        dispatch_l(lmax, [&](auto lc) {
-          launch_rotate_mix_fwd_pair<scalar_t, decltype(lc)::value>(
+  AT_DISPATCH_FLOATING_TYPES_AND(
+      at::kBFloat16, x.scalar_type(), "rotate_mix_fwd_pair", [&] {
+        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+          launch_rotate_mix_fwd_pair<scalar_t, decltype(lc)::value,
+                                     decltype(rc)::value>(
               x.data_ptr<scalar_t>(), h_gx.data_ptr<scalar_t>(),
-              src.data_ptr<long>(), wigner.data_ptr<scalar_t>(),
-              h_gwig_t.defined() ? h_gwig_t.data_ptr<scalar_t>() : nullptr,
+              src.data_ptr<long>(), runs.data_ptr<scalar_t>(),
+              h_gruns_t.defined() ? h_gruns_t.data_ptr<scalar_t>() : nullptr,
               kc.data_ptr<scalar_t>(),
               h_gkc_t.defined() ? h_gkc_t.data_ptr<scalar_t>() : nullptr,
               cb.data_ptr<scalar_t>(), u0.data_ptr<scalar_t>(),
               hgu0.data_ptr<scalar_t>(), n_edge, x.stride(0), x.stride(1),
-              h_gx.stride(0), h_gx.stride(1), cf, c_wide, (int)rank, threads,
-              stream);
+              h_gx.stride(0), h_gx.stride(1), cf, c_wide, threads, stream);
         });
       });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_fwd_pair");
@@ -194,18 +171,18 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
     const at::Tensor& grad_u_in,
     const at::Tensor& x_in,
     const at::Tensor& src,
-    const at::Tensor& wigner_in,
+    const at::Tensor& runs_in,
     const at::Tensor& kc_in,
     const at::Tensor& cb_in,
     int64_t lmax,
     int64_t n_focus,
     int64_t rank) {
-  check_rotate_inputs(x_in, src, wigner_in, lmax, n_focus, rank,
+  check_rotate_inputs(x_in, src, runs_in, lmax, n_focus, rank,
                       "sezm_rotate_mix_bwd");
   const c10::cuda::CUDAGuard guard(x_in.device());
   const at::Tensor grad_u = grad_u_in.contiguous();
   const at::Tensor x = x_in.stride(2) == 1 ? x_in : x_in.contiguous();
-  const at::Tensor wigner = wigner_in.contiguous();
+  const at::Tensor runs = runs_in.contiguous();
   const at::Tensor kc = kc_in.contiguous();
   const at::Tensor cb = cb_in.contiguous();
   const long n_edge = src.size(0);
@@ -213,7 +190,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
   const int cf = c_wide / (int)n_focus;
   const long dim = (lmax + 1) * (lmax + 1);
   auto grad_x_edge = at::empty({n_edge, dim, c_wide}, x.options());
-  auto grad_wigner = at::zeros_like(wigner);
+  auto grad_runs = at::zeros_like(runs);
   auto grad_kc = at::empty_like(kc);
   // Per-edge channel-basis partials; the reduction over edges runs as one
   // sum below (a direct atomic accumulation would serialize every edge on
@@ -221,28 +198,29 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
   auto pcb = at::empty({rank > 0 ? n_edge : 0, rank, c_wide}, x.options());
   auto grad_cb = at::zeros_like(cb);
   if (n_edge == 0) {
-    return {grad_x_edge, grad_wigner, grad_kc, grad_cb};
+    return {grad_x_edge, grad_runs, grad_kc, grad_cb};
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, x.scalar_type(), "rotate_mix_bwd", [&] {
-        dispatch_l(lmax, [&](auto lc) {
-          launch_rotate_mix_bwd<scalar_t, decltype(lc)::value>(
+  AT_DISPATCH_FLOATING_TYPES_AND(
+      at::kBFloat16, x.scalar_type(), "rotate_mix_bwd", [&] {
+        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+          launch_rotate_mix_bwd<scalar_t, decltype(lc)::value,
+                                decltype(rc)::value>(
               grad_u.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
-              src.data_ptr<long>(), wigner.data_ptr<scalar_t>(),
+              src.data_ptr<long>(), runs.data_ptr<scalar_t>(),
               kc.data_ptr<scalar_t>(), cb.data_ptr<scalar_t>(),
-              grad_x_edge.data_ptr<scalar_t>(),
-              grad_wigner.data_ptr<scalar_t>(), grad_kc.data_ptr<scalar_t>(),
+              grad_x_edge.data_ptr<scalar_t>(), grad_runs.data_ptr<scalar_t>(),
+              grad_kc.data_ptr<scalar_t>(),
               rank > 0 ? pcb.data_ptr<scalar_t>() : nullptr, n_edge,
-              x.stride(0), x.stride(1), cf, c_wide, (int)rank, threads, stream);
+              x.stride(0), x.stride(1), cf, c_wide, threads, stream);
         });
       });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_bwd");
   if (rank > 0) {
     grad_cb = pcb.sum(0, false, at::kFloat).to(cb.scalar_type()).view_as(cb);
   }
-  return {grad_x_edge, grad_wigner, grad_kc, grad_cb};
+  return {grad_x_edge, grad_runs, grad_kc, grad_cb};
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd2(
@@ -250,67 +228,68 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd2(
     const at::Tensor& x_in,
     const at::Tensor& h_gx_in,
     const at::Tensor& src,
-    const at::Tensor& wigner_in,
-    const c10::optional<at::Tensor>& h_gwig,
+    const at::Tensor& runs_in,
+    const c10::optional<at::Tensor>& h_gruns,
     const at::Tensor& kc_in,
     const c10::optional<at::Tensor>& h_gkc,
     const at::Tensor& cb_in,
     int64_t lmax,
     int64_t n_focus,
     int64_t rank) {
-  check_rotate_inputs(x_in, src, wigner_in, lmax, n_focus, rank,
+  check_rotate_inputs(x_in, src, runs_in, lmax, n_focus, rank,
                       "sezm_rotate_mix_bwd2");
   const c10::cuda::CUDAGuard guard(x_in.device());
   const at::Tensor grad_u = grad_u_in.contiguous();
   const at::Tensor x = x_in.stride(2) == 1 ? x_in : x_in.contiguous();
   const at::Tensor h_gx =
       h_gx_in.stride(2) == 1 ? h_gx_in : h_gx_in.contiguous();
-  const at::Tensor wigner = wigner_in.contiguous();
+  const at::Tensor runs = runs_in.contiguous();
   const at::Tensor kc = kc_in.contiguous();
   const at::Tensor cb = cb_in.contiguous();
-  const at::Tensor h_gwig_t =
-      h_gwig.has_value() ? h_gwig->contiguous() : at::Tensor();
+  const at::Tensor h_gruns_t =
+      h_gruns.has_value() ? h_gruns->contiguous() : at::Tensor();
   const at::Tensor h_gkc_t =
       h_gkc.has_value() ? h_gkc->contiguous() : at::Tensor();
-  const bool wants_gxe = h_gwig_t.defined() || h_gkc_t.defined();
+  const bool wants_gxe = h_gruns_t.defined() || h_gkc_t.defined();
   const long n_edge = src.size(0);
   const int c_wide = (int)x.size(2);
   const int cf = c_wide / (int)n_focus;
   const long dim = (lmax + 1) * (lmax + 1);
   auto grad_x_edge =
       at::empty({wants_gxe ? n_edge : 0, dim, c_wide}, x.options());
-  auto grad_wigner = at::zeros_like(wigner);
+  auto grad_runs = at::zeros_like(runs);
   auto grad_kc = at::empty_like(kc);
   auto pcb = at::empty({rank > 0 ? n_edge : 0, rank, c_wide}, x.options());
   auto grad_cb = at::zeros_like(cb);
   if (n_edge == 0) {
-    return {grad_x_edge, grad_wigner, grad_kc, grad_cb};
+    return {grad_x_edge, grad_runs, grad_kc, grad_cb};
   }
   auto stream = at::cuda::getCurrentCUDAStream();
   const int threads = lane_count(c_wide);
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, x.scalar_type(), "rotate_mix_bwd2", [&] {
-        dispatch_l(lmax, [&](auto lc) {
-          launch_rotate_mix_bwd2<scalar_t, decltype(lc)::value>(
+  AT_DISPATCH_FLOATING_TYPES_AND(
+      at::kBFloat16, x.scalar_type(), "rotate_mix_bwd2", [&] {
+        dispatch_l_rank(lmax, rank, [&](auto lc, auto rc) {
+          launch_rotate_mix_bwd2<scalar_t, decltype(lc)::value,
+                                 decltype(rc)::value>(
               grad_u.data_ptr<scalar_t>(), x.data_ptr<scalar_t>(),
               h_gx.data_ptr<scalar_t>(), src.data_ptr<long>(),
-              wigner.data_ptr<scalar_t>(),
-              h_gwig_t.defined() ? h_gwig_t.data_ptr<scalar_t>() : nullptr,
+              runs.data_ptr<scalar_t>(),
+              h_gruns_t.defined() ? h_gruns_t.data_ptr<scalar_t>() : nullptr,
               kc.data_ptr<scalar_t>(),
               h_gkc_t.defined() ? h_gkc_t.data_ptr<scalar_t>() : nullptr,
               cb.data_ptr<scalar_t>(),
               wants_gxe ? grad_x_edge.data_ptr<scalar_t>() : nullptr,
-              grad_wigner.data_ptr<scalar_t>(), grad_kc.data_ptr<scalar_t>(),
+              grad_runs.data_ptr<scalar_t>(), grad_kc.data_ptr<scalar_t>(),
               rank > 0 ? pcb.data_ptr<scalar_t>() : nullptr, n_edge,
               x.stride(0), x.stride(1), h_gx.stride(0), h_gx.stride(1), cf,
-              c_wide, (int)rank, threads, stream);
+              c_wide, threads, stream);
         });
       });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_bwd2");
   if (rank > 0) {
     grad_cb = pcb.sum(0, false, at::kFloat).to(cb.scalar_type()).view_as(cb);
   }
-  return {grad_x_edge, grad_wigner, grad_kc, grad_cb};
+  return {grad_x_edge, grad_runs, grad_kc, grad_cb};
 }
 
 at::Tensor segment_sum_csr(const at::Tensor& rows_in,

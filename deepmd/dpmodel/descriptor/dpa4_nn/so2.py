@@ -1622,7 +1622,7 @@ class SO2Convolution(NativeOP):
         # === Step 14. Optional fused training seams ===
         # Training differentiates the convolution twice under a force loss, so
         # its accelerated forms carry analytic backward and second-order
-        # implementations of their own: one fused kernel for the value stream
+        # implementations of their own: one fused operator for the value stream
         # up to the attention aggregation (``_cuda_value_train``), and the
         # segmented attention softmax / flash aggregation pair for the
         # attention span (``_flash_atten_trains`` marks the bound aggregation
@@ -1892,9 +1892,12 @@ class SO2Convolution(NativeOP):
             raise RuntimeError("The fused attention path requires a CSR builder")
         dst = edge_cache.dst
         order, row_ptr = self._cached_edge_csr_fn(edge_cache, "dst", x.shape[0])
+        rotation = edge_cache.Dt_full
+        if rotation is None:
+            rotation = self._cuda_value_train.edge_runs(edge_cache)
         pre_gate = self._flash_atten_fn(
             x_local,
-            edge_cache.Dt_full,
+            rotation,
             self.rotate_inv_rescale_full,
             attn_alpha,
             order,

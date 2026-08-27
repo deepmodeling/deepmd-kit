@@ -1448,6 +1448,26 @@ def _uses_dpa4_kernel_defaults(model_data: dict) -> bool:
     )
 
 
+def _prepare_dpa4_triton_value_path_weights(
+    model: torch.nn.Module,
+    model_data: dict,
+) -> None:
+    """Prepare packed weights only for a bound DPA4 Triton value path."""
+    if not _uses_dpa4_kernel_defaults(model_data):
+        return
+    if not any(
+        getattr(module, "_triton_value_path", None) is not None
+        for module in model.modules()
+    ):
+        return
+
+    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+        prepare_triton_value_path_weights,
+    )
+
+    prepare_triton_value_path_weights(model)
+
+
 @contextlib.contextmanager
 def _dpa4_kernel_levels_for_target(
     model_data: dict,
@@ -1763,6 +1783,12 @@ def _trace_and_export_impl(
     )
 
     run_autotune(model, target_device)
+
+    # Pack after checkpoint deserialization. The non-persistent buffers become
+    # constants in the CPU trace and move with the exported graph to the
+    # requested AOTI target. The helper leaves every non-DPA4 or reference path
+    # untouched and avoids importing the SeZM Triton implementation for it.
+    _prepare_dpa4_triton_value_path_weights(model, data["model"])
 
     # 2. Collect metadata
     metadata = _collect_metadata(

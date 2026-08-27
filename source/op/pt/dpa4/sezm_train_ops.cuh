@@ -35,7 +35,7 @@ at::ScalarType alpha_dtype(at::ScalarType working);
 
 // Whole-stack gated-mixing forward: (x_local, z_all, u_final).
 std::tuple<at::Tensor, at::Tensor, at::Tensor> mixing_fwd(
-    const at::Tensor& u0,
+    at::Tensor u0,
     const at::Tensor& alpha,
     const at::Tensor& w0_all,
     const at::Tensor& w1_all,
@@ -90,6 +90,7 @@ std::tuple<at::Tensor,
            at::Tensor,
            at::Tensor,
            at::Tensor,
+           at::Tensor,
            at::Tensor>
 mixing_bwd2(const at::Tensor& grad_out,
             const at::Tensor& x_local,
@@ -107,8 +108,8 @@ mixing_bwd2(const at::Tensor& grad_out,
             const c10::optional<at::Tensor>& grad_u_up,
             const c10::optional<at::Tensor>& kept_upstream,
             const c10::optional<at::Tensor>& kept_grad_z,
-            const c10::optional<at::Tensor>& kept_grad_logit,
-            const c10::optional<at::Tensor>& ggout_init,
+            const c10::optional<at::Tensor>& kept_gate_logit,
+            const c10::optional<at::Tensor>& ggout_scale,
             int64_t lmax,
             int64_t focus_dim,
             bool apply_alpha);
@@ -117,7 +118,7 @@ mixing_bwd2(const at::Tensor& grad_out,
 // focus-major output (F, E, ROW).
 at::Tensor rotate_mix_fwd(const at::Tensor& x,
                           const at::Tensor& src,
-                          const at::Tensor& wigner,
+                          const at::Tensor& runs,
                           const at::Tensor& kc,
                           const at::Tensor& cb,
                           int64_t lmax,
@@ -126,14 +127,15 @@ at::Tensor rotate_mix_fwd(const at::Tensor& x,
 
 // Paired forward for the second order: one traversal produces the rotated
 // input u0 and the upstream cotangent of the rotation backward,
-// h_gu0 = M(kc) R(wig) h_e + M(kc) R(h_gwig) x + M(h_gkc) R(wig) x, with
+// h_gu0 = M(kc) R(runs) h_e + M(kc) R(h_gruns) x +
+// M(h_gkc) R(runs) x, with
 // the node cotangent h_gx gathered onto edges in place.
 std::tuple<at::Tensor, at::Tensor> rotate_mix_fwd_pair(
     const at::Tensor& x,
     const at::Tensor& h_gx,
     const at::Tensor& src,
-    const at::Tensor& wigner,
-    const c10::optional<at::Tensor>& h_gwig,
+    const at::Tensor& runs,
+    const c10::optional<at::Tensor>& h_gruns,
     const at::Tensor& kc,
     const c10::optional<at::Tensor>& h_gkc,
     const at::Tensor& cb,
@@ -142,14 +144,13 @@ std::tuple<at::Tensor, at::Tensor> rotate_mix_fwd_pair(
     int64_t rank);
 
 // First-order backward of the fused front end: per-edge node gradient (the
-// caller segment-sums it), Wigner gradient on the structural non-zeros, the
-// degree-kernel gradient, and the channel-basis gradient (zero-shaped for
-// the basis-free rank-0 form).
+// caller segment-sums it), packed-run gradient, degree-kernel gradient, and
+// channel-basis gradient (zero-shaped for the basis-free rank-0 form).
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
     const at::Tensor& grad_u,
     const at::Tensor& x,
     const at::Tensor& src,
-    const at::Tensor& wigner,
+    const at::Tensor& runs,
     const at::Tensor& kc,
     const at::Tensor& cb,
     int64_t lmax,
@@ -159,15 +160,15 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
 // Rotation curvature for the second order: the three multilinear re-entries
 // of the rotation backward against the shared upstream, merged into one
 // traversal. Returns the per-edge node curvature (zero-shaped when neither
-// the Wigner nor the kernel cotangent is present), the Wigner curvature,
-// the kernel curvature, and the channel-basis curvature.
+// the run nor the kernel cotangent is present), the run curvature, the kernel
+// curvature, and the channel-basis curvature.
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd2(
     const at::Tensor& grad_u,
     const at::Tensor& x,
     const at::Tensor& h_gx,
     const at::Tensor& src,
-    const at::Tensor& wigner,
-    const c10::optional<at::Tensor>& h_gwig,
+    const at::Tensor& runs,
+    const c10::optional<at::Tensor>& h_gruns,
     const at::Tensor& kc,
     const c10::optional<at::Tensor>& h_gkc,
     const at::Tensor& cb,

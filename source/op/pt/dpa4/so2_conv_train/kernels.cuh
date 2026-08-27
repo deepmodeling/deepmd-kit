@@ -13,7 +13,7 @@
 
 #include <type_traits>
 
-#include "sezm_train_ops.cuh"
+#include "../sezm_train_ops.cuh"
 
 namespace dpa4_sezm_kernels {
 
@@ -90,6 +90,7 @@ __global__ void so2_value_fwd_kernel(
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
+  constexpr int NW = 3 * DIM - 2;
   const long edge0 = (long)blockIdx.x * TE;
   if (edge0 >= n_edge) {
     return;
@@ -130,7 +131,7 @@ __global__ void so2_value_fwd_kernel(
     }
     const long s = src[edge];
     const scalar_t* xb = x + s * x_sn + c;
-    const scalar_t* db = wig + edge * DIM * DIM;
+    const scalar_t* db = wig + edge * NW;
     acc_t xr[DIM];
 #pragma unroll
     for (int r = 0; r < DIM; ++r) {
@@ -140,15 +141,14 @@ __global__ void so2_value_fwd_kernel(
 #pragma unroll
     for (int l = 0; l <= L; ++l) {
       const int base = l * l;
-      const int r0 = base + l;
       acc_t a0 = 0, am = 0, ap = 0;
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
         const acc_t xv = xr[base + j];
-        a0 += (acc_t)db[r0 * DIM + base + j] * xv;
+        a0 += (acc_t)db[base + j] * xv;
         if (l >= 1) {
-          am += (acc_t)db[(r0 - 1) * DIM + base + j] * xv;
-          ap += (acc_t)db[(r0 + 1) * DIM + base + j] * xv;
+          am += (acc_t)db[DIM + base - 1 + j] * xv;
+          ap += (acc_t)db[2 * DIM + base - 2 + j] * xv;
         }
       }
       xl[l] = a0;

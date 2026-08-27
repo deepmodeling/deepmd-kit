@@ -144,6 +144,7 @@ __all__ = [
     "fused_gated_activation",
     "make_triton_rotate_mix",
     "make_triton_value_path",
+    "prepare_triton_value_path_weights",
 ]
 
 try:
@@ -3183,6 +3184,14 @@ def _stack_backward_traversal(
         if keep and n_gated > 0
         else torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
     )
+    # Inference retains no per-layer upstream state. Two buffers carry the
+    # reverse recurrence without exposing an unrolled layer stack for
+    # functionalization into select-scatter copies.
+    g_spare = (
+        torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+        if not keep and n_gated > 0
+        else None
+    )
     wrap_triton(_stack_gemm_bwd_kernel)[
         (triton.cdiv(n_edge, block_m) * n_tiles, n_focus)
     ](
@@ -3256,21 +3265,36 @@ def _stack_backward_traversal(
         weights = (grad_w0_all, grad_w1_all, grad_gw_all)
 
     # === Gated layers in reverse ===
-    # The per-layer pre-activation and gate-logit gradients are retained rather
-    # than reused across layers: they are exactly the cotangents the weight
-    # gradients contract against, and recomputing them later would cost a second
-    # traversal of the stack.
+    # A second-order traversal retains the per-layer linearization surfaces.
+    # Inference and first-order weight gradients consume each surface before
+    # advancing to the next layer, so one scratch allocation serves the stack.
     gate_width = lmax * focus_dim
     sig = torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
-    grad_z_all = torch.empty(
-        (n_gated, n_focus, n_edge, row), device=device, dtype=dtype
+    grad_z_all = (
+        torch.empty((n_gated, n_focus, n_edge, row), device=device, dtype=dtype)
+        if keep
+        else None
+    )
+    grad_z_scratch = (
+        torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+        if not keep
+        else None
     )
     use_bmm = focus_dim >= GATE_BMM_MIN_FOCUS_DIM
     store_logit = with_weights or use_bmm or (keep and need_logit)
-    grad_logit_all = torch.empty(
-        (n_gated if store_logit else 0, n_focus, n_edge, gate_width),
-        device=device,
-        dtype=dtype,
+    grad_logit_all = (
+        torch.empty(
+            (n_gated if store_logit else 0, n_focus, n_edge, gate_width),
+            device=device,
+            dtype=dtype,
+        )
+        if keep
+        else None
+    )
+    grad_logit_scratch = (
+        torch.empty((n_focus, n_edge, gate_width), device=device, dtype=dtype)
+        if store_logit and not keep
+        else None
     )
     recover = with_weights or keep
     inputs_all = (
@@ -3280,8 +3304,21 @@ def _stack_backward_traversal(
     )
     u_next = u_final
     for layer in range(n_gated - 1, -1, -1):
-        gz = grad_z_all[layer]
-        glogit = grad_logit_all[layer] if store_logit else sig
+        if keep:
+            assert grad_z_all is not None
+            gz = grad_z_all[layer]
+        else:
+            assert grad_z_scratch is not None
+            gz = grad_z_scratch
+        if store_logit:
+            if keep:
+                assert grad_logit_all is not None
+                glogit = grad_logit_all[layer]
+            else:
+                assert grad_logit_scratch is not None
+                glogit = grad_logit_scratch
+        else:
+            glogit = sig
         if keep:
             u_layer = inputs_all[layer]
         elif recover:
@@ -3330,11 +3367,15 @@ def _stack_backward_traversal(
                 glogit,
                 out=grad_gw_all[layer],
             )
-        g_next = (
-            upstream_all[layer - 1]
-            if keep and layer > 0
-            else torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
-        )
+        if keep:
+            g_next = (
+                upstream_all[layer - 1]
+                if layer > 0
+                else torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+            )
+        else:
+            assert g_spare is not None
+            g_next = g_spare
         wrap_triton(_stack_gemm_bwd_kernel)[
             (triton.cdiv(n_edge, block_m) * n_tiles, n_focus)
         ](
@@ -3359,9 +3400,15 @@ def _stack_backward_traversal(
         )
         if recover:
             u_next = u_layer
+        if not keep:
+            g_spare = g_cur
         g_cur = g_next
     state = None
     if keep:
+        assert upstream_all is not None
+        assert inputs_all is not None
+        assert grad_z_all is not None
+        assert grad_logit_all is not None
         state = _StackBackwardState(
             upstream_all, inputs_all, grad_z_all, grad_logit_all
         )
@@ -5107,6 +5154,13 @@ def make_triton_rotate_mix(conv: SO2Convolution) -> _TritonRotateMix | None:
     return _TritonRotateMix(conv)
 
 
+_PACKED_WEIGHT_BUFFER_NAMES = (
+    "_triton_w0_all",
+    "_triton_w1_all",
+    "_triton_gw_all",
+)
+
+
 class _TritonSO2ValuePath:
     """Per-convolution entry running the SO(2) value path through the fused ops.
 
@@ -5115,12 +5169,12 @@ class _TritonSO2ValuePath:
     ``(E, F, D_m, Cf)`` and the projected radial features whose ``l = 0``
     slice feeds the attention aggregation.
 
-    The stacked weights are assembled from the live parameters on every call
-    and must not be cached across calls: the first call may run inside a
-    ``make_fx`` fake-tensor trace, where a cache would capture fake weights,
-    and eager weights may change when a checkpoint is loaded after
-    construction.  The assembly is a short chain of parameter-only aten ops
-    that the compile pipeline constant-folds out of the hot path.
+    Training assembles the stacked weights from the live parameters on every
+    call so gradients always reach the current parameter values. A freeze path
+    prepares non-persistent buffers after loading the checkpoint and before
+    tracing; the frozen graph then reads those fixed packed layouts directly.
+    Preparing them at that boundary avoids both fake-tensor caches during
+    ``make_fx`` and stale values from a checkpoint loaded after construction.
 
     At ``DP_TRITON_INFER >= 3`` the mixing stack runs through the fp16x3
     tensor-core operator when the ``(focus_dim, lmax)`` key carries a
@@ -5142,8 +5196,10 @@ class _TritonSO2ValuePath:
 
             self._stack_op = mixing_stack_fp16x3
 
-    def _pack_weights(self, *, differentiable: bool) -> tuple[Tensor, Tensor, Tensor]:
-        """Stack the SO(2) block weights and gate projections per layer.
+    def _assemble_weights(
+        self, *, differentiable: bool
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Assemble the SO(2) block weights and gate projections per layer.
 
         Returns ``(w0_all, w1_all, gw_all)`` with shapes
         ``(n_layers, F, M0, M0)``, ``(n_layers, F, M1, M1)`` and
@@ -5176,6 +5232,28 @@ class _TritonSO2ValuePath:
             torch.stack(w1_list).contiguous(),
             torch.stack(gw_list).contiguous(),
         )
+
+    def prepare_inference_weights(self) -> None:
+        """Cache fixed packed weights after checkpoint loading and evaluation."""
+        if self._conv.training:
+            raise RuntimeError("SO(2) inference weights require evaluation mode")
+        with torch.no_grad():
+            weights = self._assemble_weights(differentiable=False)
+        for name, weight in zip(_PACKED_WEIGHT_BUFFER_NAMES, weights, strict=True):
+            if name in self._conv._buffers:
+                setattr(self._conv, name, weight)
+            else:
+                self._conv.register_buffer(name, weight, persistent=False)
+
+    def _pack_weights(self, *, differentiable: bool) -> tuple[Tensor, Tensor, Tensor]:
+        """Return live training weights or the prepared inference layouts."""
+        if not differentiable:
+            w0_all = getattr(self._conv, "_triton_w0_all", None)
+            w1_all = getattr(self._conv, "_triton_w1_all", None)
+            gw_all = getattr(self._conv, "_triton_gw_all", None)
+            if w0_all is not None and w1_all is not None and gw_all is not None:
+                return w0_all, w1_all, gw_all
+        return self._assemble_weights(differentiable=differentiable)
 
     def __call__(
         self,
@@ -5280,6 +5358,14 @@ class _TritonSO2ValuePath:
             x_local.view(n_edge, conv.n_focus, reduced_dim, conv.so2_focus_dim),
             rad_feat,
         )
+
+
+def prepare_triton_value_path_weights(model: torch.nn.Module) -> None:
+    """Prepare fixed SO(2) weight layouts for every bound Triton value path."""
+    for module in model.modules():
+        value_path = getattr(module, "_triton_value_path", None)
+        if isinstance(value_path, _TritonSO2ValuePath):
+            value_path.prepare_inference_weights()
 
 
 def _is_supported(conv: SO2Convolution) -> bool:

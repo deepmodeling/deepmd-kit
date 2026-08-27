@@ -1716,14 +1716,14 @@ class SO2Convolution(nn.Module):
             self._cuda_conv_fn = make_cuda_so2_conv(self)
 
         # === Step 15. Optional fused CUDA SO(2) value path (training) ===
-        # One CUDA kernel spans the training value stream up to the attention
+        # One CUDA operator spans the training value stream up to the attention
         # aggregation: rotate-to-local, radial degree mixing, the cross-focus
         # competition weight, the whole gated mixing stack and the final
-        # identity layer, with the rotated input and every inter-layer
-        # activation resident in shared memory. The attention span stays on
-        # the Triton operator composition inside the traced graph (a fused
-        # CUDA form was measured slower at equal memory and removed). Bound
-        # under ``DP_CUDA_TRAIN=1``.
+        # identity layer. Narrow layouts stay in a resident tile kernel; wide
+        # layouts compose the rotation kernels and strided cuBLASLt contractions
+        # behind the same differentiable boundary. The attention span stays on
+        # the Triton operator composition inside the traced graph. Bound under
+        # ``DP_CUDA_TRAIN=1``; ``so2_message`` dispatches to it in training mode.
         self._cuda_value_train = None
         if cuda_train_enabled():
             from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
@@ -2025,9 +2025,12 @@ class SO2Convolution(nn.Module):
         dst = edge_cache.dst
         n_node = x.shape[0]
         order, row_ptr = cached_edge_csr(edge_cache, "dst", n_node)
+        rotation = edge_cache.Dt_full
+        if rotation is None:
+            rotation = self._cuda_value_train.edge_runs(edge_cache)
         pre_gate = self._flash_atten_fn(
             x_local,
-            edge_cache.Dt_full,
+            rotation,
             self.rotate_inv_rescale_full,
             attn_alpha,
             order,

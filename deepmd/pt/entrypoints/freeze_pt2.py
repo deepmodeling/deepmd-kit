@@ -968,6 +968,21 @@ def freeze_sezm_to_pt2(
     # covered for the local GPU, so the traced graph bakes tuned launches.
     _tune_triton_configs(model, target_device)
 
+    has_triton_value_path = any(
+        getattr(module, "_triton_value_path", None) is not None
+        for module in model.modules()
+    )
+    if has_triton_value_path:
+        # Pack fixed SO(2) weight layouts after checkpoint loading. The
+        # registered buffers enter the CPU trace as constants and move with the
+        # exported graph to the AOTI target, eliminating parameter-only layout
+        # kernels at runtime.
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            prepare_triton_value_path_weights,
+        )
+
+        prepare_triton_value_path_weights(model)
+
     _, sample_inputs_cpu = _resolve_nframes(
         model,
         nloc=7,

@@ -352,15 +352,14 @@ class SO2Convolution(SO2ConvolutionDP):
             self._triton_rotate_mix = make_triton_rotate_mix(self)
 
         # === Step 17. Optional fused CUDA SO(2) value path (training) ===
-        # One CUDA kernel spans the training value stream up to the attention
+        # One CUDA operator spans the training value stream up to the attention
         # aggregation: rotate-to-local, radial degree mixing, the cross-focus
         # competition weight, the whole gated mixing stack and the final
-        # identity layer, with the rotated input and every inter-layer
-        # activation resident in shared memory and analytic first and second
-        # order behind the call. The attention span stays on the Triton
-        # operator composition inside the traced graph. Bound under
-        # ``DP_CUDA_TRAIN=1``; ``so2_message`` dispatches to it in training
-        # mode.
+        # identity layer. Narrow layouts stay in a resident tile kernel; wide
+        # layouts compose the rotation kernels and strided cuBLASLt contractions
+        # behind the same differentiable boundary. The attention span stays on
+        # the Triton operator composition inside the traced graph. Bound under
+        # ``DP_CUDA_TRAIN=1``; ``so2_message`` dispatches to it in training mode.
         if cuda_train_enabled():
             from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
                 make_cuda_so2_value,

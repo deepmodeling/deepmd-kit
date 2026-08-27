@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // Kernel bodies of the SeZM rotation / degree-mixing training operators.
-// Included by the per-degree instantiation units and by the host file; the
+// Included by the (degree, rank, dtype) build shards and by the host file; the
 // kernels live in a named namespace so explicit instantiations link across
 // translation units.
 
@@ -21,6 +21,10 @@ namespace dpa4_sezm_kernels {
 
 constexpr int kMaxLmax = 6;
 constexpr int kMaxRank = 4;
+constexpr int kMaxRotateFocus = 4;
+constexpr int kMediumChannelLanes = 192;
+constexpr int kNarrowChannelLanes = 256;
+constexpr int kWideChannelLanes = 384;
 
 // Threads per block: one thread per channel lane, padded to a warp multiple.
 __host__ inline int lane_count(int c_wide) { return ((c_wide + 31) / 32) * 32; }
@@ -94,6 +98,7 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
+  constexpr int NW = 3 * DIM - 2;
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
     return;
@@ -104,7 +109,7 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
 
   const long s = src[edge];
   const scalar_t* xb = x + s * x_sn + (active ? c : 0);
-  const scalar_t* db = wig + edge * DIM * DIM;
+  const scalar_t* edge_runs = wig + edge * NW;
 
   // === Phase 1. Rotate to the local frame (registers) ===
   float xr[DIM];
@@ -116,15 +121,14 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    const int r0 = base + l;
     float a0 = 0.0f, am = 0.0f, ap = 0.0f;
 #pragma unroll
     for (int j = 0; j < 2 * l + 1; ++j) {
       const float xv = xr[base + j];
-      a0 += (float)db[r0 * DIM + base + j] * xv;
+      a0 += (float)edge_runs[base + j] * xv;
       if (l >= 1) {
-        am += (float)db[(r0 - 1) * DIM + base + j] * xv;
-        ap += (float)db[(r0 + 1) * DIM + base + j] * xv;
+        am += (float)edge_runs[DIM + base - 1 + j] * xv;
+        ap += (float)edge_runs[2 * DIM + base - 2 + j] * xv;
       }
     }
     xl[l] = a0;
@@ -211,29 +215,29 @@ __global__ void rotate_mix_fwd_kernel(const scalar_t* __restrict__ x,
 }
 
 // ---------------------------------------------------------------------------
-// Rotation of one channel lane over the structural block diagonal:
-// xl[m-major reduced rows] from the gathered feature rows xr. The Wigner
-// block is read in place (L2 / read-only cache); it is far too large for
-// registers at high degree.
+// Rotation of one channel lane over the packed structural rows:
+// xl[m-major reduced rows] from the gathered feature rows xr. The run stores
+// every m = 0 row first, followed by the m = -1 and m = +1 rows. Within each
+// group the degree-l row starts at l^2, so the three bases are ``l^2``,
+// ``DIM + l^2 - 1`` and ``2 * DIM + l^2 - 2``.
 // ---------------------------------------------------------------------------
 template <typename scalar_t, int L>
 __device__ __forceinline__ void rotate_lane(const float* __restrict__ xr,
-                                            const scalar_t* __restrict__ db,
+                                            const scalar_t* __restrict__ runs,
                                             float* __restrict__ xl) {
   constexpr int NS0 = L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    const int r0 = base + l;
     float a0 = 0.0f, am = 0.0f, ap = 0.0f;
 #pragma unroll
     for (int j = 0; j < 2 * l + 1; ++j) {
       const float xv = xr[base + j];
-      a0 += (float)db[r0 * DIM + base + j] * xv;
+      a0 += (float)runs[base + j] * xv;
       if (l >= 1) {
-        am += (float)db[(r0 - 1) * DIM + base + j] * xv;
-        ap += (float)db[(r0 + 1) * DIM + base + j] * xv;
+        am += (float)runs[DIM + base - 1 + j] * xv;
+        ap += (float)runs[2 * DIM + base - 2 + j] * xv;
       }
     }
     xl[l] = a0;
@@ -315,8 +319,9 @@ __device__ __forceinline__ void degree_mix_acc(const float* __restrict__ xl,
 // and both Wigner blocks happen once; the four separate forward re-entries
 // this replaces each re-read their operands from L2.
 // ---------------------------------------------------------------------------
-template <typename scalar_t, int L, int RANK>
-__global__ __launch_bounds__(256, 2) void rotate_mix_fwd_pair_kernel(
+template <typename scalar_t, int L, int RANK, int MAX_THREADS, int MIN_BLOCKS>
+__global__
+__launch_bounds__(MAX_THREADS, MIN_BLOCKS) void rotate_mix_fwd_pair_kernel(
     const scalar_t* __restrict__ x,
     const scalar_t* __restrict__ h_gx,
     const long* __restrict__ src,
@@ -337,6 +342,7 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_fwd_pair_kernel(
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
+  constexpr int NW = 3 * DIM - 2;
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
     return;
@@ -356,7 +362,7 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_fwd_pair_kernel(
 
   // === Rotated lanes: xl_x for u0 and the h_gkc term; xl_s for the summed
   // kc-mixed cotangent terms (linearity of the mixer merges them) ===
-  const scalar_t* db = wig + edge * DIM * DIM;
+  const scalar_t* db = wig + edge * NW;
   float xl_x[RED];
   float xl_s[RED];
   {
@@ -368,7 +374,7 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_fwd_pair_kernel(
     }
     rotate_lane<scalar_t, L>(xr, db, xl_x);
     if (h_gwig != nullptr) {
-      rotate_lane<scalar_t, L>(xr, h_gwig + edge * DIM * DIM, xl_s);
+      rotate_lane<scalar_t, L>(xr, h_gwig + edge * NW, xl_s);
     } else {
 #pragma unroll
       for (int r = 0; r < RED; ++r) {
@@ -457,35 +463,37 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_fwd_pair_kernel(
 // h_gkc-mixed local gradients' outer products, and the node gradient sums
 // the two projections. Every operand is read once.
 // ---------------------------------------------------------------------------
-template <typename scalar_t, int L, int RANK>
-__global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
-    const scalar_t* __restrict__ gu,
-    const scalar_t* __restrict__ x,
-    const scalar_t* __restrict__ h_gx,
-    const long* __restrict__ src,
-    const scalar_t* __restrict__ wig,
-    const scalar_t* __restrict__ h_gwig,
-    const scalar_t* __restrict__ kc,
-    const scalar_t* __restrict__ h_gkc,
-    const scalar_t* __restrict__ cb,
-    scalar_t* __restrict__ gxe,
-    scalar_t* __restrict__ gw,
-    scalar_t* __restrict__ gkc,
-    scalar_t* __restrict__ pcb,
-    long n_edge,
-    long x_sn,
-    long x_sd,
-    long h_sn,
-    long h_sd,
-    int cf,
-    int c_wide) {
+template <typename scalar_t, int L, int RANK, int MAX_THREADS, int MIN_BLOCKS>
+__global__ __launch_bounds__(
+    MAX_THREADS,
+    MIN_BLOCKS) void rotate_mix_bwd2_kernel(const scalar_t* __restrict__ gu,
+                                            const scalar_t* __restrict__ x,
+                                            const scalar_t* __restrict__ h_gx,
+                                            const long* __restrict__ src,
+                                            const scalar_t* __restrict__ wig,
+                                            const scalar_t* __restrict__ h_gwig,
+                                            const scalar_t* __restrict__ kc,
+                                            const scalar_t* __restrict__ h_gkc,
+                                            const scalar_t* __restrict__ cb,
+                                            scalar_t* __restrict__ gxe,
+                                            scalar_t* __restrict__ gw,
+                                            scalar_t* __restrict__ gkc,
+                                            scalar_t* __restrict__ pcb,
+                                            long n_edge,
+                                            long x_sn,
+                                            long x_sd,
+                                            long h_sn,
+                                            long h_sd,
+                                            int cf,
+                                            int c_wide) {
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
+  constexpr int NW = 3 * DIM - 2;
   // Batched-reduction scratch, as in the first-order backward.
   constexpr int KC_SLOTS = RANK > 0 ? (NS0 * NS0 + L * L) * RANK : 1;
-  constexpr int WIG_SLOTS = 1 + 3 * (DIM - 1);
-  constexpr int MAX_WARPS = 8;
+  constexpr int WIG_SLOTS = NW;
+  constexpr int MAX_WARPS = (MAX_THREADS + 31) / 32;
   __shared__ float part_kc[KC_SLOTS * MAX_WARPS];
   __shared__ float part_wig[WIG_SLOTS * MAX_WARPS];
 
@@ -498,8 +506,8 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
   const int n_warps = (int)((blockDim.x + 31) >> 5);
   const long row_w = (long)RED * cf;
   const long s = src[edge];
-  const scalar_t* db = wig + edge * DIM * DIM;
-  const scalar_t* dbh = h_gwig != nullptr ? h_gwig + edge * DIM * DIM : nullptr;
+  const scalar_t* db = wig + edge * NW;
+  const scalar_t* dbh = h_gwig != nullptr ? h_gwig + edge * NW : nullptr;
 
   // === Phase 0. Rotated lanes (the raw rows are re-read from L2 in the
   // phase-2 outer products; two DIM-wide register arrays are what would
@@ -597,7 +605,7 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
 
   // === Phase 2. Local gradients of both kernel routes; Wigner curvature,
   // node curvature and basis partials accumulate alongside ===
-  scalar_t* gdb = gw + edge * DIM * DIM;
+  scalar_t* gdb = gw + edge * NW;
   scalar_t* gxb = gxe != nullptr
                       ? gxe + edge * (long)DIM * c_wide + (active ? c : 0)
                       : nullptr;
@@ -616,7 +624,6 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    const int r0 = base + l;
     // g_k: local gradient through the stored kernel (row l).
     // g_h: local gradient through the kernel cotangent (row l).
     float g0k = 0.0f, gmk = 0.0f, gpk = 0.0f;
@@ -716,7 +723,6 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
       }
     }
     {
-      int ws = (l == 0) ? 0 : 1 + 3 * (base - 1);
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
         const int col = base + j;
@@ -724,24 +730,24 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
         const float hv = active ? (float)hxb[col * h_sd] : 0.0f;
         // Wigner curvature: kc-route outer product against the cotangent
         // rows plus h_gkc-route outer product against the feature rows.
-        warp_partial_sum(g0k * hv + g0h * xv, ws++, n_warps, part_wig);
+        warp_partial_sum(g0k * hv + g0h * xv, base + j, n_warps, part_wig);
         float gx_row = 0.0f;
         if (dbh != nullptr) {
-          gx_row += (float)dbh[r0 * DIM + col] * g0k;
+          gx_row += (float)dbh[base + j] * g0k;
         }
         if (khb != nullptr) {
-          gx_row += (float)db[r0 * DIM + col] * g0h;
+          gx_row += (float)db[base + j] * g0h;
         }
         if (l >= 1) {
-          warp_partial_sum(gmk * hv + gmh * xv, ws++, n_warps, part_wig);
-          warp_partial_sum(gpk * hv + gph * xv, ws++, n_warps, part_wig);
+          const int minus = DIM + base - 1 + j;
+          const int plus = 2 * DIM + base - 2 + j;
+          warp_partial_sum(gmk * hv + gmh * xv, minus, n_warps, part_wig);
+          warp_partial_sum(gpk * hv + gph * xv, plus, n_warps, part_wig);
           if (dbh != nullptr) {
-            gx_row += (float)dbh[(r0 - 1) * DIM + col] * gmk +
-                      (float)dbh[(r0 + 1) * DIM + col] * gpk;
+            gx_row += (float)dbh[minus] * gmk + (float)dbh[plus] * gpk;
           }
           if (khb != nullptr) {
-            gx_row += (float)db[(r0 - 1) * DIM + col] * gmh +
-                      (float)db[(r0 + 1) * DIM + col] * gph;
+            gx_row += (float)db[minus] * gmh + (float)db[plus] * gph;
           }
         }
         if (gxb != nullptr && active) {
@@ -767,20 +773,7 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
     }
   }
   for (int s2 = threadIdx.x; s2 < WIG_SLOTS; s2 += blockDim.x) {
-    if (s2 == 0) {
-      gdb[0] = (scalar_t)finish_partial_sum(part_wig, 0, n_warps);
-      continue;
-    }
-    const int q = s2 - 1;
-    const int col = 1 + q / 3;
-    const int kind = q % 3;
-    int l = 1;
-    while ((l + 1) * (l + 1) <= col) {
-      ++l;
-    }
-    const int r0 = l * l + l;
-    const int row = kind == 0 ? r0 : (kind == 1 ? r0 - 1 : r0 + 1);
-    gdb[row * DIM + col] = (scalar_t)finish_partial_sum(part_wig, s2, n_warps);
+    gdb[s2] = (scalar_t)finish_partial_sum(part_wig, s2, n_warps);
   }
 }
 
@@ -795,34 +788,38 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd2_kernel(
 // multiprocessor with the DRAM pipe mostly idle. Capping at two 256-thread
 // blocks trades a modest register spill (absorbed by the idle L2) for
 // twice the latency cover, which is what the measured occupancy needed.
-template <typename scalar_t, int L, int RANK>
-__global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
-    const scalar_t* __restrict__ gu,
-    const scalar_t* __restrict__ x,
-    const long* __restrict__ src,
-    const scalar_t* __restrict__ wig,
-    const scalar_t* __restrict__ kc,
-    const scalar_t* __restrict__ cb,
-    scalar_t* __restrict__ gxe,
-    scalar_t* __restrict__ gw,
-    scalar_t* __restrict__ gkc,
-    scalar_t* __restrict__ pcb,
-    long n_edge,
-    long x_sn,
-    long x_sd,
-    int cf,
-    int c_wide) {
+template <typename scalar_t, int L, int RANK, int MAX_THREADS, int MIN_BLOCKS>
+__global__ __launch_bounds__(
+    MAX_THREADS,
+    MIN_BLOCKS) void rotate_mix_bwd_kernel(const scalar_t* __restrict__ gu,
+                                           const scalar_t* __restrict__ x,
+                                           const long* __restrict__ src,
+                                           const scalar_t* __restrict__ wig,
+                                           const scalar_t* __restrict__ kc,
+                                           const scalar_t* __restrict__ cb,
+                                           scalar_t* __restrict__ gxe,
+                                           scalar_t* __restrict__ gw,
+                                           scalar_t* __restrict__ gkc,
+                                           scalar_t* __restrict__ pcb,
+                                           long n_edge,
+                                           long x_sn,
+                                           long x_sd,
+                                           int cf,
+                                           int c_wide) {
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
   constexpr int DIM = (L + 1) * (L + 1);
+  constexpr int NW = 3 * DIM - 2;
   // Batched-reduction scratch: one partial per (slot, warp). Kernel-gradient
   // slots map linearly onto the compact kernel layout; Wigner slots follow
   // the block-diagonal enumeration of phase 2.
   constexpr int KC_SLOTS = RANK > 0 ? (NS0 * NS0 + L * L) * RANK : 1;
-  constexpr int WIG_SLOTS = 1 + 3 * (DIM - 1);
-  constexpr int MAX_WARPS = 8;
+  constexpr int WIG_SLOTS = NW;
+  constexpr int MAX_WARPS = (MAX_THREADS + 31) / 32;
   __shared__ float part_kc[KC_SLOTS * MAX_WARPS];
   __shared__ float part_wig[WIG_SLOTS * MAX_WARPS];
+  __shared__ scalar_t edge_runs[L == kMaxLmax ? NW : 1];
+  __shared__ scalar_t edge_kernel[L == kMaxLmax ? KC_SLOTS : 1];
 
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
@@ -835,7 +832,21 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
 
   const long s = src[edge];
   const scalar_t* xb = x + s * x_sn + (active ? c : 0);
-  const scalar_t* db = wig + edge * DIM * DIM;
+  const scalar_t* db = wig + edge * NW;
+  if constexpr (L == kMaxLmax) {
+    for (int i = threadIdx.x; i < NW; i += blockDim.x) {
+      edge_runs[i] = db[i];
+    }
+    if constexpr (RANK > 0) {
+      const scalar_t* global_kernel =
+          kc + edge * (long)(NS0 * NS0 + L * L) * RANK;
+      for (int i = threadIdx.x; i < KC_SLOTS; i += blockDim.x) {
+        edge_kernel[i] = global_kernel[i];
+      }
+    }
+    __syncthreads();
+    db = edge_runs;
+  }
 
   // === Phase 0. Recompute the rotated rows (the raw rows are re-read from
   // L2 in phase 2 rather than held: DIM registers per thread are exactly
@@ -850,15 +861,14 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
 #pragma unroll
     for (int l = 0; l <= L; ++l) {
       const int base = l * l;
-      const int r0 = base + l;
       float a0 = 0.0f, am = 0.0f, ap = 0.0f;
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
         const float xv = xr[base + j];
-        a0 += (float)db[r0 * DIM + base + j] * xv;
+        a0 += (float)db[base + j] * xv;
         if (l >= 1) {
-          am += (float)db[(r0 - 1) * DIM + base + j] * xv;
-          ap += (float)db[(r0 + 1) * DIM + base + j] * xv;
+          am += (float)db[DIM + base - 1 + j] * xv;
+          ap += (float)db[2 * DIM + base - 2 + j] * xv;
         }
       }
       xl[l] = a0;
@@ -929,10 +939,13 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
   // === Phase 2. Rotation backward with g_local formed on the fly; the
   // channel-basis partials accumulate alongside since every operand is
   // already in registers ===
-  scalar_t* gdb = gw + edge * DIM * DIM;
+  scalar_t* gdb = gw + edge * NW;
   scalar_t* gxb = gxe + edge * (long)DIM * c_wide + (active ? c : 0);
-  const scalar_t* kb = RANK == 0 ? kc + edge * (long)NS0 * c_wide
-                                 : kc + edge * (long)(NS0 * NS0 + L * L) * RANK;
+  const scalar_t* kb =
+      RANK == 0
+          ? kc + edge * (long)NS0 * c_wide
+          : (L == kMaxLmax ? edge_kernel
+                           : kc + edge * (long)(NS0 * NS0 + L * L) * RANK);
   float pcb_acc[RANK > 0 ? RANK : 1];
 #pragma unroll
   for (int t = 0; t < RANK; ++t) {
@@ -941,7 +954,6 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
 #pragma unroll
   for (int l = 0; l <= L; ++l) {
     const int base = l * l;
-    const int r0 = base + l;
     float g0 = 0.0f, gm = 0.0f, gp = 0.0f;
     if (RANK == 0) {
       const float rad_l = active ? (float)kb[l * (long)c_wide + c] : 0.0f;
@@ -1000,20 +1012,18 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
       }
     }
     {
-      int ws = (l == 0) ? 0 : 1 + 3 * (base - 1);
 #pragma unroll
       for (int j = 0; j < 2 * l + 1; ++j) {
         const int col = base + j;
         const float xv = active ? (float)xb[col * x_sd] : 0.0f;
-        const float w0 = (float)db[r0 * DIM + col];
-        float gx_row = w0 * g0;
-        warp_partial_sum(g0 * xv, ws++, n_warps, part_wig);
+        float gx_row = (float)db[base + j] * g0;
+        warp_partial_sum(g0 * xv, base + j, n_warps, part_wig);
         if (l >= 1) {
-          const float wm = (float)db[(r0 - 1) * DIM + col];
-          const float wp = (float)db[(r0 + 1) * DIM + col];
-          gx_row += wm * gm + wp * gp;
-          warp_partial_sum(gm * xv, ws++, n_warps, part_wig);
-          warp_partial_sum(gp * xv, ws++, n_warps, part_wig);
+          const int minus = DIM + base - 1 + j;
+          const int plus = 2 * DIM + base - 2 + j;
+          gx_row += (float)db[minus] * gm + (float)db[plus] * gp;
+          warp_partial_sum(gm * xv, minus, n_warps, part_wig);
+          warp_partial_sum(gp * xv, plus, n_warps, part_wig);
         }
         if (active) {
           gxb[col * (long)c_wide] = (scalar_t)gx_row;
@@ -1038,23 +1048,7 @@ __global__ __launch_bounds__(256, 2) void rotate_mix_bwd_kernel(
     }
   }
   for (int s2 = threadIdx.x; s2 < WIG_SLOTS; s2 += blockDim.x) {
-    // Invert the phase-2 enumeration: slot 0 is (l = 0, row 0, column 0);
-    // above it the slots pack three per column (r0, r0-1, r0+1), columns in
-    // block order.
-    if (s2 == 0) {
-      gdb[0] = (scalar_t)finish_partial_sum(part_wig, 0, n_warps);
-      continue;
-    }
-    const int q = s2 - 1;
-    const int col = 1 + q / 3;
-    const int kind = q % 3;
-    int l = 1;
-    while ((l + 1) * (l + 1) <= col) {
-      ++l;
-    }
-    const int r0 = l * l + l;
-    const int row = kind == 0 ? r0 : (kind == 1 ? r0 - 1 : r0 + 1);
-    gdb[row * DIM + col] = (scalar_t)finish_partial_sum(part_wig, s2, n_warps);
+    gdb[s2] = (scalar_t)finish_partial_sum(part_wig, s2, n_warps);
   }
 }
 
@@ -1088,7 +1082,7 @@ __global__ void segment_sum_kernel(const scalar_t* __restrict__ rows,
 
 inline void check_rotate_inputs(const at::Tensor& x,
                                 const at::Tensor& src,
-                                const at::Tensor& wigner,
+                                const at::Tensor& runs,
                                 int64_t lmax,
                                 int64_t n_focus,
                                 int64_t rank,
@@ -1097,14 +1091,19 @@ inline void check_rotate_inputs(const at::Tensor& x,
               ": x must be (N, D, C_wide) with unit channel stride");
   TORCH_CHECK(1 <= lmax && lmax <= kMaxLmax, who, ": unsupported lmax");
   TORCH_CHECK(0 <= rank && rank <= kMaxRank, who, ": unsupported rank");
+  TORCH_CHECK(1 <= n_focus && n_focus <= kMaxRotateFocus, who,
+              ": unsupported focus count");
   TORCH_CHECK(x.size(1) == (lmax + 1) * (lmax + 1), who,
               ": x degree dimension does not match lmax");
   TORCH_CHECK(x.size(2) % n_focus == 0, who,
               ": channel width must split into the focus streams");
-  TORCH_CHECK(wigner.is_contiguous() &&
-                  wigner.size(1) == (lmax + 1) * (lmax + 1) &&
-                  wigner.size(2) == (lmax + 1) * (lmax + 1),
-              who, ": wigner must be contiguous (E, DIM, DIM)");
+  TORCH_CHECK(x.size(2) <= kNarrowChannelLanes ||
+                  (lmax == kMaxLmax && x.size(2) <= kWideChannelLanes),
+              who, ": channel width exceeds the supported block lane count");
+  const int64_t dim = (lmax + 1) * (lmax + 1);
+  TORCH_CHECK(runs.is_contiguous() && runs.dim() == 2 &&
+                  runs.size(0) == src.size(0) && runs.size(1) == 3 * dim - 2,
+              who, ": runs must be contiguous (E, 3 * DIM - 2)");
   TORCH_CHECK(src.scalar_type() == at::kLong, who, ": src must be int64");
 }
 
@@ -1137,11 +1136,9 @@ void dispatch_l_rank(int64_t lmax, int64_t rank, const F& f) {
 }
 
 // ---------------------------------------------------------------------------
-// Host launchers: one per kernel and degree, instantiated in the per-degree
-// units so the device code of each degree is compiled and launched within
-// one translation unit (no relocatable device code required).
+// Host launchers: one static (L, RANK, dtype) specialization per build shard.
 // ---------------------------------------------------------------------------
-template <typename scalar_t, int L>
+template <typename scalar_t, int L, int RANK>
 void launch_rotate_mix_fwd(const scalar_t* x,
                            const long* src,
                            const scalar_t* wig,
@@ -1153,25 +1150,13 @@ void launch_rotate_mix_fwd(const scalar_t* x,
                            long x_sd,
                            int cf,
                            int c_wide,
-                           int rank,
                            int threads,
                            cudaStream_t stream) {
-  switch (rank) {
-#define DPA4_RMT_CASE(R)                                                   \
-  case R:                                                                  \
-    rotate_mix_fwd_kernel<scalar_t, L, R><<<n_edge, threads, 0, stream>>>( \
-        x, src, wig, kc, cb, u, n_edge, x_sn, x_sd, cf, c_wide);           \
-    break;
-    DPA4_RMT_CASE(0)
-    DPA4_RMT_CASE(1)
-    DPA4_RMT_CASE(2)
-    DPA4_RMT_CASE(3)
-    DPA4_RMT_CASE(4)
-#undef DPA4_RMT_CASE
-  }
+  rotate_mix_fwd_kernel<scalar_t, L, RANK><<<n_edge, threads, 0, stream>>>(
+      x, src, wig, kc, cb, u, n_edge, x_sn, x_sd, cf, c_wide);
 }
 
-template <typename scalar_t, int L>
+template <typename scalar_t, int L, int RANK>
 void launch_rotate_mix_fwd_pair(const scalar_t* x,
                                 const scalar_t* h_gx,
                                 const long* src,
@@ -1189,27 +1174,31 @@ void launch_rotate_mix_fwd_pair(const scalar_t* x,
                                 long h_sd,
                                 int cf,
                                 int c_wide,
-                                int rank,
                                 int threads,
                                 cudaStream_t stream) {
-  switch (rank) {
-#define DPA4_RMT_CASE(R)                                                       \
-  case R:                                                                      \
-    rotate_mix_fwd_pair_kernel<scalar_t, L, R>                                 \
-        <<<n_edge, threads, 0, stream>>>(x, h_gx, src, wig, h_gwig, kc, h_gkc, \
-                                         cb, u0, hgu0, n_edge, x_sn, x_sd,     \
-                                         h_sn, h_sd, cf, c_wide);              \
-    break;
-    DPA4_RMT_CASE(0)
-    DPA4_RMT_CASE(1)
-    DPA4_RMT_CASE(2)
-    DPA4_RMT_CASE(3)
-    DPA4_RMT_CASE(4)
-#undef DPA4_RMT_CASE
+  if constexpr (L == kMaxLmax) {
+    if (threads > kNarrowChannelLanes) {
+      rotate_mix_fwd_pair_kernel<scalar_t, L, RANK, kWideChannelLanes, 1>
+          <<<n_edge, threads, 0, stream>>>(x, h_gx, src, wig, h_gwig, kc, h_gkc,
+                                           cb, u0, hgu0, n_edge, x_sn, x_sd,
+                                           h_sn, h_sd, cf, c_wide);
+      return;
+    }
+    if (threads == kMediumChannelLanes) {
+      rotate_mix_fwd_pair_kernel<scalar_t, L, RANK, kMediumChannelLanes, 2>
+          <<<n_edge, threads, 0, stream>>>(x, h_gx, src, wig, h_gwig, kc, h_gkc,
+                                           cb, u0, hgu0, n_edge, x_sn, x_sd,
+                                           h_sn, h_sd, cf, c_wide);
+      return;
+    }
   }
+  rotate_mix_fwd_pair_kernel<scalar_t, L, RANK, kNarrowChannelLanes, 2>
+      <<<n_edge, threads, 0, stream>>>(x, h_gx, src, wig, h_gwig, kc, h_gkc, cb,
+                                       u0, hgu0, n_edge, x_sn, x_sd, h_sn, h_sd,
+                                       cf, c_wide);
 }
 
-template <typename scalar_t, int L>
+template <typename scalar_t, int L, int RANK>
 void launch_rotate_mix_bwd(const scalar_t* gu,
                            const scalar_t* x,
                            const long* src,
@@ -1225,26 +1214,30 @@ void launch_rotate_mix_bwd(const scalar_t* gu,
                            long x_sd,
                            int cf,
                            int c_wide,
-                           int rank,
                            int threads,
                            cudaStream_t stream) {
-  switch (rank) {
-#define DPA4_RMT_CASE(R)                                                    \
-  case R:                                                                   \
-    rotate_mix_bwd_kernel<scalar_t, L, R><<<n_edge, threads, 0, stream>>>(  \
-        gu, x, src, wig, kc, cb, gxe, gw, gkc, pcb, n_edge, x_sn, x_sd, cf, \
-        c_wide);                                                            \
-    break;
-    DPA4_RMT_CASE(0)
-    DPA4_RMT_CASE(1)
-    DPA4_RMT_CASE(2)
-    DPA4_RMT_CASE(3)
-    DPA4_RMT_CASE(4)
-#undef DPA4_RMT_CASE
+  if constexpr (L == kMaxLmax) {
+    if (threads > kNarrowChannelLanes) {
+      rotate_mix_bwd_kernel<scalar_t, L, RANK, kWideChannelLanes, 1>
+          <<<n_edge, threads, 0, stream>>>(gu, x, src, wig, kc, cb, gxe, gw,
+                                           gkc, pcb, n_edge, x_sn, x_sd, cf,
+                                           c_wide);
+      return;
+    }
+    if (threads == kMediumChannelLanes) {
+      rotate_mix_bwd_kernel<scalar_t, L, RANK, kMediumChannelLanes, 2>
+          <<<n_edge, threads, 0, stream>>>(gu, x, src, wig, kc, cb, gxe, gw,
+                                           gkc, pcb, n_edge, x_sn, x_sd, cf,
+                                           c_wide);
+      return;
+    }
   }
+  rotate_mix_bwd_kernel<scalar_t, L, RANK, kNarrowChannelLanes, 2>
+      <<<n_edge, threads, 0, stream>>>(gu, x, src, wig, kc, cb, gxe, gw, gkc,
+                                       pcb, n_edge, x_sn, x_sd, cf, c_wide);
 }
 
-template <typename scalar_t, int L>
+template <typename scalar_t, int L, int RANK>
 void launch_rotate_mix_bwd2(const scalar_t* gu,
                             const scalar_t* x,
                             const scalar_t* h_gx,
@@ -1265,23 +1258,28 @@ void launch_rotate_mix_bwd2(const scalar_t* gu,
                             long h_sd,
                             int cf,
                             int c_wide,
-                            int rank,
                             int threads,
                             cudaStream_t stream) {
-  switch (rank) {
-#define DPA4_RMT_CASE(R)                                                    \
-  case R:                                                                   \
-    rotate_mix_bwd2_kernel<scalar_t, L, R><<<n_edge, threads, 0, stream>>>( \
-        gu, x, h_gx, src, wig, h_gwig, kc, h_gkc, cb, gxe, gw, gkc, pcb,    \
-        n_edge, x_sn, x_sd, h_sn, h_sd, cf, c_wide);                        \
-    break;
-    DPA4_RMT_CASE(0)
-    DPA4_RMT_CASE(1)
-    DPA4_RMT_CASE(2)
-    DPA4_RMT_CASE(3)
-    DPA4_RMT_CASE(4)
-#undef DPA4_RMT_CASE
+  if constexpr (L == kMaxLmax) {
+    if (threads > kNarrowChannelLanes) {
+      rotate_mix_bwd2_kernel<scalar_t, L, RANK, kWideChannelLanes, 1>
+          <<<n_edge, threads, 0, stream>>>(gu, x, h_gx, src, wig, h_gwig, kc,
+                                           h_gkc, cb, gxe, gw, gkc, pcb, n_edge,
+                                           x_sn, x_sd, h_sn, h_sd, cf, c_wide);
+      return;
+    }
+    if (threads == kMediumChannelLanes) {
+      rotate_mix_bwd2_kernel<scalar_t, L, RANK, kMediumChannelLanes, 2>
+          <<<n_edge, threads, 0, stream>>>(gu, x, h_gx, src, wig, h_gwig, kc,
+                                           h_gkc, cb, gxe, gw, gkc, pcb, n_edge,
+                                           x_sn, x_sd, h_sn, h_sd, cf, c_wide);
+      return;
+    }
   }
+  rotate_mix_bwd2_kernel<scalar_t, L, RANK, kNarrowChannelLanes, 2>
+      <<<n_edge, threads, 0, stream>>>(gu, x, h_gx, src, wig, h_gwig, kc, h_gkc,
+                                       cb, gxe, gw, gkc, pcb, n_edge, x_sn,
+                                       x_sd, h_sn, h_sd, cf, c_wide);
 }
 
 }  // namespace dpa4_sezm_kernels

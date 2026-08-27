@@ -162,6 +162,27 @@ def test_cuda_train_gate_binds_the_value_stream(monkeypatch) -> None:
         assert conv._flash_atten_trains is False
 
 
+def test_cuda_triton_train_reuses_packed_wigner_runs(monkeypatch) -> None:
+    """The composed training path does not construct dense Wigner matrices."""
+    if not cuda_value_available():
+        pytest.skip("the DPA4 CUDA training operators are unavailable")
+    if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+        pytest.skip("Triton is unavailable")
+    _clear_gates(monkeypatch)
+    monkeypatch.setenv("DP_CUDA_TRAIN", "1")
+    monkeypatch.setenv("DP_TRITON_TRAIN", "1")
+
+    descriptor = _make_descriptor(2, [20], 4.0).train()
+    assert descriptor._packed_wigner_train
+    assert not descriptor._build_full_wigner()
+
+    for block in descriptor.blocks:
+        conv = block.so2_conv
+        assert conv._cuda_value_train is not None
+        assert conv._flash_atten_fn is not None
+        assert conv._flash_atten_trains
+
+
 def test_grid_pair_train_follows_the_slot_bound(monkeypatch) -> None:
     """The grid pair training operator binds only above its measured crossover."""
     _clear_gates(monkeypatch)
@@ -208,11 +229,11 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(objective, coord)[0]
         return objective.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    @pytest.mark.parametrize("path", ["triton", "cuda"])
+    @pytest.mark.parametrize("path", ["triton", "cuda", "cuda-triton"])
     def test_training_step_matches_the_dense_path(self, monkeypatch, path) -> None:
-        if path == "triton" and not SO2_VALUE_PATH_TRITON_AVAILABLE:
+        if path in ("triton", "cuda-triton") and not SO2_VALUE_PATH_TRITON_AVAILABLE:
             pytest.skip("Triton is unavailable")
-        if path == "cuda" and not cuda_value_available():
+        if path in ("cuda", "cuda-triton") and not cuda_value_available():
             pytest.skip("the DPA4 CUDA training operators are unavailable")
 
         _clear_gates(monkeypatch)
@@ -222,15 +243,19 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
 
         # The accelerated descriptor is deserialized from the same weights, so
         # the two runs differ only in dispatch.
-        monkeypatch.setenv("DP_TRITON_TRAIN", "1" if path == "triton" else "0")
-        monkeypatch.setenv("DP_CUDA_TRAIN", "1" if path == "cuda" else "0")
+        monkeypatch.setenv(
+            "DP_TRITON_TRAIN", "1" if path in ("triton", "cuda-triton") else "0"
+        )
+        monkeypatch.setenv(
+            "DP_CUDA_TRAIN", "1" if path in ("cuda", "cuda-triton") else "0"
+        )
         fused = DescrptSeZM.deserialize(data).to(self.device).train()
         conv = next(
             module for module in fused.modules() if isinstance(module, SO2Convolution)
         )
-        if path == "cuda":
+        if path in ("cuda", "cuda-triton"):
             assert conv._cuda_value_train is not None
-        else:
+        if path in ("triton", "cuda-triton"):
             assert conv._segment_softmax_fn is not None
         fused_objective, fused_gradient = self._step(fused)
 

@@ -85,6 +85,38 @@ def _block_diagonal_wigner(n_edge, lmax, device, dtype, generator):
     return wigner
 
 
+def _pack_wigner_dt(wigner_dt, lmax):
+    """Pack the three structural transpose columns consumed by mmax=1."""
+    dim = get_so3_dim_of_lmax(lmax)
+    m0, mm, mp = [], [], []
+    for ll in range(lmax + 1):
+        start, end = ll * ll, (ll + 1) ** 2
+        row0 = start + ll
+        m0.append(wigner_dt[:, start:end, row0])
+        if ll >= 1:
+            mm.append(wigner_dt[:, start:end, row0 - 1])
+            mp.append(wigner_dt[:, start:end, row0 + 1])
+    runs = torch.cat(m0 + mm + mp, dim=1)
+    assert runs.shape[1] == 3 * dim - 2
+    return runs
+
+
+def _unpack_wigner_dt(runs, lmax):
+    """Expand packed mmax=1 structural entries into dense transpose blocks."""
+    dim = get_so3_dim_of_lmax(lmax)
+    wigner_dt = runs.new_zeros(runs.shape[0], dim, dim)
+    for ll in range(lmax + 1):
+        start, end = ll * ll, (ll + 1) ** 2
+        row0 = start + ll
+        wigner_dt[:, start:end, row0] = runs[:, start:end]
+        if ll >= 1:
+            wigner_dt[:, start:end, row0 - 1] = runs[:, dim + start - 1 : dim + end - 1]
+            wigner_dt[:, start:end, row0 + 1] = runs[
+                :, 2 * dim + start - 2 : 2 * dim + end - 2
+            ]
+    return wigner_dt
+
+
 def _block_mask(lmax, device):
     dim = get_so3_dim_of_lmax(lmax)
     mask = torch.zeros(dim, dim, dtype=torch.bool, device=device)
@@ -747,6 +779,48 @@ class TestSeZMTritonValuePath(unittest.TestCase):
                         rtol=1e-4,
                     )
 
+    def test_prepared_weights_follow_device_without_entering_state_dict(self) -> None:
+        """Frozen layouts move as buffers while training reads live weights."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+            prepare_triton_value_path_weights,
+        )
+
+        conv = self._build_conv(*self.CASES[1]).cpu()
+        value_path = make_triton_value_path(conv)
+        self.assertIsNotNone(value_path)
+        conv._triton_value_path = value_path
+
+        buffer_names = (
+            "_triton_w0_all",
+            "_triton_w1_all",
+            "_triton_gw_all",
+        )
+        for name in buffer_names:
+            self.assertFalse(hasattr(conv, name))
+
+        prepare_triton_value_path_weights(conv)
+        for name, weight in zip(
+            buffer_names,
+            value_path._pack_weights(differentiable=False),
+            strict=True,
+        ):
+            self.assertIs(weight, getattr(conv, name))
+            self.assertEqual(weight.device.type, "cpu")
+            self.assertNotIn(name, conv.state_dict())
+
+        conv.to("cuda")
+        cached = value_path._pack_weights(differentiable=False)
+        for name, weight in zip(buffer_names, cached, strict=True):
+            self.assertIs(weight, getattr(conv, name))
+            self.assertEqual(weight.device.type, "cuda")
+
+        with torch.no_grad():
+            conv.so2_linears[0].weight_m0.add_(0.125)
+        live = value_path._pack_weights(differentiable=True)
+        self.assertFalse(torch.equal(live[0], cached[0]))
+        self.assertIs(value_path._pack_weights(differentiable=False)[0], cached[0])
+
     def test_factory_rejects_unsupported_layouts(self):
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
@@ -794,8 +868,60 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                 (grad_ref,) = torch.autograd.grad(ref, q_ref, grad_seed)
                 torch.testing.assert_close(grad_fused, grad_ref, atol=1e-5, rtol=1e-5)
 
+    def test_second_order_matches_reference(self):
+        """The force-loss Hessian contraction stays on the fused path."""
+        from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+            _monomials_reference,
+            wigner_monomials,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(17)
+        for degree in (4, 8, 12):
+            with self.subTest(degree=degree):
+                exponents = self._exponents(degree)
+                q = torch.randn(257, 4, device="cuda", generator=generator)
+                q = q / q.norm(dim=-1, keepdim=True)
+                q[0] = torch.tensor([1.0, 0.0, 0.0, 0.0], device="cuda")
+                grad_seed = torch.randn(
+                    257,
+                    len(exponents) // 4,
+                    device="cuda",
+                    generator=generator,
+                )
+                h = torch.randn(257, 4, device="cuda", generator=generator)
+
+                q_fused = q.clone().requires_grad_(True)
+                seed_fused = grad_seed.clone().requires_grad_(True)
+                grad_fused = torch.autograd.grad(
+                    wigner_monomials(q_fused, exponents, degree),
+                    q_fused,
+                    seed_fused,
+                    create_graph=True,
+                )[0]
+                second_fused = torch.autograd.grad(
+                    grad_fused,
+                    (seed_fused, q_fused),
+                    h,
+                )
+
+                q_ref = q.clone().requires_grad_(True)
+                seed_ref = grad_seed.clone().requires_grad_(True)
+                grad_ref = torch.autograd.grad(
+                    _monomials_reference(q_ref, exponents, degree),
+                    q_ref,
+                    seed_ref,
+                    create_graph=True,
+                )[0]
+                second_ref = torch.autograd.grad(
+                    grad_ref,
+                    (seed_ref, q_ref),
+                    h,
+                )
+                for got, want in zip(second_fused, second_ref, strict=True):
+                    torch.testing.assert_close(got, want, atol=2e-4, rtol=2e-5)
+
     def test_wigner_calculator_matches_reference_chain(self):
-        """The calculator's fused monomial path reproduces the dense chain."""
+        """The fused calculator matches the dense chain without copying its transpose."""
         import os
         from unittest import (
             mock,
@@ -821,9 +947,18 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                         .eval()
                     )
                 self.assertTrue(fused_calc._use_triton_monomials)
-                got = fused_calc(q)[0]
-                want = ref_calc(q)[0]
+                got, got_t = fused_calc(q)
+                want, want_t = ref_calc(q)
                 torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
+                torch.testing.assert_close(got_t, want_t, atol=1e-5, rtol=1e-5)
+                self.assertEqual(
+                    got.untyped_storage().data_ptr(),
+                    got_t.untyped_storage().data_ptr(),
+                )
+                self.assertEqual(
+                    got_t.stride(),
+                    (got.stride(0), got.stride(2), got.stride(1)),
+                )
 
 
 @_GPU_KERNELS
@@ -1010,6 +1145,89 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                         atol=1e-4 * max(scale, 1.0),
                         rtol=1e-4,
                     )
+
+    def test_packed_rotation_matches_dense_through_second_order(self):
+        """Packed structural rows preserve the forward and force-loss graph."""
+        from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
+            flash_atten_aggregate,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(17)
+        lmax, n_focus, focus_dim, n_head = 3, 2, 32, 2
+        n_edge, n_node = 4096, 128
+        reduced_dim = 3 * lmax + 1
+        dim = (lmax + 1) ** 2
+        x_local = torch.randn(
+            n_edge,
+            n_focus,
+            reduced_dim,
+            focus_dim,
+            device="cuda",
+            generator=generator,
+        )
+        wigner_dt = _block_diagonal_wigner(
+            n_edge, lmax, "cuda", torch.float32, generator
+        )
+        runs = _pack_wigner_dt(wigner_dt, lmax)
+        rescale = torch.rand(dim, device="cuda", generator=generator) + 0.5
+        alpha = torch.rand(n_edge, n_focus, n_head, device="cuda", generator=generator)
+        dst = torch.randint(0, n_node, (n_edge,), device="cuda", generator=generator)
+        order = torch.argsort(dst, stable=True)
+        counts = torch.zeros(n_node, device="cuda", dtype=torch.long).scatter_add(
+            0, dst, torch.ones_like(dst)
+        )
+        row_ptr = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
+        grad_out = torch.randn(
+            n_node, dim, n_focus * focus_dim, device="cuda", generator=generator
+        )
+        h_x = torch.randn_like(x_local)
+        h_runs = torch.randn_like(runs)
+        h_alpha = torch.randn_like(alpha)
+
+        def evaluate(rotation, h_rotation):
+            x = x_local.detach().clone().requires_grad_(True)
+            rot = rotation.detach().clone().requires_grad_(True)
+            weights = alpha.detach().clone().requires_grad_(True)
+            out = flash_atten_aggregate(
+                x,
+                rot,
+                rescale,
+                weights,
+                order,
+                row_ptr,
+                dst,
+                lmax,
+                n_head,
+            )
+            first = torch.autograd.grad(
+                out, (x, rot, weights), grad_out, create_graph=True
+            )
+            probe = sum(
+                (grad * tangent).sum()
+                for grad, tangent in zip(first, (h_x, h_rotation, h_alpha), strict=True)
+            )
+            second = torch.autograd.grad(probe, (x, rot, weights))
+            return out, first, second
+
+        dense = evaluate(wigner_dt, _unpack_wigner_dt(h_runs, lmax))
+        packed = evaluate(runs, h_runs)
+        comparisons = [
+            (packed[0], dense[0]),
+            (packed[1][0], dense[1][0]),
+            (packed[1][1], _pack_wigner_dt(dense[1][1], lmax)),
+            (packed[1][2], dense[1][2]),
+            (packed[2][0], dense[2][0]),
+            (packed[2][1], _pack_wigner_dt(dense[2][1], lmax)),
+            (packed[2][2], dense[2][2]),
+        ]
+        for got, want in comparisons:
+            scale = want.abs().max().item()
+            torch.testing.assert_close(
+                got,
+                want,
+                atol=2e-4 * max(scale, 1.0),
+                rtol=2e-4,
+            )
 
 
 class TestTritonInferLevel(unittest.TestCase):

@@ -84,6 +84,9 @@ from deepmd.pt.utils.compile_compat import (
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
+    relax_views_to_reshapes,
+)
+from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
 from deepmd.pt.utils.compile_compat import trace_pad_dim as _trace_pad_dim
@@ -681,6 +684,10 @@ def _finalize_compiled_lower(
     # The training trace is fed already-detached, grad-enabled inputs, so
     # every detach is removed unconditionally to restore the gradient path.
     _strip_saved_tensor_detach(traced_lower, remove_all=True)
+    # Fake strides can make make_fx specialize a reshape to an aten.view that
+    # is invalid for a runtime transpose. Keep view-compatible cases free and
+    # permit a materializing reshape only when the runtime layout requires it.
+    relax_views_to_reshapes(traced_lower)
     # Rebuild into a fresh graph to eliminate stale C-level node pointers
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)

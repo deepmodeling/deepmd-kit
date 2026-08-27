@@ -4,15 +4,17 @@
 
 The CUDA operator ``deepmd::sezm_so2_value_fwd`` (see
 ``source/op/pt/dpa4/so2_conv_train.cu``) evaluates the value stream of one
-``SO2Convolution`` up to the attention aggregation in a single kernel: the
-gather into the edge frame over the structural block-diagonal non-zeros of
+``SO2Convolution`` up to the attention aggregation behind one differentiable
+boundary: the gather into the edge frame over the structural block-diagonal non-zeros of
 the Wigner-D matrix, the edge-conditioned radial degree mixing, the
 cross-focus competition weight from the ``l = 0`` scalars, every gated
-mixing layer, and the final identity layer with its edge-major store. The
-rotated input and all inter-layer activations live in shared memory for the
-lifetime of a block; the only global surfaces are the operator outputs and
-the backward anchors (the stacked pre-activations ``z_all``, the final gated
-activation ``u_final``, and the competition weight ``alpha``).
+mixing layer, and the final identity layer with its edge-major store. Narrow
+layouts keep the rotated input and all inter-layer activations in a
+resident tile kernel; wide layouts compose the rotation kernels and strided
+cuBLASLt contractions inside the operator. In both cases only the operator
+outputs and backward anchors cross the dispatcher boundary (the stacked
+pre-activations ``z_all``, the final gated activation ``u_final``, and the
+competition weight ``alpha``).
 
 The backward is one CUDA operator (``deepmd::sezm_so2_value_bwd``): the
 rotated input is recomputed by the fused rotate-mix forward, the mixing
@@ -25,8 +27,9 @@ differentiates the coordinate chain alone, and its parameter-gradient GEMMs
 would be discarded. The second order a force loss requires is likewise one
 CUDA operator (``deepmd::sezm_so2_value_bwd2``), analytic for the
 force-loss regime where the cotangent enters only through the node-feature
-gradient. The training value path therefore never leaves the CUDA library;
-it composes no Triton operator.
+gradient. Once the packed Wigner runs have been built, the value path itself
+therefore never leaves the CUDA library. The shared run builder evaluates its
+quaternion monomials with Triton and contracts them with one framework matmul.
 
 The attention span downstream (segmented softmax, flash aggregation, head
 gate) runs as the Triton operator composition inside the traced graph,
@@ -36,11 +39,12 @@ span was built, measured slower at equal memory, and removed
 
 Supported configuration
 -----------------------
-The Triton value-path constraints (``mmax == 1``, degree 1 to 6, gated stack
-with an identity final layer, supported focus widths, radial mixer absent or
-``degree_channel`` with rank at most 4), at most 256 wide channels, at most
-4 focus streams, and an identity competition norm (``focus_norm=False``).
-Unsupported blocks keep the narrower fused paths.
+The operator reuses the Triton value-path constraints: ``mmax == 1``, degree
+1 to 6, a gated stack with an identity final layer, supported focus widths,
+and a radial mixer that is absent or ``degree_channel`` with rank at most 4.
+Its additional bounds are at most 256 wide channels for degrees 1--5, or 384
+wide channels at degree 6, at most 4 focus streams, and an identity competition
+norm (``focus_norm=False``). Unsupported blocks keep the narrower fused paths.
 """
 
 from __future__ import (
@@ -106,7 +110,7 @@ def _alpha_dtype(working: torch.dtype) -> torch.dtype:
 def _fwd_fake(
     x,
     src,
-    wigner,
+    runs,
     kc,
     cb,
     w_fc,
@@ -138,7 +142,7 @@ def _bwd_fake(
     src,
     src_order,
     src_rowptr,
-    wigner,
+    runs,
     kc,
     cb,
     w_fc,
@@ -173,6 +177,11 @@ def _bwd_fake(
             z_all.new_empty((n_gated, n_focus_z, n_edge, row)),
             z_all.new_empty((n_gated, n_focus_z, n_edge, row)),
             z_all.new_empty((n_gated, n_focus_z, n_edge, lg)),
+            (
+                alpha.new_empty((n_edge, n_focus_z))
+                if apply_alpha
+                else alpha.new_empty((0, n_focus_z))
+            ),
         )
     else:
         kept = (
@@ -180,10 +189,11 @@ def _bwd_fake(
             x.new_empty(0),
             x.new_empty(0),
             x.new_empty(0),
+            x.new_empty(0),
         )
     return (
         x.new_empty(x.shape),
-        wigner.new_empty(wigner.shape),
+        runs.new_empty(runs.shape),
         kc.new_empty(kc.shape),
         cb.new_empty(cb.shape) if rank > 0 else x.new_empty(0),
         (
@@ -205,14 +215,14 @@ def _bwd_fake(
 
 def _bwd2_fake(
     h_gx,
-    h_gwig,
+    h_gruns,
     h_gkc,
     grad_x_local,
     x,
     src,
     src_order,
     src_rowptr,
-    wigner,
+    runs,
     kc,
     cb,
     w_fc,
@@ -227,7 +237,8 @@ def _bwd2_fake(
     kept_grad_u0,
     kept_upstream,
     kept_grad_z,
-    kept_grad_logit,
+    kept_gate_logit,
+    kept_grad_alpha_mix,
     lmax,
     n_focus,
     rank,
@@ -238,7 +249,7 @@ def _bwd2_fake(
     return (
         grad_x_local.new_empty(grad_x_local.shape),
         x.new_empty(x.shape),
-        wigner.new_empty(wigner.shape),
+        runs.new_empty(runs.shape),
         kc.new_empty(kc.shape),
         cb.new_empty(cb.shape) if rank > 0 else x.new_empty(0),
         w_fc.new_empty(w_fc.shape) if w_fc is not None else x.new_empty(0),
@@ -276,7 +287,7 @@ def _value_train_impl(
     src: Tensor,
     src_order: Tensor,
     src_rowptr: Tensor,
-    wigner: Tensor,
+    runs: Tensor,
     kc: Tensor,
     cb: Tensor,
     w_fc: Tensor | None,
@@ -303,7 +314,7 @@ def _value_train_impl(
     return torch.ops.deepmd.sezm_so2_value_fwd(
         x.contiguous(),
         src,
-        wigner,
+        runs,
         kc.contiguous(),
         cb.contiguous(),
         w_fc.to(x.dtype) if w_fc is not None else None,
@@ -333,7 +344,7 @@ def _(
     src,
     src_order,
     src_rowptr,
-    wigner,
+    runs,
     kc,
     cb,
     w_fc,
@@ -351,7 +362,7 @@ def _(
     return _fwd_fake(
         x,
         src,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -374,7 +385,7 @@ def _value_train_bwd_impl(
     src: Tensor,
     src_order: Tensor,
     src_rowptr: Tensor,
-    wigner: Tensor,
+    runs: Tensor,
     kc: Tensor,
     cb: Tensor,
     w_fc: Tensor | None,
@@ -411,13 +422,14 @@ def _value_train_bwd_impl(
     Tensor,
     Tensor,
     Tensor,
+    Tensor,
 ]:
     """First order of the fused value path, one CUDA operator call.
 
     Under ``keep_state`` (the force regime) the mixing traversal's per-layer
-    surfaces and the total input gradient ride out as trailing outputs; the
-    second order consumes them and replays nothing. The weight contractions
-    run only under ``with_weights``.
+    surfaces, the total input gradient and the scalar competition contraction
+    ride out as trailing outputs; the second order consumes them and replays
+    nothing. The weight contractions run only under ``with_weights``.
     """
     return torch.ops.deepmd.sezm_so2_value_bwd(
         grad_x_local,
@@ -425,7 +437,7 @@ def _value_train_bwd_impl(
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -465,7 +477,7 @@ def _(
     src,
     src_order,
     src_rowptr,
-    wigner,
+    runs,
     kc,
     cb,
     w_fc,
@@ -495,7 +507,7 @@ def _(
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -528,7 +540,7 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -552,14 +564,14 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
         keep_state,
         with_weights,
     ) = inputs
-    kept = output[9:13] if keep_state else (None, None, None, None)
+    kept = output[9:14] if keep_state else (None, None, None, None, None)
     ctx.save_for_backward(
         grad_x_local,
         x,
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -587,12 +599,12 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
 def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
     """Analytic second order, force-loss regime.
 
-    The force graph sends cotangents through the node-feature, Wigner and
+    The force graph sends cotangents through the node-feature, packed-run and
     degree-kernel gradients (whose producers precede this operator on the
     coordinate graph); the parameter gradients feed the optimizer and carry
     none. The whole linearization runs as one CUDA operator call.
     """
-    h_gwig, h_gkc = h_rest[0], h_rest[1]
+    h_gruns, h_gkc = h_rest[0], h_rest[1]
     if h_gx is None and all(h is None for h in h_rest):
         return (None,) * 28
     if any(h is not None for h in h_rest[2:]) or ctx.had_upstream:
@@ -606,7 +618,7 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -621,14 +633,15 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         kept_grad_u0,
         kept_upstream,
         kept_grad_z,
-        kept_grad_logit,
+        kept_gate_logit,
+        kept_grad_alpha_mix,
     ) = ctx.saved_tensors
     apply_alpha = bool(ctx.apply_alpha)
     rank = int(ctx.rank)
     (
         grad_grad_x_local,
         gx2,
-        gwig2,
+        gruns2,
         gkc2,
         gcb2,
         gwfc2,
@@ -642,14 +655,14 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         _guf2,
     ) = torch.ops.deepmd.sezm_so2_value_bwd2(
         h_gx.contiguous() if h_gx is not None else torch.zeros_like(x),
-        h_gwig,
+        h_gruns,
         h_gkc,
         grad_x_local,
         x,
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -664,7 +677,8 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         kept_grad_u0,
         kept_upstream,
         kept_grad_z,
-        kept_grad_logit,
+        kept_gate_logit,
+        kept_grad_alpha_mix,
         int(ctx.lmax),
         int(ctx.n_focus),
         rank,
@@ -672,7 +686,7 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         float(ctx.softmax_tau),
         float(ctx.label_smoothing),
     )
-    # inputs: grad_x_local, x, src, src_order, src_rowptr, wigner, kc, cb,
+    # inputs: grad_x_local, x, src, src_order, src_rowptr, runs, kc, cb,
     # w_fc, fc_bias, w0_all, w1_all, gw_all, x_local, z_all, u_final, alpha,
     # h_z, h_uf, h_alpha, lmax, n_focus, rank, apply_alpha, softmax_tau,
     # label_smoothing, keep_state, with_weights.
@@ -682,7 +696,7 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         None,
         None,
         None,
-        gwig2,
+        gruns2,
         gkc2,
         gcb2 if rank > 0 else None,
         gwfc2 if apply_alpha else None,
@@ -721,7 +735,7 @@ def _value_train_setup_context(ctx, inputs, output):
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -742,7 +756,7 @@ def _value_train_setup_context(ctx, inputs, output):
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -773,7 +787,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -804,7 +818,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
     with_weights = any(needs[i] for i in (7, 8, 9, 10, 11))
     (
         grad_x,
-        grad_wigner,
+        grad_runs,
         grad_kc,
         grad_cb,
         grad_w_fc,
@@ -818,7 +832,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         src,
         src_order,
         src_rowptr,
-        wigner,
+        runs,
         kc,
         cb,
         w_fc,
@@ -842,7 +856,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         keep_state,
         with_weights,
     )[:9]
-    # inputs: x, src, src_order, src_rowptr, wigner, kc, cb, w_fc, fc_bias,
+    # inputs: x, src, src_order, src_rowptr, runs, kc, cb, w_fc, fc_bias,
     # w0_all, w1_all, gw_all, lmax, n_focus, rank, apply_alpha, softmax_tau,
     # label_smoothing.
     return (
@@ -850,7 +864,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         None,
         None,
         None,
-        grad_wigner,
+        grad_runs,
         grad_kc,
         grad_cb if rank > 0 else None,
         grad_w_fc if (with_weights and apply_alpha) else None,
@@ -896,6 +910,45 @@ class SO2ValueTrainCuda:
 
     def __init__(self, conv: SO2Convolution) -> None:
         self._conv = conv
+        from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv import (
+            wigner_run_tables,
+        )
+
+        run_coeff, _, run_exponents, _ = wigner_run_tables(conv.lmax)
+        self._run_coeff_cpu = run_coeff
+        self._run_coeff: Tensor | None = None
+        self._run_exponents = [int(value) for value in run_exponents.reshape(-1)]
+
+    def _run_coefficients(self, device: torch.device) -> Tensor:
+        """Return the packed-run coefficient table on the compute device."""
+        if self._run_coeff is None or self._run_coeff.device != device:
+            self._run_coeff = self._run_coeff_cpu.to(device)
+        return self._run_coeff
+
+    @torch.amp.autocast("cuda", enabled=False)
+    def edge_runs(self, edge_cache: Any) -> Tensor:
+        """Build and cache the packed Wigner rows shared by every block."""
+        store = getattr(edge_cache, "csr_cache", None)
+        key = f"runs:{self._conv.lmax}"
+        runs = None if store is None else store.get(key)
+        if runs is None:
+            from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+                wigner_monomials,
+            )
+
+            quaternion = edge_cache.edge_quat
+            monomials = wigner_monomials(
+                quaternion,
+                self._run_exponents,
+                2 * self._conv.lmax,
+            )
+            runs = torch.matmul(
+                monomials,
+                self._run_coefficients(quaternion.device).transpose(0, 1),
+            )
+            if store is not None:
+                store[key] = runs
+        return runs
 
     def _pack_weights(self, *, differentiable: bool) -> tuple[Tensor, Tensor, Tensor]:
         """Stack the SO(2) block weights and gate projections per layer.
@@ -945,8 +998,8 @@ class SO2ValueTrainCuda:
         x : Tensor
             Node features with shape (N, D, C_wide).
         edge_cache : EdgeCache
-            Precomputed edge cache (provides ``src`` and the Wigner
-            ``D_full``).
+            Precomputed edge cache providing the edge endpoints and
+            quaternions.
         radial_feat : Tensor
             Per-edge radial features with shape (E, lmax+1, C).
 
@@ -960,6 +1013,7 @@ class SO2ValueTrainCuda:
         conv = self._conv
         src = edge_cache.src
         ensure_registered()
+        runs = self.edge_runs(edge_cache)
         w0_all, w1_all, gw_all = self._pack_weights(differentiable=conv.training)
 
         rad_feat = (
@@ -994,7 +1048,7 @@ class SO2ValueTrainCuda:
             src,
             src_order,
             src_rowptr,
-            edge_cache.D_full,
+            runs,
             kc,
             cb,
             conv.adamw_focus_compete_w if apply_alpha else None,
@@ -1033,7 +1087,8 @@ def make_cuda_so2_value(conv: SO2Convolution) -> SO2ValueTrainCuda | None:
 
     if not _is_supported(conv):
         return None
-    if conv.n_focus * conv.so2_focus_dim > 256 or conv.n_focus > 4:
+    c_wide = conv.n_focus * conv.so2_focus_dim
+    if conv.n_focus > 4 or c_wide > 384 or (c_wide > 256 and conv.lmax != 6):
         return None
     if conv.focus_compete and conv.n_focus > 1:
         # The identity competition norm is spelled ``nn.Identity`` on the pt

@@ -22,6 +22,7 @@ import torch
 
 from deepmd.pt_expt.kernels.triton.sezm.grid_pair import (
     GRID_PAIR_TRITON_AVAILABLE,
+    _built_in_launch_config,
     grid_pair_train,
 )
 
@@ -51,6 +52,31 @@ GRID_SHAPES = [
 # Independent operand draws the verdict is taken over; see
 # :func:`.conditioning.median_deviations`.
 DRAW_SEEDS = (11, 2027, 40529)
+
+
+def test_blackwell_launch_table_uses_exact_grid_shape() -> None:
+    """Keep production launch pins scoped to the swept device and grid."""
+    shape_key = (
+        "_grid_pair_bwd2_kernel",
+        147,
+        96,
+        2,
+        3,
+        False,
+        584,
+        torch.bfloat16,
+    )
+    assert _built_in_launch_config(
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition", shape_key
+    ) == (16, 32, 2)
+    assert _built_in_launch_config("NVIDIA H20", shape_key) is None
+    alternate_grid = (*shape_key[:-2], 460, shape_key[-1])
+    assert (
+        _built_in_launch_config(
+            "NVIDIA RTX PRO 6000 Blackwell Server Edition", alternate_grid
+        )
+        is None
+    )
 
 
 def _eager_pair(
@@ -120,7 +146,12 @@ class _GridPairCase:
         return ["fwd", "d/d left", "d/d right", "d2/d left", "d2/d right"]
 
     def evaluate(
-        self, *, fused: bool, dtype: torch.dtype, amp: bool
+        self,
+        *,
+        fused: bool,
+        dtype: torch.dtype,
+        amp: bool,
+        strided: bool = False,
     ) -> tuple[torch.Tensor, ...]:
         """
         Run one evaluation of the pair product and its differentiated forms.
@@ -135,14 +166,31 @@ class _GridPairCase:
             Whether to run inside bfloat16 autocast. Both sides lower to the
             same reduced-precision regime there, so the comparison stays
             inside one ambient mode.
+        strided : bool, default=False
+            Whether coefficient operands use a non-contiguous trailing stride,
+            as the channel slices entering the production grid nets do.
 
         Returns
         -------
         tuple of torch.Tensor
             The output and its first and second order gradients.
         """
-        left = self.left.to(dtype).clone().requires_grad_(True)
-        right = self.right.to(dtype).clone().requires_grad_(True)
+
+        def make_leaf(value: torch.Tensor) -> torch.Tensor:
+            value = value.to(dtype)
+            if not strided:
+                return value.clone().requires_grad_(True)
+            storage = torch.empty(
+                (*value.shape[:-1], value.shape[-1] * 2),
+                device=value.device,
+                dtype=value.dtype,
+            )
+            view = storage[..., ::2]
+            view.copy_(value)
+            return view.requires_grad_(True)
+
+        left = make_leaf(self.left)
+        right = make_leaf(self.right)
         to_grid, from_grid = self.to_grid.to(dtype), self.from_grid.to(dtype)
         context = (
             torch.autocast("cuda", dtype=torch.bfloat16)
@@ -155,7 +203,12 @@ class _GridPairCase:
         return grad_chain(out, [left, right], self.cotangent, self.second_cotangents)
 
 
-def _compare(shape: tuple[int, int, int, int, int], *, amp: bool) -> None:
+def _compare(
+    shape: tuple[int, int, int, int, int],
+    *,
+    amp: bool,
+    strided: bool = False,
+) -> None:
     """Arbitrate the fused pair product against the eager composition."""
     working = torch.bfloat16 if amp else torch.float32
     runs = []
@@ -164,9 +217,15 @@ def _compare(shape: tuple[int, int, int, int, int], *, amp: bool) -> None:
         runs.append(
             deviations(
                 case.quantity_names(),
-                case.evaluate(fused=False, dtype=torch.float64, amp=False),
-                case.evaluate(fused=False, dtype=torch.float32, amp=amp),
-                case.evaluate(fused=True, dtype=torch.float32, amp=amp),
+                case.evaluate(
+                    fused=False, dtype=torch.float64, amp=False, strided=strided
+                ),
+                case.evaluate(
+                    fused=False, dtype=torch.float32, amp=amp, strided=strided
+                ),
+                case.evaluate(
+                    fused=True, dtype=torch.float32, amp=amp, strided=strided
+                ),
                 # The operator walks the grid axis in its natural order while
                 # the eager chain reduces through cuBLAS, so the two agree to
                 # the conditioning of the same contraction. Under bfloat16 the
@@ -198,3 +257,8 @@ def test_autocast_bfloat16_matches_eager_conditioning(
 ) -> None:
     """Hold the same bound under the bfloat16 autocast of production training."""
     _compare((lmax, n_frames, n_focus, channels, n_grid), amp=True)
+
+
+def test_noncontiguous_operands_match_eager_conditioning() -> None:
+    """Cover the channel-slice strides supplied by production grid nets."""
+    _compare(GRID_SHAPES[1], amp=True, strided=True)

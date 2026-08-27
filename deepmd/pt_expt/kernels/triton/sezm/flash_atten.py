@@ -249,6 +249,21 @@ def _flash_atten_backward_reference(
 # Triton kernels (mmax == 1; LMAX / layout are constexpr; channels vectorized)
 # ======================================================================
 if FLASH_ATTEN_TRITON_AVAILABLE:
+
+    @triton.jit
+    def _rotation_entry_offset(
+        output_row,
+        input_row,
+        packed_index,
+        row_stride,
+        column_stride,
+        PACKED: tl.constexpr,
+    ):
+        """Map a structural Wigner entry to dense or packed storage."""
+        if PACKED:
+            return packed_index * column_stride
+        return output_row * row_stride + input_row * column_stride
+
     # The segmented forward carries a DIM-row register accumulator per
     # program, so low warp counts dominate; higher counts only pay off for
     # wide channel tiles.
@@ -267,7 +282,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         triton.Config({}, num_warps=4, num_stages=2),
     ]
 
-    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide"])
+    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide", "PACKED"])
     @triton.jit
     def _flash_fwd_kernel(
         xl_ptr,
@@ -296,6 +311,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         CF: tl.constexpr,
         HEAD_DIM: tl.constexpr,
         BLOCK_C: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """One program per node: indirect CSR segment reduction of the rotate-back.
 
@@ -358,23 +374,33 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                     ).to(tl.float32)
                 for j in tl.static_range(0, 2 * l + 1):
                     d = base + j  # full packed output row
-                    rb = (
-                        tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
-                            tl.float32
-                        )
-                        * xl0
+                    offset0 = _rotation_entry_offset(
+                        d, r0, base + j, dt_sr, dt_sk, PACKED
                     )
+                    rb = tl.load(dt_ptr + edge * dt_se + offset0).to(tl.float32) * xl0
                     if l >= 1:
+                        offset_m = _rotation_entry_offset(
+                            d,
+                            r0 - 1,
+                            DIM + base - 1 + j,
+                            dt_sr,
+                            dt_sk,
+                            PACKED,
+                        )
+                        offset_p = _rotation_entry_offset(
+                            d,
+                            r0 + 1,
+                            2 * DIM + base - 2 + j,
+                            dt_sr,
+                            dt_sk,
+                            PACKED,
+                        )
                         rb += (
-                            tl.load(
-                                dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
-                            ).to(tl.float32)
+                            tl.load(dt_ptr + edge * dt_se + offset_m).to(tl.float32)
                             * xlm
                         )
                         rb += (
-                            tl.load(
-                                dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
-                            ).to(tl.float32)
+                            tl.load(dt_ptr + edge * dt_se + offset_p).to(tl.float32)
                             * xlp
                         )
                     # Loop-carried tuples require inline constexpr subscripts
@@ -390,7 +416,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                 mask=cmask,
             )
 
-    @triton.autotune(configs=_BWD_CONFIGS, key=["C_wide"])
+    @triton.autotune(configs=_BWD_CONFIGS, key=["C_wide", "PACKED"])
     @triton.jit
     def _flash_bwd_kernel(
         gp_ptr,
@@ -433,6 +459,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         NFOCUS: tl.constexpr,
         NHEAD: tl.constexpr,
         BLOCK_C: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """One program per edge: exact per-edge gradients of the fused forward.
 
@@ -442,6 +469,8 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         (reduced over each (focus, head) channel group). No cross-edge
         accumulation, hence no atomics.
         """
+        DIM: tl.constexpr = (LMAX + 1) * (LMAX + 1)
+
         edge = tl.program_id(0).to(tl.int64)
         n = tl.load(dst_ptr + edge).to(tl.int64)
         chan = tl.arange(0, BLOCK_C)
@@ -479,6 +508,10 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                 gxlp = tl.zeros((BLOCK_C,), dtype=tl.float32)
             for j in tl.static_range(0, 2 * l + 1):
                 d = base + j
+                offset0 = _rotation_entry_offset(d, r0, base + j, dt_sr, dt_sk, PACKED)
+                grad_offset0 = _rotation_entry_offset(
+                    d, r0, base + j, gdt_sr, gdt_sk, PACKED
+                )
                 resc = tl.load(resc_ptr + d).to(tl.float32)
                 gpr = (
                     tl.load(
@@ -489,31 +522,57 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                     * resc
                 )
                 grad_rb = gpr * wv
-                w0 = tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
-                    tl.float32
-                )
+                w0 = tl.load(dt_ptr + edge * dt_se + offset0).to(tl.float32)
                 rb = w0 * xl0
                 gxl0 += w0 * grad_rb
                 tl.store(
-                    gdt_ptr + edge * gdt_se + d * gdt_sr + r0 * gdt_sk,
+                    gdt_ptr + edge * gdt_se + grad_offset0,
                     tl.sum(grad_rb * xl0).to(gdt_ptr.dtype.element_ty),
                 )
                 if l >= 1:
-                    wm = tl.load(
-                        dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
-                    ).to(tl.float32)
-                    wp = tl.load(
-                        dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
-                    ).to(tl.float32)
+                    offset_m = _rotation_entry_offset(
+                        d,
+                        r0 - 1,
+                        DIM + base - 1 + j,
+                        dt_sr,
+                        dt_sk,
+                        PACKED,
+                    )
+                    offset_p = _rotation_entry_offset(
+                        d,
+                        r0 + 1,
+                        2 * DIM + base - 2 + j,
+                        dt_sr,
+                        dt_sk,
+                        PACKED,
+                    )
+                    grad_offset_m = _rotation_entry_offset(
+                        d,
+                        r0 - 1,
+                        DIM + base - 1 + j,
+                        gdt_sr,
+                        gdt_sk,
+                        PACKED,
+                    )
+                    grad_offset_p = _rotation_entry_offset(
+                        d,
+                        r0 + 1,
+                        2 * DIM + base - 2 + j,
+                        gdt_sr,
+                        gdt_sk,
+                        PACKED,
+                    )
+                    wm = tl.load(dt_ptr + edge * dt_se + offset_m).to(tl.float32)
+                    wp = tl.load(dt_ptr + edge * dt_se + offset_p).to(tl.float32)
                     rb += wm * xlm + wp * xlp
                     gxlm += wm * grad_rb
                     gxlp += wp * grad_rb
                     tl.store(
-                        gdt_ptr + edge * gdt_se + d * gdt_sr + (r0 - 1) * gdt_sk,
+                        gdt_ptr + edge * gdt_se + grad_offset_m,
                         tl.sum(grad_rb * xlm).to(gdt_ptr.dtype.element_ty),
                     )
                     tl.store(
-                        gdt_ptr + edge * gdt_se + d * gdt_sr + (r0 + 1) * gdt_sk,
+                        gdt_ptr + edge * gdt_se + grad_offset_p,
                         tl.sum(grad_rb * xlp).to(gdt_ptr.dtype.element_ty),
                     )
                 gw_chan += gpr * rb
@@ -678,7 +737,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
             val = tl.sum(tl.where((grp == g)[None, :] & em, gw_acc, 0.0), axis=1)
             tl.store(gw_ptr + eq * NG + g, val, mask=e_mask)
 
-    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide"])
+    @triton.autotune(configs=_FWD_CONFIGS, key=["C_wide", "PACKED"])
     @triton.jit
     def _flash_2nd_gather_kernel(
         xl_ptr,
@@ -720,6 +779,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         CF: tl.constexpr,
         HEAD_DIM: tl.constexpr,
         BLOCK_C: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """Output-cotangent term of the aggregation's second order, one pass.
 
@@ -805,26 +865,56 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                     up = wv * xlp
                 for j in tl.static_range(0, 2 * l + 1):
                     d = base + j
-                    dt0 = tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
-                        tl.float32
+                    offset0 = _rotation_entry_offset(
+                        d, r0, base + j, dt_sr, dt_sk, PACKED
                     )
-                    hdt0 = tl.load(
-                        hdt_ptr + edge * hdt_se + d * hdt_sr + r0 * hdt_sk
-                    ).to(tl.float32)
+                    h_offset0 = _rotation_entry_offset(
+                        d, r0, base + j, hdt_sr, hdt_sk, PACKED
+                    )
+                    dt0 = tl.load(dt_ptr + edge * dt_se + offset0).to(tl.float32)
+                    hdt0 = tl.load(hdt_ptr + edge * hdt_se + h_offset0).to(tl.float32)
                     rb = dt0 * v0 + hdt0 * u0
                     if l >= 1:
-                        dtm = tl.load(
-                            dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
-                        ).to(tl.float32)
-                        dtp = tl.load(
-                            dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
-                        ).to(tl.float32)
-                        hdtm = tl.load(
-                            hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 - 1) * hdt_sk
-                        ).to(tl.float32)
-                        hdtp = tl.load(
-                            hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 + 1) * hdt_sk
-                        ).to(tl.float32)
+                        offset_m = _rotation_entry_offset(
+                            d,
+                            r0 - 1,
+                            DIM + base - 1 + j,
+                            dt_sr,
+                            dt_sk,
+                            PACKED,
+                        )
+                        offset_p = _rotation_entry_offset(
+                            d,
+                            r0 + 1,
+                            2 * DIM + base - 2 + j,
+                            dt_sr,
+                            dt_sk,
+                            PACKED,
+                        )
+                        h_offset_m = _rotation_entry_offset(
+                            d,
+                            r0 - 1,
+                            DIM + base - 1 + j,
+                            hdt_sr,
+                            hdt_sk,
+                            PACKED,
+                        )
+                        h_offset_p = _rotation_entry_offset(
+                            d,
+                            r0 + 1,
+                            2 * DIM + base - 2 + j,
+                            hdt_sr,
+                            hdt_sk,
+                            PACKED,
+                        )
+                        dtm = tl.load(dt_ptr + edge * dt_se + offset_m).to(tl.float32)
+                        dtp = tl.load(dt_ptr + edge * dt_se + offset_p).to(tl.float32)
+                        hdtm = tl.load(hdt_ptr + edge * hdt_se + h_offset_m).to(
+                            tl.float32
+                        )
+                        hdtp = tl.load(hdt_ptr + edge * hdt_se + h_offset_p).to(
+                            tl.float32
+                        )
                         rb += dtm * vm + dtp * vp + hdtm * um + hdtp * up
                     new_acc = new_acc + (acc[l * l + j] + rb,)
             acc = new_acc
@@ -837,7 +927,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                 mask=cmask,
             )
 
-    @triton.autotune(configs=_BWD_CONFIGS, key=["C_wide"])
+    @triton.autotune(configs=_BWD_CONFIGS, key=["C_wide", "PACKED"])
     @triton.jit
     def _flash_2nd_edge_kernel(
         gp_ptr,
@@ -893,6 +983,7 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         NFOCUS: tl.constexpr,
         NHEAD: tl.constexpr,
         BLOCK_C: tl.constexpr,
+        PACKED: tl.constexpr,
     ):
         """Edge-side terms of the aggregation's second order, one pass.
 
@@ -909,6 +1000,8 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         per-edge backward kernel with every operand paired against its
         cotangent.
         """
+        DIM: tl.constexpr = (LMAX + 1) * (LMAX + 1)
+
         edge = tl.program_id(0).to(tl.int64)
         n = tl.load(dst_ptr + edge).to(tl.int64)
         chan = tl.arange(0, BLOCK_C)
@@ -964,6 +1057,13 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                 dxlp = tl.zeros((BLOCK_C,), dtype=tl.float32)
             for j in tl.static_range(0, 2 * l + 1):
                 d = base + j
+                offset0 = _rotation_entry_offset(d, r0, base + j, dt_sr, dt_sk, PACKED)
+                h_offset0 = _rotation_entry_offset(
+                    d, r0, base + j, hdt_sr, hdt_sk, PACKED
+                )
+                d_offset0 = _rotation_entry_offset(
+                    d, r0, base + j, ddt_sr, ddt_sk, PACKED
+                )
                 resc = tl.load(resc_ptr + d).to(tl.float32)
                 gpr = (
                     tl.load(
@@ -975,41 +1075,77 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
                 )
                 grad_ha = gpr * hwv  # pairs with Dt for d_x
                 grad_a = gpr * wv  # pairs with h_Dt for d_x
-                dt0 = tl.load(dt_ptr + edge * dt_se + d * dt_sr + r0 * dt_sk).to(
-                    tl.float32
-                )
-                hdt0 = tl.load(hdt_ptr + edge * hdt_se + d * hdt_sr + r0 * hdt_sk).to(
-                    tl.float32
-                )
+                dt0 = tl.load(dt_ptr + edge * dt_se + offset0).to(tl.float32)
+                hdt0 = tl.load(hdt_ptr + edge * hdt_se + h_offset0).to(tl.float32)
                 dxl0 += dt0 * grad_ha + hdt0 * grad_a
                 tl.store(
-                    ddt_ptr + edge * ddt_se + d * ddt_sr + r0 * ddt_sk,
+                    ddt_ptr + edge * ddt_se + d_offset0,
                     tl.sum(gpr * (hwv * xl0 + wv * hx0)).to(ddt_ptr.dtype.element_ty),
                 )
                 rb_mix = dt0 * hx0 + hdt0 * xl0
                 if l >= 1:
-                    dtm = tl.load(
-                        dt_ptr + edge * dt_se + d * dt_sr + (r0 - 1) * dt_sk
-                    ).to(tl.float32)
-                    dtp = tl.load(
-                        dt_ptr + edge * dt_se + d * dt_sr + (r0 + 1) * dt_sk
-                    ).to(tl.float32)
-                    hdtm = tl.load(
-                        hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 - 1) * hdt_sk
-                    ).to(tl.float32)
-                    hdtp = tl.load(
-                        hdt_ptr + edge * hdt_se + d * hdt_sr + (r0 + 1) * hdt_sk
-                    ).to(tl.float32)
+                    offset_m = _rotation_entry_offset(
+                        d,
+                        r0 - 1,
+                        DIM + base - 1 + j,
+                        dt_sr,
+                        dt_sk,
+                        PACKED,
+                    )
+                    offset_p = _rotation_entry_offset(
+                        d,
+                        r0 + 1,
+                        2 * DIM + base - 2 + j,
+                        dt_sr,
+                        dt_sk,
+                        PACKED,
+                    )
+                    h_offset_m = _rotation_entry_offset(
+                        d,
+                        r0 - 1,
+                        DIM + base - 1 + j,
+                        hdt_sr,
+                        hdt_sk,
+                        PACKED,
+                    )
+                    h_offset_p = _rotation_entry_offset(
+                        d,
+                        r0 + 1,
+                        2 * DIM + base - 2 + j,
+                        hdt_sr,
+                        hdt_sk,
+                        PACKED,
+                    )
+                    d_offset_m = _rotation_entry_offset(
+                        d,
+                        r0 - 1,
+                        DIM + base - 1 + j,
+                        ddt_sr,
+                        ddt_sk,
+                        PACKED,
+                    )
+                    d_offset_p = _rotation_entry_offset(
+                        d,
+                        r0 + 1,
+                        2 * DIM + base - 2 + j,
+                        ddt_sr,
+                        ddt_sk,
+                        PACKED,
+                    )
+                    dtm = tl.load(dt_ptr + edge * dt_se + offset_m).to(tl.float32)
+                    dtp = tl.load(dt_ptr + edge * dt_se + offset_p).to(tl.float32)
+                    hdtm = tl.load(hdt_ptr + edge * hdt_se + h_offset_m).to(tl.float32)
+                    hdtp = tl.load(hdt_ptr + edge * hdt_se + h_offset_p).to(tl.float32)
                     dxlm += dtm * grad_ha + hdtm * grad_a
                     dxlp += dtp * grad_ha + hdtp * grad_a
                     tl.store(
-                        ddt_ptr + edge * ddt_se + d * ddt_sr + (r0 - 1) * ddt_sk,
+                        ddt_ptr + edge * ddt_se + d_offset_m,
                         tl.sum(gpr * (hwv * xlm + wv * hxm)).to(
                             ddt_ptr.dtype.element_ty
                         ),
                     )
                     tl.store(
-                        ddt_ptr + edge * ddt_se + d * ddt_sr + (r0 + 1) * ddt_sk,
+                        ddt_ptr + edge * ddt_se + d_offset_p,
                         tl.sum(gpr * (hwv * xlp + wv * hxp)).to(
                             ddt_ptr.dtype.element_ty
                         ),
@@ -1059,6 +1195,18 @@ def _has_no_edges(n_edge) -> bool:
     return type(n_edge) is int and n_edge == 0
 
 
+def _rotation_strides(rotation: Tensor) -> tuple[bool, int, int, int]:
+    """Return the storage mode and strides for dense or packed rotations."""
+    if rotation.dim() == 2:
+        return True, rotation.stride(0), 0, rotation.stride(1)
+    if rotation.dim() == 3:
+        return False, rotation.stride(0), rotation.stride(1), rotation.stride(2)
+    raise ValueError(
+        "rotation must have shape (E, D, D) or (E, 3 * D - 2), "
+        f"got rank {rotation.dim()}"
+    )
+
+
 # ======================================================================
 # Triton launch wrappers
 # ======================================================================
@@ -1076,6 +1224,7 @@ def _launch_forward(
     n_edge, n_focus, _reduced_dim, focus_dim = x_local.shape
     dim = (int(lmax) + 1) ** 2
     c_wide = n_focus * focus_dim
+    packed, dt_se, dt_sr, dt_sk = _rotation_strides(wigner_dt)
     # The segment reduction accumulates in float32 registers regardless of
     # the input precision and writes each output row exactly once.
     out = torch.empty(n_nodes, dim, c_wide, dtype=torch.float32, device=x_local.device)
@@ -1095,9 +1244,9 @@ def _launch_forward(
         x_local.stride(1),
         x_local.stride(2),
         x_local.stride(3),
-        wigner_dt.stride(0),
-        wigner_dt.stride(1),
-        wigner_dt.stride(2),
+        dt_se,
+        dt_sr,
+        dt_sk,
         alpha.stride(0),
         alpha.stride(1),
         alpha.stride(2),
@@ -1108,6 +1257,7 @@ def _launch_forward(
         CF=focus_dim,
         HEAD_DIM=focus_dim // int(n_head),
         BLOCK_C=_tile_channels(c_wide),
+        PACKED=packed,
     )
     return out.to(x_local.dtype)
 
@@ -1127,12 +1277,14 @@ def _launch_backward(
     grad_x_local = torch.empty_like(x_local)
     grad_wigner = torch.zeros_like(wigner_dt, memory_format=torch.contiguous_format)
     grad_alpha = torch.empty_like(alpha)
+    packed, dt_se, dt_sr, dt_sk = _rotation_strides(wigner_dt)
+    _, gdt_se, gdt_sr, gdt_sk = _rotation_strides(grad_wigner)
     if _has_no_edges(n_edge):
         return grad_x_local, grad_wigner, grad_alpha
     # The edge-block schedule engages on swept-and-winning (C_wide, lmax)
     # keys; every other shape keeps the per-edge kernel.  The branch resolves
     # at trace time, so exactly one kernel reaches the compiled graph.
-    block_cfg = flash_bwd_block_config(int(c_wide), int(lmax))
+    block_cfg = None if packed else flash_bwd_block_config(int(c_wide), int(lmax))
     if block_cfg is not None:
         block_e, warps, stages = block_cfg
         wrap_triton(_flash_bwd_block_kernel)[(triton.cdiv(n_edge, block_e),)](
@@ -1197,9 +1349,9 @@ def _launch_backward(
         x_local.stride(1),
         x_local.stride(2),
         x_local.stride(3),
-        wigner_dt.stride(0),
-        wigner_dt.stride(1),
-        wigner_dt.stride(2),
+        dt_se,
+        dt_sr,
+        dt_sk,
         alpha.stride(0),
         alpha.stride(1),
         alpha.stride(2),
@@ -1207,9 +1359,9 @@ def _launch_backward(
         grad_x_local.stride(1),
         grad_x_local.stride(2),
         grad_x_local.stride(3),
-        grad_wigner.stride(0),
-        grad_wigner.stride(1),
-        grad_wigner.stride(2),
+        gdt_se,
+        gdt_sr,
+        gdt_sk,
         grad_alpha.stride(0),
         grad_alpha.stride(1),
         grad_alpha.stride(2),
@@ -1219,6 +1371,7 @@ def _launch_backward(
         NFOCUS=n_focus,
         NHEAD=int(n_head),
         BLOCK_C=_tile_channels(c_wide),
+        PACKED=packed,
         **edge_kwargs,
     )
     return grad_x_local, grad_wigner, grad_alpha
@@ -1359,6 +1512,10 @@ def _second_order_gather_impl(
     n_focus, focus_dim = x_local.shape[1], x_local.shape[3]
     c_wide = n_focus * focus_dim
     dim = (int(lmax) + 1) ** 2
+    packed, dt_se, dt_sr, dt_sk = _rotation_strides(wigner_dt)
+    h_packed, hdt_se, hdt_sr, hdt_sk = _rotation_strides(h_wigner)
+    if h_packed != packed:
+        raise ValueError("rotation and its cotangent must use the same storage layout")
     out = x_local.new_empty(n_node, dim, c_wide)
     if _has_no_edges(x_local.shape[0]):
         return out.zero_()
@@ -1386,12 +1543,12 @@ def _second_order_gather_impl(
         h_x.stride(1),
         h_x.stride(2),
         h_x.stride(3),
-        wigner_dt.stride(0),
-        wigner_dt.stride(1),
-        wigner_dt.stride(2),
-        h_wigner.stride(0),
-        h_wigner.stride(1),
-        h_wigner.stride(2),
+        dt_se,
+        dt_sr,
+        dt_sk,
+        hdt_se,
+        hdt_sr,
+        hdt_sk,
         alpha.stride(0),
         alpha.stride(1),
         alpha.stride(2),
@@ -1405,6 +1562,7 @@ def _second_order_gather_impl(
         CF=focus_dim,
         HEAD_DIM=focus_dim // int(n_head),
         BLOCK_C=_tile_channels(c_wide),
+        PACKED=packed,
     )
     return out
 
@@ -1456,6 +1614,11 @@ def _second_order_edge_impl(
     # degree block), so the Wigner gradient must start from zeros.
     d_dt = torch.zeros_like(wigner_dt, memory_format=torch.contiguous_format)
     d_alpha = torch.empty_like(alpha)
+    packed, dt_se, dt_sr, dt_sk = _rotation_strides(wigner_dt)
+    h_packed, hdt_se, hdt_sr, hdt_sk = _rotation_strides(h_wigner)
+    d_packed, ddt_se, ddt_sr, ddt_sk = _rotation_strides(d_dt)
+    if h_packed != packed or d_packed != packed:
+        raise ValueError("rotation tensors must use the same storage layout")
     if _has_no_edges(n_edge):
         return d_x, d_dt, d_alpha
     grad_pre_gate = grad_pre_gate.contiguous()
@@ -1488,12 +1651,12 @@ def _second_order_edge_impl(
         h_x.stride(1),
         h_x.stride(2),
         h_x.stride(3),
-        wigner_dt.stride(0),
-        wigner_dt.stride(1),
-        wigner_dt.stride(2),
-        h_wigner.stride(0),
-        h_wigner.stride(1),
-        h_wigner.stride(2),
+        dt_se,
+        dt_sr,
+        dt_sk,
+        hdt_se,
+        hdt_sr,
+        hdt_sk,
         alpha.stride(0),
         alpha.stride(1),
         alpha.stride(2),
@@ -1504,9 +1667,9 @@ def _second_order_edge_impl(
         d_x.stride(1),
         d_x.stride(2),
         d_x.stride(3),
-        d_dt.stride(0),
-        d_dt.stride(1),
-        d_dt.stride(2),
+        ddt_se,
+        ddt_sr,
+        ddt_sk,
         d_alpha.stride(0),
         d_alpha.stride(1),
         d_alpha.stride(2),
@@ -1516,6 +1679,7 @@ def _second_order_edge_impl(
         NFOCUS=n_focus,
         NHEAD=int(n_head),
         BLOCK_C=_tile_channels(c_wide),
+        PACKED=packed,
     )
     return d_x, d_dt, d_alpha
 

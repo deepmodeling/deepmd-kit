@@ -374,6 +374,7 @@ BUILTIN_TILE_CONFIGS: dict[
         },
         # Production per-edge flash backward launch; avoids trace-size tuning.
         "flash_bwd_edge": {
+            (32, 1): (1, 1),
             (32, 2): (1, 1),
             (64, 1): (1, 1),
             (64, 2): (1, 1),
@@ -399,9 +400,11 @@ BUILTIN_TILE_CONFIGS: dict[
             (256, 4): (1, 1),
             (256, 5): (2, 1),
             (256, 6): (2, 1),
+            (384, 6): (2, 1),
         },
         # Edge-block schedule win list against the pinned per-edge baseline.
         "flash_bwd_block": {
+            (32, 1): None,
             (32, 2): None,
             (64, 1): None,
             (64, 2): None,
@@ -427,6 +430,7 @@ BUILTIN_TILE_CONFIGS: dict[
             (256, 4): (2, 2, 2),
             (256, 5): None,
             (256, 6): None,
+            (384, 6): None,
         },
         # (C_wide, lmax) -> (BLOCK_E, num_warps, num_stages); win list.
         "rotate_mix_bwd_block": {
