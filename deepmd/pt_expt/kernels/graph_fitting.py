@@ -44,6 +44,9 @@ import os
 from dataclasses import (
     dataclass,
 )
+from functools import (
+    cache,
+)
 from typing import (
     Any,
 )
@@ -317,19 +320,13 @@ def _backward(ctx: Any, d_e: torch.Tensor, d_saved: Any) -> tuple:
 # ======================================================================
 # Registration and the public wrapper
 # ======================================================================
-_registered = False
-
-
-def ensure_registered() -> None:
-    """Register the meta and autograd implementations for the ops.
+@cache
+def _register_ops() -> None:
+    """Register the meta and autograd implementations for the ops once.
 
     Both devices implement the network in C++, so only the shapes and the
-    autograd rule are described here. Idempotent; a no-op when the operator
-    library is not loaded.
+    autograd rule are described here.
     """
-    global _registered
-    if _registered or not op_available():
-        return
     torch.library.register_fake("deepmd::graph_fitting")(_forward_fake)
     torch.library.register_fake("deepmd::graph_fitting_backward")(_backward_fake)
     torch.library.register_fake("deepmd::graph_fitting_energy_gradient")(
@@ -338,7 +335,12 @@ def ensure_registered() -> None:
     torch.library.register_autograd(
         "deepmd::graph_fitting", _backward, setup_context=_setup_context
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register meta and autograd implementations when the ops are available."""
+    if op_available():
+        _register_ops()
 
 
 def energy_and_input_gradient(

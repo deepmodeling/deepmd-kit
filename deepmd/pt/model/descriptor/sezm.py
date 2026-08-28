@@ -1042,13 +1042,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.blocks = nn.ModuleList(blocks)
 
         # The fused convolution paths consume only the three structural rows of
-        # each Wigner degree block. The dense per-edge matrices are therefore
-        # built only when some block falls back to the reference value or
-        # attention path.
-        self._wigner_free_conv = bool(self.blocks) and all(
-            getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
-            and not block.so2_conv._cuda_conv_fn._compete
-            for block in self.blocks
+        # each Wigner degree block. Source-gated attention bypasses that fused
+        # convolution, so its dense per-edge rotations remain available.
+        self._wigner_free_conv = (
+            self.bridging_switch is None
+            and bool(self.blocks)
+            and all(
+                getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
+                and not block.so2_conv._cuda_conv_fn._compete
+                for block in self.blocks
+            )
         )
         self._packed_wigner_train = bool(self.blocks) and all(
             getattr(block.so2_conv, "_cuda_value_train", None) is not None

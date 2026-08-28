@@ -507,10 +507,13 @@ void launch_so2_value_fwd(const scalar_t* x,
     auto kernel = so2_value_fwd_kernel<scalar_t, L, decltype(rc)::value,
                                        decltype(tc)::value>;
     if (smem_bytes > 48 * 1024) {
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
-                           (int)smem_bytes);
+      const cudaError_t error = cudaFuncSetAttribute(
+          kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem_bytes);
+      TORCH_CHECK(error == cudaSuccess, "launch_so2_value_fwd: requesting ",
+                  smem_bytes, " bytes of dynamic shared memory failed: ",
+                  cudaGetErrorString(error));
     }
-    kernel<<<n_blocks, 256, smem_bytes, stream>>>(
+    kernel<<<n_blocks, kThreads, smem_bytes, stream>>>(
         x, src, wig, kc, cb, w_fc, fc_bias, w0_all, w1_all, gw_all, x_out,
         z_all, u_final, alpha_out, n_edge, x_sn, x_sd, cf, n_focus, n_gated,
         apply_alpha, has_bias, inv_tau, label_smooth);
@@ -541,6 +544,8 @@ void launch_so2_value_fwd(const scalar_t* x,
     DPA4_SCT_CASE(3)
     DPA4_SCT_CASE(4)
 #undef DPA4_SCT_CASE
+    default:
+      TORCH_CHECK(false, "launch_so2_value_fwd: unsupported rank ", rank);
   }
 }
 

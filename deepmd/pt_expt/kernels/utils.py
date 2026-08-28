@@ -157,7 +157,7 @@ def cuda_train_enabled() -> bool:
     that stream; the attention span downstream is independent and follows
     ``DP_TRITON_TRAIN``. The production operating point enables both.
     """
-    return os.environ.get("DP_CUDA_TRAIN", "0").strip() == "1"
+    return os.environ.get("DP_CUDA_TRAIN", "0").strip().lower() in _INFER_TRUE
 
 
 CUDA_INFER_LEVELS = (0, 1, 2)

@@ -36,6 +36,9 @@ import math
 from dataclasses import (
     dataclass,
 )
+from functools import (
+    cache,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -1751,19 +1754,14 @@ def _backward(
     return (edge_gradient,) + (None,) * 25
 
 
-_registered = False
-
-
-def ensure_registered() -> None:
+@cache
+def _register_ops() -> None:
     """Register the fake and autograd implementations once.
 
     Both devices implement the operator in C++, so the only Python-side
     registrations are the meta shapes ``torch.export`` needs and the autograd
     rule that connects the analytical backward.
     """
-    global _registered
-    if _registered or not op_available():
-        return
     torch.library.register_fake("deepmd::dpa4c_graph_compress")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4c_graph_compress_backward")(_backward_fake)
     torch.library.register_autograd(
@@ -1771,7 +1769,12 @@ def ensure_registered() -> None:
         _backward,
         setup_context=_setup_context,
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake and autograd implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 def compressed_operator_arguments(

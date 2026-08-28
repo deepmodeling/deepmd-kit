@@ -283,6 +283,9 @@ void check_inputs(const torch::Tensor& quat,
               "dpa4_wigner_dense: the element table must cover every "
               "block-diagonal element of degree ",
               lmax);
+  TORCH_CHECK(entry_coeff.numel() == entry_mono.numel(),
+              "dpa4_wigner_dense: coefficients and exponents must have equal "
+              "length");
   TORCH_CHECK(dim <= 121, "dpa4_wigner_dense: block dimension overflow");
 }
 
@@ -359,6 +362,12 @@ torch::Tensor dpa4_wigner_dense_backward(torch::Tensor g_d,
   const at::cuda::OptionalCUDAGuard device_guard(quat.device());
   check_inputs(quat, elem_ptr, elem_pos, entry_coeff, entry_mono, lmax);
   quat = quat.contiguous();
+  const long dim_check = (lmax + 1) * (lmax + 1);
+  TORCH_CHECK(g_d.sizes() == g_dt.sizes() && g_d.dim() == 3 &&
+                  g_d.size(0) == quat.size(0) && g_d.size(1) == dim_check &&
+                  g_d.size(2) == dim_check,
+              "dpa4_wigner_dense_backward: cotangents must have shape "
+              "(E, D, D)");
   g_d = g_d.contiguous();
   g_dt = g_dt.contiguous();
 

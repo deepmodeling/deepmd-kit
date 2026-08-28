@@ -364,7 +364,6 @@ if SEZM_CUTE_AVAILABLE:
             self._B = bucket
             self.nf, self.cf, self.Dm = n_focus, cf, self.op.Dm
             self._compiled = None
-            self._stream = cuda.CUstream(torch.cuda.current_stream().cuda_stream)
             self._pack(weights, lmax, cf, n_focus, n_layers)
 
         def _pack(self, w, lmax: int, cf: int, nf: int, nl: int) -> None:
@@ -438,7 +437,8 @@ if SEZM_CUTE_AVAILABLE:
                 self._dyn(fgate, 2),
             )
             args = (*views, cutlass.Int32(n_edge), cutlass.Int32(n_bucket))
+            stream = cuda.CUstream(torch.cuda.current_stream(x.device).cuda_stream)
             if self._compiled is None:
-                self._compiled = cute.compile(self.op, *args, stream=self._stream)
-            self._compiled(*args, stream=self._stream)
+                self._compiled = cute.compile(self.op, *args, stream=stream)
+            self._compiled(*args, stream=stream)
             return out[:n_edge], fgate[:n_edge]

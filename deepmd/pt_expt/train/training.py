@@ -3071,17 +3071,14 @@ class Trainer(AbstractTrainer):
         watchdog and aborts the job. One forward and backward per task on the
         *inner* module therefore runs first: the compiled artifacts are keyed
         by the module and its input shapes, so warming them there is what the
-        optimization step reuses, and it issues no collective. A rendezvous
+        optimization step reuses. ``torch.autograd.grad`` compiles the same
+        backward without accumulating parameter gradients; the reducer hooks
+        attached to ``AccumulateGrad`` therefore remain dormant. A rendezvous
         store barrier (which has no watchdog) then aligns the ranks before the
         first real step.
-
-        Going through the DDP wrapper instead -- even under ``no_sync`` --
-        makes the backward run inside DDP's autograd hooks while the graph is
-        still being compiled, which aborts with a dtype mismatch on a
-        generated ``bmm`` under bf16 autocast. The inner module is the same
-        callable the wrapper delegates to, so nothing about the traced graph
-        differs.
         """
+        if not self.enable_compile:
+            return
         if not (dist.is_available() and dist.is_initialized()):
             return
         if not isinstance(self.wrapper, torch.nn.parallel.DistributedDataParallel):
@@ -3091,6 +3088,9 @@ class Trainer(AbstractTrainer):
         log.info("Compiling training graphs before the first collective.")
         start = time.time()
         inner = self._unwrapped
+        trainable_parameters = tuple(
+            parameter for parameter in inner.parameters() if parameter.requires_grad
+        )
         for task in self.training_tasks:
             input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
             _, loss, _ = inner(
@@ -3099,8 +3099,7 @@ class Trainer(AbstractTrainer):
                 label=label_dict,
                 task_key=task.key,
             )
-            loss.backward()
-        self.optimizer.zero_grad(set_to_none=True)
+            torch.autograd.grad(loss, trainable_parameters, allow_unused=True)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         log.info(

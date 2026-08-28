@@ -87,8 +87,10 @@ def neighbor_graph_from_ijs(
         Whether to reorder every edge field into destination-major form. Implies
         ``with_csr=True``.
     destination_sorted
-        Whether ``i`` already ascends, so that the destination grouping holds
-        without a sort. A search that walks its centers in order provides this.
+        Whether the flattened destination index ``i + frame_offset`` already
+        ascends across the complete edge list, so that destination grouping
+        holds without a sort. Sorting ``i`` independently inside each frame is
+        sufficient only when the frame edge blocks themselves are ordered.
 
     Returns
     -------

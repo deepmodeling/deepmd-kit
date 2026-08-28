@@ -478,7 +478,9 @@ class SO3Linear(NativeOP):
         """
         xp = array_api_compat.array_namespace(x)
         weight = xp.reshape(
-            xp_asarray_nodetach(xp, self.weight[0], device=array_api_compat.device(x)),
+            xp_asarray_nodetach(
+                xp, self.weight[0, ...], device=array_api_compat.device(x)
+            ),
             (self.in_channels, self.n_focus, self.out_channels),
         )
         out = xp_einsum("ndfi,ifo->ndfo", x[:, 0:1, :, :], weight)

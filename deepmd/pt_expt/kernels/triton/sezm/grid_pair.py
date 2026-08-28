@@ -52,9 +52,14 @@ import torch
 from torch import (
     Tensor,
 )
+from torch.fx.experimental.symbolic_shapes import (
+    guard_int,
+)
 from torch.library import (
     wrap_triton,
 )
+
+_Shape = tuple[int | torch.SymInt, ...]
 
 __all__ = [
     "GRID_PAIR_TRITON_AVAILABLE",
@@ -77,10 +82,10 @@ if GRID_PAIR_TRITON_AVAILABLE:
         pair,
         slot,
         channel,
-        stride_batch: tl.constexpr,
-        stride_coeff: tl.constexpr,
-        stride_focus: tl.constexpr,
-        stride_channel: tl.constexpr,
+        stride_batch,
+        stride_coeff,
+        stride_focus,
+        stride_channel,
         PACKED: tl.constexpr,
         N_FOCUS: tl.constexpr,
         N_FRAMES: tl.constexpr,
@@ -112,18 +117,18 @@ if GRID_PAIR_TRITON_AVAILABLE:
         tg_ptr,
         fg_ptr,
         out_ptr,
-        left_s0: tl.constexpr,
-        left_s1: tl.constexpr,
-        left_s2: tl.constexpr,
-        left_s3: tl.constexpr,
-        right_s0: tl.constexpr,
-        right_s1: tl.constexpr,
-        right_s2: tl.constexpr,
-        right_s3: tl.constexpr,
-        out_s0: tl.constexpr,
-        out_s1: tl.constexpr,
-        out_s2: tl.constexpr,
-        out_s3: tl.constexpr,
+        left_s0,
+        left_s1,
+        left_s2,
+        left_s3,
+        right_s0,
+        right_s1,
+        right_s2,
+        right_s3,
+        out_s0,
+        out_s1,
+        out_s2,
+        out_s3,
         n_pair,
         n_grid,
         PACKED: tl.constexpr,
@@ -275,26 +280,26 @@ if GRID_PAIR_TRITON_AVAILABLE:
         fg_ptr,
         gl_ptr,
         gr_ptr,
-        go_s0: tl.constexpr,
-        go_s1: tl.constexpr,
-        go_s2: tl.constexpr,
-        go_s3: tl.constexpr,
-        left_s0: tl.constexpr,
-        left_s1: tl.constexpr,
-        left_s2: tl.constexpr,
-        left_s3: tl.constexpr,
-        right_s0: tl.constexpr,
-        right_s1: tl.constexpr,
-        right_s2: tl.constexpr,
-        right_s3: tl.constexpr,
-        gl_s0: tl.constexpr,
-        gl_s1: tl.constexpr,
-        gl_s2: tl.constexpr,
-        gl_s3: tl.constexpr,
-        gr_s0: tl.constexpr,
-        gr_s1: tl.constexpr,
-        gr_s2: tl.constexpr,
-        gr_s3: tl.constexpr,
+        go_s0,
+        go_s1,
+        go_s2,
+        go_s3,
+        left_s0,
+        left_s1,
+        left_s2,
+        left_s3,
+        right_s0,
+        right_s1,
+        right_s2,
+        right_s3,
+        gl_s0,
+        gl_s1,
+        gl_s2,
+        gl_s3,
+        gr_s0,
+        gr_s1,
+        gr_s2,
+        gr_s3,
         n_pair,
         n_grid,
         PACKED: tl.constexpr,
@@ -512,38 +517,38 @@ if GRID_PAIR_TRITON_AVAILABLE:
         ggo_ptr,
         g2l_ptr,
         g2r_ptr,
-        hgl_s0: tl.constexpr,
-        hgl_s1: tl.constexpr,
-        hgl_s2: tl.constexpr,
-        hgl_s3: tl.constexpr,
-        hgr_s0: tl.constexpr,
-        hgr_s1: tl.constexpr,
-        hgr_s2: tl.constexpr,
-        hgr_s3: tl.constexpr,
-        go_s0: tl.constexpr,
-        go_s1: tl.constexpr,
-        go_s2: tl.constexpr,
-        go_s3: tl.constexpr,
-        left_s0: tl.constexpr,
-        left_s1: tl.constexpr,
-        left_s2: tl.constexpr,
-        left_s3: tl.constexpr,
-        right_s0: tl.constexpr,
-        right_s1: tl.constexpr,
-        right_s2: tl.constexpr,
-        right_s3: tl.constexpr,
-        ggo_s0: tl.constexpr,
-        ggo_s1: tl.constexpr,
-        ggo_s2: tl.constexpr,
-        ggo_s3: tl.constexpr,
-        g2l_s0: tl.constexpr,
-        g2l_s1: tl.constexpr,
-        g2l_s2: tl.constexpr,
-        g2l_s3: tl.constexpr,
-        g2r_s0: tl.constexpr,
-        g2r_s1: tl.constexpr,
-        g2r_s2: tl.constexpr,
-        g2r_s3: tl.constexpr,
+        hgl_s0,
+        hgl_s1,
+        hgl_s2,
+        hgl_s3,
+        hgr_s0,
+        hgr_s1,
+        hgr_s2,
+        hgr_s3,
+        go_s0,
+        go_s1,
+        go_s2,
+        go_s3,
+        left_s0,
+        left_s1,
+        left_s2,
+        left_s3,
+        right_s0,
+        right_s1,
+        right_s2,
+        right_s3,
+        ggo_s0,
+        ggo_s1,
+        ggo_s2,
+        ggo_s3,
+        g2l_s0,
+        g2l_s1,
+        g2l_s2,
+        g2l_s3,
+        g2r_s0,
+        g2r_s1,
+        g2r_s2,
+        g2r_s3,
         n_pair,
         n_grid,
         PACKED: tl.constexpr,
@@ -843,7 +848,7 @@ def _next_pow2(value: int) -> int:
     return 1 << (value - 1).bit_length()
 
 
-def _pack(value: Tensor, n_frames: int) -> tuple[Tensor, tuple[int, ...]]:
+def _pack(value: Tensor, n_frames: int) -> tuple[Tensor, _Shape]:
     """Reorder ``(N, D, F, K*C)`` to the compact ``(N*F, P, C)`` layout.
 
     The focus axis strides between the degree and frame axes of the logical
@@ -861,7 +866,7 @@ def _pack(value: Tensor, n_frames: int) -> tuple[Tensor, tuple[int, ...]]:
     return packed, (n_batch, coeff_dim, n_focus, kc)
 
 
-def _unpack(value: Tensor, shape: tuple[int, ...], n_frames: int) -> Tensor:
+def _unpack(value: Tensor, shape: _Shape, n_frames: int) -> Tensor:
     # The permute back to the frame-packed layout materializes: the operator
     # contract (and the fake tensors the compile pipeline reasons with)
     # promises contiguous outputs.
@@ -1027,7 +1032,13 @@ def _launch(
     take precedence where available and fall back to the same compile search
     if a later Triton version rejects one.
     """
-    n_batch, coeff_dim, n_focus, packed_channels = value.shape
+    n_batch = value.shape[0]
+    # The leading pair count follows the workload. The trailing coefficient
+    # layout and projector size define the Triton tile geometry and remain
+    # kernel-specialized.
+    n_grid = guard_int(n_grid)
+    n_frames = guard_int(n_frames)
+    coeff_dim, n_focus, packed_channels = (guard_int(size) for size in value.shape[1:])
     n_pair = n_batch * n_focus
     p_dim = coeff_dim * n_frames
     c_per = packed_channels // n_frames
@@ -1093,32 +1104,35 @@ def _launch(
     raise _NoViableConfig(p_dim, c_per)
 
 
-def _strides(*values: Tensor) -> tuple[int, ...]:
-    """Flatten the logical NDFC strides of a kernel's tensor operands."""
-    return tuple(int(stride) for value in values for stride in value.stride())
+def _strides(*values: Tensor) -> _Shape:
+    """Flatten logical NDFC strides into runtime kernel arguments."""
+    return tuple(stride for value in values for stride in value.stride())
 
 
 def _kernel_layout(
     values: tuple[Tensor, ...],
     n_frames: int,
-) -> tuple[tuple[Tensor, ...], int, tuple[int, ...] | None]:
+) -> tuple[tuple[Tensor, ...], int, _Shape | None]:
     """Select the coefficient layout used by the Triton kernels.
 
     A single focus has no intervening focus axis, so packing only collapses
     adjacent dimensions and the kernels retain linear coefficient addressing.
-    Multiple focuses require a materializing permutation; those shapes stay in
-    the native layout so the kernels consume the producer strides directly.
+    Packing multiple focuses requires a materializing permutation, so those
+    shapes stay in the native layout and consume the producer strides directly.
+    Physical strides remain runtime kernel arguments so a degree-major view
+    whose coefficient stride depends on the node count reuses one compiled
+    graph. The trailing coefficient geometry remains kernel-specialized.
     """
-    shape = tuple(int(size) for size in values[0].shape)
-    if shape[2] != 1:
+    if values[0].shape[2] != 1:
         return values, n_frames, None
+    shape = (values[0].shape[0], *(int(size) for size in values[0].shape[1:]))
     packed = tuple(_pack(value, n_frames)[0].unsqueeze(2) for value in values)
     return packed, 1, shape
 
 
 def _restore_layout(
     value: Tensor,
-    shape: tuple[int, ...] | None,
+    shape: _Shape | None,
     n_frames: int,
 ) -> Tensor:
     """Restore a single-focus packed result to the operator contract."""
@@ -1465,4 +1479,4 @@ def grid_pair_train(
     torch.Tensor
         Coefficient result with shape (N, D, F, K * C).
     """
-    return _train_op(left, right, to_grid, from_grid, n_frames)
+    return _train_op(left, right, to_grid, from_grid, int(n_frames))

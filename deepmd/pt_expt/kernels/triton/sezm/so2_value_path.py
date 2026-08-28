@@ -5342,7 +5342,7 @@ class _TritonSO2ValuePath:
             )
 
         # === Step 4. Fused mixing stack (identity layer stores edge-major) ===
-        x_local, _z_all, _u_final = self._stack_op(
+        stack_output = self._stack_op(
             u0,
             alpha,
             w0_all,
@@ -5352,6 +5352,9 @@ class _TritonSO2ValuePath:
             conv.so2_focus_dim,
             apply_alpha,
         )
+        # The fp32 training operator appends private parameter-gradient state;
+        # inference-only stack implementations expose only the common outputs.
+        x_local = stack_output[0]
         n_edge = src.shape[0]
         reduced_dim = 3 * conv.lmax + 1
         return (

@@ -18,6 +18,9 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
     Any,
 )
@@ -30,8 +33,6 @@ __all__ = [
     "grid_pair",
     "op_available",
 ]
-
-_registered = False
 
 # Coefficient-slot counts the operator is instantiated for, mirroring
 # ``DPA4_GRID_FOR_EACH_P`` in ``source/op/pt/dpa4/grid_pair.cu``. ``P`` is the
@@ -80,17 +81,20 @@ def _backward(ctx: Any, grad_out: torch.Tensor) -> tuple:
     return g_left, g_right, None, None
 
 
-def ensure_registered() -> None:
-    """Register fake and autograd implementations. Safe to call repeatedly."""
-    global _registered
-    if _registered or not op_available():
-        return
+@cache
+def _register_ops() -> None:
+    """Register fake and autograd implementations once."""
     torch.library.register_fake("deepmd::dpa4_grid_pair")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4_grid_pair_backward")(_backward_fake)
     torch.library.register_autograd(
         "deepmd::dpa4_grid_pair", _backward, setup_context=_setup_context
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake and autograd implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 def grid_pair(

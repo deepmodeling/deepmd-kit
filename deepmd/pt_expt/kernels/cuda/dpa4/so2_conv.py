@@ -53,6 +53,9 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
     Any,
 )
@@ -65,8 +68,6 @@ __all__ = [
     "make_cuda_so2_conv",
     "op_available",
 ]
-
-_registered = False
 
 _RUN_TABLE_CACHE: dict[int, tuple[torch.Tensor, ...]] = {}
 
@@ -521,11 +522,9 @@ def _backward(
     )
 
 
-def ensure_registered() -> None:
-    """Register fake and autograd implementations. Safe to call repeatedly."""
-    global _registered
-    if _registered or not op_available():
-        return
+@cache
+def _register_ops() -> None:
+    """Register fake and autograd implementations once."""
     torch.library.register_fake("deepmd::dpa4_so2_conv")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4_so2_conv_backward")(_backward_fake)
     torch.library.register_autograd(
@@ -540,7 +539,12 @@ def ensure_registered() -> None:
         _runs_backward,
         setup_context=_runs_setup_context,
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake and autograd implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 class SO2ConvCuda:

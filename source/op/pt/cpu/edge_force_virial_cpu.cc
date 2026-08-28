@@ -21,12 +21,14 @@
 
 #include <ATen/Parallel.h>
 #include <torch/torch.h>
+#include <torch/version.h>
 
 #include <algorithm>
 #include <cstdint>
 #include <tuple>
 #include <vector>
 
+#include "dispatch.h"
 #include "group.h"
 #include "partition.h"
 
@@ -48,17 +50,17 @@ std::vector<int64_t> frame_row_pointer(const torch::Tensor& n_node_per_frame) {
 template <typename scalar_t, typename index_t, bool HasSpin>
 void assemble_range(int64_t node_begin,
                     int64_t node_end,
-                    const scalar_t* __restrict__ edge_gradient,
-                    const scalar_t* __restrict__ edge_vec,
-                    const bool* __restrict__ edge_mask,
-                    const index_t* __restrict__ destination_order,
-                    const int64_t* __restrict__ destination_row_ptr,
-                    const index_t* __restrict__ source_order,
-                    const int64_t* __restrict__ source_row_ptr,
-                    const scalar_t* __restrict__ edge_spin_gradient,
-                    scalar_t* __restrict__ force,
-                    scalar_t* __restrict__ node_virial,
-                    scalar_t* __restrict__ magnetic_force) {
+                    const scalar_t* DEEPMD_RESTRICT edge_gradient,
+                    const scalar_t* DEEPMD_RESTRICT edge_vec,
+                    const bool* DEEPMD_RESTRICT edge_mask,
+                    const index_t* DEEPMD_RESTRICT destination_order,
+                    const int64_t* DEEPMD_RESTRICT destination_row_ptr,
+                    const index_t* DEEPMD_RESTRICT source_order,
+                    const int64_t* DEEPMD_RESTRICT source_row_ptr,
+                    const scalar_t* DEEPMD_RESTRICT edge_spin_gradient,
+                    scalar_t* DEEPMD_RESTRICT force,
+                    scalar_t* DEEPMD_RESTRICT node_virial,
+                    scalar_t* DEEPMD_RESTRICT magnetic_force) {
   for (int64_t node = node_begin; node < node_end; ++node) {
     scalar_t incoming[3] = {0, 0, 0};
     scalar_t outgoing[3] = {0, 0, 0};
@@ -118,8 +120,8 @@ void assemble_range(int64_t node_begin,
 /// Reduce per-node values into per-frame sums in double precision.
 template <typename scalar_t, int kComponents>
 void reduce_frames(const std::vector<int64_t>& frame_row_ptr,
-                   const scalar_t* __restrict__ node_values,
-                   scalar_t* __restrict__ frame_values) {
+                   const scalar_t* DEEPMD_RESTRICT node_values,
+                   scalar_t* DEEPMD_RESTRICT frame_values) {
   const int64_t frames = static_cast<int64_t>(frame_row_ptr.size()) - 1;
   at::parallel_for(0, frames, 1, [&](int64_t begin, int64_t end) {
     for (int64_t frame = begin; frame < end; ++frame) {
@@ -147,8 +149,8 @@ void reduce_frames(const std::vector<int64_t>& frame_row_ptr,
 /// order fixed by the partition.
 template <typename scalar_t, int kComponents>
 void reduce_single_frame(int64_t node_count,
-                         const scalar_t* __restrict__ node_values,
-                         scalar_t* __restrict__ frame_values) {
+                         const scalar_t* DEEPMD_RESTRICT node_values,
+                         scalar_t* DEEPMD_RESTRICT frame_values) {
   const int threads = std::max(1, at::get_num_threads());
   std::vector<double> partial(static_cast<size_t>(threads) * kComponents, 0.0);
   at::parallel_for(0, threads, 1, [&](int64_t begin, int64_t end) {
@@ -230,6 +232,46 @@ void assemble(int64_t node_count,
       });
 }
 
+/// Dispatch compact edge-order tensors independently of the scalar dtype.
+template <typename scalar_t>
+void assemble_for_index_type(int64_t node_count,
+                             const torch::Tensor& edge_gradient,
+                             const torch::Tensor& edge_vec,
+                             const torch::Tensor& edge_mask,
+                             const torch::Tensor& destination_order,
+                             const torch::Tensor& destination_row_ptr,
+                             const torch::Tensor& source_order,
+                             const torch::Tensor& source_row_ptr,
+                             const torch::Tensor& edge_spin_gradient,
+                             bool has_spin,
+                             torch::Tensor& force,
+                             torch::Tensor& node_virial,
+                             torch::Tensor& magnetic_force) {
+  switch (source_order.scalar_type()) {
+    case torch::kInt32:
+      assemble<scalar_t, int32_t>(
+          node_count, edge_gradient, edge_vec, edge_mask, destination_order,
+          destination_row_ptr, source_order, source_row_ptr, edge_spin_gradient,
+          has_spin, force, node_virial, magnetic_force);
+      break;
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 3)
+    case torch::kUInt32:
+      assemble<scalar_t, uint32_t>(
+          node_count, edge_gradient, edge_vec, edge_mask, destination_order,
+          destination_row_ptr, source_order, source_row_ptr, edge_spin_gradient,
+          has_spin, force, node_virial, magnetic_force);
+      break;
+#endif
+    default:
+      assemble<scalar_t, int64_t>(
+          node_count, edge_gradient, edge_vec, edge_mask, destination_order,
+          destination_row_ptr, source_order, source_row_ptr, edge_spin_gradient,
+          has_spin, force, node_virial, magnetic_force);
+      break;
+  }
+}
+
 std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 assemble_entry(int64_t node_count,
                const torch::Tensor& edge_gradient,
@@ -260,29 +302,10 @@ assemble_entry(int64_t node_count,
 
   AT_DISPATCH_FLOATING_TYPES(
       edge_gradient.scalar_type(), "edge_force_virial_cpu", [&] {
-        switch (source_order.scalar_type()) {
-          case torch::kInt32:
-            assemble<scalar_t, int32_t>(
-                node_count, edge_gradient, edge_vec, edge_mask,
-                destination_order, destination_row_ptr, source_order,
-                source_row_ptr, edge_spin_gradient, has_spin, force,
-                node_virial, magnetic_force);
-            break;
-          case torch::kUInt32:
-            assemble<scalar_t, uint32_t>(
-                node_count, edge_gradient, edge_vec, edge_mask,
-                destination_order, destination_row_ptr, source_order,
-                source_row_ptr, edge_spin_gradient, has_spin, force,
-                node_virial, magnetic_force);
-            break;
-          default:
-            assemble<scalar_t, int64_t>(
-                node_count, edge_gradient, edge_vec, edge_mask,
-                destination_order, destination_row_ptr, source_order,
-                source_row_ptr, edge_spin_gradient, has_spin, force,
-                node_virial, magnetic_force);
-            break;
-        }
+        assemble_for_index_type<scalar_t>(
+            node_count, edge_gradient, edge_vec, edge_mask, destination_order,
+            destination_row_ptr, source_order, source_row_ptr,
+            edge_spin_gradient, has_spin, force, node_virial, magnetic_force);
         if (frame_count == 1) {
           reduce_single_frame<scalar_t, 9>(
               node_count, node_virial.const_data_ptr<scalar_t>(),
@@ -358,8 +381,9 @@ torch::Tensor frame_scalar_sum(torch::Tensor node_scalar,
   AT_DISPATCH_FLOATING_TYPES(
       contiguous.scalar_type(), "frame_scalar_sum_cpu", [&] {
         if (frames == 1) {
+          const auto frame_row_ptr = frame_row_pointer(n_node_per_frame);
           reduce_single_frame<scalar_t, 1>(
-              contiguous.size(0), contiguous.const_data_ptr<scalar_t>(),
+              frame_row_ptr[1], contiguous.const_data_ptr<scalar_t>(),
               total.data_ptr<scalar_t>());
         } else {
           reduce_frames<scalar_t, 1>(frame_row_pointer(n_node_per_frame),
@@ -404,6 +428,9 @@ build_graph_csr(torch::Tensor edge_index,
   const auto contiguous = edge_index.contiguous();
   const auto* source = contiguous.const_data_ptr<std::int64_t>();
   const auto* destination = source + edge_count;
+  TORCH_CHECK(
+      std::is_sorted(destination, destination + valid_edge_count),
+      "build_graph_csr: valid destinations must be sorted in ascending order");
 
   const auto index_options = torch::TensorOptions().dtype(torch::kInt64);
   torch::Tensor destination_order = torch::arange(edge_count, index_options);

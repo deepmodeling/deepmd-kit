@@ -19,6 +19,10 @@ from __future__ import (
     annotations,
 )
 
+from types import (
+    SimpleNamespace,
+)
+
 import pytest
 import torch
 
@@ -28,7 +32,11 @@ try:
 except ImportError:
     pass
 
+from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv import (
+    wigner_run_tables,
+)
 from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
+    SO2ValueTrainCuda,
     op_available,
 )
 from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
@@ -79,6 +87,25 @@ LEAF_NAMES = (
     "w1",
     "gw",
 )
+
+
+def test_edge_runs_match_the_quaternion_dtype() -> None:
+    """Packed-run coefficients follow the dtype selected by autocast."""
+    lmax = 3
+    run_coeff, _, run_exponents, _ = wigner_run_tables(lmax)
+    value_path = SO2ValueTrainCuda.__new__(SO2ValueTrainCuda)
+    value_path._conv = SimpleNamespace(lmax=lmax)
+    value_path._run_coeff_cpu = run_coeff
+    value_path._run_coeff = None
+    value_path._run_exponents = [int(value) for value in run_exponents.reshape(-1)]
+
+    for dtype in (torch.bfloat16, torch.float32):
+        edge_cache = SimpleNamespace(
+            edge_quat=torch.randn(8, 4, device="cuda", dtype=dtype),
+            csr_cache={},
+        )
+        runs = value_path.edge_runs(edge_cache)
+        assert runs.dtype is dtype
 
 
 def _block_diagonal_mask(lmax: int, device: torch.device) -> torch.Tensor:

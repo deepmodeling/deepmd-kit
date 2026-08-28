@@ -422,6 +422,15 @@ class TestPtExptLoadPt(unittest.TestCase):
 class TestNeighborGraphMethodResolution(unittest.TestCase):
     """Auto graph-builder selection must cover each host policy explicitly."""
 
+    def test_explicit_resolution(self) -> None:
+        """Every implemented graph builder is accepted without rewriting."""
+        for method in ("dense", "ase", "cell", "vesin", "nv"):
+            with self.subTest(method=method):
+                self.assertEqual(
+                    PtExptDeepEval._resolve_neighbor_graph_method(method),
+                    method,
+                )
+
     def test_auto_deferred_until_nf_known(self) -> None:
         """Construction-time resolve leaves ``auto`` unresolved without ``nf``."""
         self.assertEqual(

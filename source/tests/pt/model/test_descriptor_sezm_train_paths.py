@@ -50,6 +50,7 @@ from deepmd.pt.model.descriptor.sezm_nn.so2 import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt_expt.kernels.cuda.dpa4 import op_available as cuda_infer_available
 from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
     op_available as cuda_value_available,
 )
@@ -68,7 +69,13 @@ TRAIN_GATES = ("DP_TRITON_TRAIN", "DP_CUDA_TRAIN")
 INFER_GATES = ("DP_TRITON_INFER", "DP_CUDA_INFER", "DP_CUTILE_INFER", "DP_CUTE_INFER")
 
 
-def _make_descriptor(ntypes: int, sel: list[int], rcut: float) -> DescrptSeZM:
+def _make_descriptor(
+    ntypes: int,
+    sel: list[int],
+    rcut: float,
+    *,
+    source_gated: bool = False,
+) -> DescrptSeZM:
     """Build a small SeZM descriptor in the deployed layout."""
     return DescrptSeZM(
         ntypes=ntypes,
@@ -88,6 +95,8 @@ def _make_descriptor(ntypes: int, sel: list[int], rcut: float) -> DescrptSeZM:
         random_gamma=False,
         precision="float32",
         seed=7,
+        inner_clamp_r_inner=0.8 if source_gated else None,
+        inner_clamp_r_outer=1.2 if source_gated else None,
     )
 
 
@@ -228,6 +237,49 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         objective = (output**2).sum()
         gradient = torch.autograd.grad(objective, coord)[0]
         return objective.detach().cpu().numpy(), gradient.detach().cpu().numpy()
+
+    def _inference_step(self, descriptor: DescrptSeZM) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluate one inference output and its coordinate gradient."""
+        coord, atype, nlist = self._inputs()
+        output = descriptor(coord, atype, nlist)[0]
+        gradient = torch.autograd.grad(output.sum(), coord)[0]
+        return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
+
+    def test_source_gated_flash_retains_dense_rotations(self, monkeypatch) -> None:
+        """Source-gated flash inference retains the rotations its fallback uses."""
+        if not cuda_infer_available():
+            pytest.skip("the DPA4 CUDA inference operators are unavailable")
+        if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+            pytest.skip("Triton is unavailable")
+
+        _clear_gates(monkeypatch)
+        data = _make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            source_gated=True,
+        ).serialize()
+        dense = DescrptSeZM.deserialize(data).to(self.device).eval()
+        dense_output, dense_gradient = self._inference_step(dense)
+
+        monkeypatch.setenv("DP_TRITON_INFER", "1")
+        monkeypatch.setenv("DP_CUDA_INFER", "2")
+        accelerated = DescrptSeZM.deserialize(data).to(self.device).eval()
+        conv = next(
+            module
+            for module in accelerated.modules()
+            if isinstance(module, SO2Convolution)
+        )
+        if conv._cuda_conv_fn is None:
+            pytest.skip("the descriptor layout has no fused CUDA convolution")
+        assert conv._flash_atten_fn is not None
+        assert conv._cuda_value_train is None
+        assert not accelerated._wigner_free_conv
+        assert accelerated._build_full_wigner()
+
+        output, gradient = self._inference_step(accelerated)
+        np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)
+        np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
 
     @pytest.mark.parametrize("path", ["triton", "cuda", "cuda-triton"])
     def test_training_step_matches_the_dense_path(self, monkeypatch, path) -> None:

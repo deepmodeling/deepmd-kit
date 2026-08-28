@@ -1763,8 +1763,9 @@ class SO2Convolution(NativeOP):
             Node update with shape (N, D, C_wide).
         """
         # === Step 1. Scalar channels shared by every attention component ===
-        x_l0_node = x[:, 0, :].reshape(
-            x.shape[0], self.attn_n_focus, self.attn_focus_dim
+        xp = array_api_compat.array_namespace(x)
+        x_l0_node = xp.reshape(
+            x[:, 0, :], (x.shape[0], self.attn_n_focus, self.attn_focus_dim)
         )  # (N, Fa, Ca)
 
         # === Step 2. Backend dispatch ===

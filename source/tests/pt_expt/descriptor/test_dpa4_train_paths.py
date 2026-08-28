@@ -54,6 +54,9 @@ from deepmd.pt_expt.kernels.triton.sezm.so2_block_gemm import (
 from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
     SO2_VALUE_PATH_TRITON_AVAILABLE,
 )
+from deepmd.pt_expt.kernels.utils import (
+    cuda_train_enabled,
+)
 from deepmd.pt_expt.utils import (
     env,
 )
@@ -93,6 +96,13 @@ def _clear_gates(monkeypatch) -> None:
     """Silence every accelerated gate so a case only sets what it needs."""
     for name in TRAIN_GATES + INFER_GATES:
         monkeypatch.setenv(name, "0")
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", "on"])
+def test_cuda_train_gate_accepts_shared_truthy_values(monkeypatch, value: str) -> None:
+    """The CUDA training gate accepts the module's common truthy vocabulary."""
+    monkeypatch.setenv("DP_CUDA_TRAIN", value)
+    assert cuda_train_enabled()
 
 
 @pytest.mark.parametrize("triton_train", [0, 1])

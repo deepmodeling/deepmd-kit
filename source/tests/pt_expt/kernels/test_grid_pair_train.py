@@ -19,6 +19,12 @@ from __future__ import (
 
 import pytest
 import torch
+from torch._dynamo.testing import (
+    CompileCounterWithBackend,
+)
+from torch.fx.experimental.proxy_tensor import (
+    make_fx,
+)
 
 from deepmd.pt_expt.kernels.triton.sezm.grid_pair import (
     GRID_PAIR_TRITON_AVAILABLE,
@@ -262,3 +268,124 @@ def test_autocast_bfloat16_matches_eager_conditioning(
 def test_noncontiguous_operands_match_eager_conditioning() -> None:
     """Cover the channel-slice strides supplied by production grid nets."""
     _compare(GRID_SHAPES[1], amp=True, strided=True)
+
+
+@pytest.mark.parametrize(
+    ("n_focus", "degree_major"),
+    [(1, False), (2, True)],
+)
+def test_symbolic_graph_reuses_layout_across_batch_shapes(
+    n_focus: int, degree_major: bool
+) -> None:
+    """Keep batch-dependent sizes and strides symbolic through every order."""
+    n_frames, coeff_dim, channels, n_grid = 3, 4, 16, 32
+    device = torch.device("cuda")
+    generator = torch.Generator(device=device).manual_seed(1729)
+    projector_shape = (n_grid, coeff_dim * n_frames)
+    to_grid = torch.randn(projector_shape, device=device, generator=generator)
+    from_grid = torch.randn(projector_shape, device=device, generator=generator)
+
+    def make_inputs(n_node: int) -> tuple[torch.Tensor, ...]:
+        shape = (
+            (coeff_dim, n_node, n_focus, n_frames * channels)
+            if degree_major
+            else (n_node, coeff_dim, n_focus, n_frames * channels)
+        )
+
+        def leaf() -> torch.Tensor:
+            return torch.randn(
+                shape, device=device, generator=generator, requires_grad=True
+            )
+
+        return leaf(), leaf(), to_grid, from_grid, leaf(), leaf(), leaf()
+
+    def logical_layout(value: torch.Tensor) -> torch.Tensor:
+        if degree_major:
+            return value.permute(1, 0, 2, 3)
+        return value
+
+    def evaluate(
+        left: torch.Tensor,
+        right: torch.Tensor,
+        to_grid: torch.Tensor,
+        from_grid: torch.Tensor,
+        cotangent: torch.Tensor,
+        h_left: torch.Tensor,
+        h_right: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        left = logical_layout(left)
+        right = logical_layout(right)
+        cotangent = logical_layout(cotangent)
+        h_left = logical_layout(h_left)
+        h_right = logical_layout(h_right)
+        out = grid_pair_train(left, right, to_grid, from_grid, n_frames)
+        grad_left, grad_right = torch.autograd.grad(
+            (out * cotangent).sum(), (left, right), create_graph=True
+        )
+        grad_cotangent, grad2_left, grad2_right = torch.autograd.grad(
+            (grad_left * h_left).sum() + (grad_right * h_right).sum(),
+            (cotangent, left, right),
+        )
+        return (
+            out,
+            grad_left,
+            grad_right,
+            grad_cotangent,
+            grad2_left,
+            grad2_right,
+        )
+
+    traced_inputs = make_inputs(7)
+    graph = make_fx(evaluate, tracing_mode="symbolic")(*traced_inputs)
+    compile_counter = CompileCounterWithBackend("inductor")
+    compiled = torch.compile(
+        graph, backend=compile_counter, dynamic=True, fullgraph=True
+    )
+    with torch.no_grad():
+        compiled(*traced_inputs)
+        runtime_inputs = make_inputs(11)
+        actual = compiled(*runtime_inputs)
+    expected = evaluate(*runtime_inputs)
+
+    assert compile_counter.frame_count == 1
+    for got, want in zip(actual, expected, strict=True):
+        torch.testing.assert_close(got, want)
+
+
+def test_aotautograd_reuses_multifocus_stride_across_batch_shapes() -> None:
+    """Keep a producer's batch-dependent coefficient stride out of guards."""
+    n_frames, coeff_dim, n_focus, channels, n_grid = 3, 4, 2, 16, 32
+    device = torch.device("cuda")
+    generator = torch.Generator(device=device).manual_seed(40529)
+    projector_shape = (n_grid, coeff_dim * n_frames)
+    to_grid = torch.randn(projector_shape, device=device, generator=generator)
+    from_grid = torch.randn(projector_shape, device=device, generator=generator)
+
+    def evaluate(
+        left_storage: torch.Tensor, right_storage: torch.Tensor
+    ) -> torch.Tensor:
+        left = left_storage.permute(1, 0, 2, 3)
+        right = right_storage.permute(1, 0, 2, 3)
+        return grid_pair_train(left, right, to_grid, from_grid, n_frames).square().sum()
+
+    compile_counter = CompileCounterWithBackend("inductor")
+    compiled = torch.compile(
+        evaluate, backend=compile_counter, dynamic=True, fullgraph=True
+    )
+    for n_node in (7, 11, 13):
+        shape = (coeff_dim, n_node, n_focus, n_frames * channels)
+        left = torch.randn(
+            shape, device=device, generator=generator, requires_grad=True
+        )
+        right = torch.randn(
+            shape, device=device, generator=generator, requires_grad=True
+        )
+        expected_loss = evaluate(left, right)
+        expected_grad = torch.autograd.grad(expected_loss, (left, right))
+        actual_loss = compiled(left, right)
+        actual_grad = torch.autograd.grad(actual_loss, (left, right))
+        torch.testing.assert_close(actual_loss, expected_loss)
+        for got, want in zip(actual_grad, expected_grad, strict=True):
+            torch.testing.assert_close(got, want)
+
+    assert compile_counter.frame_count == 1

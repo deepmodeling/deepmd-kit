@@ -107,13 +107,16 @@ inline float fast_tanh(float x) {
   const float magnitude = std::abs(x);
   const float scaled = fast_exp(magnitude + magnitude);
   const float saturating = 1.0F - 2.0F / (scaled + 1.0F);
-  const float square = x * x;
+  // Bound the unselected polynomial branch so its degree-11 term stays finite;
+  // multiplying an overflowing branch by a zero selector would produce NaN.
+  const float bounded = std::copysign(std::fmin(magnitude, kCrossover), x);
+  const float square = bounded * bounded;
   float series = kP0;
   series = series * square + kP1;
   series = series * square + kP2;
   series = series * square + kP3;
   series = series * square + kP4;
-  const float central = series * square * x + x;
+  const float central = series * square * bounded + bounded;
   // Select arithmetically. Any form that reaches the compiler as a
   // conditional -- a ternary, or a bool cast to float -- is control flow next
   // to this much inlined arithmetic, and costs the vectorization of the whole

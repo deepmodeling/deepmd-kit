@@ -31,6 +31,10 @@ from deepmd.pt_expt.kernels.edge_force_virial import (
     edge_force_virial as fused_edge_force_virial,
 )
 from deepmd.pt_expt.kernels.edge_force_virial import (
+    frame_scalar_sum,
+    frame_scalar_sum_available,
+)
+from deepmd.pt_expt.kernels.edge_force_virial import (
     op_available as fused_scatter_available,
 )
 from deepmd.pt_expt.kernels.utils import (
@@ -134,6 +138,7 @@ def edge_energy_deriv(
         and source_order is not None
         and source_row_ptr is not None
     )
+    use_cutile_assembly = use_cutile_infer() and g_e.is_cuda
     if (
         fused_operators_enabled()
         and not create_graph
@@ -156,7 +161,7 @@ def edge_energy_deriv(
             do_atomic_virial,
         )
     elif (
-        (triton_infer_level() >= 1 or (use_cutile_infer() and g_e.is_cuda))
+        (triton_infer_level() >= 1 or use_cutile_assembly)
         and not create_graph
         and has_csr
         and destination_order is not None
@@ -166,7 +171,7 @@ def edge_energy_deriv(
         # on colliding edges) and a materialized ``(E, 9)`` outer product. The
         # graph already owns both stable endpoint views, so no topology sort is
         # repeated here.
-        if use_cutile_infer():
+        if use_cutile_assembly:
             from deepmd.pt_expt.kernels.cutile.sezm.force_assembly import (
                 edge_force_assembly,
             )
@@ -306,9 +311,26 @@ def fit_output_to_model_output_graph(
         if node_capacity is not None
         else next(iter(fit_ret.values())).shape[0]
     )
-    frame_id = frame_id_from_n_node(
-        n_node, n_total=N
-    )  # (N,) int64 frame index per atom
+    # A scalar frame reduction has a native segmented implementation on both
+    # CPU and CUDA. It avoids the fully contended single-slot ``index_add``
+    # that Torch 2.11 cannot lower for a dynamic node axis. The registered
+    # autograd rule broadcasts each frame cotangent back to its node span, so
+    # the subsequent energy-to-edge differentiation remains unchanged.
+    use_frame_scalar_sum = (
+        not create_graph and fused_operators_enabled() and frame_scalar_sum_available()
+    )
+    frame_id: torch.Tensor | None = None
+
+    def reduce_by_frame(data: torch.Tensor) -> torch.Tensor:
+        nonlocal frame_id
+        scalar = data.ndim == 1 or (data.ndim == 2 and data.shape[1] == 1)
+        if use_frame_scalar_sum and scalar:
+            reduced = frame_scalar_sum(data.reshape(N, 1).contiguous(), n_node)
+            return reduced.reshape(nf, *data.shape[1:])
+        if frame_id is None:
+            frame_id = frame_id_from_n_node(n_node, n_total=N)
+        return segment_sum(data, frame_id, nf)
+
     # owned-node (multi-rank ghost) mask: (N,) bool, True for owned rows.
     # Computed once (array-API pure, works directly on torch tensors) and
     # applied to every reducible per-node value BEFORE its segment_sum, so
@@ -323,24 +345,22 @@ def fit_output_to_model_output_graph(
         if not vdef.reducible:
             continue
         kk_redu = get_reduce_name(kk)
-        # segment_sum reduces axis 0 (the flat atom axis) per frame
+        # Reduce axis 0 (the flat atom axis) per frame.
         vv_e = vv.to(redu_prec)  # (N, *shape)
         if owned_e is not None:
             vv_e = vv_e * owned_e.reshape(N, *([1] * (vv_e.ndim - 1)))
-        redu = segment_sum(vv_e, frame_id, nf)  # (nf, *shape)
+        redu = reduce_by_frame(vv_e)  # (nf, *shape)
         if vdef.intensive:
             if mask is not None:
-                # real-atom count per frame: segment_sum of the mask
+                # Real-atom count per frame.
                 cnt_mask = mask.to(redu_prec)
                 if owned_e is not None:
                     cnt_mask = cnt_mask * owned_e
-                cnt = segment_sum(cnt_mask, frame_id, nf)  # (nf,)
+                cnt = reduce_by_frame(cnt_mask)  # (nf,)
                 # broadcast cnt to (nf, 1, ..., 1) to match redu shape
                 cnt = cnt.reshape(nf, *([1] * (redu.ndim - 1)))
             elif owned_e is not None:
-                cnt = segment_sum(owned_e, frame_id, nf).reshape(
-                    nf, *([1] * (redu.ndim - 1))
-                )
+                cnt = reduce_by_frame(owned_e).reshape(nf, *([1] * (redu.ndim - 1)))
             else:
                 cnt = n_node.to(redu_prec).reshape(nf, *([1] * (redu.ndim - 1)))
             redu = redu / cnt

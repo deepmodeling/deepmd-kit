@@ -13,6 +13,10 @@ from deepmd.pt.utils import (
 from deepmd.pt_expt.kernels.cutile import (
     CUTILE_AVAILABLE,
 )
+from deepmd.pt_expt.kernels.edge_force_virial import (
+    frame_scalar_sum,
+    frame_scalar_sum_available,
+)
 from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
     FORCE_ASSEMBLY_TRITON_AVAILABLE,
 )
@@ -22,6 +26,47 @@ from deepmd.pt_expt.model.edge_transform_output import (
 
 
 class TestEdgeEnergyDeriv(unittest.TestCase):
+    @unittest.skipUnless(
+        frame_scalar_sum_available(),
+        "the native frame scalar reduction is unavailable",
+    )
+    def test_frame_scalar_sum_ignores_padding_and_preserves_autograd(self) -> None:
+        """The native frame reduction differentiates only its real node spans."""
+        for counts in ([3], [2, 1]):
+            with self.subTest(counts=counts):
+                node_scalar = torch.arange(
+                    5,
+                    dtype=torch.float64,
+                    device="cpu",
+                    requires_grad=True,
+                ).reshape(5, 1)
+                n_node = torch.tensor(counts, dtype=torch.int64, device="cpu")
+                reduced = frame_scalar_sum(node_scalar, n_node)
+
+                offset = 0
+                expected_values = []
+                for count in counts:
+                    expected_values.append(node_scalar[offset : offset + count].sum())
+                    offset += count
+                expected = torch.stack(expected_values).reshape(-1, 1)
+                torch.testing.assert_close(reduced, expected)
+
+                frame_weight = torch.arange(
+                    1,
+                    len(counts) + 1,
+                    dtype=node_scalar.dtype,
+                    device=node_scalar.device,
+                ).reshape(-1, 1)
+                (gradient,) = torch.autograd.grad(
+                    (reduced * frame_weight).sum(), node_scalar
+                )
+                expected_gradient = torch.zeros_like(node_scalar)
+                offset = 0
+                for frame, count in enumerate(counts):
+                    expected_gradient[offset : offset + count] = frame + 1
+                    offset += count
+                torch.testing.assert_close(gradient, expected_gradient)
+
     def test_force_matches_autograd_wrt_node_coords(self) -> None:
         """The graph force equals -dE/d(node coord): build edge_vec from node
         coords, so force from edge_energy_deriv == -autograd.grad(E, coords).
@@ -140,6 +185,70 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         self.assertIsNone(av)
         self.assertEqual(force.shape, (N, 3))
         self.assertEqual(gv.shape, (1, 3, 3))
+
+    def test_cpu_does_not_select_cutile_force_assembly(self) -> None:
+        """A global cuTile level must not route CPU tensors to a CUDA kernel."""
+        device = torch.device("cpu")
+        n_node = torch.tensor([3], dtype=torch.int64, device=device)
+        src = torch.tensor([0, 1, 2], dtype=torch.int64, device=device)
+        dst = torch.tensor([1, 2, 0], dtype=torch.int64, device=device)
+        edge_index = torch.stack([src, dst])
+        edge_mask = torch.ones(src.shape[0], dtype=torch.bool, device=device)
+        destination_order = torch.argsort(dst, stable=True)
+        source_order = torch.argsort(src, stable=True)
+        boundaries = torch.arange(4, dtype=torch.int64, device=device)
+        destination_row_ptr = torch.searchsorted(
+            dst.index_select(0, destination_order), boundaries
+        )
+        source_row_ptr = torch.searchsorted(
+            src.index_select(0, source_order), boundaries
+        )
+        edge_value = torch.tensor(
+            [[0.3, -0.2, 0.7], [-0.5, 0.4, 0.1], [0.8, -0.6, 0.2]],
+            dtype=torch.float64,
+            device=device,
+        )
+
+        def run(
+            triton_level: int, cutile_enabled: bool
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            edge_vec = edge_value.clone().requires_grad_(True)
+            energy = (edge_vec**2).sum()
+            with (
+                mock.patch(
+                    "deepmd.pt_expt.model.edge_transform_output."
+                    "fused_operators_enabled",
+                    return_value=False,
+                ),
+                mock.patch(
+                    "deepmd.pt_expt.model.edge_transform_output.triton_infer_level",
+                    return_value=triton_level,
+                ),
+                mock.patch(
+                    "deepmd.pt_expt.model.edge_transform_output.use_cutile_infer",
+                    return_value=cutile_enabled,
+                ),
+            ):
+                force, atom_virial, virial = edge_energy_deriv(
+                    energy,
+                    edge_vec,
+                    edge_index,
+                    edge_mask,
+                    n_node,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    do_atomic_virial=True,
+                    create_graph=False,
+                )
+            assert atom_virial is not None
+            return force, atom_virial, virial
+
+        reference = run(0, False)
+        accelerated = run(1, True)
+        for actual, expected in zip(accelerated, reference, strict=True):
+            torch.testing.assert_close(actual, expected)
 
     @unittest.skipUnless(
         torch.cuda.is_available()

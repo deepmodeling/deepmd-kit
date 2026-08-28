@@ -236,6 +236,14 @@ def test_force_virial_matches_the_scatter_reference() -> None:
     torch.testing.assert_close(virial, expected_virial)
 
 
+@_CPU_FORCE
+def test_build_graph_csr_rejects_unsorted_destinations() -> None:
+    """The optimized CSR builder rejects an invalid destination ordering."""
+    edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.int64)
+    with pytest.raises(RuntimeError, match="destinations must be sorted"):
+        torch.ops.deepmd.build_graph_csr(edge_index, 2, 2)
+
+
 @_CPU_FITTING
 @pytest.mark.parametrize("activation", ["tanh", "silu"])
 def test_fitting_matches_the_dense_network(activation: str) -> None:
@@ -304,6 +312,68 @@ def test_fitting_matches_the_dense_network(activation: str) -> None:
     )
     (expected,) = torch.autograd.grad((reference.double() * cotangent).sum(), leaf)
     torch.testing.assert_close(gradient, expected.float(), atol=2e-5, rtol=2e-5)
+
+    with pytest.raises(RuntimeError, match="atype must be contiguous CPU int64"):
+        torch.ops.deepmd.graph_fitting(
+            descriptor,
+            atype[:-1],
+            arguments.weights,
+            arguments.biases,
+            arguments.residuals,
+            arguments.head_weight,
+            arguments.head_bias,
+            bias,
+            arguments.activation,
+        )
+    with pytest.raises(RuntimeError, match="bias_atom_e must be contiguous CPU fp64"):
+        torch.ops.deepmd.graph_fitting(
+            descriptor,
+            atype,
+            arguments.weights,
+            arguments.biases,
+            arguments.residuals,
+            arguments.head_weight,
+            arguments.head_bias,
+            bias.reshape(1, -1),
+            arguments.activation,
+        )
+
+
+@_CPU_FITTING
+def test_fitting_tanh_saturates_for_large_inputs() -> None:
+    """The vectorized tanh remains finite when the unused series would overflow."""
+    from deepmd.pt_expt.fitting.ener_fitting import (
+        EnergyFittingNet,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    fitting = EnergyFittingNet(
+        ntypes=1,
+        dim_descrpt=12,
+        neuron=[16],
+        resnet_dt=False,
+        activation_function="tanh",
+        precision="float32",
+        mixed_types=True,
+        seed=3,
+    ).eval()
+    arguments = fitting_operator_arguments(fitting)
+    descriptor = torch.full((4, 12), 1.0e8, dtype=torch.float32)
+    energy, _ = torch.ops.deepmd.graph_fitting(
+        descriptor,
+        torch.zeros(4, dtype=torch.int64),
+        arguments.weights,
+        arguments.biases,
+        arguments.residuals,
+        arguments.head_weight,
+        arguments.head_bias,
+        torch.zeros(1, dtype=torch.float64),
+        arguments.activation,
+    )
+
+    assert torch.isfinite(energy).all()
 
 
 @_CPU

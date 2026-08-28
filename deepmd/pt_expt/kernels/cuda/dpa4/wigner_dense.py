@@ -23,6 +23,9 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
     Any,
 )
@@ -41,8 +44,6 @@ __all__ = [
     "op_available",
     "wigner_dense_tables",
 ]
-
-_registered = False
 
 _DENSE_TABLE_CACHE: dict[int, tuple[torch.Tensor, ...]] = {}
 
@@ -189,17 +190,20 @@ def _backward(ctx: Any, g_d: torch.Tensor, g_dt: torch.Tensor) -> tuple:
     return g_quat, None, None, None, None, None
 
 
-def ensure_registered() -> None:
-    """Register fake and autograd implementations. Safe to call repeatedly."""
-    global _registered
-    if _registered or not op_available():
-        return
+@cache
+def _register_ops() -> None:
+    """Register fake and autograd implementations once."""
     torch.library.register_fake("deepmd::dpa4_wigner_dense")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4_wigner_dense_backward")(_backward_fake)
     torch.library.register_autograd(
         "deepmd::dpa4_wigner_dense", _backward, setup_context=_setup_context
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake and autograd implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 class WignerDenseCuda:

@@ -97,7 +97,7 @@ def _bench(run: Callable[[], object], iters: int = 30, warmup: int = 8) -> float
 def _block_diagonal(n_edge: int, lmax: int, device: torch.device) -> torch.Tensor:
     """Return a random Wigner-D stack supported on its degree blocks."""
     dim = (lmax + 1) ** 2
-    wigner = torch.zeros(n_edge, dim, dim, device=device)
+    wigner = torch.zeros(n_edge, dim, dim, device=device, dtype=torch.float32)
     for degree in range(lmax + 1):
         lo, hi = degree * degree, (degree + 1) ** 2
         wigner[:, lo:hi, lo:hi] = torch.randn(n_edge, hi - lo, hi - lo, device=device)
@@ -121,9 +121,9 @@ def _probes(
     # by more than an order of magnitude, and a probe that draws both uniformly
     # selects a tile that is far too narrow for the destination reduction.
     src = torch.randint(0, n_extended, (n_edge,), device=device)
-    dst = torch.arange(n_local, device=device).repeat_interleave(n_edge // n_local)[
-        :n_edge
-    ]
+    dst = torch.arange(n_local, device=device, dtype=torch.long).repeat_interleave(
+        n_edge // n_local
+    )[:n_edge]
     wigner = _block_diagonal(n_edge, layout.lmax, device)
     mixer = torch.randn(n_edge, layout.kernel_size, device=device)
     channel = torch.randn(c_wide, device=device)
@@ -135,8 +135,12 @@ def _probes(
     activation = torch.randn(n_focus, n_edge, layout.row, device=device)
     n_row = 3 * layout.lmax + 1
     x_local = torch.randn(n_edge, n_focus, n_row, cf, device=device)
-    alpha = torch.rand(n_edge, n_focus, n_head, device=device)
-    rescale = tuple((torch.rand(dim) + 0.5).tolist())
+    alpha = torch.rand(n_edge, n_focus, n_head, device=device, dtype=torch.float32)
+    rescale = tuple(
+        (
+            torch.rand(dim, device=torch.device("cpu"), dtype=torch.float32) + 0.5
+        ).tolist()
+    )
     grad_node = torch.randn(n_local, dim, c_wide, device=device)
     edge_grad = torch.randn(n_edge, 3, device=device)
     # The force assembly indexes both endpoints over the extended atoms, so the

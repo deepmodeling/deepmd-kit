@@ -9,8 +9,8 @@ replacing the array-API
 ``index_add`` / outer-product / ``segment_sum`` kernels. It is
 descriptor-agnostic: any graph-lowered model whose force path differentiates
 the energy w.r.t. ``edge_vec`` can dispatch here. The CUDA kernel is
-``source/op/pt/edge_force_virial.cu`` and the CPU kernel
-``source/op/pt/edge_force_virial_cpu.cc``.
+``source/op/pt/edge_force_virial.cu`` and the CPU kernel is
+``source/op/pt/cpu/edge_force_virial_cpu.cc``.
 
 Usage and pitfalls
 ------------------
@@ -29,8 +29,19 @@ Usage and pitfalls
   reductions.
 """
 
+from functools import (
+    cache,
+)
+from typing import (
+    Any,
+)
+
 import torch
 
+from deepmd.dpmodel.utils.neighbor_graph import (
+    frame_id_from_n_node,
+    node_validity_mask,
+)
 from deepmd.pt_expt.kernels.utils import (
     operator_available,
 )
@@ -66,6 +77,31 @@ def _frame_scalar_sum_fake(
     n_node_per_frame: torch.Tensor,
 ) -> torch.Tensor:
     return node_scalar.new_empty(n_node_per_frame.shape[0], 1)
+
+
+def _frame_scalar_sum_setup_context(
+    ctx: Any,
+    inputs: tuple[torch.Tensor, torch.Tensor],
+    output: torch.Tensor,
+) -> None:
+    del output
+    node_scalar, n_node_per_frame = inputs
+    ctx.node_capacity = node_scalar.shape[0]
+    ctx.save_for_backward(n_node_per_frame)
+
+
+def _frame_scalar_sum_backward(
+    ctx: Any,
+    grad_output: torch.Tensor,
+) -> tuple[torch.Tensor, None]:
+    (n_node_per_frame,) = ctx.saved_tensors
+    frame_id = frame_id_from_n_node(
+        n_node_per_frame,
+        n_total=ctx.node_capacity,
+    )
+    node_mask = node_validity_mask(n_node_per_frame, ctx.node_capacity)
+    grad_node = torch.index_select(grad_output, 0, frame_id)
+    return grad_node * node_mask[:, None], None
 
 
 def frame_scalar_sum(
@@ -151,19 +187,13 @@ def _canonical_fake(
     )
 
 
-_registered = False
-
-
-def ensure_registered() -> None:
-    """Register the meta implementations the export tracer needs.
+@cache
+def _register_ops() -> None:
+    """Register the meta implementations the export tracer needs once.
 
     Both devices implement the assembly in C++, so only the shapes are
-    described here. Idempotent; a no-op when the operator library is not
-    loaded.
+    described here.
     """
-    global _registered
-    if _registered or not op_available():
-        return
     torch.library.register_fake("deepmd::edge_force_virial")(_fake)
     if canonical_op_available():
         torch.library.register_fake("deepmd::canonical_edge_force_virial")(
@@ -171,7 +201,17 @@ def ensure_registered() -> None:
         )
     if frame_scalar_sum_available():
         torch.library.register_fake("deepmd::frame_scalar_sum")(_frame_scalar_sum_fake)
-    _registered = True
+        torch.library.register_autograd(
+            "deepmd::frame_scalar_sum",
+            _frame_scalar_sum_backward,
+            setup_context=_frame_scalar_sum_setup_context,
+        )
+
+
+def ensure_registered() -> None:
+    """Register meta implementations when the op library is available."""
+    if op_available():
+        _register_ops()
 
 
 def edge_force_virial(

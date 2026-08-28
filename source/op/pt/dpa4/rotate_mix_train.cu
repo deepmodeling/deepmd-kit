@@ -218,7 +218,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd(
       });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_bwd");
   if (rank > 0) {
-    grad_cb = pcb.sum(0, false, at::kFloat).to(cb.scalar_type()).view_as(cb);
+    const at::ScalarType accumulation_type =
+        x.scalar_type() == at::kDouble ? at::kDouble : at::kFloat;
+    grad_cb =
+        pcb.sum(0, false, accumulation_type).to(cb.scalar_type()).view_as(cb);
   }
   return {grad_x_edge, grad_runs, grad_kc, grad_cb};
 }
@@ -287,7 +290,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rotate_mix_bwd2(
       });
   DPA4_RM_CHECK_LAUNCH("sezm_rotate_mix_bwd2");
   if (rank > 0) {
-    grad_cb = pcb.sum(0, false, at::kFloat).to(cb.scalar_type()).view_as(cb);
+    const at::ScalarType accumulation_type =
+        x.scalar_type() == at::kDouble ? at::kDouble : at::kFloat;
+    grad_cb =
+        pcb.sum(0, false, accumulation_type).to(cb.scalar_type()).view_as(cb);
   }
   return {grad_x_edge, grad_runs, grad_kc, grad_cb};
 }
@@ -300,9 +306,20 @@ at::Tensor segment_sum_csr(const at::Tensor& rows_in,
   TORCH_CHECK(
       order.scalar_type() == at::kLong && row_ptr.scalar_type() == at::kLong,
       "sezm_segment_sum: CSR indices must be int64");
+  TORCH_CHECK(order.is_cuda() && row_ptr.is_cuda(),
+              "sezm_segment_sum: CSR indices must be on CUDA");
+  TORCH_CHECK(order.device() == rows_in.device() &&
+                  row_ptr.device() == rows_in.device(),
+              "sezm_segment_sum: rows and CSR indices must share a device");
+  TORCH_CHECK(order.numel() == rows_in.size(0),
+              "sezm_segment_sum: order length must match the row count");
+  TORCH_CHECK(row_ptr.numel() >= 1,
+              "sezm_segment_sum: row_ptr must contain at least one offset");
   const c10::cuda::CUDAGuard guard(rows_in.device());
   const at::Tensor rows = rows_in.contiguous();
-  const long n_seg = row_ptr.size(0) - 1;
+  const at::Tensor order_contiguous = order.contiguous();
+  const at::Tensor row_ptr_contiguous = row_ptr.contiguous();
+  const long n_seg = row_ptr_contiguous.size(0) - 1;
   auto sizes = rows.sizes().vec();
   long feat = 1;
   for (size_t i = 1; i < sizes.size(); ++i) {
@@ -320,8 +337,9 @@ at::Tensor segment_sum_csr(const at::Tensor& rows_in,
   AT_DISPATCH_FLOATING_TYPES_AND2(
       at::kBFloat16, at::kHalf, rows.scalar_type(), "segment_sum_csr", [&] {
         segment_sum_kernel<scalar_t><<<grid, threads, 0, stream>>>(
-            rows.data_ptr<scalar_t>(), order.data_ptr<long>(),
-            row_ptr.data_ptr<long>(), out.data_ptr<scalar_t>(), n_seg, feat);
+            rows.data_ptr<scalar_t>(), order_contiguous.data_ptr<long>(),
+            row_ptr_contiguous.data_ptr<long>(), out.data_ptr<scalar_t>(),
+            n_seg, feat);
       });
   DPA4_RM_CHECK_LAUNCH("sezm_segment_sum");
   return out;

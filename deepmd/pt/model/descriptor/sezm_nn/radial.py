@@ -574,6 +574,7 @@ class RadialBasis(nn.Module):
                 "n_radial": self.n_radial,
                 "exponent": self.exponent,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
+                "trainable": self.trainable,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
         }
@@ -597,6 +598,7 @@ class RadialBasis(nn.Module):
             basis_type=str(config.get("basis_type", "bessel")),
             exponent=int(config.get("exponent", 7)),
             dtype=dtype,
+            trainable=bool(config.get("trainable", True)),
         )
         if variables is not None:
             template = obj.state_dict()

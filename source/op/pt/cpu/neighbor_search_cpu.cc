@@ -40,12 +40,19 @@ namespace {
 /// Squared displacement below which a pair is treated as a self-image.
 constexpr double kSelfPairTolerance = 1e-10;
 
+/// Maximum dense cell-list storage relative to the atom count.
+constexpr std::int64_t kMaxCellsPerAtom = 8;
+
 /// Lattice geometry needed to bin atoms and to enumerate candidate images.
 struct CellGrid {
   /// Cell divisions along each lattice direction.
   std::int64_t divisions[3] = {1, 1, 1};
-  /// Image range searched along each lattice direction.
+  /// Cell offsets searched along each direction.
   std::int64_t reach[3] = {0, 0, 0};
+  /// Cartesian lower bound of a non-periodic grid.
+  double origin[3] = {0, 0, 0};
+  /// Cartesian-to-grid scale of a non-periodic grid.
+  double position_scale[3] = {0, 0, 0};
   /// Row-major inverse of the lattice matrix, mapping Cartesian to fractional.
   double inverse[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
   /// Row-major lattice matrix, rows being the lattice vectors.
@@ -87,14 +94,9 @@ void invert3(const double* matrix, double* inverse) {
  * reach grows instead, so a cell smaller than the cutoff is searched over as
  * many images as it takes.
  */
-CellGrid make_grid(const double* lattice,
-                   const bool periodic,
-                   const double rcut) {
+CellGrid make_periodic_grid(const double* lattice, const double rcut) {
   CellGrid grid;
-  grid.periodic = periodic;
-  if (!periodic) {
-    return grid;
-  }
+  grid.periodic = true;
   std::copy(lattice, lattice + 9, grid.lattice);
   invert3(lattice, grid.inverse);
   // The perpendicular width along a direction is the volume divided by the
@@ -114,20 +116,84 @@ CellGrid make_grid(const double* lattice,
   return grid;
 }
 
-/// Wrapped fractional coordinates and the integer image each atom came from.
-struct Fractional {
+/**
+ * @brief Build an axis-aligned grid over a non-periodic coordinate cloud.
+ *
+ * Cells are at least the cutoff wide, so one adjacent cell in each direction
+ * contains every possible neighbour. The dense cell table is capped relative
+ * to the atom count: reducing a division only widens cells and therefore
+ * preserves the candidate-set invariant while avoiding excessive storage for
+ * sparse coordinate clouds.
+ */
+template <typename ScalarType>
+CellGrid make_nonperiodic_grid(const ScalarType* coord,
+                               const std::int64_t atom_count,
+                               const double rcut) {
+  CellGrid grid;
+  if (atom_count == 0) {
+    return grid;
+  }
+
+  double lower[3];
+  double upper[3];
+  for (int axis = 0; axis < 3; ++axis) {
+    lower[axis] = static_cast<double>(coord[axis]);
+    upper[axis] = lower[axis];
+  }
+  for (std::int64_t atom = 1; atom < atom_count; ++atom) {
+    for (int axis = 0; axis < 3; ++axis) {
+      const double value = static_cast<double>(coord[atom * 3 + axis]);
+      lower[axis] = std::min(lower[axis], value);
+      upper[axis] = std::max(upper[axis], value);
+    }
+  }
+
+  const std::int64_t max_cells =
+      std::max<std::int64_t>(atom_count * kMaxCellsPerAtom, 1);
+  double span[3];
+  for (int axis = 0; axis < 3; ++axis) {
+    span[axis] = upper[axis] - lower[axis];
+    grid.origin[axis] = lower[axis];
+    const double desired = std::floor(span[axis] / rcut);
+    grid.divisions[axis] = std::max<std::int64_t>(
+        std::min<double>(desired, static_cast<double>(max_cells)), 1);
+  }
+
+  auto cell_count = [&grid]() {
+    return static_cast<long double>(grid.divisions[0]) *
+           static_cast<long double>(grid.divisions[1]) *
+           static_cast<long double>(grid.divisions[2]);
+  };
+  while (cell_count() > static_cast<long double>(max_cells)) {
+    const auto* largest = std::max_element(grid.divisions, grid.divisions + 3);
+    const auto axis = static_cast<int>(largest - grid.divisions);
+    grid.divisions[axis] = std::max<std::int64_t>(*largest / 2, 1);
+  }
+
+  for (int axis = 0; axis < 3; ++axis) {
+    if (span[axis] > 0.0) {
+      grid.position_scale[axis] =
+          static_cast<double>(grid.divisions[axis]) / span[axis];
+    }
+    grid.reach[axis] = std::min<std::int64_t>(grid.divisions[axis] - 1, 1);
+  }
+  return grid;
+}
+
+/// Search coordinates and the integer image each periodic atom came from.
+struct SearchCoordinates {
   std::vector<double> position;
   std::vector<std::int32_t> image;
 };
 
-/// Map Cartesian coordinates into the primitive cell.
+/// Prepare fractional periodic positions or Cartesian non-periodic positions.
 template <typename ScalarType>
-Fractional to_fractional(const ScalarType* coord,
-                         const std::int64_t atom_count,
-                         const CellGrid& grid) {
-  Fractional fractional;
-  fractional.position.resize(static_cast<size_t>(atom_count) * 3);
-  fractional.image.assign(static_cast<size_t>(atom_count) * 3, 0);
+SearchCoordinates prepare_coordinates(const ScalarType* coord,
+                                      const std::int64_t atom_count,
+                                      const CellGrid& grid) {
+  SearchCoordinates coordinates;
+  coordinates.position.resize(static_cast<size_t>(atom_count) * 3);
+  coordinates.image.assign(static_cast<size_t>(atom_count) * 3, 0);
   at::parallel_for(
       0, atom_count, 1024, [&](std::int64_t begin, std::int64_t end) {
         for (std::int64_t atom = begin; atom < end; ++atom) {
@@ -135,9 +201,9 @@ Fractional to_fractional(const ScalarType* coord,
           const double y = static_cast<double>(coord[atom * 3 + 1]);
           const double z = static_cast<double>(coord[atom * 3 + 2]);
           if (!grid.periodic) {
-            fractional.position[atom * 3] = x;
-            fractional.position[atom * 3 + 1] = y;
-            fractional.position[atom * 3 + 2] = z;
+            coordinates.position[atom * 3] = x;
+            coordinates.position[atom * 3 + 1] = y;
+            coordinates.position[atom * 3 + 2] = z;
             continue;
           }
           for (int axis = 0; axis < 3; ++axis) {
@@ -145,13 +211,25 @@ Fractional to_fractional(const ScalarType* coord,
                                y * grid.inverse[3 + axis] +
                                z * grid.inverse[6 + axis];
             const double cell = std::floor(raw);
-            fractional.position[atom * 3 + axis] = raw - cell;
-            fractional.image[atom * 3 + axis] =
+            coordinates.position[atom * 3 + axis] = raw - cell;
+            coordinates.image[atom * 3 + axis] =
                 -static_cast<std::int32_t>(cell);
           }
         }
       });
-  return fractional;
+  return coordinates;
+}
+
+/// Map one prepared coordinate to its clamped grid-cell index.
+std::int64_t cell_bin(const double position,
+                      const CellGrid& grid,
+                      const int axis) {
+  const double scaled =
+      grid.periodic
+          ? position * static_cast<double>(grid.divisions[axis])
+          : (position - grid.origin[axis]) * grid.position_scale[axis];
+  const auto bin = static_cast<std::int64_t>(std::floor(scaled));
+  return std::min(std::max<std::int64_t>(bin, 0), grid.divisions[axis] - 1);
 }
 
 /// Atoms bucketed by cell, in compressed-sparse-row form.
@@ -161,7 +239,7 @@ struct Buckets {
 };
 
 /// Bucket atoms by cell index with a counting sort.
-Buckets bucket_atoms(const Fractional& fractional,
+Buckets bucket_atoms(const SearchCoordinates& coordinates,
                      const std::int64_t atom_count,
                      const CellGrid& grid) {
   const std::int64_t cell_count = grid.count();
@@ -171,10 +249,8 @@ Buckets bucket_atoms(const Fractional& fractional,
   for (std::int64_t atom = 0; atom < atom_count; ++atom) {
     std::int64_t index = 0;
     for (int axis = 0; axis < 3; ++axis) {
-      auto bin =
-          static_cast<std::int64_t>(fractional.position[atom * 3 + axis] *
-                                    static_cast<double>(grid.divisions[axis]));
-      bin = std::min(std::max<std::int64_t>(bin, 0), grid.divisions[axis] - 1);
+      const auto bin =
+          cell_bin(coordinates.position[atom * 3 + axis], grid, axis);
       index = index * grid.divisions[axis] + bin;
     }
     cell_of_atom[atom] = index;
@@ -202,7 +278,7 @@ struct CandidateCell {
 /// Prepared search state, shared by the counting and the emitting pass.
 struct PreparedSearch {
   CellGrid grid;
-  Fractional fractional;
+  SearchCoordinates coordinates;
   Buckets buckets;
   double rcut_squared = 0.0;
   std::int64_t atom_count = 0;
@@ -224,40 +300,42 @@ void visit_neighbors(const std::int64_t center,
                      std::vector<CandidateCell>& candidates,
                      Visitor&& visitor) {
   const CellGrid& grid = prepared.grid;
-  const Fractional& fractional = prepared.fractional;
-  const double* center_position = &fractional.position[center * 3];
-  const std::int32_t* center_image = &fractional.image[center * 3];
+  const SearchCoordinates& coordinates = prepared.coordinates;
+  const double* center_position = &coordinates.position[center * 3];
+  const std::int32_t* center_image = &coordinates.image[center * 3];
 
   candidates.clear();
-  if (!grid.periodic) {
-    candidates.push_back({0, {0, 0, 0}});
-  } else {
-    std::int64_t home[3];
-    for (int axis = 0; axis < 3; ++axis) {
-      const auto bin = static_cast<std::int64_t>(
-          center_position[axis] * static_cast<double>(grid.divisions[axis]));
-      home[axis] =
-          std::min(std::max<std::int64_t>(bin, 0), grid.divisions[axis] - 1);
-    }
-    for (std::int64_t da = -grid.reach[0]; da <= grid.reach[0]; ++da) {
-      for (std::int64_t db = -grid.reach[1]; db <= grid.reach[1]; ++db) {
-        for (std::int64_t dc = -grid.reach[2]; dc <= grid.reach[2]; ++dc) {
-          const std::int64_t offset[3] = {da, db, dc};
-          CandidateCell candidate{0, {0, 0, 0}};
-          std::int64_t index = 0;
-          for (int axis = 0; axis < 3; ++axis) {
-            const std::int64_t raw = home[axis] + offset[axis];
-            const std::int64_t divisions = grid.divisions[axis];
+  std::int64_t home[3];
+  for (int axis = 0; axis < 3; ++axis) {
+    home[axis] = cell_bin(center_position[axis], grid, axis);
+  }
+  for (std::int64_t da = -grid.reach[0]; da <= grid.reach[0]; ++da) {
+    for (std::int64_t db = -grid.reach[1]; db <= grid.reach[1]; ++db) {
+      for (std::int64_t dc = -grid.reach[2]; dc <= grid.reach[2]; ++dc) {
+        const std::int64_t offset[3] = {da, db, dc};
+        CandidateCell candidate{0, {0, 0, 0}};
+        std::int64_t index = 0;
+        bool in_bounds = true;
+        for (int axis = 0; axis < 3; ++axis) {
+          const std::int64_t raw = home[axis] + offset[axis];
+          const std::int64_t divisions = grid.divisions[axis];
+          std::int64_t bin = raw;
+          if (grid.periodic) {
             // Floor division carries the wrap into the lattice image.
             std::int64_t wrap = raw / divisions;
-            std::int64_t bin = raw % divisions;
+            bin = raw % divisions;
             if (bin < 0) {
               bin += divisions;
               --wrap;
             }
             candidate.image[axis] = static_cast<std::int32_t>(wrap);
-            index = index * divisions + bin;
+          } else if (raw < 0 || raw >= divisions) {
+            in_bounds = false;
+            break;
           }
+          index = index * divisions + bin;
+        }
+        if (in_bounds) {
           candidate.index = index;
           candidates.push_back(candidate);
         }
@@ -272,7 +350,7 @@ void visit_neighbors(const std::int64_t center,
       const std::int64_t neighbor = prepared.buckets.atom[slot];
       double delta[3];
       for (int axis = 0; axis < 3; ++axis) {
-        delta[axis] = fractional.position[neighbor * 3 + axis] -
+        delta[axis] = coordinates.position[neighbor * 3 + axis] -
                       center_position[axis] +
                       static_cast<double>(candidate.image[axis]);
       }
@@ -295,12 +373,12 @@ void visit_neighbors(const std::int64_t center,
       }
       // The image relating the ORIGINAL coordinates absorbs the wrap that
       // brought each atom into the primitive cell.
-      const std::int32_t image[3] = {
-          fractional.image[neighbor * 3] + candidate.image[0] - center_image[0],
-          fractional.image[neighbor * 3 + 1] + candidate.image[1] -
-              center_image[1],
-          fractional.image[neighbor * 3 + 2] + candidate.image[2] -
-              center_image[2]};
+      const std::int32_t image[3] = {coordinates.image[neighbor * 3] +
+                                         candidate.image[0] - center_image[0],
+                                     coordinates.image[neighbor * 3 + 1] +
+                                         candidate.image[1] - center_image[1],
+                                     coordinates.image[neighbor * 3 + 2] +
+                                         candidate.image[2] - center_image[2]};
       visitor(neighbor, image, displacement);
     }
   }
@@ -321,11 +399,14 @@ PreparedSearch prepare_search(const torch::Tensor& coord,
   PreparedSearch prepared;
   prepared.atom_count = coord.size(0);
   prepared.rcut_squared = rcut * rcut;
-  prepared.grid = make_grid(lattice, periodic, rcut);
-  prepared.fractional = to_fractional(coord.const_data_ptr<ScalarType>(),
-                                      prepared.atom_count, prepared.grid);
+  const ScalarType* coord_data = coord.const_data_ptr<ScalarType>();
+  prepared.grid =
+      periodic ? make_periodic_grid(lattice, rcut)
+               : make_nonperiodic_grid(coord_data, prepared.atom_count, rcut);
+  prepared.coordinates =
+      prepare_coordinates(coord_data, prepared.atom_count, prepared.grid);
   prepared.buckets =
-      bucket_atoms(prepared.fractional, prepared.atom_count, prepared.grid);
+      bucket_atoms(prepared.coordinates, prepared.atom_count, prepared.grid);
 
   prepared.row_ptr.assign(prepared.atom_count + 1, 0);
   std::int64_t* row_ptr = prepared.row_ptr.data();

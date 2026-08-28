@@ -41,6 +41,7 @@
 #include <cuda_runtime.h>
 #include <torch/torch.h>
 
+#include <algorithm>
 #include <tuple>
 #include <utility>
 
@@ -85,10 +86,13 @@ constexpr int kWideChannelLanes = 384;
 void check_value_inputs(const at::Tensor& x,
                         const at::Tensor& src,
                         const at::Tensor& runs,
+                        const at::Tensor& kc,
                         const at::Tensor& w0_all,
                         int64_t lmax,
                         int64_t n_focus,
                         int64_t rank,
+                        double softmax_tau,
+                        double label_smoothing,
                         const char* who) {
   TORCH_CHECK(x.is_cuda() && x.dim() == 3 && x.stride(2) == 1, who,
               ": x must be (N, D, C_wide) with unit channel stride");
@@ -108,7 +112,12 @@ void check_value_inputs(const at::Tensor& x,
                   runs.size(0) == src.size(0) && runs.size(1) == 3 * dim - 2,
               who, ": runs must be contiguous (E, 3 * DIM - 2)");
   TORCH_CHECK(src.scalar_type() == at::kLong, who, ": src must be int64");
+  TORCH_CHECK(kc.dim() >= 1 && kc.size(0) == src.size(0), who,
+              ": degree-kernel edge count must match src");
   TORCH_CHECK(w0_all.dim() == 4, who, ": stacked block weights expected");
+  TORCH_CHECK(softmax_tau > 0.0, who, ": softmax_tau must be positive");
+  TORCH_CHECK(0.0 <= label_smoothing && label_smoothing < 1.0, who,
+              ": label_smoothing must be in [0, 1)");
 }
 
 template <typename F>
@@ -281,8 +290,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
     bool apply_alpha,
     double softmax_tau,
     double label_smoothing) {
-  check_value_inputs(x_in, src, runs_in, w0_in, lmax, n_focus, rank,
-                     "sezm_so2_value_fwd");
+  check_value_inputs(x_in, src, runs_in, kc_in, w0_in, lmax, n_focus, rank,
+                     softmax_tau, label_smoothing, "sezm_so2_value_fwd");
   TORCH_CHECK(!apply_alpha || w_fc.has_value(),
               "sezm_so2_value_fwd: competition weights required");
   const c10::cuda::CUDAGuard guard(x_in.device());
@@ -314,17 +323,20 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
       x.scalar_type() == at::kDouble ? sizeof(double) : sizeof(float);
   // Bytes of tile-resident state per edge slot (including the bank-offset
   // padding word per surface); the tile width is the largest power of two
-  // whose footprint stays inside the opt-in shared memory window, which
-  // keeps the weight traffic amortized over as many register accumulators
-  // as the configuration allows.
+  // whose footprint stays inside the current device's shared-memory window,
+  // which keeps the weight traffic amortized over as many register
+  // accumulators as the configuration allows.
   const size_t per_edge =
       (size_t)(2 * (n_focus * row_w + 1) + (n_focus * lg + 1) + n_focus) *
       acc_bytes;
-  constexpr size_t kSmemCeiling = 96 * 1024;
+  const auto* properties = at::cuda::getCurrentDeviceProperties();
+  const size_t smem_ceiling = std::max(properties->sharedMemPerBlock,
+                                       properties->sharedMemPerBlockOptin);
   int te = 8;
-  while (te > 1 && (size_t)te * per_edge > kSmemCeiling) {
+  while (te > 1 && (size_t)te * per_edge > smem_ceiling) {
     te >>= 1;
   }
+  const bool resident_supported = per_edge <= smem_ceiling;
 
   // The resident kernel multiplies its arithmetic intensity by the tile
   // width. Where the activation footprint forces the tile below eight
@@ -336,12 +348,14 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
   // shapes run the same value stream as a composition of the rotation kernel,
   // the closed-form competition head and the cuBLAS-backed mixing traversal,
   // producing identical anchor layouts for the shared backward. Double inputs
-  // (the parity harnesses' ground truth) stay on the resident kernel, whose
-  // accumulators follow the input precision.
-  const bool blackwell_wide =
-      at::cuda::getCurrentDeviceProperties()->major >= 12 && cf >= 64;
-  if ((te < 8 || blackwell_wide) && n_edge > 0 &&
-      x.scalar_type() != at::kDouble) {
+  // (the parity harnesses' ground truth) stay on the resident kernel whenever
+  // the device can hold one edge slot; its accumulators follow the input
+  // precision.
+  const bool blackwell_wide = properties->major >= 12 && cf >= 64;
+  const bool use_composed_path =
+      !resident_supported ||
+      (x.scalar_type() != at::kDouble && (te < 8 || blackwell_wide));
+  if (use_composed_path && n_edge > 0) {
     auto u0 =
         dpa4_sezm::rotate_mix_fwd(x, src, runs, kc, cb, lmax, n_focus, rank);
     at::Tensor alpha_t;
@@ -448,6 +462,10 @@ value_bwd(const at::Tensor& grad_x_local,
           double label_smoothing,
           bool keep_state,
           bool with_weights) {
+  check_value_inputs(x, src, runs, kc, w0_all, lmax, n_focus, rank, softmax_tau,
+                     label_smoothing, "sezm_so2_value_bwd");
+  TORCH_CHECK(!apply_alpha || w_fc.has_value(),
+              "sezm_so2_value_bwd: competition weights required");
   const c10::cuda::CUDAGuard guard(x.device());
   const int cf = (int)(x.size(2) / n_focus);
 
@@ -603,6 +621,10 @@ value_bwd2(const at::Tensor& h_gx,
            bool apply_alpha,
            double softmax_tau,
            double label_smoothing) {
+  check_value_inputs(x, src, runs, kc, w0_all, lmax, n_focus, rank, softmax_tau,
+                     label_smoothing, "sezm_so2_value_bwd2");
+  TORCH_CHECK(!apply_alpha || w_fc.has_value(),
+              "sezm_so2_value_bwd2: competition weights required");
   const c10::cuda::CUDAGuard guard(x.device());
   const int cf = (int)(x.size(2) / n_focus);
   const bool kept = kept_grad_u0.has_value() && kept_upstream.has_value() &&

@@ -27,15 +27,21 @@ list(
 # The architecture level is pinned per unit rather than added to it: the project
 # may be configured with ENABLE_NATIVE_OPTIMIZATION, and a trailing -march wins,
 # so this is what keeps the fallback units free of instructions the dispatcher
-# promised the host would not need.
-set_source_files_properties(dpa4c/graph_compress_cpu_scalar.cc
-                            PROPERTIES COMPILE_OPTIONS "-march=x86-64")
-set_source_files_properties(dpa4c/graph_compress_cpu_avx2.cc
-                            PROPERTIES COMPILE_OPTIONS "-march=x86-64-v3")
-set_source_files_properties(
-  dpa4c/graph_compress_cpu_avx512.cc
-  PROPERTIES COMPILE_OPTIONS
-             "-march=x86-64-v4;-mprefer-vector-width=512;-mtune=native")
+# promised the host would not need. Other targets compile the same bodies at
+# their baseline ISA and select only the scalar body at runtime.
+if(NOT MSVC
+   AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$"
+   AND NOT CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+  set_source_files_properties(dpa4c/graph_compress_cpu_scalar.cc
+                              PROPERTIES COMPILE_OPTIONS "-march=x86-64")
+  set_source_files_properties(dpa4c/graph_compress_cpu_avx2.cc
+                              PROPERTIES COMPILE_OPTIONS "-march=x86-64-v3")
+  set_source_files_properties(
+    dpa4c/graph_compress_cpu_avx512.cc
+    PROPERTIES COMPILE_OPTIONS
+               "-march=x86-64-v4;-mprefer-vector-width=512;-mtune=native")
+endif()
 # Fused graph-lower inference operators (CUDA / cuBLAS). They include ATen CUDA
 # headers and link libtorch_cuda, so they build only against a CUDA-enabled
 # PyTorch (DEEPMD_TORCH_HAS_CUDA); against a CPU-only torch they are omitted and

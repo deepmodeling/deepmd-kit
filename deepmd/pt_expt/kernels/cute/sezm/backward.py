@@ -595,7 +595,6 @@ if SEZM_CUTE_AVAILABLE:
             self._B = bucket
             self.nf, self.cf, self.Dm, self.D = n_focus, cf, self.op.Dm, self.op.D
             self._compiled = None
-            self._stream = cuda.CUstream(torch.cuda.current_stream().cuda_stream)
             fr = ForwardRunner(
                 weights,
                 lmax=lmax,
@@ -686,7 +685,8 @@ if SEZM_CUTE_AVAILABLE:
                 self._dyn(grad_kc, 2),
             )
             args = (*views, cutlass.Int32(n_edge), cutlass.Int32(n_bucket))
+            stream = cuda.CUstream(torch.cuda.current_stream(x.device).cuda_stream)
             if self._compiled is None:
-                self._compiled = cute.compile(self.op, *args, stream=self._stream)
-            self._compiled(*args, stream=self._stream)
+                self._compiled = cute.compile(self.op, *args, stream=stream)
+            self._compiled(*args, stream=stream)
             return grad_x, grad_d[:n_edge], grad_kc[:n_edge]

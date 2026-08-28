@@ -524,6 +524,50 @@ inline void groupEdgesByNode(const std::int64_t* key,
 }
 
 /**
+ * @brief Build CSR views with device-native tensor operations.
+ *
+ * This path preserves the payload device. It is used when host pointers cannot
+ * access the edge tensors, while CPU payloads use the linear counting sort in
+ * @ref groupEdgesByNode.
+ */
+inline void buildGraphCSRWithTensorOps(GraphTensorPack& pack,
+                                       const std::int64_t node_count,
+                                       const bool destination_sorted) {
+  const auto index = pack.edge_index.to(torch::kInt64).contiguous();
+  const auto mask = pack.edge_mask.to(torch::kBool).contiguous();
+  const auto real_index = torch::nonzero(mask).reshape({-1});
+  const auto padding_index =
+      torch::nonzero(torch::logical_not(mask)).reshape({-1});
+  const auto real_destination = index.select(0, 1).index_select(0, real_index);
+  const auto real_source = index.select(0, 0).index_select(0, real_index);
+  const auto destination_counts =
+      torch::bincount(real_destination, {}, node_count);
+  const auto source_counts = torch::bincount(real_source, {}, node_count);
+  const auto zero = torch::zeros({1}, destination_counts.options());
+  pack.destination_row_ptr =
+      torch::cat({zero, torch::cumsum(destination_counts, 0)})
+          .to(torch::kInt64)
+          .contiguous();
+  pack.source_row_ptr = torch::cat({zero, torch::cumsum(source_counts, 0)})
+                            .to(torch::kInt64)
+                            .contiguous();
+  if (destination_sorted) {
+    pack.destination_order = torch::arange(index.size(1), real_index.options());
+  } else {
+    const auto real_destination_order =
+        torch::argsort(real_destination, 0, false);
+    pack.destination_order =
+        torch::cat(
+            {real_index.index_select(0, real_destination_order), padding_index})
+            .contiguous();
+  }
+  const auto real_source_order = torch::argsort(real_source, 0, false);
+  pack.source_order =
+      torch::cat({real_index.index_select(0, real_source_order), padding_index})
+          .contiguous();
+}
+
+/**
  * @brief Build destination/source CSR views of an edge pack.
  *
  * Both views store permutations into the original edge payload. Masked
@@ -535,6 +579,10 @@ inline void groupEdgesByNode(const std::int64_t* key,
 inline void buildGraphCSR(GraphTensorPack& pack,
                           const std::int64_t node_count,
                           const bool destination_sorted = false) {
+  if (!pack.edge_index.device().is_cpu()) {
+    buildGraphCSRWithTensorOps(pack, node_count, destination_sorted);
+    return;
+  }
   const auto index = pack.edge_index.to(torch::kInt64).contiguous();
   const auto mask = pack.edge_mask.to(torch::kBool).contiguous();
   const std::int64_t edge_count = index.size(1);
@@ -564,6 +612,19 @@ inline void buildGraphCSR(GraphTensorPack& pack) {
  */
 inline void canonicalizeGraphPayload(GraphTensorPack& pack,
                                      const std::int64_t node_count) {
+  if (!pack.edge_index.device().is_cpu()) {
+    const auto destination = pack.edge_index.select(0, 1);
+    const auto padding_node = torch::full_like(destination, node_count);
+    const auto destination_key =
+        torch::where(pack.edge_mask, destination, padding_node);
+    const auto order =
+        torch::argsort(destination_key, /*stable=*/true, 0, false);
+    pack.edge_index = pack.edge_index.index_select(1, order).contiguous();
+    pack.edge_vec = pack.edge_vec.index_select(0, order).contiguous();
+    pack.edge_mask = pack.edge_mask.index_select(0, order).contiguous();
+    buildGraphCSR(pack, node_count, /*destination_sorted=*/true);
+    return;
+  }
   const auto index = pack.edge_index.to(torch::kInt64).contiguous();
   const auto mask = pack.edge_mask.to(torch::kBool).contiguous();
   const std::int64_t edge_count = index.size(1);

@@ -188,7 +188,8 @@ class DeepEval(DeepEvalBackend):
         :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
         at each eval call (CUDA: ``nv`` if importable; else ``vesin`` only when
         ``nf == 1`` and importable; else ``dense``). Explicit
-        ``"dense"`` / ``"ase"`` / ``"vesin"`` / ``"nv"`` choices are preserved.
+        ``"dense"`` / ``"ase"`` / ``"cell"`` / ``"vesin"`` / ``"nv"``
+        choices are preserved.
         A non-default value on any other artifact raises at construction because
         the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
@@ -279,10 +280,10 @@ class DeepEval(DeepEvalBackend):
         time setup can defer to :meth:`_build_eval_graph`, where the frame
         count is known and vesin can be gated on ``nf == 1``.
         """
-        if method not in ("auto", "dense", "ase", "vesin", "nv"):
+        if method not in ("auto", "dense", "ase", "cell", "vesin", "nv"):
             raise ValueError(
                 f"Unknown neighbor_graph_method {method!r}; "
-                "expected 'auto', 'dense', 'ase', 'vesin', or 'nv'."
+                "expected 'auto', 'dense', 'ase', 'cell', 'vesin', or 'nv'."
             )
         if method != "auto":
             return method

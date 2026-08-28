@@ -108,6 +108,9 @@ def test_dpa4_pte_does_not_apply_pt2_kernel_defaults(monkeypatch) -> None:
 def test_dpa4_pte_graph_keeps_legacy_cuda_floor(monkeypatch) -> None:
     monkeypatch.delenv("DP_TRITON_INFER", raising=False)
     monkeypatch.setenv("DP_CUDA_INFER", "1")
+    monkeypatch.setattr(
+        "deepmd.pt_expt.kernels.utils.backend_device_type", lambda: "cuda"
+    )
     captured = {}
 
     def capture(*args, **kwargs):
@@ -139,6 +142,9 @@ def test_dpa4_pte_graph_keeps_legacy_cuda_floor(monkeypatch) -> None:
 def test_level_two_graph_families_keep_cuda_floor(monkeypatch, descriptor_type) -> None:
     monkeypatch.delenv("DP_TRITON_INFER", raising=False)
     monkeypatch.setenv("DP_CUDA_INFER", "1")
+    monkeypatch.setattr(
+        "deepmd.pt_expt.kernels.utils.backend_device_type", lambda: "cuda"
+    )
 
     captured = _capture_pt2_levels(
         monkeypatch,

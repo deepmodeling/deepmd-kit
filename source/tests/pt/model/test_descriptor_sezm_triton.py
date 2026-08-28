@@ -1348,9 +1348,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         u0_run = u0.clone().requires_grad_(True)
         alpha_run = alpha.clone().requires_grad_(True)
-        x_run, z_run, _ = op(
+        stack_output = op(
             u0_run, alpha_run, w0_all, w1_all, gw_all, self.LMAX, self.FOCUS_DIM, True
         )
+        x_run, z_run = stack_output[:2]
         self.assertTrue(bool(torch.isfinite(x_run).all()))
         self.assertTrue(bool(torch.isfinite(z_run).all()))
         gu_run, _ = torch.autograd.grad(x_run, [u0_run, alpha_run], grad_seed)
@@ -1419,16 +1420,16 @@ class TestSeZMStackFP16x3(unittest.TestCase):
                 self.assertLess(x3_bwd, max(3.0 * fp32_bwd, 8e-6))
 
     def test_inductor_compiled_matches_eager(self):
-        """The Inductor-lowered operator is bitwise identical to eager.
+        """The Inductor-lowered force graph is bitwise identical to eager.
 
         Guards the weight fp16 splits: the tail of a split is defined by an
         ``fp32 -> fp16 -> fp32`` rounding round-trip, which Inductor's
         pointwise fusion elides when the split is expressed in aten (the
         intermediate stays in an fp32 register), zeroing the tails and
         silently degrading the compiled operator to fp16-head weights.  The
-        split therefore runs as a Triton kernel, and this test pins the
-        compiled-versus-eager parity through the same make_fx + Inductor
-        pipeline that model freezing uses.
+        split therefore runs as a Triton kernel. Tracing the input gradient
+        also keeps the fp16x3 backward inside the same make_fx + Inductor
+        pipeline that compiled force inference uses.
         """
         from torch._functorch.aot_autograd import (
             aot_module_simplified,
@@ -1449,15 +1450,17 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         generator = torch.Generator(device="cuda").manual_seed(23)
         inputs = self._stack_inputs(generator)
+        inputs = (inputs[0].requires_grad_(True), *inputs[1:])
         lmax, focus_dim = self.LMAX, self.FOCUS_DIM
 
         def fn(u0, alpha, w0_all, w1_all, gw_all):
-            x_local, z_all, _ = mixing_stack_fp16x3(
+            x_local, z_all = mixing_stack_fp16x3(
                 u0, alpha, w0_all, w1_all, gw_all, lmax, focus_dim, True
             )
-            return (x_local, z_all)
+            (grad_u0,) = torch.autograd.grad(x_local.sum(), u0)
+            return (x_local, z_all, grad_u0)
 
-        eager_x, eager_z = fn(*inputs)
+        eager = fn(*inputs)
         graph = make_fx(fn, tracing_mode="symbolic")(*inputs)
         # AOTAutograd's PhiloxStateTracker allocates tensors without an
         # explicit device and would trip the pt-test default-device sentinel
@@ -1465,18 +1468,19 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         saved_device = torch.get_default_device()
         torch.set_default_device(None)
         try:
-            compiled = aot_module_simplified(
-                graph,
-                inputs,
-                fw_compiler=lambda gm, args: compile_fx_inner(gm, args),
-                decompositions=select_decomp_table(),
-            )
-            with torch.no_grad():
-                compiled_x, compiled_z = compiled(*inputs)
+            with torch.no_grad(), torch.device("cuda"):
+                compiled = aot_module_simplified(
+                    graph,
+                    inputs,
+                    fw_compiler=lambda gm, args: compile_fx_inner(gm, args),
+                    inference_compiler=lambda gm, args: compile_fx_inner(gm, args),
+                    decompositions=select_decomp_table(),
+                )
+                actual = compiled(*inputs)
         finally:
             torch.set_default_device(saved_device)
-        torch.testing.assert_close(compiled_x, eager_x, atol=0.0, rtol=0.0)
-        torch.testing.assert_close(compiled_z, eager_z, atol=0.0, rtol=0.0)
+        for got, expected in zip(actual, eager, strict=True):
+            torch.testing.assert_close(got, expected, atol=0.0, rtol=0.0)
 
     def test_dynamic_compile_survives_int32_stride_overflow_edge_counts(self):
         """A graph traced on a small system must run beyond 2^31 / ROW edges.
@@ -1522,7 +1526,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         def make_fn(op):
             def fn(u0, alpha, w0, w1, gw):
-                x_local, _, _ = op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)
+                x_local = op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)[0]
                 return (x_local,)
 
             return fn

@@ -24,6 +24,7 @@
 
 #include "../fitting_plan.h"
 #include "activation.h"
+#include "dispatch.h"
 
 namespace {
 
@@ -76,16 +77,16 @@ inline float derivative_from_state(float state) {
 template <int64_t Act>
 void layer_epilogue(int64_t nodes,
                     int64_t width,
-                    float* __restrict__ pre,
-                    const float* __restrict__ bias,
-                    const float* __restrict__ residual,
-                    float* __restrict__ out) {
+                    float* DEEPMD_RESTRICT pre,
+                    const float* DEEPMD_RESTRICT bias,
+                    const float* DEEPMD_RESTRICT residual,
+                    float* DEEPMD_RESTRICT out) {
   at::parallel_for(0, nodes, kEpilogueGrain, [&](int64_t begin, int64_t end) {
     for (int64_t node = begin; node < end; ++node) {
-      float* __restrict__ row = pre + node * width;
-      float* __restrict__ target = out + node * width;
+      float* DEEPMD_RESTRICT row = pre + node * width;
+      float* DEEPMD_RESTRICT target = out + node * width;
       if (residual != nullptr) {
-        const float* __restrict__ skip = residual + node * width;
+        const float* DEEPMD_RESTRICT skip = residual + node * width;
         for (int64_t channel = 0; channel < width; ++channel) {
           const float biased = row[channel] + bias[channel];
           const float value = activation<Act>(biased);
@@ -107,15 +108,15 @@ void layer_epilogue(int64_t nodes,
 /// Per-atom energy of the linear head, accumulated in double.
 void head(int64_t nodes,
           int64_t width,
-          const float* __restrict__ activation_in,
-          const float* __restrict__ weight,
+          const float* DEEPMD_RESTRICT activation_in,
+          const float* DEEPMD_RESTRICT weight,
           float head_bias,
-          const double* __restrict__ atom_bias,
-          const int64_t* __restrict__ atype,
-          double* __restrict__ energy) {
+          const double* DEEPMD_RESTRICT atom_bias,
+          const int64_t* DEEPMD_RESTRICT atype,
+          double* DEEPMD_RESTRICT energy) {
   at::parallel_for(0, nodes, kEpilogueGrain, [&](int64_t begin, int64_t end) {
     for (int64_t node = begin; node < end; ++node) {
-      const float* __restrict__ row = activation_in + node * width;
+      const float* DEEPMD_RESTRICT row = activation_in + node * width;
       float total = 0.0f;
       for (int64_t channel = 0; channel < width; ++channel) {
         total += row[channel] * weight[channel];
@@ -134,18 +135,18 @@ void head(int64_t nodes,
 template <int64_t Act>
 void seed_epilogue(int64_t nodes,
                    int64_t width,
-                   const double* __restrict__ energy_cotangent,
-                   const float* __restrict__ head_weight,
-                   const float* __restrict__ state,
-                   float* __restrict__ pre_cotangent,
-                   float* __restrict__ residual_out) {
+                   const double* DEEPMD_RESTRICT energy_cotangent,
+                   const float* DEEPMD_RESTRICT head_weight,
+                   const float* DEEPMD_RESTRICT state,
+                   float* DEEPMD_RESTRICT pre_cotangent,
+                   float* DEEPMD_RESTRICT residual_out) {
   at::parallel_for(0, nodes, kEpilogueGrain, [&](int64_t begin, int64_t end) {
     for (int64_t node = begin; node < end; ++node) {
       const float seed = static_cast<float>(energy_cotangent[node]);
-      const float* __restrict__ row = state + node * width;
-      float* __restrict__ target = pre_cotangent + node * width;
+      const float* DEEPMD_RESTRICT row = state + node * width;
+      float* DEEPMD_RESTRICT target = pre_cotangent + node * width;
       if (residual_out != nullptr) {
-        float* __restrict__ skip = residual_out + node * width;
+        float* DEEPMD_RESTRICT skip = residual_out + node * width;
         for (int64_t channel = 0; channel < width; ++channel) {
           const float upstream = seed * head_weight[channel];
           skip[channel] = upstream;
@@ -165,15 +166,15 @@ void seed_epilogue(int64_t nodes,
 template <int64_t Act>
 void backward_epilogue(int64_t nodes,
                        int64_t width,
-                       const float* __restrict__ state,
-                       float* __restrict__ cotangent,
-                       float* __restrict__ residual_out) {
+                       const float* DEEPMD_RESTRICT state,
+                       float* DEEPMD_RESTRICT cotangent,
+                       float* DEEPMD_RESTRICT residual_out) {
   at::parallel_for(0, nodes, kEpilogueGrain, [&](int64_t begin, int64_t end) {
     for (int64_t node = begin; node < end; ++node) {
-      const float* __restrict__ row = state + node * width;
-      float* __restrict__ target = cotangent + node * width;
+      const float* DEEPMD_RESTRICT row = state + node * width;
+      float* DEEPMD_RESTRICT target = cotangent + node * width;
       if (residual_out != nullptr) {
-        float* __restrict__ skip = residual_out + node * width;
+        float* DEEPMD_RESTRICT skip = residual_out + node * width;
         for (int64_t channel = 0; channel < width; ++channel) {
           skip[channel] = target[channel];
         }
@@ -294,13 +295,25 @@ void fitting_backward_range(const FittingLayerPlan& plan,
 /// Validate the inputs the operator's arithmetic assumes.
 FittingLayerPlan validate(const char* operation,
                           const torch::Tensor& x,
-                          const std::vector<torch::Tensor>& ws) {
+                          const torch::Tensor& atype,
+                          const std::vector<torch::Tensor>& ws,
+                          const torch::Tensor& bias_atom_e) {
   TORCH_CHECK(x.dim() == 2 && x.device().is_cpu() && x.is_contiguous() &&
                   x.scalar_type() == torch::kFloat32,
               operation, ": x must be contiguous CPU fp32 with shape (N, D)");
+  TORCH_CHECK(atype.dim() == 1 && atype.size(0) == x.size(0) &&
+                  atype.device().is_cpu() && atype.is_contiguous() &&
+                  atype.scalar_type() == torch::kInt64,
+              operation,
+              ": atype must be contiguous CPU int64 with shape (N,)");
   const FittingLayerPlan plan = fitting_layer_plan(ws);
-  TORCH_CHECK(plan.n_layer > 0 && ws[0].size(0) == x.size(1), operation,
-              ": the first weight does not match the descriptor width");
+  TORCH_CHECK(
+      plan.n_layer > 0 && ws[0].dim() == 2 && ws[0].size(0) == x.size(1),
+      operation, ": the first fitting weight must match the input width");
+  TORCH_CHECK(bias_atom_e.dim() == 1 && bias_atom_e.device().is_cpu() &&
+                  bias_atom_e.is_contiguous() &&
+                  bias_atom_e.scalar_type() == torch::kFloat64,
+              operation, ": bias_atom_e must be contiguous CPU fp64");
   return plan;
 }
 
@@ -314,7 +327,8 @@ std::tuple<torch::Tensor, torch::Tensor> graph_fitting(
     torch::Tensor b_head,
     torch::Tensor bias_atom_e,
     int64_t act) {
-  const FittingLayerPlan plan = validate("graph_fitting", x, ws);
+  const FittingLayerPlan plan =
+      validate("graph_fitting", x, atype, ws, bias_atom_e);
   const int64_t nodes = x.size(0);
   auto options = x.options();
   auto energy = torch::empty({nodes, 1}, options.dtype(torch::kFloat64));
@@ -381,7 +395,7 @@ torch::Tensor graph_fitting_energy_gradient(torch::Tensor x,
                                             torch::Tensor seed,
                                             int64_t tile) {
   const FittingLayerPlan plan =
-      validate("graph_fitting_energy_gradient", x, ws);
+      validate("graph_fitting_energy_gradient", x, atype, ws, bias_atom_e);
   const int64_t nodes = x.size(0);
   auto options = x.options();
   auto energy = torch::empty({nodes, 1}, options.dtype(torch::kFloat64));

@@ -38,6 +38,9 @@ from deepmd.pt_expt.kernels.cutile import (
 from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
     FORCE_ASSEMBLY_TRITON_AVAILABLE,
 )
+from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+    SO2_VALUE_PATH_TRITON_AVAILABLE,
+)
 from deepmd.pt_expt.utils import (
     env,
 )
@@ -52,6 +55,8 @@ def _make_descriptor(
     sel: list[int],
     rcut: float,
     precision: str = "float32",
+    *,
+    source_gated: bool = False,
 ) -> DescrptDPA4:
     return DescrptDPA4(
         ntypes=ntypes,
@@ -71,6 +76,8 @@ def _make_descriptor(
         random_gamma=False,
         precision=precision,
         seed=7,
+        inner_clamp_r_inner=0.8 if source_gated else None,
+        inner_clamp_r_outer=1.2 if source_gated else None,
     )
 
 
@@ -171,6 +178,57 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         atype = torch.tensor(self.atype_ext, dtype=torch.int64, device=self.device)
         nlist = torch.tensor(self.nlist, dtype=torch.int64, device=self.device)
         return coord, atype, nlist
+
+    def _step(self, descriptor: DescrptDPA4) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluate one descriptor output and its coordinate gradient."""
+        coord, atype, nlist = self._inputs()
+        output = descriptor(coord, atype, nlist)[0]
+        gradient = torch.autograd.grad(output.sum(), coord)[0]
+        return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
+
+    def test_source_gated_flash_retains_dense_rotations(self, monkeypatch) -> None:
+        """Source-gated flash inference retains the rotations its fallback uses."""
+        if not so2_conv.op_available():
+            pytest.skip("the DPA4 CUDA inference operators are unavailable")
+        if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+            pytest.skip("Triton is unavailable")
+
+        for name in (
+            "DP_TRITON_INFER",
+            "DP_CUDA_INFER",
+            "DP_CUTILE_INFER",
+            "DP_CUTE_INFER",
+            "DP_TRITON_TRAIN",
+            "DP_CUDA_TRAIN",
+        ):
+            monkeypatch.setenv(name, "0")
+        data = _make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            source_gated=True,
+        ).serialize()
+        dense = DescrptDPA4.deserialize(data).to(self.device).eval()
+        dense_output, dense_gradient = self._step(dense)
+
+        monkeypatch.setenv("DP_TRITON_INFER", "1")
+        monkeypatch.setenv("DP_CUDA_INFER", "2")
+        accelerated = DescrptDPA4.deserialize(data).to(self.device).eval()
+        conv = next(
+            module
+            for module in accelerated.modules()
+            if isinstance(module, SO2Convolution)
+        )
+        if conv._cuda_conv_fn is None:
+            pytest.skip("the descriptor layout has no fused CUDA convolution")
+        assert conv._flash_atten_fn is not None
+        assert conv._cuda_value_train is None
+        assert not accelerated._wigner_free_conv
+        assert accelerated._build_full_wigner()
+
+        output, gradient = self._step(accelerated)
+        np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)
+        np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
 
     @pytest.mark.parametrize("backend", ["triton", "cuda", "cutile"])
     def test_forward_and_coordinate_gradient(self, monkeypatch, backend) -> None:

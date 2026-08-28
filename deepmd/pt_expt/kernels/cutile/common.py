@@ -49,7 +49,7 @@ Loop bounds must share one integer type.
     literal fails verification in the tile compiler. CSR offset arrays passed to
     a kernel are therefore int32; the edge counts they index stay well inside
     that range, while the *element* offsets derived from them do not, which is
-    what :data:`BigArray` is for.
+    why generated kernels annotate edge-scaled arrays for int64 indexing.
 """
 
 from __future__ import (
@@ -63,7 +63,6 @@ import sys
 import tempfile
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
 )
 
@@ -75,9 +74,10 @@ if TYPE_CHECKING:
     import torch
 
 try:
-    import cuda.tile as ct
+    from cuda import tile as _cuda_tile
 
-    CUTILE_AVAILABLE = True
+    CUTILE_AVAILABLE = hasattr(_cuda_tile, "kernel")
+    del _cuda_tile
 except ImportError:  # pragma: no cover - exercised only without cuda.tile
     CUTILE_AVAILABLE = False
 
@@ -96,13 +96,6 @@ __all__ = [
 #: fp16 accuracy. Only the tail is scaled, so the head represents the operand
 #: unmodified and the representation stays valid up to the fp16 maximum.
 TAIL_SCALE = 2048.0
-
-if CUTILE_AVAILABLE:
-    #: Element offsets on edge-scaled arrays pass 2^31 near 10^7 edges, which is
-    #: within the production range at molecular-dynamics scale.
-    BigArray = Annotated[ct.Array, ct.ArrayAnnotation(index_dtype=ct.int64)]
-else:  # pragma: no cover - exercised only without cuda.tile
-    BigArray = Any
 
 
 def next_pow2(value: int) -> int:

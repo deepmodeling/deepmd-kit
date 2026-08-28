@@ -23,6 +23,10 @@
 #include <new>
 #include <vector>
 
+#if defined(_MSC_VER)
+#include <malloc.h>
+#endif
+
 namespace deepmd_dpa4c_cpu {
 
 /// Allocator placing a buffer on a cache-line boundary.
@@ -45,16 +49,26 @@ struct AlignedAllocator {
   AlignedAllocator(const AlignedAllocator<U, Alignment>&) {}
 
   T* allocate(std::size_t count) {
-    void* memory = std::aligned_alloc(
-        Alignment,
-        ((count * sizeof(T) + Alignment - 1) / Alignment) * Alignment);
+    const std::size_t bytes =
+        ((count * sizeof(T) + Alignment - 1) / Alignment) * Alignment;
+#if defined(_MSC_VER)
+    void* memory = _aligned_malloc(bytes, Alignment);
+#else
+    void* memory = std::aligned_alloc(Alignment, bytes);
+#endif
     if (memory == nullptr) {
       throw std::bad_alloc();
     }
     return static_cast<T*>(memory);
   }
 
-  void deallocate(T* pointer, std::size_t) { std::free(pointer); }
+  void deallocate(T* pointer, std::size_t) {
+#if defined(_MSC_VER)
+    _aligned_free(pointer);
+#else
+    std::free(pointer);
+#endif
+  }
 
   template <typename U>
   bool operator==(const AlignedAllocator<U, Alignment>&) const {

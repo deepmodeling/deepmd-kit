@@ -17,6 +17,12 @@
 
 #include <cstdint>
 
+#if defined(_MSC_VER)
+#define DEEPMD_RESTRICT __restrict
+#else
+#define DEEPMD_RESTRICT __restrict__
+#endif
+
 namespace deepmd_cpu {
 
 /// Compiled instruction-set levels, in increasing capability order.
@@ -33,7 +39,8 @@ enum class Isa : int {
 /// that masks a feature is respected.
 inline Isa host_isa() {
   static const Isa resolved = [] {
-#if defined(__x86_64__) || defined(_M_X64)
+#if (defined(__GNUC__) || defined(__clang__)) && \
+    (defined(__x86_64__) || defined(__i386__))
     __builtin_cpu_init();
     if (__builtin_cpu_supports("avx512f") &&
         __builtin_cpu_supports("avx512dq") &&

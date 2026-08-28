@@ -795,6 +795,20 @@ class _MixedRouteModel(torch.nn.Module):
         return (h @ self.adamw_gate) * self.scale
 
 
+class _AlternatingHeadModel(torch.nn.Module):
+    """Model whose task-specific heads produce two gradient signatures."""
+
+    def __init__(self, device: torch.device) -> None:
+        super().__init__()
+        self.shared = torch.nn.Linear(32, 32, device=device)
+        self.heads = torch.nn.ModuleList(
+            [torch.nn.Linear(32, 16, device=device) for _ in range(2)]
+        )
+
+    def forward(self, x: torch.Tensor, head: int) -> torch.Tensor:
+        return self.heads[head](torch.tanh(self.shared(x)))
+
+
 @unittest.skipIf(not torch.cuda.is_available(), "CUDA graph capture needs CUDA")
 class TestHybridMuonCudaGraph(unittest.TestCase):
     """The whole-step CUDA graph must be an exact execution detail.
@@ -802,7 +816,7 @@ class TestHybridMuonCudaGraph(unittest.TestCase):
     Every test runs a coupled trajectory -- the gradients of each step
     depend on every earlier update -- with a per-step learning-rate
     schedule, so the graph's device-resident scalars (learning rate,
-    bias-correction powers) are exercised against the eager execution of
+    bias corrections) are exercised against the eager execution of
     the identical update.
     """
 
@@ -817,6 +831,20 @@ class TestHybridMuonCudaGraph(unittest.TestCase):
     def _make(self, graph_on: bool) -> tuple[torch.nn.Module, HybridMuonOptimizer]:
         torch.manual_seed(7)
         model = _MixedRouteModel(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            weight_decay=0.01,
+            named_parameters=list(model.named_parameters()),
+        )
+        optimizer._graph_enabled = graph_on
+        return model, optimizer
+
+    def _make_alternating(
+        self, graph_on: bool
+    ) -> tuple[_AlternatingHeadModel, HybridMuonOptimizer]:
+        torch.manual_seed(17)
+        model = _AlternatingHeadModel(self.device)
         optimizer = HybridMuonOptimizer(
             model.parameters(),
             lr=0.02,
@@ -843,12 +871,29 @@ class TestHybridMuonCudaGraph(unittest.TestCase):
         torch.cuda.synchronize()
         return [p.detach().clone() for p in model.parameters()]
 
+    def _run_alternating(
+        self,
+        model: _AlternatingHeadModel,
+        optimizer: HybridMuonOptimizer,
+        start_step: int,
+        end_step: int,
+    ) -> list[torch.Tensor]:
+        for step in range(start_step, end_step):
+            for group in optimizer.param_groups:
+                group["lr"] = 0.02 * (0.8**step)
+            optimizer.zero_grad(set_to_none=True)
+            loss = ((model(self.inputs, step % 2) - self.targets) ** 2).mean()
+            loss.backward()
+            optimizer.step()
+        torch.cuda.synchronize()
+        return [p.detach().clone() for p in model.parameters()]
+
     def test_graph_matches_eager_trajectory(self) -> None:
         """Graph and eager trajectories agree on a deterministic model."""
         eager = self._run(*self._make(graph_on=False), self.N_STEPS)
         graph_model, graph_opt = self._make(graph_on=True)
         graph = self._run(graph_model, graph_opt, self.N_STEPS)
-        self.assertIsNotNone(graph_opt._graph, "graph was never captured")
+        self.assertEqual(len(graph_opt._graphs), 1, "graph was never captured")
         # The replay re-executes the captured kernel sequence on the same
         # operands, so on a deterministic model the trajectories are
         # bitwise identical; any tolerance would hide a replay-frozen
@@ -872,39 +917,170 @@ class TestHybridMuonCudaGraph(unittest.TestCase):
         )
         self.assertGreater(max_diff, 1e-5)
 
-    def test_bias_powers_advance_inside_graph(self) -> None:
-        """The bias-correction powers evolve across graph replays."""
+    def test_uniform_bias_clock_advances_inside_graph(self) -> None:
+        """A fixed owner set retains the group-clock fast path."""
         model, optimizer = self._make(graph_on=True)
         self._run(model, optimizer, self.N_STEPS)
-        beta1 = optimizer.param_groups[0]["adam_betas"][0]
-        pow1 = optimizer.param_groups[0]["beta1_pow_device"].item()
-        self.assertAlmostEqual(pow1, beta1**self.N_STEPS, places=6)
+        group = optimizer.param_groups[0]
+        beta1, beta2 = group["adam_betas"]
+        self.assertFalse(optimizer._per_parameter_adam_clock)
+        self.assertAlmostEqual(
+            group["beta1_pow_device"].item(), beta1**self.N_STEPS, places=6
+        )
+        self.assertAlmostEqual(
+            group["beta2_pow_device"].item(), beta2**self.N_STEPS, places=6
+        )
+        for param in model.parameters():
+            state = optimizer.state[param]
+            if "exp_avg" in state:
+                self.assertNotIn("bias_correction1", state)
+                self.assertNotIn("bias_correction2", state)
 
     def test_legacy_bias_power_migration(self) -> None:
-        """Per-parameter float powers from an old checkpoint seed the group."""
+        """Per-parameter float powers become float32 device corrections."""
         model, optimizer = self._make(graph_on=True)
         self._run(model, optimizer, 3)
         state_dict = optimizer.state_dict()
-        # Rewrite the state into the legacy layout: per-parameter float
-        # powers, no group tensors.
         for group in state_dict["param_groups"]:
-            group.pop("beta1_pow_device", None)
-            group.pop("beta2_pow_device", None)
             group.pop("lr_device", None)
         for state in state_dict["state"].values():
             if "exp_avg" in state:
                 state["beta1_pow"] = 0.9**3
                 state["beta2_pow"] = 0.95**3
 
+        _model2, optimizer2 = self._make(graph_on=True)
+        optimizer2.load_state_dict(state_dict)
+        optimizer2._build_param_routing()
+        optimizer2._migrate_bias_corrections()
+        self.assertTrue(optimizer2._per_parameter_adam_clock)
+        for param, state in optimizer2.state.items():
+            if "exp_avg" in state:
+                self.assertEqual(state["bias_correction1"].dtype, torch.float32)
+                self.assertEqual(state["bias_correction1"].device, param.device)
+                self.assertAlmostEqual(
+                    state["bias_correction1"].item(), 1.0 - 0.9**3, places=6
+                )
+                self.assertAlmostEqual(
+                    state["bias_correction2"].item(), 1.0 - 0.95**3, places=6
+                )
+
+    def test_group_bias_power_migration(self) -> None:
+        """Single-signature checkpoints retain the uniform fast path."""
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, 3)
+        state_dict = optimizer.state_dict()
+        for group in state_dict["param_groups"]:
+            group["beta1_pow_device"] = torch.tensor(0.9**3, device=self.device)
+            group["beta2_pow_device"] = torch.tensor(0.95**3, device=self.device)
+        for state in state_dict["state"].values():
+            state.pop("bias_correction1", None)
+            state.pop("bias_correction2", None)
+
         model2, optimizer2 = self._make(graph_on=True)
         optimizer2.load_state_dict(state_dict)
         optimizer2._build_param_routing()
-        optimizer2._migrate_legacy_bias_powers()
+        optimizer2._migrate_bias_corrections()
         group = optimizer2.param_groups[0]
+        self.assertFalse(optimizer2._per_parameter_adam_clock)
         self.assertAlmostEqual(group["beta1_pow_device"].item(), 0.9**3, places=6)
         self.assertAlmostEqual(group["beta2_pow_device"].item(), 0.95**3, places=6)
         for state in optimizer2.state.values():
-            self.assertNotIn("beta1_pow", state)
+            if "exp_avg" in state:
+                self.assertNotIn("bias_correction1", state)
+                self.assertNotIn("bias_correction2", state)
+
+    def test_late_adam_owner_starts_at_its_first_update(self) -> None:
+        """A newly active task head starts at Adam step one."""
+        for use_foreach in (True, False):
+            first = torch.nn.Parameter(torch.zeros(4, device=self.device))
+            late = torch.nn.Parameter(torch.zeros(4, device=self.device))
+            optimizer = HybridMuonOptimizer(
+                [first, late],
+                lr=0.1,
+                weight_decay=0.0,
+                use_foreach=use_foreach,
+            )
+
+            for _ in range(3):
+                optimizer.zero_grad(set_to_none=True)
+                first.grad = torch.ones_like(first)
+                optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            late.grad = torch.ones_like(late)
+            optimizer.step()
+
+            with self.subTest(use_foreach=use_foreach):
+                torch.testing.assert_close(
+                    late, torch.full_like(late, -0.1), rtol=0.0, atol=1e-7
+                )
+                self.assertTrue(optimizer._per_parameter_adam_clock)
+                self.assertAlmostEqual(
+                    optimizer.state[first]["bias_correction1"].item(),
+                    1.0 - 0.9**3,
+                    places=6,
+                )
+                self.assertAlmostEqual(
+                    optimizer.state[late]["bias_correction1"].item(),
+                    0.1,
+                    places=6,
+                )
+
+    def test_dynamic_signatures_match_eager_trajectory(self) -> None:
+        """Alternating task heads use independent cached optimizer graphs."""
+        n_steps = 10
+        eager = self._run_alternating(
+            *self._make_alternating(graph_on=False), 0, n_steps
+        )
+        graph_model, graph_opt = self._make_alternating(graph_on=True)
+        graph = self._run_alternating(graph_model, graph_opt, 0, n_steps)
+
+        self.assertEqual(len(graph_opt._graphs), 2)
+        self.assertFalse(graph_opt._graph_warmups)
+        self.assertTrue(graph_opt._per_parameter_adam_clock)
+        self.assertEqual(
+            sum(buffer is not None for buffer in graph_opt._static_grad_buffers),
+            len(tuple(graph_model.parameters())),
+        )
+        for entry in graph_opt._graphs.values():
+            self.assertEqual(entry.graph.pool(), graph_opt._graph_pool)
+        for eager_param, graph_param in zip(eager, graph, strict=True):
+            torch.testing.assert_close(eager_param, graph_param, rtol=0.0, atol=0.0)
+
+        beta1 = graph_opt.param_groups[0]["adam_betas"][0]
+        self.assertAlmostEqual(
+            graph_opt.state[graph_model.shared.bias]["bias_correction1"].item(),
+            1.0 - beta1**n_steps,
+            places=6,
+        )
+        for head in graph_model.heads:
+            self.assertAlmostEqual(
+                graph_opt.state[head.bias]["bias_correction1"].item(),
+                1.0 - beta1 ** (n_steps // 2),
+                places=6,
+            )
+
+    def test_dynamic_state_dict_roundtrip_resumes_trajectory(self) -> None:
+        """Alternating-head Adam clocks survive a checkpoint roundtrip."""
+        n_steps = 10
+        reference = self._run_alternating(
+            *self._make_alternating(graph_on=True), 0, n_steps
+        )
+
+        model, optimizer = self._make_alternating(graph_on=True)
+        self._run_alternating(model, optimizer, 0, 5)
+        model_state = model.state_dict()
+        optimizer_state = optimizer.state_dict()
+
+        model2, optimizer2 = self._make_alternating(graph_on=True)
+        model2.load_state_dict(model_state)
+        optimizer2.load_state_dict(optimizer_state)
+        self._run_alternating(model2, optimizer2, 5, n_steps)
+        for reference_param, resumed_param in zip(
+            reference, model2.parameters(), strict=True
+        ):
+            torch.testing.assert_close(
+                reference_param, resumed_param.detach(), rtol=0.0, atol=0.0
+            )
 
     def test_state_dict_roundtrip_resumes_trajectory(self) -> None:
         """Save/load mid-trajectory reproduces the uninterrupted run."""
@@ -935,7 +1111,7 @@ class TestHybridMuonCudaGraph(unittest.TestCase):
         """The eager reference execution never captures a graph."""
         model, optimizer = self._make(graph_on=False)
         self._run(model, optimizer, 4)
-        self.assertIsNone(optimizer._graph)
+        self.assertFalse(optimizer._graphs)
 
 
 if __name__ == "__main__":

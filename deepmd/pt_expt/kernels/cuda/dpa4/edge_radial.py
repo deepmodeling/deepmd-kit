@@ -22,6 +22,9 @@ from __future__ import (
 )
 
 import math
+from functools import (
+    cache,
+)
 from typing import (
     Any,
 )
@@ -38,8 +41,6 @@ __all__ = [
     "op_available",
     "series_coefficients",
 ]
-
-_registered = False
 
 BESSEL = 0
 GAUSSIAN = 1
@@ -124,17 +125,20 @@ def _backward(ctx: Any, grad_env: torch.Tensor, grad_rbf: torch.Tensor) -> tuple
     return grad_len.reshape(edge_len.shape), None, None, None, None, None, None, None
 
 
-def ensure_registered() -> None:
-    """Register fake and autograd implementations. Safe to call repeatedly."""
-    global _registered
-    if _registered or not op_available():
-        return
+@cache
+def _register_ops() -> None:
+    """Register fake and autograd implementations once."""
     torch.library.register_fake("deepmd::dpa4_edge_radial")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4_edge_radial_backward")(_backward_fake)
     torch.library.register_autograd(
         "deepmd::dpa4_edge_radial", _backward, setup_context=_setup_context
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake and autograd implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 def edge_radial(

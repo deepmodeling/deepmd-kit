@@ -18,6 +18,9 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
     Any,
 )
@@ -29,8 +32,6 @@ __all__ = [
     "op_available",
     "zonal_scatter",
 ]
-
-_registered = False
 
 # Degrees with an instantiation, mirroring ``DPA4_ZONAL_FOR_EACH_LMAX`` in
 # ``source/op/pt/dpa4/zonal_scatter.cu``.
@@ -86,17 +87,20 @@ def _backward(ctx: Any, grad_out: torch.Tensor) -> tuple:
     return g_zonal, g_radial, None, None, None, g_scale, None
 
 
-def ensure_registered() -> None:
-    """Register fake and autograd implementations. Safe to call repeatedly."""
-    global _registered
-    if _registered or not op_available():
-        return
+@cache
+def _register_ops() -> None:
+    """Register fake and autograd implementations once."""
     torch.library.register_fake("deepmd::dpa4_zonal_scatter")(_forward_fake)
     torch.library.register_fake("deepmd::dpa4_zonal_scatter_backward")(_backward_fake)
     torch.library.register_autograd(
         "deepmd::dpa4_zonal_scatter", _backward, setup_context=_setup_context
     )
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake and autograd implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 def zonal_scatter(

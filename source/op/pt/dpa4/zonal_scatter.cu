@@ -317,7 +317,7 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4_zonal_scatter_backward(
   dst = dst.to(torch::kLong).contiguous();
   node_scale = node_scale.contiguous().reshape({-1});
 
-  auto g_zonal = torch::empty_like(zonal);
+  auto g_zonal = torch::zeros_like(zonal);
   auto g_radial = torch::zeros_like(radial);
   const long n_edge = zonal.size(0);
   const int n_slot = static_cast<int>(radial.size(1));

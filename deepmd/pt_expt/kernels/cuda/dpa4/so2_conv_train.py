@@ -51,6 +51,9 @@ from __future__ import (
     annotations,
 )
 
+from functools import (
+    cache,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -72,8 +75,6 @@ __all__ = [
     "make_cuda_so2_value",
     "op_available",
 ]
-
-_registered = False
 
 
 def op_available() -> bool:
@@ -271,15 +272,18 @@ def _bwd2_fake(
     )
 
 
-def ensure_registered() -> None:
-    """Register the fake implementations the compile pipeline requires."""
-    global _registered
-    if _registered or not op_available():
-        return
+@cache
+def _register_ops() -> None:
+    """Register the fake implementations the compile pipeline requires once."""
     torch.library.register_fake("deepmd::sezm_so2_value_fwd")(_fwd_fake)
     torch.library.register_fake("deepmd::sezm_so2_value_bwd")(_bwd_fake)
     torch.library.register_fake("deepmd::sezm_so2_value_bwd2")(_bwd2_fake)
-    _registered = True
+
+
+def ensure_registered() -> None:
+    """Register fake implementations when the op is available."""
+    if op_available():
+        _register_ops()
 
 
 def _value_train_impl(
@@ -919,10 +923,14 @@ class SO2ValueTrainCuda:
         self._run_coeff: Tensor | None = None
         self._run_exponents = [int(value) for value in run_exponents.reshape(-1)]
 
-    def _run_coefficients(self, device: torch.device) -> Tensor:
+    def _run_coefficients(self, device: torch.device, dtype: torch.dtype) -> Tensor:
         """Return the packed-run coefficient table on the compute device."""
-        if self._run_coeff is None or self._run_coeff.device != device:
-            self._run_coeff = self._run_coeff_cpu.to(device)
+        if (
+            self._run_coeff is None
+            or self._run_coeff.device != device
+            or self._run_coeff.dtype != dtype
+        ):
+            self._run_coeff = self._run_coeff_cpu.to(device=device, dtype=dtype)
         return self._run_coeff
 
     @torch.amp.autocast("cuda", enabled=False)
@@ -944,7 +952,9 @@ class SO2ValueTrainCuda:
             )
             runs = torch.matmul(
                 monomials,
-                self._run_coefficients(quaternion.device).transpose(0, 1),
+                self._run_coefficients(quaternion.device, monomials.dtype).transpose(
+                    0, 1
+                ),
             )
             if store is not None:
                 store[key] = runs

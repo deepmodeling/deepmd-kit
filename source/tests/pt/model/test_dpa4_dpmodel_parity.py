@@ -426,6 +426,23 @@ class TestRadialParity:
         r = self._r_grid()
         assert_parity(dp_mod.call(r), pt_mod(to_pt(r)))
 
+    @pytest.mark.parametrize("trainable", [True, False])
+    def test_radial_basis_roundtrip_preserves_trainable(self, trainable: bool) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        radial_basis = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=8,
+            dtype=torch.float64,
+            trainable=trainable,
+        )
+        restored = PTRadialBasis.deserialize(radial_basis.serialize())
+
+        assert restored.trainable is trainable
+        assert restored.adam_freqs.requires_grad is trainable
+
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
     @pytest.mark.parametrize("apply_envelope", [True, False])  # both envelope modes
     def test_radial_basis_roundtrip(self, basis_type, apply_envelope) -> None:
