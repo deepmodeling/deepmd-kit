@@ -37,8 +37,8 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
     * ``"type"`` is renamed to ``"atype"`` (int64).
     * ``"natoms_vec"`` (1-D) is tiled to 2-D ``[nframes, 2+ntypes]``
       and stored as ``"natoms"``.
-    * Non-periodic ``default_mesh`` encodings convert the zero ``box``
-      placeholder to ``None``.
+    * Non-periodic ``default_mesh`` encodings set the canonical model input
+      ``box`` to ``None``.
     * ``find_*`` flags are converted to ``np.bool_``.
     * Metadata keys (``default_mesh``, ``sid``, ``fid``) are dropped.
 
