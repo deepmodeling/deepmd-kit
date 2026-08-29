@@ -258,8 +258,10 @@ if(NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
   )
   # TensorFlow 2.21 packages may not record protobuf as a direct runtime
   # dependency. If the runtime scan found protobuf, preserve that exact library
-  # and use its installation prefix to guide the header search. Otherwise, allow
-  # FindProtobuf to locate the external protobuf package normally.
+  # and use its installation prefix to guide the header search. Check both flat
+  # <prefix>/lib and multiarch <prefix>/lib/<triplet> layouts before trusting
+  # the inferred prefix. Otherwise, allow FindProtobuf to locate the external
+  # protobuf package normally.
   if(Protobuf_LIBRARY)
     set(_TensorFlow_PROTOBUF_ROOT_WAS_DEFINED FALSE)
     if(DEFINED Protobuf_ROOT)
@@ -269,7 +271,17 @@ if(NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
     get_filename_component(_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY
                            "${Protobuf_LIBRARY}" DIRECTORY)
     get_filename_component(
-      Protobuf_ROOT "${_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY}" DIRECTORY)
+      _TensorFlow_PROTOBUF_PREFIX "${_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY}"
+      DIRECTORY)
+    if(NOT EXISTS
+       "${_TensorFlow_PROTOBUF_PREFIX}/include/google/protobuf/service.h")
+      get_filename_component(_TensorFlow_PROTOBUF_PREFIX
+                             "${_TensorFlow_PROTOBUF_PREFIX}" DIRECTORY)
+    endif()
+    if(EXISTS
+       "${_TensorFlow_PROTOBUF_PREFIX}/include/google/protobuf/service.h")
+      set(Protobuf_ROOT "${_TensorFlow_PROTOBUF_PREFIX}")
+    endif()
   endif()
   find_package(Protobuf REQUIRED)
   if(DEFINED _TensorFlow_PROTOBUF_ROOT_WAS_DEFINED)
@@ -281,6 +293,7 @@ if(NOT TensorFlow_INCLUDE_DIRS_GOOGLE)
     unset(_TensorFlow_PROTOBUF_ROOT_WAS_DEFINED)
     unset(_TensorFlow_SAVED_PROTOBUF_ROOT)
     unset(_TensorFlow_PROTOBUF_LIBRARY_DIRECTORY)
+    unset(_TensorFlow_PROTOBUF_PREFIX)
   endif()
   set(TensorFlow_INCLUDE_DIRS_GOOGLE ${Protobuf_INCLUDE_DIRS})
   set(Protobuf_LIBRARY ${Protobuf_LIBRARIES})
