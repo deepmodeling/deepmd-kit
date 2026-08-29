@@ -393,7 +393,9 @@ def _raw_frame_availability(
                     explicit_true |= bit
         else:
             bit = key_bits.get(name)
-            if bit is not None:
+            if bit is not None and (
+                name != "box" or not np.allclose(_decode_value(value), 0.0)
+            ):
                 present |= bit
     return present & (~explicit_known | explicit_true)
 
@@ -737,6 +739,11 @@ def _frame_source_available(frame: dict[str, Any], key: str) -> bool:
     source_present = _is_encoded_array(value) or isinstance(
         value, (np.ndarray, np.generic, int, float, bool)
     )
+    if source_present and key == "box":
+        # A zero cell is DeePMD's non-periodic sentinel, not an available
+        # periodic box. Treating it as present would mix PBC and non-PBC
+        # frames under one scalar find_box flag.
+        source_present = not np.allclose(_decode_value(value), 0.0)
     find_key = f"find_{key}"
     if find_key in frame:
         return source_present and bool(
@@ -1970,8 +1977,17 @@ class LmdbDataReader:
         self,
         lmdb_path: str,
         type_map: list[str],
-        batch_size: int | str = "auto",
+        batch_size: int | str | Sequence[int | str] = "auto",
     ) -> None:
+        if isinstance(batch_size, (Sequence, np.ndarray)) and not isinstance(
+            batch_size, str
+        ):
+            if len(batch_size) != 1:
+                raise ValueError(
+                    "One LMDB path is one training dataset and therefore "
+                    "requires exactly one batch_size value."
+                )
+            batch_size = batch_size[0]
         self.lmdb_path = str(Path(lmdb_path).resolve())
         self._type_map = type_map
         # Read before opening the frame-serving environment, which disables
@@ -2235,14 +2251,8 @@ class LmdbDataReader:
     def __len__(self) -> int:
         return self.nframes
 
-    def __getitem__(self, index: int) -> dict[str, Any]:
-        """Read frame from LMDB, decode, remap keys, return dict of numpy arrays.
-
-        ``index`` is a dataset-level index in ``[0, len(self))``. Under
-        ``filter:N`` the LMDB key space may have gaps (dropped frames), so
-        we translate through ``self._retained_keys`` before hitting LMDB.
-        """
-        self._data_requirements_frozen = True
+    def _read_frame(self, index: int) -> dict[str, Any]:
+        """Decode one frame without changing requirement-registration state."""
         if index < 0 or index >= self.nframes:
             raise IndexError(f"dataset index {index} out of range [0, {self.nframes})")
         original_key = int(self._retained_keys[index])
@@ -2258,6 +2268,25 @@ class LmdbDataReader:
             self._decode_config,
             copy_arrays=True,
         )
+
+    def peek_frame(self, index: int) -> dict[str, Any]:
+        """Inspect one frame without freezing later requirement registration.
+
+        Structural probes such as periodic-boundary detection happen before a
+        model supplies its label requirements. They may inspect a frame, but
+        must not turn that inspection into the first training read.
+        """
+        return self._read_frame(index)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        """Read and decode one frame, freezing the registered data contract.
+
+        ``index`` is a dataset-level index in ``[0, len(self))``. Under
+        ``filter:N`` the LMDB key space may have gaps, which :meth:`_read_frame`
+        translates through ``self._retained_keys``.
+        """
+        self._data_requirements_frozen = True
+        return self._read_frame(index)
 
     def original_keys(self, indices: Sequence[int]) -> list[int]:
         """Translate dataset indices to original integer LMDB keys."""
@@ -2854,13 +2883,17 @@ def compute_block_targets(
         Each element is ``(system_indices_in_block, target_frame_count)``.
         Returns empty list if no expansion is needed (all targets == actual).
     """
-    # Parse block definitions from the auto_prob string
-    # Format: "prob_sys_size;stt:end:weight;stt:end:weight;..."
-    block_str = auto_prob_style.split(";")[1:]
+    # ``prob_uniform`` is one equal-weight block per original system. The
+    # extended ``prob_sys_size`` form names arbitrary ranges explicitly.
     blocks: list[tuple[int, int, float]] = []
-    for part in block_str:
-        stt, end, weight = part.split(":")
-        blocks.append((int(stt), int(end), float(weight)))
+    if auto_prob_style == "prob_uniform":
+        blocks = [(system_id, system_id + 1, 1.0) for system_id in range(nsystems)]
+    elif auto_prob_style.startswith("prob_sys_size"):
+        for part in auto_prob_style.split(";")[1:]:
+            stt, end, weight = part.split(":")
+            blocks.append((int(stt), int(end), float(weight)))
+    else:
+        raise RuntimeError(f"Unknown auto prob style: {auto_prob_style}")
 
     # A bare ``prob_sys_size`` names no blocks: it asks for a probability
     # proportional to system size, which is what sampling the merged frames
@@ -2900,9 +2933,6 @@ def compute_block_targets(
             "compute_block_targets: dropping empty blocks (all systems have "
             f"0 frames, likely after filter:N): {dropped}. Remaining block "
             "weights will be renormalised to sum to 1.0."
-        )
-        auto_prob_style = "prob_sys_size;" + ";".join(
-            f"{stt}:{end}:{weight}" for stt, end, weight in nonempty
         )
         blocks = nonempty
 
@@ -3688,22 +3718,29 @@ def make_neighbor_stat_data(
     )
 
     reader = LmdbDataReader(lmdb_path, type_map=type_map)
-    nframes = len(reader)
-    rng = np.random.RandomState(42)
-    if nframes > max_frames:
-        indices = np.sort(rng.choice(nframes, max_frames, replace=False))
-    else:
-        indices = np.arange(nframes, dtype=np.int64)
+    try:
+        nframes = len(reader)
+        rng = np.random.RandomState(42)
+        if nframes > max_frames:
+            indices = np.sort(rng.choice(nframes, max_frames, replace=False))
+        else:
+            indices = np.arange(nframes, dtype=np.int64)
 
-    # Read sampled frames, group by nloc
-    nloc_frames: dict[int, list[tuple[np.ndarray, np.ndarray, np.ndarray | None]]] = {}
-    for idx in indices:
-        frame = reader[int(idx)]
-        atype = frame["atype"]
-        nloc = len(atype)
-        nloc_frames.setdefault(nloc, []).append(
-            (frame["coord"], atype, frame.get("box"))
-        )
+        # The copied arrays remain valid after the reader is closed, so this
+        # helper does not leave an LMDB transaction or mmap alive in callers.
+        nloc_frames: dict[
+            int, list[tuple[np.ndarray, np.ndarray, np.ndarray | None]]
+        ] = {}
+        for idx in indices:
+            frame = reader[int(idx)]
+            atype = frame["atype"]
+            nloc = len(atype)
+            nloc_frames.setdefault(nloc, []).append(
+                (frame["coord"], atype, frame.get("box"))
+            )
+        ntypes = len(type_map) if type_map else reader._ntypes
+    finally:
+        reader.close()
 
     # Build per-nloc data_system proxies
     data_systems = []
@@ -3725,7 +3762,6 @@ def make_neighbor_stat_data(
         data_systems.append(proxy)
         system_dirs.append(label)
 
-    ntypes = len(type_map) if type_map else reader._ntypes
     return SimpleNamespace(
         system_dirs=system_dirs,
         data_systems=data_systems,
@@ -3903,18 +3939,16 @@ class LmdbTestData:
                 )
         return frames
 
-    def __del__(self) -> None:
-        """Release the LMDB environment ref-count on garbage collection.
-
-        The count is released only once, and only if construction got as far
-        as taking it: an instance that failed earlier holds no reference, and
-        releasing one it never took would close the environment underneath
-        whichever reader does hold it.
-        """
+    def close(self) -> None:
+        """Release the LMDB environment ref-count idempotently."""
         if getattr(self, "_env", None) is None:
             return
         self._env = None
         _close_lmdb(self.lmdb_path)
+
+    def __del__(self) -> None:
+        """Release the LMDB environment ref-count on garbage collection."""
+        self.close()
 
     @property
     def nloc_groups(self) -> dict[int, np.ndarray]:
@@ -4278,13 +4312,32 @@ class LmdbTestDataNlocView:
         lmdb_test_data: "LmdbTestData",
         nloc: int,
         frame_indices: Sequence[int] | None = None,
+        *,
+        pbc: bool | None = None,
+        stat_groups: dict[str, Sequence[int]] | None = None,
     ) -> None:
         self._inner = lmdb_test_data
         self._nloc = nloc
         self._frame_indices = frame_indices
+        self._pbc = pbc
+        self._stat_groups = stat_groups or {}
+        self.dirs = list(self._stat_groups)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._inner, name)
+
+    @property
+    def pbc(self) -> bool:
+        """Whether every frame represented by this view is periodic."""
+        return self._inner.pbc if self._pbc is None else self._pbc
+
+    def get_natoms(self) -> int:
+        """Return the fixed atom count of this stack-compatible view."""
+        return self._nloc
+
+    def _load_set(self, set_name: str) -> dict[str, Any]:
+        """Load one bounded neighbor-stat chunk from this view."""
+        return self._inner.get_test_by_indices(self._stat_groups[str(set_name)])
 
     def get_test(self) -> dict[str, Any]:
         if self._frame_indices is not None:

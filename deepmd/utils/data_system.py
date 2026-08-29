@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import collections
 import hashlib
+import importlib.metadata
+import json
 import logging
 import os
 import shutil
+import socket
+import threading
 import time
 import warnings
 from functools import (
@@ -14,6 +18,7 @@ from pathlib import (
 )
 from typing import (
     Any,
+    Self,
 )
 
 import numpy as np
@@ -39,7 +44,15 @@ log = logging.getLogger(__name__)
 
 _DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
 _DPDATA_DEFAULT_OUT_FORMAT = "deepmd/lmdb"
-_DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str], list[str]] = {}
+_DPDATA_CONVERSION_SCHEMA_VERSION = "2"
+_DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str, str], list[str]] = {}
+_DPDATA_SOURCE_MTIME_CACHE: dict[tuple[str, str], tuple[float, float]] = {}
+# Neighbor-stat, trainer construction, and multi-task routing commonly query
+# the same directory within one startup. Reuse that O(file-count) scan while
+# still letting a long-lived process notice later source rewrites.
+_DPDATA_SOURCE_MTIME_CACHE_TTL = 60.0
+_CONVERSION_LOCK_HEARTBEAT_SECONDS = 5.0
+_CONVERSION_LOCK_STALE_SECONDS = 30.0
 
 
 def validate_lmdb_systems(
@@ -758,7 +771,7 @@ class LmdbDataSystem:
         self,
         lmdb_path: str,
         type_map: list[str],
-        batch_size: int | str = "auto",
+        batch_size: int | str | list[int | str] = "auto",
         auto_prob_style: str | None = None,
         seed: int | None = None,
     ) -> None:
@@ -767,6 +780,7 @@ class LmdbDataSystem:
         from deepmd.dpmodel.utils.lmdb_data import (
             LmdbBatchSampler,
             LmdbDataReader,
+            LmdbTestData,
             compute_block_targets,
         )
 
@@ -778,32 +792,16 @@ class LmdbDataSystem:
             )
 
         self.lmdb_path = lmdb_path
-        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
         self._type_map = list(type_map)
-        # LMDB is defined as mixed-type by its reader contract; determining
-        # this must not scan every frame during data-system initialization.
-        self.mixed_type = self._reader.mixed_type
-        self.nsystems = 1
-        self.system_dirs = [lmdb_path]
-        self.natoms = [
-            int(self._reader.frame_nlocs.max()) if len(self._reader.frame_nlocs) else 0
-        ]
-        self.batch_size = [self._reader.batch_size]
-        self.sys_probs = [1.0]
-        self.data_systems = [self]
-        self.pbc = self._detect_pbc()
+        self._closed = False
         self._data_dict = {
-            "box": {
-                "ndof": 9,
-                "atomic": False,
-                "must": False,
-                "high_prec": False,
-                "type_sel": None,
-                "repeat": 1,
-                "default": 0.0,
-                "dtype": None,
-                "output_natoms_for_type_sel": False,
-            },
+            "box": DataRequirementItem(
+                "box",
+                9,
+                atomic=False,
+                must=False,
+                default=np.zeros(9, dtype=GLOBAL_NP_FLOAT_PRECISION),
+            ).dict,
             "coord": {
                 "ndof": 3,
                 "atomic": True,
@@ -828,6 +826,34 @@ class LmdbDataSystem:
             },
         }
 
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
+        # Box availability is part of stack compatibility. Register it before
+        # any grouping so periodic and non-periodic frames never share the
+        # scalar ``find_box`` flag of one legacy batch.
+        box_requirement = DataRequirementItem(
+            "box",
+            9,
+            atomic=False,
+            must=False,
+            default=np.zeros(9, dtype=GLOBAL_NP_FLOAT_PRECISION),
+        )
+        self._reader.add_data_requirement([box_requirement])
+        self._test_data = LmdbTestData(
+            lmdb_path,
+            type_map=type_map,
+            shuffle_test=False,
+        )
+        self._test_data.add_data_requirement([box_requirement])
+        # LMDB is defined as mixed-type by its reader contract; determining
+        # this must not scan every frame during data-system initialization.
+        self.mixed_type = self._reader.mixed_type
+        self.nsystems = 1
+        self.natoms = [
+            int(self._reader.frame_nlocs.max()) if len(self._reader.frame_nlocs) else 0
+        ]
+        self.batch_size = [self._reader.batch_size]
+        self.sys_probs = [1.0]
+
         block_targets = None
         if auto_prob_style is not None and self._reader.frame_system_ids is not None:
             block_targets = compute_block_targets(
@@ -843,36 +869,94 @@ class LmdbDataSystem:
         )
         self.nbatches = [self._sampler.total_batches]
         self._iter = iter(self._sampler)
-        self._refresh_set_indices()
+        self._refresh_groups()
 
-    def _refresh_set_indices(self) -> None:
-        """Refresh stack-compatible groups after data requirements change."""
+    def _refresh_groups(self) -> None:
+        """Refresh bounded statistics chunks and full-validation views."""
         from deepmd.dpmodel.utils.lmdb_data import (
+            LmdbTestDataNlocView,
             collect_lmdb_sampling_groups,
         )
 
         groups = collect_lmdb_sampling_groups(self._reader)
-        self._nloc_set_indices = {
-            f"{self.lmdb_path}#group={group_idx}:nloc={nloc}": indices
-            for group_idx, (nloc, indices) in enumerate(groups)
-        }
+        self._stat_groups = groups
+        self._stat_offsets = [0] * len(groups)
+
+        # Neighbor statistics are a bounded sample, matching the dedicated
+        # LMDB path. Chunks additionally cap decoded atoms so one large-nloc
+        # group cannot create a large transient Python/NumPy allocation.
+        selected = np.zeros(len(self._reader), dtype=bool)
+        max_frames = min(len(self._reader), 2000)
+        if max_frames:
+            rng = np.random.RandomState(42)
+            chosen = (
+                rng.choice(len(self._reader), max_frames, replace=False)
+                if max_frames < len(self._reader)
+                else np.arange(len(self._reader), dtype=np.int64)
+            )
+            selected[np.asarray(chosen, dtype=np.int64)] = True
+
+        self._nloc_set_indices: dict[str, np.ndarray] = {}
+        data_systems = []
+        system_dirs: list[str] = []
+        any_pbc = False
+        for group_idx, (nloc, indices) in enumerate(groups):
+            group_label = f"{self.lmdb_path}#group={group_idx}:nloc={nloc}"
+            original_indices = np.asarray(
+                self._reader.original_keys(indices), dtype=np.int64
+            )
+            frame = self._reader.peek_frame(int(indices[0]))
+            group_pbc = bool(float(frame.get("find_box", 0.0)) > 0.5)
+            any_pbc = any_pbc or group_pbc
+
+            stat_groups: dict[str, np.ndarray] = {}
+            sampled_indices = np.asarray(indices)[selected[np.asarray(indices)]]
+            chunk_size = max(1, min(128, 20000 // max(int(nloc), 1)))
+            for chunk_idx, start in enumerate(
+                range(0, len(sampled_indices), chunk_size)
+            ):
+                chunk = sampled_indices[start : start + chunk_size]
+                set_name = f"{group_label}:chunk={chunk_idx}"
+                self._nloc_set_indices[set_name] = np.asarray(chunk, dtype=np.int64)
+                stat_groups[set_name] = np.asarray(
+                    self._reader.original_keys(chunk), dtype=np.int64
+                )
+
+            data_systems.append(
+                LmdbTestDataNlocView(
+                    self._test_data,
+                    int(nloc),
+                    original_indices,
+                    pbc=group_pbc,
+                    stat_groups=stat_groups,
+                )
+            )
+            system_dirs.append(group_label)
+
+        # These views do not point back to this adapter, avoiding the
+        # ``data_systems=[self]`` reference cycle while satisfying both the
+        # neighbor-stat and JAX/TF2 full-validation contracts.
+        self.data_systems = data_systems
+        self.system_dirs = system_dirs
         self.dirs = list(self._nloc_set_indices)
+        self.pbc = any_pbc
 
     def _detect_pbc(self) -> bool:
         """Return True when LMDB frames contain a non-zero simulation box."""
         if len(self._reader) == 0:
             return False
-        box = self._reader[0].get("box")
-        return box is not None and not np.allclose(box, 0.0)
+        frame = self._reader.peek_frame(0)
+        return bool(float(frame.get("find_box", 0.0)) > 0.5)
 
     def add_data_requirements(
         self, data_requirements: list[DataRequirementItem]
     ) -> None:
         """Add label/auxiliary data requirements."""
+        self._reader.add_data_requirement(data_requirements)
+        self._test_data.add_data_requirement(data_requirements)
         for item in data_requirements:
             self._data_dict[item.key] = item.dict
-        self._reader.add_data_requirement(data_requirements)
-        self._refresh_set_indices()
+        self._refresh_groups()
         self.nbatches = [self._sampler.total_batches]
         self._iter = iter(self._sampler)
 
@@ -912,10 +996,9 @@ class LmdbDataSystem:
         return self._data_dict
 
     def _load_set(self, set_name: str) -> dict[str, Any]:
-        """Load one same-nloc LMDB group for legacy neighbor-stat code."""
+        """Load one bounded same-nloc chunk for legacy neighbor statistics."""
         indices = self._nloc_set_indices[str(set_name)]
-        frames = [self._reader[int(idx)] for idx in indices]
-        return self._stack_frames(frames)
+        return self._legacy_batch(self._reader.decode_batch(indices, ragged=False))
 
     def _next_indices(self) -> list[int]:
         try:
@@ -924,13 +1007,21 @@ class LmdbDataSystem:
             self._iter = iter(self._sampler)
             return next(self._iter)
 
-    def _stack_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
-        if not frames:
-            raise ValueError("Cannot stack an empty LMDB frame batch.")
+    def _legacy_batch(self, batch: dict[str, Any]) -> dict[str, Any]:
+        """Translate a canonical LMDB batch to the legacy data-system shape."""
+        coord = np.asarray(batch["coord"])
+        nframes = coord.shape[0]
         out: dict[str, Any] = {}
         structural_keys = {"coord", "box"}
-        for key in frames[0]:
-            if key in {"atype", "fid", "natoms", "real_natoms_vec"}:
+        for key, value in batch.items():
+            if key in {
+                "atype",
+                "natoms",
+                "real_natoms_vec",
+                "fid",
+                "sid",
+                "n_node",
+            }:
                 continue
             if key.startswith("find_") and key[5:] not in self._data_dict:
                 continue
@@ -940,25 +1031,27 @@ class LmdbDataSystem:
                 and key not in self._data_dict
             ):
                 continue
-            if key.startswith("find_"):
-                out[key] = np.asarray(frames[0][key], dtype=np.float32)
-            elif frames[0][key] is None:
+            if value is None:
                 out[key] = None
-            else:
-                arr = np.stack([frame[key] for frame in frames])
-                data_info = self._data_dict.get(key)
-                if data_info is not None and data_info["atomic"] and arr.ndim >= 3:
-                    arr = arr.reshape(arr.shape[0], -1)
-                out[key] = arr
+                continue
+            array = np.asarray(value)
+            data_info = self._data_dict.get(key)
+            if key == "coord" or (
+                data_info is not None and data_info["atomic"] and array.ndim >= 3
+            ):
+                array = array.reshape(nframes, -1)
+            out[key] = array
 
-        atype = np.stack([frame["atype"] for frame in frames]).astype(np.int32)
-        real_natoms_vec = np.stack([frame["natoms"] for frame in frames]).astype(
-            np.int32
+        atype = np.asarray(batch["atype"], dtype=np.int32)
+        real_natoms_vec = np.asarray(
+            batch.get("real_natoms_vec", batch["natoms"]), dtype=np.int32
         )
-        nloc = int(real_natoms_vec[:, 0].max())
+        if real_natoms_vec.ndim == 1:
+            real_natoms_vec = np.tile(real_natoms_vec, (nframes, 1))
+        pad_nloc = int(atype.shape[1])
         natoms_vec = np.concatenate(
             (
-                np.array([nloc, nloc], dtype=np.int32),
+                np.array([pad_nloc, pad_nloc], dtype=np.int32),
                 real_natoms_vec[:, 2:].max(axis=0).astype(np.int32),
             )
         )
@@ -967,14 +1060,13 @@ class LmdbDataSystem:
         out["natoms_vec"] = natoms_vec
         out["real_natoms_vec"] = real_natoms_vec
         if "box" not in out or out["box"] is None:
-            out["box"] = np.zeros((len(frames), 9), dtype=GLOBAL_NP_FLOAT_PRECISION)
+            out["box"] = np.zeros((nframes, 9), dtype=GLOBAL_NP_FLOAT_PRECISION)
             out["find_box"] = np.float32(0.0)
         elif "find_box" not in out:
             out["find_box"] = np.float32(0.0 if np.allclose(out["box"], 0.0) else 1.0)
-        if "find_coord" not in out:
-            out["find_coord"] = np.float32(1.0)
+        out.setdefault("find_coord", np.float32(1.0))
         if "numb_copy" not in out:
-            out["numb_copy"] = np.ones((len(frames), 1), dtype=np.int64)
+            out["numb_copy"] = np.ones((nframes, 1), dtype=np.int64)
             out["find_numb_copy"] = np.float32(0.0)
         out["default_mesh"] = np.asarray(
             make_default_mesh(bool(float(out["find_box"]) > 0.5), self.mixed_type),
@@ -982,11 +1074,54 @@ class LmdbDataSystem:
         )
         return out
 
+    def _stack_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
+        """Collate already-decoded frames with the reader's flag semantics."""
+        if not frames:
+            raise ValueError("Cannot stack an empty LMDB frame batch.")
+        from deepmd.dpmodel.utils.lmdb_data import (
+            collate_lmdb_frames,
+            resolve_per_atom_keys,
+        )
+
+        per_atom_keys = resolve_per_atom_keys(frames[0], self._reader.decode_config)
+        return self._legacy_batch(collate_lmdb_frames(frames, per_atom_keys))
+
     def get_batch(self, sys_idx: int | None = None) -> dict[str, Any]:
         del sys_idx
         indices = self._next_indices()
-        frames = [self._reader[int(idx)] for idx in indices]
-        return self._stack_frames(frames)
+        return self._legacy_batch(self._reader.decode_batch(indices, ragged=False))
+
+    def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
+        """Return one bounded batch from a homogeneous statistical group."""
+        if not 0 <= sys_idx < len(self._stat_groups):
+            raise IndexError(f"Statistical system index {sys_idx} is out of range")
+        nloc, indices = self._stat_groups[sys_idx]
+        batch_size = self._get_stat_batch_size(nloc)
+        start = self._stat_offsets[sys_idx]
+        if start >= len(indices):
+            start = 0
+        stop = min(start + batch_size, len(indices))
+        self._stat_offsets[sys_idx] = stop
+        return self._legacy_batch(
+            self._reader.decode_batch(indices[start:stop], ragged=False)
+        )
+
+    def get_stat_nsystems(self) -> int:
+        """Return the number of stack-compatible statistical groups."""
+        return len(self._stat_groups)
+
+    def _get_stat_batch_size(self, nloc: int) -> int:
+        """Cap model-stat decoding by both frames and decoded atom rows."""
+        configured = self._reader.get_batch_size_for_nloc(nloc)
+        return max(1, min(configured, 128, 20000 // max(int(nloc), 1)))
+
+    def get_stat_numb_batches(self, sys_idx: int) -> int:
+        """Return the finite batch count of one statistical group."""
+        if not 0 <= sys_idx < len(self._stat_groups):
+            raise IndexError(f"Statistical system index {sys_idx} is out of range")
+        nloc, indices = self._stat_groups[sys_idx]
+        batch_size = self._get_stat_batch_size(nloc)
+        return (len(indices) + batch_size - 1) // batch_size
 
     def get_nsystems(self) -> int:
         return self.nsystems
@@ -1000,12 +1135,39 @@ class LmdbDataSystem:
     def get_type_map(self) -> list[str]:
         return self._type_map
 
+    @property
+    def type_map(self) -> list[str]:
+        """Model-side atom names exposed by the legacy data-system API."""
+        return self._type_map
+
     def get_batch_size(self) -> list[int]:
         return self.batch_size
 
     def print_summary(self, name: str, prob: Any | None = None) -> None:
         del prob
         self._reader.print_summary(name, self.sys_probs)
+
+    def close(self) -> None:
+        """Release LMDB readers idempotently."""
+        if getattr(self, "_closed", True):
+            return
+        self.data_systems = []
+        test_data = getattr(self, "_test_data", None)
+        if test_data is not None:
+            test_data.close()
+        reader = getattr(self, "_reader", None)
+        if reader is not None:
+            reader.close()
+        self._closed = True
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        self.close()
 
 
 def _format_name_length(name: str, width: int) -> str:
@@ -1169,6 +1331,78 @@ def _is_dpdata_lmdb_format(fmt: str) -> bool:
     return fmt in {"deepmd/lmdb", "lmdb"}
 
 
+def _canonical_dpdata_out_format(out_fmt: str | None) -> str:
+    """Return the canonical dpdata output format used by conversion caches."""
+    if out_fmt is None:
+        return _DPDATA_DEFAULT_OUT_FORMAT
+    out_fmt = out_fmt.lower()
+    return _DPDATA_DEFAULT_OUT_FORMAT if out_fmt == "lmdb" else out_fmt
+
+
+def conversion_will_write_lmdb(data_config: dict[str, Any]) -> bool:
+    """Whether a non-DeePMD input config will be converted to LMDB."""
+    data_format = data_config.get("format")
+    if data_format is None or _is_deepmd_data_format(data_format.lower()):
+        return False
+    out_format = data_config.get("out_format", data_config.get("output_format"))
+    return _is_dpdata_lmdb_format(_canonical_dpdata_out_format(out_format))
+
+
+def validate_backend_data_config(
+    data_config: dict[str, Any],
+    *,
+    backend_name: str,
+    lmdb_supported: bool,
+) -> None:
+    """Reject unsupported converted output before dpdata performs any I/O."""
+    if not lmdb_supported and conversion_will_write_lmdb(data_config):
+        raise NotImplementedError(
+            f"{backend_name} backend does not support LMDB data yet. "
+            "Choose out_format='deepmd/hdf5' for automatic conversion."
+        )
+
+
+def validate_lmdb_sampling_options(data_config: dict[str, Any]) -> None:
+    """Reject sampling options that cannot be represented by one LMDB route."""
+    if data_config.get("sys_probs") is not None:
+        raise ValueError(
+            "LMDB data does not support explicit sys_probs yet. Use auto_prob "
+            "('prob_sys_size', 'prob_uniform', or block weights) so sampling "
+            "can be derived from LMDB frame_system_ids."
+        )
+
+
+def close_data_systems(*values: Any) -> None:
+    """Close nested data-system mappings/sequences, ignoring shared objects."""
+    seen: set[int] = set()
+
+    def close_one(value: Any) -> None:
+        if value is None or id(value) in seen:
+            return
+        seen.add(id(value))
+        if isinstance(value, dict):
+            for child in value.values():
+                close_one(child)
+            return
+        if isinstance(value, (list, tuple)):
+            for child in value:
+                close_one(child)
+            return
+        close = getattr(value, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                log.warning(
+                    "Failed to close data system %r during cleanup",
+                    value,
+                    exc_info=True,
+                )
+
+    for value in values:
+        close_one(value)
+
+
 def _looks_like_extxyz(path: Path) -> bool:
     if not path.is_file():
         return False
@@ -1209,20 +1443,39 @@ def _iter_conversion_inputs(path: str, patterns: list[str] | None) -> list[str]:
 
 def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
     source_resolved = source.resolve(strict=False)
-    digest = hashlib.sha1(f"{source_resolved}|{fmt}|{out_fmt}".encode()).hexdigest()[
-        :16
-    ]
+    try:
+        dpdata_version = importlib.metadata.version("dpdata")
+    except importlib.metadata.PackageNotFoundError:
+        dpdata_version = "unknown"
+    digest = hashlib.sha1(
+        (
+            f"{source_resolved}|{fmt}|{out_fmt}|"
+            f"schema={_DPDATA_CONVERSION_SCHEMA_VERSION}|dpdata={dpdata_version}"
+        ).encode()
+    ).hexdigest()[:16]
     stem = source_resolved.stem or source_resolved.name or "dataset"
     safe_out_fmt = out_fmt.replace("/", "-")
     suffix = ".lmdb" if _is_dpdata_lmdb_format(out_fmt) else ""
     return Path.cwd() / _DPDATA_CACHE_DIR / f"{stem}-{safe_out_fmt}-{digest}{suffix}"
 
 
-def _source_mtime(source: Path, cache_file: Path) -> float:
+def _source_mtime(source: Path, cache_file: Path, *, force: bool = False) -> float:
     if source.is_file():
         return source.stat().st_mtime
     if not source.is_dir():
         return 0.0
+    cache_key = (
+        str(source.resolve(strict=False)),
+        str(cache_file.parent.resolve(strict=False)),
+    )
+    now = time.monotonic()
+    cached = _DPDATA_SOURCE_MTIME_CACHE.get(cache_key)
+    if (
+        not force
+        and cached is not None
+        and now - cached[0] < _DPDATA_SOURCE_MTIME_CACHE_TTL
+    ):
+        return cached[1]
     cache_dir = cache_file.parent.resolve(strict=False)
     latest = source.stat().st_mtime
     for item in source.rglob("*"):
@@ -1233,23 +1486,143 @@ def _source_mtime(source: Path, cache_file: Path) -> float:
             latest = max(latest, item.stat().st_mtime)
         except OSError:
             continue
+    _DPDATA_SOURCE_MTIME_CACHE[cache_key] = (now, latest)
     return latest
 
 
-def _is_conversion_current(source: Path, output: Path) -> bool:
+def _is_conversion_current(
+    source: Path, output: Path, *, force_source_scan: bool = False
+) -> bool:
     if not output.exists():
         return False
-    return output.stat().st_mtime >= _source_mtime(source, output)
+    return output.stat().st_mtime >= _source_mtime(
+        source, output, force=force_source_scan
+    )
+
+
+def _process_start_time(pid: int) -> str | None:
+    """Return Linux's stable process start token, if available."""
+    try:
+        stat_text = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    fields_after_name = stat_text.rsplit(")", 1)[1].split()
+    return fields_after_name[19] if len(fields_after_name) > 19 else None
+
+
+def _same_lock_file(lock_path: Path, expected: os.stat_result) -> bool:
+    """Whether *lock_path* still names the inode originally acquired/read."""
+    try:
+        current = lock_path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return (current.st_dev, current.st_ino) == (expected.st_dev, expected.st_ino)
+
+
+class _ConversionLock:
+    """Owned conversion lock with a heartbeat for cross-host stale recovery."""
+
+    def __init__(self, lock_path: Path, lock_fd: int) -> None:
+        self.path = lock_path
+        self._stat = os.fstat(lock_fd)
+        payload = {
+            "hostname": socket.gethostname(),
+            "pid": os.getpid(),
+            "process_start": _process_start_time(os.getpid()),
+            "created": time.time(),
+        }
+        with os.fdopen(lock_fd, "w") as fp:
+            json.dump(payload, fp)
+            fp.flush()
+            os.fsync(fp.fileno())
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._heartbeat,
+            name="deepmd-dpdata-conversion-lock",
+            daemon=True,
+        )
+        try:
+            self._thread.start()
+        except Exception:
+            if _same_lock_file(self.path, self._stat):
+                self.path.unlink(missing_ok=True)
+            raise
+
+    def _heartbeat(self) -> None:
+        while not self._stop.wait(_CONVERSION_LOCK_HEARTBEAT_SECONDS):
+            if not _same_lock_file(self.path, self._stat):
+                return
+            try:
+                os.utime(self.path, None, follow_symlinks=False)
+            except FileNotFoundError:
+                return
+
+    def release(self) -> None:
+        """Stop heartbeating and remove only the lock inode we own."""
+        self._stop.set()
+        self._thread.join()
+        if _same_lock_file(self.path, self._stat):
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
+    """Return owner liveness locally, or None for another host/invalid data."""
+    if payload.get("hostname") != socket.gethostname():
+        return None
+    try:
+        pid = int(payload["pid"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    expected_start = payload.get("process_start")
+    current_start = _process_start_time(pid)
+    if expected_start is not None and current_start is not None:
+        return str(expected_start) == current_start
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _recover_stale_conversion_lock(lock_path: Path) -> bool:
+    """Remove a dead-owner or expired-lease lock without touching a successor."""
+    try:
+        lock_stat = lock_path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    try:
+        payload = json.loads(lock_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+
+    owner_alive = _lock_owner_is_alive(payload)
+    lease_expired = time.time() - lock_stat.st_mtime > _CONVERSION_LOCK_STALE_SECONDS
+    stale = owner_alive is False or (owner_alive is None and lease_expired)
+    if not stale or not _same_lock_file(lock_path, lock_stat):
+        return False
+    log.warning("Recovering stale dpdata conversion lock %s", lock_path)
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
+    return True
 
 
 def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> bool:
-    for _ in range(300):
-        if not lock_path.exists():
-            return _is_conversion_current(source, output)
-        if _is_conversion_current(source, output):
-            return True
+    """Wait without rescanning the source tree while a valid writer owns it."""
+    while lock_path.exists():
+        if _recover_stale_conversion_lock(lock_path):
+            continue
         time.sleep(1.0)
-    return False
+    # Freshness is checked once after publication, not once per waiter-second.
+    return _is_conversion_current(source, output, force_source_scan=True)
 
 
 def _remove_path(path: Path) -> None:
@@ -1263,6 +1636,28 @@ def _remove_path(path: Path) -> None:
         path.unlink()
 
 
+def _publish_conversion_output(tmp_output: Path, output: Path) -> None:
+    """Publish a non-LMDB conversion without discarding a valid old cache."""
+    if not output.exists() or output.is_symlink() or not output.is_dir():
+        os.replace(tmp_output, output)
+        backup = output.with_name(f".{output.name}.backup")
+        _remove_path(backup)
+        return
+
+    # POSIX cannot replace a non-empty directory directly. Preserve the old
+    # cache under a sibling name and restore it if the second rename fails.
+    backup = output.with_name(f".{output.name}.backup")
+    _remove_path(backup)
+    os.replace(output, backup)
+    try:
+        os.replace(tmp_output, output)
+    except Exception:
+        os.replace(backup, output)
+        raise
+    else:
+        _remove_path(backup)
+
+
 def _write_dpdata_conversion(
     source: Path, fmt: str, out_fmt: str, output: Path
 ) -> None:
@@ -1270,7 +1665,7 @@ def _write_dpdata_conversion(
 
     dpdata 1.1.0 makes ``deepmd/lmdb`` writes transactional: it stages and
     validates the complete database before atomically publishing it. Use that
-    writer directly so DeepMD-kit does not duplicate or weaken its overwrite
+    writer directly so DeePMD-kit does not duplicate or weaken its overwrite
     guarantees. Other dpdata formats do not share that contract, so they keep
     the cache-level temporary output used for failure isolation.
     """
@@ -1286,9 +1681,24 @@ def _write_dpdata_conversion(
     multi_systems = dpdata.MultiSystems()
     try:
         multi_systems.load_systems_from_file(str(source), fmt=fmt)
-    except NotImplementedError:
-        labeled_system = dpdata.LabeledSystem(str(source), fmt=fmt)
-        multi_systems = dpdata.MultiSystems(labeled_system)
+    except (NotImplementedError, ValueError) as labeled_error:
+        # dpdata 1.1 exposes an explicit unlabeled path. This matters for
+        # structure-only EXTXYZ/ASE inputs, which are valid descriptor data
+        # even though a supervised loss may later require labels.
+        unlabeled_systems = dpdata.MultiSystems()
+        try:
+            unlabeled_systems.load_systems_from_file(
+                str(source), fmt=fmt, labeled=False
+            )
+        except (NotImplementedError, TypeError, ValueError):
+            try:
+                labeled_system = dpdata.LabeledSystem(str(source), fmt=fmt)
+            except Exception:
+                raise labeled_error from None
+            multi_systems = dpdata.MultiSystems(labeled_system)
+        else:
+            log.info("Loaded unlabeled dpdata input %s using format %s", source, fmt)
+            multi_systems = unlabeled_systems
     if len(multi_systems) == 0:
         raise RuntimeError(f"No frames were loaded by dpdata from {source}")
 
@@ -1300,8 +1710,7 @@ def _write_dpdata_conversion(
     _remove_path(tmp_output)
     try:
         multi_systems.to(out_fmt, str(tmp_output))
-        _remove_path(output)
-        os.replace(tmp_output, output)
+        _publish_conversion_output(tmp_output, output)
     except Exception:
         _remove_path(tmp_output)
         raise
@@ -1310,22 +1719,17 @@ def _write_dpdata_conversion(
 def _convert_system_by_dpdata(
     source_path: str, fmt: str, out_fmt: str | None
 ) -> list[str]:
-    if out_fmt is None:
-        out_fmt = _DPDATA_DEFAULT_OUT_FORMAT
     source = Path(source_path)
     fmt = _normalize_dpdata_format(fmt, source)
-    out_fmt = out_fmt.lower()
-    if out_fmt == "lmdb":
-        # dpdata keeps ``lmdb`` as an alias, but ``deepmd/lmdb`` is the
-        # canonical name for the DeePMD-compatible schema since dpdata 1.1.0.
-        out_fmt = _DPDATA_DEFAULT_OUT_FORMAT
+    out_fmt = _canonical_dpdata_out_format(out_fmt)
+    output = _conversion_cache_path(source, fmt, out_fmt)
     cache_key = (
         str(Path.cwd().resolve(strict=False)),
         str(source.resolve(strict=False)),
         fmt,
         out_fmt,
+        str(output),
     )
-    output = _conversion_cache_path(source, fmt, out_fmt)
     cached_systems = _DPDATA_CONVERSION_CACHE.get(cache_key)
     if cached_systems is not None:
         if _is_conversion_current(source, output):
@@ -1344,14 +1748,13 @@ def _convert_system_by_dpdata(
             except FileExistsError:
                 if _wait_for_conversion(source, output, lock_path):
                     break
-                raise TimeoutError(
-                    f"Timed out waiting for dpdata conversion lock {lock_path}"
-                ) from None
+                continue
             else:
-                with os.fdopen(lock_fd, "w") as fp:
-                    fp.write(str(os.getpid()))
+                conversion_lock = _ConversionLock(lock_path, lock_fd)
                 try:
-                    if not _is_conversion_current(source, output):
+                    if not _is_conversion_current(
+                        source, output, force_source_scan=True
+                    ):
                         log.info(
                             "Converting %s from dpdata format %s to %s at %s",
                             source,
@@ -1361,12 +1764,7 @@ def _convert_system_by_dpdata(
                         )
                         _write_dpdata_conversion(source, fmt, out_fmt, output)
                 finally:
-                    try:
-                        lock_path.unlink()
-                    except FileNotFoundError:
-                        # Concurrent conversion cleanup is idempotent; another
-                        # process may already have removed the shared lock.
-                        pass
+                    conversion_lock.release()
                 break
 
     if _is_dpdata_lmdb_format(out_fmt):
@@ -1433,22 +1831,35 @@ def process_systems(
         if _is_deepmd_data_format(fmt):
             fmt = None
 
+    conversion_inputs: list[str] = []
+    if fmt is not None:
+        for path in search_paths:
+            conversion_inputs.extend(_iter_conversion_inputs(path, patterns))
+        if (
+            _is_dpdata_lmdb_format(_canonical_dpdata_out_format(out_fmt))
+            and len(conversion_inputs) != 1
+        ):
+            raise ValueError(
+                "Automatic LMDB conversion requires exactly one resolved input "
+                "path. Merge multiple inputs with dpdata first or choose "
+                "out_format='deepmd/hdf5'."
+            )
+
     # Iterate over the search_paths list and apply expansion logic to each path
     result_systems = []
-    for path in search_paths:
-        if fmt is not None:
-            for input_path in _iter_conversion_inputs(path, patterns):
-                result_systems.extend(
-                    _convert_system_by_dpdata(input_path, fmt, out_fmt)
-                )
-        elif is_lmdb(path):
-            result_systems.append(path)
-        elif patterns is None:
-            expanded_paths = expand_sys_str(path)
-            result_systems.extend(expanded_paths)
-        else:
-            expanded_paths = rglob_sys_str(path, patterns)
-            result_systems.extend(expanded_paths)
+    if fmt is not None:
+        for input_path in conversion_inputs:
+            result_systems.extend(_convert_system_by_dpdata(input_path, fmt, out_fmt))
+    else:
+        for path in search_paths:
+            if is_lmdb(path):
+                result_systems.append(path)
+            elif patterns is None:
+                expanded_paths = expand_sys_str(path)
+                result_systems.extend(expanded_paths)
+            else:
+                expanded_paths = rglob_sys_str(path, patterns)
+                result_systems.extend(expanded_paths)
 
     return result_systems
 
@@ -1484,6 +1895,8 @@ def get_data(
     rglob_patterns = jdata.get("rglob_patterns")
     data_format = jdata.get("format")
     out_format = jdata.get("out_format", jdata.get("output_format"))
+    if conversion_will_write_lmdb(jdata):
+        validate_lmdb_sampling_options(jdata)
     systems = process_systems(
         systems, patterns=rglob_patterns, fmt=data_format, out_fmt=out_format
     )
@@ -1495,6 +1908,7 @@ def get_data(
 
     lmdb_path = validate_lmdb_systems(systems, backend_name="legacy data loader")
     if lmdb_path is not None:
+        validate_lmdb_sampling_options(jdata)
         if type_map is None:
             raise ValueError(
                 "LMDB training data requires model/type_map to be set. "

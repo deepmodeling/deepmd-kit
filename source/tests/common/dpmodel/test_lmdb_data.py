@@ -2021,6 +2021,13 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(result[0], ([0], 500))
         self.assertEqual(result[1], ([1], 500))
 
+    def test_compute_block_targets_prob_uniform(self):
+        """Bare prob_uniform equalizes unequal original system sizes."""
+        result = compute_block_targets(
+            "prob_uniform", nsystems=2, system_nframes=[100, 500]
+        )
+        self.assertEqual(result, [([0], 500), ([1], 500)])
+
     def test_compute_block_targets_multi_sys_block(self):
         result = compute_block_targets(
             "prob_sys_size;0:2:0.5;2:3:0.5",

@@ -33,8 +33,10 @@ from deepmd.pt_expt.utils.lmdb_dataset import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+    conversion_will_write_lmdb,
     get_data,
     process_systems,
+    validate_lmdb_sampling_options,
     validate_lmdb_systems,
 )
 from deepmd.utils.stat_file import (
@@ -123,11 +125,14 @@ def _get_neighbor_stat_data(
         else _detect_lmdb_path(dataset_params.get("systems"))
     )
     if lmdb_path is not None:
+        validate_lmdb_sampling_options(dataset_params)
         from deepmd.dpmodel.utils.lmdb_data import (
             make_neighbor_stat_data,
         )
 
         return make_neighbor_stat_data(lmdb_path, type_map)
+    if conversion_will_write_lmdb(dataset_params):
+        validate_lmdb_sampling_options(dataset_params)
     systems = process_systems(
         dataset_params["systems"],
         patterns=dataset_params.get("rglob_patterns"),
@@ -168,6 +173,7 @@ def _build_data_system(
         else _detect_lmdb_path(systems_raw)
     )
     if lmdb_path is not None:
+        validate_lmdb_sampling_options(dataset_params)
         return LmdbDataSystem(
             lmdb_path=lmdb_path,
             type_map=type_map,
@@ -177,6 +183,8 @@ def _build_data_system(
             rank=rank,
             world_size=world_size,
         )
+    if conversion_will_write_lmdb(dataset_params):
+        validate_lmdb_sampling_options(dataset_params)
     systems = process_systems(
         systems_raw,
         patterns=dataset_params.get("rglob_patterns"),
@@ -187,12 +195,15 @@ def _build_data_system(
         systems, backend_name="PyTorch exportable"
     )
     if converted_lmdb_path is not None:
+        validate_lmdb_sampling_options(dataset_params)
         return LmdbDataSystem(
             lmdb_path=converted_lmdb_path,
             type_map=type_map,
             batch_size=dataset_params["batch_size"],
             auto_prob_style=dataset_params.get("auto_prob"),
             seed=seed,
+            rank=rank,
+            world_size=world_size,
         )
     return DeepmdDataSystem(
         systems=systems,

@@ -98,6 +98,42 @@ class TestConvertedLmdbValidation(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exactly one path"):
                 _build_data_system(params, ["O", "H"])
 
+    def test_converted_lmdb_forwards_distributed_sharding(self) -> None:
+        """Converted and direct LMDB routes must pass identical DDP metadata."""
+        params = {
+            "systems": "input.extxyz",
+            "format": "extxyz",
+            "batch_size": 2,
+        }
+        with (
+            patch(
+                "deepmd.pt_expt.entrypoints.main.process_systems",
+                return_value=["converted.lmdb"],
+            ),
+            patch(
+                "deepmd.pt_expt.entrypoints.main.validate_lmdb_systems",
+                return_value="converted.lmdb",
+            ),
+            patch("deepmd.pt_expt.entrypoints.main.LmdbDataSystem") as lmdb_data_system,
+        ):
+            _build_data_system(
+                params,
+                ["O", "H"],
+                seed=7,
+                rank=2,
+                world_size=4,
+            )
+
+        lmdb_data_system.assert_called_once_with(
+            lmdb_path="converted.lmdb",
+            type_map=["O", "H"],
+            batch_size=2,
+            auto_prob_style=None,
+            seed=7,
+            rank=2,
+            world_size=4,
+        )
+
 
 def _make_frame(natoms: int, seed: int, *, include_spin: bool = False) -> dict:
     """Synthetic LMDB frame matching the on-disk schema used by LmdbDataReader."""

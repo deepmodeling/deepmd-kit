@@ -34,6 +34,7 @@ from deepmd.tf2.utils.serialization import (
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import (
+    close_data_systems,
     get_data,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
@@ -192,11 +193,14 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
             shared_links=self.shared_links,
             min_nbor_dist=neighbor_stat,
         )
-        start_time = time.time()
-        trainer.run()
-        end_time = time.time()
-        log.info("finished training")
-        log.info("wall time: %.3f s", end_time - start_time)
+        try:
+            start_time = time.time()
+            trainer.run()
+            end_time = time.time()
+            log.info("finished training")
+            log.info("wall time: %.3f s", end_time - start_time)
+        finally:
+            close_data_systems(train_data_map, valid_data_map)
 
 
 def train(
@@ -249,11 +253,14 @@ def update_sel(
             type_map,
             None,
         )
-        updated_model, task_min_nbor_dist = BaseModel.update_sel(
-            train_data,
-            type_map,
-            dict(task_config.model_params),
-        )
+        try:
+            updated_model, task_min_nbor_dist = BaseModel.update_sel(
+                train_data,
+                type_map,
+                dict(task_config.model_params),
+            )
+        finally:
+            close_data_systems(train_data)
         min_nbor_dist[task_config.key] = task_min_nbor_dist
         if multi_task:
             jdata_cpy["model"]["model_dict"][task_config.key] = updated_model

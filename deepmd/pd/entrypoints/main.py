@@ -69,6 +69,7 @@ from deepmd.utils.compat import (
 from deepmd.utils.data_system import (
     get_data,
     process_systems,
+    validate_backend_data_config,
     validate_lmdb_systems,
 )
 from deepmd.utils.path import (
@@ -109,6 +110,11 @@ def get_trainer(
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
+        validate_backend_data_config(
+            training_dataset_params,
+            backend_name="Paddle",
+            lmdb_supported=False,
+        )
         trn_patterns = training_dataset_params.get("rglob_patterns", None)
         training_systems = process_systems(
             training_systems,
@@ -120,6 +126,11 @@ def get_trainer(
         )
         validate_lmdb_systems(training_systems, backend_name="Paddle", supported=False)
         if validation_systems is not None:
+            validate_backend_data_config(
+                validation_dataset_params,
+                backend_name="Paddle",
+                lmdb_supported=False,
+            )
             val_patterns = validation_dataset_params.get("rglob_patterns", None)
             validation_systems = process_systems(
                 validation_systems,

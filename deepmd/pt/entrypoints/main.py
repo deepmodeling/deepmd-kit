@@ -88,8 +88,10 @@ from deepmd.utils.compat import (
     update_deepmd_input,
 )
 from deepmd.utils.data_system import (
+    conversion_will_write_lmdb,
     get_data,
     process_systems,
+    validate_lmdb_sampling_options,
     validate_lmdb_systems,
 )
 from deepmd.utils.stat_file import (
@@ -179,6 +181,8 @@ def get_trainer(
             dataset_params: dict[str, Any],
         ) -> DpLoaderSet | LmdbDataset:
             """Create a dataset from systems with pattern expansion/conversion."""
+            if conversion_will_write_lmdb(dataset_params):
+                validate_lmdb_sampling_options(dataset_params)
             patterns = dataset_params.get("rglob_patterns")
             systems = process_systems(
                 systems,
@@ -190,6 +194,7 @@ def get_trainer(
             )
             lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
             if lmdb_path is not None:
+                validate_lmdb_sampling_options(dataset_params)
                 return LmdbDataset(
                     lmdb_path,
                     model_params_single["type_map"],
@@ -210,6 +215,7 @@ def get_trainer(
             and isinstance(training_systems, str)
             and is_lmdb(training_systems)
         ):
+            validate_lmdb_sampling_options(training_dataset_params)
             auto_prob = training_dataset_params.get("auto_prob", None)
             train_data_single = LmdbDataset(
                 training_systems,
@@ -223,6 +229,7 @@ def get_trainer(
                 and isinstance(validation_systems, str)
                 and is_lmdb(validation_systems)
             ):
+                validate_lmdb_sampling_options(validation_dataset_params)
                 validation_data_single = LmdbDataset(
                     validation_systems,
                     model_params_single["type_map"],
@@ -416,12 +423,15 @@ def train(
             type_map: list[str] | None,
         ) -> Any:
             training_systems = dataset_params.get("systems")
-            if (
+            direct_lmdb = (
                 dataset_params.get("format") is None
                 and training_systems is not None
                 and isinstance(training_systems, str)
                 and is_lmdb(training_systems)
-            ):
+            )
+            if direct_lmdb or conversion_will_write_lmdb(dataset_params):
+                validate_lmdb_sampling_options(dataset_params)
+            if direct_lmdb:
                 systems = [training_systems]
             else:
                 systems = process_systems(
