@@ -10,9 +10,7 @@ import pytest
 from deepmd.main import (
     parse_args,
 )
-from deepmd.pt_expt.entrypoints import (
-    compress as compress_mod,
-)
+from deepmd.pt_expt.entrypoints import compress as compress_mod
 
 
 class _FakeModel:
