@@ -8,8 +8,14 @@ converted to torch tensors at the boundary.
 
 import functools
 import logging
-import os
 import time
+from collections.abc import (
+    Callable,
+    Mapping,
+)
+from contextlib import (
+    nullcontext,
+)
 from copy import (
     deepcopy,
 )
@@ -23,17 +29,36 @@ from typing import (
 import numpy as np
 import torch
 import torch.distributed as dist
+from torch.distributed.checkpoint.state_dict import (
+    StateDictOptions,
+    get_model_state_dict,
+    get_optimizer_state_dict,
+    set_optimizer_state_dict,
+)
+from torch.distributed.optim import (
+    ZeroRedundancyOptimizer,
+)
+
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None  # type: ignore[assignment]
 
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
     RankContext,
+    ShardingPolicy,
     TrainerConfig,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
+    build_checkpoint_stores,
     change_model_out_bias,
     change_model_out_bias_by_task,
+    resolve_step_schedule,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -42,12 +67,19 @@ from deepmd.dpmodel.utils.batch import (
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
-from deepmd.pt.train.utils import (
-    resolve_best_checkpoint_dir,
+from deepmd.dpmodel.utils.training_utils import (
+    compute_total_numb_batch,
 )
-from deepmd.pt.train.validation import (
-    FullValidator,
-    resolve_full_validation_start_step,
+from deepmd.loggers.training import (
+    log_parameter_counts,
+)
+from deepmd.pt.optimizer import (
+    HybridMuonOptimizer,
+)
+from deepmd.pt.utils.compile_compat import (
+    apply_global_compile_patches,
+    build_inductor_compile_options,
+    check_compile_torch_version,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
@@ -68,6 +100,27 @@ from deepmd.pt_expt.model import (
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
 )
+from deepmd.pt_expt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+    ModelEMA,
+    get_ema_checkpoint_prefix,
+)
+from deepmd.pt_expt.train.gradient import (
+    NonFiniteGradGuard,
+    clip_grad_norm_,
+)
+from deepmd.pt_expt.train.utils import (
+    MatmulPrecisionPolicy,
+    count_parameters,
+    infer_compile_enabled,
+    infer_env_defaults,
+    resolve_best_checkpoint_dir,
+    scoped_env_defaults,
+)
+from deepmd.pt_expt.train.validation import (
+    FullValidator,
+    build_full_validators,
+)
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,
 )
@@ -87,8 +140,11 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
-from deepmd.utils.path import (
-    DPPath,
+from deepmd.utils.stat_file import (
+    StatFileSpec,
+    open_stat_file,
+    run_stat_on_chief,
+    stat_file_specs_by_task,
 )
 
 log = logging.getLogger(__name__)
@@ -154,6 +210,48 @@ def _detect_task_buffers(
     return result
 
 
+def _warn_compiled_attention(model: torch.nn.Module, task_key: str) -> None:
+    """Warn when compiling DPA1/se_atten_v2 attention (hardware-sensitive).
+
+    Compiled DPA1/se_atten_v2 attention is numerically more sensitive than
+    other descriptors: the inductor-fused and eager force/grad outputs can
+    diverge above 1e-10 on multi-threaded CPU hosts because parallel
+    reduction order is hardware-dependent. Warn but do not reject —
+    energies remain well within training tolerance and the user may accept
+    the trade-off for compile speed.
+
+    Compositions (``LinearEnergyAtomicModel``) have no single descriptor to
+    probe; ``enable_compile`` must degrade gracefully for them instead of
+    crashing on the reach-in (issue #5906 Task 4 audit).
+
+    Parameters
+    ----------
+    model
+        The per-task model about to be compiled.
+    task_key
+        The task label used in the warning message.
+    """
+    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+    try:
+        descriptor = model.get_descriptor()
+    except AttributeError:
+        return
+    if isinstance(descriptor, DescrptDPA1DP):
+        n_attn = descriptor.get_numb_attn_layer()
+        if n_attn > 0:
+            log.warning(
+                "Compiling DPA1/se_atten_v2 with %d attention "
+                "layer(s) (task=%s): the compiled forces/grads "
+                "are slightly hardware-sensitive (multi-thread "
+                "reduction order), and may not match the eager "
+                "path bit-for-bit.  Use 'enable_compile: false' "
+                "or 'attn_layer: 0' for fully reproducible runs.",
+                n_attn,
+                task_key,
+            )
+
+
 def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
@@ -173,6 +271,11 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     After ``share_params``, the fitting net's child sub-modules are the same
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
+
+    ``has_spin()`` leads the key because native-spin models trace an extra
+    per-node moment input and return additional magnetic outputs. A spin task
+    must therefore never reuse a spin-free task's compiled graph even when the
+    descriptor and fitting parameters are shared.
     """
     descriptor_id: int = 0
     try:
@@ -185,13 +288,15 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     except AttributeError:
         pass
 
+    fitting_id: int = id(model)
     try:
         fitting = model.get_fitting_net()
         for _, child in fitting.named_children():
-            return (descriptor_id, id(child))
+            fitting_id = id(child)
+            break
     except AttributeError:
         pass
-    return (descriptor_id, id(model))
+    return (int(model.has_spin()), descriptor_id, fitting_id)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +358,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_fparam,
                 default=fparam_default,
+                source_policy="default" if has_default_fparam else "tracked",
             )
         )
     if _model.get_dim_aparam() > 0:
@@ -261,10 +367,27 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 "aparam", _model.get_dim_aparam(), atomic=True, must=True
             )
         )
+    if _model.has_spin():
+        # ``model.spin.allow_missing_label`` relaxes the spin label from
+        # mandatory to optional with a zero default, so a system without a
+        # ``spin`` file is filled with zeros rather than rejected. Mirrors
+        # ``deepmd.pt.train.training.get_additional_data_requirement``.
+        # Every spin model wrapper carries a ``spin`` attribute.
+        allow_missing_spin = _model.spin.allow_missing_label
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "spin",
+                ndof=3,
+                atomic=True,
+                must=not allow_missing_spin,
+                default=0.0,
+                source_policy="default" if allow_missing_spin else "tracked",
+            )
+        )
     if _model.has_chg_spin_ebd():
-        has_default_cs = _model.has_default_chg_spin()
+        default_cs = _model.get_default_chg_spin()
+        has_default_cs = default_cs is not None
         if has_default_cs:
-            default_cs = _model.get_default_chg_spin()
             if hasattr(default_cs, "cpu"):
                 default_cs = default_cs.cpu().numpy()
             else:
@@ -278,6 +401,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 atomic=False,
                 must=not has_default_cs,
                 default=default_cs,
+                source_policy="default" if has_default_cs else "tracked",
             )
         )
     return additional_data_requirement
@@ -293,14 +417,6 @@ def _as_task_map(
     if multi_task:
         return {model_key: value[model_key] for model_key in model_keys}
     return {DEFAULT_TASK_KEY: value}
-
-
-def _replace_latest_checkpoint_link(latest: Path, ckpt_path: Path) -> None:
-    """Point latest to ckpt_path using a target relative to latest's directory."""
-    if latest.is_symlink() or latest.exists():
-        latest.unlink()
-    latest.parent.mkdir(parents=True, exist_ok=True)
-    latest.symlink_to(os.path.relpath(ckpt_path, latest.parent))
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +463,7 @@ def _trace_and_compile(
     model: torch.nn.Module,
     ext_coord: torch.Tensor,
     ext_atype: torch.Tensor,
+    ext_spin: torch.Tensor | None,
     nlist: torch.Tensor,
     mapping: torch.Tensor,
     fparam: torch.Tensor | None,
@@ -361,11 +478,15 @@ def _trace_and_compile(
     ----------
     model : torch.nn.Module
         The (uncompiled) model.
-    ext_coord, ext_atype, nlist, mapping, fparam, aparam
+    ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam
         Sample tensors used to seed the symbolic tracer.
+        ``ext_spin`` is present for virtual-atom spin models and follows the
+        same extended-node axis as coordinates and atom types.
     compile_opts : dict or None
         User-supplied inductor options.  These are merged on top of the
         built-in defaults (user values take precedence).
+    charge_spin : torch.Tensor or None
+        Frame-level charge and spin conditioning used by the traced model.
     task_buffers : dict or None
         Per-task buffers (e.g. ``bias_atom_e``, ``case_embd``, ``out_bias``,
         ``out_std``) detected by ``_detect_task_buffers``.  These are promoted
@@ -383,14 +504,12 @@ def _trace_and_compile(
         make_fx,
     )
 
-    was_training = model.training
-    # Trace in train mode so that create_graph=True is captured inside
-    # task_deriv_one.  Without this, the autograd.grad that computes
-    # forces is traced with create_graph=False (eval mode), producing
-    # force tensors that are detached from model parameters — force loss
-    # backprop cannot reach the weights and force RMSE never decreases.
-    model.train()
-
+    # The model's current mode decides what gets traced, and the caller keys
+    # the resulting graph by that same mode.  It matters inside
+    # task_deriv_one: the autograd.grad that computes forces is decomposed
+    # with create_graph=self.training, so a train-mode trace keeps the
+    # double-backward the force loss needs to reach the weights, while an
+    # eval-mode trace omits it.
     task_buf_order: tuple[str, ...] = tuple(task_buffers.keys()) if task_buffers else ()
     task_buf_vals_trace: tuple[torch.Tensor, ...] = (
         tuple(task_buffers[k] for k in task_buf_order) if task_buffers else ()
@@ -412,6 +531,7 @@ def _trace_and_compile(
     def fn(
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
+        extended_spin: torch.Tensor | None,
         nlist: torch.Tensor,
         mapping: torch.Tensor | None,
         fparam: torch.Tensor | None,
@@ -437,6 +557,17 @@ def _trace_and_compile(
                         originals[name] = _fitting._buffers.get(name)
                         _fitting._buffers[name] = val
         try:
+            if extended_spin is not None:
+                return model.forward_lower(
+                    extended_coord,
+                    extended_atype,
+                    extended_spin,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
             return model.forward_lower(
                 extended_coord,
                 extended_atype,
@@ -489,6 +620,8 @@ def _trace_and_compile(
     # Pad nf only; nloc and nall retain their real values (no clamping needed).
     ext_coord = _trace_pad_dim(ext_coord[:1], 0, trace_nf)
     ext_atype = _trace_pad_dim(ext_atype[:1], 0, trace_nf)
+    if ext_spin is not None:
+        ext_spin = _trace_pad_dim(ext_spin[:1], 0, trace_nf)
     nlist = _trace_pad_dim(nlist[:1], 0, trace_nf)
     mapping = _trace_pad_dim(mapping[:1], 0, trace_nf)
     if fparam is not None:
@@ -516,6 +649,7 @@ def _trace_and_compile(
     )(
         ext_coord,
         ext_atype,
+        ext_spin,
         nlist,
         mapping,
         fparam,
@@ -525,15 +659,13 @@ def _trace_and_compile(
     )
 
     return (
-        _finalize_compiled_lower(traced_lower, model, was_training, compile_opts),
+        _finalize_compiled_lower(traced_lower, compile_opts),
         task_buf_order,
     )
 
 
 def _finalize_compiled_lower(
     traced_lower: "torch.fx.GraphModule",
-    model: torch.nn.Module,
-    was_training: bool,
     compile_opts: dict[str, Any] | None,
     extra_options: dict[str, Any] | None = None,
 ) -> torch.nn.Module:
@@ -553,22 +685,14 @@ def _finalize_compiled_lower(
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)
 
-    if not was_training:
-        model.eval()
+    # This is the common boundary immediately before every pt_expt
+    # ``torch.compile`` call. Applying the idempotent process-global patches
+    # here leaves eager-only imports untouched while still preceding all
+    # Dynamo and Inductor configuration reads.
+    apply_global_compile_patches()
 
-    # Inductor defaults tuned for second-order-gradient training graphs.
-    # User-supplied compile_opts override these on a per-key basis.
-    inductor_options: dict[str, Any] = {
-        "max_autotune": False,
-        "shape_padding": True,
-        "epilogue_fusion": False,
-        "triton.cudagraphs": False,
-        "max_fusion_size": 8,
-        # NOTE: On GPU with PyTorch <=2.11, consider adding
-        # "triton.mix_order_reduction": False to work around
-        # pytorch/pytorch#174379, #178080, #179494 under
-        # data-dependent symbolic shapes.
-    }
+    # Keep pt_expt training on the same compiler contract as the PT SeZM path.
+    inductor_options = build_inductor_compile_options(inference=False)
     if extra_options:
         inductor_options.update(extra_options)
     if compile_opts:
@@ -587,6 +711,7 @@ def _trace_and_compile_graph(
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
     charge_spin: torch.Tensor | None,
+    spin: torch.Tensor | None,
     compile_opts: dict[str, Any] | None = None,
     task_buffers: dict[str, torch.Tensor] | None = None,
 ) -> tuple[torch.nn.Module, tuple[str, ...]]:
@@ -602,13 +727,18 @@ def _trace_and_compile_graph(
     and returns those public keys on the FLAT node axis (``N == sum(n_node)``);
     the caller (:meth:`_CompiledModel.forward`) unravels them to ``(nf, nloc, *)``.
 
+    Native-spin models additionally carry the per-node moment as a second
+    autograd leaf. Their compiled lower returns ``force_mag`` and ``mask_mag``
+    through the same model-owned translation used by eager execution.
+
     Parameters
     ----------
     model
         The (uncompiled) graph-eligible energy model.
-    fparam, aparam, charge_spin
+    fparam, aparam, charge_spin, spin
         Representative optional inputs (or ``None``) so the traced branch
         matches what :meth:`_CompiledModel.forward` passes at run time.
+        ``spin`` is the flat ``(N, 3)`` per-node moment.
     compile_opts
         User-supplied inductor options (merged over the built-in defaults).
     task_buffers
@@ -622,15 +752,13 @@ def _trace_and_compile_graph(
         make_fx,
     )
 
-    from deepmd.pt_expt.model.ener_model import (
+    from deepmd.pt_expt.model.make_model import (
         _translate_energy_keys,
     )
 
-    was_training = model.training
-    # Trace in train mode so create_graph=True is captured inside the graph
-    # force backward (forward_common_lower_graph passes create_graph=self.training).
-    model.train()
-
+    # Traced in the model's current mode, which the caller keys the graph by:
+    # forward_common_lower_graph passes create_graph=self.training to the force
+    # backward, so the mode decides whether the graph carries it.
     task_buf_order: tuple[str, ...] = tuple(task_buffers.keys()) if task_buffers else ()
     task_buf_vals_trace: tuple[torch.Tensor, ...] = (
         tuple(task_buffers[k] for k in task_buf_order) if task_buffers else ()
@@ -717,6 +845,7 @@ def _trace_and_compile_graph(
         want_fparam=fparam is not None,
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
+        want_spin=spin is not None,
     )
     (
         s_atype,
@@ -729,10 +858,12 @@ def _trace_and_compile_graph(
         s_destination_row_ptr,
         s_source_order,
         s_source_row_ptr,
-        s_fparam,
-        s_aparam,
-        s_charge_spin,
+        *s_conditioning,
     ) = sample
+    # The synthetic native-spin ABI puts spin before the optional conditioning
+    # tensors, while forward_common_lower_graph takes it after them.
+    s_spin = s_conditioning.pop(0) if spin is not None else None
+    s_fparam, s_aparam, s_charge_spin = s_conditioning
 
     def fn(
         atype: torch.Tensor,
@@ -748,6 +879,7 @@ def _trace_and_compile_graph(
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
+        spin: torch.Tensor | None,
         *task_buf_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         # Patch task-specific buffers with the proxy tensors so make_fx records
@@ -765,8 +897,8 @@ def _trace_and_compile_graph(
                         originals[name] = _fitting._buffers.get(name)
                         _fitting._buffers[name] = val
         try:
-            # forward_common_lower_graph makes edge_vec the autograd leaf
-            # internally, so no outer detach/requires_grad_ here.
+            # forward_common_lower_graph makes edge_vec and, when present,
+            # spin the autograd leaves internally.
             model_ret = model.forward_common_lower_graph(
                 atype,
                 n_node,
@@ -782,13 +914,20 @@ def _trace_and_compile_graph(
                 fparam=fparam,
                 aparam=aparam,
                 charge_spin=charge_spin,
+                spin=spin,
             )
-            return _translate_energy_keys(
+            if spin is None:
+                return _translate_energy_keys(
+                    model_ret,
+                    do_grad_r=do_grad_r,
+                    do_grad_c=do_grad_c,
+                    do_atomic_virial=False,
+                    local=True,
+                )
+            return model._translate_eager_call(
                 model_ret,
-                do_grad_r=do_grad_r,
-                do_grad_c=do_grad_c,
+                atype,
                 do_atomic_virial=False,
-                local=True,
             )
         finally:
             for name, orig in originals.items():
@@ -821,6 +960,7 @@ def _trace_and_compile_graph(
         s_fparam,
         s_aparam,
         s_charge_spin,
+        s_spin,
         *task_buf_vals_trace,
     )
 
@@ -832,8 +972,6 @@ def _trace_and_compile_graph(
     return (
         _finalize_compiled_lower(
             traced_lower,
-            model,
-            was_training,
             compile_opts,
             extra_options={"cpp.simdlen": 0},
         ),
@@ -848,6 +986,17 @@ class _CompiledModel(torch.nn.Module):
     ``forward()`` invocation using that batch's tensors, so no extra
     ``get_data()`` call is needed during ``__init__``.  Tasks that share the
     same model structure reuse the compiled graph via ``compiled_by_structure``.
+
+    Training always gets a compiled graph. Evaluation delegates to the
+    original eager model unless compiled inference is enabled, in which case it
+    gets a separate graph keyed by ``self.training``. The two compiled modes
+    differ in more than speed. The force ``autograd.grad`` is decomposed with
+    ``create_graph=self.training``, so a training graph carries the
+    double-backward needed by the force loss while an evaluation graph does
+    not, and train-only behaviour such as the random local-Z roll is baked in
+    at trace time. Serving evaluation from the training graph would therefore
+    both cost a second-order graph per validation batch and randomize its
+    frames.
     """
 
     def __init__(
@@ -858,13 +1007,25 @@ class _CompiledModel(torch.nn.Module):
         task_buffers: dict[str, torch.Tensor] | None = None,
         compile_opts: dict[str, Any] | None = None,
         compiled_by_structure: dict | None = None,
+        task_key: str = DEFAULT_TASK_KEY,
+        compile_eval: bool = False,
     ) -> None:
         super().__init__()
         self.original_model = original_model
-        self.compiled_forward_lower: torch.nn.Module | None = None
+        # Compiled graphs are execution artifacts, not model state, and are
+        # deliberately held in a plain dict rather than as submodules: a
+        # registered graph copies its baked-in constants (``_param_constant*``,
+        # duplicates of the real weights) into every checkpoint, once per
+        # compiled mode.  Keyed by the ``self.training`` flag they serve.
+        self._compiled_lower_by_mode: dict[bool, torch.nn.Module] = {}
+        # ``(attributes, start time)`` of a graph whose Inductor compile the
+        # next call will trigger; see :meth:`_report_pending_compile`.
+        self._pending_compile: tuple[str, float] | None = None
         self._task_buf_order = task_buf_order
         self._structure_key = structure_key
+        self._task_key = task_key
         self._compile_opts = compile_opts
+        self._compile_eval = compile_eval
         # Stored only for the first-forward compile call; freed afterwards.
         self._task_buffers = task_buffers
         # Shared dict across all _CompiledModel instances in the same Trainer.
@@ -876,6 +1037,67 @@ class _CompiledModel(torch.nn.Module):
         # Resolved on the first forward: whether to compile the GRAPH lower
         # (graph-eligible mixed_types descriptors) or the dense forward_lower.
         self._graph_eligible: bool | None = None
+
+    def _compiled_lower_for(
+        self,
+        path: str,
+        trace: "Callable[[], tuple[torch.nn.Module, tuple[str, ...]]]",
+    ) -> tuple[torch.nn.Module, tuple[str, ...]]:
+        """Return the compiled graph of this model, tracing it at most once.
+
+        Tasks that share a model structure share one compiled graph per mode,
+        so a task reaching this point second only reports the reuse.
+
+        Parameters
+        ----------
+        path : str
+            Name of the lowering being compiled, as it appears in the log.
+        trace : Callable[[], tuple[torch.nn.Module, tuple[str, ...]]]
+            Traces and compiles the graph, returning it together with the
+            order of the per-task buffers it expects.
+
+        Returns
+        -------
+        tuple[torch.nn.Module, tuple[str, ...]]
+            The compiled graph and its buffer order.
+        """
+        mode = "train" if self.training else "eval"
+        attributes = f"task={self._task_key}, path={path}, mode={mode}"
+        cache_key = (*self._structure_key, self.training)
+        cached = self._compiled_by_structure.get(cache_key)
+        if cached is not None:
+            log.info("Reusing the graph compiled for an earlier task (%s).", attributes)
+            return cached
+        log.info("Tracing and compiling the model (%s).", attributes)
+        started = time.perf_counter()
+        compiled = trace()
+        # ``torch.compile`` only schedules the Inductor compile; it runs on the
+        # first call. Timing the trace alone would report a fraction of the
+        # real cost, so the elapsed time is reported by the caller once that
+        # first call has completed.
+        self._pending_compile = (attributes, started)
+        self._compiled_by_structure[cache_key] = compiled
+        return compiled
+
+    def _report_pending_compile(self) -> None:
+        """Log the compile time of a graph whose first call just returned.
+
+        CUDA work is synchronized first: the launch queue would otherwise
+        return before the device finished, and the measurement would omit the
+        very work it is meant to cover.
+        """
+        pending = self._pending_compile
+        if pending is None:
+            return
+        self._pending_compile = None
+        attributes, started = pending
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        log.info(
+            "Finished compiling (%s) in %.1f s.",
+            attributes,
+            time.perf_counter() - started,
+        )
 
     def __getattr__(self, name: str) -> Any:
         # Delegate unknown lookups to original_model so that callers such as
@@ -889,6 +1111,37 @@ class _CompiledModel(torch.nn.Module):
         except AttributeError:
             return getattr(self.original_model, name)
 
+    def _forward_eager(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        do_atomic_virial: bool,
+        charge_spin: torch.Tensor | None,
+        spin: torch.Tensor | None,
+        n_node: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Delegate one rectangular or ragged evaluation to the original model."""
+        kwargs = {
+            "box": box,
+            "fparam": fparam,
+            "aparam": aparam,
+            "do_atomic_virial": do_atomic_virial,
+            "charge_spin": charge_spin,
+        }
+        if spin is not None:
+            kwargs["spin"] = spin
+        if n_node is not None:
+            return self.original_model.forward_ragged(
+                coord,
+                atype,
+                n_node,
+                **kwargs,
+            )
+        return self.original_model(coord, atype, **kwargs)
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -898,7 +1151,20 @@ class _CompiledModel(torch.nn.Module):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        if not self.training and not self._compile_eval:
+            return self._forward_eager(
+                coord,
+                atype,
+                box,
+                fparam,
+                aparam,
+                do_atomic_virial,
+                charge_spin,
+                spin,
+            )
+
         from deepmd.dpmodel.utils.nlist import (
             build_neighbor_list,
             extend_coord_with_ghosts,
@@ -918,10 +1184,19 @@ class _CompiledModel(torch.nn.Module):
             self._graph_eligible = model_uses_graph_lower(self.original_model)
         if self._graph_eligible:
             return self._forward_graph(
-                coord, atype, box, fparam, aparam, charge_spin, nframes, nloc, rcut
+                coord,
+                atype,
+                box,
+                fparam,
+                aparam,
+                charge_spin,
+                spin,
+                nframes,
+                nloc,
+                rcut,
             )
 
-        sel = self.original_model.get_sel()
+        nsel = self.original_model.get_nsel()
 
         # coord extension + nlist (data-dependent, run in eager)
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
@@ -940,13 +1215,30 @@ class _CompiledModel(torch.nn.Module):
             ext_atype,
             nloc,
             rcut,
-            sel,
+            nsel,
+            # Keep the candidate list merged, matching eager training's
+            # DefaultNeighborList contract. forward_common_lower always calls
+            # model.format_nlist, which performs the type split for non-mixed
+            # descriptors. The shared builder globally truncates to nsel before
+            # either split, so distinguish_types=True would only move the same
+            # layout transform earlier without changing the final formatted
+            # neighbor list consumed by the lower model. SpinModel.get_nsel()
+            # exposes the real-input count; its lower expands that nlist for
+            # the virtual types together with coordinates and spins.
             distinguish_types=False,
             # model-level pair exclusion is a nlist-BUILD transform (decision
             # #18/A4); the compiled dense lower consumes a pre-excluded nlist.
-            pair_excl=getattr(self.original_model.atomic_model, "pair_excl", None),
+            pair_excl=self.original_model.atomic_model.pair_excl,
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
+        ext_spin = None
+        if spin is not None:
+            spin = spin.reshape(nframes, nloc, 3)
+            ext_spin = torch.gather(
+                spin,
+                1,
+                mapping.unsqueeze(-1).expand(-1, -1, 3),
+            )
 
         # Mirror the uncompiled path's optional-input defaulting (see
         # ``SeZMModel._forward_common`` -> ``convert_fparam_aparam`` /
@@ -981,9 +1273,7 @@ class _CompiledModel(torch.nn.Module):
                     .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = (
-            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = _model.get_dim_chg_spin()
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
@@ -999,28 +1289,21 @@ class _CompiledModel(torch.nn.Module):
         # batch's tensors (prime-padded inside _trace_and_compile).
         # Mirrors DPA4's on-cache-miss compile so no separate get_data()
         # is needed during __init__.
-        if self.compiled_forward_lower is None:
+        compiled_lower = self._compiled_lower_by_mode.get(self.training)
+        if compiled_lower is None:
             # Optional inputs (fparam / charge_spin) are normalized to their
             # defaults above, so their presence is now config-driven (a
             # function of the model's ``dim_*``) rather than data-driven.
             # Tasks sharing this structure key share the same descriptor /
             # fitting net and therefore the same dims, so a single compiled
             # graph is safe to reuse across them.
-            if self._structure_key in self._compiled_by_structure:
-                compiled_lower, buf_order = self._compiled_by_structure[
-                    self._structure_key
-                ]
-                log.info("Reusing compiled graph (shared model structure, lazy).")
-            else:
-                log.info(
-                    "Lazy compile: tracing model on first forward call "
-                    "(structure_key=%s).",
-                    self._structure_key,
-                )
-                compiled_lower, buf_order = _trace_and_compile(
+            compiled_lower, buf_order = self._compiled_lower_for(
+                "neighbor-list",
+                lambda: _trace_and_compile(
                     self.original_model,
                     ext_coord,
                     ext_atype,
+                    ext_spin,
                     nlist,
                     mapping,
                     fparam,
@@ -1028,14 +1311,10 @@ class _CompiledModel(torch.nn.Module):
                     charge_spin=charge_spin,
                     task_buffers=self._task_buffers,
                     compile_opts=self._compile_opts,
-                )
-                self._compiled_by_structure[self._structure_key] = (
-                    compiled_lower,
-                    buf_order,
-                )
-            self.compiled_forward_lower = compiled_lower
+                ),
+            )
+            self._compiled_lower_by_mode[self.training] = compiled_lower
             self._task_buf_order = buf_order
-            self._task_buffers = None  # free; no longer needed after compile
 
         ext_coord = ext_coord.detach().requires_grad_(True)
 
@@ -1059,55 +1338,142 @@ class _CompiledModel(torch.nn.Module):
                 ) from exc
         else:
             task_buf_vals = ()
-        result = self.compiled_forward_lower(
-            ext_coord,
-            ext_atype,
-            nlist,
-            mapping,
+        # The evaluation graph carries no double-backward, so nothing outside
+        # it needs an autograd tape; forces come from the decomposed backward
+        # ops baked into the graph itself.
+        with nullcontext() if self.training else torch.no_grad():
+            result = compiled_lower(
+                ext_coord,
+                ext_atype,
+                ext_spin,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                charge_spin,
+                *task_buf_vals,
+            )
+        self._report_pending_compile()
+
+        # Translate forward_lower keys -> forward keys. OUTPUT-AGNOSTIC:
+        # ordinary keys pass through unchanged; extended derivatives fold
+        # ghost rows back onto their local owners through ``mapping``, exactly
+        # as ``communicate_extended_output`` does in eager execution. A mask
+        # labels nodes rather than additive contributions, so its public value
+        # is the local prefix of the extended axis.
+        out: dict[str, torch.Tensor] = {}
+        folded_keys = {
+            "extended_force": "force",
+            "extended_force_mag": "force_mag",
+            "extended_virial": "atom_virial",
+        }
+        for extended_key, local_key in folded_keys.items():
+            if extended_key not in result:
+                continue
+            value = result[extended_key]
+            index = mapping.unsqueeze(-1).expand_as(value)
+            local = torch.zeros(
+                nframes,
+                nloc,
+                value.shape[-1],
+                dtype=value.dtype,
+                device=value.device,
+            )
+            out[local_key] = local.scatter_add(1, index, value)
+        if "extended_mask_mag" in result:
+            out["mask_mag"] = result["extended_mask_mag"][:, :nloc]
+        translated_extended_keys = {*folded_keys, "extended_mask_mag"}
+        for key, val in result.items():
+            if key not in translated_extended_keys:
+                out[key] = val
+        return out
+
+    def forward_ragged(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compiled forward over a batch whose node axis is already flat.
+
+        The compiled lower works on that axis in either case -- its trace keeps
+        the frame count, the node count and the edge count as independent
+        symbols -- so a ragged batch simply skips the padding round trip the
+        rectangular :meth:`forward` performs around it.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            Local coordinates with shape ``(N, 3)``, frame-major over ``n_node``.
+        atype : torch.Tensor
+            Local atom types with shape ``(N,)``.
+        n_node : torch.Tensor
+            Atoms per frame with shape ``(nf,)``.
+        box : torch.Tensor or None, optional
+            Simulation cell, ``(nf, 3, 3)`` or ``(nf, 9)``.
+        fparam : torch.Tensor or None, optional
+            Frame parameters with shape ``(nf, ndf)``.
+        aparam : torch.Tensor or None, optional
+            Atomic parameters with shape ``(N, nda)``.
+        do_atomic_virial : bool, default: False
+            Whether to return per-atom virials.
+        charge_spin : torch.Tensor or None, optional
+            Frame-level charge and spin conditioning with shape ``(nf, 2)``.
+        spin : torch.Tensor or None, optional
+            Native spin with shape ``(N, 3)``. Virtual-atom spin models do
+            not expose this ragged entry.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Public model keys; per-atom entries keep the flat axis.
+
+        Raises
+        ------
+        NotImplementedError
+            If the model reads a rectangular node axis, which cannot represent
+            frames of unequal atom count without padding.
+        """
+        if not self.training and not self._compile_eval:
+            return self._forward_eager(
+                coord,
+                atype,
+                box,
+                fparam,
+                aparam,
+                do_atomic_virial,
+                charge_spin,
+                spin,
+                n_node,
+            )
+        del do_atomic_virial
+        if self._graph_eligible is None:
+            self._graph_eligible = model_uses_graph_lower(self.original_model)
+        if not self._graph_eligible:
+            raise NotImplementedError(
+                "a flat node axis requires a model whose descriptor reads one; "
+                "this model compiles the dense (nlist) lower, whose batches "
+                "must be padded to a common atom count"
+            )
+        return self._forward_graph(
+            coord,
+            atype,
+            box,
             fparam,
             aparam,
             charge_spin,
-            *task_buf_vals,
+            spin,
+            int(n_node.shape[0]),
+            0,
+            self.original_model.get_rcut(),
+            n_node=n_node,
         )
-
-        # Translate forward_lower keys -> forward keys.  OUTPUT-AGNOSTIC:
-        # every key passes through unchanged (energy models emit
-        # atom_energy/energy/virial/..., property/dos/... models their own
-        # keys -- the hardcoded energy-key copy here used to KeyError on any
-        # non-energy fitting), EXCEPT the extended-region keys
-        # ``extended_force`` (nf, nall, 3) and ``extended_virial``
-        # (nf, nall, 9): their ghost rows are scatter-summed back onto
-        # local owners via ``mapping`` -- the same fold
-        # ``communicate_extended_output`` performs in the uncompiled path
-        # (which exposes them as ``force`` / ``atom_virial``).  Folding
-        # both keeps the compiled and uncompiled outputs key-for-key
-        # consistent, including for a future atom-virial training
-        # objective.
-        out: dict[str, torch.Tensor] = {}
-        if "extended_force" in result:
-            ext_force = result["extended_force"]  # (nf, nall, 3)
-            idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
-            force = torch.zeros(
-                nframes, nloc, 3, dtype=ext_force.dtype, device=ext_force.device
-            )
-            force.scatter_add_(1, idx, ext_force)
-            out["force"] = force
-        if "extended_virial" in result:
-            ext_virial = result["extended_virial"]  # (nf, nall, 9)
-            idx = mapping.unsqueeze(-1).expand_as(ext_virial)  # (nf, nall, 9)
-            atom_virial = torch.zeros(
-                nframes,
-                nloc,
-                ext_virial.shape[-1],
-                dtype=ext_virial.dtype,
-                device=ext_virial.device,
-            )
-            atom_virial.scatter_add_(1, idx, ext_virial)
-            out["atom_virial"] = atom_virial
-        for key, val in result.items():
-            if key not in ("extended_force", "extended_virial"):
-                out[key] = val
-        return out
 
     def _forward_graph(
         self,
@@ -1117,9 +1483,11 @@ class _CompiledModel(torch.nn.Module):
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
+        spin: torch.Tensor | None,
         nframes: int,
         nloc: int,
         rcut: float,
+        n_node: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Carry-all GRAPH forward -> compiled ``forward_common_lower_graph``.
 
@@ -1129,21 +1497,47 @@ class _CompiledModel(torch.nn.Module):
         ``(N, 3)`` with ``N == nframes * nloc`` for a single-rank carry-all graph,
         so no extended->local scatter is needed; only the flat ``(N, *)`` node
         keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
+
+        A native-spin model additionally passes the per-node moment, which the
+        compiled lower turns into ``force_mag`` (and the type gate ``mask_mag``)
+        alongside the energy keys.  Presence of the moment is a property of the
+        model, not of the batch, and it is part of the structure key
+        (:func:`_get_model_structure_key`), so a cached graph is never shared
+        between a spin and a spin-free task.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
-            build_neighbor_graph,
+            compact_nodes,
+            expand_node_values,
+        )
+        from deepmd.pt_expt.utils.graph_builder import (
+            build_neighbor_graph_for_method,
+            build_ragged_neighbor_graph,
         )
 
         _model = self.original_model
 
-        coord_3d = coord.detach().reshape(nframes, nloc, 3)
+        # A ragged batch already holds the node axis the lower works on; a
+        # rectangular one is unravelled to it, and its per-atom outputs are
+        # folded back at the end.
+        ragged = n_node is not None
+        n_padded = nframes * nloc
+        # The builders take the shape the layout hands over: a flat node axis,
+        # or the rectangular one a padded batch carries.
+        coord_3d = (
+            coord.detach().reshape(-1, 3)
+            if ragged
+            else coord.detach().reshape(nframes, nloc, 3)
+        )
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
-        # graph-lower ABI: aparam is FLAT on the node axis, (N, nda) -- like
-        # every per-node tensor of the graph schema (the trace sample from
-        # build_synthetic_graph_inputs is flat too, so the compiled lower's
-        # input spec expects it).
-        if aparam is not None:
-            aparam = aparam.reshape(nframes * nloc, -1)
+        # Graph-lower per-node inputs are flat: aparam is ``(N, nda)`` and
+        # spin is ``(N, 3)``, matching the synthetic trace schema. A ragged
+        # batch already carries that layout; only rectangular inputs need to
+        # be unfolded from their frame axis.
+        if not ragged:
+            if aparam is not None:
+                aparam = aparam.reshape(n_padded, -1)
+            if spin is not None:
+                spin = spin.reshape(n_padded, 3)
 
         # Mirror the optional-input defaulting of the dense path / eager
         # call_common: a model configured with fparam / charge_spin substitutes
@@ -1162,9 +1556,7 @@ class _CompiledModel(torch.nn.Module):
                     .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = (
-            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
-        )
+        _dim_cs = _model.get_dim_chg_spin()
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
@@ -1181,43 +1573,56 @@ class _CompiledModel(torch.nn.Module):
         # level pair_exclude is a graph-BUILD transform (decision #18): fold it
         # into edge_mask here so the compiled lower consumes a pre-excluded graph
         # (the lower no longer re-applies it), matching the eager path exactly.
-        pair_excl = getattr(_model.atomic_model, "pair_excl", None)
-        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut, pair_excl=pair_excl)
-        atype_flat = atype.reshape(nframes * nloc)
+        pair_excl = _model.atomic_model.pair_excl
+        method = getattr(_model, "neighbor_graph_method", "dense")
+        if ragged:
+            ng = build_ragged_neighbor_graph(
+                method, coord_3d, atype, n_node, box_flat, rcut, pair_excl
+            )
+            atype_flat, node_index = atype, None
+        else:
+            ng = build_neighbor_graph_for_method(
+                method, coord_3d, atype, box_flat, rcut, pair_excl
+            )
+            # A rectangular batch of unequal atom counts is padded to a common
+            # width with phantom atoms (atype < 0). The builders leave them out
+            # of every edge, so dropping them from the node axis costs nothing
+            # and spares the network from evaluating them. On a batch of
+            # uniform atom count this is a renumbering by the identity.
+            atype_flat = atype.reshape(n_padded)
+            ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_flat = atype_flat[node_index]
+            if aparam is not None:
+                aparam = aparam[node_index]
+            if spin is not None:
+                spin = spin[node_index]
 
-        # Lazy compile of the GRAPH lower (cached per structure key).
-        if self.compiled_forward_lower is None:
-            if self._structure_key in self._compiled_by_structure:
-                compiled_lower, buf_order = self._compiled_by_structure[
-                    self._structure_key
-                ]
-                log.info("Reusing compiled graph lower (shared structure, lazy).")
-            else:
-                log.info(
-                    "Lazy compile (graph lower): tracing on first forward call "
-                    "(structure_key=%s).",
-                    self._structure_key,
-                )
-                compiled_lower, buf_order = _trace_and_compile_graph(
+        # Lazy compile of the GRAPH lower (cached per structure key and mode).
+        compiled_lower = self._compiled_lower_by_mode.get(self.training)
+        if compiled_lower is None:
+            compiled_lower, buf_order = self._compiled_lower_for(
+                "neighbor-graph",
+                lambda: _trace_and_compile_graph(
                     _model,
                     fparam,
                     aparam,
                     charge_spin,
+                    spin,
                     task_buffers=self._task_buffers,
                     compile_opts=self._compile_opts,
-                )
-                self._compiled_by_structure[self._structure_key] = (
-                    compiled_lower,
-                    buf_order,
-                )
-            self.compiled_forward_lower = compiled_lower
+                ),
+            )
+            self._compiled_lower_by_mode[self.training] = compiled_lower
             self._task_buf_order = buf_order
-            self._task_buffers = None
 
         # Feed a detached, grad-enabled edge_vec leaf: the traced graph's internal
         # ``edge_vec.detach()`` is stripped by ``_strip_saved_tensor_detach`` (as
         # for the dense ext_coord leaf), so the force backward roots at this input.
+        # ``spin`` is the graph lower's second leaf and gets the same treatment,
+        # rooting the magnetic-force backward at the moment input.
         edge_vec = ng.edge_vec.detach().requires_grad_(True)
+        if spin is not None:
+            spin = spin.detach().requires_grad_(True)
 
         if self._task_buf_order:
             try:
@@ -1240,35 +1645,51 @@ class _CompiledModel(torch.nn.Module):
         else:
             task_buf_vals = ()
 
-        result = self.compiled_forward_lower(
-            atype_flat,
-            ng.n_node,
-            ng.n_node,
-            ng.edge_index,
-            edge_vec,
-            ng.edge_mask,
-            ng.destination_order,
-            ng.destination_row_ptr,
-            ng.source_order,
-            ng.source_row_ptr,
-            fparam,
-            aparam,
-            charge_spin,
-            *task_buf_vals,
-        )
+        # See the dense path: an evaluation graph needs no surrounding tape.
+        with nullcontext() if self.training else torch.no_grad():
+            result = compiled_lower(
+                atype_flat,
+                ng.n_node,
+                ng.n_node,
+                ng.edge_index,
+                edge_vec,
+                ng.edge_mask,
+                ng.destination_order,
+                ng.destination_row_ptr,
+                ng.source_order,
+                ng.source_row_ptr,
+                fparam,
+                aparam,
+                charge_spin,
+                spin,
+                *task_buf_vals,
+            )
+        self._report_pending_compile()
 
         # The compiled graph lower emits PUBLIC keys on the FLAT node axis
         # (``atom_energy`` / ``force`` are (N, *); ``energy`` / ``virial`` are
-        # (nf, *)).  Unravel the node-level keys to rectangular (nf, nloc, *) so
-        # callers receive the same shapes as the dense path.
-        N = nframes * nloc
+        # (nf, *)). A ragged caller reads that axis directly. A rectangular one
+        # has its node-level keys scattered back onto the padded width and
+        # unravelled to (nf, nloc, *), where a phantom slot reads zero -- what
+        # a masked-out atom contributed there before.
+        if ragged:
+            result["n_node"] = ng.n_node
+            return result
+        N = node_index.shape[0]
         # Node-level (per-atom, lead dim N) public keys emitted by the graph
         # lower; the remaining keys are frame-level (lead dim nf) and must NOT
         # be unravelled. Keying on the NAME rather than the ``N != nframes``
         # shape heuristic keeps the single-atom case (nloc == 1, where
         # N == nframes) correct -- node-level outputs still reshape to
         # (nf, 1, *) instead of staying (nf, *).
-        node_level_keys = {"atom_energy", "force", "atom_virial", "mask"}
+        node_level_keys = {
+            "atom_energy",
+            "force",
+            "force_mag",
+            "atom_virial",
+            "mask",
+            "mask_mag",
+        }
         out: dict[str, torch.Tensor] = {}
         for key, val in result.items():
             if (
@@ -1276,7 +1697,9 @@ class _CompiledModel(torch.nn.Module):
                 and val is not None
                 and val.shape[:1] == torch.Size([N])
             ):
-                out[key] = val.reshape(nframes, nloc, *val.shape[1:])
+                out[key] = expand_node_values(val, node_index, n_padded).reshape(
+                    nframes, nloc, *val.shape[1:]
+                )
             else:
                 out[key] = val
         return out
@@ -1300,8 +1723,8 @@ class Trainer(AbstractTrainer):
         Full training configuration.
     training_data : DeepmdDataSystem or dict
         Training data.  Dict of ``{model_key: DeepmdDataSystem}`` for multi-task.
-    stat_file_path : DPPath or dict or None
-        Path for saving / loading statistics.
+    stat_file_spec : StatFileSpec or dict or None
+        Unopened statistics-cache configuration.
     validation_data : DeepmdDataSystem or dict or None
         Validation data.
     init_model : str or None
@@ -1316,7 +1739,7 @@ class Trainer(AbstractTrainer):
         self,
         config: dict[str, Any],
         training_data: DeepmdDataSystem | dict,
-        stat_file_path: DPPath | dict | None = None,
+        stat_file_spec: StatFileSpec | Mapping[str, StatFileSpec] | None = None,
         validation_data: DeepmdDataSystem | dict | None = None,
         init_model: str | None = None,
         restart_model: str | None = None,
@@ -1336,6 +1759,7 @@ class Trainer(AbstractTrainer):
 
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}
 
         # Task normalization --------------------------------------------------
@@ -1362,41 +1786,55 @@ class Trainer(AbstractTrainer):
             multi_task=self.multi_task,
             model_keys=self.model_keys,
         )
-        self.stat_file_path_by_task = _as_task_map(
-            stat_file_path,
-            multi_task=self.multi_task,
-            model_keys=self.model_keys,
+        self.stat_file_specs = stat_file_specs_by_task(
+            stat_file_spec,
+            self.model_keys,
         )
 
         # Distributed training detection
         self.is_distributed = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
+        self.sharding = ShardingPolicy.from_training_params(
+            training_params, is_distributed=self.is_distributed
+        )
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
-        self.max_ckpt_keep = int(training_params.get("max_ckpt_keep", 5))
+        self.enable_ema = bool(training_params.get("enable_ema", False))
+        self.ema_decay = float(training_params.get("ema_decay", 0.999))
+        self.ema_save_ckpt = get_ema_checkpoint_prefix(self.save_ckpt)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
         self.change_bias_after_training = bool(
             training_params.get("change_bias_after_training", False)
         )
+        self.enable_compile = bool(training_params.get("enable_compile", False))
+        self.enable_tf32 = bool(training_params.get("enable_tf32", False))
+        self._raise_if_sharding_unsupported()
 
         # Model ---------------------------------------------------------------
         self.models: dict[str, torch.nn.Module] = {}
         do_case_embd, case_embd_index = (
             _get_case_embd_config(model_params) if self.multi_task else (False, {})
         )
-        for model_key in self.model_keys:
-            self.models[model_key] = get_model(
-                deepcopy(self.model_params_by_task[model_key])
-            ).to(DEVICE)
-            if do_case_embd and not resuming:
-                self.models[model_key].set_case_embd(case_embd_index[model_key])
+        # Descriptors sample the eval-time policy variables exactly once, while
+        # they are being constructed; keep the config-derived defaults scoped to
+        # construction so they do not leak into the rest of the process. The
+        # matmul precision policy reads the same variables and so is resolved
+        # in the same scope.
+        with scoped_env_defaults(infer_env_defaults(validating_params)):
+            self.compile_infer = infer_compile_enabled()
+            self.matmul_precision = MatmulPrecisionPolicy(self.enable_tf32)
+            for model_key in self.model_keys:
+                self.models[model_key] = get_model(
+                    deepcopy(self.model_params_by_task[model_key])
+                ).to(DEVICE)
+                if do_case_embd and not resuming:
+                    self.models[model_key].set_case_embd(case_embd_index[model_key])
         self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
         # Loss ----------------------------------------------------------------
@@ -1454,13 +1892,17 @@ class Trainer(AbstractTrainer):
             else self.valid_numb_batch_by_task[DEFAULT_TASK_KEY]
         )
 
+        # The layout settles before the schedule below, because under
+        # ``mix:N`` it is what decides how many frames a batch holds, and the
+        # schedule counts those batches to turn epochs into steps.
+        self._configure_batch_layout(training_data, validation_data)
+
         # Statistics ----------------------------------------------------------
         self._finetune_update_stat = False
         self._sample_funcs: dict[str, Any] = {}
         for model_key in self.model_keys:
             _nbatch = self.model_params_by_task[model_key].get("data_stat_nbatch", 10)
             _data = self.training_data_by_task[model_key]
-            _stat_path = self.stat_file_path_by_task[model_key]
 
             @functools.lru_cache
             def _make_sample(
@@ -1478,28 +1920,49 @@ class Trainer(AbstractTrainer):
             )
             if _finetune_has_new_type:
                 self._finetune_update_stat = True
-            if (not resuming or _finetune_has_new_type) and self.rank == 0:
-                self.models[model_key].compute_or_load_stat(
-                    sampled_func=_make_sample,
-                    stat_file_path=_stat_path,
+            if not resuming or _finetune_has_new_type:
+
+                def initialize_statistics(
+                    _model_key: str = model_key,
+                    _sample_func: Callable[[], list[dict[str, np.ndarray]]] = (
+                        _make_sample
+                    ),
+                ) -> None:
+                    with open_stat_file(
+                        self.stat_file_specs[_model_key]
+                    ) as stat_file_path:
+                        self.models[_model_key].compute_or_load_stat(
+                            sampled_func=_sample_func,
+                            stat_file_path=stat_file_path,
+                        )
+
+                self._run_stat_on_chief(
+                    initialize_statistics,
+                    operation=f"statistics initialization for task {model_key!r}",
                 )
-        if self.is_distributed:
-            for model_key in self.model_keys:
-                self._broadcast_model_stat(self.models[model_key])
 
-        # Model probability (multi-task) --------------------------------------
-        if self.multi_task:
-            from deepmd.dpmodel.utils.training_utils import (
-                resolve_model_prob,
-            )
+        # Training schedule ---------------------------------------------------
+        schedule = resolve_step_schedule(
+            training_params,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+            training_data=self.training_data_by_task,
+            epoch_length=self._epoch_length,
+            broadcast=self._broadcast_value_from_rank0,
+            rank=self.rank,
+        )
+        self.num_steps = schedule.num_steps
+        self.model_prob = schedule.model_prob
 
-            self.model_prob = resolve_model_prob(
-                self.model_keys,
-                training_params.get("model_prob"),
-                self.training_data_by_task,
-            )
-        else:
-            self.model_prob = None
+        # Checkpoint layout ----------------------------------------------------
+        # num_steps is final here, so a retention ratio can be converted into an
+        # absolute keep count once.
+        self.ckpt_store, self.ema_ckpt_store = build_checkpoint_stores(
+            training_params,
+            num_steps=self.num_steps,
+            ema_prefix=self.ema_save_ckpt,
+            rank=self.rank,
+        )
 
         # Learning rate -------------------------------------------------------
         self.lr_schedule = make_learning_rate_schedule(
@@ -1508,13 +1971,20 @@ class Trainer(AbstractTrainer):
 
         # Gradient clipping
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
 
         # Model wrapper -------------------------------------------------------
-        self.wrapper = ModelWrapper(self.model, self.loss, model_params=model_params)
+        self.wrapper = ModelWrapper(
+            self.model,
+            self.loss,
+            model_params=model_params,
+            matmul_precision=self.matmul_precision,
+        )
         self.start_step = 0
 
         # Shared params (multi-task) ------------------------------------------
         self._shared_links = shared_links
+        synchronize_model_state = not resuming or self._finetune_update_stat
         if shared_links is not None:
             _data_stat_protect = np.array(
                 [
@@ -1526,69 +1996,39 @@ class Trainer(AbstractTrainer):
                 raise ValueError(
                     "Model key 'data_stat_protect' must be the same in each branch when multitask!"
                 )
-            self.wrapper.share_params(
-                shared_links,
-                resume=(resuming and not self._finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(
+            share_kwargs = {
+                "model_key_prob_map": dict(
                     zip(self.model_keys, self.model_prob, strict=True)
                 ),
-                data_stat_protect=_data_stat_protect[0],
+                "data_stat_protect": _data_stat_protect[0],
+            }
+            if synchronize_model_state:
+                self._run_stat_on_chief(
+                    lambda: self.wrapper.share_params(
+                        shared_links,
+                        resume=False,
+                        **share_kwargs,
+                    ),
+                    operation="shared statistics merge",
+                )
+
+        if synchronize_model_state and self.is_distributed:
+            for model_key in self.model_keys:
+                self._broadcast_model_stat(self.models[model_key])
+
+        if shared_links is not None:
+            self.wrapper.share_params(
+                shared_links,
+                resume=True,
+                **share_kwargs,
             )
-
-        # DDP wrapping --------------------------------------------------------
-        if self.is_distributed:
-            # Multi-task uses only one fitting_net per step, so unused
-            # parameters exist in the graph. Single-task doesn't need this.
-            _find_unused = self.multi_task
-            if DEVICE.type == "cuda":
-                from deepmd.pt_expt.utils.env import (
-                    LOCAL_RANK,
-                )
-
-                torch.cuda.set_device(LOCAL_RANK)
-                self.wrapper = torch.nn.parallel.DistributedDataParallel(
-                    self.wrapper,
-                    device_ids=[LOCAL_RANK],
-                    find_unused_parameters=_find_unused,
-                    output_device=LOCAL_RANK,
-                )
-            else:
-                # CPU (gloo backend) — no device_ids
-                self.wrapper = torch.nn.parallel.DistributedDataParallel(
-                    self.wrapper,
-                    find_unused_parameters=_find_unused,
-                )
-
-        # Optimiser -----------------------------------------------------------
-        opt_type = training_params.get("opt_type", "Adam")
-        # LambdaLR multiplies each param group's initial learning rate by the
-        # lambda value.  Warmup schedules legitimately return zero at step 0,
-        # so use the nonzero schedule base as the denominator and let the
-        # lambda initialize the optimizer to the requested warmup value.
-        initial_lr = float(self.lr_schedule.start_lr)
-
-        if opt_type == "Adam":
-            self.optimizer = torch.optim.Adam(self.wrapper.parameters(), lr=initial_lr)
-        elif opt_type == "AdamW":
-            weight_decay = training_params.get("weight_decay", 0.001)
-            self.optimizer = torch.optim.AdamW(
-                self.wrapper.parameters(),
-                lr=initial_lr,
-                weight_decay=weight_decay,
-            )
-        else:
-            raise ValueError(f"Unsupported optimizer type: {opt_type}")
-
-        for param_group in self.optimizer.param_groups:
-            param_group["initial_lr"] = initial_lr
-
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lambda step: self.lr_schedule.value(step) / initial_lr,
-            last_epoch=self.start_step - 1,
-        )
 
         # Resume --------------------------------------------------------------
+        # Weights are restored while the wrapper still owns whole tensors,
+        # because a checkpoint records the model as a whole and its tensors
+        # cannot be copied into sharded parameters.
+        ema_state_dict = None
+        optimizer_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             is_pte = resume_model.endswith((".pte", ".pt2"))
@@ -1602,10 +2042,15 @@ class Trainer(AbstractTrainer):
                     resume_model, map_location=DEVICE, weights_only=True
                 )
                 if "model" in state_dict:
+                    # Optimizer and EMA state describe the weights of the run
+                    # they were saved by; a finetune starts a new run and keeps
+                    # neither.
+                    continues_run = self.restart_training and finetune_model is None
                     optimizer_state_dict = (
-                        state_dict["optimizer"]
-                        if self.restart_training and finetune_model is None
-                        else None
+                        state_dict["optimizer"] if continues_run else None
+                    )
+                    ema_state_dict = (
+                        state_dict.get(EMA_CHECKPOINT_KEY) if continues_run else None
                     )
                     state_dict = state_dict["model"]
                 else:
@@ -1739,12 +2184,21 @@ class Trainer(AbstractTrainer):
                         if not finetune_rule.get_random_fitting()
                         else "set-by-statistic"
                     )
-                    if self.rank == 0:
-                        self.models[model_key] = model_change_out_bias(
-                            self.models[model_key],
-                            self._sample_funcs[model_key],
-                            _bias_adjust_mode=bias_mode,
+
+                    def update_finetune_bias(
+                        _model_key: str = model_key,
+                        _bias_mode: str = bias_mode,
+                    ) -> None:
+                        self.models[_model_key] = model_change_out_bias(
+                            self.models[_model_key],
+                            self._sample_funcs[_model_key],
+                            _bias_adjust_mode=_bias_mode,
                         )
+
+                    self._run_stat_on_chief(
+                        update_finetune_bias,
+                        operation=f"fine-tuning statistics for task {model_key!r}",
+                    )
                     if self.is_distributed:
                         self._broadcast_model_stat(self.models[model_key])
                 self.model = (
@@ -1764,24 +2218,92 @@ class Trainer(AbstractTrainer):
                     ),
                 )
 
-            if optimizer_state_dict is not None:
-                self.optimizer.load_state_dict(optimizer_state_dict)
-                for param_group in self.optimizer.param_groups:
-                    param_group["initial_lr"] = initial_lr
-                # rebuild scheduler from the resumed step.
-                # last_epoch handles the step offset; the lambda must NOT
-                # add self.start_step again (that would double-count).
-                self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                    self.optimizer,
-                    lambda step: self.lr_schedule.value(step) / initial_lr,
-                    last_epoch=self.start_step - 1,
-                )
+        # Distribution --------------------------------------------------------
+        # The weights are in place, so a sharding strategy may cut them up.
+        if self.is_distributed:
+            self._distribute_wrapper()
+            self._log_sharding_strategy()
+
+        # Optimiser -----------------------------------------------------------
+        opt_type = optimizer_params.get("type", "Adam")
+        if opt_type not in ("Adam", "AdamW", "HybridMuon"):
+            raise ValueError(f"Unsupported optimizer type: {opt_type}")
+        # LambdaLR multiplies each param group's initial learning rate by the
+        # lambda value.  Warmup schedules legitimately return zero at step 0,
+        # so use the nonzero schedule base as the denominator and let the
+        # lambda initialize the optimizer to the requested warmup value.
+        initial_lr = float(self.lr_schedule.start_lr)
+        adam_betas = (
+            float(optimizer_params["adam_beta1"]),
+            float(optimizer_params["adam_beta2"]),
+        )
+        weight_decay = float(optimizer_params["weight_decay"])
+
+        if opt_type in ("Adam", "AdamW"):
+            self.optimizer = self._create_optimizer(
+                torch.optim.Adam if opt_type == "Adam" else torch.optim.AdamW,
+                lr=initial_lr,
+                betas=adam_betas,
+                weight_decay=weight_decay,
+            )
+        else:
+            self.optimizer = self._create_optimizer(
+                HybridMuonOptimizer,
+                lr=initial_lr,
+                momentum=float(optimizer_params["momentum"]),
+                weight_decay=weight_decay,
+                adam_betas=adam_betas,
+                lr_adjust=float(optimizer_params["lr_adjust"]),
+                lr_adjust_coeff=float(optimizer_params["lr_adjust_coeff"]),
+                muon_mode=str(optimizer_params["muon_mode"]),
+                enable_gram=bool(optimizer_params["enable_gram"]),
+                flash_muon=bool(optimizer_params["flash_muon"]),
+                magma_muon=bool(optimizer_params["magma_muon"]),
+                # Sharded parameters are DTensors, and several torch._foreach_*
+                # ops lack sharding propagation, so the per-tensor path applies.
+                use_foreach=False if self.sharding.shards_parameters else None,
+            )
+            # The parameter names route each tensor to Muon or Adam. They are
+            # supplied after construction because a redundancy-sharded
+            # optimizer treats every constructor keyword as a param-group
+            # default, which would serialize the whole model into each
+            # checkpoint.
+            self._local_optimizer.set_param_names(
+                tuple(self.wrapper.named_parameters())
+            )
+
+        if optimizer_state_dict is not None:
+            self._load_optimizer_state(optimizer_state_dict)
+        for param_group in self.optimizer.param_groups:
+            param_group["initial_lr"] = initial_lr
+
+        # The resumed step offset is carried by last_epoch; the lambda must not
+        # add it again, which would advance the schedule twice.
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.optimizer,
+            lambda step: self.lr_schedule.value(step) / initial_lr,
+            last_epoch=self.start_step - 1,
+        )
+
+        # Exponential moving average -------------------------------------------
+        # The shadow tracks the raw models, whose parameter tensors the compiled
+        # graphs keep sharing, so it is unaffected by compilation below.
+        self.model_ema = (
+            ModelEMA(self.model, decay=self.ema_decay, state=ema_state_dict)
+            if self.enable_ema
+            else None
+        )
+
+        self._configure_neighbor_graph_method(
+            training_params.get("neighbor_graph_method", "auto")
+        )
 
         # torch.compile -------------------------------------------------------
-        self.enable_compile = training_params.get("enable_compile", False)
         if self.enable_compile:
+            check_compile_torch_version()
             compile_opts = training_params.get("compile_options", {})
-            log.info("Compiling model with torch.compile (%s)", compile_opts)
+            if compile_opts:
+                log.info("torch.compile options: %s", compile_opts)
             self._compile_model(compile_opts)
 
         self.training_tasks = self._make_training_tasks()
@@ -1794,52 +2316,46 @@ class Trainer(AbstractTrainer):
             ),
             rank_context=RankContext(rank=self.rank, world_size=self.world_size),
         )
-        self.full_validator = self._create_full_validator(
+        self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
             validation_data=self.validation_data if not self.multi_task else None,
         )
 
-    def _create_full_validator(
+        if self.rank == 0:
+            log_parameter_counts(
+                {key: count_parameters(self.models[key]) for key in self.model_keys},
+                multi_task=self.multi_task,
+            )
+
+    def _create_full_validators(
         self,
         *,
         validating_params: dict[str, Any],
         validation_data: Any | None,
-    ) -> FullValidator | None:
-        """Create the runtime full validator when it is active."""
-        if not self._is_validation_requested(validating_params, "full_validation"):
-            return None
-        self._raise_if_full_validation_unsupported(validation_data)
-        if validation_data is None:
-            raise RuntimeError(
-                "validation_data must be available after full validation checks."
-            )
-        return FullValidator(
+    ) -> tuple[FullValidator | None, FullValidator | None]:
+        """Create the live-weight and EMA-weight full validators."""
+        validation_model = self.model
+        if self.enable_compile and not self.multi_task:
+            validation_model = self._unwrapped.model[DEFAULT_TASK_KEY]
+        return build_full_validators(
             validating_params=validating_params,
             validation_data=validation_data,
-            model=self.models[DEFAULT_TASK_KEY],
+            model=validation_model,
             state_store=self._unwrapped.train_infos,
             num_steps=self.num_steps,
             rank=self.rank,
-            zero_stage=0,
             restart_training=self.restart_training,
             checkpoint_dir=resolve_best_checkpoint_dir(
                 validating_params, self.save_ckpt
             ),
+            ensure_supported=lambda: self._raise_if_full_validation_unsupported(
+                validation_data
+            ),
+            model_ema=self.model_ema,
+            ema_weight_model=self.model,
+            sharding=self.sharding,
+            matmul_precision=self.matmul_precision,
         )
-
-    def _is_validation_requested(
-        self,
-        validating_params: dict[str, Any],
-        flag_name: str,
-    ) -> bool:
-        """Check whether a full validation flow can trigger during this run."""
-        if not validating_params.get(flag_name, False):
-            return False
-        start_step = resolve_full_validation_start_step(
-            validating_params.get("full_val_start", 0.5),
-            self.num_steps,
-        )
-        return start_step is not None and start_step <= self.num_steps
 
     def _raise_if_full_validation_unsupported(
         self,
@@ -1852,18 +2368,16 @@ class Trainer(AbstractTrainer):
                 "training; multi-task training is not supported."
             )
 
-        has_spin = getattr(self.models[DEFAULT_TASK_KEY], "has_spin", False)
-        if callable(has_spin):
-            has_spin = has_spin()
-        if has_spin or isinstance(self.loss, EnergySpinLoss):
+        if self.sharding.shards_parameters:
             raise ValueError(
                 "validating.full_validation only supports single-task energy "
-                "training; spin-energy training is not supported."
+                "training with training.zero_stage < 2."
             )
 
-        if not isinstance(self.loss, EnergyLoss):
+        if not isinstance(self.loss, (EnergyLoss, EnergySpinLoss)):
             raise ValueError(
-                "validating.full_validation only supports single-task energy training."
+                "validating.full_validation only supports single-task energy "
+                "or spin-energy training."
             )
 
         if validation_data is None:
@@ -1875,6 +2389,81 @@ class Trainer(AbstractTrainer):
     # ------------------------------------------------------------------
     # torch.compile helpers
     # ------------------------------------------------------------------
+
+    def _configure_batch_layout(self, *data_maps: Any) -> None:
+        """Ask each LMDB data system for the layout its own model can consume.
+
+        Under ``mix:N``, a model whose descriptor reads a flat node axis takes
+        the frames of a batch concatenated, which spares it the padding that
+        frames of unequal atom count would otherwise need. Every other model
+        reads an ``(nf, nloc, ...)`` axis and needs them padded to a common
+        width. Non-mixing batch rules retain their established rectangular
+        layout. Only the trainer sees both sides, and it settles the question
+        here, once, before any batch is drawn.
+
+        A graph lower is necessary but not sufficient: the model must expose an
+        entry that takes the flat axis, and the configured loss must accept that
+        representation. Composed models (linear, ZBL bridging) have no such
+        model entry. Generalized-force and Hessian losses require rectangular
+        label axes. Traditional virtual-atom spin models expose no flat-axis
+        entry and therefore remain rectangular; native-spin models follow the
+        same graph capability contract once their loss accepts flat magnetic
+        outputs. Requiring both capabilities keeps the complete objective on a
+        layout it can evaluate.
+
+        Each task has its own data system and its own model, so the answer is
+        each task's own: a multi-task run pairing a graph model with a dense
+        one gives the first concatenated batches and the second padded ones.
+
+        This must run before the run length is resolved. Under ``mix:N`` the
+        layout decides where the sampler cuts a batch -- padding is what makes
+        a batch's cost depend on its widest frame -- so a schedule that
+        counted batches first would count a packing training never uses, and
+        would serve its first epoch in that packing.
+
+        Parameters
+        ----------
+        *data_maps : Any
+            The training and validation data systems, either bare or as the
+            per-task mappings a multi-task run builds.
+        """
+        for task_key in self.model_keys:
+            model = self.models[task_key]
+            loss = self.losses[task_key]
+            ragged = (
+                model_uses_graph_lower(model)
+                and hasattr(model, "forward_ragged")
+                and loss.supports_ragged_batches
+            )
+            for data_map in data_maps:
+                data = (
+                    data_map.get(task_key) if isinstance(data_map, dict) else data_map
+                )
+                if hasattr(data, "use_ragged_batches"):
+                    data.use_ragged_batches(ragged)
+
+    def _configure_neighbor_graph_method(self, requested: str) -> None:
+        """Resolve and install the training graph builder on eligible models."""
+        graph_models = [
+            self.models[model_key]
+            for model_key in self.model_keys
+            if model_uses_graph_lower(self.models[model_key])
+        ]
+        if not graph_models:
+            if requested != "auto":
+                raise ValueError(
+                    "training.neighbor_graph_method applies only to "
+                    "graph-eligible energy models"
+                )
+            return
+
+        from deepmd.pt_expt.utils.graph_builder import (
+            resolve_neighbor_graph_method,
+        )
+
+        resolved = resolve_neighbor_graph_method(requested, DEVICE)
+        for model in graph_models:
+            model.neighbor_graph_method = resolved
 
     def _compile_model(self, compile_opts: dict[str, Any]) -> None:
         """Replace ``self.model`` with a compiled version.
@@ -1891,14 +2480,6 @@ class Trainer(AbstractTrainer):
         needed.  The coord extension + nlist build (data-dependent
         control flow) are kept outside the compiled region.
         """
-        # Disable DDPOptimizer: our compile region wraps only the inner
-        # compute function, not the whole DDP model.  DDPOptimizer assumes
-        # it owns the full model graph and splits at bucket boundaries,
-        # producing subgraphs whose outputs include symbolic integers.
-        # AOT Autograd then crashes with ``'int' object has no attribute
-        # 'meta'`` (pytorch/pytorch#134182).
-        torch._dynamo.config.optimize_ddp = False
-
         # Under DDP, self.wrapper is a DistributedDataParallel wrapper;
         # access the underlying ModelWrapper via .module.
         wrapper_mod = (
@@ -1910,8 +2491,6 @@ class Trainer(AbstractTrainer):
         from collections import (
             defaultdict,
         )
-
-        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
 
         # Pre-pass: group tasks by structure key and auto-detect per-task buffers.
         # Grouping is needed so _detect_task_buffers can diff buffer identities
@@ -1961,27 +2540,7 @@ class Trainer(AbstractTrainer):
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
-            # Compiled DPA1/se_atten_v2 attention is numerically more
-            # sensitive than other descriptors: the inductor-fused and
-            # eager force/grad outputs can diverge above 1e-10 on
-            # multi-threaded CPU hosts because parallel reduction order
-            # is hardware-dependent.  Warn but do not reject — energies
-            # remain well within training tolerance and the user may
-            # accept the trade-off for compile speed.
-            descriptor = model.get_descriptor()
-            if isinstance(descriptor, DescrptDPA1DP):
-                n_attn = descriptor.get_numb_attn_layer()
-                if n_attn > 0:
-                    log.warning(
-                        "Compiling DPA1/se_atten_v2 with %d attention "
-                        "layer(s) (task=%s): the compiled forces/grads "
-                        "are slightly hardware-sensitive (multi-thread "
-                        "reduction order), and may not match the eager "
-                        "path bit-for-bit.  Use 'enable_compile: false' "
-                        "or 'attn_layer: 0' for fully reproducible runs.",
-                        n_attn,
-                        task_key,
-                    )
+            _warn_compiled_attention(model, task_key)
 
             structure_key = _key_for[task_key]
             task_bufs = _task_bufs_for[task_key]
@@ -1993,9 +2552,12 @@ class Trainer(AbstractTrainer):
                 task_buffers=task_bufs if task_bufs else None,
                 compile_opts=compile_opts,
                 compiled_by_structure=_compiled_by_structure,
+                task_key=task_key,
+                compile_eval=self.compile_infer,
             )
             log.info(
-                "Lazy compile registered (task=%s); will trace on first forward call.",
+                "Compilation enabled (task=%s); the graph is traced and compiled "
+                "on the first training step.",
                 task_key,
             )
 
@@ -2065,9 +2627,181 @@ class Trainer(AbstractTrainer):
 
         return input_dict, label_dict
 
+    def _epoch_length(self, model_key: str) -> int:
+        """Return the steps this rank takes during one epoch of a task.
+
+        Parameters
+        ----------
+        model_key : str
+            Key of the task whose training data is measured.
+
+        Returns
+        -------
+        int
+            Number of steps covering one pass over the task's training data.
+
+        Notes
+        -----
+        A data system reports ``nbatches[i]``, the batch count of system ``i``,
+        and ``sys_probs[i]``, the probability of drawing from that system, from
+        which ``compute_total_numb_batch`` derives the dataset-wide epoch
+        length ``ceil(max_i(nbatches[i] / sys_probs[i]))``. LMDB data reports
+        that global count while its sampler shards batches evenly across ranks;
+        legacy data systems remain replicated. In both cases one rank takes
+        ``ceil(total / world_size)`` steps per epoch.
+        """
+        data = self.training_data_by_task[model_key]
+        total = compute_total_numb_batch(data.nbatches, data.sys_probs)
+        return int(np.ceil(total / self.world_size))
+
     # ------------------------------------------------------------------
-    # DDP helpers
+    # Distribution helpers
     # ------------------------------------------------------------------
+
+    def _raise_if_sharding_unsupported(self) -> None:
+        """Reject the run configurations that state sharding cannot serve.
+
+        Raises
+        ------
+        ValueError
+            If the requested stage conflicts with another training option.
+        """
+        if not self.sharding.enabled:
+            return
+        if self.multi_task:
+            raise ValueError(
+                "training.zero_stage is currently only supported in single-task "
+                "training."
+            )
+        if self.change_bias_after_training:
+            raise ValueError(
+                "training.zero_stage does not support change_bias_after_training."
+            )
+        if not self.sharding.shards_parameters:
+            return
+        if self.enable_ema:
+            raise ValueError(
+                "training.enable_ema currently only supports training.zero_stage < 2."
+            )
+        if self.enable_compile:
+            raise ValueError(
+                "training.enable_compile only supports training.zero_stage < 2: "
+                "the compiled graph is traced from the parameters, which FSDP2 "
+                "shards as DTensors."
+            )
+
+    def _distribute_wrapper(self) -> None:
+        """Place the wrapper under the parallel strategy of this run.
+
+        Stages below two replicate the model and keep plain tensors, so the
+        wrapper is held by ``DistributedDataParallel``. From stage two on the
+        parameters themselves are sharded by FSDP2, which mutates the wrapper
+        in place and therefore leaves no module to unwrap.
+        """
+        local_rank = None
+        if DEVICE.type == "cuda":
+            from deepmd.pt_expt.utils.env import (
+                LOCAL_RANK,
+            )
+
+            local_rank = LOCAL_RANK
+            torch.cuda.set_device(local_rank)
+
+        if not self.sharding.shards_parameters:
+            # Multi-task uses only one fitting_net per step, so unused
+            # parameters exist in the graph. Single-task doesn't need this.
+            kwargs: dict[str, Any] = {"find_unused_parameters": self.multi_task}
+            if local_rank is not None:
+                kwargs |= {"device_ids": [local_rank], "output_device": local_rank}
+            self.wrapper = torch.nn.parallel.DistributedDataParallel(
+                self.wrapper, **kwargs
+            )
+            return
+
+        if fully_shard is None:
+            raise RuntimeError(
+                "training.zero_stage>=2 requires FSDP2 "
+                "(``torch.distributed.fsdp.fully_shard``), which is missing "
+                f"from PyTorch {torch.__version__}. Set training.zero_stage "
+                "to 0 or 1 to stay on the DDP / ZeRO-1 path."
+            )
+        # Unlike the DDP constructor, FSDP2 does not broadcast: the ranks have
+        # to already agree on the weights before they are cut into shards.
+        for tensor in (*self.wrapper.parameters(), *self.wrapper.buffers()):
+            dist.broadcast(tensor.data, src=0)
+        self.wrapper = fully_shard(
+            self.wrapper,
+            reshard_after_forward=self.sharding.reshards_after_forward,
+        )
+
+    def _log_sharding_strategy(self) -> None:
+        """Report the distribution strategy once the wrapper is in place."""
+        if self.sharding.enabled and self.rank == 0:
+            log.info(self.sharding.describe())
+
+    def _load_optimizer_state(self, optimizer_state_dict: dict[str, Any]) -> None:
+        """Restore optimizer state recorded as one whole.
+
+        Unlike the weights, the optimizer is necessarily built after the model
+        is distributed, so under parameter sharding its state is already made
+        of shards and the recorded state has to be cut up to match.
+
+        Parameters
+        ----------
+        optimizer_state_dict : dict[str, Any]
+            The optimizer state as recorded in a checkpoint.
+        """
+        if not self.sharding.shards_parameters:
+            self.optimizer.load_state_dict(optimizer_state_dict)
+            return
+        set_optimizer_state_dict(
+            self.wrapper,
+            self.optimizer,
+            optim_state_dict=optimizer_state_dict,
+            options=StateDictOptions(full_state_dict=True, broadcast_from_rank0=True),
+        )
+
+    def _create_optimizer(
+        self,
+        optimizer_class: type[torch.optim.Optimizer],
+        **kwargs: Any,
+    ) -> torch.optim.Optimizer:
+        """Construct the optimizer, sharding its state when the stage asks.
+
+        Parameters
+        ----------
+        optimizer_class : type[torch.optim.Optimizer]
+            The optimizer to construct.
+        **kwargs
+            Keyword arguments forwarded to the optimizer.
+
+        Returns
+        -------
+        torch.optim.Optimizer
+            The optimizer, wrapped in a ``ZeroRedundancyOptimizer`` when the
+            stage shards optimizer state but not the parameters; from stage
+            two on FSDP2 already shards the state that the optimizer derives
+            from its sharded parameters.
+        """
+        if self.sharding.stage == 1:
+            return ZeroRedundancyOptimizer(
+                self.wrapper.parameters(),
+                optimizer_class=optimizer_class,
+                **kwargs,
+            )
+        return optimizer_class(self.wrapper.parameters(), **kwargs)
+
+    @property
+    def _local_optimizer(self) -> torch.optim.Optimizer:
+        """Return the optimizer that performs this rank's update.
+
+        A redundancy-sharded optimizer owns no update of its own: it delegates
+        to a local optimizer over this rank's share of the parameters, and it
+        is that one which holds the per-parameter state and the name routing.
+        """
+        if self.sharding.stage == 1:
+            return self.optimizer.optim
+        return self.optimizer
 
     @property
     def _unwrapped(self) -> "ModelWrapper":
@@ -2075,6 +2809,30 @@ class Trainer(AbstractTrainer):
         if hasattr(self.wrapper, "module"):
             return self.wrapper.module
         return self.wrapper
+
+    def _run_stat_on_chief(
+        self,
+        action: Callable[[], None],
+        *,
+        operation: str,
+    ) -> None:
+        """Run a statistics action on rank 0 and synchronize its outcome."""
+        synchronize_failure: Callable[[bool], bool] | None = None
+        if self.is_distributed:
+
+            def broadcast_failure(failed: bool) -> bool:
+                holder = [failed if self.rank == 0 else False]
+                dist.broadcast_object_list(holder, src=0, device=DEVICE)
+                return bool(holder[0])
+
+            synchronize_failure = broadcast_failure
+
+        run_stat_on_chief(
+            action,
+            is_chief=self.rank == 0,
+            synchronize_failure=synchronize_failure,
+            operation=operation,
+        )
 
     @staticmethod
     def _broadcast_model_stat(model: torch.nn.Module) -> None:
@@ -2084,17 +2842,48 @@ class Trainer(AbstractTrainer):
         for b in model.buffers():
             dist.broadcast(b, src=0)
 
+    def _broadcast_value_from_rank0(self, value: Any) -> Any:
+        """Return rank 0's copy of ``value`` on every rank.
+
+        Epoch lengths round a quotient of sampling probabilities that is often
+        an exact integer in real arithmetic, so a last-bit difference between
+        ranks -- as reduction kernels dispatched for different CPU features
+        produce -- flips the rounded result and hence ``num_steps``. Ranks that
+        disagree on ``num_steps`` also disagree on the full-validation start
+        step and deadlock on mismatched collective calls, so the whole world
+        adopts rank 0's value.
+        """
+        if not self.is_distributed:
+            return value
+        holder = [value]
+        dist.broadcast_object_list(holder, src=0, device=DEVICE)
+        return holder[0]
+
     # ------------------------------------------------------------------
     # Checkpointing
     # ------------------------------------------------------------------
 
+    @property
+    def checkpoint_is_collective(self) -> bool:
+        """Whether assembling a checkpoint needs every rank."""
+        return self.sharding.enabled
+
     def save_checkpoint(self, step: int) -> None:
-        ckpt_path = Path(f"{self.save_ckpt}-{step}.pt")
+        # Abort before writing if any gradient norm since the previous
+        # checkpoint was non-finite, so a diverged interval is not persisted.
+        self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
+        ckpt_path = self.ckpt_store.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
-        latest = Path(f"{self.save_ckpt}.pt")
-        _replace_latest_checkpoint_link(latest, ckpt_path)
-        self._cleanup_old_checkpoints()
-        log.info(f"Saved checkpoint to {ckpt_path}")
+        if self.rank == 0:
+            self.ckpt_store.publish(ckpt_path)
+            self.ckpt_store.prune(ckpt_path)
+            log.info(f"Saved model to {ckpt_path}")
+        if self.model_ema is not None:
+            ema_path = self.ema_ckpt_store.path_for(step)
+            self._save_checkpoint_to_path(ema_path, step=step, use_ema_weights=True)
+            if self.rank == 0:
+                self.ema_ckpt_store.publish(ema_path)
+                self.ema_ckpt_store.prune(ema_path)
 
     def _save_full_validation_checkpoint(
         self,
@@ -2106,8 +2895,61 @@ class Trainer(AbstractTrainer):
         del lr
         self._save_checkpoint_to_path(save_path, step=step)
 
-    def _save_checkpoint_to_path(self, ckpt_path: Path, *, step: int) -> None:
-        """Serialize the current trainer state to an explicit checkpoint path."""
+    def _save_full_validation_ema_checkpoint(
+        self,
+        save_path: Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save an EMA-weight checkpoint selected by EMA full validation.
+
+        The validator restores the live weights before selecting a checkpoint,
+        so the shadow has to be applied again while writing it.
+        """
+        del lr
+        self._save_checkpoint_to_path(save_path, step=step, use_ema_weights=True)
+
+    def _save_checkpoint_to_path(
+        self,
+        ckpt_path: Path,
+        *,
+        step: int,
+        use_ema_weights: bool = False,
+    ) -> None:
+        """Serialize the current trainer state to an explicit checkpoint path.
+
+        Parameters
+        ----------
+        ckpt_path : Path
+            Destination of the checkpoint file.
+        step : int
+            Training step recorded in the checkpoint.
+        use_ema_weights : bool, optional
+            Whether to substitute the EMA-smoothed weights for the live ones.
+            Such a checkpoint is a deployment snapshot: it carries neither the
+            optimizer state nor the EMA state, both of which describe the live
+            weights it does not contain.
+        """
+        if use_ema_weights:
+            with self.model_ema.apply_shadow(self.model):
+                self._write_checkpoint(
+                    ckpt_path,
+                    step=step,
+                    include_optimizer=False,
+                    include_ema_state=False,
+                )
+            return
+        self._write_checkpoint(ckpt_path, step=step)
+
+    def _write_checkpoint(
+        self,
+        ckpt_path: Path,
+        *,
+        step: int,
+        include_optimizer: bool = True,
+        include_ema_state: bool = True,
+    ) -> None:
+        """Serialize the wrapper, and optionally optimizer and EMA state."""
         self._unwrapped.train_infos["step"] = step
         # When compiled, wrapper.model[key] is _CompiledModel whose state_dict
         # uses keys like "original_model.*".  Restart would load into a plain
@@ -2122,32 +2964,64 @@ class Trainer(AbstractTrainer):
                 compiled_backup[task_key] = m
                 wrapper.model[task_key] = m.original_model
         try:
-            state = {
-                "model": wrapper.state_dict(),
-                "optimizer": self.optimizer.state_dict(),
-            }
+            model_state, optim_state = self._collect_checkpoint_states(
+                wrapper, include_optimizer=include_optimizer
+            )
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
+        # Sharded state is assembled on the chief; the other ranks have played
+        # their part in the collectives above and hold nothing to write.
+        if self.rank != 0:
+            return
+        state: dict[str, Any] = {"model": model_state}
+        if optim_state is not None:
+            state["optimizer"] = optim_state
+        if include_ema_state and self.model_ema is not None:
+            state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(state, ckpt_path)
 
-    def _cleanup_old_checkpoints(self) -> None:
-        """Remove old step checkpoint files beyond the retention limit."""
-        if self.max_ckpt_keep <= 0:
-            return
-        ckpt_prefix_path = Path(self.save_ckpt)
-        ckpt_parent = ckpt_prefix_path.parent
-        ckpt_prefix = ckpt_prefix_path.name
-        checkpoints: list[tuple[int, Path]] = []
-        for path in ckpt_parent.glob(f"{ckpt_prefix}-*.pt"):
-            if path.is_dir() or path.is_symlink():
-                continue
-            step_text = path.name.removeprefix(f"{ckpt_prefix}-").removesuffix(".pt")
-            if step_text.isdigit():
-                checkpoints.append((int(step_text), path))
-        for _, path in sorted(checkpoints)[: -self.max_ckpt_keep]:
-            path.unlink(missing_ok=True)
+    def _collect_checkpoint_states(
+        self,
+        wrapper: "ModelWrapper",
+        *,
+        include_optimizer: bool,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Gather the model and optimizer state a checkpoint records.
+
+        Parameters
+        ----------
+        wrapper : ModelWrapper
+            The unwrapped model wrapper, already stripped of compiled models.
+            Under parameter sharding it is the sharded wrapper itself, because
+            FSDP2 shards in place and compilation is rejected alongside it.
+        include_optimizer : bool
+            Whether the optimizer state belongs in the checkpoint.
+
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any] | None]
+            The model state and the optimizer state. Under sharding both are
+            complete only on the chief; the other ranks contribute their shards
+            and receive placeholders.
+        """
+        if self.sharding.shards_parameters:
+            # FSDP2 reassembles the shards, so every rank has to take part.
+            options = StateDictOptions(full_state_dict=True, cpu_offload=True)
+            return (
+                get_model_state_dict(wrapper, options=options),
+                get_optimizer_state_dict(wrapper, self.optimizer, options=options)
+                if include_optimizer
+                else None,
+            )
+        model_state = wrapper.state_dict()
+        if not include_optimizer:
+            return model_state, None
+        if self.sharding.shards_optimizer_state:
+            self.optimizer.consolidate_state_dict(to=0)
+            return model_state, self.optimizer.state_dict() if self.rank == 0 else {}
+        return model_state, self.optimizer.state_dict()
 
     # ------------------------------------------------------------------
     # Training loop
@@ -2181,13 +3055,31 @@ class Trainer(AbstractTrainer):
     def run(self) -> None:
         """Run pt_expt training through the backend-independent trainer loop."""
         log.info("Start to train %d steps.", self.num_steps)
-        wall_start = time.time()
-        super().run(self.training_tasks)
-        if self.change_bias_after_training and self.num_steps > self.start_step:
-            self._change_bias_after_training()
-            if self.rank_context.is_chief:
-                self.save_checkpoint(self.num_steps)
-        log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+        try:
+            super().run(self.training_tasks)
+            if self.change_bias_after_training and self.num_steps > self.start_step:
+                self._change_bias_after_training()
+                if self.rank_context.is_chief:
+                    self.save_checkpoint(self.num_steps)
+        finally:
+            self._close_data_systems()
+        if self.rank_context.is_chief:
+            log.info(f"Trained model has been saved to: {self.save_ckpt}")
+
+    def _close_data_systems(self) -> None:
+        """Release asynchronous data pipelines owned by this trainer."""
+        closed: set[int] = set()
+        for data_by_task in (
+            self.training_data_by_task,
+            self.validation_data_by_task,
+        ):
+            for data_system in data_by_task.values():
+                if data_system is None or id(data_system) in closed:
+                    continue
+                closed.add(id(data_system))
+                close = getattr(data_system, "close", None)
+                if close is not None:
+                    close()
 
     def _change_bias_after_training(self) -> None:
         if self.rank == 0:
@@ -2209,16 +3101,19 @@ class Trainer(AbstractTrainer):
         display_step: int,
         learning_rate: float,
     ) -> None:
-        """Run optional full validation for one step."""
-        if self.full_validator is None:
-            return None
-        self.full_validator.run(
-            step_id=display_step,
-            display_step=display_step,
-            lr=learning_rate,
-            save_checkpoint=self._save_full_validation_checkpoint,
-        )
-        return None
+        """Run the active full validation flows for one step."""
+        for validator, save_checkpoint in (
+            (self.full_validator, self._save_full_validation_checkpoint),
+            (self.ema_full_validator, self._save_full_validation_ema_checkpoint),
+        ):
+            if validator is None:
+                continue
+            validator.run(
+                step_id=display_step,
+                display_step=display_step,
+                lr=learning_rate,
+                save_checkpoint=save_checkpoint,
+            )
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select a task using DeePMD's seeded random helper."""
@@ -2274,11 +3169,20 @@ class Trainer(AbstractTrainer):
         loss.backward()
 
         if self.gradient_max_norm > 0.0:
-            torch.nn.utils.clip_grad_norm_(
-                self.wrapper.parameters(), self.gradient_max_norm
+            self.nonfinite_grad_guard.update(
+                clip_grad_norm_(
+                    self.wrapper.parameters(),
+                    self.gradient_max_norm,
+                    # A sharded gradient is a DTensor: the overflow-safe
+                    # reduction would measure this rank's shard alone, so the
+                    # distributed-native norm applies instead.
+                    stable=not self.sharding.shards_parameters,
+                )
             )
 
         self._optimizer_step()
+        if self.model_ema is not None:
+            self.model_ema.update(self.model)
         return TrainStepResult(
             task_key=task_key,
             step=step,
@@ -2315,8 +3219,15 @@ class Trainer(AbstractTrainer):
         step: int,
         step_result: TrainStepResult | None,
     ) -> dict[str, float] | None:
-        """Evaluate validation loss terms for one task."""
-        if task.validation_data is None:
+        """Evaluate validation loss terms for one task.
+
+        Sharded parameters are gathered by the forward itself, which makes it
+        a collective operation, while the display runs on the chief alone.
+        Validation is therefore skipped from stage two on; the metrics remain
+        available through the independent full validation flow, which every
+        rank enters together.
+        """
+        if task.validation_data is None or self.sharding.shards_parameters:
             return None
 
         valid_results: dict[str, float] = {}
@@ -2331,7 +3242,10 @@ class Trainer(AbstractTrainer):
                 label=val_label,
                 task_key=task.key,
             )
-            natoms = int(val_input["atype"].shape[-1])
+            # The metrics are per-atom quantities, so each batch weighs by the
+            # real atoms it holds summed over its frames. Phantom atoms
+            # (atype < 0), which pad a mixed-nloc batch, contribute to none.
+            natoms = int((val_input["atype"] >= 0).sum())
             sum_natoms += natoms
             for key, value in vmore.items():
                 if "l2_" not in key:

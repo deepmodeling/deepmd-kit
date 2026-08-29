@@ -14,10 +14,15 @@ from typing import (
 )
 
 from deepmd.dpmodel.utils.lmdb_data import (
+    DistributedLmdbBatchSampler,
+    LmdbBatchIterator,
+    LmdbBatchSampler,
     LmdbDataReader,
-    SameNlocBatchSampler,
-    collate_lmdb_frames,
+    collect_lmdb_sampling_groups,
     compute_block_targets,
+)
+from deepmd.env import (
+    get_lmdb_num_workers,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -30,12 +35,15 @@ class LmdbDataSystem:
     """LMDB-backed data system for pt_expt.
 
     Exposes the small surface that pt_expt's trainer touches:
-    ``get_batch(sys_idx=None)``, ``add_data_requirements(list)``, and
-    ``get_nsystems()``. Internally uses :class:`LmdbDataReader` for I/O and
-    :class:`SameNlocBatchSampler` to draw same-nloc batches. Statistics use a
-    separate logical-system view in which every ``nloc`` group is sampled
-    independently, matching the PyTorch DataLoader adapter without changing
-    the identity of the LMDB as one training dataset.
+    ``get_batch(sys_idx=None)``, ``add_data_requirements(list)``,
+    ``get_nsystems()``, and the ``nbatches``/``sys_probs`` pair from which the
+    trainer derives an epoch length. The whole LMDB counts as one logical
+    system. Internally uses :class:`LmdbDataReader` for I/O and
+    :class:`LmdbBatchSampler`, or its distributed wrapper, to draw batches.
+    Statistics use a separate logical-system view in which every
+    ``(nloc, label-availability)`` group is sampled independently, matching
+    the training sampler without changing the identity of the LMDB as one
+    training dataset.
 
     Parameters
     ----------
@@ -44,12 +52,21 @@ class LmdbDataSystem:
     type_map
         Global type map from the model config.
     batch_size
-        Batch size spec; ``int``, ``"auto"``, or ``"auto:N"``.
+        Batch size spec; ``int``, ``"auto"``, ``"auto:N"``, ``"max:N"``,
+        ``"filter:N"``, or ``"mix:N"`` for mixed-nloc batching.
     auto_prob_style
         Optional ``auto_prob`` string (e.g. ``"prob_sys_size"``) for
         per-system reweighting via :func:`compute_block_targets`.
     seed
-        Optional seed for the shuffle in :class:`SameNlocBatchSampler`.
+        Optional seed for the shuffle in :class:`LmdbBatchSampler`.
+    num_workers
+        Number of LMDB decoder worker processes. ``None`` selects the
+        hardware-aware default; zero or one disables multiprocessing.
+    rank
+        Rank of this process in distributed training.
+    world_size
+        Number of distributed training processes. Values greater than one
+        select :class:`DistributedLmdbBatchSampler`.
     """
 
     def __init__(
@@ -59,10 +76,11 @@ class LmdbDataSystem:
         batch_size: int | str = "auto",
         auto_prob_style: str | None = None,
         seed: int | None = None,
+        num_workers: int | None = None,
+        rank: int = 0,
+        world_size: int = 1,
     ) -> None:
-        self._reader = LmdbDataReader(
-            lmdb_path, type_map, batch_size, mixed_batch=False
-        )
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
 
         block_targets = None
         if auto_prob_style is not None and self._reader.frame_system_ids is not None:
@@ -72,19 +90,56 @@ class LmdbDataSystem:
                 self._reader.system_nframes,
             )
 
-        self._sampler = SameNlocBatchSampler(
-            self._reader,
-            shuffle=True,
-            seed=seed,
-            block_targets=block_targets,
+        if world_size > 1:
+            self._sampler: LmdbBatchSampler | DistributedLmdbBatchSampler = (
+                DistributedLmdbBatchSampler(
+                    self._reader,
+                    rank=rank,
+                    world_size=world_size,
+                    shuffle=True,
+                    seed=seed,
+                    block_targets=block_targets,
+                )
+            )
+        else:
+            self._sampler = LmdbBatchSampler(
+                self._reader,
+                shuffle=True,
+                seed=seed,
+                block_targets=block_targets,
+            )
+        self._refresh_stat_groups()
+        num_workers = (
+            get_lmdb_num_workers() if num_workers is None else int(num_workers)
         )
-        self._iter = iter(self._sampler)
-        self._stat_nlocs = tuple(sorted(self._reader.nloc_groups))
-        self._stat_offsets = [0] * len(self._stat_nlocs)
+        self._batch_iterator = LmdbBatchIterator(
+            self._reader,
+            self._sampler,
+            num_workers,
+        )
+
+    def _refresh_stat_groups(self) -> None:
+        """Build statistical systems from stack-compatible reader groups."""
+        self._stat_groups = collect_lmdb_sampling_groups(self._reader)
+        self._stat_offsets = [0] * len(self._stat_groups)
 
     # ------------------------------------------------------------------
     # pt_expt trainer surface
     # ------------------------------------------------------------------
+
+    def use_ragged_batches(self, ragged: bool) -> None:
+        """Select the layout :meth:`get_batch` delivers.
+
+        See :meth:`deepmd.dpmodel.utils.lmdb_data.LmdbDataReader.use_ragged_batches`.
+        The trainer calls this once it knows whether the model reads a flat
+        node axis, before training draws its first batch.
+
+        Parameters
+        ----------
+        ragged : bool
+            Whether to concatenate frames instead of padding them.
+        """
+        self._reader.use_ragged_batches(ragged)
 
     def get_batch(self, sys_idx: int | None = None) -> dict[str, Any]:
         """Return one batch as a numpy dict.
@@ -93,20 +148,15 @@ class LmdbDataSystem:
         sampling is baked into ``block_targets`` at sampler construction.
         """
         del sys_idx
-        try:
-            indices = next(self._iter)
-        except StopIteration:
-            self._iter = iter(self._sampler)
-            indices = next(self._iter)
-        return self._collate_indices(indices)
+        return next(self._batch_iterator)
 
     def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
-        """Return one batch from a fixed-``nloc`` statistical system.
+        """Return one batch from a homogeneous statistical system.
 
         Parameters
         ----------
         sys_idx : int
-            Index into the sorted ``nloc`` groups.
+            Index into the per-atom-count groups.
 
         Returns
         -------
@@ -116,53 +166,77 @@ class LmdbDataSystem:
         Raises
         ------
         IndexError
-            If ``sys_idx`` does not identify an available ``nloc`` group.
+            If ``sys_idx`` does not identify an available statistical group.
+
+        Notes
+        -----
+        The batch is rectangular whatever layout training uses: output
+        statistics accumulate over an ``(nf, nloc, ...)`` axis. A group is
+        uniform in atom count, so that layout pads nothing.
         """
-        if not 0 <= sys_idx < len(self._stat_nlocs):
+        if not 0 <= sys_idx < len(self._stat_groups):
             raise IndexError(
                 f"Statistical system index {sys_idx} is out of range for "
-                f"{len(self._stat_nlocs)} nloc groups."
+                f"{len(self._stat_groups)} homogeneous groups."
             )
 
-        nloc = self._stat_nlocs[sys_idx]
-        group_indices = self._reader.nloc_groups[nloc]
+        nloc, group_indices = self._stat_groups[sys_idx]
         batch_size = self._reader.get_batch_size_for_nloc(nloc)
         start = self._stat_offsets[sys_idx]
         if start >= len(group_indices):
             start = 0
         stop = min(start + batch_size, len(group_indices))
         self._stat_offsets[sys_idx] = stop
-        return self._collate_indices(group_indices[start:stop])
+        return self._reader.decode_batch(group_indices[start:stop], ragged=False)
 
     def get_stat_nsystems(self) -> int:
-        """Return the number of fixed-``nloc`` statistical systems."""
-        return len(self._stat_nlocs)
+        """Return the number of homogeneous statistical systems."""
+        return len(self._stat_groups)
 
     def get_stat_numb_batches(self, sys_idx: int) -> int:
         """Return the available batch count for one statistical system."""
-        if not 0 <= sys_idx < len(self._stat_nlocs):
+        if not 0 <= sys_idx < len(self._stat_groups):
             raise IndexError(
                 f"Statistical system index {sys_idx} is out of range for "
-                f"{len(self._stat_nlocs)} nloc groups."
+                f"{len(self._stat_groups)} homogeneous groups."
             )
-        nloc = self._stat_nlocs[sys_idx]
-        nframes = len(self._reader.nloc_groups[nloc])
+        nloc, group_indices = self._stat_groups[sys_idx]
+        nframes = len(group_indices)
         batch_size = self._reader.get_batch_size_for_nloc(nloc)
         return (nframes + batch_size - 1) // batch_size
-
-    def _collate_indices(self, indices: list[int]) -> dict[str, Any]:
-        """Load and collate the requested dataset indices."""
-        frames = [self._reader[int(i)] for i in indices]
-        return collate_lmdb_frames(frames)
 
     def add_data_requirements(
         self, data_requirement: list[DataRequirementItem]
     ) -> None:
         self._reader.add_data_requirement(data_requirement)
+        self._refresh_stat_groups()
+
+    def close(self) -> None:
+        """Cancel prefetched work and release decoder processes."""
+        iterator = getattr(self, "_batch_iterator", None)
+        if iterator is not None:
+            iterator.close()
+        reader = getattr(self, "_reader", None)
+        if reader is not None:
+            reader.close()
+
+    def __del__(self) -> None:
+        """Release worker processes during interpreter teardown."""
+        self.close()
 
     def get_nsystems(self) -> int:
         """Return one logical LMDB training dataset."""
         return 1
+
+    @property
+    def nbatches(self) -> list[int]:
+        """Return the global batch count of one full pass."""
+        return [self._sampler.total_batches]
+
+    @property
+    def sys_probs(self) -> list[float]:
+        """Return the sampling probability of each logical system."""
+        return [1.0]
 
     # ------------------------------------------------------------------
     # Misc forwarders

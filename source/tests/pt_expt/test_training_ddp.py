@@ -26,6 +26,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import torch
@@ -34,6 +37,9 @@ import torch.multiprocessing as mp
 
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
+)
+from deepmd.pt_expt.train.training import (
+    Trainer,
 )
 from deepmd.pt_expt.utils.finetune import (
     get_finetune_rules,
@@ -46,6 +52,10 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+
+from .compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
 )
 
 # Paths to the water data used by PT tests
@@ -62,6 +72,9 @@ EXAMPLE_DIR = os.path.join(
 
 # Auto-detect DDP backend based on device availability.
 _DDP_BACKEND = "nccl" if torch.cuda.is_available() else "gloo"
+
+# Epoch length reported by rank 0 when the ranks are made to disagree.
+_DRIFTED_EPOCH_LENGTH = 40
 
 # NCCL requires at least 2 GPUs for multi-rank tests.
 if _DDP_BACKEND == "nccl" and torch.cuda.device_count() < 2:
@@ -607,9 +620,280 @@ def _worker_finetune(
         dist.destroy_process_group()
 
 
+def _worker_epoch_schedule(rank, world_size, port, data_dir, drifted, result_dict):
+    """Worker: build a trainer whose run length comes from numb_epoch.
+
+    When *drifted* is set, each rank reports a different local epoch length,
+    reproducing the last-bit disagreement that floating-point sampling
+    probabilities can produce between ranks.
+    """
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_epoch_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_config(data_dir)
+            del config["training"]["numb_steps"]
+            config["training"]["numb_epoch"] = 1.0
+            config = update_deepmd_input(config, warning=False)
+            config = normalize(config)
+            if drifted:
+                with patch.object(
+                    Trainer,
+                    "_epoch_length",
+                    lambda self, model_key: _DRIFTED_EPOCH_LENGTH + rank,
+                ):
+                    num_steps = get_trainer(config).num_steps
+            else:
+                num_steps = get_trainer(config).num_steps
+            result_dict[rank] = {"num_steps": num_steps}
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
+def _unsharded_parameter_shapes(data_dir: str) -> dict[str, list[int]]:
+    """Return the tensor shapes a single-process run records.
+
+    They are the yardstick for a sharded run: a checkpoint must describe the
+    whole model, never the shard one rank happens to hold.
+    """
+    config = _make_config(data_dir, numb_steps=1)
+    config = update_deepmd_input(config, warning=False)
+    config = normalize(config)
+    tmpdir = tempfile.mkdtemp(prefix="ddp_zero_reference_")
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(tmpdir)
+        state = get_trainer(config)._unwrapped.state_dict()
+    finally:
+        os.chdir(old_cwd)
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    return _tensor_shapes(state)
+
+
+def _tensor_shapes(state: dict) -> dict[str, list[int]]:
+    return {
+        key: list(value.shape)
+        for key, value in state.items()
+        if isinstance(value, torch.Tensor)
+    }
+
+
+def _worker_zero_stage(rank, world_size, port, data_dir, run_dir, stage, result_dict):
+    """Worker: train under a ZeRO stage, checkpoint, then restart from it.
+
+    Every rank shares ``run_dir``, as ranks of a real run share a filesystem;
+    the checkpoint the chief writes there is what all of them resume from.
+    """
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(run_dir)
+
+        def make_config(numb_steps: int) -> dict:
+            config = _make_config(data_dir, numb_steps=numb_steps)
+            config["training"]["zero_stage"] = stage
+            config["training"]["save_freq"] = numb_steps
+            # Exercise the clipping strategy and the divergence guard, whose
+            # reductions differ once the gradients are sharded.
+            config["training"]["gradient_max_norm"] = 5.0
+            config = update_deepmd_input(config, warning=False)
+            return normalize(config)
+
+        get_trainer(make_config(2)).run()
+        dist.barrier()
+
+        ckpt = os.path.join(run_dir, "model.ckpt-2.pt")
+        written_here = rank == 0 and os.path.exists(ckpt)
+        shapes = (
+            _tensor_shapes(torch.load(ckpt, weights_only=True)["model"])
+            if rank == 0
+            else {}
+        )
+
+        resumed = get_trainer(make_config(4), restart_model=ckpt)
+        # The momenta the first run accumulated must survive the round trip,
+        # whichever way the stage shards the optimizer state. The state is read
+        # off the optimizer that performs this rank's update, since a
+        # redundancy-sharded one exposes nothing before consolidation.
+        restored_optimizer_state = len(resumed._local_optimizer.state)
+        resumed.run()
+
+        result_dict[rank] = {
+            "written_here": written_here,
+            "shapes": shapes,
+            "resumed_step": resumed.start_step,
+            "restored_optimizer_state": restored_optimizer_state,
+        }
+    finally:
+        os.chdir(old_cwd)
+        dist.destroy_process_group()
+
+
+def _worker_zero_stage_muon(rank, world_size, port, data_dir, run_dir, result_dict):
+    """Worker: checkpoint a ZeRO-1 run driven by the name-routed optimizer."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(run_dir)
+        config = _make_config(data_dir, numb_steps=1)
+        config["training"]["zero_stage"] = 1
+        config["training"]["save_freq"] = 1
+        config["optimizer"] = {"type": "HybridMuon"}
+        get_trainer(normalize(update_deepmd_input(config, warning=False))).run()
+
+        if rank != 0:
+            result_dict[rank] = {}
+            return
+        state = torch.load(os.path.join(run_dir, "model.ckpt-1.pt"), weights_only=False)
+        result_dict[rank] = {
+            "group_keys": sorted(state["optimizer"]["param_groups"][0]),
+            "tensor_valued_keys": sorted(
+                key
+                for group in state["optimizer"]["param_groups"]
+                for key, value in group.items()
+                if _holds_tensor(value)
+            ),
+        }
+    finally:
+        os.chdir(old_cwd)
+        dist.destroy_process_group()
+
+
+def _holds_tensor(value) -> bool:
+    if isinstance(value, torch.Tensor):
+        return True
+    if isinstance(value, (list, tuple)):
+        return any(_holds_tensor(item) for item in value)
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Test classes
 # ---------------------------------------------------------------------------
+
+
+class TestDDPZeroStage(unittest.TestCase):
+    """Train, checkpoint and restart under each ZeRO stage."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = os.path.join(data_dir, "data_0")
+        cls.reference = _unsharded_parameter_shapes(cls.data_dir)
+
+    def _assert_round_trip(self, zero_stage: int) -> None:
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        run_dir = tempfile.mkdtemp(prefix=f"ddp_zero{zero_stage}_")
+        try:
+            mp.spawn(
+                _worker_zero_stage,
+                args=(2, port, self.data_dir, run_dir, zero_stage, result_dict),
+                nprocs=2,
+                join=True,
+            )
+            results = dict(result_dict)
+        finally:
+            shutil.rmtree(run_dir, ignore_errors=True)
+
+        self.assertTrue(results[0]["written_here"], "the chief writes the checkpoint")
+        # A checkpoint records the whole model, never one rank's shard, so a
+        # run at any stage can resume a run at any other.
+        self.assertEqual(results[0]["shapes"], self.reference)
+        for rank in (0, 1):
+            self.assertEqual(results[rank]["resumed_step"], 2)
+            self.assertGreater(
+                results[rank]["restored_optimizer_state"],
+                0,
+                "the resumed optimizer should carry the recorded state",
+            )
+
+    def test_zero_stage_1_shards_optimizer_state(self) -> None:
+        self._assert_round_trip(1)
+
+    def test_zero_stage_2_shards_gradients(self) -> None:
+        self._assert_round_trip(2)
+
+    def test_zero_stage_3_shards_parameters(self) -> None:
+        self._assert_round_trip(3)
+
+    def test_zero_stage_1_keeps_weights_out_of_the_optimizer_state(self) -> None:
+        # A redundancy-sharded optimizer turns every constructor keyword into a
+        # param-group default, which the checkpoint then records. Parameter
+        # names must therefore reach the name-routed optimizer some other way,
+        # or each checkpoint would carry a second copy of the model.
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        run_dir = tempfile.mkdtemp(prefix="ddp_zero1_muon_")
+        try:
+            mp.spawn(
+                _worker_zero_stage_muon,
+                args=(2, port, self.data_dir, run_dir, result_dict),
+                nprocs=2,
+                join=True,
+            )
+            chief = dict(result_dict)[0]
+        finally:
+            shutil.rmtree(run_dir, ignore_errors=True)
+
+        self.assertNotIn("named_parameters", chief["group_keys"])
+        self.assertEqual(chief["tensor_valued_keys"], [])
+
+
+class TestDDPEpochSchedule(unittest.TestCase):
+    """An epoch spans the dataset once across the whole world, not per rank."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = os.path.join(data_dir, "data_0")
+
+    def _run(self, drifted: bool) -> dict:
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            _worker_epoch_schedule,
+            args=(2, port, self.data_dir, drifted, result_dict),
+            nprocs=2,
+            join=True,
+        )
+        return dict(result_dict)
+
+    def test_ranks_share_an_epoch(self) -> None:
+        results = self._run(drifted=False)
+
+        # DistributedSampler gives each rank ceil(nframes / 2) samples, and
+        # the system is read one frame per batch.
+        nframes = np.load(os.path.join(self.data_dir, "set.000", "coord.npy")).shape[0]
+        self.assertEqual(results[0]["num_steps"], int(np.ceil(nframes / 2)))
+        self.assertEqual(results[1]["num_steps"], results[0]["num_steps"])
+
+    def test_drifting_epoch_lengths_are_pinned_to_rank_zero(self) -> None:
+        """Ranks that round differently still agree on the run length.
+
+        A run length that drifts by one step across ranks desynchronizes the
+        full-validation start step and deadlocks the mismatched collectives,
+        so rank 0's value must win everywhere.
+        """
+        results = self._run(drifted=True)
+
+        self.assertEqual(results[0]["num_steps"], _DRIFTED_EPOCH_LENGTH)
+        self.assertEqual(results[1]["num_steps"], _DRIFTED_EPOCH_LENGTH)
 
 
 class TestDDPSingleTaskTrain(unittest.TestCase):
@@ -1479,6 +1763,7 @@ def _worker_multitask_compile_train(rank, world_size, port, data_dir, result_dic
         dist.destroy_process_group()
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestDDPCompileSingleTask(unittest.TestCase):
     """DDP + torch.compile: single-task training with 2 ranks.
 
@@ -1524,6 +1809,7 @@ class TestDDPCompileSingleTask(unittest.TestCase):
             )
 
 
+@REQUIRES_SUPPORTED_COMPILE
 class TestDDPCompileMultiTask(unittest.TestCase):
     """DDP + torch.compile: multi-task training with 2 ranks.
 

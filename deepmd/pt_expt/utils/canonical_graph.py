@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Compact canonical graph contract for compressed DPA1 deployment."""
+"""Compact canonical graph contract for compressed CUDA deployment."""
 
 from __future__ import (
     annotations,
@@ -19,9 +19,11 @@ if TYPE_CHECKING:
         NeighborGraph,
     )
 
+UINT32_MAX = (1 << 32) - 1
+
 
 @dataclass(frozen=True)
-class DPA1CanonicalGraph:
+class CanonicalGraph:
     """Store a cutoff-compacted destination-major graph without redundant fields.
 
     The physical edge count is the final value of either CSR row-pointer tensor.
@@ -36,7 +38,7 @@ class DPA1CanonicalGraph:
         Per-frame owned node counts with shape ``(nf,)``, int64.
     source
         Source-node index for each edge storage slot with shape ``(S,)``,
-        int64.
+        uint32.
     edge_vec
         Neighbor-minus-center vectors with shape ``(S, 3)``, float32.
     destination_row_ptr
@@ -58,14 +60,14 @@ class DPA1CanonicalGraph:
 
 
 def validate_canonical_graph_shapes(
-    graph: DPA1CanonicalGraph,
+    graph: CanonicalGraph,
     node_count: int,
 ) -> None:
     """Validate shape, dtype, and device invariants without reading tensor data."""
     index_dtype = graph.source.dtype
-    if index_dtype != torch.int64:
-        raise ValueError("canonical graph source must be int64")
-    if graph.source_order.dtype != torch.int64:
+    if index_dtype != torch.uint32:
+        raise ValueError("canonical graph source must be uint32")
+    if graph.source_order.dtype != index_dtype:
         raise ValueError("canonical graph source and source_order dtypes must match")
     if graph.edge_vec.dtype != torch.float32:
         raise ValueError("canonical graph edge_vec must be float32")
@@ -82,6 +84,8 @@ def validate_canonical_graph_shapes(
         raise ValueError("canonical graph edge_vec must have shape (S, 3)")
     if graph.source.shape[0] < 2:
         raise ValueError("canonical graph edge storage must contain at least two slots")
+    if graph.source.shape[0] > UINT32_MAX:
+        raise ValueError("canonical graph edge storage exceeds the uint32 range")
     if graph.destination_row_ptr.shape != (node_count + 1,):
         raise ValueError("destination_row_ptr must have shape (N + 1,)")
     if graph.source_row_ptr.shape != (node_count + 1,):
@@ -114,7 +118,7 @@ def validate_canonical_graph_shapes(
 
 def canonical_graph_from_neighbor_graph(
     graph: NeighborGraph,
-) -> DPA1CanonicalGraph:
+) -> CanonicalGraph:
     """Convert a compact generic graph into the source-only deployment contract.
 
     Parameters
@@ -124,7 +128,7 @@ def canonical_graph_from_neighbor_graph(
 
     Returns
     -------
-    DPA1CanonicalGraph
+    CanonicalGraph
         Source-only graph with exactly two storage slots when ``E < 2``.
 
     Raises
@@ -156,9 +160,11 @@ def canonical_graph_from_neighbor_graph(
     node_count = graph.destination_row_ptr.shape[0] - 1
 
     storage_edge_count = max(physical_edge_count, 2)
+    if storage_edge_count > UINT32_MAX:
+        raise ValueError("canonical graph edge storage exceeds the uint32 range")
     source = torch.zeros(
         storage_edge_count,
-        dtype=torch.int64,
+        dtype=torch.uint32,
         device=graph.edge_index.device,
     )
     edge_vec = torch.zeros(
@@ -171,19 +177,19 @@ def canonical_graph_from_neighbor_graph(
         storage_edge_count,
         dtype=torch.int64,
         device=graph.edge_index.device,
-    )
+    ).to(torch.uint32)
     if physical_edge_count:
         source[:physical_edge_count] = graph.edge_index[0, :physical_edge_count].to(
-            torch.int64
+            torch.uint32
         )
         edge_vec[:physical_edge_count] = graph.edge_vec[:physical_edge_count].to(
             torch.float32
         )
         source_order[:physical_edge_count] = graph.source_order[
             :physical_edge_count
-        ].to(torch.int64)
+        ].to(torch.uint32)
 
-    result = DPA1CanonicalGraph(
+    result = CanonicalGraph(
         n_node=graph.n_node.contiguous(),
         n_local=graph.n_local.contiguous(),
         source=source,
@@ -197,7 +203,8 @@ def canonical_graph_from_neighbor_graph(
 
 
 __all__ = [
-    "DPA1CanonicalGraph",
+    "UINT32_MAX",
+    "CanonicalGraph",
     "canonical_graph_from_neighbor_graph",
     "validate_canonical_graph_shapes",
 ]

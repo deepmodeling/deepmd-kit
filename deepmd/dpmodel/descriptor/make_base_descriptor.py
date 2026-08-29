@@ -48,6 +48,15 @@ def make_base_descriptor(
     class BD(ABC, PluginVariant, make_plugin_registry("descriptor")):
         """Base descriptor provides the interfaces of descriptor."""
 
+        # Stat-behavior flags with concrete defaults so stat machinery (e.g.
+        # ``merge_env_stat``, which accepts either a ``Descriptor`` or a
+        # ``DescriptorBlock``) can read them on any descriptor without
+        # getattr probes; descriptors that configure them assign instance
+        # attributes in __init__ (issue #5897). Mirrors the same defaults on
+        # ``DescriptorBlock``.
+        set_davg_zero: bool = False
+        set_stddev_constant: bool = False
+
         def __new__(cls, *args: Any, **kwargs: Any) -> Any:
             if cls is BD:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
@@ -100,13 +109,28 @@ def make_base_descriptor(
             """Returns the dimension of charge_spin input (0 if not supported)."""
             return 0
 
-        def has_default_chg_spin(self) -> bool:
-            """Returns whether the descriptor has a default charge_spin value."""
-            return False
-
         def get_default_chg_spin(self) -> Any:
             """Returns the default charge_spin value, or None."""
             return None
+
+        def has_chg_spin_ebd(self) -> bool:
+            """Returns whether the descriptor carries a charge/spin condition.
+
+            This asks whether the condition is part of the model at all, which
+            :meth:`get_dim_chg_spin` does not: that reports the width of the
+            conditioning input a compiled forward reads, and a compressed
+            descriptor folds the condition into frozen tables and so reads
+            none. The two agree everywhere else.
+            """
+            return False
+
+        def get_geo_compress(self) -> bool:
+            """Return whether geometric tabulated compression is active.
+
+            Concrete default ``False``; descriptor families with a
+            geometric compression path override from their own state.
+            """
+            return False
 
         @abstractmethod
         def mixed_types(self) -> bool:
@@ -136,6 +160,128 @@ def make_base_descriptor(
             children) override to return ``True``.
             """
             return False
+
+        def supports_edge_parallel(self) -> bool:
+            """Whether this descriptor can run under MPI domain decomposition.
+
+            Distinct from :meth:`has_message_passing_across_ranks` (whether
+            multi-rank inference NEEDS a per-block ghost exchange): this asks
+            whether any part of the computation folds state that a single
+            rank cannot observe. Default ``True``: an ordinary descriptor
+            reads only rank-local neighbourhoods.
+            """
+            return True
+
+        def supports_native_spin(self) -> bool:
+            """Returns whether the descriptor natively conditions on per-atom spin.
+
+            Declaring ``True`` obliges the descriptor's ``call_graph`` to
+            accept a per-node ``spin`` keyword; the atomic model only
+            forwards the keyword to descriptors that declare the capability,
+            since an unconditional ``spin=`` kwarg would be a ``TypeError``
+            on a ``call_graph`` signature that does not declare it.
+
+            Concrete default ``False`` so descriptors across all backends
+            (pt/pd/tf subclass this same base) need no change until they grow
+            a native spin mechanism of their own; such descriptors override
+            this method to return ``True``.
+            """
+            return False
+
+        def supports_charge_spin(self) -> bool:
+            """Returns whether the descriptor conditions on a frame-level ``charge_spin`` input.
+
+            Declaring ``True`` obliges the descriptor's ``call_graph`` to
+            accept a frame-level ``charge_spin`` keyword; the atomic model
+            only forwards the keyword to descriptors that declare the
+            capability. Concrete default ``False`` (see
+            ``supports_native_spin``); descriptors that condition on this
+            input override this method to return ``True``.
+            """
+            return False
+
+        def uses_graph_lower(self) -> bool:
+            """Returns whether the descriptor supports the graph-native (NeighborGraph) lower.
+
+            Declaring ``True`` obliges the descriptor to implement
+            ``call_graph``; the model layer routes ``forward_lower`` through
+            the NeighborGraph path only for descriptors that declare the
+            capability, and falls back to the legacy dense (nlist) lower
+            otherwise.
+
+            Concrete default ``False`` so descriptors across all backends
+            (which subclass this same base) stay on the dense lower until
+            they implement a graph-native forward; such descriptors override
+            this method (typically conditioning on their configuration and
+            on :meth:`disable_graph_lower`).
+            """
+            return False
+
+        def disable_graph_lower(self) -> None:
+            """Force the legacy dense (nlist) lower for this descriptor.
+
+            An explicit opt-out knob used by contexts where the graph-native
+            lower is unsupported or undesirable. After calling this,
+            :meth:`uses_graph_lower` must return ``False`` regardless of the
+            descriptor configuration.
+
+            Concrete default: a no-op, since a descriptor without a graph
+            lower is already dense-only. Descriptors overriding
+            :meth:`uses_graph_lower` must also override this to set their
+            escape hatch.
+            """
+            return None
+
+        def uses_compact_edge_pairs(self) -> bool:
+            """Returns whether the descriptor's graph lower traces compact edge pairs.
+
+            The compact ``center_edge_pairs`` realization uses
+            unbacked-SymInt ``nonzero``/``repeat`` sizes when traced for
+            export; ``check_graph_trace_torch_version`` keys its
+            torch >= 2.6 requirement on this capability. Concrete default
+            ``False``; only meaningful for descriptors whose
+            :meth:`uses_graph_lower` can return ``True``.
+            """
+            return False
+
+        def dense_lower_supports_comm(self) -> bool:
+            """Whether the DENSE (nlist) lower implements comm_dict exchange.
+
+            Default ``True`` — dense comm is the production multi-rank path
+            for dpa2/dpa3 (previously this was probed by method absence in
+            the freeze machinery); a descriptor whose dense adapter raises
+            on ``comm_dict`` (DPA4) overrides to ``False``.
+            """
+            return True
+
+        def graph_edge_dtype(self) -> str:
+            """Edge-geometry dtype the graph deployment artifact accepts.
+
+            ``"float64"`` is the model-agnostic ABI; geometrically
+            compressed float32 descriptors override to ``"float32"``.
+            """
+            return "float64"
+
+        def supports_graph_export(self) -> bool:
+            """Whether an exportable graph-lower implementation exists.
+
+            A compressed descriptor without its fused opaque operator cannot
+            be traced through the reference tabulation kernel.
+            """
+            return True
+
+        def graph_type_embedding_table(self) -> Any | None:
+            """Full type-embedding table consumed by the graph-route forward.
+
+            Returns
+            -------
+            Any | None
+                The ``(ntypes + 1, tebd_dim)`` type-embedding table for
+                descriptors whose graph lower consumes an external table, or
+                ``None`` (the concrete default) for descriptors that embed
+                types internally or have no graph lower.
+            """
+            return None
 
         @abstractmethod
         def need_sorted_nlist_for_lower(self) -> bool:
@@ -208,6 +354,21 @@ def make_base_descriptor(
                 The overflow check frequency
             """
             raise NotImplementedError("This descriptor doesn't support compression!")
+
+        def compression_needs_min_nbor_dist(self) -> bool:
+            """Whether :meth:`enable_compression` consumes ``min_nbor_dist``.
+
+            Returns
+            -------
+            bool
+                Concrete default ``True``: a tabulated embedding starts its
+                table at the shortest distance the training data contains, so
+                the caller must measure it first. ``False`` for descriptors
+                whose table domain is fixed analytically; the caller may then
+                skip the neighbor-statistics pass, which is a dense all-pairs
+                computation over the training data.
+            """
+            return True
 
         @abstractmethod
         def fwd(

@@ -38,6 +38,8 @@ class SpinEnergyModel(SpinModel):
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
             output_def["atom_virial"].squeeze(-2)
+        if "mask" in out_def_data:
+            output_def["mask"] = out_def_data["mask"]
         return output_def
 
     def forward(
@@ -65,6 +67,8 @@ class SpinEnergyModel(SpinModel):
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
@@ -101,6 +105,8 @@ class SpinEnergyModel(SpinModel):
         model_predict["atom_energy"] = model_ret["energy"]
         model_predict["energy"] = model_ret["energy_redu"]
         model_predict["extended_mask_mag"] = model_ret["mask_mag"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         if self.backbone_model.do_grad_r("energy"):
             model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["extended_force_mag"] = model_ret[
@@ -135,7 +141,7 @@ class SpinEnergyModel(SpinModel):
 
         Parameters
         ----------
-        extended_coord, extended_atype, extended_spin, nlist, mapping, fparam, aparam, do_atomic_virial
+        extended_coord, extended_atype, extended_spin, nlist, mapping, fparam, aparam, do_atomic_virial, charge_spin
             Sample inputs with representative shapes (used for tracing).
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
@@ -145,7 +151,7 @@ class SpinEnergyModel(SpinModel):
         -------
         torch.nn.Module
             A traced module whose ``forward`` accepts
-            ``(extended_coord, extended_atype, extended_spin, nlist, mapping, fparam, aparam)``
+            ``(extended_coord, extended_atype, extended_spin, nlist, mapping, fparam, aparam, charge_spin)``
             and returns a dict with the same keys as ``forward_lower``.
         """
         traced = self.forward_common_lower_exportable(
@@ -190,6 +196,8 @@ class SpinEnergyModel(SpinModel):
             model_predict["atom_energy"] = model_ret["energy"]
             model_predict["energy"] = model_ret["energy_redu"]
             model_predict["extended_mask_mag"] = model_ret["mask_mag"]
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
             if do_grad_r:
                 model_predict["extended_force"] = model_ret["energy_derv_r"].squeeze(-2)
                 model_predict["extended_force_mag"] = model_ret[

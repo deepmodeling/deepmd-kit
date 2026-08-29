@@ -3,11 +3,14 @@
 
 #ifdef BUILD_PYTORCH
 #include <torch/torch.h>
+#include <torch/version.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -194,6 +197,18 @@ inline EdgeTensorPack createEdgeTensors(
     const bool with_geometry = true,
     const std::vector<int>* row_centers = nullptr,
     const bool fold_to_local = true) {
+  // Folding reads an owner for every extended atom, so a mapping shorter than
+  // that is a caller error rather than a degraded input: indexing it would be
+  // out of bounds, and the out-of-range owners it appears to yield would drop
+  // the corresponding edges one by one, leaving a quietly incomplete graph.
+  if (fold_to_local && mapping.size() < static_cast<size_t>(nall)) {
+    throw deepmd::deepmd_exception(
+        "folding ghost neighbours onto their local owners needs an owner for "
+        "each of the " +
+        std::to_string(nall) + " extended atoms, but the mapping holds " +
+        std::to_string(mapping.size()) +
+        "; under LAMMPS this is what 'atom_modify map yes' supplies");
+  }
   std::vector<std::int64_t> src;
   std::vector<std::int64_t> dst;
   std::vector<std::int64_t> src_ext;
@@ -233,8 +248,19 @@ inline EdgeTensorPack createEdgeTensors(
       std::int64_t src_node;
       if (fold_to_local) {
         const std::int64_t src_local = mapping[static_cast<size_t>(jj)];
+        // Folding is single-domain, where every extended atom has an owner
+        // among the local ones. An owner outside that range therefore marks a
+        // mapping that was never filled, not a neighbour to skip: skipping
+        // would discard every ghost edge and leave a graph that is quietly
+        // missing the whole halo.
         if (src_local < 0 || src_local >= nloc) {
-          continue;
+          throw deepmd::deepmd_exception(
+              "extended atom " + std::to_string(jj) + " of " +
+              std::to_string(nall) + " maps to owner " +
+              std::to_string(src_local) + ", which is not one of the " +
+              std::to_string(nloc) +
+              " local atoms; under LAMMPS an owner for every extended atom is "
+              "what 'atom_modify map yes' supplies");
         }
         src_node = src_local;
       } else {
@@ -392,27 +418,52 @@ struct CanonicalGraphTensorPack {
   torch::Tensor source_order;
 };
 
+/**
+ * @brief Return the scalar type of compact canonical graph indices.
+ *
+ * Unsigned 32-bit tensors entered the public C++ API in PyTorch 2.3. Older
+ * CPU-only libtorch releases can still build DeePMD-kit, but cannot execute
+ * the GPU-only compact canonical graph path.
+ */
+inline at::ScalarType canonicalGraphIndexType() {
+#if TORCH_VERSION_MAJOR > 2 || \
+    (TORCH_VERSION_MAJOR == 2 && TORCH_VERSION_MINOR >= 3)
+  return torch::kUInt32;
+#else
+  throw deepmd_exception(
+      "compact canonical graph inference requires PyTorch 2.3 or later");
+#endif
+}
+
 inline CanonicalGraphTensorPack compactCanonicalGraph(
     const GraphTensorPack& graph) {
   const std::int64_t edge_count =
       graph.destination_row_ptr.select(0, graph.destination_row_ptr.size(0) - 1)
           .item<std::int64_t>();
   const std::int64_t storage_count = std::max<std::int64_t>(edge_count, 2);
+  if (static_cast<std::uint64_t>(storage_count) >
+      std::numeric_limits<std::uint32_t>::max()) {
+    throw deepmd_exception(
+        "compact canonical graph exceeds the uint32 edge-index range");
+  }
+  const auto index_type = canonicalGraphIndexType();
   auto source = torch::zeros({storage_count},
-                             graph.edge_index.options().dtype(torch::kInt64));
+                             graph.edge_index.options().dtype(index_type));
   auto edge_vec = torch::zeros({storage_count, 3},
                                graph.edge_vec.options().dtype(torch::kFloat32));
-  auto source_order = torch::arange(
-      storage_count, graph.edge_index.options().dtype(torch::kInt64));
+  auto source_order =
+      torch::arange(storage_count,
+                    graph.edge_index.options().dtype(torch::kInt64))
+          .to(index_type);
   if (edge_count > 0) {
     source.slice(0, 0, edge_count)
         .copy_(graph.edge_index.select(0, 0)
                    .slice(0, 0, edge_count)
-                   .to(torch::kInt64));
+                   .to(index_type));
     edge_vec.slice(0, 0, edge_count)
         .copy_(graph.edge_vec.slice(0, 0, edge_count).to(torch::kFloat32));
     source_order.slice(0, 0, edge_count)
-        .copy_(graph.source_order.slice(0, 0, edge_count).to(torch::kInt64));
+        .copy_(graph.source_order.slice(0, 0, edge_count).to(index_type));
   }
   return {graph.atype,
           graph.n_node,
@@ -579,6 +630,94 @@ inline GraphTensorPack buildGraphTensors(
                    .clone()
                    .to(device);
   return pack;
+}
+
+/**
+ * @brief Normalize a graph-route aparam tensor to the flat node axis.
+ *
+ * The NeighborGraph ABI carries atomic parameters FLAT on the node axis --
+ * shape (N, daparam) with N == n_node_count, the same axis as ``atype``
+ * (mirrors ``build_synthetic_graph_inputs`` / ``_build_graph_dynamic_shapes``
+ * on the Python export side).  The runtime aparam carries the owned (local)
+ * rows only (``aparam_nall`` is structurally false for pt_expt models, see
+ * ``init``); on extended-region graphs (multi-rank routes, N == nall_real)
+ * the ghost rows are zero-padded here.  Ghost fitting outputs are never
+ * retained -- the with-comm artifact masks non-owned energies before
+ * reduction, and the plain multi-rank remap sums energy over the owned
+ * prefix only -- so the padded values are inert.
+ *
+ * A ghost-only rank (``nlocal == 0``, ``N > 0``) synthesizes a full zero
+ * tensor: the graph still carries N nodes and the artifact requires the
+ * (N, daparam) input, while the owned-node mask keeps its contribution
+ * exactly zero.  A missing aparam on a rank that OWNS atoms, or a width
+ * mismatch, is an explicit error -- the former silently returned the empty
+ * tensor (artifact reshape failure mid-collective), and a width mismatch
+ * used to be absorbed by broadcasting ``copy_`` (silent result corruption
+ * for daparam > 1).
+ *
+ * Shared by ``DeepPotPTExpt`` and ``DeepSpinPTExpt``: both graph routes carry
+ * aparam on the same flat node axis.
+ */
+inline at::Tensor extend_graph_aparam(const at::Tensor& aparam_tensor,
+                                      std::int64_t n_node_count,
+                                      std::int64_t nlocal,
+                                      std::int64_t daparam) {
+  if (daparam <= 0) {
+    return aparam_tensor;  // model has no aparam input; passed through empty
+  }
+  if (aparam_tensor.numel() == 0) {
+    if (nlocal > 0) {
+      throw deepmd::deepmd_exception(
+          "aparam is required (dim_aparam=" + std::to_string(daparam) +
+          ") but no values were provided on a rank owning " +
+          std::to_string(nlocal) + " atoms.");
+    }
+    // ghost-only rank: there are no owned rows to supply; zeros are inert
+    // under the owned-node mask but the artifact needs the full node axis.
+    return torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  }
+  if (aparam_tensor.numel() != nlocal * daparam) {
+    throw deepmd::deepmd_exception(
+        "aparam holds " + std::to_string(aparam_tensor.numel()) +
+        " values but the graph route expects nlocal * dim_aparam = " +
+        std::to_string(nlocal) + " * " + std::to_string(daparam) + ".");
+  }
+  at::Tensor owned = aparam_tensor.reshape({nlocal, daparam});
+  if (nlocal == n_node_count) {
+    return owned;  // single-rank / folded graph: nothing to pad
+  }
+  at::Tensor padded =
+      torch::zeros({n_node_count, daparam}, aparam_tensor.options());
+  padded.slice(0, 0, nlocal).copy_(owned);
+  return padded;
+}
+
+/**
+ * @brief Assert the flat graph-route aparam contract at the C++ boundary.
+ *
+ * The graph artifacts consume aparam FLAT on the node axis, shape
+ * (N, daparam) -- the layout ``extend_graph_aparam`` produces.  A caller
+ * hand-rolling a rectangular (1, N, daparam) tensor (the pre-flat
+ * convention) would otherwise fail DEEP inside the artifact -- or, on a
+ * GPU-only route, only at deployment where no CPU test can catch it (the
+ * device-edge branch shipped exactly that bug).  Failing loudly here turns
+ * any future such site into an immediate, self-explanatory error.
+ */
+inline void check_graph_aparam_flat(const at::Tensor& aparam,
+                                    std::int64_t daparam,
+                                    const char* where) {
+  if (daparam <= 0) {
+    return;
+  }
+  if (aparam.dim() != 2 || aparam.size(1) != daparam) {
+    std::ostringstream oss;
+    oss << where
+        << ": graph-route aparam must be flat (N, daparam) on the node axis "
+           "(produce it with extend_graph_aparam); got a rank-"
+        << aparam.dim() << " tensor of shape " << aparam.sizes()
+        << " for daparam = " << daparam << ".";
+    throw deepmd::deepmd_exception(oss.str());
+  }
 }
 
 /**
@@ -755,6 +894,69 @@ inline void remap_graph_outputs_to_dense_keys(
 }
 
 /**
+ * @brief Flatten the per-atom virial emitted by a compact canonical lower.
+ *
+ * The compact lower emits the per-atom virial as a three-by-three tensor,
+ * whereas the graph lower flattens it to nine components -- the layout the
+ * dense-key remap consumes. The key is absent when the artifact was traced
+ * without the per-atom virial, in which case the remap never reads it either.
+ *
+ * @param[in,out] output_map Output tensor map of a canonical forward.
+ */
+inline void flatten_canonical_atom_virial(
+    std::map<std::string, torch::Tensor>& output_map) {
+  const auto entry = output_map.find("atom_virial");
+  if (entry == output_map.end()) {
+    return;
+  }
+  entry->second = entry->second.reshape({entry->second.size(0), 9});
+}
+
+/**
+ * @brief Remap NeighborGraph (graph-schema) native-spin public outputs onto
+ *        the dense internal-key layout ``DeepSpinPTExpt::compute`` consumes.
+ *
+ * The single-rank native-spin graph forward is LOCAL-only and additionally
+ * emits ``force_mag`` (N, 3): per-node
+ * magnetic force, N == nloc, already exactly zero on non-spin-carrying atoms
+ * (the model's own type gate, not re-masked here per the project's
+ * one-owner design principle).
+ *
+ * Delegates the energy/force/virial/atom_virial remap to
+ * ``remap_graph_outputs_to_dense_keys`` and additionally zero-pads
+ * ``force_mag`` up to ``nall`` exactly like ``force`` (ghost rows already
+ * folded onto their local owners via ``edge_index``), writing it to
+ * ``energy_derv_r_mag`` -- the key ``DeepSpinPTExpt::compute`` reads for
+ * every other lower schema (dense nlist / edge_vec).
+ *
+ * **Single-rank only** (``fold_to_local=true``, so ``N == nloc``).  The
+ * multi-rank sibling is
+ * ``remap_graph_spin_outputs_to_dense_keys_extended``; calling THIS one on an
+ * extended-region result throws on the ``index_put_`` below as soon as
+ * ``nloc < nall``, because ``force_mag_pub`` then carries ``nall`` rows.
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (== N, the graph node count).
+ * @param[in] nall Extended atom count to pad the per-atom outputs up to.
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_spin_outputs_to_dense_keys(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  using torch::indexing::Slice;
+  const std::int64_t nf = 1;
+  remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic,
+                                    /*single_rank=*/true);
+  const auto& force_mag_pub = output_map.at("force_mag");  // (N, 3)
+  auto force_mag_full = torch::zeros({nf, nall, 1, 3}, force_mag_pub.options());
+  force_mag_full.index_put_({0, Slice(0, nloc), 0}, force_mag_pub);
+  output_map["energy_derv_r_mag"] = force_mag_full;
+}
+
+/**
  * @brief Remap NeighborGraph public outputs onto the dense internal-key layout
  *        for the MULTI-RANK (extended-region) path.
  *
@@ -814,6 +1016,38 @@ inline void remap_graph_outputs_to_dense_keys_extended(
         atom_energy_pub.index({Slice(0, nloc)}).reshape({nf, nloc, 1});
     output_map["energy_derv_c"] = atom_virial_pub.reshape({nf, nall, 1, 9});
   }
+}
+
+/**
+ * @brief Native-spin twin of ``remap_graph_outputs_to_dense_keys_extended``:
+ *        the MULTI-RANK (extended-region) graph-spin output remap.
+ *
+ * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes, so
+ * ``force_mag`` is already the EXTENDED magnetic force -- one row per
+ * extended atom.  Unlike the single-rank helper it must NOT zero-pad from
+ * ``nloc`` to ``nall``: the rows are already there, and padding would both
+ * truncate real ghost rows and mis-shape the tensor (the single-rank helper's
+ * ``index_put_({0, Slice(0, nloc), 0}, force_mag_pub)`` fails outright when
+ * ``force_mag_pub`` carries ``nall`` rows and ``nloc < nall``).
+ *
+ * Ghost magnetic-force rows stay distinct and are folded onto their owners by
+ * the LAMMPS spin reverse-comm, exactly as ghost conservative-force rows are.
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (owned by this rank).
+ * @param[in] nall Extended atom count (== N, the graph node count).
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_spin_outputs_to_dense_keys_extended(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  const std::int64_t nf = 1;
+  remap_graph_outputs_to_dense_keys_extended(output_map, nloc, nall, atomic);
+  const auto& force_mag_pub = output_map.at("force_mag");  // (N==nall, 3)
+  output_map["energy_derv_r_mag"] = force_mag_pub.reshape({nf, nall, 1, 3});
 }
 
 }  // namespace deepmd

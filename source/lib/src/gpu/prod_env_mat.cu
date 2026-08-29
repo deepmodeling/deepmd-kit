@@ -110,6 +110,12 @@ __device__ inline void decoding_nbor_info(int& type,
   index = key & 0xFFFFFF;
 }
 
+__device__ inline bool is_padding_nbor_info(const uint_64 key) {
+  // Empty sort slots are initialized bytewise to 0xff. Compare with that
+  // sentinel directly because a full row has a valid key in its final slot.
+  return key == static_cast<uint_64>(-1);
+}
+
 __global__ void get_i_idx(int* i_idx,
                           const int nloc,
                           const int nframes,
@@ -175,7 +181,7 @@ __global__ void fill_nei_iter(int* nei_iter_dev,
   const FPTYPE* key_out = key + nloc * max_nbor_size + row * max_nbor_size;
   int nei_type_cur = -1, nbor_idx_cur = 0;
   int nei_type_pre = -1, nbor_idx_pre = 0;
-  if (col < max_nbor_size && key_out[col] != key_out[max_nbor_size - 1]) {
+  if (col < max_nbor_size && !is_padding_nbor_info(key_out[col])) {
     if (col >= 1) {
       decoding_nbor_info(nei_type_pre, nbor_idx_pre, key_out[col - 1]);
     }
@@ -201,7 +207,7 @@ __global__ void format_nlist_fill_b(int* nlist,
   FPTYPE* key_out = key + nloc * max_nbor_size + row * max_nbor_size;
   int* row_nlist = nlist + row * nlist_size;
   if (col < max_nbor_size) {
-    if (key_out[col] != key_out[max_nbor_size - 1]) {
+    if (!is_padding_nbor_info(key_out[col])) {
       int nei_type = 0, nbor_idx = 0;
       decoding_nbor_info(nei_type, nbor_idx, key_out[col]);
       int out_indx = col - nei_iter[nei_type] + sec[nei_type];

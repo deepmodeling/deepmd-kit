@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Edge-vector neighbor-list helpers for SeZM-style models."""
+"""Edge-vector neighbor-list helpers for SeZM-style models.
+
+LEGACY: serves only the deprecated pt-backend edge_vec .pt2 schema;
+scheduled for removal with that rail.
+"""
 
 from __future__ import (
     annotations,
@@ -12,6 +16,37 @@ from deepmd.dpmodel.utils.neighbor_list import (
 )
 
 _DUMMY_EDGE_COUNT = 2
+
+
+def real_atom_edge_mask(
+    atype_flat: torch.Tensor,
+    src: torch.Tensor,
+    dst: torch.Tensor,
+) -> torch.Tensor:
+    """Keep only the edges whose two endpoints are both real atoms.
+
+    Phantom atoms (``atype < 0``) pad a mixed-nloc batch to a rectangular
+    shape: they occupy a tensor slot but no physical site. A geometric
+    neighbor search cannot know that, and reports them as neighbors of
+    whichever real atoms lie near their placeholder coordinates. Dropping
+    those edges restores the invariant that a phantom neither carries an
+    environment of its own nor enters a real atom's.
+
+    Parameters
+    ----------
+    atype_flat : torch.Tensor
+        Atom types flattened over the batch, with shape ``(nf * nloc,)``.
+    src : torch.Tensor
+        Source endpoint of each edge, indexing ``atype_flat``.
+    dst : torch.Tensor
+        Destination endpoint of each edge, indexing ``atype_flat``.
+
+    Returns
+    -------
+    torch.Tensor
+        Boolean mask over edges, with shape ``(nedge,)``.
+    """
+    return (atype_flat[src] >= 0) & (atype_flat[dst] >= 0)
 
 
 def _append_dummy_edges(
@@ -115,8 +150,21 @@ def edge_schema_from_extended(
 
     # No ``edge_len2 <= rcut**2`` upper bound here: ``nlist`` is contractually
     # cutoff-truncated by the caller (see the docstring). Only padding (-1),
-    # ghost-only neighbours, and coincident pairs are dropped.
-    edge_keep = valid_flat & (src_local >= 0) & (src_local < nloc) & (edge_len2 > 1e-10)
+    # ghost-only neighbours, coincident pairs and phantom endpoints are
+    # dropped. Without ``mapping`` the source index spans the extended atoms,
+    # so it is clamped before the type lookup: entries the preceding terms
+    # already reject must still not index out of bounds.
+    edge_keep = (
+        valid_flat
+        & (src_local >= 0)
+        & (src_local < nloc)
+        & (edge_len2 > 1e-10)
+        & real_atom_edge_mask(
+            atype[:, :nloc].reshape(-1),
+            src_actual.clamp(0, nf * nloc - 1),
+            dst_actual,
+        )
+    )
     valid_idx = torch.nonzero(edge_keep, as_tuple=False).flatten()
     edge_index = torch.stack(
         [
@@ -202,7 +250,11 @@ def edge_schema_from_neighbor_matrix(
             edge_vec_all.index_add_(0, shifted_idx, shift_cart)
 
     edge_len2 = torch.sum(edge_vec_all * edge_vec_all, dim=-1)
-    edge_keep = (edge_len2 > 1e-10) & (edge_len2 <= float(rcut) * float(rcut))
+    edge_keep = (
+        (edge_len2 > 1e-10)
+        & (edge_len2 <= float(rcut) * float(rcut))
+        & real_atom_edge_mask(atype.reshape(-1), src_actual, dst)
+    )
     valid_idx = torch.nonzero(edge_keep, as_tuple=False).flatten()
     schema = _append_dummy_edges(
         torch.stack(
@@ -268,7 +320,11 @@ def edge_schema_from_ij_shifts(
                 (sel_shifts[:, :, None] * cell).sum(1),
             )
     edge_len2 = torch.sum(edge_vec_all * edge_vec_all, dim=-1)
-    edge_keep = (edge_len2 > 1e-10) & (edge_len2 <= float(rcut) * float(rcut))
+    edge_keep = (
+        (edge_len2 > 1e-10)
+        & (edge_len2 <= float(rcut) * float(rcut))
+        & real_atom_edge_mask(atype.reshape(-1), jj, ii)
+    )
     valid_idx = torch.nonzero(edge_keep, as_tuple=False).flatten()
     schema = _append_dummy_edges(
         torch.stack(

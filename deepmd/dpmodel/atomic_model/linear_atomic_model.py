@@ -40,6 +40,7 @@ from .pairtab_atomic_model import (
 
 
 @BaseAtomicModel.register("linear")
+@BaseAtomicModel.register("linear_ener")  # accepted alias, never emitted
 class LinearEnergyAtomicModel(BaseAtomicModel):
     r"""Linear model makes linear combinations of several existing models.
 
@@ -83,9 +84,37 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 f"LinearAtomicModel only supports AtomicModel of mixed type, the following models are not mixed type: {model_mixed_type}."
             )
 
+        # Fail fast: a sum mixing an intensive with an extensive term is not
+        # physically meaningful, so such a composition must not exist.
+        intensive_flags = {m.get_intensive() for m in models}
+        if len(intensive_flags) > 1:
+            raise ValueError(
+                "LinearAtomicModel cannot combine intensive and extensive "
+                "sub-models: "
+                + ", ".join(f"{type(m).__name__}={m.get_intensive()}" for m in models)
+            )
+
+        # Fail fast: the composition feeds ONE external fparam/aparam tensor to
+        # every child, so all children that actually consume it must agree on
+        # its dimension. Children with dimension 0 do not consume it and are
+        # ignored, so a learned model composed with an analytical term (ZBL)
+        # simply inherits the learned dimension.
+        for name, dim_of in (
+            ("fparam", lambda m: m.get_dim_fparam()),
+            ("aparam", lambda m: m.get_dim_aparam()),
+        ):
+            dims = {dim_of(m) for m in models if dim_of(m) > 0}
+            if len(dims) > 1:
+                raise ValueError(
+                    f"LinearAtomicModel sub-models disagree on the {name} "
+                    "dimension, but the composition feeds them one shared "
+                    "tensor: "
+                    + ", ".join(f"{type(m).__name__}={dim_of(m)}" for m in models)
+                )
+
         self.models = models
         self.type_map = type_map
-        self.mapping_list = self._build_mapping_list()
+        self._rebuild_mapping_state()
         self.mixed_types_list = [model.mixed_types() for model in self.models]
         if isinstance(weights, str):
             assert weights in ["sum", "mean"]
@@ -96,6 +125,21 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 f"'weights' must be a string ('sum' or 'mean') or a list of float of length {len(models)}."
             )
         self.weights = weights
+
+    def _rebuild_mapping_state(self) -> None:
+        """Rebuild ``mapping_list`` and everything derived from it.
+
+        The ONE owner of the mapping state: called at construction and after
+        ``change_type_map`` (submodels may reorder or add species).
+        ``_graph_mapping_is_identity`` is a static composition property
+        computed EAGERLY here: the graph route requires identity atype
+        mappings, and checking at forward time would iterate (possibly
+        traced) tensors and trip ``torch.export``'s data-dependent guards.
+        """
+        self.mapping_list = self._build_mapping_list()
+        self._graph_mapping_is_identity = all(
+            list(m) == list(range(len(m))) for m in self.mapping_list
+        )
 
     def _build_mapping_list(self) -> list[Array]:
         """Map common type IDs to the current type IDs of every submodel."""
@@ -138,6 +182,31 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Returns whether the atomic model has message passing."""
         return any(model.has_message_passing() for model in self.models)
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """ANY child needing the exchange makes the composition need it."""
+        return any(m.has_message_passing_across_ranks() for m in self.models)
+
+    def supports_edge_parallel(self) -> bool:
+        """EVERY child must tolerate decomposition; one veto vetoes all."""
+        return all(m.supports_edge_parallel() for m in self.models)
+
+    def dense_lower_supports_comm(self) -> bool:
+        """The shared dense lower is only comm-capable if every child's is."""
+        return all(m.dense_lower_supports_comm() for m in self.models)
+
+    def uses_compact_edge_pairs(self) -> bool:
+        """The export guard fires if ANY child emits compact pairs."""
+        return any(m.uses_compact_edge_pairs() for m in self.models)
+
+    def graph_edge_dtype(self) -> str:
+        """One shared edge tensor: float32 only if EVERY child accepts it."""
+        dtypes = {m.graph_edge_dtype() for m in self.models}
+        return "float32" if dtypes == {"float32"} else "float64"
+
+    def supports_graph_export(self) -> bool:
+        """All children trace into one artifact; each must be exportable."""
+        return all(m.supports_graph_export() for m in self.models)
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the atomic model needs sorted nlist when using `forward_lower`."""
         return True
@@ -167,8 +236,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 else None,
             )
         # Submodels may reorder existing species or add new ones.  Rebuild only
-        # after every submodel has changed so runtime type IDs use their new maps.
-        self.mapping_list = self._build_mapping_list()
+        # after every submodel has changed so runtime type IDs use their new maps
+        # (also refreshes the derived _graph_mapping_is_identity flag).
+        self._rebuild_mapping_state()
 
     def get_model_rcuts(self) -> list[float]:
         """Get the cut-off radius for each individual models."""
@@ -232,6 +302,125 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 table_stride_2,
                 check_frequency,
             )
+
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Required as soon as ANY child consumes it.
+
+        The statistic is measured once and handed to every child, so a single
+        child that tabulates from the shortest observed distance keeps the
+        neighbor-statistics pass for the whole composition.
+        """
+        return any(m.compression_needs_min_nbor_dist() for m in self.models)
+
+    def uses_graph_lower(self) -> bool:
+        """Graph-capable iff EVERY child supports the graph lower.
+
+        All children evaluate on the one shared graph, so a single
+        dense-only child (e.g. ``PairTabAtomicModel`` in standard DP+ZBL)
+        forces the whole composition onto the dense route; a graph
+        descriptor plus an analytical graph term (ZBL bridging) stays on the
+        graph route.
+        """
+        return all(m.uses_graph_lower() for m in self.models)
+
+    def supports_native_spin(self) -> bool:
+        """Spin-capable when ANY child consumes the spin input.
+
+        Unlike :meth:`uses_graph_lower` (every child must run on the shared
+        graph), spin only has to reach ONE consumer: analytical terms accept
+        and ignore it, so a composition of a spin-aware learned model with a
+        ZBL term is a valid native-spin model.  With no consumer at all the
+        magnetic force would be identically zero, which is not a spin model.
+        """
+        return any(m.supports_native_spin() for m in self.models)
+
+    def forward_atomic_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+        spin: Array | None = None,
+        comm_dict: dict | None = None,
+    ) -> dict[str, Array]:
+        """Graph-route linear combination on the flat node axis.
+
+        Every child consumes the SAME graph, so on autograd backends the
+        shared ``graph.edge_vec`` leaf makes the summed energy's force and
+        virial exactly the sum of the children's -- one edge backward
+        covers the whole composition (this is what makes analytical
+        bridging terms compose with the learned model for free).
+
+        Only constant weights are supported here (``"sum"``/``"mean"`` or a
+        per-child float list); the distance-switched ZBL-interpolation
+        weights are a dense-route feature. Children with distinct type maps
+        are not supported on the graph route.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free).
+        atype
+            flat local atom types. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            frame-level conditioning, forwarded to every child (children
+            gate it on their own capabilities).
+        spin
+            flat (N, 3) per-node spin, forwarded to every child.
+        comm_dict
+            MPI communication metadata, forwarded to every child.
+
+        Returns
+        -------
+        dict
+            ``{"energy": (N, 1)}`` -- the weighted sum of the children's
+            per-atom energies.
+
+        Raises
+        ------
+        NotImplementedError
+            For non-constant weights or children with remapped type maps.
+        """
+        import array_api_compat
+
+        if not self._graph_mapping_is_identity:
+            raise NotImplementedError(
+                "the graph route supports children sharing the parent "
+                "type_map only (no atype remapping)"
+            )
+        nmodels = len(self.models)
+        if self.weights == "sum":
+            weights = [1.0] * nmodels
+        elif self.weights == "mean":
+            weights = [1.0 / nmodels] * nmodels
+        elif isinstance(self.weights, list):
+            weights = [float(w) for w in self.weights]
+        else:
+            raise NotImplementedError(
+                "the graph route supports constant weights only "
+                "('sum'/'mean'/list); distance-switched weights are a "
+                "dense-route feature"
+            )
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        energy = None
+        for model, ww in zip(self.models, weights, strict=True):
+            ret = model.forward_common_atomic_graph(
+                graph,
+                atype,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                spin=spin,
+                comm_dict=comm_dict,
+            )
+            contrib = ret["energy"] * ww
+            energy = contrib if energy is None else energy + contrib
+        return {"energy": xp.astype(energy, graph.edge_vec.dtype)}
 
     def forward_atomic(
         self,
@@ -356,6 +545,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             {
                 "@class": "Model",
                 "@version": 3,
+                # ONE wire type across backends: pt/tf write "linear" here, so
+                # dpmodel must too or cross-backend conversion breaks.  The
+                # unambiguous energy-specific name lives in the config/model
+                # registry ("linear_ener"), which is also accepted here.
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
@@ -460,13 +653,108 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             raise NotImplementedError
 
     def get_dim_fparam(self) -> int:
-        """Get the number (dimension) of frame parameters of this atomic model."""
-        # tricky...
+        """Get the number (dimension) of frame parameters of this atomic model.
+
+        ``max`` is exact here, not a guess: ``__init__`` rejects consumers
+        that disagree, so the only other value present is 0 from a
+        non-consumer.
+        """
         return max([model.get_dim_fparam() for model in self.models])
 
     def get_dim_aparam(self) -> int:
-        """Get the number (dimension) of atomic parameters of this atomic model."""
+        """Get the number (dimension) of atomic parameters of this atomic model.
+
+        ``max`` is exact for the same reason as :meth:`get_dim_fparam`.
+        """
         return max([model.get_dim_aparam() for model in self.models])
+
+    # --- conditioning-input capabilities owned by the children -----------
+    # A composition must FORWARD every capability its children own, exactly
+    # like get_dim_fparam/get_dim_aparam above.  Falling through to
+    # BaseAtomicModel's False/0 is silently wrong: eager forward still
+    # conditions on the input (the learned child consumes it), but the
+    # freeze reads these accessors, so a 0 here drops the charge_spin slot
+    # from the exported ABI and from the metadata the C++ feeder uses --
+    # the artifact then disagrees with its own eager model.
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Whether ANY child consumes the frame-level charge/spin FiLM input."""
+        return any(model.has_chg_spin_ebd() for model in self.models)
+
+    def get_intensive(self) -> bool:
+        """Whether the composed property is intensive.
+
+        All children agree by construction (validated in ``__init__``).
+        """
+        return self.models[0].get_intensive() if self.models else False
+
+    def get_compute_stats_distinguish_types(self) -> bool:
+        """Needed if ANY child needs them; the stricter rule is safe for
+        children that do not distinguish types.
+        """
+        return any(model.get_compute_stats_distinguish_types() for model in self.models)
+
+    def get_dim_chg_spin(self) -> int:
+        """Dimension of the charge_spin input (max over children, like fparam)."""
+        return max([model.get_dim_chg_spin() for model in self.models])
+
+    @staticmethod
+    def _agreed_default(
+        actives: "list[BaseAtomicModel]",
+        has: "Callable[[BaseAtomicModel], bool]",
+        get: "Callable[[BaseAtomicModel], Any]",
+    ) -> "tuple[bool, Any]":
+        """Shared default of the ACTIVE children, or none if they disagree.
+
+        The composition exposes ONE external tensor to all children, so a
+        parent default is only meaningful when every active consumer would
+        have used the same value anyway. Otherwise omitting the input must
+        stay omitted, letting each child apply its own default, rather than
+        silently broadcasting one child's value to the others.
+
+        Children that do not consume the input (dimension 0, e.g. an
+        analytical bridging term) are excluded by the caller, so a learned
+        model composed with ZBL still inherits the learned default.
+        """
+        if not actives or not all(has(m) for m in actives):
+            return False, None
+        values = [np.asarray(get(m), dtype=float).reshape(-1) for m in actives]
+        first = values[0]
+        if any(v.shape != first.shape or not np.allclose(v, first) for v in values[1:]):
+            return False, None
+        return True, get(actives[0])
+
+    def _chg_spin_consumers(self) -> list:
+        """Children that actually consume ``charge_spin``."""
+        return [m for m in self.models if m.get_dim_chg_spin() > 0]
+
+    def _fparam_consumers(self) -> list:
+        """Children that actually consume ``fparam``."""
+        return [m for m in self.models if m.get_dim_fparam() > 0]
+
+    def get_default_chg_spin(self) -> "Array | None":
+        """The shared default charge/spin conditions, if the children agree."""
+        return self._agreed_default(
+            self._chg_spin_consumers(),
+            lambda m: m.get_default_chg_spin() is not None,
+            lambda m: m.get_default_chg_spin(),
+        )[1]
+
+    def has_default_fparam(self) -> bool:
+        """Whether every active child shares one default frame parameter."""
+        return self._agreed_default(
+            self._fparam_consumers(),
+            lambda m: m.has_default_fparam(),
+            lambda m: m.get_default_fparam(),
+        )[0]
+
+    def get_default_fparam(self) -> "list[float] | None":
+        """The shared default frame parameters, if the children agree."""
+        return self._agreed_default(
+            self._fparam_consumers(),
+            lambda m: m.has_default_fparam(),
+            lambda m: m.get_default_fparam(),
+        )[1]
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

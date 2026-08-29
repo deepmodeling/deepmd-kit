@@ -252,6 +252,47 @@ class TestMultiTaskSeA(unittest.TestCase, MultiTaskTrainTest):
             self.config["model"]
         )
 
+    def test_filtered_tasks_share_retry_budget(self) -> None:
+        """All tasks share one retry budget when filtering invalid batches."""
+        config = deepcopy(self.config)
+        data_dict = config["training"]["data_dict"]
+        for task_data in data_dict.values():
+            task_data["training_data"]["min_pair_dist"] = 0.1
+        data_dict["model_1"]["training_data"]["systems"] = [
+            *data_dict["model_1"]["training_data"]["systems"],
+            str(Path(__file__).parent / "water/data/data_1"),
+        ]
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        trainer = get_trainer(config, shared_links=self.shared_links)
+
+        loader_lengths = {
+            task_key: len(trainer.training_dataloader[task_key])
+            for task_key in trainer.model_keys
+        }
+        self.assertGreater(len(set(loader_lengths.values())), 1)
+        expected_attempts = max(loader_lengths.values())
+
+        for task_key in trainer.model_keys:
+            with self.subTest(task_key=task_key):
+                call_count = 0
+
+                def get_empty_data(
+                    is_train: bool = True,
+                    task_key: str = "Default",
+                ) -> tuple[dict, dict, dict]:
+                    nonlocal call_count
+                    call_count += 1
+                    return {}, {}, {}
+
+                trainer.get_data = get_empty_data
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    rf"after {expected_attempts} attempts",
+                ):
+                    trainer._next_training_batch(task_key)
+                self.assertEqual(call_count, expected_attempts)
+
     def tearDown(self) -> None:
         MultiTaskTrainTest.tearDown(self)
 

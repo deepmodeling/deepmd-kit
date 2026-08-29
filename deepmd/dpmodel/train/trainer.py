@@ -11,9 +11,7 @@ from __future__ import (
     annotations,
 )
 
-import datetime
 import logging
-import time
 from abc import (
     ABC,
     abstractmethod,
@@ -48,6 +46,11 @@ from deepmd.dpmodel.common import (
 from deepmd.loggers.training import (
     format_training_message,
     format_training_message_per_task,
+)
+
+from .timing import (
+    DisplayInterval,
+    TrainingTimer,
 )
 
 DEFAULT_TASK_KEY = "Default"
@@ -532,9 +535,11 @@ class AbstractTrainer(ABC):
         try:
             self.on_train_begin(tasks)
             fout = self._open_learning_curve()
-            wall_start = time.time()
-            last_log_time = wall_start
-            last_log_step = start_step
+            timer = TrainingTimer(
+                start_step=start_step,
+                num_steps=num_steps,
+                disp_freq=self.trainer_config.disp_freq,
+            )
             for step in range(start_step, num_steps):
                 task = self.select_task(tasks)
                 step_result = self.train_step(task, step)
@@ -548,15 +553,6 @@ class AbstractTrainer(ABC):
                             step=step,
                             step_result=step_result,
                         )
-                        current_time = time.time()
-                        interval_wall_time = current_time - last_log_time
-                        interval_steps = max(1, display_step - last_log_step)
-                        self._log_interval(
-                            display_step=display_step,
-                            interval_wall_time=interval_wall_time,
-                            interval_steps=interval_steps,
-                            wall_elapsed=current_time - wall_start,
-                        )
                         current_lr = self.learning_rate(step)
                         self.lcurve_writer.log_results(
                             step=display_step,
@@ -564,6 +560,7 @@ class AbstractTrainer(ABC):
                             train_results=train_results,
                             valid_results=valid_results,
                         )
+                        self._log_interval(timer.record(display_step))
                         if fout is not None:
                             if fout.tell() == 0:
                                 self.lcurve_writer.write_header(
@@ -578,8 +575,6 @@ class AbstractTrainer(ABC):
                                 train_results=train_results,
                                 valid_results=valid_results,
                             )
-                        last_log_time = current_time
-                        last_log_step = display_step
 
                 self.run_full_validation(
                     step=step,
@@ -588,7 +583,7 @@ class AbstractTrainer(ABC):
                 )
 
                 if (
-                    self.rank_context.is_chief
+                    self._participates_in_checkpoint()
                     and self.trainer_config.save_freq > 0
                     and display_step % self.trainer_config.save_freq == 0
                 ):
@@ -596,6 +591,7 @@ class AbstractTrainer(ABC):
 
             if self._should_save_final_checkpoint():
                 self.save_checkpoint(num_steps)
+            self._log_average_step_time(timer)
         finally:
             if fout is not None:
                 fout.close()
@@ -644,6 +640,17 @@ class AbstractTrainer(ABC):
         """Hook called after training resources have been closed."""
         return None
 
+    @property
+    def checkpoint_is_collective(self) -> bool:
+        """Whether every rank must enter :meth:`save_checkpoint`.
+
+        A backend that shards training state assembles a checkpoint from all
+        the shards, which is a collective operation: confining the call to the
+        chief would leave the other ranks waiting at the next barrier. Such a
+        backend gates the write itself.
+        """
+        return False
+
     def run_full_validation(
         self,
         *,
@@ -682,7 +689,12 @@ class AbstractTrainer(ABC):
 
     @abstractmethod
     def save_checkpoint(self, step: int) -> None:
-        """Persist a checkpoint for a one-based step."""
+        """Persist a checkpoint for a one-based step.
+
+        Called on the chief alone, unless :attr:`checkpoint_is_collective`
+        says otherwise; a backend that opts into being called on every rank is
+        responsible for letting only one of them write to the checkpoint path.
+        """
 
     def _open_learning_curve(self) -> TextIO | None:
         if (
@@ -704,8 +716,12 @@ class AbstractTrainer(ABC):
             and display_step % self.trainer_config.disp_freq == 0
         )
 
+    def _participates_in_checkpoint(self) -> bool:
+        """Whether this rank takes part in writing a checkpoint."""
+        return self.rank_context.is_chief or self.checkpoint_is_collective
+
     def _should_save_final_checkpoint(self) -> bool:
-        if not self.rank_context.is_chief:
+        if not self._participates_in_checkpoint():
             return False
         if self.trainer_config.num_steps <= self.trainer_config.start_step:
             return False
@@ -713,37 +729,27 @@ class AbstractTrainer(ABC):
             return True
         return self.trainer_config.num_steps % self.trainer_config.save_freq != 0
 
-    def _log_interval(
-        self,
-        *,
-        display_step: int,
-        interval_wall_time: float,
-        interval_steps: int,
-        wall_elapsed: float,
-    ) -> None:
+    def _log_interval(self, interval: DisplayInterval) -> None:
         if self.trainer_config.timing_in_training:
-            completed = max(1, display_step - self.trainer_config.start_step)
-            eta = int(
-                (self.trainer_config.num_steps - display_step)
-                / completed
-                * wall_elapsed
-            )
             log.info(
                 format_training_message(
-                    batch=display_step,
-                    wall_time=interval_wall_time,
-                    eta=eta,
-                    current_time=datetime.datetime.fromtimestamp(
-                        time.time(),
-                        tz=datetime.timezone.utc,
-                    ).astimezone(),
-                    step_time=interval_wall_time / interval_steps,
+                    batch=interval.display_step,
+                    wall_time=interval.wall_time,
+                    eta=interval.eta,
+                    current_time=interval.timestamp,
                 )
             )
         else:
             log.info(
                 format_training_message(
-                    batch=display_step,
-                    wall_time=interval_wall_time,
+                    batch=interval.display_step,
+                    wall_time=interval.wall_time,
                 )
             )
+
+    def _log_average_step_time(self, timer: TrainingTimer) -> None:
+        if not self.rank_context.is_chief or not self.trainer_config.timing_in_training:
+            return
+        message = timer.format_average()
+        if message is not None:
+            log.info(message)

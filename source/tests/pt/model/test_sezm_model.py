@@ -38,7 +38,7 @@ from deepmd.pt.model.model import (
     get_sezm_model,
 )
 from deepmd.pt.model.model.sezm_model import (
-    InterPotential,
+    InnerPotential,
     SeZMModel,
 )
 from deepmd.pt.model.model.sezm_native_spin_model import (
@@ -52,6 +52,9 @@ from deepmd.pt.train.training import (
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
 )
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
@@ -72,18 +75,18 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# SeZM's ``torch.compile`` / AOT-export code paths are validated on torch
-# 2.11.x and 2.12.x, the releases the compile pipeline supports (see
-# ``deepmd.pt.utils.compile_compat``). Other torch versions can segfault or
-# drift, so the compile-parity tests are skipped there.
+# Keep compile-parity test gating aligned with the runtime allowlist in
+# ``deepmd.pt.utils.compile_compat``. Membership in the allowlist does not imply
+# that every release is installed in CI.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
-    (2, 11),
-    (2, 12),
-}
+_SKIP_OFF_COMPILE_TORCH = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
 _SKIP_OFF_COMPILE_TORCH_REASON = (
-    "SeZM's torch.compile path is only supported on torch 2.11.x and 2.12.x; "
-    f"current torch is {torch.__version__}."
+    "SeZM's torch.compile path is only supported on torch "
+    + ", ".join(f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH)
+    + f"; current torch is {torch.__version__}."
 )
 
 
@@ -1005,7 +1008,7 @@ class TestSeZMModelCompile(unittest.TestCase):
                 "water_1": {"type": "ener"},
                 "water_2": {"type": "ener"},
             }
-            models = get_model_for_wrapper(mt_cfg, _loss_params=loss_params)
+            models = get_model_for_wrapper(mt_cfg)
             prepare_model_for_loss(models, loss_params)
             wrapper = ModelWrapper(models)
             wrapper.share_params(shared_links, {"water_1": 0.5, "water_2": 0.5})
@@ -1201,6 +1204,43 @@ class TestSeZMModelProperty(unittest.TestCase):
                 expected = ret["atom_foo"].sum(dim=1)
             torch.testing.assert_close(ret["foo"], expected)
 
+    def test_change_out_bias_matches_property_reduction(self) -> None:
+        """Property statistics use sum or masked mean according to metadata."""
+        coord, atype, box = self._make_tiny_frame()
+        for intensive in (False, True):
+            model = get_sezm_model(
+                self._build_model_params(
+                    use_compile=False,
+                    intensive=intensive,
+                )
+            ).to(self.device)
+            model.eval()
+            label = model(coord, atype, box=box)["foo"].detach()
+            old_bias = model.get_out_bias().detach().clone()
+            sample = {
+                "coord": coord,
+                "atype": atype,
+                "box": box,
+                "foo": label,
+                "natoms": torch.tensor(
+                    [[5, 5, 3, 2]],
+                    dtype=torch.long,
+                    device=self.device,
+                ),
+                "find_foo": torch.tensor(1.0, device=self.device),
+            }
+
+            model.change_out_bias(
+                [sample],
+                bias_adjust_mode="change-by-statistic",
+            )
+            torch.testing.assert_close(
+                model.get_out_bias(),
+                old_bias,
+                atol=1.0e-6,
+                rtol=1.0e-6,
+            )
+
     def test_property_loss_and_serialization(self) -> None:
         """PropertyLoss metadata and model serialization should round-trip."""
         from deepmd.pt.model.model.model import (
@@ -1261,8 +1301,8 @@ class TestSeZMModelProperty(unittest.TestCase):
         self.assertTrue(grad_found)
 
 
-class TestInterPotential(unittest.TestCase):
-    """Test InterPotential ZBL analytical pair potential."""
+class TestInnerPotential(unittest.TestCase):
+    """Test InnerPotential ZBL analytical pair potential."""
 
     def setUp(self) -> None:
         self.device = env.DEVICE
@@ -1285,7 +1325,7 @@ class TestInterPotential(unittest.TestCase):
 
     def test_zbl_known_value_OO(self) -> None:
         """ZBL energy for an O-O pair matches the analytic reference."""
-        pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
 
         import math
 
@@ -1308,7 +1348,7 @@ class TestInterPotential(unittest.TestCase):
 
     def test_zbl_known_value_OH(self) -> None:
         """ZBL energy for an O-H pair matches the analytic reference."""
-        pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
         import math
 
         z_o, z_h = 8.0, 1.0
@@ -1330,7 +1370,7 @@ class TestInterPotential(unittest.TestCase):
 
     def test_zbl_gradient_exists(self) -> None:
         """ZBL produces finite gradients w.r.t. the edge vectors."""
-        pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
         edge_vec, edge_index, atype_flat, edge_mask = self._pair_edges(1.0, [0, 1])
         edge_vec = edge_vec.detach().requires_grad_(True)
 
@@ -1340,7 +1380,7 @@ class TestInterPotential(unittest.TestCase):
 
     def test_virtual_spin_types_masked(self) -> None:
         """Edges touching a virtual spin type (>= real_type_count) contribute 0."""
-        pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
         # Node 2 is a virtual spin atom (type 2 >= real_type_count=2).
         edge_vec = torch.tensor(
             [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]],
@@ -1371,7 +1411,7 @@ class TestInterPotential(unittest.TestCase):
     def test_unknown_element_raises(self) -> None:
         """Test that unknown element raises ValueError."""
         with self.assertRaises(ValueError):
-            InterPotential(type_map=["O", "Xx"])
+            InnerPotential(type_map=["O", "Xx"])
 
 
 class TestSeZMEdgeForceScatter(unittest.TestCase):
@@ -1383,7 +1423,7 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
     float64 finite-difference checks pin the conservative-force guarantee
     ``F = -dE/dx`` and the PBC-correct virial ``W = -dE/deps``, and confirm
     the half-split per-atom virial sums back to the global virial.  The ZBL
-    cases additionally drive ``InterPotential`` (edge form) through the
+    cases additionally drive ``InnerPotential`` (edge form) through the
     same single backward.
     """
 
@@ -1568,12 +1608,20 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
     def setUp(self) -> None:
         self.device = env.DEVICE
 
-    def _build_model(self, *, use_compile: bool = False) -> SeZMNativeSpinModel:
-        """Build a tiny float64 native-spin model with randomized parameters."""
+    def _build_model(
+        self,
+        *,
+        use_compile: bool = False,
+        bridging_method: str = "none",
+        use_spin: list[bool] | None = None,
+        randomize: bool = True,
+    ) -> SeZMNativeSpinModel:
+        """Build a tiny float64 native-spin model."""
+        use_spin = [True, False] if use_spin is None else use_spin
         params = {
             "type": "dpa4",
             "type_map": ["Ni", "O"],
-            "spin": {"use_spin": [True, False], "scheme": "native"},
+            "spin": {"use_spin": use_spin, "scheme": "native"},
             "descriptor": {
                 "type": "dpa4",
                 "sel": [12, 12],
@@ -1602,14 +1650,18 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
                 "seed": 7,
             },
             "use_compile": use_compile,
+            "bridging_method": bridging_method,
+            "bridging_r_inner": 0.8,
+            "bridging_r_outer": 1.2,
         }
         model = get_model(params)
-        # Perturb away from the near-identity initialization so the spin
-        # embedding measurably shapes the output.
-        torch.manual_seed(1234)
-        with torch.no_grad():
-            for p in model.parameters():
-                p.copy_(torch.randn_like(p) * 0.1)
+        if randomize:
+            # Perturb away from the near-identity initialization so the spin
+            # embedding measurably shapes the output.
+            torch.manual_seed(1234)
+            with torch.no_grad():
+                for p in model.parameters():
+                    p.copy_(torch.randn_like(p) * 0.1)
         model.eval()
         return model
 
@@ -1643,6 +1695,105 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
             device=self.device,
         )
         return coord, atype, spin, box
+
+    def _mixed_padded_batch(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build two frames whose shorter member carries phantom padding."""
+        coord, atype, spin, box = self._frame()
+        coord = coord.repeat(2, 1, 1)
+        atype = atype.repeat(2, 1)
+        spin = spin.repeat(2, 1, 1)
+        box = box.repeat(2, 1)
+        atype[1, -2:] = -1
+        coord[1, -2:] = 0.0
+        spin[1, -2:] = 0.0
+        return coord, atype, spin, box
+
+    def test_spin_routes_initialize_to_zero(self) -> None:
+        """Fresh native-spin models start from the spin-free function."""
+        model = self._build_model(randomize=False)
+        descriptor = model.atomic_model.descriptor
+        spin_embedding = descriptor.spin_embedding
+        env_seed_embedding = descriptor.env_seed_embedding
+
+        self.assertIsNotNone(spin_embedding)
+        self.assertIsNotNone(env_seed_embedding)
+        self.assertTrue(torch.all(spin_embedding.mag_layer2.matrix == 0.0))
+        self.assertTrue(torch.all(spin_embedding.adam_spin_vec_weight == 0.0))
+        self.assertTrue(torch.all(spin_embedding.adam_spin_nbr_weight == 0.0))
+        self.assertTrue(torch.all(env_seed_embedding.spin_scale == 0.0))
+
+    def test_migrated_spin_routes_are_trainable_after_activation(self) -> None:
+        """Mirror the production two-stage native-spin fine-tune load.
+
+        The trainer first rebuilds the pretrained all-false model and loads the
+        legacy checkpoint into it, allowing version migration to canonicalize
+        dormant spin routes. It then transfers that migrated state into the
+        magnetic target. Loading directly into the target would lose the source
+        configuration needed to distinguish dormant routes from trained ones.
+        """
+        legacy = self._build_model(use_spin=[False, False], randomize=True)
+        legacy_state = legacy.state_dict()
+        version_key = "atomic_model.descriptor.version_tensor"
+        legacy_state[version_key] = torch.full_like(legacy_state[version_key], 1.1)
+        migrated = self._build_model(use_spin=[False, False], randomize=False)
+        migrated.load_state_dict(legacy_state)
+
+        model = self._build_model(use_spin=[True, False], randomize=False)
+        model.load_state_dict(migrated.state_dict())
+        coord, atype, spin, box = self._frame()
+
+        model.train()
+        model.zero_grad(set_to_none=True)
+        model(coord, atype, spin, box=box)["energy"].sum().backward()
+        descriptor = model.atomic_model.descriptor
+        spin_embedding = descriptor.spin_embedding
+        env_seed_embedding = descriptor.env_seed_embedding
+        gradients = {
+            "magnitude": spin_embedding.mag_layer2.matrix.grad,
+            "onsite_l1": spin_embedding.adam_spin_vec_weight.grad,
+            "neighbor_l1": spin_embedding.adam_spin_nbr_weight.grad,
+            "env_seed": env_seed_embedding.spin_scale.grad,
+        }
+        for name, gradient in gradients.items():
+            self.assertIsNotNone(gradient, f"{name} has no gradient")
+            self.assertGreater(
+                float(gradient.abs().max()),
+                0.0,
+                f"{name} cannot leave zero initialization",
+            )
+
+    def test_zbl_change_out_bias_is_invariant_for_self_labels(self) -> None:
+        """Native-spin statistics consume spin and the complete ZBL energy."""
+        model = self._build_model(bridging_method="ZBL")
+        coord, atype, spin, box = self._frame()
+        label = model(coord, atype, spin, box=box)["energy"].detach()
+        old_bias = model.get_out_bias().detach().clone()
+        sample = {
+            "coord": coord,
+            "atype": atype,
+            "spin": spin,
+            "box": box,
+            "energy": label,
+            "natoms": torch.tensor(
+                [[5, 5, 3, 2]],
+                dtype=torch.long,
+                device=self.device,
+            ),
+            "find_energy": torch.tensor(1.0, device=self.device),
+        }
+
+        model.change_out_bias(
+            [sample],
+            bias_adjust_mode="change-by-statistic",
+        )
+        torch.testing.assert_close(
+            model.get_out_bias(),
+            old_bias,
+            atol=1.0e-12,
+            rtol=1.0e-12,
+        )
 
     @staticmethod
     def _proper_rotation(device: torch.device) -> torch.Tensor:
@@ -1716,6 +1867,33 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
             atol=1e-8,
             rtol=1e-6,
         )
+
+    def test_phantom_atoms_are_excluded_from_magnetic_mask(self) -> None:
+        """Mixed-nloc padding never enters the per-type spin lookup."""
+        model = self._build_model()
+        coord, atype, spin, box = self._mixed_padded_batch()
+
+        out = model(coord, atype, spin, box=box)
+        expected_mask = ((atype == 0) & (atype >= 0)).unsqueeze(-1)
+        torch.testing.assert_close(out["mask_mag"], expected_mask)
+        self.assertTrue(torch.all(out["force"][1, -2:] == 0.0))
+        self.assertTrue(torch.all(out["force_mag"][1, -2:] == 0.0))
+
+        lower = model._attach_spin_masks(
+            {
+                "energy_derv_r_mag": torch.zeros(
+                    2,
+                    atype.shape[1],
+                    1,
+                    3,
+                    dtype=coord.dtype,
+                    device=coord.device,
+                )
+            },
+            atype=atype,
+            nall=atype.shape[1],
+        )
+        torch.testing.assert_close(lower["mask_mag"], expected_mask)
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_export_matches_forward(self) -> None:
@@ -1825,7 +2003,7 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager(self) -> None:
         """The compiled native-spin path matches eager force and magnetic force."""
-        coord, atype, spin, box = self._frame()
+        coord, atype, spin, box = self._mixed_padded_batch()
         model_eager = self._build_model(use_compile=False)
         model_cmp = self._build_model(use_compile=True)
         model_cmp.load_state_dict(model_eager.state_dict())
@@ -1843,6 +2021,8 @@ class TestSeZMNativeSpinModel(unittest.TestCase):
                 rtol=1.0e-6,
                 msg=f"native-spin compile mismatch on {key}",
             )
+        torch.testing.assert_close(out_c["mask_mag"], out_e["mask_mag"])
+        self.assertTrue(torch.all(~out_c["mask_mag"][1, -2:]))
 
     @staticmethod
     def _extended_spin_inputs(
@@ -1987,11 +2167,17 @@ class TestSeZMModelBridging(unittest.TestCase):
         self.assertEqual(model.bridging_method, "NONE")
 
     def test_bridging_zbl_creates_potential(self) -> None:
-        """Test that bridging_method='ZBL' creates InterPotential and InnerClamp."""
+        """Test that bridging_method='ZBL' creates InnerPotential and InnerClamp."""
         model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
         self.assertIsNotNone(model.inter_potential)
         self.assertEqual(model.bridging_method, "ZBL")
         self.assertIsNotNone(model.atomic_model.descriptor.inner_clamp)
+
+    def test_empty_statistics_raise(self) -> None:
+        """A fully filtered statistics sample cannot calibrate output bias."""
+        model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
+        with self.assertRaisesRegex(ValueError, "at least one sampled system"):
+            model.compute_or_load_stat(lambda: [])
 
     def test_zbl_adds_energy(self) -> None:
         """Test that ZBL bridging adds energy to the model output."""
@@ -2025,6 +2211,331 @@ class TestSeZMModelBridging(unittest.TestCase):
             0.0,
             "ZBL bridging should add positive (repulsive) energy",
         )
+
+    def test_change_out_bias_is_invariant_for_self_labels(self) -> None:
+        """Residual bias calibration uses the complete bridged energy."""
+        params = self._build_model_params(bridging_method="ZBL")
+        params["descriptor"]["precision"] = "float64"
+        params["fitting_net"]["precision"] = "float64"
+        model = get_sezm_model(params).to(self.device).eval()
+
+        coord = torch.tensor(
+            [
+                [[0.0, 0.0, 0.0], [0.90, 0.0, 0.0], [1.80, 0.0, 0.0]],
+                [[0.0, 0.0, 0.0], [0.95, 0.0, 0.0], [1.90, 0.0, 0.0]],
+            ],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        atype = torch.tensor(
+            [[0, 0, 1], [0, 1, 1]],
+            dtype=torch.long,
+            device=self.device,
+        )
+        box = torch.tensor(
+            [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]] * 2,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        labels = model(coord, atype, box=box)["energy"].detach()
+        stat_energy = model.predict_atomic_outputs_for_stat(
+            coord,
+            atype,
+            box,
+        )["energy"].sum(dim=1)
+        torch.testing.assert_close(stat_energy, labels, atol=1.0e-12, rtol=1.0e-12)
+
+        sample = {
+            "coord": coord,
+            "atype": atype,
+            "box": box,
+            "energy": labels,
+            "natoms": torch.tensor(
+                [[3, 3, 2, 1], [3, 3, 1, 2]],
+                dtype=torch.long,
+                device=self.device,
+            ),
+            "find_energy": np.float32(1.0),
+        }
+        old_bias = model.get_out_bias().detach().clone()
+        model.use_compile = True
+        model.train()
+        with (
+            mock.patch.object(
+                model,
+                "trace_and_compile",
+                side_effect=AssertionError("statistics must not compile"),
+            ),
+            mock.patch(
+                "deepmd.pt.model.model.sezm_model.edge_energy_deriv",
+                side_effect=AssertionError("statistics must not compute derivatives"),
+            ),
+        ):
+            model.change_out_bias(
+                [sample],
+                bias_adjust_mode="change-by-statistic",
+            )
+
+        self.assertTrue(model.training)
+        self.assertEqual(model.compiled_core_compute_cache, {})
+        self.assertTrue(
+            all(
+                module._cached_weight is None
+                for module in model.modules()
+                if isinstance(module, SO2Linear)
+            )
+        )
+        torch.testing.assert_close(
+            model.get_out_bias(),
+            old_bias,
+            atol=1.0e-12,
+            rtol=1.0e-12,
+        )
+        self.assertTrue(all(parameter.grad is None for parameter in model.parameters()))
+        model.use_compile = False
+        model(coord, atype, box=box)["energy"].sum().backward()
+        self.assertTrue(
+            any(
+                parameter.grad is not None
+                and torch.count_nonzero(parameter.grad).item() > 0
+                for parameter in model.parameters()
+            )
+        )
+
+    def test_set_by_statistic_fits_raw_labels_by_definition(self) -> None:
+        """Semantic pin (issue #5927): ``set-by-statistic`` is E_model-blind.
+
+        The model energy decomposes as ``E = E_model + E_bias``. The set
+        mode DEFINES ``E_bias`` as the per-type statistic of the raw data
+        labels (or a user-given value), independent of ``E_model`` -- it
+        ignores a trained network and it equally ignores the analytical
+        ZBL term of a bridged model. Do NOT "fix" this by subtracting the
+        analytical contribution: that would silently turn the mode into a
+        third, model-dependent behavior. For a calibration that
+        compensates ``E_model``, use ``change-by-statistic`` (which since
+        #5910 uses the complete bridged predictor).
+        """
+        params = self._build_model_params(bridging_method="ZBL")
+        params["descriptor"]["precision"] = "float64"
+        params["fitting_net"]["precision"] = "float64"
+        model = get_sezm_model(params).to(self.device)
+
+        rng = np.random.default_rng(5)
+        coord = torch.tensor(
+            rng.uniform(1.0, 2.5, size=(1, 4, 3)),
+            dtype=torch.float64,
+            device=self.device,
+        )
+        box = torch.eye(3, dtype=torch.float64, device=self.device).reshape(1, 9) * 8.0
+        samples, labels, counts_rows = [], [], []
+        for types in ([[0, 0, 1, 1]], [[0, 1, 1, 1]]):
+            counts = np.bincount(np.asarray(types[0]), minlength=2)
+            label = float(rng.normal())
+            samples.append(
+                {
+                    "coord": coord,
+                    "atype": torch.tensor(types, device=self.device),
+                    "box": box,
+                    "energy": torch.tensor(
+                        [[label]], dtype=torch.float64, device=self.device
+                    ),
+                    "find_energy": np.float32(1.0),
+                    "natoms": torch.tensor([[4, 4, *counts]], device=self.device),
+                }
+            )
+            labels.append(label)
+            counts_rows.append(counts)
+        # Seed a nonzero bias: `set` must DISCARD it (an accidental
+        # additive implementation would shift the result by the seed).
+        model.set_out_bias(torch.ones_like(model.get_out_bias()))
+        model.change_out_bias(samples, bias_adjust_mode="set-by-statistic")
+        bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
+        raw_fit = np.linalg.solve(
+            np.array(counts_rows, dtype=np.float64), np.array(labels)
+        )
+        np.testing.assert_allclose(bias, raw_fit, atol=1.0e-8)
+        # Idempotence: repeating the call from the fitted state must land
+        # on the same raw-label fit again.
+        model.change_out_bias(samples, bias_adjust_mode="set-by-statistic")
+        repeated_bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
+        np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
+
+    def test_zbl_respects_exclusions(self) -> None:
+        """Excluded atoms and pairs contribute neither learned nor ZBL energy."""
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0]]],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device=self.device)
+        box = torch.tensor(
+            [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        for exclusion_key, exclusion_value in (
+            ("pair_exclude_types", [[0, 1]]),
+            ("atom_exclude_types", [1]),
+        ):
+            with self.subTest(exclusion_key=exclusion_key):
+                plain_params = self._build_model_params(bridging_method="none")
+                zbl_params = self._build_model_params(bridging_method="ZBL")
+                for params in (plain_params, zbl_params):
+                    params[exclusion_key] = exclusion_value
+                    params["descriptor"]["precision"] = "float64"
+                    params["fitting_net"]["precision"] = "float64"
+
+                model_plain = get_sezm_model(plain_params).to(self.device).eval()
+                model_zbl = get_sezm_model(zbl_params).to(self.device).eval()
+                model_zbl.load_state_dict(model_plain.state_dict(), strict=False)
+
+                torch.testing.assert_close(
+                    model_zbl(coord, atype, box=box)["energy"],
+                    model_plain(coord, atype, box=box)["energy"],
+                    atol=1.0e-12,
+                    rtol=1.0e-12,
+                )
+
+
+class TestSeZMPhantomAtoms(unittest.TestCase):
+    """SeZM must ignore the phantom atoms that pad a mixed-nloc batch.
+
+    A mixed-nloc LMDB batch is rectangular: frames shorter than the batch-wide
+    atom count are padded with slots carrying ``atype = -1`` and zero
+    coordinates. Those slots stand for no physical site, so the padded batch
+    has to reproduce, frame by frame, what the unpadded frames give on their
+    own.
+    """
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+        torch.manual_seed(2024)
+
+    def _build_model(self) -> SeZMModel:
+        params = {
+            "type": "SeZM",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "SeZM",
+                "sel": [20, 20],
+                "rcut": 4.0,
+                "channels": 4,
+                "n_focus": 1,
+                "focus_compete": False,
+                "n_radial": 3,
+                "radial_mlp": [6],
+                "use_env_seed": False,
+                "l_schedule": [1, 0],
+                "mmax": 1,
+                "so2_norm": False,
+                "so2_layers": 1,
+                "n_atten_head": 0,
+                "sandwich_norm": [True, False, True, False],
+                "ffn_neurons": 8,
+                "ffn_blocks": 1,
+                "mlp_bias": True,
+                "layer_scale": True,
+                "use_amp": False,
+                "activation_function": "silu",
+                "glu_activation": True,
+                "precision": "float64",
+                "seed": 7,
+            },
+            "fitting_net": {
+                "neuron": [8],
+                "activation_function": "silu",
+                "precision": "float64",
+                "seed": 7,
+            },
+            "use_compile": False,
+        }
+        model = get_sezm_model(params).to(self.device)
+        torch.manual_seed(1234)
+        with torch.no_grad():
+            for param in model.parameters():
+                param.copy_(torch.randn_like(param) * 0.1)
+        return model.eval()
+
+    @staticmethod
+    def _make_frames() -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray]:
+        """Three frames of unequal atom count sharing one cubic cell."""
+        rng = np.random.default_rng(0)
+        nlocs = (4, 7, 3)
+        coords = [rng.uniform(0.0, 6.0, (nloc, 3)) for nloc in nlocs]
+        atypes = [rng.integers(0, 2, nloc) for nloc in nlocs]
+        return coords, atypes, (np.eye(3) * 10.0).reshape(9)
+
+    def _pad(
+        self, coords: list[np.ndarray], atypes: list[np.ndarray]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        pad_nloc = max(len(a) for a in atypes)
+        coord = np.zeros((len(atypes), pad_nloc, 3))
+        atype = np.full((len(atypes), pad_nloc), -1, dtype=np.int64)
+        for index, (frame_coord, frame_atype) in enumerate(
+            zip(coords, atypes, strict=True)
+        ):
+            coord[index, : len(frame_atype)] = frame_coord
+            atype[index, : len(frame_atype)] = frame_atype
+        return (
+            torch.tensor(coord, dtype=torch.float64, device=self.device),
+            torch.tensor(atype, device=self.device),
+        )
+
+    def test_padded_batch_matches_unpadded_frames(self) -> None:
+        """Energy and real-atom forces are unchanged by the padding."""
+        model = self._build_model()
+        coords, atypes, box = self._make_frames()
+        coord, atype = self._pad(coords, atypes)
+        batched = model(
+            coord,
+            atype,
+            box=torch.tensor(
+                np.tile(box, (len(atypes), 1)),
+                dtype=torch.float64,
+                device=self.device,
+            ),
+        )
+
+        for index, (frame_coord, frame_atype) in enumerate(
+            zip(coords, atypes, strict=True)
+        ):
+            alone = model(
+                torch.tensor(
+                    frame_coord[None], dtype=torch.float64, device=self.device
+                ),
+                torch.tensor(frame_atype[None], device=self.device),
+                box=torch.tensor(box[None], dtype=torch.float64, device=self.device),
+            )
+            torch.testing.assert_close(
+                batched["energy"].reshape(-1)[index],
+                alone["energy"].reshape(-1)[0],
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
+            torch.testing.assert_close(
+                batched["force"][index, : len(frame_atype)],
+                alone["force"][0],
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
+
+    def test_phantom_atoms_carry_no_force(self) -> None:
+        """Padded slots stay at exactly zero force, so no gradient reaches them."""
+        model = self._build_model()
+        coords, atypes, box = self._make_frames()
+        coord, atype = self._pad(coords, atypes)
+        force = model(
+            coord,
+            atype,
+            box=torch.tensor(
+                np.tile(box, (len(atypes), 1)),
+                dtype=torch.float64,
+                device=self.device,
+            ),
+        )["force"]
+        phantom = atype < 0
+        self.assertTrue(bool(phantom.any()), "fixture must exercise padding")
+        self.assertTrue(bool(torch.all(force[phantom] == 0.0)))
 
 
 class TestSeZMModelModes(unittest.TestCase):

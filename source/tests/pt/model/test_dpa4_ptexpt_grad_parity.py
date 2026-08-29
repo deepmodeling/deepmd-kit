@@ -147,9 +147,28 @@ class TestDescriptorGradParity:
             ntypes=self.ntypes,
         )
 
-    @pytest.mark.parametrize("use_env_seed", [False, True])  # env FiLM (film_* params)
-    def test_descriptor_grad_parity(self, use_env_seed) -> None:
-        pt_mod, expt_mod = self._build_pair(use_env_seed=use_env_seed)
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param({"use_env_seed": False}, id="no_env_seed"),
+            pytest.param({"use_env_seed": True}, id="env_seed"),  # film_* params
+            # The grid-product branches are off by default, yet the SO(3) ones
+            # carry FrameExpand/FrameContract -- the only descriptor weights
+            # dpmodel stores as bare numpy outside a NativeLayer, and therefore
+            # the ones most exposed to a missing promotion.  The S2 branches
+            # share the rest of the grid-net structure without those two
+            # sub-modules.
+            pytest.param({"message_node_so3": True}, id="message_node_so3"),
+            pytest.param({"node_wise_so3": True}, id="node_wise_so3"),
+            pytest.param({"message_node_s2": True}, id="message_node_s2"),
+            pytest.param({"node_wise_s2": True}, id="node_wise_s2"),
+            # ReducedEquivariantRMSNorm is reachable only through so2_norm and
+            # is the one module that sizes its forward off a stored index array
+            pytest.param({"so2_norm": True}, id="so2_norm"),
+        ],
+    )
+    def test_descriptor_grad_parity(self, overrides) -> None:
+        pt_mod, expt_mod = self._build_pair(**overrides)
         inp = self._inputs()
         coord = inp["coord"].reshape(self.nf, -1)
         atype_ext, nlist, mapping = inp["atype_ext"], inp["nlist"], inp["mapping"]

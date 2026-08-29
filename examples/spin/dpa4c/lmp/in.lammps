@@ -1,0 +1,62 @@
+# Native-spin DPA4C on rocksalt NiO in its type-II antiferromagnetic order.
+#
+# The magnetic moment enters the descriptor as an equivariant input and the
+# magnetic force is the negative spin gradient of the energy, so no virtual
+# atoms are created and the atom count equals the number of physical atoms.
+#
+# The pair style reads a graph-lower archive or the compact canonical graph
+# archive produced by compression. See README.md for how to obtain one.
+#
+# Substitute `dpa4spin/kk` for the device-resident Kokkos path, which keeps the
+# graph and the moment in device memory:
+#
+#   lmp -k on g 1 -sf kk -in in.lammps
+
+units             metal
+dimension         3
+boundary          p p p
+atom_style        spin
+atom_modify       map array
+read_data         init.data
+
+pair_style        dpa4spin frozen_model.pt2
+pair_coeff        * * Ni O
+
+neighbor          2.0 bin
+neigh_modify      every 10 delay 0 check yes
+
+compute           mag  all spin
+compute           spin all property/atom sp spx spy spz fmx fmy fmz
+variable          emag equal c_mag[5]
+
+thermo_style      custom step temp pe v_emag press
+thermo            1
+thermo_modify     format float %14.8g
+
+dump              1 all custom 10 nio.dump id type x y z &
+                  c_spin[1] c_spin[2] c_spin[3] c_spin[4] &
+                  c_spin[5] c_spin[6] c_spin[7] fx fy fz
+dump_modify       1 sort id format float %.12e
+
+# A single evaluation reports the energy, the conservative force and the
+# magnetic force of the antiferromagnetic reference state.
+run               0
+
+# `min_style spin` reads the magnetic force from the pair style directly and
+# relaxes the moment directions at fixed positions. Note that `fix nve/spin`
+# accumulates the magnetic force only from pair styles whose name it matches,
+# so spin dynamics needs a LAMMPS build aware of this style.
+min_style         spin
+min_modify        line spin_cubic discrete_factor 10.0
+minimize          1.0e-10 1.0e-8 500 1000
+
+write_data        relaxed.data
+
+# Lattice dynamics at the relaxed magnetic configuration. The thermostat
+# integrates positions only, so the moments stay fixed while the conservative
+# force, the neighbor rebuilds and the domain decomposition are exercised.
+velocity          all create 300.0 4928459 mom yes rot yes dist gaussian
+fix               1 all nvt temp 300.0 300.0 0.1
+timestep          0.001
+thermo            10
+run               100

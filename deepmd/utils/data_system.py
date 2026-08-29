@@ -241,6 +241,12 @@ class DeepmdDataSystem:
                         bsi = 1
                     bs.append(bsi)
                 self.batch_size = bs
+            elif words[0] == "mix":
+                raise RuntimeError(
+                    "the 'mix' batch_size rule packs frames of unequal atom "
+                    "count into one batch and is only available for LMDB "
+                    "datasets on the pt and pt_expt backends"
+                )
             else:
                 raise RuntimeError("unknown batch_size rule " + words[0])
         elif isinstance(self.batch_size, list):
@@ -377,6 +383,7 @@ class DeepmdDataSystem:
                 output_natoms_for_type_sel=adict[kk].get(
                     "output_natoms_for_type_sel", False
                 ),
+                special_shape=adict[kk].get("special_shape"),
             )
 
     def add_data_requirements(
@@ -397,6 +404,7 @@ class DeepmdDataSystem:
         default: float = 0.0,
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
+        special_shape: str | None = None,
     ) -> None:
         """Add a data item that to be loaded.
 
@@ -425,6 +433,8 @@ class DeepmdDataSystem:
             The dtype of data, overwrites `high_prec` if provided
         output_natoms_for_type_sel : bool
             If True and type_sel is True, the atomic dimension will be natoms instead of nsel
+        special_shape : str, optional
+            Name of a loader-defined non-standard shape contract.
         """
         for ii in self.data_systems:
             ii.add(
@@ -438,6 +448,7 @@ class DeepmdDataSystem:
                 default=default,
                 dtype=dtype,
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
+                special_shape=special_shape,
             )
 
     def reduce(self, key_out: str, key_in: str) -> None:
@@ -593,7 +604,25 @@ class DeepmdDataSystem:
             if kk not in batch_data[0]:
                 continue
             b_data["find_" + kk] = batch_data[0]["find_" + kk]
-            if not vv["atomic"]:
+            if vv.get("special_shape") == "hessian" or kk == "hessian":
+                # A Hessian is a (3 * natoms, 3 * natoms) matrix, so neither
+                # branch below pads it correctly: concatenating raises on
+                # ragged systems and copying a flat prefix would scatter the
+                # rows. Embed each frame's block in the top-left corner of the
+                # padded square instead; the padded rows and columns stay zero
+                # and are dropped by the loss mask.
+                padded_dof = max_natoms * 3
+                merged = np.zeros(
+                    (len(batch_data), padded_dof, padded_dof),
+                    dtype=batch_data[0][kk].dtype,
+                )
+                for ii, bb in enumerate(batch_data):
+                    frame_dof = bb["natoms_vec"][0] * 3
+                    merged[ii, :frame_dof, :frame_dof] = bb[kk][0].reshape(
+                        frame_dof, frame_dof
+                    )
+                b_data[kk] = merged.reshape(len(batch_data), -1)
+            elif not vv["atomic"]:
                 b_data[kk] = np.concatenate([bb[kk] for bb in batch_data], axis=0)
             else:
                 b_data[kk] = np.zeros(
@@ -736,8 +765,8 @@ class LmdbDataSystem:
         # Keep the framework-agnostic LMDB implementation lazy so importing a
         # legacy backend cannot create a data_system <-> dpmodel import cycle.
         from deepmd.dpmodel.utils.lmdb_data import (
+            LmdbBatchSampler,
             LmdbDataReader,
-            SameNlocBatchSampler,
             compute_block_targets,
         )
 
@@ -749,25 +778,19 @@ class LmdbDataSystem:
             )
 
         self.lmdb_path = lmdb_path
-        self._reader = LmdbDataReader(
-            lmdb_path, type_map, batch_size, mixed_batch=False
-        )
+        self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
         self._type_map = list(type_map)
         # LMDB is defined as mixed-type by its reader contract; determining
         # this must not scan every frame during data-system initialization.
         self.mixed_type = self._reader.mixed_type
         self.nsystems = 1
         self.system_dirs = [lmdb_path]
-        self.natoms = [max(self._reader.frame_nlocs) if self._reader.frame_nlocs else 0]
+        self.natoms = [
+            int(self._reader.frame_nlocs.max()) if len(self._reader.frame_nlocs) else 0
+        ]
         self.batch_size = [self._reader.batch_size]
-        self.nbatches = [self._reader.total_batch]
         self.sys_probs = [1.0]
         self.data_systems = [self]
-        self._nloc_set_indices = {
-            f"{self.lmdb_path}#nloc={nloc}": indices
-            for nloc, indices in sorted(self._reader.nloc_groups.items())
-        }
-        self.dirs = list(self._nloc_set_indices)
         self.pbc = self._detect_pbc()
         self._data_dict = {
             "box": {
@@ -812,13 +835,28 @@ class LmdbDataSystem:
                 self._reader.nsystems,
                 self._reader.system_nframes,
             )
-        self._sampler = SameNlocBatchSampler(
+        self._sampler = LmdbBatchSampler(
             self._reader,
             shuffle=True,
             seed=seed,
             block_targets=block_targets,
         )
+        self.nbatches = [self._sampler.total_batches]
         self._iter = iter(self._sampler)
+        self._refresh_set_indices()
+
+    def _refresh_set_indices(self) -> None:
+        """Refresh stack-compatible groups after data requirements change."""
+        from deepmd.dpmodel.utils.lmdb_data import (
+            collect_lmdb_sampling_groups,
+        )
+
+        groups = collect_lmdb_sampling_groups(self._reader)
+        self._nloc_set_indices = {
+            f"{self.lmdb_path}#group={group_idx}:nloc={nloc}": indices
+            for group_idx, (nloc, indices) in enumerate(groups)
+        }
+        self.dirs = list(self._nloc_set_indices)
 
     def _detect_pbc(self) -> bool:
         """Return True when LMDB frames contain a non-zero simulation box."""
@@ -834,6 +872,9 @@ class LmdbDataSystem:
         for item in data_requirements:
             self._data_dict[item.key] = item.dict
         self._reader.add_data_requirement(data_requirements)
+        self._refresh_set_indices()
+        self.nbatches = [self._sampler.total_batches]
+        self._iter = iter(self._sampler)
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         """Alias used by DataLoader-style backends."""

@@ -196,12 +196,10 @@ class DeepEval(DeepEvalBackend):
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
         self._has_spin = (
-            getattr(self.dp.model["Default"], "has_spin", False)
+            self.dp.model["Default"].has_spin()
             if isinstance(self.dp, ModelWrapper)
             else False
         )
-        if callable(self._has_spin):
-            self._has_spin = False
         self._has_hessian = False
 
     def get_rcut(self) -> float:
@@ -241,12 +239,10 @@ class DeepEval(DeepEvalBackend):
 
     def get_var_name(self) -> str:
         """Get the name of the property."""
-        if hasattr(self.dp.model["Default"], "get_var_name") and callable(
-            getattr(self.dp.model["Default"], "get_var_name")
-        ):
-            return self.dp.model["Default"].get_var_name()
-        else:
+        var_name = self.dp.model["Default"].get_var_name()
+        if var_name is None:
             raise NotImplementedError
+        return var_name
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:

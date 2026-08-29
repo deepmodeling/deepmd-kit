@@ -37,6 +37,33 @@ def custom_huber_loss(
     return paddle.mean(loss)
 
 
+def masked_pair_mean(
+    elem: paddle.Tensor, maskf: paddle.Tensor, ncomp: int
+) -> paddle.Tensor:
+    """Average pair contributions over real atoms on both pair axes.
+
+    Hessian padding is square: a component is valid only when both its row atom
+    and column atom are real. The reduction is normalized per frame so mixed
+    systems with different atom counts receive the same weighting.
+    """
+    nf, nloc = maskf.shape
+    component_mask = paddle.broadcast_to(
+        maskf.astype(elem.dtype).reshape([nf, nloc, 1]),
+        [nf, nloc, ncomp],
+    ).reshape([nf, nloc * ncomp])
+    masked = elem * component_mask[:, :, None] * component_mask[:, None, :]
+    per_frame_sum = paddle.sum(masked.reshape([nf, -1]), axis=-1)
+    per_frame_dof = paddle.square(paddle.sum(component_mask, axis=-1))
+    has_dof = per_frame_dof > 0
+    safe_dof = paddle.where(has_dof, per_frame_dof, paddle.ones_like(per_frame_dof))
+    per_frame = paddle.where(
+        has_dof,
+        per_frame_sum / safe_dof,
+        paddle.zeros_like(per_frame_sum),
+    )
+    return paddle.mean(per_frame)
+
+
 class EnergyStdLoss(TaskLoss):
     def __init__(
         self,
@@ -649,7 +676,11 @@ class EnergyHessianStdLoss(EnergyStdLoss):
             Other keyword arguments.
         """
         super().__init__(**kwargs)
-        self.has_h = (start_pref_h != 0.0 and limit_pref_h != 0.0) or self.inference
+        # A scheduled term is active when either endpoint is nonzero. Requiring
+        # both endpoints silently disabled valid ramp-up and ramp-down inputs.
+        self.has_h = (start_pref_h != 0.0 or limit_pref_h != 0.0) or self.inference
+        if self.use_huber and self.has_h:
+            raise RuntimeError("Huber loss is not implemented for hessian.")
 
         self.start_pref_h = start_pref_h
         self.limit_pref_h = limit_pref_h
@@ -672,12 +703,21 @@ class EnergyHessianStdLoss(EnergyStdLoss):
         if self.has_h and "hessian" in model_pred and "hessian" in label:
             find_hessian = label.get("find_hessian", 0.0)
             pref_h = pref_h * find_hessian
-            diff_h = label["hessian"].reshape(
-                [-1],
-            ) - model_pred["hessian"].reshape(
-                [-1],
-            )
-            l2_hessian_loss = paddle.mean(paddle.square(diff_h))
+            maskf = model_pred.get("mask")
+            if maskf is not None:
+                nf, nloc = maskf.shape
+                hessian_shape = [nf, nloc * 3, nloc * 3]
+                diff_h = label["hessian"].reshape(hessian_shape) - model_pred[
+                    "hessian"
+                ].reshape(hessian_shape)
+                l2_hessian_loss = masked_pair_mean(
+                    paddle.square(diff_h), maskf, ncomp=3
+                )
+            else:
+                diff_h = label["hessian"].reshape([-1]) - model_pred["hessian"].reshape(
+                    [-1]
+                )
+                l2_hessian_loss = paddle.mean(paddle.square(diff_h))
             if not self.inference:
                 more_loss["l2_hessian_loss"] = self.display_if_exist(
                     l2_hessian_loss.detach(), find_hessian
@@ -686,7 +726,10 @@ class EnergyHessianStdLoss(EnergyStdLoss):
             rmse_h = l2_hessian_loss.sqrt()
             more_loss["rmse_h"] = self.display_if_exist(rmse_h.detach(), find_hessian)
             if mae:
-                mae_h = paddle.mean(paddle.abs(diff_h))
+                if maskf is not None:
+                    mae_h = masked_pair_mean(paddle.abs(diff_h), maskf, ncomp=3)
+                else:
+                    mae_h = paddle.mean(paddle.abs(diff_h))
                 more_loss["mae_h"] = self.display_if_exist(mae_h.detach(), find_hessian)
 
         if not self.inference:
@@ -701,10 +744,11 @@ class EnergyHessianStdLoss(EnergyStdLoss):
             label_requirement.append(
                 DataRequirementItem(
                     "hessian",
-                    ndof=1,  # 9=3*3 --> 3N*3N=ndof*natoms*natoms
-                    atomic=True,
+                    ndof=1,
+                    atomic=False,
                     must=False,
                     high_prec=False,
+                    special_shape="hessian",
                 )
             )
         return label_requirement

@@ -186,6 +186,21 @@ void use_nei_info_cpu(int* nlist,
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 /**
+ * @brief Validate that every host neighbor-list row fits a GPU row buffer.
+ *
+ * GPU neighbor lists are stored in a dense, fixed-width buffer.  Validate the
+ * sparse host rows before any device allocation or copy so an oversized row
+ * cannot overwrite the following row.
+ *
+ * @param nlist Host neighbor list to validate.
+ * @param row_capacity Number of neighbor indices allocated for each GPU row.
+ * @return Maximum neighbor count found in @p nlist.
+ * @throws deepmd_exception If any row exceeds @p row_capacity.
+ */
+int validate_nlist_gpu_capacity(const InputNlist& nlist,
+                                const int row_capacity);
+
+/**
  *@brief              Convert the a host memory InputNlist to a device memory
  *InputNlist
  *

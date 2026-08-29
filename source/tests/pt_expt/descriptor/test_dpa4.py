@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import os
+from contextlib import (
+    nullcontext,
+)
+from unittest import (
+    mock,
+)
+
 import numpy as np
 import pytest
 import torch
@@ -98,6 +106,163 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             atol=atol,
             err_msg=err_msg,
         )
+
+    def test_default_charge_spin_uses_model_namespace(self) -> None:
+        """A device buffer supplies the default without a NumPy round trip."""
+        dtype = PRECISION_DICT["float64"]
+        descriptor = make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            add_chg_spin_ebd=True,
+            default_chg_spin=[-1.0, 3.0],
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        with mock.patch.object(
+            torch.Tensor,
+            "numpy",
+            side_effect=TypeError("direct conversion is unavailable"),
+        ):
+            output = descriptor(coord_ext, atype_ext, nlist)[0]
+
+        assert output.device == self.device
+        assert torch.isfinite(output).all()
+
+    def test_train_and_eval_amp_switches_are_independent(self) -> None:
+        """Training follows ``use_amp``, evaluation follows ``DP_AMP_INFER``.
+
+        The block implementation is stubbed so a CUDA-device test double can
+        exercise the policy on CPU without constructing or executing a CUDA
+        tensor. Neither switch may leak into the other's mode.
+        """
+        block_input = mock.Mock(device=mock.Mock(type="cuda"))
+        block_output = object()
+
+        for amp_infer in (False, True):
+            with mock.patch.dict(
+                os.environ, {"DP_AMP_INFER": "1" if amp_infer else "0"}, clear=False
+            ):
+                for use_amp in (False, True):
+                    dd = make_descriptor(
+                        self.nt, self.sel_mix, self.rcut, use_amp=use_amp
+                    )
+                    for training in (False, True):
+                        dd.train(training)
+                        expected = use_amp if training else amp_infer
+                        with (
+                            mock.patch.object(
+                                DPDescrptDPA4,
+                                "_forward_blocks",
+                                return_value=block_output,
+                            ),
+                            mock.patch(
+                                "torch.autocast", return_value=nullcontext()
+                            ) as autocast_mock,
+                        ):
+                            actual = dd._forward_blocks(block_input)
+                        assert actual is block_output
+                        assert autocast_mock.called is expected, (
+                            f"amp_infer={amp_infer} use_amp={use_amp} "
+                            f"training={training}"
+                        )
+
+    def test_random_gamma_train_eval_gate(self) -> None:
+        """``random_gamma`` mirrors pt: rolled in train mode, fixed otherwise.
+
+        The ``_in_training_mode`` runtime hook must forward
+        ``random_gamma=True`` to the edge-cache builder only for a
+        train-mode pt_expt forward; eval-mode forwards and the dpmodel
+        reference (no training mode) always forward ``False``. Spy-based:
+        the model is roll-equivariant, so an output-difference check would
+        have no deterministic teeth.
+        """
+        import deepmd.dpmodel.descriptor.dpa4 as dpa4_mod
+
+        dtype = PRECISION_DICT["float64"]
+        dd0 = make_descriptor(
+            self.nt,
+            self.sel_mix,
+            self.rcut,
+            random_gamma=True,  # the default in production configs
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        captured: list[bool] = []
+        orig = dpa4_mod._edge_cache_from_arrays
+
+        def spy(*args, **kwargs):
+            captured.append(kwargs["random_gamma"])
+            return orig(*args, **kwargs)
+
+        with mock.patch.object(dpa4_mod, "_edge_cache_from_arrays", spy):
+            # Train mode: the augmentation is on (and the numpy gamma draw
+            # runs against torch tensors -- eager smoke).
+            dd0.train()
+            dd0(coord_ext, atype_ext, nlist)
+            assert captured[-1] is True
+            # Eval mode: fixed gamma, deterministic forwards.
+            dd0.eval()
+            r1 = dd0(coord_ext, atype_ext, nlist)[0]
+            r2 = dd0(coord_ext, atype_ext, nlist)[0]
+            assert captured[-1] is False
+            assert torch.equal(r1, r2)
+            # dpmodel reference: no training mode, never rolls even with
+            # random_gamma=True.
+            dd2 = DPDescrptDPA4.deserialize(dd0.serialize())
+            assert dd2._in_training_mode() is False
+            dd2.call(self.coord_ext, self.atype_ext, self.nlist)
+            assert captured[-1] is False
+
+    def test_random_gamma_draw_obeys_torch_rng_state(self) -> None:
+        """The train-mode roll must be drawn by torch, on the edge device.
+
+        pt draws it with ``torch.rand``, so ``torch.manual_seed`` replays it.
+        A host numpy draw would answer to no seed and freeze to a constant
+        under tracing. Replay is the only property separating the two: the
+        descriptor is roll-equivariant, so comparing outputs has no teeth.
+        """
+        import deepmd.dpmodel.descriptor.dpa4_nn.edge_cache as ec_mod
+
+        dtype = PRECISION_DICT["float64"]
+        dd0 = make_descriptor(self.nt, self.sel_mix, self.rcut, random_gamma=True).to(
+            self.device
+        )
+        dd0.train()
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        def _rolled_quat() -> torch.Tensor:
+            """One train-mode forward's post-roll edge quaternion."""
+            captured: list[torch.Tensor] = []
+            orig = ec_mod.quaternion_multiply
+
+            def spy(a, b):
+                out = orig(a, b)
+                captured.append(out)
+                return out
+
+            with mock.patch.object(ec_mod, "quaternion_multiply", spy):
+                dd0(coord_ext, atype_ext, nlist)
+            assert captured, "the random roll never ran"
+            return captured[0].detach().clone()
+
+        torch.manual_seed(20260725)
+        q_a = _rolled_quat()
+        torch.manual_seed(20260725)
+        q_b = _rolled_quat()
+        torch.testing.assert_close(q_a, q_b, rtol=0.0, atol=0.0)
+
+        # anti-vacuity: a constant gamma would satisfy the replay check alone
+        torch.manual_seed(20260726)
+        assert not torch.allclose(q_a, _rolled_quat())
+        # drawn on the edge device, no host round-trip
+        assert q_a.device.type == self.device.type
 
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_exportable(self, prec) -> None:
