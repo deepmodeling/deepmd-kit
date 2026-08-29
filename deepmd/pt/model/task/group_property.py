@@ -26,6 +26,13 @@ from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
 )
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+    to_torch_tensor,
+)
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -268,7 +275,12 @@ class GroupPropertyFittingNet(Fitting):
         return None
 
     def serialize(self) -> dict[str, Any]:
+        variables = {
+            key: to_numpy_array(value) for key, value in self.state_dict().items()
+        }
         return {
+            "@class": "Fitting",
+            "@version": 1,
             "type": "group_property",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -282,4 +294,19 @@ class GroupPropertyFittingNet(Fitting):
             "activation_function": self.activation_function,
             "precision": self.precision,
             "type_map": self.type_map,
+            "trainable": self.trainable,
+            "seed": self.seed,
+            "@variables": variables,
         }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> GroupPropertyFittingNet:
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 1, 1)
+        data.pop("@class", None)
+        variables = data.pop("@variables")
+        data.pop("type", None)
+        obj = cls(**data)
+        state = {key: to_torch_tensor(value) for key, value in variables.items()}
+        obj.load_state_dict(state, strict=True)
+        return obj

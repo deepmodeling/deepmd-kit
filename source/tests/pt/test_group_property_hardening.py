@@ -63,7 +63,14 @@ class _StubDescriptor(torch.nn.Module):
         return desc, None, None, None, None
 
 
-def _fitting(dim=2, task_dim=1, neuron=(4,), numb_fparam=0, group_reduce="mean"):
+def _fitting(
+    dim=2,
+    task_dim=1,
+    neuron=(4,),
+    numb_fparam=0,
+    group_reduce="mean",
+    dim_case_embd=0,
+):
     return GroupPropertyFittingNet(
         ntypes=2,
         dim_descrpt=dim,
@@ -72,6 +79,7 @@ def _fitting(dim=2, task_dim=1, neuron=(4,), numb_fparam=0, group_reduce="mean")
         neuron=list(neuron),
         numb_fparam=numb_fparam,
         group_reduce=group_reduce,
+        dim_case_embd=dim_case_embd,
     )
 
 
@@ -253,12 +261,68 @@ def test_shuffled_batch_loss_invariance():
 
 
 # --------------------------------------------------------------------------- serialize
+def test_model_serialize_deserialize_preserves_predictions():
+    from deepmd.pt.model.descriptor import (
+        DescrptSeA,
+    )
+
+    desc = DescrptSeA(rcut=6.0, rcut_smth=5.0, sel=[4, 4], ntypes=2)
+    fitting = _fitting(
+        dim=desc.get_dim_out(),
+        task_dim=2,
+        neuron=(5,),
+        numb_fparam=3,
+        group_reduce="mean",
+        dim_case_embd=3,
+    )
+    fitting.set_case_embd(0)
+    model = GroupPropertyModel(
+        descriptor=desc,
+        fitting=fitting,
+        type_map=["A", "B"],
+    )
+
+    coord = _coords(3, 2)
+    atype = torch.tensor([[0, 1], [0, 1], [0, 1]], device=env.DEVICE)
+    group_id = torch.tensor([[0], [0], [1]], device=env.DEVICE)
+    weight = torch.tensor([[0.25], [0.75], [1.0]], device=env.DEVICE)
+    pool_mask = torch.ones(3, 2, device=env.DEVICE)
+    fparam = torch.tensor(
+        [[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+
+    before = model(
+        coord,
+        atype,
+        box=None,
+        fparam=fparam,
+        group_id=group_id,
+        weight=weight,
+        pool_mask=pool_mask,
+    )["y"].detach()
+
+    restored = GroupPropertyModel.deserialize(model.serialize())
+    after = restored(
+        coord,
+        atype,
+        box=None,
+        fparam=fparam,
+        group_id=group_id,
+        weight=weight,
+        pool_mask=pool_mask,
+    )["y"].detach()
+
+    assert torch.equal(before, after)
+
+
 def test_serialize_roundtrip_group_reduce_and_fparam():
     fitting = _fitting(numb_fparam=2, group_reduce="sum")
     sd = fitting.serialize()
     assert sd["group_reduce"] == "sum"
     assert sd["numb_fparam"] == 2
-    rebuilt = GroupPropertyFittingNet(**{k: v for k, v in sd.items() if k != "type"})
+    rebuilt = GroupPropertyFittingNet.deserialize(sd)
     assert rebuilt.group_reduce == "sum"
     assert rebuilt.get_dim_fparam() == 2
 

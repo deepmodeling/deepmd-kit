@@ -18,6 +18,9 @@ import torch
 
 pytest.importorskip("deepmd.lib")
 
+from deepmd.pt.model.task import (
+    BaseFitting,
+)
 from deepmd.pt.model.task.group_property import (
     GroupPropertyFittingNet,
 )
@@ -165,6 +168,44 @@ def test_dim_case_embd_combines_with_fparam_neuron():
     fn.set_case_embd(0)
     out = fn(torch.zeros(2, 4 + 3, device=env.DEVICE))
     assert out.shape == (2, 1)
+
+
+def test_serialize_deserialize_preserves_weights_and_predictions():
+    fn = _make(
+        task_dim=2,
+        neuron=[7, 5],
+        numb_fparam=3,
+        fparam_neuron=[4],
+        dim_case_embd=4,
+        group_reduce="sum",
+        trainable=[False, True, False],
+        type_map=["H", "O", "C"],
+        seed=17,
+    )
+    fn.set_case_embd(2)
+    group_embedding = torch.rand(6, 4 + 3, device=env.DEVICE)
+    before = fn(group_embedding).detach().clone()
+
+    data = fn.serialize()
+    assert "@variables" in data
+    assert "network.0.weight" in data["@variables"]
+    assert "fparam_network.0.weight" in data["@variables"]
+    assert "case_embd" in data["@variables"]
+
+    restored = BaseFitting.deserialize(data)
+    assert isinstance(restored, GroupPropertyFittingNet)
+    after = restored(group_embedding).detach()
+
+    assert restored.group_reduce == "sum"
+    assert restored.trainable == [False, True, False]
+    assert torch.equal(restored.case_embd, fn.case_embd)
+    for (name, param), (restored_name, restored_param) in zip(
+        fn.named_parameters(), restored.named_parameters(), strict=True
+    ):
+        assert name == restored_name
+        assert torch.equal(param, restored_param)
+        assert restored_param.requires_grad == param.requires_grad
+    assert torch.equal(before, after)
 
 
 def test_serialize_round_trips_dim_case_embd():
