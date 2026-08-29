@@ -84,6 +84,7 @@ def _write_minimal_lmdb(path: str) -> None:
 class _FakeMultiSystems:
     write_count = 0
     load_calls: ClassVar[list[tuple[str, str]]] = []
+    to_calls: ClassVar[list[tuple[str, str, dict]]] = []
 
     def __init__(self, *systems) -> None:
         self.systems = list(systems)
@@ -97,11 +98,12 @@ class _FakeMultiSystems:
     def __len__(self) -> int:
         return 1 if self.loaded or self.systems else 0
 
-    def to(self, fmt: str, file_name: str) -> None:
+    def to(self, fmt: str, file_name: str, **kwargs) -> None:
         type(self).write_count += 1
+        self.to_calls.append((fmt, file_name, kwargs))
         if fmt == "deepmd/hdf5":
             _write_minimal_deepmd_hdf5(file_name)
-        elif fmt == "lmdb":
+        elif fmt == "deepmd/lmdb":
             _write_minimal_lmdb(file_name)
         else:
             raise AssertionError(fmt)
@@ -123,6 +125,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.source.write_text("1\nProperties=species:S:1:pos:R:3\nH 0 0 0\n")
         _FakeMultiSystems.write_count = 0
         _FakeMultiSystems.load_calls = []
+        _FakeMultiSystems.to_calls = []
         data_system._DPDATA_CONVERSION_CACHE.clear()
         self.fake_dpdata = types.SimpleNamespace(
             MultiSystems=_FakeMultiSystems,
@@ -134,7 +137,7 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.tmpdir.cleanup()
         data_system._DPDATA_CONVERSION_CACHE.clear()
 
-    def test_process_systems_defaults_to_lmdb_and_reuses_cache(self) -> None:
+    def test_process_systems_defaults_to_deepmd_lmdb_and_reuses_cache(self) -> None:
         with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
             systems = process_systems(str(self.source), fmt="extxyz")
             systems_again = process_systems(str(self.source), fmt="extxyz")
@@ -147,6 +150,10 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.assertTrue(is_lmdb(systems[0]))
         self.assertTrue(Path(systems[0]).is_relative_to(self.root))
         self.assertEqual(Path(systems[0]).parent, self.root / ".deepmd_dpdata_cache")
+        self.assertEqual(
+            _FakeMultiSystems.to_calls,
+            [("deepmd/lmdb", systems[0], {"overwrite": True})],
+        )
 
     def test_process_systems_cache_is_scoped_to_cwd(self) -> None:
         other_cwd = self.root / "run2"
@@ -176,6 +183,46 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         self.assertEqual(systems, systems_again)
         self.assertEqual(_FakeMultiSystems.write_count, 2)
+        self.assertTrue(
+            all(
+                call == ("deepmd/lmdb", systems[0], {"overwrite": True})
+                for call in _FakeMultiSystems.to_calls
+            )
+        )
+
+    def test_lmdb_alias_uses_canonical_dpdata_writer(self) -> None:
+        """The legacy alias must share the canonical dpdata cache entry."""
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            systems = process_systems(str(self.source), fmt="extxyz", out_fmt="lmdb")
+
+        self.assertEqual(
+            _FakeMultiSystems.to_calls,
+            [("deepmd/lmdb", systems[0], {"overwrite": True})],
+        )
+
+    def test_real_dpdata_lmdb_writer_is_deepmd_compatible(self) -> None:
+        """Verify dpdata 1.1 writes the schema consumed by DeepMD's LMDB reader."""
+        extxyz = (
+            "1\n"
+            "Properties=species:S:1:pos:R:3:forces:R:3 energy=0.0 "
+            'Lattice="8 0 0 0 8 0 0 0 8"\n'
+            "H 0 0 0 0 0 0\n"
+        )
+        self.source.write_text(extxyz)
+
+        systems = process_systems(str(self.source), fmt="extxyz")
+        # A changed source exercises dpdata's own transactional overwrite path;
+        # DeepMD-kit must not remove or rename the LMDB directory around it.
+        self.source.write_text(extxyz.replace("energy=0.0", "energy=1.0"))
+        systems_again = process_systems(str(self.source), fmt="extxyz")
+
+        self.assertEqual(len(systems), 1)
+        self.assertEqual(systems_again, systems)
+        self.assertTrue(is_lmdb(systems[0]))
+        data = LmdbDataSystem(systems[0], ["H"], batch_size=1)
+        batch = data.get_batch()
+        self.assertEqual(batch["coord"].shape, (1, 3))
+        self.assertEqual(batch["type"].shape, (1, 1))
 
     def test_cache_cleanup_unlinks_directory_symlink(self) -> None:
         """Cleanup must not recurse through a symlink outside the cache."""

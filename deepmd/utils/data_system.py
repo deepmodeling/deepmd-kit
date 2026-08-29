@@ -38,7 +38,7 @@ from deepmd.utils.out_stat import (
 log = logging.getLogger(__name__)
 
 _DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
-_DPDATA_DEFAULT_OUT_FORMAT = "lmdb"
+_DPDATA_DEFAULT_OUT_FORMAT = "deepmd/lmdb"
 _DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str], list[str]] = {}
 
 
@@ -1118,8 +1118,14 @@ def _is_deepmd_data_format(fmt: str) -> bool:
         "deepmd/comp",
         "deepmd/npy/mixed",
         "deepmd/hdf5",
+        "deepmd/lmdb",
         "lmdb",
     }
+
+
+def _is_dpdata_lmdb_format(fmt: str) -> bool:
+    """Return whether *fmt* names dpdata's DeePMD-compatible LMDB format."""
+    return fmt in {"deepmd/lmdb", "lmdb"}
 
 
 def _looks_like_extxyz(path: Path) -> bool:
@@ -1167,7 +1173,7 @@ def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
     ]
     stem = source_resolved.stem or source_resolved.name or "dataset"
     safe_out_fmt = out_fmt.replace("/", "-")
-    suffix = ".lmdb" if out_fmt == "lmdb" else ""
+    suffix = ".lmdb" if _is_dpdata_lmdb_format(out_fmt) else ""
     return Path.cwd() / _DPDATA_CACHE_DIR / f"{stem}-{safe_out_fmt}-{digest}{suffix}"
 
 
@@ -1219,6 +1225,14 @@ def _remove_path(path: Path) -> None:
 def _write_dpdata_conversion(
     source: Path, fmt: str, out_fmt: str, output: Path
 ) -> None:
+    """Load *source* with dpdata and publish it in a DeePMD format.
+
+    dpdata 1.1.0 makes ``deepmd/lmdb`` writes transactional: it stages and
+    validates the complete database before atomically publishing it. Use that
+    writer directly so DeepMD-kit does not duplicate or weaken its overwrite
+    guarantees. Other dpdata formats do not share that contract, so they keep
+    the cache-level temporary output used for failure isolation.
+    """
     try:
         import dpdata
     except ImportError as exc:
@@ -1228,17 +1242,22 @@ def _write_dpdata_conversion(
             "automatic dataset conversion."
         ) from exc
 
+    multi_systems = dpdata.MultiSystems()
+    try:
+        multi_systems.load_systems_from_file(str(source), fmt=fmt)
+    except NotImplementedError:
+        labeled_system = dpdata.LabeledSystem(str(source), fmt=fmt)
+        multi_systems = dpdata.MultiSystems(labeled_system)
+    if len(multi_systems) == 0:
+        raise RuntimeError(f"No frames were loaded by dpdata from {source}")
+
+    if _is_dpdata_lmdb_format(out_fmt):
+        multi_systems.to(out_fmt, str(output), overwrite=True)
+        return
+
     tmp_output = output.with_name(f".{output.name}.{os.getpid()}.tmp")
     _remove_path(tmp_output)
     try:
-        multi_systems = dpdata.MultiSystems()
-        try:
-            multi_systems.load_systems_from_file(str(source), fmt=fmt)
-        except NotImplementedError:
-            labeled_system = dpdata.LabeledSystem(str(source), fmt=fmt)
-            multi_systems = dpdata.MultiSystems(labeled_system)
-        if len(multi_systems) == 0:
-            raise RuntimeError(f"No frames were loaded by dpdata from {source}")
         multi_systems.to(out_fmt, str(tmp_output))
         _remove_path(output)
         os.replace(tmp_output, output)
@@ -1255,6 +1274,10 @@ def _convert_system_by_dpdata(
     source = Path(source_path)
     fmt = _normalize_dpdata_format(fmt, source)
     out_fmt = out_fmt.lower()
+    if out_fmt == "lmdb":
+        # dpdata keeps ``lmdb`` as an alias, but ``deepmd/lmdb`` is the
+        # canonical name for the DeePMD-compatible schema since dpdata 1.1.0.
+        out_fmt = _DPDATA_DEFAULT_OUT_FORMAT
     cache_key = (
         str(Path.cwd().resolve(strict=False)),
         str(source.resolve(strict=False)),
@@ -1305,7 +1328,7 @@ def _convert_system_by_dpdata(
                         pass
                 break
 
-    if out_fmt == "lmdb":
+    if _is_dpdata_lmdb_format(out_fmt):
         converted_systems = [str(output)]
     else:
         converted_systems = expand_sys_str(str(output))
@@ -1339,8 +1362,8 @@ def process_systems(
     fmt : str, optional
         The dpdata input format. If None, no conversion is performed.
     out_fmt : str, optional
-        The dpdata output format. If None, ``lmdb`` is used when fmt triggers
-        conversion.
+        The dpdata output format. If None, ``deepmd/lmdb`` is used when fmt
+        triggers conversion.
 
     Returns
     -------

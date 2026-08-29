@@ -5014,8 +5014,8 @@ def training_data_args() -> list[
     doc_out_format = (
         "The output data format passed to dpdata for automatic conversion. "
         "When `format` requests conversion from a non-DeePMD format, this key "
-        "defaults to `lmdb`. Use a DeePMD format supported by dpdata, such as "
-        "`lmdb`, `deepmd/hdf5`, or `deepmd/npy`."
+        "defaults to `deepmd/lmdb`. Use a DeePMD format supported by dpdata, "
+        "such as `deepmd/lmdb`, `deepmd/hdf5`, or `deepmd/npy`."
     )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
@@ -5065,7 +5065,7 @@ If MPI is used, the value should be considered as the batch size per task.'
             "out_format",
             [str, None],
             optional=True,
-            default="lmdb",
+            default="deepmd/lmdb",
             doc=doc_out_format,
             alias=["output_format"],
         ),
@@ -5138,8 +5138,8 @@ def validation_data_args() -> list[
     doc_out_format = (
         "The output data format passed to dpdata for automatic conversion. "
         "When `format` requests conversion from a non-DeePMD format, this key "
-        "defaults to `lmdb`. Use a DeePMD format supported by dpdata, such as "
-        "`lmdb`, `deepmd/hdf5`, or `deepmd/npy`."
+        "defaults to `deepmd/lmdb`. Use a DeePMD format supported by dpdata, "
+        "such as `deepmd/lmdb`, `deepmd/hdf5`, or `deepmd/npy`."
     )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
@@ -5176,7 +5176,7 @@ def validation_data_args() -> list[
             "out_format",
             [str, None],
             optional=True,
-            default="lmdb",
+            default="deepmd/lmdb",
             doc=doc_out_format,
             alias=["output_format"],
         ),
