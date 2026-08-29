@@ -32,9 +32,13 @@ class TestForbiddenDimsFromModel:
 
 def test_fusion_size_defaults_to_eight(monkeypatch) -> None:
     monkeypatch.delenv("DP_FUSION_SIZE", raising=False)
+    monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
 
     assert build_inductor_compile_options()["max_fusion_size"] == 8
-    assert build_inductor_compile_options(inference=True)["max_fusion_size"] == 8
+    inference_options = build_inductor_compile_options(inference=True)
+    assert inference_options["max_fusion_size"] == 8
+    assert inference_options["cpp.min_chunk_size"] == 1
+    assert inference_options["cpp.dynamic_threads"] is True
 
 
 def test_fusion_size_environment_is_shared(monkeypatch) -> None:
@@ -42,6 +46,19 @@ def test_fusion_size_environment_is_shared(monkeypatch) -> None:
 
     assert build_inductor_compile_options()["max_fusion_size"] == 16
     assert build_inductor_compile_options(inference=True)["max_fusion_size"] == 16
+
+
+def test_lsan_inference_uses_serial_codegen(monkeypatch) -> None:
+    monkeypatch.setenv("DP_GEN_UNDER_SANITIZER", "lsan")
+
+    training_options = build_inductor_compile_options()
+    inference_options = build_inductor_compile_options(inference=True)
+
+    assert "cpp.threads" not in training_options
+    assert "cpp.dynamic_threads" not in training_options
+    assert "cpp.min_chunk_size" not in inference_options
+    assert inference_options["cpp.dynamic_threads"] is False
+    assert inference_options["cpp.threads"] == 1
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "fast"])

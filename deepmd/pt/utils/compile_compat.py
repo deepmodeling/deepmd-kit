@@ -655,13 +655,19 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # the loops are parallel. The axes this threshold guards are always
         # system sized at run time, so the guard is removed rather than
         # retuned.
-        compile_options["cpp.min_chunk_size"] = 1
-        # Resolve the thread count at run time instead of baking the freezing
-        # host's into the generated code. A deployed artifact is routinely
-        # loaded on a machine with a different core count, and an artifact
-        # frozen under the DeePMD-kit thread defaults would otherwise pin
-        # every parallel region to those.
-        compile_options["cpp.dynamic_threads"] = True
+        under_lsan = os.environ.get("DP_GEN_UNDER_SANITIZER") == "lsan"
+        if not under_lsan:
+            compile_options["cpp.min_chunk_size"] = 1
+        # Outside sanitizer fixtures, resolve the thread count at run time
+        # instead of baking the freezing host's into the generated code. A
+        # deployed artifact is routinely loaded on a machine with a different
+        # core count, and an artifact frozen under the DeePMD-kit thread
+        # defaults would otherwise pin every parallel region to those.
+        compile_options["cpp.dynamic_threads"] = not under_lsan
+        if under_lsan:
+            # LeakSanitizer fails on the generated OpenMP force/virial
+            # reductions, so its memory-safety fixtures use serial codegen.
+            compile_options["cpp.threads"] = 1
     try:
         from torch._inductor import config as inductor_config
 

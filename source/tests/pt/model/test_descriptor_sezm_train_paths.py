@@ -46,6 +46,7 @@ from deepmd.pt.model.descriptor.sezm_nn.so2 import (
     DynamicRadialDegreeMixer,
     SO2Convolution,
     SO2Linear,
+    active_triton_level,
 )
 from deepmd.pt.utils import (
     env,
@@ -54,7 +55,14 @@ from deepmd.pt_expt.kernels.cuda.dpa4 import op_available as cuda_infer_availabl
 from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
     op_available as cuda_value_available,
 )
+from deepmd.pt_expt.kernels.triton.sezm.grid_pair import (
+    GRID_PAIR_TRITON_AVAILABLE,
+)
+from deepmd.pt_expt.kernels.triton.sezm.segment_softmax import (
+    SEGMENT_SOFTMAX_TRITON_AVAILABLE,
+)
 from deepmd.pt_expt.kernels.triton.sezm.so2_block_gemm import (
+    SO2_BLOCK_GEMM_TRITON_AVAILABLE,
     slices_supported,
 )
 from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
@@ -106,12 +114,21 @@ def _clear_gates(monkeypatch) -> None:
         monkeypatch.setenv(name, "0")
 
 
-@pytest.mark.parametrize("triton_train", [0, 1])
-def test_triton_train_gate_binds_its_stages(monkeypatch, triton_train: int) -> None:
-    """``DP_TRITON_TRAIN`` binds the per-stage operators, and only it does."""
+@pytest.mark.parametrize(
+    ("gate_name", "training"),
+    [("DP_TRITON_TRAIN", True), ("DP_TRITON_INFER", False)],
+    ids=("training", "inference"),
+)
+@pytest.mark.parametrize("enabled", [0, 1])
+def test_triton_mode_gate_binds_each_stage(
+    monkeypatch, gate_name: str, training: bool, enabled: int
+) -> None:
+    """Each Triton gate binds every supported stage for only its own mode."""
     _clear_gates(monkeypatch)
-    monkeypatch.setenv("DP_TRITON_TRAIN", str(triton_train))
-    expected = bool(triton_train) and SO2_VALUE_PATH_TRITON_AVAILABLE
+    monkeypatch.setenv(gate_name, str(enabled))
+    requested = bool(enabled)
+    train_level = enabled if training else 0
+    infer_level = enabled if not training else 0
 
     descriptor = _make_descriptor(2, [20], 4.0)
     convolutions = [
@@ -120,10 +137,19 @@ def test_triton_train_gate_binds_its_stages(monkeypatch, triton_train: int) -> N
     assert convolutions
 
     for conv in convolutions:
-        assert conv.triton_train_level == triton_train
-        assert (conv._rotate_to_local_fn is not None) is expected
-        assert (conv._segment_softmax_fn is not None) is expected
-        assert conv._flash_atten_trains is expected
+        assert conv.triton_train_level == train_level
+        assert conv.triton_infer_level == infer_level
+        # Rotation and flash wrappers retain their eager implementations when
+        # Triton is unavailable, so their binding follows the mode gates alone.
+        assert (conv._rotate_to_local_fn is not None) is requested
+        assert (conv._rotate_back_fn is not None) is requested
+        assert (conv._flash_atten_fn is not None) is requested
+        assert conv._flash_atten_trains is (requested and training)
+        # Segment softmax has no wrapper-level fallback and binds only when its
+        # own Triton implementation is importable.
+        assert (conv._segment_softmax_fn is not None) is (
+            requested and SEGMENT_SOFTMAX_TRITON_AVAILABLE
+        )
         # The rotate-mix front end is bound by a profitability bound on the
         # hidden width, which this narrow block sits below.
         assert conv.hidden_channels < 128
@@ -136,17 +162,39 @@ def test_triton_train_gate_binds_its_stages(monkeypatch, triton_train: int) -> N
             # The fused GEMM additionally needs every |m| block width to align
             # to its BN=64 tile, which a narrow block does not satisfy.
             aligned = slices_supported(module._block_diag_slices)
-            assert (module._block_diag_gemm is not None) is (expected and aligned)
+            assert (module._block_diag_gemm is not None) is (
+                requested and SO2_BLOCK_GEMM_TRITON_AVAILABLE and aligned
+            )
         if isinstance(module, DynamicRadialDegreeMixer):
-            assert (module._radial_mix_block is not None) is expected
+            # The callable contains its eager fallback, so construction binds it
+            # whenever either mode requests the stage.
+            assert (module._radial_mix_block is not None) is requested
         if isinstance(module, GatedActivation):
-            assert module.triton_train_level == triton_train
+            assert module.triton_train_level == train_level
+            assert module.triton_infer_level == infer_level
             footprint_ok = module.channels <= 32 or (
                 module.channels <= 64 and module.lmax <= 3
             )
             assert (module._fused_gated_act is not None) is (
-                expected and footprint_ok and module.layout == "fndc"
+                requested and footprint_ok and module.layout == "fndc"
             )
+
+    # A shared binding is only a construction-time capability. Runtime dispatch
+    # follows the active module mode, so the opposite gate remains disabled.
+    for mode, active_level in ((training, enabled), (not training, 0)):
+        descriptor.train(mode)
+        for module in descriptor.modules():
+            if isinstance(
+                module, (SO2Convolution, SO2Linear, DynamicRadialDegreeMixer)
+            ):
+                assert active_triton_level(module) == active_level
+            if isinstance(module, GatedActivation):
+                level = (
+                    module.triton_train_level
+                    if module.training
+                    else module.triton_infer_level
+                )
+                assert level == active_level
 
 
 def test_cuda_train_gate_binds_the_value_stream(monkeypatch) -> None:
@@ -192,10 +240,13 @@ def test_cuda_triton_train_reuses_packed_wigner_runs(monkeypatch) -> None:
         assert conv._flash_atten_trains
 
 
-def test_grid_pair_train_follows_the_slot_bound(monkeypatch) -> None:
-    """The grid pair training operator binds only above its measured crossover."""
+@pytest.mark.parametrize("gate_name", ["DP_TRITON_TRAIN", "DP_TRITON_INFER"])
+def test_grid_pair_train_follows_its_gate_and_slot_bound(
+    monkeypatch, gate_name: str
+) -> None:
+    """Grid-pair training ignores the inference gate and its narrow layouts."""
     _clear_gates(monkeypatch)
-    monkeypatch.setenv("DP_TRITON_TRAIN", "1")
+    monkeypatch.setenv(gate_name, "1")
 
     descriptor = _make_descriptor(2, [20], 4.0)
     grid_nets = [
@@ -206,7 +257,12 @@ def test_grid_pair_train_follows_the_slot_bound(monkeypatch) -> None:
     assert grid_nets
     for net in grid_nets:
         slots = int(net.projector.to_grid_mat.shape[1])
-        assert (net._grid_pair_train_fn is not None) == (slots >= 75)
+        expected = (
+            gate_name == "DP_TRITON_TRAIN"
+            and GRID_PAIR_TRITON_AVAILABLE
+            and slots >= 75
+        )
+        assert (net._grid_pair_train_fn is not None) is expected
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
