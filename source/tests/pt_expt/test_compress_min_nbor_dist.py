@@ -10,8 +10,8 @@ import pytest
 from deepmd.main import (
     parse_args,
 )
-from deepmd.pt_expt.entrypoints.compress import (
-    _read_saved_min_nbor_dist,
+from deepmd.pt_expt.entrypoints import (
+    compress as compress_mod,
 )
 
 
@@ -58,9 +58,10 @@ def test_read_saved_min_nbor_dist(
     expected: tuple[float | None, str],
 ) -> None:
     """Every storage location is honored, in order of precedence."""
-    assert _read_saved_min_nbor_dist(_FakeModel(model_min_nbor_dist), model_dict) == (
-        expected
+    got = compress_mod._read_saved_min_nbor_dist(
+        _FakeModel(model_min_nbor_dist), model_dict
     )
+    assert got == expected
 
 
 def test_recompute_min_nbor_dist_flag_defaults_to_false() -> None:
@@ -92,7 +93,6 @@ def test_graph_lower_output_keeps_min_nbor_dist(monkeypatch: Any) -> None:
     ``model.serialize()`` does not include the runtime buffer, so without this
     the compressed artifact loses a value that was just recovered.
     """
-    import deepmd.pt_expt.entrypoints.compress as compress_mod
     import deepmd.pt_expt.model.graph_lower as graph_lower_mod
     import deepmd.pt_expt.model.model as model_mod
     import deepmd.pt_expt.utils.tabulate_ops as tabulate_ops_mod
