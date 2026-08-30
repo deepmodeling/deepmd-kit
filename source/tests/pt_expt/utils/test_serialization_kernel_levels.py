@@ -14,6 +14,19 @@ from deepmd.pt_expt.utils import (
     serialization,
 )
 
+_INFER_LEVELS = (
+    "DP_TRITON_INFER",
+    "DP_CUDA_INFER",
+    "DP_CUTILE_INFER",
+    "DP_CUTE_INFER",
+)
+
+
+def _clear_infer_levels(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove inherited accelerator policy from an environment-sensitive test."""
+    for name in _INFER_LEVELS:
+        monkeypatch.delenv(name, raising=False)
+
 
 def _capture_pt2_levels(monkeypatch, data, *, lower_kind="nlist"):
     captured = {}
@@ -30,8 +43,7 @@ def _capture_pt2_levels(monkeypatch, data, *, lower_kind="nlist"):
 
 
 def test_dpa4_uses_pt_freeze_defaults_and_restores_environment(monkeypatch) -> None:
-    monkeypatch.delenv("DP_TRITON_INFER", raising=False)
-    monkeypatch.delenv("DP_CUDA_INFER", raising=False)
+    _clear_infer_levels(monkeypatch)
 
     captured = _capture_pt2_levels(
         monkeypatch,
@@ -80,8 +92,7 @@ def test_dpa4_explicit_triton_cuda_levels_win(monkeypatch) -> None:
 
 
 def test_dpa4_pte_does_not_apply_pt2_kernel_defaults(monkeypatch) -> None:
-    monkeypatch.delenv("DP_TRITON_INFER", raising=False)
-    monkeypatch.delenv("DP_CUDA_INFER", raising=False)
+    _clear_infer_levels(monkeypatch)
     captured = {}
 
     def capture(*args, **kwargs):
@@ -106,7 +117,7 @@ def test_dpa4_pte_does_not_apply_pt2_kernel_defaults(monkeypatch) -> None:
 
 
 def test_dpa4_pte_graph_keeps_legacy_cuda_floor(monkeypatch) -> None:
-    monkeypatch.delenv("DP_TRITON_INFER", raising=False)
+    _clear_infer_levels(monkeypatch)
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     monkeypatch.setattr(
         "deepmd.pt_expt.kernels.utils.backend_device_type", lambda: "cuda"
@@ -140,7 +151,7 @@ def test_dpa4_pte_graph_keeps_legacy_cuda_floor(monkeypatch) -> None:
     ["dpa1", "dpa4c"],
 )
 def test_level_two_graph_families_keep_cuda_floor(monkeypatch, descriptor_type) -> None:
-    monkeypatch.delenv("DP_TRITON_INFER", raising=False)
+    _clear_infer_levels(monkeypatch)
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     monkeypatch.setattr(
         "deepmd.pt_expt.kernels.utils.backend_device_type", lambda: "cuda"
@@ -243,16 +254,10 @@ def test_target_policy_only_suppresses_incompatible_dpa4_accelerators(
     target,
     expected,
 ) -> None:
-    accelerator_levels = (
-        "DP_TRITON_INFER",
-        "DP_CUDA_INFER",
-        "DP_CUTILE_INFER",
-        "DP_CUTE_INFER",
-    )
-    for name in accelerator_levels:
+    for name in _INFER_LEVELS:
         monkeypatch.setenv(name, "1")
 
     with serialization._dpa4_kernel_levels_for_target(model, torch.device(target)):
-        assert tuple(os.environ[name] for name in accelerator_levels) == expected
+        assert tuple(os.environ[name] for name in _INFER_LEVELS) == expected
 
-    assert all(os.environ[name] == "1" for name in accelerator_levels)
+    assert all(os.environ[name] == "1" for name in _INFER_LEVELS)

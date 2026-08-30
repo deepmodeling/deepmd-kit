@@ -9,7 +9,8 @@ needed. These tests check parity against the dpmodel reference
 (:func:`deepmd.dpmodel.utils.neighbor_graph.env.edge_env_mat`) in fp32 and fp64,
 including padding (zero-vector) edges, the optionally returned smooth switch
 ``sw`` and its gradient (the strip type-pair gate consumes it), and
-composability under ``make_fx``.
+composability under ``make_fx``. The Triton kernel handles fp32 inference and
+its first-order force derivative; fp64 follows the eager path.
 """
 
 import os

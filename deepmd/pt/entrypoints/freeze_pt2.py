@@ -23,6 +23,7 @@ from __future__ import (
     annotations,
 )
 
+import contextlib
 import ctypes
 import json
 import logging
@@ -33,11 +34,17 @@ from copy import (
     deepcopy,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
 import numpy as np
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Iterator,
+    )
 
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
@@ -857,6 +864,7 @@ def _export_with_comm_artifact(
 # it defaults to exact float32.
 _FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
 _FREEZE_DISABLED_LEVELS = {"DP_CUTILE_INFER": "0", "DP_CUTE_INFER": "0"}
+_INFER_KERNEL_LEVELS = tuple(_FREEZE_KERNEL_LEVELS | _FREEZE_DISABLED_LEVELS)
 
 
 def _apply_kernel_level_defaults(target_device: torch.device) -> None:
@@ -869,12 +877,7 @@ def _apply_kernel_level_defaults(target_device: torch.device) -> None:
     Python-only eager backends and are disabled for every frozen archive.
     """
     if target_device.type != "cuda":
-        for name in (
-            "DP_TRITON_INFER",
-            "DP_CUDA_INFER",
-            "DP_CUTILE_INFER",
-            "DP_CUTE_INFER",
-        ):
+        for name in _INFER_KERNEL_LEVELS:
             os.environ[name] = "0"
         log.info("Freezing for CPU with accelerator-only DPA4 paths disabled.")
         return
@@ -890,6 +893,21 @@ def _apply_kernel_level_defaults(target_device: torch.device) -> None:
         "selected kernels are baked into the .pt2 archive.",
         ", ".join(f"{k}={v} ({how})" for k, (v, how) in chosen.items()),
     )
+
+
+@contextlib.contextmanager
+def _kernel_level_defaults(target_device: torch.device) -> Iterator[None]:
+    """Apply freeze-time kernel levels without changing the caller's environment."""
+    saved = {name: os.environ.get(name) for name in _INFER_KERNEL_LEVELS}
+    try:
+        _apply_kernel_level_defaults(target_device)
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
 
 def freeze_sezm_to_pt2(
@@ -929,13 +947,30 @@ def freeze_sezm_to_pt2(
     are ``DP_TRITON_INFER=2`` and ``DP_CUDA_INFER=1``, which is the fastest
     combination that keeps every operator in exact float32.
     """
+    target_device = device if device is not None else DEVICE
+    with _kernel_level_defaults(target_device):
+        _freeze_sezm_to_pt2(
+            ckpt_path,
+            out_path,
+            target_device=target_device,
+            head=head,
+            atomic_virial=atomic_virial,
+        )
+
+
+def _freeze_sezm_to_pt2(
+    ckpt_path: str,
+    out_path: str,
+    *,
+    target_device: torch.device,
+    head: str | None,
+    atomic_virial: bool,
+) -> None:
+    """Build one AOTInductor archive under an established kernel policy."""
     from torch._inductor import (
         aoti_compile_and_package,
     )
     from torch._inductor import config as inductor_config
-
-    target_device = device if device is not None else DEVICE
-    _apply_kernel_level_defaults(target_device)
 
     raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict, params = _extract_state_and_params(raw)

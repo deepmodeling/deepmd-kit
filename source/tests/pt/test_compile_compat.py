@@ -4,6 +4,9 @@
 import pytest
 import torch
 
+from deepmd.pt.utils import (
+    compile_compat,
+)
 from deepmd.pt.utils.compile_compat import (
     build_inductor_compile_options,
     forbidden_dims_from_model,
@@ -33,12 +36,23 @@ class TestForbiddenDimsFromModel:
 def test_fusion_size_defaults_to_eight(monkeypatch) -> None:
     monkeypatch.delenv("DP_FUSION_SIZE", raising=False)
     monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
+    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 13))
 
     assert build_inductor_compile_options()["max_fusion_size"] == 8
     inference_options = build_inductor_compile_options(inference=True)
     assert inference_options["max_fusion_size"] == 8
     assert inference_options["cpp.min_chunk_size"] == 1
     assert inference_options["cpp.dynamic_threads"] is True
+
+
+def test_torch_211_inference_keeps_default_cpp_parallelism(monkeypatch) -> None:
+    monkeypatch.delenv("DP_GEN_UNDER_SANITIZER", raising=False)
+    monkeypatch.setattr(compile_compat, "_torch_release", lambda: (2, 11))
+
+    inference_options = build_inductor_compile_options(inference=True)
+
+    assert "cpp.min_chunk_size" not in inference_options
+    assert "cpp.dynamic_threads" not in inference_options
 
 
 def test_fusion_size_environment_is_shared(monkeypatch) -> None:

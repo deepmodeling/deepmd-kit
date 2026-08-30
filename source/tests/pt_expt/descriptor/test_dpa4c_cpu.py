@@ -338,6 +338,36 @@ def test_fitting_matches_the_dense_network(activation: str) -> None:
             arguments.activation,
         )
 
+    for invalid_type in (-1, bias.numel()):
+        with pytest.raises(
+            IndexError, match=r"atype values must satisfy 0 <= atype < 2"
+        ):
+            torch.ops.deepmd.graph_fitting(
+                descriptor[:1],
+                torch.tensor([invalid_type], dtype=torch.int64),
+                arguments.weights,
+                arguments.biases,
+                arguments.residuals,
+                arguments.head_weight,
+                arguments.head_bias,
+                bias,
+                arguments.activation,
+            )
+
+    empty_energy, empty_saved = torch.ops.deepmd.graph_fitting(
+        descriptor[:0],
+        atype[:0],
+        arguments.weights,
+        arguments.biases,
+        arguments.residuals,
+        arguments.head_weight,
+        arguments.head_bias,
+        bias,
+        arguments.activation,
+    )
+    assert empty_energy.shape == (0, 1)
+    assert empty_saved.numel() == 0
+
 
 @_CPU_FITTING
 def test_fitting_tanh_saturates_for_large_inputs() -> None:

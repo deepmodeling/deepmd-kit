@@ -1012,8 +1012,19 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 ckpt_path,
             )
             out = Path(tmp) / "out.pt2"
-            with self.assertRaises(NotImplementedError):
-                freeze_sezm_to_pt2(str(ckpt_path), str(out), head="branch")
+            levels = {
+                "DP_TRITON_INFER": "3",
+                "DP_CUDA_INFER": "0",
+                "DP_CUTILE_INFER": "1",
+                "DP_CUTE_INFER": "1",
+            }
+            with mock.patch.dict(os.environ, levels):
+                with self.assertRaises(NotImplementedError):
+                    freeze_sezm_to_pt2(str(ckpt_path), str(out), head="branch")
+                self.assertEqual(
+                    {name: os.environ[name] for name in levels},
+                    levels,
+                )
 
     def test_freeze_requires_head_for_multi_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

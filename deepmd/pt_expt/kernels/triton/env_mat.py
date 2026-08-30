@@ -36,12 +36,12 @@ The analytic Jacobian per slot, with ``q = L + p``, ``W = s(L)`` (masked),
         + g_diff
         + g_sw * W' * (d / L)
 
-The kernel is inference-only (``register_autograd`` provides the first-order
-backward used for forces; higher-order / training differentiation keeps the eager
-path) and is registered as a ``triton_op`` so it is captured as a single opaque
-node under ``make_fx`` / ``torch.export`` (the ``pt_expt`` backend).  Off CUDA or
-with Triton unavailable it transparently falls back to the validated eager
-reference, so it is a drop-in for the descriptors' ``prod_env_mat`` front end.
+The fp32 kernels are inference-only: ``register_autograd`` provides the
+first-order backward used for forces, while force-loss training stays on the
+differentiable eager path at the descriptor routing boundary. They are
+registered as ``triton_op`` so ``make_fx`` / ``torch.export`` capture each
+kernel as one opaque node. Off CUDA, in fp64, or with Triton unavailable the
+operators transparently fall back to the validated eager reference.
 """
 
 from __future__ import (
@@ -457,7 +457,7 @@ def _geometry(
         nf, nloc, nnei, 3
     )
     d = cj - ci[:, :, None, :]
-    length = torch.linalg.norm(d, dim=-1)
+    length = safe_for_vector_norm(d, axis=-1)
     length_safe = torch.where(mask, length, torch.ones_like(length))
     return mask, j, d, length_safe, ci
 
@@ -538,7 +538,7 @@ def _env_mat_grad_coord_reference(
 
 
 def _use_triton(coord: Tensor) -> bool:
-    return TRITON_AVAILABLE and coord.is_cuda
+    return TRITON_AVAILABLE and coord.is_cuda and coord.dtype == torch.float32
 
 
 def _launch(coord: Tensor, nlist: Tensor, nnei: int):
@@ -792,10 +792,10 @@ def env_mat(
 
     Notes
     -----
-    Routes to the Triton operator at ``DP_TRITON_INFER >= 1`` on CUDA; elsewhere
-    (CPU, Triton absent, or under a double-backward / training graph) it uses the
-    eager reference so results are identical. The registered backward is
-    first-order (the force path); training keeps the eager autograd chain.
+    Routes fp32 CUDA inference to the Triton operator at
+    ``DP_TRITON_INFER >= 1``; CPU, fp64, and Triton-absent execution use the
+    eager reference. The registered backward is fused for first-order forces;
+    callers route force-loss training to the differentiable eager formulation.
 
     The scalar hyper-parameters are passed as kernel arguments (fp32) rather than
     a device tensor: a device tensor built from Python scalars forces a
@@ -1097,13 +1097,14 @@ def edge_env_mat(
 
     Notes
     -----
-    Routes to the Triton operator at ``DP_TRITON_INFER >= 1`` when an
-    ``edge_mask`` is supplied (the graph path always provides one); it is called
-    unconditionally there so a CPU ``make_fx`` trace captures it as an opaque
-    node, while the implementation resolves the CUDA kernel vs. the eager
-    reference per the runtime device. The registered backward differentiates
-    ``edge_vec`` (the graph-path force leaf) and folds the switch cotangent when
-    ``return_sw`` feeds a downstream gradient.
+    Routes fp32 CUDA inference to the Triton operator at
+    ``DP_TRITON_INFER >= 1`` when an ``edge_mask`` is supplied (the graph path
+    always provides one); it is called unconditionally there so a CPU
+    ``make_fx`` trace captures it as an opaque node, while the implementation
+    resolves the CUDA kernel vs. the eager reference per the runtime device and
+    dtype. The registered backward differentiates ``edge_vec`` (the graph-path
+    force leaf) and folds the switch cotangent when ``return_sw`` feeds a
+    downstream gradient.
     """
     if triton_infer_level() >= 1 and TRITON_AVAILABLE and edge_mask is not None:
         env, sw = _edge_fwd_op(

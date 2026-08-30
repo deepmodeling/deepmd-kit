@@ -22,6 +22,9 @@ from typing import (
 
 import torch
 import torch.nn as nn
+from packaging.version import (
+    Version,
+)
 
 from deepmd.pt.utils import (
     env,
@@ -38,6 +41,8 @@ from deepmd.utils.version import (
 from .utils import (
     nvtx_range,
 )
+
+_TORCH_RELEASE = Version(torch.__version__).release[:2]
 
 
 class CaseCoefficients(nn.Module):
@@ -418,6 +423,7 @@ class WignerDCalculator(nn.Module):
         self.dtype = dtype
         self.device = env.DEVICE
         self.eps = float(eps)
+        self._materialize_inverse_rotation = _TORCH_RELEASE == (2, 11)
         self.dim_full = (self.lmax + 1) ** 2
         self.poly_lmin = 11
         self.poly_offset = self.poly_lmin * self.poly_lmin
@@ -627,6 +633,12 @@ class WignerDCalculator(nn.Module):
         # Consumers address the inverse rotation through explicit strides or
         # PyTorch strided operators, so the transpose can share D_full's storage.
         Dt_full = D_full.transpose(-1, -2)
+        if self._materialize_inverse_rotation:
+            # PyTorch 2.11 Inductor cannot safely lower this escaping transpose
+            # view after the slice assignments that assemble D_full. The
+            # materialized layout keeps the compiled graph semantically
+            # identical; later releases retain the shared-storage view.
+            Dt_full = Dt_full.contiguous()
         return D_full, Dt_full
 
     def forward_zonal(

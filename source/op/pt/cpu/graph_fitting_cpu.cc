@@ -314,6 +314,19 @@ FittingLayerPlan validate(const char* operation,
                   bias_atom_e.is_contiguous() &&
                   bias_atom_e.scalar_type() == torch::kFloat64,
               operation, ": bias_atom_e must be contiguous CPU fp64");
+  // Validate every index before the tiled energy-gradient operator overwrites
+  // descriptor rows with their cotangents. Checking in the head epilogue could
+  // leave the input partially modified when a later tile contains an invalid
+  // atom type.
+  if (atype.numel() != 0) {
+    const int64_t* begin = atype.const_data_ptr<int64_t>();
+    const auto [min_type, max_type] =
+        std::minmax_element(begin, begin + atype.numel());
+    TORCH_CHECK_INDEX(*min_type >= 0 && *max_type < bias_atom_e.numel(),
+                      operation, ": atype values must satisfy 0 <= atype < ",
+                      bias_atom_e.numel(), ", but got range [", *min_type, ", ",
+                      *max_type, "]");
+  }
   return plan;
 }
 

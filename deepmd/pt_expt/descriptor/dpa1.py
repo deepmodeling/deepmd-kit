@@ -111,10 +111,10 @@ def _env_mat(
     se = desc.se_atten
     nf, nloc, nnei = nlist.shape
     atype_ext_for_env = atype_ext.clamp_min(0)
-    if triton_infer_level() >= 1:
-        # Fused env-matrix operator, captured opaquely under the pt_expt trace and
-        # resolving to the Triton kernel at CUDA runtime; identical outputs to the
-        # array-API ``EnvMat.call`` below.
+    if not desc.training and triton_infer_level() >= 1:
+        # Inference-only env-matrix operator, captured opaquely under the pt_expt
+        # trace and resolving to the Triton kernel at CUDA runtime; identical
+        # outputs to the array-API ``EnvMat.call`` below.
         rr, diff, sw = _env_mat_triton(
             coord_ext,
             nlist,

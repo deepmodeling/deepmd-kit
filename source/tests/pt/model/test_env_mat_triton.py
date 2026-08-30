@@ -5,10 +5,11 @@ The kernel (:mod:`deepmd.pt_expt.kernels.triton.env_mat`) is a drop-in for the
 descriptors' ``prod_env_mat`` front end under ``DP_TRITON_INFER >= 1`` on CUDA.
 These tests check, against the eager reference path (level 0):
 
-* forward parity of ``(env_mat, diff, switch)`` in fp32 and fp64, for the full
-  and radial-only outputs and both smooth switches;
+* forward parity of ``(env_mat, diff, switch)`` for the fp32 kernel and fp64
+  eager fallback, for the full and radial-only outputs and both smooth switches;
 * force parity, i.e. the coordinate gradient produced by the registered
   closed-form backward;
+* training routing through the differentiable eager formulation;
 * ``NaN``-safety of the exponential switch backward in fp32 (the factored
   ``-a e w`` overflows; the kernel uses the fused ``-a exp(xarg - e)`` form);
 * composability under ``make_fx`` (the operator is captured as one opaque node).
@@ -164,6 +165,39 @@ class TestEnvMatTriton(unittest.TestCase):
         e, d, s = env_mat(c, nlist, atype, mean, std, 6.0, 1.0, use_exp_switch=True)
         (g,) = torch.autograd.grad(e.sum() + d.sum() + s.sum(), c)
         self.assertTrue(torch.isfinite(g).all().item())
+
+    def test_training_route_supports_force_loss(self) -> None:
+        """The inference gate does not select the kernel during training."""
+        coord, nlist, atype, nt = _make_system(
+            torch.float32,
+            GLOBAL_SEED,
+            nf=1,
+            nloc=4,
+            nnei=8,
+            nall=16,
+        )
+        nnei = nlist.shape[2]
+        device = coord.device
+        generator = torch.Generator(device=device).manual_seed(17)
+        mean = torch.randn(nt, nnei, 4, generator=generator, device=device)
+        std = 0.5 + torch.rand(nt, nnei, 4, generator=generator, device=device)
+        _set_level(1)
+        c = coord.clone().requires_grad_()
+        value, diff, switch = prod_env_mat(
+            c,
+            nlist,
+            atype,
+            mean,
+            std,
+            6.0,
+            2.0,
+            training=True,
+        )
+        (grad_coord,) = torch.autograd.grad(
+            value.sum() + diff.sum() + switch.sum(), c, create_graph=True
+        )
+        (grad_force_loss,) = torch.autograd.grad(grad_coord.square().sum(), c)
+        self.assertTrue(torch.isfinite(grad_force_loss).all().item())
 
     def test_make_fx_opaque_operator(self) -> None:
         from torch.fx.experimental.proxy_tensor import (

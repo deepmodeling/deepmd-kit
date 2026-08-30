@@ -55,6 +55,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Mapping,
         Sequence,
     )
 
@@ -100,6 +101,7 @@ def deviations(
     fused: Sequence[torch.Tensor],
     *,
     factor: float,
+    factor_overrides: Mapping[str, float] | None = None,
     working_dtype: torch.dtype,
     project: Callable[[str, torch.Tensor], torch.Tensor] | None = None,
 ) -> list[Deviation]:
@@ -118,6 +120,9 @@ def deviations(
         The fused operator evaluated in the working precision.
     factor : float
         Multiple of the eager error still attributed to reduction order.
+    factor_overrides : Mapping[str, float], optional
+        Quantity-specific factors for arithmetic with a distinct conditioning
+        bound. Unlisted quantities use ``factor``.
     working_dtype : torch.dtype
         Precision both evaluations under test ran in. One rounding of this
         format is admitted where the eager reference came out exact, which is
@@ -147,12 +152,17 @@ def deviations(
         # error.
         scale = truth.abs().max().clamp_min(1.0).item()
         eager_error = (ref - truth).abs().max().item() / scale
+        quantity_factor = (
+            factor_overrides.get(name, factor)
+            if factor_overrides is not None
+            else factor
+        )
         measured.append(
             Deviation(
                 name=name,
                 eager=eager_error,
                 fused=(got - truth).abs().max().item() / scale,
-                bound=max(factor * eager_error, unit_roundoff),
+                bound=max(quantity_factor * eager_error, unit_roundoff),
             )
         )
     return measured

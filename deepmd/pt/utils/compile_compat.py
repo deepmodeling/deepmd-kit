@@ -656,18 +656,23 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # system sized at run time, so the guard is removed rather than
         # retuned.
         under_lsan = os.environ.get("DP_GEN_UNDER_SANITIZER") == "lsan"
-        if not under_lsan:
-            compile_options["cpp.min_chunk_size"] = 1
-        # Outside sanitizer fixtures, resolve the thread count at run time
-        # instead of baking the freezing host's into the generated code. A
-        # deployed artifact is routinely loaded on a machine with a different
-        # core count, and an artifact frozen under the DeePMD-kit thread
-        # defaults would otherwise pin every parallel region to those.
-        compile_options["cpp.dynamic_threads"] = not under_lsan
+        # PyTorch 2.11 corrupts the process heap when its CPU backend lowers
+        # the dynamic SeZM inference graph with forced parallel loops. Keeping
+        # its default threshold and thread policy preserves the same graph
+        # semantics without activating the defective codegen path.
         if under_lsan:
             # LeakSanitizer fails on the generated OpenMP force/virial
             # reductions, so its memory-safety fixtures use serial codegen.
+            compile_options["cpp.dynamic_threads"] = False
             compile_options["cpp.threads"] = 1
+        elif _torch_release() != (2, 11):
+            compile_options["cpp.min_chunk_size"] = 1
+            # Resolve the thread count at run time instead of baking the
+            # freezing host's into the generated code. A deployed artifact is
+            # routinely loaded on a machine with a different core count, and
+            # an artifact frozen under the DeePMD-kit thread defaults would
+            # otherwise pin every parallel region to those.
+            compile_options["cpp.dynamic_threads"] = True
     try:
         from torch._inductor import config as inductor_config
 

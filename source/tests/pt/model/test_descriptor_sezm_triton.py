@@ -921,7 +921,7 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                     torch.testing.assert_close(got, want, atol=2e-4, rtol=2e-5)
 
     def test_wigner_calculator_matches_reference_chain(self):
-        """The fused calculator matches the dense chain without copying its transpose."""
+        """The fused calculator matches the dense chain and inverse layout policy."""
         import os
         from unittest import (
             mock,
@@ -951,14 +951,21 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                 want, want_t = ref_calc(q)
                 torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
                 torch.testing.assert_close(got_t, want_t, atol=1e-5, rtol=1e-5)
-                self.assertEqual(
-                    got.untyped_storage().data_ptr(),
-                    got_t.untyped_storage().data_ptr(),
-                )
-                self.assertEqual(
-                    got_t.stride(),
-                    (got.stride(0), got.stride(2), got.stride(1)),
-                )
+                if fused_calc._materialize_inverse_rotation:
+                    self.assertTrue(got_t.is_contiguous())
+                    self.assertNotEqual(
+                        got.untyped_storage().data_ptr(),
+                        got_t.untyped_storage().data_ptr(),
+                    )
+                else:
+                    self.assertEqual(
+                        got.untyped_storage().data_ptr(),
+                        got_t.untyped_storage().data_ptr(),
+                    )
+                    self.assertEqual(
+                        got_t.stride(),
+                        (got.stride(0), got.stride(2), got.stride(1)),
+                    )
 
 
 @_GPU_KERNELS

@@ -781,6 +781,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.rcut,
             self.rcut_smth,
             protection=self.env_protection,
+            training=self.training,
         )
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)
