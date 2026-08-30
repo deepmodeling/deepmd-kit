@@ -234,6 +234,33 @@ def test_convert_regular_pt_dpa1_preserves_dense_semantics(tmp_path) -> None:
     )
 
 
+def test_convert_pt_dpa4_maps_edge_vec_to_graph(tmp_path) -> None:
+    """PT SeZM's edge-list ABI converts to pt_expt's NeighborGraph ABI."""
+    from deepmd.pt.model.model import get_model as get_pt_model
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.pt.utils.serialization import serialize_from_file as serialize_from_pt
+
+    from ..model.test_dpa4_export import (
+        _DPA4_CONFIG,
+    )
+
+    config = copy.deepcopy(_DPA4_CONFIG)
+    source_model = tmp_path / "model.pt"
+    converted_model = tmp_path / "model.pte"
+    model = get_pt_model(config)
+    wrapper = ModelWrapper(model, model_params=config)
+    torch.save({"model": wrapper.state_dict()}, source_model)
+
+    source_data = serialize_from_pt(str(source_model))
+    assert source_data["lower_input_kind"] == "edge_vec"
+
+    convert_backend(INPUT=str(source_model), OUTPUT=str(converted_model))
+    converted_data = serialize_from_file(str(converted_model))
+    assert converted_data["lower_input_kind"] == "graph"
+
+
 def test_deserialize_rejects_unknown_lower_kind(dpa1_dpmodel_data, tmp_path) -> None:
     """The target serializer owns validation of its supported lower ABIs."""
     with pytest.raises(ValueError, match="Unsupported lower_kind 'unknown'"):

@@ -52,9 +52,17 @@ from deepmd.utils.charge_state import (
 # ---------------------------------------------------------------------------
 PT2_EXTRA_PREFIX = "model/extra/"
 
-_SUPPORTED_LOWER_INPUT_KINDS = frozenset(
-    {"nlist", "graph", "dpa1_canonical", "dpa4c_canonical"}
-)
+# Backend conversion supplies the source artifact's lower ABI. Each accepted
+# source kind maps to the concrete schema emitted by pt_expt. PT SeZM's
+# ``edge_vec`` lower and pt_expt's ``graph`` lower carry the same directed-edge
+# model semantics, while the target materializes its native NeighborGraph ABI.
+_LOWER_INPUT_KIND_TARGETS = {
+    "nlist": "nlist",
+    "graph": "graph",
+    "dpa1_canonical": "dpa1_canonical",
+    "dpa4c_canonical": "dpa4c_canonical",
+    "edge_vec": "graph",
+}
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
@@ -1378,6 +1386,17 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
     return "nlist"
 
 
+def _resolve_target_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
+    """Resolve a source lower ABI to a concrete pt_expt export schema."""
+    source_lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
+    if source_lower_kind not in _LOWER_INPUT_KIND_TARGETS:
+        raise ValueError(
+            f"Unsupported lower_kind {source_lower_kind!r}; expected one of "
+            f"{sorted(_LOWER_INPUT_KIND_TARGETS)}."
+        )
+    return _LOWER_INPUT_KIND_TARGETS[source_lower_kind]
+
+
 def deserialize_to_file(
     model_file: str,
     data: dict,
@@ -1418,19 +1437,15 @@ def deserialize_to_file(
         (``Dim("nedge", min=2)``), so the artifact accepts any system size.
         ``"auto"`` resolves to ``"graph"`` for an exportable graph-lower
         ``.pt2`` and ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`).
-        Backend conversion passes the source artifact's concrete lower kind
-        instead, preserving its execution semantics. A graph lower always
-        preserves the fused inference operators (``DP_CUDA_INFER >= 2``) and
-        the per-atom virial.
+        Backend conversion passes the source artifact's concrete lower kind;
+        compatible source ABIs are mapped to the target's native schema while
+        preserving their execution semantics. A graph lower always preserves
+        the fused inference operators (``DP_CUDA_INFER >= 2``) and the
+        per-atom virial.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
     """
-    lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
-    if lower_kind not in _SUPPORTED_LOWER_INPUT_KINDS:
-        raise ValueError(
-            f"Unsupported lower_kind {lower_kind!r}; expected one of "
-            f"{sorted(_SUPPORTED_LOWER_INPUT_KINDS)}."
-        )
+    lower_kind = _resolve_target_lower_kind(model_file, data, lower_kind)
     if data["model"].get("type") == "native_spin" and lower_kind not in (
         "graph",
         "dpa4c_canonical",
