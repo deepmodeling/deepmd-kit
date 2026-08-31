@@ -8,8 +8,9 @@ an evaluation: on an 8000-atom cell the search takes about 90 ms against 4 to
 algorithm threaded over destination atoms, and it emits its pairs
 destination-grouped, which is the order the compressed-sparse-row views want.
 
-The builder is CPU-only by construction. CUDA hosts keep the ``nv`` builder,
-whose search already runs on the device.
+The builder is CPU-only by construction. Automatic CUDA selection keeps the
+``nv`` builder, whose search already runs on the device. An explicit ``cell``
+selection searches on the host and transfers the completed graph to CUDA.
 """
 
 from __future__ import (

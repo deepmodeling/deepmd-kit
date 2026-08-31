@@ -509,6 +509,62 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                 self.assertEqual(actual, expected)
 
 
+class TestCellGraphDeviceRouting(unittest.TestCase):
+    """The CPU-only cell search must not receive CUDA tensors."""
+
+    @staticmethod
+    def _make_evaluator() -> PtExptDeepEval:
+        evaluator = object.__new__(PtExptDeepEval)
+        evaluator._neighbor_graph_method = "cell"
+        evaluator._rcut = 3.0
+        evaluator.metadata = {"graph_edge_dtype": "float32"}
+        return evaluator
+
+    def test_fused_cell_builder_uses_cpu(self) -> None:
+        """The single-frame fused cell builder receives CPU inputs."""
+        evaluator = self._make_evaluator()
+        expected = mock.sentinel.graph
+        with (
+            mock.patch.object(evaluator, "_model_pair_excl", return_value=None),
+            mock.patch(
+                "deepmd.pt_expt.utils.cell_graph_builder.build_neighbor_graph_fused",
+                return_value=expected,
+            ) as builder,
+        ):
+            actual = evaluator._build_eval_graph(
+                np.zeros((1, 6)),
+                np.zeros((1, 2), dtype=np.int64),
+                np.eye(3).reshape(1, 9),
+                torch.device("cuda"),
+            )
+
+        self.assertIs(actual, expected)
+        for value in builder.call_args.args[:3]:
+            self.assertEqual(value.device.type, "cpu")
+
+    def test_general_cell_builder_uses_cpu(self) -> None:
+        """The batched cell builder receives CPU inputs."""
+        evaluator = self._make_evaluator()
+        expected = mock.sentinel.graph
+        with (
+            mock.patch.object(evaluator, "_model_pair_excl", return_value=None),
+            mock.patch(
+                "deepmd.pt_expt.utils.cell_graph_builder.build_neighbor_graph_cell",
+                return_value=expected,
+            ) as builder,
+        ):
+            actual = evaluator._build_eval_graph(
+                np.zeros((2, 6)),
+                np.zeros((2, 2), dtype=np.int64),
+                np.tile(np.eye(3).reshape(1, 9), (2, 1)),
+                torch.device("cuda"),
+            )
+
+        self.assertIs(actual, expected)
+        for value in builder.call_args.args[:3]:
+            self.assertEqual(value.device.type, "cpu")
+
+
 class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
     """Raw DPA1 checkpoints retain the source model's graph-forward semantics."""
 

@@ -189,7 +189,8 @@ class DeepEval(DeepEvalBackend):
         at each eval call (CUDA: ``nv`` if importable; else ``vesin`` only when
         ``nf == 1`` and importable; else ``dense``). Explicit
         ``"dense"`` / ``"ase"`` / ``"cell"`` / ``"vesin"`` / ``"nv"``
-        choices are preserved.
+        choices are preserved. The CPU-only ``cell`` search runs on the host;
+        its graph tensors are transferred to the model device before inference.
         A non-default value on any other artifact raises at construction because
         the knob would silently do nothing there; use ``nlist_backend`` for the
         nlist path instead. All builders emit the same neighbor set, so the
@@ -2558,11 +2559,13 @@ class DeepEval(DeepEvalBackend):
         call-time via
         :func:`~deepmd.pt_expt.utils.graph_builder.resolve_auto_graph_builder`
         using the batch frame count (vesin only when ``nf == 1``);
-        ``dense``/``ase`` run backend-agnostic (numpy); ``cell``/``vesin``/``nv``
-        run on-device (torch, O(N)), and ``cell`` threads its search. All backends emit the SAME neighbor set
+        ``dense``/``ase`` run backend-agnostic (numpy), ``cell`` runs its
+        threaded search on the CPU, and ``vesin``/``nv`` run on the requested
+        device (torch, O(N)). All backends emit the SAME neighbor set
         (carry-all, sel-free), so the selection is a pure performance choice
         and results are unchanged. The result is canonicalized to the
-        destination-major graph-form ``.pt2`` ABI after construction.
+        destination-major graph-form ``.pt2`` ABI after construction; the
+        caller transfers its fields to the model device.
         """
         method = self._neighbor_graph_method
         if method == "auto":
@@ -2574,6 +2577,7 @@ class DeepEval(DeepEvalBackend):
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
         # ``applyPairExclusion`` and the eager dpmodel/pt_expt build path).
         pair_excl = self._model_pair_excl()
+        builder_device = torch.device("cpu") if method == "cell" else device
         # The fused builder writes the whole destination-major payload from one
         # search. It applies only where nothing has to be filtered or masked
         # afterwards, because it has no stage in which to do so, and only for
@@ -2598,17 +2602,17 @@ class DeepEval(DeepEvalBackend):
                 torch.as_tensor(
                     np.asarray(coord_input).reshape(-1, 3),
                     dtype=torch.float64,
-                    device=device,
+                    device=builder_device,
                 ),
                 torch.as_tensor(
                     np.asarray(atom_types).reshape(-1),
                     dtype=torch.int64,
-                    device=device,
+                    device=builder_device,
                 ),
                 torch.as_tensor(
                     np.asarray(box_input).reshape(3, 3),
                     dtype=torch.float64,
-                    device=device,
+                    device=builder_device,
                 )
                 if box_input is not None
                 else None,
@@ -2642,12 +2646,14 @@ class DeepEval(DeepEvalBackend):
                 pair_excl=pair_excl,
             )
         if method in ("cell", "vesin", "nv"):
-            cc = torch.as_tensor(coord_input, dtype=torch.float64, device=device)
+            cc = torch.as_tensor(
+                coord_input, dtype=torch.float64, device=builder_device
+            )
             aa = torch.as_tensor(
-                np.asarray(atom_types), dtype=torch.int64, device=device
+                np.asarray(atom_types), dtype=torch.int64, device=builder_device
             )
             bb = (
-                torch.as_tensor(box_input, dtype=torch.float64, device=device)
+                torch.as_tensor(box_input, dtype=torch.float64, device=builder_device)
                 if box_input is not None
                 else None
             )
@@ -2703,10 +2709,10 @@ class DeepEval(DeepEvalBackend):
         FRESH numpy-backed mask.
 
         A numpy ``type_mask`` converts cleanly onto whichever namespace/device the
-        builder's ``atype`` uses (dense/ase pass numpy; vesin/nv pass torch). The
-        dpmodel's own ``pair_excl`` is NOT reused: as a pt_expt module attribute
-        its ``type_mask`` is a torch (possibly CUDA) buffer, which cannot convert
-        to a numpy ``atype`` on the dense/ase build path.
+        builder's ``atype`` uses (dense/ase pass numpy; cell/vesin/nv pass torch).
+        The dpmodel's own ``pair_excl`` is NOT reused: as a pt_expt module
+        attribute its ``type_mask`` is a torch (possibly CUDA) buffer, which
+        cannot convert to a numpy ``atype`` on the dense/ase build path.
 
         Returns
         -------
