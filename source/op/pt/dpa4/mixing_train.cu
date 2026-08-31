@@ -400,8 +400,9 @@ __global__ void mixing_2nd_final_kernel(
 // ---------------------------------------------------------------------------
 // Entry-side gradient of the final store: g_edge = grad_out * alpha in the
 // focus-major layout. One block owns one (edge, focus) row and simultaneously
-// reduces grad_alpha = sum_r grad_out * x_local / alpha, so grad_out and alpha
-// are read only once on the first-order entry.
+// reduces grad_alpha = sum_r grad_out * x_local / alpha. Label smoothing keeps
+// the competition weight strictly positive, so the division recovers the
+// unscaled output exactly while grad_out and alpha are read only once.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
 __global__ void mixing_entry_bwd_kernel(
@@ -451,7 +452,7 @@ __global__ void mixing_entry_bwd_kernel(
     }
     if (threadIdx.x == 0) {
       const acc_t a = alpha[row];
-      grad_alpha[row] = (acc_t)acc / (a > acc_t(1e-12) ? a : acc_t(1e-12));
+      grad_alpha[row] = (acc_t)acc / a;
     }
   }
 }
@@ -1086,10 +1087,6 @@ mixing_bwd(const at::Tensor& grad_out_in,
   const long n_gated = gw_all.size(0);
   const long m0 = (lmax + 1) * focus_dim;
   const long lg = lmax * focus_dim;
-  auto stream = at::cuda::getCurrentCUDAStream();
-  auto lt_workspace = at::empty(
-      {u_final.scalar_type() == at::kDouble ? 0L : (long)kLtWorkspaceBytes},
-      u_final.options().dtype(at::kByte));
 
   auto grad_w0 = with_weights ? at::empty(w0t_all.sizes(), w0t_all.options())
                               : at::empty({0}, w0t_all.options());
@@ -1110,12 +1107,6 @@ mixing_bwd(const at::Tensor& grad_out_in,
                 u_final.options());
   auto kept_gate_logit_all =
       at::empty({n_keep, n_focus, n_edge, lg}, u_final.options());
-  auto gate_logit_scratch = at::empty(
-      {keep_state ? 0L : std::min<long>(n_gated, 1), n_focus, n_edge, lg},
-      u_final.options());
-  auto grad_logit_scratch = at::empty(
-      {keep_state ? std::min<long>(n_gated, 1) : 0L, n_focus, n_edge, lg},
-      u_final.options());
   // The competition-weight gradient feeds the head's closed form, whose
   // gate-slice term enters the input gradient; the entry traversal computes
   // it whenever the competition is active, independent of the weight
@@ -1126,6 +1117,33 @@ mixing_bwd(const at::Tensor& grad_out_in,
   if (!apply_alpha) {
     grad_alpha.zero_();
   }
+  if (n_edge == 0) {
+    if (with_weights) {
+      grad_w0.zero_();
+      grad_w1.zero_();
+      grad_gw.zero_();
+    }
+    return {at::empty_like(u_final),
+            grad_alpha,
+            grad_w0,
+            grad_w1,
+            grad_gw,
+            upstream_all,
+            input_all,
+            grad_z_all,
+            kept_gate_logit_all};
+  }
+
+  auto stream = at::cuda::getCurrentCUDAStream();
+  auto lt_workspace = at::empty(
+      {u_final.scalar_type() == at::kDouble ? 0L : (long)kLtWorkspaceBytes},
+      u_final.options().dtype(at::kByte));
+  auto gate_logit_scratch = at::empty(
+      {keep_state ? 0L : std::min<long>(n_gated, 1), n_focus, n_edge, lg},
+      u_final.options());
+  auto grad_logit_scratch = at::empty(
+      {keep_state ? std::min<long>(n_gated, 1) : 0L, n_focus, n_edge, lg},
+      u_final.options());
 
   // === Entry: undo the competition scale and the edge-major store ===
   auto g_focus = at::empty({n_focus, n_edge, row_w}, u_final.options());
@@ -1350,6 +1368,41 @@ mixing_bwd2(const at::Tensor& grad_out_in,
   const long row_w = u_final.size(2);
   const long n_gated = gw_all.size(0);
   const long m0 = (lmax + 1) * focus_dim;
+  const bool has_kept_state = kept_upstream.has_value() &&
+                              kept_grad_z.has_value() &&
+                              kept_gate_logit.has_value();
+  if (n_edge == 0) {
+    auto grad_u_final = apply_alpha && h_alpha.has_value()
+                            ? at::empty_like(u_final)
+                            : at::empty({0}, u_final.options());
+    auto grad_alpha_in = at::empty(
+        {0, n_focus}, grad_out.options().dtype(
+                          dpa4_sezm::alpha_dtype(grad_out.scalar_type())));
+    auto grad_w0_out = at::zeros(w0t_all.sizes(), w0t_all.options());
+    auto grad_w1_out = at::zeros(w1t_all.sizes(), w1t_all.options());
+    auto grad_gw_out = at::zeros_like(gw_all);
+    auto grad_gz_up = grad_z_up.has_value() ? at::empty_like(z_all)
+                                            : at::empty({0}, z_all.options());
+    auto grad_gu_up = grad_u_up.has_value() ? at::empty_like(u_final)
+                                            : at::empty({0}, u_final.options());
+    auto grad_u0_first = has_kept_state ? at::empty({0}, u_final.options())
+                                        : at::empty_like(u_final);
+    auto grad_x_local_out = ggout_scale.has_value()
+                                ? at::empty_like(grad_out)
+                                : at::empty({0}, grad_out.options());
+    return {at::empty_like(grad_out),
+            at::empty_like(z_all),
+            grad_u_final,
+            grad_alpha_in,
+            grad_w0_out,
+            grad_w1_out,
+            grad_gw_out,
+            at::empty({0}, u_final.options()),
+            grad_gz_up,
+            grad_gu_up,
+            grad_u0_first,
+            grad_x_local_out};
+  }
   auto stream = at::cuda::getCurrentCUDAStream();
 
   // === Linearization points: kept by the first order, or replayed ===
@@ -1360,8 +1413,7 @@ mixing_bwd2(const at::Tensor& grad_out_in,
   // replayed input gradient rides along as the last output so a caller
   // needing both differentiations pays for one traversal either way.
   at::Tensor grad_u0_first, upstream_all, grad_z_all, gate_logit_all;
-  if (kept_upstream.has_value() && kept_grad_z.has_value() &&
-      kept_gate_logit.has_value()) {
+  if (has_kept_state) {
     upstream_all = kept_upstream.value();
     grad_z_all = kept_grad_z.value();
     gate_logit_all = kept_gate_logit.value();

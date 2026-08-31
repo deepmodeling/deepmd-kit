@@ -64,7 +64,7 @@ ConvConfig resolve_config(const torch::Tensor& x,
   c.n_layers = static_cast<int>(w0.size(0));
   c.rank = static_cast<int>(rank);
   c.n_edge = runs.size(0);
-  c.kc_len = static_cast<int>(kc.numel() / c.n_edge);
+  c.kc_len = static_cast<int>(kc.size(1));
   c.dim = (c.lmax + 1) * (c.lmax + 1);
   c.row = (3 * c.lmax + 1) * c.focus_dim;
   c.n_node = static_cast<int>(x.size(0));
@@ -90,8 +90,8 @@ void check_inputs(const torch::Tensor& x,
               " focus_dim=", c.focus_dim);
   TORCH_CHECK(c.c_wide == c.n_focus * c.focus_dim,
               "dpa4_so2_conv: C_wide must be a multiple of focus_dim");
-  TORCH_CHECK(c.n_head >= 1 && c.focus_dim % c.n_head == 0,
-              "dpa4_so2_conv: focus_dim must be a multiple of n_head");
+  TORCH_CHECK(c.n_head == 1,
+              "dpa4_so2_conv: the fused operator supports one attention head");
   TORCH_CHECK(c.n_layers >= 2,
               "dpa4_so2_conv: the stack needs at least one gated layer");
   TORCH_CHECK(
@@ -336,12 +336,10 @@ dpa4_so2_conv(torch::Tensor x,
               int64_t rank) {
   const at::cuda::OptionalCUDAGuard device_guard(x.device());
   x = x.contiguous();
-  kc = kc.contiguous().reshape({runs.size(0), -1});
+  kc = kc.contiguous().flatten(1);
   const ConvConfig c =
       resolve_config(x, runs, kc, cb, w0, head_gate, lmax, focus_dim, rank);
   check_inputs(x, runs, kc, cb, head_gate, c);
-  TORCH_CHECK(c.focus_dim % c.n_head == 0 && c.focus_dim / c.n_head >= 32,
-              "dpa4_so2_conv: a head must span at least one 32-lane slot");
   TORCH_CHECK(q.numel() == static_cast<long>(c.n_node) * c.c_wide &&
                   k.numel() == q.numel(),
               "dpa4_so2_conv: q and k must be (N, C_wide)");
@@ -434,7 +432,7 @@ dpa4_so2_conv_backward(torch::Tensor grad_out,
                        int64_t rank) {
   const at::cuda::OptionalCUDAGuard device_guard(x.device());
   x = x.contiguous();
-  kc = kc.contiguous().reshape({runs.size(0), -1});
+  kc = kc.contiguous().flatten(1);
   const ConvConfig c =
       resolve_config(x, runs, kc, cb, w0, head_gate, lmax, focus_dim, rank);
   check_inputs(x, runs, kc, cb, head_gate, c);

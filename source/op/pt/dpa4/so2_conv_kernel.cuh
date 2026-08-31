@@ -405,11 +405,8 @@ DPA4_DEV void attention_chunk(const ConvArgs& a,
       bias += a.kc0[edge * static_cast<long>(a.c_wide) + focus * CF + ca] *
               a.logit_w[(static_cast<long>(focus) * CF + ca) * a.n_head + head];
     }
-    // Heads own whole 32-lane slots, so the per-slot partials of one lane
-    // belong to one head and the warp sum finishes both contractions. The
-    // bias contraction runs over the full focus width for every head, which
-    // the slot-uniform head index realizes exactly when the head count is
-    // one per slot or fewer; wider head counts are declined by the host.
+    // The operator serves one attention head, so the warp sum completes both
+    // contractions over the full focus width.
     const float dot = warp_all_sum(qk) * a.inv_sqrt_ch;
     const float bias_sum = warp_all_sum(bias);
     if (lane < a.n_head) {

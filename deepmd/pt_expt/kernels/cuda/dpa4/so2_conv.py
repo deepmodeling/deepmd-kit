@@ -13,13 +13,13 @@ intermediates of that composition reach device memory.
 
 Supported configuration
 -----------------------
-``mmax == 1``, degree 1 to 6, focus width 32 or 64, any focus-stream count, at
-least 32 channels per attention head, an attention layout matching the value
-stream, two or more mixing layers with an identity final layer, and a radial
-mixer that is either absent or ``degree_channel`` of any rank. The kernels are
-templated on degree and focus width only; every other dimension is a runtime
-argument. The bridging-mode source gate reshapes the softmax normalization and
-is declined at call time.
+``mmax == 1``, degree 1 to 6, focus width 32 or 64, one attention head, any
+focus-stream count, an attention layout matching the value stream, two or more
+mixing layers with an identity final layer, and a radial mixer that is either
+absent or ``degree_channel`` of any rank. The kernels are templated on degree
+and focus width only; every other dimension is a runtime argument. The
+bridging-mode source gate reshapes the softmax normalization and is declined at
+call time.
 
 Usage and pitfalls
 ------------------
@@ -460,7 +460,9 @@ def _backward(
     # not depend on any logit.
     if fscale.numel() > 0:
         fs = fscale.unsqueeze(-1)
-        raw_alpha = alpha / fs.clamp_min(1e-30)
+        # Label smoothing gives every focus a strict positive lower bound, so
+        # recovering the unscaled softmax weight is an exact division.
+        raw_alpha = alpha / fs
         g_alpha = g_weight * fs
         g_fscale = (g_weight * raw_alpha).sum(-1)
     else:
@@ -484,12 +486,13 @@ def _backward(
     g_k.index_add_(0, src, gl * q_heads.index_select(0, dst))
     g_rad0 = torch.einsum(
         "efh,fih->efi", g_logit, logit_w.reshape(n_focus, ctx.focus_dim, n_head)
-    ).reshape(n_edge, -1)
+    ).reshape(n_edge, n_focus * ctx.focus_dim)
     env_flat = env.reshape(n_edge)
     positive = env_flat > 0
+    safe_env = torch.where(positive, env_flat, torch.ones_like(env_flat))
     g_env = torch.where(
         positive,
-        g_logit.sum((1, 2)) * 2.0 / env_flat.clamp_min(1e-30),
+        g_logit.sum((1, 2)) * 2.0 / safe_env,
         torch.zeros_like(env_flat),
     ).reshape(env.shape)
 
@@ -633,8 +636,8 @@ class SO2ConvCuda:
         """
         mixer = self._conv.radial_degree_mixer
         if mixer is None:
-            return rad_feat.reshape(rad_feat.shape[0], -1), rad_feat.new_zeros(1)
-        kc = torch.matmul(rad_feat.reshape(rad_feat.shape[0], -1), mixer.weight)
+            return rad_feat.flatten(1), rad_feat.new_zeros(1)
+        kc = torch.matmul(rad_feat.flatten(1), mixer.weight)
         return kc, mixer.channel_basis.reshape(self._rank, -1)
 
     def _pack_weights(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -694,7 +697,10 @@ class SO2ConvCuda:
             scalar = x_local[:, 0, :] * rad_feat[:, 0, :]  # (E, C_wide)
         else:
             slots = [i * n_deg for i in range(n_deg)]
-            sel = kc.reshape(kc.shape[0], -1, self._rank)[:, slots, :]  # (E, L+1, rank)
+            kernel_slots = n_deg * n_deg + lmax * lmax
+            sel = kc.reshape(kc.shape[0], kernel_slots, self._rank)[
+                :, slots, :
+            ]  # (E, L+1, rank)
             keff = torch.einsum("eir,rc->eic", sel, cb)  # (E, L+1, C_wide)
             scalar = (keff * x_local).sum(1)  # (E, C_wide)
         gate_src = scalar.reshape(-1, conv.n_focus, cf)  # (E, F, Cf)
@@ -795,12 +801,9 @@ def _is_supported(conv: Any) -> bool:
         conv.mmax == 1
         and 1 <= conv.lmax <= _MAX_LMAX
         and conv.mixing_layers >= 2
-        and conv.n_atten_head >= 1
+        and conv.n_atten_head == 1
         and conv.so2_focus_dim in _SUPPORTED_FOCUS_DIMS
-        # The fused softmax assigns whole 32-lane channel slots to heads and
-        # shares the attention layout with the value stream.
-        and conv.so2_focus_dim % conv.n_atten_head == 0
-        and conv.so2_focus_dim // conv.n_atten_head >= 32
+        # The fused softmax shares the attention layout with the value stream.
         and conv.attn_n_focus == conv.n_focus
         and conv.attn_focus_dim == conv.so2_focus_dim
         # ``node_wise_grid_product`` couples into the local frame inside the

@@ -1088,6 +1088,7 @@ class SO2Convolution(nn.Module):
         trainable: bool,
     ) -> None:
         super().__init__()
+        self.trainable = bool(trainable)
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
         if self.mmax < 0:
@@ -3047,7 +3048,6 @@ class SO2Convolution(nn.Module):
             self.adam_so2_layer_scales = None
 
     def serialize(self) -> dict[str, Any]:
-        trainable = all(p.requires_grad for p in self.parameters())
         state = self.state_dict()
         return {
             "@class": "SO2Convolution",
@@ -3087,7 +3087,7 @@ class SO2Convolution(nn.Module):
                 "node_cartesian": self.node_cartesian,
                 "eps": self.eps,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
-                "trainable": trainable,
+                "trainable": self.trainable,
                 "seed": None,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},

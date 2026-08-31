@@ -606,12 +606,12 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
     def _flash_bwd_block_kernel(
         gp_ptr,  # (N, D, C) upstream gradient of the ungated aggregate
         xl_ptr,  # (E, F, D_m, Cf) local features
-        dt_ptr,  # (E, D, D) transposed block-diagonal Wigner-D, contiguous
+        dt_ptr,  # (E, D_storage, D_storage) transposed Wigner-D
         resc_ptr,  # (D,) inverse-rotation rescale
         w_ptr,  # (E, F, H) attention weights, contiguous
         dst_ptr,  # (E,)
         gxl_ptr,  # (E, F, D_m, Cf) out
-        gdt_ptr,  # (E, D, D) out (pre-zeroed, structural non-zeros written)
+        gdt_ptr,  # (E, D_storage, D_storage) out
         gw_ptr,  # (E, F, H) out, contiguous
         n_edge,
         gp_sn,
@@ -620,10 +620,16 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         xl_sf,
         xl_sr,
         xl_sc,
+        dt_se,
+        dt_sr,
+        dt_sk,
         gxl_se,
         gxl_sf,
         gxl_sr,
         gxl_sc,
+        gdt_se,
+        gdt_sr,
+        gdt_sk,
         L: tl.constexpr,
         CF: tl.constexpr,
         CW: tl.constexpr,  # C_wide = F * Cf
@@ -650,7 +656,6 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         kernel dominates; :func:`~.tile_configs.flash_bwd_block_config` acts
         as the win list.
         """
-        DIM: tl.constexpr = (L + 1) * (L + 1)
         NG: tl.constexpr = (CW // CF) * NHEAD  # flat (focus, head) group count
         PADDED: tl.constexpr = CP != CW
 
@@ -674,14 +679,16 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
 
         dst = tl.load(dst_ptr + eq, mask=e_mask, other=0).to(tl.int64)
         # Attention weight broadcast to channels: w[e, f(c), h(c)].
-        wv = tl.load(w_ptr + (eq * NG)[:, None] + grp[None, :], mask=em, other=0.0)
+        wv = tl.load(w_ptr + (eq * NG)[:, None] + grp[None, :], mask=em, other=0.0).to(
+            tl.float32
+        )
 
         xl_row = xl_ptr + (eq * xl_se)[:, None] + (fv * xl_sf + cfv * xl_sc)[None, :]
         gxl_row = (
             gxl_ptr + (eq * gxl_se)[:, None] + (fv * gxl_sf + cfv * gxl_sc)[None, :]
         )
-        dt_base = dt_ptr + eq * DIM * DIM
-        gdt_base = gdt_ptr + eq * DIM * DIM
+        dt_base = dt_ptr + eq * dt_se
+        gdt_base = gdt_ptr + eq * gdt_se
         # The launcher passes a contiguous upstream gradient (channel stride 1).
         gp_row = gp_ptr + (dst * gp_sn)[:, None] + chan[None, :]
 
@@ -690,38 +697,57 @@ if FLASH_ATTEN_TRITON_AVAILABLE:
         for l in tl.static_range(0, L + 1):
             base = l * l
             r0 = base + l  # packed reduced column of order m = 0
-            xl0 = tl.load(xl_row + l * xl_sr, mask=em, other=0.0)
+            xl0 = tl.load(xl_row + l * xl_sr, mask=em, other=0.0).to(tl.float32)
             gxl0 = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
             if l >= 1:
-                xlm = tl.load(xl_row + (L + l) * xl_sr, mask=em, other=0.0)
-                xlp = tl.load(xl_row + (2 * L + l) * xl_sr, mask=em, other=0.0)
+                xlm = tl.load(xl_row + (L + l) * xl_sr, mask=em, other=0.0).to(
+                    tl.float32
+                )
+                xlp = tl.load(xl_row + (2 * L + l) * xl_sr, mask=em, other=0.0).to(
+                    tl.float32
+                )
                 gxlm = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
                 gxlp = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
             for j in tl.static_range(0, 2 * l + 1):
                 d = base + j
-                resc = tl.load(resc_ptr + d)
-                gpr = tl.load(gp_row + d * gp_sd, mask=em, other=0.0) * resc
+                resc = tl.load(resc_ptr + d).to(tl.float32)
+                gpr = (
+                    tl.load(gp_row + d * gp_sd, mask=em, other=0.0).to(tl.float32)
+                    * resc
+                )
                 grad_rb = gpr * wv
-                dt0 = tl.load(dt_base + d * DIM + r0, mask=e_mask, other=0.0)
+                dt0 = tl.load(
+                    dt_base + d * dt_sr + r0 * dt_sk,
+                    mask=e_mask,
+                    other=0.0,
+                ).to(tl.float32)
                 gxl0 += dt0[:, None] * grad_rb
                 tl.store(
-                    gdt_base + d * DIM + r0,
+                    gdt_base + d * gdt_sr + r0 * gdt_sk,
                     tl.sum(grad_rb * xl0, axis=1),
                     mask=e_mask,
                 )
                 rb = dt0[:, None] * xl0
                 if l >= 1:
-                    dtm = tl.load(dt_base + d * DIM + (r0 - 1), mask=e_mask, other=0.0)
-                    dtp = tl.load(dt_base + d * DIM + (r0 + 1), mask=e_mask, other=0.0)
+                    dtm = tl.load(
+                        dt_base + d * dt_sr + (r0 - 1) * dt_sk,
+                        mask=e_mask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    dtp = tl.load(
+                        dt_base + d * dt_sr + (r0 + 1) * dt_sk,
+                        mask=e_mask,
+                        other=0.0,
+                    ).to(tl.float32)
                     gxlm += dtm[:, None] * grad_rb
                     gxlp += dtp[:, None] * grad_rb
                     tl.store(
-                        gdt_base + d * DIM + (r0 - 1),
+                        gdt_base + d * gdt_sr + (r0 - 1) * gdt_sk,
                         tl.sum(grad_rb * xlm, axis=1),
                         mask=e_mask,
                     )
                     tl.store(
-                        gdt_base + d * DIM + (r0 + 1),
+                        gdt_base + d * gdt_sr + (r0 + 1) * gdt_sk,
                         tl.sum(grad_rb * xlp, axis=1),
                         mask=e_mask,
                     )
@@ -1290,7 +1316,7 @@ def _launch_backward(
         wrap_triton(_flash_bwd_block_kernel)[(triton.cdiv(n_edge, block_e),)](
             grad_pre_gate,
             x_local,
-            wigner_dt.contiguous(),
+            wigner_dt,
             rescale,
             alpha,
             dst,
@@ -1304,10 +1330,16 @@ def _launch_backward(
             x_local.stride(1),
             x_local.stride(2),
             x_local.stride(3),
+            dt_se,
+            dt_sr,
+            dt_sk,
             grad_x_local.stride(0),
             grad_x_local.stride(1),
             grad_x_local.stride(2),
             grad_x_local.stride(3),
+            gdt_se,
+            gdt_sr,
+            gdt_sk,
             L=int(lmax),
             CF=focus_dim,
             CW=c_wide,

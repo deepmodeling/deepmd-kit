@@ -1047,7 +1047,7 @@ def _launch(
     # pads to 128 + 32 and 75 (degree four) to 64 + 16 instead of the next
     # power of two. The high segment keeps the tensor-core minimum of 16.
     p_hi = max(16, 1 << (p_dim.bit_length() - 1))
-    p_lo = _next_pow2(p_dim - p_hi) if p_dim > p_hi else 0
+    p_lo = max(16, _next_pow2(p_dim - p_hi)) if p_dim > p_hi else 0
     p_eff = p_hi + p_lo
     c_top = min(64, _next_pow2(c_per), max(16, _next_pow2(4096 // (n_acc * p_eff))))
     shape_key = (

@@ -202,7 +202,8 @@ def _rotate_mix_reference(
         )
         y = x_local * rad.index_select(1, degree)
     else:
-        kc_v = kc.view(n_edge, -1, rank)
+        kernel_slots = n_deg * n_deg + lmax * lmax
+        kc_v = kc.view(n_edge, kernel_slots, rank)
         k0 = kc_v[:, : n_deg * n_deg].view(n_edge, n_deg, n_deg, rank)
         k1 = kc_v[:, n_deg * n_deg :].view(n_edge, lmax, lmax, rank)
         cb_v = cb.view(rank, c_wide)
@@ -271,7 +272,8 @@ def _rotate_mix_backward_reference(
         grad_kc[:, 1:] += prod[:, n_deg + lmax :]
         grad_kc = grad_kc.reshape(kc.shape)
     else:
-        kc_v = kc.view(n_edge, -1, rank)
+        kernel_slots = n_deg * n_deg + lmax * lmax
+        kc_v = kc.view(n_edge, kernel_slots, rank)
         k0 = kc_v[:, : n_deg * n_deg].view(n_edge, n_deg, n_deg, rank)
         k1 = kc_v[:, n_deg * n_deg :].view(n_edge, lmax, lmax, rank)
         cb_v = cb.view(rank, c_wide)
@@ -295,9 +297,7 @@ def _rotate_mix_backward_reference(
             x_local[:, n_deg + lmax :],
             cb_v,
         )
-        grad_kc = torch.cat(
-            [gk0.reshape(n_edge, -1), gk1.reshape(n_edge, -1)], dim=1
-        ).reshape(kc.shape)
+        grad_kc = torch.cat([gk0.flatten(1), gk1.flatten(1)], dim=1).reshape(kc.shape)
 
     grad_x_edge = torch.bmm(d_to_m.transpose(1, 2), g_local)  # (E, D, C_wide)
     grad_rows = torch.bmm(g_local, x_src.transpose(1, 2))  # (E, reduced, D)
@@ -399,7 +399,9 @@ def _mixing_stack_backward_reference(
     grad_logit_layers: list[Tensor] = []
     g_edge = grad_out  # (E, F, ROW)
     if apply_alpha:
-        grad_alpha = (g_edge * x_local).sum(dim=-1) / alpha.clamp_min(1e-12)
+        # Focus competition is label-smoothed, so every scale is strictly
+        # positive and the pre-scale output is recovered exactly.
+        grad_alpha = (g_edge * x_local).sum(dim=-1) / alpha
         g_edge = g_edge * alpha.unsqueeze(-1).to(g_edge.dtype)
     else:
         grad_alpha = torch.zeros_like(alpha)
@@ -2119,8 +2121,9 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         BLOCK_M: tl.constexpr,
     ):
         """Competition-weight gradient from the identity ``grad_alpha =
-        sum(grad * out) / alpha`` -- exact because the final store is a plain
-        scale, saving the two pre-scale activation copies.
+        sum(grad * out) / alpha`` -- exact because label smoothing keeps
+        ``alpha`` strictly positive and the final store is a plain scale,
+        saving the two pre-scale activation copies.
         """
         ROW: tl.constexpr = (3 * L + 1) * CF
         CP: tl.constexpr = triton.next_power_of_2(CF)
@@ -2145,7 +2148,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         alpha = tl.load(alpha_ptr + offs_m * n_focus + fid, mask=m_mask, other=1.0)
         tl.store(
             ga_ptr + offs_m * n_focus + fid,
-            ga / tl.maximum(alpha, 1e-12),
+            ga / alpha,
             mask=m_mask,
         )
 
@@ -3828,7 +3831,8 @@ def rotate_mix_basis_grad(
         .permute(1, 2, 0, 3)
         .reshape(n_edge, reduced, c_wide)
     )
-    kernel_flat = kc.view(n_edge, -1, int(rank))
+    kernel_slots = n_deg * n_deg + int(lmax) * int(lmax)
+    kernel_flat = kc.view(n_edge, kernel_slots, int(rank))
     kernel_m0 = kernel_flat[:, : n_deg * n_deg].view(n_edge, n_deg, n_deg, int(rank))
     kernel_m1 = kernel_flat[:, n_deg * n_deg :].view(
         n_edge, int(lmax), int(lmax), int(rank)
@@ -3838,13 +3842,16 @@ def rotate_mix_basis_grad(
         (kernel_m1, n_deg, int(lmax)),
         (kernel_m1, n_deg + int(lmax), int(lmax)),
     )
+    accumulation_dtype = (
+        torch.float64 if x_local.dtype is torch.float64 else torch.float32
+    )
     grad_basis: Tensor | None = None
     for kernel, start, count in blocks:
         weighted = torch.einsum(
             "eior,eoc->reic", kernel, grad_y[:, start : start + count]
         )
         term = (weighted * x_local[:, start : start + count].unsqueeze(0)).sum(
-            dim=(1, 2), dtype=torch.float32
+            dim=(1, 2), dtype=accumulation_dtype
         )
         grad_basis = term if grad_basis is None else grad_basis + term
     return grad_basis.to(cb.dtype).view_as(cb)
@@ -5073,7 +5080,7 @@ class _TritonRotateMix:
             cb = rad_feat.new_zeros(1)
             rank = 0
         else:
-            kc = torch.matmul(rad_feat.reshape(rad_feat.shape[0], -1), mixer.weight)
+            kc = torch.matmul(rad_feat.flatten(1), mixer.weight)
             cb = mixer.channel_basis.reshape(-1)
             rank = mixer.rank
         store = getattr(edge_cache, "csr_cache", None)
@@ -5299,7 +5306,7 @@ class _TritonSO2ValuePath:
             rank = 0
         else:
             kc = torch.matmul(
-                rad_feat.reshape(rad_feat.shape[0], -1), mixer.weight
+                rad_feat.flatten(1), mixer.weight
             )  # (E, degree_kernel_size * rank)
             cb = mixer.channel_basis.reshape(-1)
             rank = mixer.rank

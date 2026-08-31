@@ -47,9 +47,11 @@ pytestmark = [
 # ``(lmax, n_frames, n_focus, channels, n_grid)`` spanning the deployed grid
 # shapes. The slot count ``(lmax + 1)^2 * n_frames`` drives the operator's
 # two-stage tiling of the contraction axis, so the set covers a power-of-two
-# slot count and counts that force the split.
+# slot count, counts that force the split, and the single-frame degree-five
+# layout whose four-slot remainder must retain Triton's tensor-core floor.
 GRID_SHAPES = [
     (3, 3, 2, 32, 152),
+    (5, 1, 2, 64, 344),
     (5, 3, 2, 64, 344),
     (5, 3, 1, 64, 344),
     (6, 3, 2, 96, 460),

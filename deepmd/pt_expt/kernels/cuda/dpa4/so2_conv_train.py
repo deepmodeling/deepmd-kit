@@ -1037,7 +1037,7 @@ class SO2ValueTrainCuda:
             cb = rad_feat.new_zeros(1)
             rank = 0
         else:
-            kc = torch.matmul(rad_feat.reshape(rad_feat.shape[0], -1), mixer.weight)
+            kc = torch.matmul(rad_feat.flatten(1), mixer.weight)
             cb = mixer.channel_basis.reshape(-1)
             rank = mixer.rank
 

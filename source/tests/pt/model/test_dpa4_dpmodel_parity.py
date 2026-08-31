@@ -443,6 +443,24 @@ class TestRadialParity:
         assert restored.trainable is trainable
         assert restored.adam_freqs.requires_grad is trainable
 
+    def test_radial_basis_deserializes_version_one_without_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        radial_basis = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=8,
+            dtype=torch.float64,
+        )
+        data = radial_basis.serialize()
+        data["@version"] = 1
+        data["config"].pop("trainable")
+        restored = PTRadialBasis.deserialize(data)
+
+        assert restored.trainable is True
+        assert restored.adam_freqs.requires_grad is True
+
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
     @pytest.mark.parametrize("apply_envelope", [True, False])  # both envelope modes
     def test_radial_basis_roundtrip(self, basis_type, apply_envelope) -> None:
@@ -2655,6 +2673,32 @@ class TestSO2Parity:
         out2 = np.asarray(dp_mod2.call(x, dp_cache, radial))
         np.testing.assert_array_equal(out1, out2)
 
+    def test_so2_convolution_roundtrip_preserves_configured_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution as PTSO2Conv
+
+        module = PTSO2Conv(
+            **self._conv_kwargs(node_wise_grid_branch=1, node_wise_s2=True),
+            dtype=torch.float64,
+            seed=17,
+            trainable=True,
+        )
+        data = module.serialize()
+        restored = PTSO2Conv.deserialize(data)
+        routers = [
+            submodule.router
+            for submodule in restored.modules()
+            if isinstance(submodule, GridBranch)
+        ]
+
+        assert data["config"]["trainable"] is True
+        assert restored.trainable is True
+        assert routers
+        assert all(not router.weight.requires_grad for router in routers)
+        assert any(parameter.requires_grad for parameter in restored.parameters())
+
     def test_so2_convolution_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
 
@@ -3714,6 +3758,34 @@ class TestBlockParity:
         out1 = np.asarray(dp_mod.call(x, dp_cache, radial)[0])
         out2 = np.asarray(dp_mod2.call(x, dp_cache, radial)[0])
         np.testing.assert_array_equal(out1, out2)
+
+    def test_block_roundtrip_preserves_configured_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.block import (
+            SeZMInteractionBlock as PTBlock,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+
+        module = PTBlock(
+            **self._block_kwargs(ffn_grid_branch=1),
+            dtype=torch.float64,
+            seed=31,
+            trainable=True,
+        )
+        data = module.serialize()
+        restored = PTBlock.deserialize(data)
+        routers = [
+            submodule.router
+            for submodule in restored.modules()
+            if isinstance(submodule, GridBranch)
+        ]
+
+        assert data["config"]["trainable"] is True
+        assert restored.trainable is True
+        assert routers
+        assert all(not router.weight.requires_grad for router in routers)
+        assert any(parameter.requires_grad for parameter in restored.parameters())
 
     def test_block_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.block import (

@@ -636,7 +636,6 @@ class TestSeZMTritonRadialMix(unittest.TestCase):
         self.assertIn("sezm_triton.radial_mix_block", traced.code)
 
 
-@_GPU_KERNELS
 class TestSeZMTritonValuePath(unittest.TestCase):
     """Cross-check the fused SO(2) value path against ``SO2Convolution``.
 
@@ -722,6 +721,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         cache.D_to_m_cache = {}
         return x, cache, radial
 
+    @_GPU_KERNELS
     def test_forward_backward_matches_reference_across_family(self):
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
@@ -779,6 +779,115 @@ class TestSeZMTritonValuePath(unittest.TestCase):
                         rtol=1e-4,
                     )
 
+    def test_float64_fallback_channel_basis_gradient_preserves_precision(self) -> None:
+        """The non-Triton fallback accumulates the basis gradient in float64."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _rotate_mix_op,
+            _rotate_mix_reference,
+        )
+
+        generator = torch.Generator(device="cpu").manual_seed(29)
+        lmax, n_focus, focus_dim, rank = 2, 2, 8, 2
+        n_node, n_edge = 5, 17
+        dim = (lmax + 1) ** 2
+        c_wide = n_focus * focus_dim
+        kernel_slots = dim + lmax**2
+        x = torch.randn(
+            n_node,
+            dim,
+            c_wide,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+        src = torch.randint(0, n_node, (n_edge,), device="cpu", generator=generator)
+        order = torch.argsort(src, stable=True)
+        counts = torch.bincount(src, minlength=n_node)
+        row_ptr = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
+        wigner = _block_diagonal_wigner(n_edge, lmax, "cpu", torch.float64, generator)
+        kernel = torch.randn(
+            n_edge,
+            kernel_slots * rank,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+        basis = torch.randn(
+            rank,
+            c_wide,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+        grad_out = torch.randn(
+            n_focus,
+            n_edge,
+            (3 * lmax + 1) * focus_dim,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+
+        basis_fused = basis.clone().requires_grad_(True)
+        fused = _rotate_mix_op(
+            x,
+            src,
+            order,
+            row_ptr,
+            wigner,
+            kernel,
+            basis_fused,
+            lmax,
+            n_focus,
+            rank,
+        )
+        (grad_fused,) = torch.autograd.grad(fused, basis_fused, grad_out)
+
+        basis_reference = basis.clone().requires_grad_(True)
+        reference = _rotate_mix_reference(
+            x, src, wigner, kernel, basis_reference, lmax, n_focus, rank
+        )
+        (grad_reference,) = torch.autograd.grad(reference, basis_reference, grad_out)
+        torch.testing.assert_close(grad_fused, grad_reference, atol=1e-12, rtol=1e-12)
+
+    @_GPU_KERNELS
+    def test_competition_gradient_preserves_small_positive_scale(self) -> None:
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(31)
+        lmax, n_focus, focus_dim, n_edge, n_layers = 2, 2, 32, 9, 3
+        row = (3 * lmax + 1) * focus_dim
+        m0, m1 = (lmax + 1) * focus_dim, 2 * lmax * focus_dim
+        u0 = torch.randn(n_focus, n_edge, row, device="cuda", generator=generator)
+        alpha = torch.full((n_edge, n_focus), 1e-20, device="cuda", requires_grad=True)
+        w0 = (
+            torch.randn(n_layers, n_focus, m0, m0, device="cuda", generator=generator)
+            / m0**0.5
+        )
+        w1 = (
+            torch.randn(n_layers, n_focus, m1, m1, device="cuda", generator=generator)
+            / m1**0.5
+        )
+        gw = (
+            torch.randn(
+                n_layers - 1,
+                n_focus,
+                focus_dim,
+                lmax * focus_dim,
+                device="cuda",
+                generator=generator,
+            )
+            / focus_dim**0.5
+        )
+        out, _, _ = _mixing_stack_op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)
+        grad_out = torch.randn_like(out)
+        (grad_alpha,) = torch.autograd.grad(out, alpha, grad_out)
+        expected = (grad_out * out.detach()).sum(-1) / alpha.detach()
+        torch.testing.assert_close(grad_alpha, expected, atol=2e-5, rtol=2e-5)
+
+    @_GPU_KERNELS
     def test_prepared_weights_follow_device_without_entering_state_dict(self) -> None:
         """Frozen layouts move as buffers while training reads live weights."""
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
@@ -821,6 +930,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         self.assertFalse(torch.equal(live[0], cached[0]))
         self.assertIs(value_path._pack_weights(differentiable=False)[0], cached[0])
 
+    @_GPU_KERNELS
     def test_factory_rejects_unsupported_layouts(self):
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
@@ -1075,17 +1185,27 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
         saved = dict(runtime)
         self.addCleanup(lambda: (runtime.clear(), runtime.update(saved)))
         tile_configs.register_tile_configs(
-            "flash_bwd_block", {(64, 3): (4, 2, 2), (256, 3): None}
+            "flash_bwd_block",
+            {(64, 2): (4, 2, 2), (64, 3): (4, 2, 2), (256, 3): None},
         )
 
         generator = torch.Generator(device="cuda").manual_seed(13)
         cases = [
-            # (lmax, n_focus, focus_dim, expects_block_dispatch)
-            (3, 2, 32, True),
-            (3, 2, 128, False),
+            # (lmax, storage_lmax, n_focus, focus_dim, dtype, block dispatch)
+            (3, 3, 2, 32, torch.float32, True),
+            (3, 3, 2, 128, torch.float32, False),
+            # A descending schedule reuses a rotation allocated at the
+            # preceding block's larger degree.
+            (2, 3, 2, 32, torch.float32, True),
+            (2, 3, 2, 32, torch.bfloat16, True),
         ]
-        for lmax, n_focus, focus_dim, expects_block in cases:
-            with self.subTest(lmax=lmax, c_wide=n_focus * focus_dim):
+        for lmax, storage_lmax, n_focus, focus_dim, dtype, expects_block in cases:
+            with self.subTest(
+                lmax=lmax,
+                storage_lmax=storage_lmax,
+                c_wide=n_focus * focus_dim,
+                dtype=dtype,
+            ):
                 self.assertEqual(
                     tile_configs.flash_bwd_block_config(n_focus * focus_dim, lmax)
                     is not None,
@@ -1095,7 +1215,12 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                 reduced_dim = 3 * lmax + 1
                 dim = (lmax + 1) ** 2
                 grad_pre_gate = torch.randn(
-                    n_node, dim, n_focus * focus_dim, device="cuda", generator=generator
+                    n_node,
+                    dim,
+                    n_focus * focus_dim,
+                    device="cuda",
+                    dtype=dtype,
+                    generator=generator,
                 )
                 x_local = torch.randn(
                     n_edge,
@@ -1103,14 +1228,25 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                     reduced_dim,
                     focus_dim,
                     device="cuda",
+                    dtype=dtype,
                     generator=generator,
                 )
                 wigner_dt = _block_diagonal_wigner(
-                    n_edge, lmax, "cuda", torch.float32, generator
+                    n_edge, storage_lmax, "cuda", dtype, generator
                 )
-                rescale = torch.rand(dim, device="cuda", generator=generator) + 0.5
+                if storage_lmax > lmax:
+                    wigner_dt = wigner_dt.transpose(-1, -2)
+                rescale = (
+                    torch.rand(dim, device="cuda", dtype=dtype, generator=generator)
+                    + 0.5
+                )
                 alpha = torch.rand(
-                    n_edge, n_focus, n_head, device="cuda", generator=generator
+                    n_edge,
+                    n_focus,
+                    n_head,
+                    device="cuda",
+                    dtype=dtype,
+                    generator=generator,
                 )
                 dst = torch.randint(
                     0, n_node, (n_edge,), device="cuda", generator=generator
@@ -1138,7 +1274,11 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                 want = _flash_atten_backward_reference(
                     grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head
                 )
-                mask = _block_mask(lmax, "cuda")
+                storage_dim = (storage_lmax + 1) ** 2
+                mask = torch.zeros(
+                    storage_dim, storage_dim, dtype=torch.bool, device="cuda"
+                )
+                mask[:dim, :dim] = _block_mask(lmax, "cuda")
                 comparisons = [
                     (got[0], want[0]),
                     (got[1] * mask, want[1] * mask),
@@ -1146,11 +1286,12 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                 ]
                 for got_grad, want_grad in comparisons:
                     scale = want_grad.abs().max().item()
+                    tolerance = 2e-2 if dtype is torch.bfloat16 else 1e-4
                     torch.testing.assert_close(
                         got_grad,
                         want_grad,
-                        atol=1e-4 * max(scale, 1.0),
-                        rtol=1e-4,
+                        atol=tolerance * max(scale, 1.0),
+                        rtol=tolerance,
                     )
 
     def test_packed_rotation_matches_dense_through_second_order(self):

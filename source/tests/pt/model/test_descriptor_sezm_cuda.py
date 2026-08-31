@@ -380,6 +380,40 @@ class ConvCase:
 class TestSeZMConvCuda(unittest.TestCase):
     """Numerical contract of the fused SO(2) convolution."""
 
+    def test_rejects_multiple_attention_heads(self) -> None:
+        case = ConvCase(n_head=2, focus_dim=64)
+        with self.assertRaisesRegex(RuntimeError, "supports one attention head"):
+            case.fused()
+
+    def test_zero_edge_forward_and_backward(self) -> None:
+        case = ConvCase(n_node=5, degree=0)
+        leaves = ("x", "quat", "kc", "q", "k", "env", "rad0", "head_gate")
+        for name in leaves:
+            setattr(case, name, getattr(case, name).detach().requires_grad_(True))
+
+        out, alpha, _, _ = case.fused()
+        torch.testing.assert_close(out, torch.zeros_like(out))
+        self.assertEqual(alpha.shape[0], 0)
+        gradients = torch.autograd.grad(
+            out,
+            [getattr(case, name) for name in leaves],
+            torch.randn_like(out),
+        )
+        for name, gradient in zip(leaves, gradients, strict=True):
+            with self.subTest(gradient=name):
+                self.assertEqual(gradient.shape, getattr(case, name).shape)
+                self.assertEqual(torch.count_nonzero(gradient).item(), 0)
+
+    def test_zero_envelope_has_zero_finite_gradient(self) -> None:
+        case = ConvCase(n_node=7, degree=3)
+        case.env[:4] = 0.0
+        case.env.requires_grad_(True)
+
+        out = case.fused()[0]
+        (grad_env,) = torch.autograd.grad(out, case.env, torch.randn_like(out))
+        self.assertTrue(torch.isfinite(grad_env).all())
+        torch.testing.assert_close(grad_env[:4], torch.zeros_like(grad_env[:4]))
+
     def test_forward_matches_dense_reference_on_every_zoo_shape(self) -> None:
         for name in ZOO_SHAPES:
             with self.subTest(model=name):
@@ -806,6 +840,35 @@ class TestSeZMEdgeRadialCuda(unittest.TestCase):
 @unittest.skipUnless(_IMPORT_OK, "requires the pt_expt CUDA bindings")
 class TestSeZMConvCudaGate(unittest.TestCase):
     """The factory declines shapes the operator does not serve."""
+
+    @staticmethod
+    def _conv(n_head: int):
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+            SO2Convolution,
+        )
+
+        return SO2Convolution(
+            lmax=2,
+            mmax=1,
+            channels=64,
+            n_focus=1,
+            focus_dim=64,
+            mixing_layers=3,
+            radial_so2_mode="degree_channel",
+            radial_so2_rank=1,
+            n_atten_head=n_head,
+            dtype=torch.float32,
+            seed=7,
+            trainable=False,
+        )
+
+    def test_supports_only_one_attention_head(self) -> None:
+        from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv import (
+            _is_supported,
+        )
+
+        self.assertTrue(_is_supported(self._conv(n_head=1)))
+        self.assertFalse(_is_supported(self._conv(n_head=2)))
 
     def test_declines_an_unsupported_focus_width(self) -> None:
         from deepmd.pt_expt.kernels.cuda.dpa4 import (

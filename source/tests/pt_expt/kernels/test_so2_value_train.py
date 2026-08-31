@@ -285,7 +285,7 @@ class _ValuePathCase:
         targets = [leaf for leaf in leaves if leaf.requires_grad]
         inputs = tuple(leaf.to(torch.bfloat16) for leaf in leaves) if amp else leaves
         x, wigner, kernel, basis, compete_w, compete_b, w0, w1, gw = inputs
-        kernel_flat = kernel.reshape(self.n_edge, -1) if self.rank > 0 else kernel
+        kernel_flat = kernel.flatten(1) if self.rank > 0 else kernel
         basis_flat = basis.reshape(-1) if self.rank > 0 else basis
 
         context = (
@@ -460,3 +460,21 @@ def test_float64_agrees_with_eager_to_reduction_order() -> None:
         scale = truth.abs().max().clamp_min(1.0).item()
         error = (got - truth).abs().max().item() / scale
         assert error <= 5e-6, f"{name}: float64 disagreement {error:.3e}"
+
+
+@pytest.mark.parametrize(
+    "shape_index", [0, 2], ids=["ranked_competition", "degreewise"]
+)
+def test_zero_edge_matches_eager_through_second_order(shape_index: int) -> None:
+    """An empty graph preserves every forward, gradient and curvature shape."""
+    if not op_available():
+        pytest.skip("the DPA4 CUDA training operators are unavailable")
+    case = _ValuePathCase(*BLOCK_SHAPES[shape_index], seed=DRAW_SEEDS[0], n_edge=0)
+    common = {"dtype": torch.float32, "amp": False, "second": True}
+    reference = case.evaluate(fused=False, **common)
+    fused = case.evaluate(fused=True, **common)
+    for name, truth, got in zip(
+        case.quantity_names(second=True), reference, fused, strict=True
+    ):
+        assert got.shape == truth.shape, name
+        torch.testing.assert_close(got, truth, atol=0.0, rtol=0.0)
