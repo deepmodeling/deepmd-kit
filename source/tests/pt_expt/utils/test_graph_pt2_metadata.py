@@ -26,6 +26,7 @@ from deepmd.pt_expt.model.graph_lower import (
 )
 from deepmd.pt_expt.utils.serialization import (
     _needs_with_comm_artifact,
+    _resolve_target_lower_kind,
     _supports_graph_export,
     deserialize_to_file,
     serialize_from_file,
@@ -234,8 +235,11 @@ def test_convert_regular_pt_dpa1_preserves_dense_semantics(tmp_path) -> None:
     )
 
 
-def test_convert_pt_dpa4_maps_edge_vec_to_graph(tmp_path) -> None:
-    """PT SeZM's edge-list ABI converts to pt_expt's NeighborGraph ABI."""
+def test_convert_pt_dpa4_through_dp_maps_edge_vec_to_graph(tmp_path) -> None:
+    """A schema-neutral DPModel container preserves PT SeZM's edge-list ABI."""
+    from deepmd.dpmodel.utils.serialization import (
+        load_dp_model,
+    )
     from deepmd.pt.model.model import get_model as get_pt_model
     from deepmd.pt.train.wrapper import (
         ModelWrapper,
@@ -248,6 +252,7 @@ def test_convert_pt_dpa4_maps_edge_vec_to_graph(tmp_path) -> None:
 
     config = copy.deepcopy(_DPA4_CONFIG)
     source_model = tmp_path / "model.pt"
+    intermediate_model = tmp_path / "model.dp"
     converted_model = tmp_path / "model.pte"
     model = get_pt_model(config)
     wrapper = ModelWrapper(model, model_params=config)
@@ -256,9 +261,74 @@ def test_convert_pt_dpa4_maps_edge_vec_to_graph(tmp_path) -> None:
     source_data = serialize_from_pt(str(source_model))
     assert source_data["lower_input_kind"] == "edge_vec"
 
-    convert_backend(INPUT=str(source_model), OUTPUT=str(converted_model))
+    convert_backend(INPUT=str(source_model), OUTPUT=str(intermediate_model))
+    assert load_dp_model(str(intermediate_model))["lower_input_kind"] == "edge_vec"
+
+    convert_backend(INPUT=str(intermediate_model), OUTPUT=str(converted_model))
     converted_data = serialize_from_file(str(converted_model))
     assert converted_data["lower_input_kind"] == "graph"
+
+
+def test_edge_vec_uses_dense_lower_for_non_energy_target(tmp_path) -> None:
+    """Target model capabilities, not the source spelling, select graph export."""
+    from deepmd.dpmodel.utils.serialization import (
+        save_dp_model,
+    )
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+
+    from ..model.test_dpa4_export import (
+        _DPA4_CONFIG,
+    )
+
+    config = copy.deepcopy(_DPA4_CONFIG)
+    config.pop("type")
+    config["fitting_net"] = {
+        "type": "property",
+        "task_dim": 2,
+        "neuron": [16],
+        "precision": "float64",
+        "seed": 1,
+    }
+    model = get_model(config)
+    source_model = tmp_path / "property.dp"
+    converted_model = tmp_path / "property.pte"
+    save_dp_model(
+        str(source_model),
+        {"model": model.serialize(), "lower_input_kind": "edge_vec"},
+    )
+
+    convert_backend(INPUT=str(source_model), OUTPUT=str(converted_model))
+
+    assert serialize_from_file(str(converted_model))["lower_input_kind"] == "nlist"
+
+
+def test_native_spin_auto_pte_reports_target_constraint(tmp_path) -> None:
+    """An unbound native-spin container reports why automatic PTE export fails."""
+    from deepmd.dpmodel.utils.serialization import (
+        save_dp_model,
+    )
+
+    from ..model.test_dpa4_native_spin import (
+        _build_native_spin_model_cpu,
+    )
+
+    source_model = tmp_path / "native_spin.dp"
+    data = {"model": _build_native_spin_model_cpu().serialize()}
+    assert _resolve_target_lower_kind("native_spin.pt2", data, "auto") == "graph"
+    save_dp_model(
+        str(source_model),
+        data,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"automatic lower selection for native-spin models requires a \.pt2 output",
+    ):
+        convert_backend(
+            INPUT=str(source_model), OUTPUT=str(tmp_path / "native_spin.pte")
+        )
 
 
 def test_deserialize_rejects_unknown_lower_kind(dpa1_dpmodel_data, tmp_path) -> None:

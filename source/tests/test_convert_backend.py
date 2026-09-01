@@ -23,6 +23,7 @@ def test_convert_backend_uses_auto_for_unannotated_source(
 
     class OutputBackend:
         name = "output"
+        preserves_lower_input_kind = False
 
         @staticmethod
         def deserialize_hook(
@@ -69,6 +70,7 @@ def test_convert_backend_preserves_explicit_lower_kind(
 
     class OutputBackend:
         name = "output"
+        preserves_lower_input_kind = False
 
         @staticmethod
         def deserialize_hook(
@@ -89,7 +91,7 @@ def test_convert_backend_preserves_explicit_lower_kind(
     assert captured["lower_kind"] == lower_input_kind
 
 
-@pytest.mark.parametrize("lower_input_kind", [None, "nlist"])
+@pytest.mark.parametrize("lower_input_kind", [None, "auto", "nlist"])
 def test_convert_backend_allows_dense_compatible_source_for_plain_output(
     monkeypatch: pytest.MonkeyPatch,
     lower_input_kind: str | None,
@@ -108,6 +110,7 @@ def test_convert_backend_allows_dense_compatible_source_for_plain_output(
 
     class OutputBackend:
         name = "output"
+        preserves_lower_input_kind = False
 
         @staticmethod
         def deserialize_hook(path: str, data: dict[str, str]) -> None:
@@ -135,6 +138,7 @@ def test_convert_backend_rejects_graph_for_dense_only_output(
 
     class OutputBackend:
         name = "output"
+        preserves_lower_input_kind = False
 
         @staticmethod
         def deserialize_hook(path: str, data: dict[str, str]) -> None:
@@ -147,3 +151,33 @@ def test_convert_backend_rejects_graph_for_dense_only_output(
 
     with pytest.raises(ValueError, match="Cannot preserve lower_input_kind 'graph'"):
         convert_backend(INPUT="model.input", OUTPUT="model.output")
+
+
+def test_convert_backend_preserves_graph_for_schema_neutral_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class InputBackend:
+        name = "input"
+
+        @staticmethod
+        def serialize_hook(path: str) -> dict[str, str]:
+            return {"path": path, "lower_input_kind": "graph"}
+
+    class OutputBackend:
+        name = "output"
+        preserves_lower_input_kind = True
+
+        @staticmethod
+        def deserialize_hook(path: str, data: dict[str, str]) -> None:
+            captured.update(path=path, data=data)
+
+    def detect_backend(path: str) -> type[InputBackend] | type[OutputBackend]:
+        return InputBackend if path.endswith(".input") else OutputBackend
+
+    monkeypatch.setattr(Backend, "detect_backend_by_model", detect_backend)
+
+    convert_backend(INPUT="model.input", OUTPUT="model.output")
+
+    assert captured["data"]["lower_input_kind"] == "graph"

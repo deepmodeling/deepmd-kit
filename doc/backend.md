@@ -160,6 +160,10 @@ source serializer. Dense TensorFlow, TensorFlow 2, JAX, and standard PyTorch
 models therefore remain dense `nlist` models when converted to `.pt2`; model
 families with a graph-native deployment ABI report their corresponding kind.
 Compiled `.pt2` and `.pte` artifacts retain the kind recorded in their metadata.
-A conversion is rejected when the target backend cannot represent an explicit
-source kind. Legacy model files without lower metadata retain target-specific
-automatic selection for backward compatibility.
+Native `.dp`, `.yaml`, and `.yml` files are schema-neutral parameter containers: they
+retain concrete source provenance across conversion but report `auto` when no
+lower kind was stored. An executable target then selects a compatible schema
+from the model capabilities. A conversion is rejected only when an executable
+target cannot represent an explicit source kind. Legacy model files without
+lower metadata retain target-specific automatic selection for backward
+compatibility.

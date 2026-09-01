@@ -53,7 +53,10 @@ def convert_backend(
         hook_kwargs["lower_kind"] = (
             lower_input_kind if lower_input_kind is not None else "auto"
         )
-    elif lower_input_kind not in (None, "nlist"):
+    elif (
+        lower_input_kind not in (None, "auto", "nlist")
+        and not out_backend.preserves_lower_input_kind
+    ):
         raise ValueError(
             f"Cannot preserve lower_input_kind {lower_input_kind!r} when "
             f"converting to output backend {out_backend.name!r}: its "
