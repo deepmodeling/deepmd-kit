@@ -58,23 +58,29 @@ pytestmark = [
     ),
 ]
 
-# ``(lmax, n_focus, focus_dim, mixing_layers, mixer_rank, focus_compete)``
-# spanning the deployed DPA4 block shapes: the narrow two-focus block, the
-# wider rank-2 mixer, the single-focus block without a competition head (which
-# exercises the ``rank == 0`` degree-wise multiply), and the degree-six
-# 384-channel Ultra layouts with either four 96-wide or three 128-wide focuses.
+# ``(lmax, n_focus, focus_dim, mixing_layers, mixer_rank, focus_compete,
+# focus_norm)`` spanning the deployed DPA4 block shapes: the narrow two-focus
+# block, the wider rank-2 mixer, the single-focus block without a competition
+# head (which exercises the ``rank == 0`` degree-wise multiply), the degree-six
+# 384-channel Ultra layouts with either four 96-wide or three 128-wide
+# focuses, and the competition-norm variants (``edge_norm`` focus entry on),
+# whose per-focus RMS scales enter the operator as ``norm_scale`` and
+# receive closed-form gradients to both orders.
 BLOCK_SHAPES = [
-    (3, 2, 32, 3, 1, True),
-    (5, 2, 64, 4, 2, True),
-    (3, 1, 64, 3, 0, False),
-    (6, 2, 96, 4, 1, True),
-    (6, 4, 96, 4, 4, True),
-    (6, 3, 128, 4, 4, True),
+    (3, 2, 32, 3, 1, True, False),
+    (5, 2, 64, 4, 2, True, False),
+    (3, 1, 64, 3, 0, False, False),
+    (6, 2, 96, 4, 1, True, False),
+    (6, 4, 96, 4, 4, True, False),
+    (6, 3, 128, 4, 4, True, False),
+    (3, 2, 32, 3, 1, True, True),
+    (6, 3, 128, 4, 4, True, True),
 ]
 
 # Competition-head constants of the deployed configuration.
 SOFTMAX_TAU = 1.0
 LABEL_SMOOTHING = 0.02
+NORM_EPS = 1e-7
 
 LEAF_NAMES = (
     "x",
@@ -83,6 +89,7 @@ LEAF_NAMES = (
     "basis",
     "compete_w",
     "compete_b",
+    "norm_scale",
     "w0",
     "w1",
     "gw",
@@ -149,6 +156,7 @@ class _ValuePathCase:
         layers: int,
         rank: int,
         compete: bool,
+        norm: bool,
         *,
         seed: int,
         n_node: int = 512,
@@ -157,7 +165,7 @@ class _ValuePathCase:
         device = torch.device("cuda")
         torch.manual_seed(seed)
         self.lmax, self.n_focus, self.focus_dim = lmax, n_focus, focus_dim
-        self.rank, self.compete = rank, compete
+        self.rank, self.compete, self.norm = rank, compete, norm
         self.n_edge, self.device = n_edge, device
 
         dim = (lmax + 1) ** 2
@@ -179,13 +187,19 @@ class _ValuePathCase:
             kernel_slots = dim + lmax * lmax
             kernel = 0.3 * torch.randn(n_edge, kernel_slots * rank, **double)
             basis = torch.randn(rank, c_wide, **double)
-        self.operands = (
+        # The competition-norm scale is drawn after every pre-existing draw
+        # (operands and cotangents alike) so the sequence -- and with it every
+        # historical case -- is unchanged; the tuple places it in leaf order
+        # once all draws are done.
+        head = (
             torch.randn(n_node, dim, c_wide, **double),
             wigner,
             kernel,
             basis,
             0.05 * torch.randn(focus_dim, n_focus, **double),
             0.05 * torch.randn(n_focus, **double),
+        )
+        tail = (
             0.2 * torch.randn(n_gated + 1, n_focus, m0, m0, **double),
             0.2 * torch.randn(n_gated + 1, n_focus, m1, m1, **double),
             0.3 * torch.randn(n_gated, n_focus, focus_dim, lmax * focus_dim, **double),
@@ -197,6 +211,7 @@ class _ValuePathCase:
             rank > 0,
             compete,
             compete,
+            norm,
             True,
             True,
             True,
@@ -208,10 +223,12 @@ class _ValuePathCase:
         # radial kernel again: their producers sit on the coordinate graph.
         # The Wigner cotangent lives on the same structural support.
         self.second_cotangents = (
-            (0, torch.randn_like(self.operands[0])),
+            (0, torch.randn_like(head[0])),
             (1, torch.randn_like(wigner) * self.mask),
             (2, torch.randn_like(kernel)),
         )
+        norm_scale = 1.0 + 0.1 * torch.randn(n_focus, focus_dim, **double)
+        self.operands = (*head, norm_scale, *tail)
 
         order = torch.argsort(self.src, dim=0, stable=True)
         counts = self.src.new_zeros(n_node).scatter_add(
@@ -284,7 +301,7 @@ class _ValuePathCase:
         )
         targets = [leaf for leaf in leaves if leaf.requires_grad]
         inputs = tuple(leaf.to(torch.bfloat16) for leaf in leaves) if amp else leaves
-        x, wigner, kernel, basis, compete_w, compete_b, w0, w1, gw = inputs
+        x, wigner, kernel, basis, compete_w, compete_b, norm_scale, w0, w1, gw = inputs
         kernel_flat = kernel.flatten(1) if self.rank > 0 else kernel
         basis_flat = basis.reshape(-1) if self.rank > 0 else basis
 
@@ -305,6 +322,7 @@ class _ValuePathCase:
                     basis_flat,
                     compete_w if self.compete else None,
                     compete_b if self.compete else None,
+                    norm_scale if (self.compete and self.norm) else None,
                     w0,
                     w1,
                     gw,
@@ -314,6 +332,7 @@ class _ValuePathCase:
                     self.compete,
                     SOFTMAX_TAU,
                     LABEL_SMOOTHING,
+                    NORM_EPS,
                 )
             else:
                 u0 = _rotate_mix_reference(
@@ -328,7 +347,7 @@ class _ValuePathCase:
                 )
                 out, *_ = _mixing_stack_reference(
                     u0,
-                    self._competition(u0, compete_w, compete_b),
+                    self._competition(u0, compete_w, compete_b, norm_scale),
                     w0,
                     w1,
                     gw,
@@ -343,22 +362,40 @@ class _ValuePathCase:
             self._second_targets(targets, leaves) if second else (),
         )
 
+    def _head_logits(
+        self,
+        u0: torch.Tensor,
+        compete_w: torch.Tensor,
+        compete_b: torch.Tensor,
+        norm_scale: torch.Tensor,
+    ) -> torch.Tensor:
+        """Pre-temperature head logits from the scalar gate rows.
+
+        The head runs in the operator's accumulator precision (float32, or
+        float64 for a float64 pass); with the competition norm active the
+        gate rows pass through a per-focus RMS normalization with learnable
+        scales first, mirroring ``ScalarRMSNorm``.
+        """
+        acc = torch.float64 if u0.dtype == torch.float64 else torch.float32
+        gate = u0[:, :, : self.focus_dim].permute(1, 0, 2).to(acc)
+        if self.norm:
+            inv_rms = torch.rsqrt(gate.square().mean(dim=-1, keepdim=True) + NORM_EPS)
+            gate = gate * inv_rms * norm_scale.to(acc)
+        return torch.einsum("efi,if->ef", gate, compete_w.to(acc)) + compete_b.to(acc)
+
     def _competition(
         self,
         u0: torch.Tensor,
         compete_w: torch.Tensor,
         compete_b: torch.Tensor,
+        norm_scale: torch.Tensor,
     ) -> torch.Tensor:
         """Label-smoothed cross-focus softmax over the scalar rows."""
         if not self.compete:
             return torch.ones(
                 self.n_edge, self.n_focus, device=self.device, dtype=u0.dtype
             )
-        gate = u0[:, :, : self.focus_dim].permute(1, 0, 2)
-        logits = (
-            torch.einsum("efi,if->ef", gate.float(), compete_w.float())
-            + compete_b.float()
-        )
+        logits = self._head_logits(u0, compete_w, compete_b, norm_scale)
         weights = torch.softmax(logits / SOFTMAX_TAU, dim=1)
         smoothed = weights * (1.0 - LABEL_SMOOTHING) + LABEL_SMOOTHING / self.n_focus
         return smoothed.to(u0.dtype)
@@ -386,7 +423,7 @@ class _ValuePathCase:
 DRAW_SEEDS = (11, 2027, 40529)
 
 
-def _compare(shape: tuple[int, int, int, int, int, bool], *, amp: bool) -> None:
+def _compare(shape: tuple[int, int, int, int, int, bool, bool], *, amp: bool) -> None:
     """Arbitrate the fused value path against the eager reference on ``shape``."""
     if not op_available():
         pytest.skip("the DPA4 CUDA training operators are unavailable")
@@ -420,36 +457,41 @@ def _compare(shape: tuple[int, int, int, int, int, bool], *, amp: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    ("lmax", "focus", "cf", "layers", "rank", "compete"), BLOCK_SHAPES
+    ("lmax", "focus", "cf", "layers", "rank", "compete", "norm"), BLOCK_SHAPES
 )
 def test_float32_matches_eager_conditioning(
-    lmax: int, focus: int, cf: int, layers: int, rank: int, compete: bool
+    lmax: int, focus: int, cf: int, layers: int, rank: int, compete: bool, norm: bool
 ) -> None:
     """Hold the fused value path to the eager reference's own float32 error."""
-    _compare((lmax, focus, cf, layers, rank, compete), amp=False)
+    _compare((lmax, focus, cf, layers, rank, compete, norm), amp=False)
 
 
 @pytest.mark.parametrize(
-    ("lmax", "focus", "cf", "layers", "rank", "compete"), BLOCK_SHAPES
+    ("lmax", "focus", "cf", "layers", "rank", "compete", "norm"), BLOCK_SHAPES
 )
 def test_autocast_bfloat16_matches_eager_conditioning(
-    lmax: int, focus: int, cf: int, layers: int, rank: int, compete: bool
+    lmax: int, focus: int, cf: int, layers: int, rank: int, compete: bool, norm: bool
 ) -> None:
     """Hold the same bound under the bfloat16 autocast of production training."""
-    _compare((lmax, focus, cf, layers, rank, compete), amp=True)
+    _compare((lmax, focus, cf, layers, rank, compete, norm), amp=True)
 
 
-def test_float64_agrees_with_eager_to_reduction_order() -> None:
+@pytest.mark.parametrize("shape", [BLOCK_SHAPES[0], BLOCK_SHAPES[6]])
+def test_float64_agrees_with_eager_to_reduction_order(
+    shape: tuple[int, int, int, int, int, bool, bool],
+) -> None:
     """Separate logic from precision: in float64 both sides must coincide.
 
     The kernels keep float accumulators internally, so a float64 evaluation of
     the fused path and of the eager reference differ only by reduction order.
     Any structural disagreement -- a mis-indexed block, a dropped gradient
-    term -- survives the precision increase and shows up here.
+    term -- survives the precision increase and shows up here. The second
+    shape runs the competition head with the RMS norm active, whose scales'
+    gradient chain is closed form inside the operator in both orders.
     """
     if not op_available():
         pytest.skip("the DPA4 CUDA training operators are unavailable")
-    case = _ValuePathCase(*BLOCK_SHAPES[0], seed=DRAW_SEEDS[0])
+    case = _ValuePathCase(*shape, seed=DRAW_SEEDS[0])
     common = {"dtype": torch.float64, "amp": False, "second": True}
     reference = case.evaluate(fused=False, **common)
     fused = case.evaluate(fused=True, **common)

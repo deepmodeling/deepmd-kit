@@ -43,8 +43,11 @@ The operator reuses the Triton value-path constraints: ``mmax == 1``, degree
 1 to 6, a gated stack with an identity final layer, supported focus widths,
 and a radial mixer that is absent or ``degree_channel`` with rank at most 4.
 Its additional bounds are at most 256 wide channels for degrees 1--5, or 384
-wide channels at degree 6, at most 4 focus streams, and an identity competition
-norm (``focus_norm=False``). Unsupported blocks keep the narrower fused paths.
+wide channels at degree 6, and at most 4 focus streams. The competition head
+is evaluated entirely inside the operator, with an identity competition norm
+or the per-focus RMS norm (``focus_norm=True``), whose learnable scales enter
+as the ``norm_scale`` input and receive closed-form gradients to both orders.
+Unsupported blocks keep the narrower fused paths.
 """
 
 from __future__ import (
@@ -116,6 +119,7 @@ def _fwd_fake(
     cb,
     w_fc,
     fc_bias,
+    norm_scale,
     w0_all,
     w1_all,
     gw_all,
@@ -125,6 +129,7 @@ def _fwd_fake(
     apply_alpha,
     softmax_tau,
     label_smoothing,
+    norm_eps,
 ):
     n_edge = src.shape[0]
     cf = x.shape[2] // n_focus
@@ -148,6 +153,7 @@ def _bwd_fake(
     cb,
     w_fc,
     fc_bias,
+    norm_scale,
     w0_all,
     w1_all,
     gw_all,
@@ -164,6 +170,7 @@ def _bwd_fake(
     apply_alpha,
     softmax_tau,
     label_smoothing,
+    norm_eps,
     keep_state,
     with_weights,
 ):
@@ -211,6 +218,11 @@ def _bwd_fake(
         (w1_all.new_empty(w1_all.shape) if with_weights else x.new_empty(0)),
         (gw_all.new_empty(gw_all.shape) if with_weights else x.new_empty(0)),
         *kept,
+        (
+            norm_scale.new_empty(norm_scale.shape)
+            if (with_weights and apply_alpha and norm_scale is not None)
+            else x.new_empty(0)
+        ),
     )
 
 
@@ -228,6 +240,7 @@ def _bwd2_fake(
     cb,
     w_fc,
     fc_bias,
+    norm_scale,
     w0_all,
     w1_all,
     gw_all,
@@ -246,6 +259,7 @@ def _bwd2_fake(
     apply_alpha,
     softmax_tau,
     label_smoothing,
+    norm_eps,
 ):
     return (
         grad_x_local.new_empty(grad_x_local.shape),
@@ -255,6 +269,11 @@ def _bwd2_fake(
         cb.new_empty(cb.shape) if rank > 0 else x.new_empty(0),
         w_fc.new_empty(w_fc.shape) if w_fc is not None else x.new_empty(0),
         (fc_bias.new_empty(fc_bias.shape) if fc_bias is not None else x.new_empty(0)),
+        (
+            norm_scale.new_empty(norm_scale.shape)
+            if (apply_alpha and norm_scale is not None)
+            else x.new_empty(0)
+        ),
         w0_all.new_empty(w0_all.shape),
         w1_all.new_empty(w1_all.shape),
         gw_all.new_empty(gw_all.shape),
@@ -296,6 +315,7 @@ def _value_train_impl(
     cb: Tensor,
     w_fc: Tensor | None,
     fc_bias: Tensor | None,
+    norm_scale: Tensor | None,
     w0_all: Tensor,
     w1_all: Tensor,
     gw_all: Tensor,
@@ -305,11 +325,16 @@ def _value_train_impl(
     apply_alpha: bool,
     softmax_tau: float,
     label_smoothing: float,
+    norm_eps: float,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     """Run the fused value-path forward.
 
     The source CSR view rides through untouched so the autograd context can
-    hand it to the backward's segment reduction.
+    hand it to the backward's segment reduction. A convolution with a real
+    competition norm passes the norm's learnable scales as ``norm_scale``
+    (with its epsilon as ``norm_eps``); the operator folds the per-focus RMS
+    normalization into the head and differentiates it in closed form like
+    the other head parameters.
 
     Returns ``(x_local, z_all, u_final, alpha)`` with ``x_local`` edge-major
     ``(E, F, ROW)`` and the remaining three the backward anchors.
@@ -323,6 +348,7 @@ def _value_train_impl(
         cb.contiguous(),
         w_fc.to(x.dtype) if w_fc is not None else None,
         fc_bias.to(x.dtype) if fc_bias is not None else None,
+        norm_scale.to(x.dtype) if norm_scale is not None else None,
         w0_all,
         w1_all,
         gw_all,
@@ -332,6 +358,7 @@ def _value_train_impl(
         bool(apply_alpha),
         float(softmax_tau),
         float(label_smoothing),
+        float(norm_eps),
     )
 
 
@@ -353,6 +380,7 @@ def _(
     cb,
     w_fc,
     fc_bias,
+    norm_scale,
     w0_all,
     w1_all,
     gw_all,
@@ -362,6 +390,7 @@ def _(
     apply_alpha,
     softmax_tau,
     label_smoothing,
+    norm_eps,
 ):
     return _fwd_fake(
         x,
@@ -371,6 +400,7 @@ def _(
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -380,6 +410,7 @@ def _(
         apply_alpha,
         softmax_tau,
         label_smoothing,
+        norm_eps,
     )
 
 
@@ -394,6 +425,7 @@ def _value_train_bwd_impl(
     cb: Tensor,
     w_fc: Tensor | None,
     fc_bias: Tensor | None,
+    norm_scale: Tensor | None,
     w0_all: Tensor,
     w1_all: Tensor,
     gw_all: Tensor,
@@ -410,9 +442,11 @@ def _value_train_bwd_impl(
     apply_alpha: bool,
     softmax_tau: float,
     label_smoothing: float,
+    norm_eps: float,
     keep_state: bool,
     with_weights: bool,
 ) -> tuple[
+    Tensor,
     Tensor,
     Tensor,
     Tensor,
@@ -433,7 +467,10 @@ def _value_train_bwd_impl(
     Under ``keep_state`` (the force regime) the mixing traversal's per-layer
     surfaces, the total input gradient and the scalar competition contraction
     ride out as trailing outputs; the second order consumes them and replays
-    nothing. The weight contractions run only under ``with_weights``.
+    nothing. The weight contractions run only under ``with_weights``; with
+    the competition norm active they include the norm scales, whose gradient
+    leaves through the trailing ``grad_scale`` output (zero-sized
+    otherwise).
     """
     return torch.ops.deepmd.sezm_so2_value_bwd(
         grad_x_local,
@@ -446,6 +483,7 @@ def _value_train_bwd_impl(
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -462,6 +500,7 @@ def _value_train_bwd_impl(
         bool(apply_alpha),
         float(softmax_tau),
         float(label_smoothing),
+        float(norm_eps),
         bool(keep_state),
         bool(with_weights),
     )
@@ -486,6 +525,7 @@ def _(
     cb,
     w_fc,
     fc_bias,
+    norm_scale,
     w0_all,
     w1_all,
     gw_all,
@@ -502,6 +542,7 @@ def _(
     apply_alpha,
     softmax_tau,
     label_smoothing,
+    norm_eps,
     keep_state,
     with_weights,
 ):
@@ -516,6 +557,7 @@ def _(
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -532,6 +574,7 @@ def _(
         apply_alpha,
         softmax_tau,
         label_smoothing,
+        norm_eps,
         keep_state,
         with_weights,
     )
@@ -549,6 +592,7 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -565,6 +609,7 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
         apply_alpha,
         softmax_tau,
         label_smoothing,
+        norm_eps,
         keep_state,
         with_weights,
     ) = inputs
@@ -580,6 +625,7 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -598,19 +644,20 @@ def _value_train_bwd_setup_context(ctx, inputs, output):
     ctx.apply_alpha = apply_alpha
     ctx.softmax_tau = softmax_tau
     ctx.label_smoothing = label_smoothing
+    ctx.norm_eps = norm_eps
 
 
 def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
     """Analytic second order, force-loss regime.
 
-    The force graph sends cotangents through the node-feature, packed-run and
-    degree-kernel gradients (whose producers precede this operator on the
-    coordinate graph); the parameter gradients feed the optimizer and carry
-    none. The whole linearization runs as one CUDA operator call.
+    The force graph sends cotangents through the node-feature, packed-run
+    and degree-kernel gradients, whose producers precede this operator on
+    the coordinate graph; the parameter gradients feed the optimizer and
+    carry none. The whole linearization runs as one CUDA operator call.
     """
     h_gruns, h_gkc = h_rest[0], h_rest[1]
     if h_gx is None and all(h is None for h in h_rest):
-        return (None,) * 28
+        return (None,) * 30
     if any(h is not None for h in h_rest[2:]) or ctx.had_upstream:
         raise NotImplementedError(
             "sezm_so2_value_bwd second order supports the force-loss regime "
@@ -627,6 +674,7 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -650,6 +698,7 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         gcb2,
         gwfc2,
         gbias2,
+        gscale2,
         gw02,
         gw12,
         ggw2,
@@ -671,6 +720,7 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -689,11 +739,12 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         apply_alpha,
         float(ctx.softmax_tau),
         float(ctx.label_smoothing),
+        float(ctx.norm_eps),
     )
     # inputs: grad_x_local, x, src, src_order, src_rowptr, runs, kc, cb,
-    # w_fc, fc_bias, w0_all, w1_all, gw_all, x_local, z_all, u_final, alpha,
-    # h_z, h_uf, h_alpha, lmax, n_focus, rank, apply_alpha, softmax_tau,
-    # label_smoothing, keep_state, with_weights.
+    # w_fc, fc_bias, norm_scale, w0_all, w1_all, gw_all, x_local, z_all,
+    # u_final, alpha, h_z, h_uf, h_alpha, lmax, n_focus, rank, apply_alpha,
+    # softmax_tau, label_smoothing, norm_eps, keep_state, with_weights.
     return (
         grad_grad_x_local,
         gx2,
@@ -703,17 +754,19 @@ def _value_train_bwd_backward(ctx, h_gx, *h_rest: Tensor | None):
         gruns2,
         gkc2,
         gcb2 if rank > 0 else None,
-        gwfc2 if apply_alpha else None,
+        gwfc2 if (apply_alpha and w_fc is not None) else None,
         gbias2 if (apply_alpha and fc_bias is not None) else None,
+        gscale2 if (apply_alpha and norm_scale is not None) else None,
         gw02,
         gw12,
         ggw2,
-        gxl2 if apply_alpha else None,
+        gxl2 if (apply_alpha and gxl2.numel() > 0) else None,
         gz2,
         # The first order never reads ``u_final`` in this regime; ``guf2``
         # is a zero-sized placeholder and its cotangent stays ``None``.
         None,
         galpha2 if apply_alpha else None,
+        None,
         None,
         None,
         None,
@@ -744,6 +797,7 @@ def _value_train_setup_context(ctx, inputs, output):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -753,6 +807,7 @@ def _value_train_setup_context(ctx, inputs, output):
         apply_alpha,
         softmax_tau,
         label_smoothing,
+        norm_eps,
     ) = inputs
     x_local, z_all, u_final, alpha = output
     ctx.save_for_backward(
@@ -765,6 +820,7 @@ def _value_train_setup_context(ctx, inputs, output):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -782,6 +838,7 @@ def _value_train_setup_context(ctx, inputs, output):
     ctx.apply_alpha = apply_alpha
     ctx.softmax_tau = softmax_tau
     ctx.label_smoothing = label_smoothing
+    ctx.norm_eps = norm_eps
 
 
 def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
@@ -796,6 +853,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -819,18 +877,8 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
     # parameter-gradient contractions run only when some parameter slot
     # actually requests a gradient.
     needs = ctx.needs_input_grad
-    with_weights = any(needs[i] for i in (7, 8, 9, 10, 11))
-    (
-        grad_x,
-        grad_runs,
-        grad_kc,
-        grad_cb,
-        grad_w_fc,
-        grad_bias,
-        grad_w0,
-        grad_w1,
-        grad_gw,
-    ) = _value_train_bwd_op(
+    with_weights = any(needs[i] for i in (7, 8, 9, 10, 11, 12))
+    res = _value_train_bwd_op(
         grad_x_local,
         x,
         src,
@@ -841,6 +889,7 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         cb,
         w_fc,
         fc_bias,
+        norm_scale,
         w0_all,
         w1_all,
         gw_all,
@@ -857,12 +906,24 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         apply_alpha,
         float(ctx.softmax_tau),
         float(ctx.label_smoothing),
+        float(ctx.norm_eps),
         keep_state,
         with_weights,
-    )[:9]
+    )
+    (
+        grad_x,
+        grad_runs,
+        grad_kc,
+        grad_cb,
+        grad_w_fc,
+        grad_bias,
+        grad_w0,
+        grad_w1,
+        grad_gw,
+    ) = res[:9]
     # inputs: x, src, src_order, src_rowptr, runs, kc, cb, w_fc, fc_bias,
-    # w0_all, w1_all, gw_all, lmax, n_focus, rank, apply_alpha, softmax_tau,
-    # label_smoothing.
+    # norm_scale, w0_all, w1_all, gw_all, lmax, n_focus, rank, apply_alpha,
+    # softmax_tau, label_smoothing, norm_eps.
     return (
         grad_x,
         None,
@@ -871,11 +932,17 @@ def _value_train_backward(ctx, grad_x_local, h_z, h_uf, h_alpha):
         grad_runs,
         grad_kc,
         grad_cb if rank > 0 else None,
-        grad_w_fc if (with_weights and apply_alpha) else None,
+        grad_w_fc if (with_weights and apply_alpha and w_fc is not None) else None,
         (grad_bias if (with_weights and apply_alpha and fc_bias is not None) else None),
+        (
+            res[14]
+            if (with_weights and apply_alpha and norm_scale is not None)
+            else None
+        ),
         grad_w0 if with_weights else None,
         grad_w1 if with_weights else None,
         grad_gw if with_weights else None,
+        None,
         None,
         None,
         None,
@@ -904,6 +971,12 @@ class SO2ValueTrainCuda:
     The call contract mirrors ``_TritonSO2ValuePath``: it returns the
     post-focus-compete local features ``(E, F, D_m, Cf)`` and the projected
     radial features whose ``l = 0`` slice feeds the attention aggregation.
+
+    The competition head runs entirely inside the operator. A convolution
+    with a real (non-identity) competition norm passes the norm's learnable
+    scales through the ``norm_scale`` input; the operator folds the
+    per-focus RMS normalization into the head and returns the scales'
+    gradients alongside the other head parameters'.
 
     The stacked weights are assembled from the live parameters on every call
     and must not be cached across calls: the first call may run inside a
@@ -1053,6 +1126,12 @@ class SO2ValueTrainCuda:
         else:
             src_order, src_rowptr = csr
         apply_alpha = bool(conv.focus_compete and conv.n_focus > 1)
+        # A real competition norm hands its learnable scales to the operator,
+        # which folds the per-focus RMS normalization into the head; the
+        # identity norm (``nn.Identity`` on ``pt``, an unbound ``None`` hook
+        # on ``dpmodel``) passes nothing.
+        norm = conv.focus_compete_norm if apply_alpha else None
+        has_norm = norm is not None and type(norm).__name__ != "Identity"
         x_local, _z_all, _u_final, _alpha = _value_train_op(
             x,
             src,
@@ -1063,6 +1142,7 @@ class SO2ValueTrainCuda:
             cb,
             conv.adamw_focus_compete_w if apply_alpha else None,
             conv.focus_compete_bias if apply_alpha else None,
+            norm.adam_scale if has_norm else None,
             w0_all,
             w1_all,
             gw_all,
@@ -1072,6 +1152,7 @@ class SO2ValueTrainCuda:
             apply_alpha,
             float(conv.focus_softmax_tau),
             float(conv.focus_label_smoothing),
+            float(norm.eps) if has_norm else 0.0,
         )
         n_edge = src.shape[0]
         reduced_dim = 3 * conv.lmax + 1
@@ -1102,9 +1183,15 @@ def make_cuda_so2_value(conv: SO2Convolution) -> SO2ValueTrainCuda | None:
         return None
     if conv.focus_compete and conv.n_focus > 1:
         # The identity competition norm is spelled ``nn.Identity`` on the pt
-        # backend and an unbound (``None``) hook on the dpmodel/pt_expt one.
+        # backend and an unbound (``None``) hook on the dpmodel/pt_expt one;
+        # the per-focus RMS norm runs inside the operator off its
+        # ``adam_scale`` parameter. Any other norm module has no closed
+        # form here.
         norm = conv.focus_compete_norm
-        if norm is not None and type(norm).__name__ != "Identity":
+        if norm is not None and type(norm).__name__ not in (
+            "Identity",
+            "ScalarRMSNorm",
+        ):
             return None
     ensure_registered()
     return SO2ValueTrainCuda(conv)

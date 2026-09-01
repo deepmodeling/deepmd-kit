@@ -69,6 +69,7 @@ __global__ void so2_value_fwd_kernel(
     const scalar_t* __restrict__ cb,
     const scalar_t* __restrict__ w_fc,
     const scalar_t* __restrict__ fc_bias,
+    const scalar_t* __restrict__ norm_scale,
     const scalar_t* __restrict__ w0_all,
     const scalar_t* __restrict__ w1_all,
     const scalar_t* __restrict__ gw_all,
@@ -85,7 +86,8 @@ __global__ void so2_value_fwd_kernel(
     bool apply_alpha,
     bool has_bias,
     float inv_tau,
-    float label_smooth) {
+    float label_smooth,
+    float norm_eps) {
   using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
@@ -251,15 +253,32 @@ __global__ void so2_value_fwd_kernel(
       }
       // Lane-strided dot of the scalar row with the head column, then the
       // full softmax evaluated redundantly per pair (n_focus is at most 4).
+      // An active competition norm folds its per-focus scales into the
+      // projection and rescales the logit by the inverse RMS of the gate
+      // row, accumulated in the same pass.
       acc_t logits[kMaxFocus];
       for (int g = 0; g < n_focus; ++g) {
         acc_t part = 0;
-        for (int i = lane; i < cf; i += 32) {
-          part += u_a[e * frow_p + g * row_w + i] *
-                  (acc_t)w_fc[(long)i * n_focus + g];
+        acc_t sq = 0;
+        if (norm_scale != nullptr) {
+          for (int i = lane; i < cf; i += 32) {
+            const acc_t v = u_a[e * frow_p + g * row_w + i];
+            part += v * (acc_t)norm_scale[(long)g * cf + i] *
+                    (acc_t)w_fc[(long)i * n_focus + g];
+            sq += v * v;
+          }
+        } else {
+          for (int i = lane; i < cf; i += 32) {
+            part += u_a[e * frow_p + g * row_w + i] *
+                    (acc_t)w_fc[(long)i * n_focus + g];
+          }
         }
         for (int off = 16; off > 0; off >>= 1) {
           part += __shfl_down_sync(0xffffffff, part, off);
+          sq += __shfl_down_sync(0xffffffff, sq, off);
+        }
+        if (norm_scale != nullptr) {
+          part /= sqrt(sq / (acc_t)cf + (acc_t)norm_eps);
         }
         logits[g] = part;
       }
@@ -481,6 +500,7 @@ void launch_so2_value_fwd(const scalar_t* x,
                           const scalar_t* cb,
                           const scalar_t* w_fc,
                           const scalar_t* fc_bias,
+                          const scalar_t* norm_scale,
                           const scalar_t* w0_all,
                           const scalar_t* w1_all,
                           const scalar_t* gw_all,
@@ -498,6 +518,7 @@ void launch_so2_value_fwd(const scalar_t* x,
                           bool has_bias,
                           float inv_tau,
                           float label_smooth,
+                          float norm_eps,
                           int rank,
                           int te,
                           long n_blocks,
@@ -514,9 +535,9 @@ void launch_so2_value_fwd(const scalar_t* x,
                   cudaGetErrorString(error));
     }
     kernel<<<n_blocks, kThreads, smem_bytes, stream>>>(
-        x, src, wig, kc, cb, w_fc, fc_bias, w0_all, w1_all, gw_all, x_out,
-        z_all, u_final, alpha_out, n_edge, x_sn, x_sd, cf, n_focus, n_gated,
-        apply_alpha, has_bias, inv_tau, label_smooth);
+        x, src, wig, kc, cb, w_fc, fc_bias, norm_scale, w0_all, w1_all, gw_all,
+        x_out, z_all, u_final, alpha_out, n_edge, x_sn, x_sd, cf, n_focus,
+        n_gated, apply_alpha, has_bias, inv_tau, label_smooth, norm_eps);
   };
   auto by_te = [&](auto rc) {
     switch (te) {

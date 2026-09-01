@@ -9,8 +9,11 @@
 //      non-zeros of the Wigner-D matrix (m-major reduced rows |m| <= 1),
 //   2. apply the edge-conditioned radial degree mixing,
 //   3. form the cross-focus competition weight from the l = 0 scalars
-//      (identity pass-through, linear head, tempered softmax, label
-//      smoothing),
+//      (identity pass-through, optional per-focus RMS normalization with
+//      learnable scales, linear head, tempered softmax, label smoothing);
+//      the whole head, its parameters ``w_fc`` / ``fc_bias`` /
+//      ``norm_scale`` included, is differentiated in closed form to both
+//      orders inside the operator,
 //   4. run every gated mixing layer (block GEMMs against the stacked
 //      weights, sigmoid gates from the scalar rows, SiLU on the scalars,
 //      residual accumulation),
@@ -31,7 +34,7 @@
 // and removed (see dpa4_cuda.md section 12).
 //
 // The mathematics mirrors ``_TritonSO2ValuePath.__call__`` composed of
-// ``_rotate_mix_reference``, ``_focus_alpha`` (identity norm) and
+// ``_rotate_mix_reference``, ``_focus_alpha`` and
 // ``_mixing_stack_reference`` in ``so2_value_path.py`` / ``so2.py``.
 
 #include <ATen/ATen.h>
@@ -142,15 +145,18 @@ void dispatch_l_sc(int64_t lmax, const F& f) {
 // ---------------------------------------------------------------------------
 // Competition-head forward. One warp owns one focus of an edge and reduces
 // the scalar-channel projection directly from the focus-major rotation output.
-// The block then normalizes the at-most-four logits and writes the fp32 softmax
-// anchor. This avoids materializing an edge-major fp32 gate surface around a
-// one-row contraction.
+// An active competition norm folds its per-focus scales into the projection
+// and rescales the logit by the inverse RMS of the gate row, accumulated in
+// the same pass. The block then normalizes the at-most-four logits and writes
+// the fp32 softmax anchor. This avoids materializing an edge-major fp32 gate
+// surface around a one-row contraction.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
 __global__ void competition_fwd_kernel(
     const scalar_t* __restrict__ u0,
     const scalar_t* __restrict__ w_fc,
     const scalar_t* __restrict__ bias,
+    const scalar_t* __restrict__ norm_scale,
     typename acc_type<scalar_t>::type* __restrict__ alpha,
     long n_edge,
     int n_focus,
@@ -158,7 +164,8 @@ __global__ void competition_fwd_kernel(
     int row_w,
     float inv_tau,
     float label_smoothing,
-    bool has_bias) {
+    bool has_bias,
+    float norm_eps) {
   using acc_t = typename acc_type<scalar_t>::type;
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
@@ -170,14 +177,28 @@ __global__ void competition_fwd_kernel(
   __shared__ acc_t logits[kMaxFocus];
   if (focus < n_focus) {
     acc_t logit = 0;
+    acc_t sq = 0;
     const scalar_t* gate = u0 + ((long)focus * n_edge + edge) * row_w;
-    for (int channel = lane; channel < cf; channel += 32) {
-      logit += (acc_t)gate[channel] * (acc_t)w_fc[channel * n_focus + focus];
+    if (norm_scale != nullptr) {
+      for (int channel = lane; channel < cf; channel += 32) {
+        const acc_t v = (acc_t)gate[channel];
+        logit += v * (acc_t)norm_scale[(long)focus * cf + channel] *
+                 (acc_t)w_fc[channel * n_focus + focus];
+        sq += v * v;
+      }
+    } else {
+      for (int channel = lane; channel < cf; channel += 32) {
+        logit += (acc_t)gate[channel] * (acc_t)w_fc[channel * n_focus + focus];
+      }
     }
     for (int offset = 16; offset > 0; offset >>= 1) {
       logit += __shfl_down_sync(0xffffffff, logit, offset);
+      sq += __shfl_down_sync(0xffffffff, sq, offset);
     }
     if (lane == 0) {
+      if (norm_scale != nullptr) {
+        logit /= sqrt(sq / (acc_t)cf + (acc_t)norm_eps);
+      }
       if (has_bias) {
         logit += (acc_t)bias[focus];
       }
@@ -209,14 +230,20 @@ __global__ void competition_fwd_kernel(
 // ---------------------------------------------------------------------------
 // Competition-head backward. One block owns one edge, reconstructs the
 // smoothed softmax derivative in double precision, and immediately consumes
-// the logit gradient into the focus-major traversal gradient. The optional
-// (E, F) output is retained only for the parameter contractions; no
-// (E, F, Cf) gate-gradient surface exists.
+// the logit gradient into the focus-major traversal gradient. With the
+// competition norm active the logit is L = r S + b for the gate row g, with
+// r = (mean(g^2) + eps)^{-1/2} and S = sum_i g_i s_i w_i, so the gate-slice
+// gradient follows the Jacobian J_j = r s_j w_j - (r^3 S / cf) g_j; the
+// identity norm degenerates to J_j = w_j. The optional (E, F) output is
+// retained only for the parameter contractions; no (E, F, Cf) gate-gradient
+// surface exists.
 // ---------------------------------------------------------------------------
 template <typename scalar_t>
 __global__ void competition_bwd_kernel(
     scalar_t* __restrict__ grad_u0,
+    const scalar_t* __restrict__ u0,
     const scalar_t* __restrict__ w_fc,
+    const scalar_t* __restrict__ norm_scale,
     const typename acc_type<scalar_t>::type* __restrict__ alpha,
     const typename acc_type<scalar_t>::type* __restrict__ grad_alpha_mix,
     const typename acc_type<scalar_t>::type* __restrict__ h_alpha,
@@ -226,7 +253,8 @@ __global__ void competition_bwd_kernel(
     int cf,
     int row_w,
     double inv_tau,
-    double label_smoothing) {
+    double label_smoothing,
+    double norm_eps) {
   using acc_t = typename acc_type<scalar_t>::type;
   const long edge = blockIdx.x;
   if (edge >= n_edge) {
@@ -234,6 +262,33 @@ __global__ void competition_bwd_kernel(
   }
 
   __shared__ double gl_shared[kMaxFocus];
+  __shared__ double r_shared[kMaxFocus];
+  __shared__ double s_shared[kMaxFocus];
+  if (norm_scale != nullptr) {
+    const int warp = (int)(threadIdx.x >> 5);
+    const int lane = (int)(threadIdx.x & 31);
+    const int n_warps = (int)(blockDim.x >> 5);
+    for (int focus = warp; focus < n_focus; focus += n_warps) {
+      const scalar_t* gate = u0 + ((long)focus * n_edge + edge) * row_w;
+      double dot = 0.0;
+      double sq = 0.0;
+      for (int channel = lane; channel < cf; channel += 32) {
+        const double v = (double)gate[channel];
+        dot += v * (double)norm_scale[(long)focus * cf + channel] *
+               (double)w_fc[channel * n_focus + focus];
+        sq += v * v;
+      }
+      for (int offset = 16; offset > 0; offset >>= 1) {
+        dot += __shfl_down_sync(0xffffffff, dot, offset);
+        sq += __shfl_down_sync(0xffffffff, sq, offset);
+      }
+      if (lane == 0) {
+        r_shared[focus] = rsqrt(sq / (double)cf + norm_eps);
+        s_shared[focus] = dot;
+      }
+    }
+    __syncthreads();
+  }
   if (threadIdx.x == 0) {
     double p[kMaxFocus];
     double ga[kMaxFocus];
@@ -264,8 +319,13 @@ __global__ void competition_bwd_kernel(
     const int focus = index / cf;
     const int channel = index - focus * cf;
     const long u_index = ((long)focus * n_edge + edge) * row_w + channel;
-    const scalar_t gate =
-        (scalar_t)(gl_shared[focus] * (double)w_fc[channel * n_focus + focus]);
+    double jac = (double)w_fc[channel * n_focus + focus];
+    if (norm_scale != nullptr) {
+      const double r = r_shared[focus];
+      jac = r * (double)norm_scale[(long)focus * cf + channel] * jac -
+            r * r * r * s_shared[focus] / (double)cf * (double)u0[u_index];
+    }
+    const scalar_t gate = (scalar_t)(gl_shared[focus] * jac);
     grad_u0[u_index] = (scalar_t)((acc_t)grad_u0[u_index] + (acc_t)gate);
   }
 }
@@ -281,6 +341,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
     const at::Tensor& cb_in,
     const c10::optional<at::Tensor>& w_fc,
     const c10::optional<at::Tensor>& fc_bias,
+    const c10::optional<at::Tensor>& norm_scale,
     const at::Tensor& w0_in,
     const at::Tensor& w1_in,
     const at::Tensor& gw_in,
@@ -289,11 +350,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
     int64_t rank,
     bool apply_alpha,
     double softmax_tau,
-    double label_smoothing) {
+    double label_smoothing,
+    double norm_eps) {
   check_value_inputs(x_in, src, runs_in, kc_in, w0_in, lmax, n_focus, rank,
                      softmax_tau, label_smoothing, "sezm_so2_value_fwd");
   TORCH_CHECK(!apply_alpha || w_fc.has_value(),
               "sezm_so2_value_fwd: competition weights required");
+  const bool has_norm = apply_alpha && norm_scale.has_value();
   const c10::cuda::CUDAGuard guard(x_in.device());
   const at::Tensor x = x_in.stride(2) == 1 ? x_in : x_in.contiguous();
   const at::Tensor runs = runs_in.contiguous();
@@ -307,6 +370,14 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
   const bool has_bias = apply_alpha && fc_bias.has_value();
   const at::Tensor fc_bias_t =
       has_bias ? fc_bias->contiguous() : at::empty({0}, x.options());
+  const at::Tensor norm_scale_t =
+      has_norm ? norm_scale->contiguous() : at::empty({0}, x.options());
+  TORCH_CHECK(
+      !has_norm ||
+          (norm_scale_t.dim() == 2 && norm_scale_t.size(0) == n_focus &&
+           norm_scale_t.size(1) * n_focus == x.size(2) && norm_eps > 0.0),
+      "sezm_so2_value_fwd: norm_scale must be (n_focus, Cf) with a "
+      "positive norm_eps");
 
   const long n_edge = src.size(0);
   const int c_wide = (int)x.size(2);
@@ -368,9 +439,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
             using acc_t = typename acc_type<scalar_t>::type;
             competition_fwd_kernel<scalar_t><<<n_edge, threads, 0, stream>>>(
                 u0.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
-                fc_bias_t.data_ptr<scalar_t>(), alpha_t.data_ptr<acc_t>(),
-                n_edge, (int)n_focus, cf, (int)u0.size(2),
-                (float)(1.0 / softmax_tau), (float)label_smoothing, has_bias);
+                fc_bias_t.data_ptr<scalar_t>(),
+                has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
+                alpha_t.data_ptr<acc_t>(), n_edge, (int)n_focus, cf,
+                (int)u0.size(2), (float)(1.0 / softmax_tau),
+                (float)label_smoothing, has_bias, (float)norm_eps);
           });
       DPA4_SC_CHECK_LAUNCH("sezm_so2_value_fwd competition");
     } else {
@@ -394,19 +467,20 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
   AT_DISPATCH_FLOATING_TYPES_AND2(
       at::kBFloat16, at::kHalf, x.scalar_type(), "so2_value_fwd", [&] {
         dispatch_l_sc(lmax, [&](auto lc) {
+          using acc_t = typename acc_type<scalar_t>::type;
           launch_so2_value_fwd<scalar_t, decltype(lc)::value>(
               x.data_ptr<scalar_t>(), src.data_ptr<long>(),
               runs.data_ptr<scalar_t>(), kc.data_ptr<scalar_t>(),
               cb.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
-              fc_bias_t.data_ptr<scalar_t>(), w0_all.data_ptr<scalar_t>(),
-              w1_all.data_ptr<scalar_t>(), gw_all.data_ptr<scalar_t>(),
-              x_out.data_ptr<scalar_t>(), z_all.data_ptr<scalar_t>(),
-              u_final.data_ptr<scalar_t>(),
-              alpha.data_ptr<typename acc_type<scalar_t>::type>(), n_edge,
-              x.stride(0), x.stride(1), cf, (int)n_focus, (int)n_gated,
-              apply_alpha, has_bias, (float)(1.0 / softmax_tau),
-              (float)label_smoothing, (int)rank, te, n_blocks, smem_bytes,
-              stream);
+              fc_bias_t.data_ptr<scalar_t>(),
+              has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
+              w0_all.data_ptr<scalar_t>(), w1_all.data_ptr<scalar_t>(),
+              gw_all.data_ptr<scalar_t>(), x_out.data_ptr<scalar_t>(),
+              z_all.data_ptr<scalar_t>(), u_final.data_ptr<scalar_t>(),
+              alpha.data_ptr<acc_t>(), n_edge, x.stride(0), x.stride(1), cf,
+              (int)n_focus, (int)n_gated, apply_alpha, has_bias,
+              (float)(1.0 / softmax_tau), (float)label_smoothing,
+              (float)norm_eps, (int)rank, te, n_blocks, smem_bytes, stream);
         });
       });
   DPA4_SC_CHECK_LAUNCH("sezm_so2_value_fwd");
@@ -418,9 +492,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> value_fwd(
 // entries of this library. The rotated input is recomputed (the forward
 // never stores it), the mixing traversal runs with its weight contractions,
 // the competition head is differentiated in closed form from the stored
-// weight, and the rotation gradients reduce over the source CSR view.
+// weight down to its parameters (the projection, the bias and the optional
+// norm scales), and the rotation gradients reduce over the source CSR view.
 // ---------------------------------------------------------------------------
 std::tuple<at::Tensor,
+           at::Tensor,
            at::Tensor,
            at::Tensor,
            at::Tensor,
@@ -444,6 +520,7 @@ value_bwd(const at::Tensor& grad_x_local,
           const at::Tensor& cb,
           const c10::optional<at::Tensor>& w_fc,
           const c10::optional<at::Tensor>& fc_bias,
+          const c10::optional<at::Tensor>& norm_scale,
           const at::Tensor& w0_all,
           const at::Tensor& w1_all,
           const at::Tensor& gw_all,
@@ -460,12 +537,14 @@ value_bwd(const at::Tensor& grad_x_local,
           bool apply_alpha,
           double softmax_tau,
           double label_smoothing,
+          double norm_eps,
           bool keep_state,
           bool with_weights) {
   check_value_inputs(x, src, runs, kc, w0_all, lmax, n_focus, rank, softmax_tau,
                      label_smoothing, "sezm_so2_value_bwd");
   TORCH_CHECK(!apply_alpha || w_fc.has_value(),
               "sezm_so2_value_bwd: competition weights required");
+  const bool has_norm = apply_alpha && norm_scale.has_value();
   const c10::cuda::CUDAGuard guard(x.device());
   const int cf = (int)(x.size(2) / n_focus);
 
@@ -505,9 +584,14 @@ value_bwd(const at::Tensor& grad_x_local,
 
   // === Step 3. Competition head, closed form from the stored weight ===
   // The gate-slice term enters the input gradient and is always applied;
-  // the parameter contractions follow the weight gate.
+  // the parameter contractions follow the weight gate. With the norm
+  // active the logit is L = r S + b off the gate row g (r the inverse RMS,
+  // S the scaled projection), so the parameter gradients read
+  // gwfc[i,f] = sum_e gl r g_i s_i and gscale[f,i] = sum_e gl r g_i w_i,
+  // and the bias gradient is unchanged.
   at::Tensor grad_w_fc = at::empty({0}, x.options());
   at::Tensor grad_bias = at::empty({0}, x.options());
+  at::Tensor grad_scale = at::empty({0}, x.options());
   if (apply_alpha) {
     const long n_edge = alpha.size(0);
     auto grad_logit =
@@ -515,6 +599,8 @@ value_bwd(const at::Tensor& grad_x_local,
             ? at::empty({n_edge, n_focus}, alpha.options().dtype(at::kDouble))
             : at::empty({0, n_focus}, alpha.options().dtype(at::kDouble));
     const at::Tensor w_fc_t = w_fc->contiguous();
+    const at::Tensor norm_scale_t =
+        has_norm ? norm_scale->contiguous() : at::Tensor();
     const at::Tensor h_alpha_t = h_alpha.has_value()
                                      ? h_alpha->contiguous()
                                      : at::empty({0}, alpha.options());
@@ -528,20 +614,35 @@ value_bwd(const at::Tensor& grad_x_local,
           at::kBFloat16, at::kHalf, x.scalar_type(), "competition_bwd", [&] {
             using acc_t = typename acc_type<scalar_t>::type;
             competition_bwd_kernel<scalar_t><<<n_edge, threads, 0, stream>>>(
-                grad_u0.data_ptr<scalar_t>(), w_fc_t.data_ptr<scalar_t>(),
+                grad_u0.data_ptr<scalar_t>(), u0.data_ptr<scalar_t>(),
+                w_fc_t.data_ptr<scalar_t>(),
+                has_norm ? norm_scale_t.data_ptr<scalar_t>() : nullptr,
                 alpha.data_ptr<acc_t>(), grad_alpha_mix.data_ptr<acc_t>(),
                 h_alpha.has_value() ? h_alpha_t.data_ptr<acc_t>() : nullptr,
                 with_weights ? grad_logit.data_ptr<double>() : nullptr, n_edge,
                 (int)n_focus, cf, (int)grad_u0.size(2), 1.0 / softmax_tau,
-                label_smoothing);
+                label_smoothing, norm_eps);
           });
       DPA4_SC_CHECK_LAUNCH("sezm_so2_value_bwd competition");
     }
     if (with_weights) {
       auto gate = u0.narrow(2, 0, cf).permute({1, 0, 2}).to(at::kDouble);
-      grad_w_fc = at::einsum("ef,efi->if", {grad_logit, gate})
-                      .to(w_fc->scalar_type())
-                      .contiguous();
+      if (has_norm) {
+        auto scale_acc = norm_scale_t.to(at::kDouble);
+        auto wfc_acc = w_fc_t.to(at::kDouble);
+        auto r = at::rsqrt(gate.square().mean(-1, false) + norm_eps);
+        auto glr = grad_logit * r;
+        grad_w_fc = at::einsum("ef,efi,fi->if", {glr, gate, scale_acc})
+                        .to(w_fc->scalar_type())
+                        .contiguous();
+        grad_scale = at::einsum("ef,efi,if->fi", {glr, gate, wfc_acc})
+                         .to(norm_scale->scalar_type())
+                         .contiguous();
+      } else {
+        grad_w_fc = at::einsum("ef,efi->if", {grad_logit, gate})
+                        .to(w_fc->scalar_type())
+                        .contiguous();
+      }
       if (fc_bias.has_value()) {
         grad_bias = grad_logit.sum(0).to(fc_bias->scalar_type()).contiguous();
       }
@@ -560,7 +661,8 @@ value_bwd(const at::Tensor& grad_x_local,
           grad_w0,          grad_w1,
           grad_gw,          keep_state ? grad_u0 : at::empty({0}, x.options()),
           kept_upstream,    kept_grad_z,
-          kept_gate_logit,  kept_grad_alpha_mix};
+          kept_gate_logit,  kept_grad_alpha_mix,
+          grad_scale};
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +691,7 @@ std::tuple<at::Tensor,
            at::Tensor,
            at::Tensor,
            at::Tensor,
+           at::Tensor,
            at::Tensor>
 value_bwd2(const at::Tensor& h_gx,
            const c10::optional<at::Tensor>& h_gruns,
@@ -603,6 +706,7 @@ value_bwd2(const at::Tensor& h_gx,
            const at::Tensor& cb,
            const c10::optional<at::Tensor>& w_fc,
            const c10::optional<at::Tensor>& fc_bias,
+           const c10::optional<at::Tensor>& norm_scale,
            const at::Tensor& w0_all,
            const at::Tensor& w1_all,
            const at::Tensor& gw_all,
@@ -620,11 +724,13 @@ value_bwd2(const at::Tensor& h_gx,
            int64_t rank,
            bool apply_alpha,
            double softmax_tau,
-           double label_smoothing) {
+           double label_smoothing,
+           double norm_eps) {
   check_value_inputs(x, src, runs, kc, w0_all, lmax, n_focus, rank, softmax_tau,
                      label_smoothing, "sezm_so2_value_bwd2");
   TORCH_CHECK(!apply_alpha || w_fc.has_value(),
               "sezm_so2_value_bwd2: competition weights required");
+  const bool has_norm = apply_alpha && norm_scale.has_value();
   const c10::cuda::CUDAGuard guard(x.device());
   const int cf = (int)(x.size(2) / n_focus);
   const bool kept = kept_grad_u0.has_value() && kept_upstream.has_value() &&
@@ -643,23 +749,31 @@ value_bwd2(const at::Tensor& h_gx,
   auto h_gu0 = std::get<1>(pair);
 
   // === Step 2. Competition head curvature (feeds the traversal below) ===
-  // The first-order head reads the softmax off the stored competition
-  // weight, p = (alpha - ls/F) / (1 - ls), takes the traversal's alpha
-  // gradient ga_mix[e,f] = <grad_out[e,f,:], x_local[e,f,:]> / alpha[e,f],
-  // and emits gl = p (ga - <ga, p>) / tau with ga = (1 - ls) ga_mix and the
-  // gate-slice gradient g_gate = gl w_fc^T. This second order linearizes
-  // exactly that map: the cotangent of g_gate (the gate slice of
-  // ``h_gu0``) lands on w_fc directly, on (grad_out, x_local, alpha)
-  // through ga_mix, and on the alpha anchor again through p. The autograd
-  // composition then routes the alpha and x_local cotangents back through
-  // the forward's own graph, where the softmax's dependence on
-  // (u0, w_fc, bias) lives; nothing of it belongs to this operator's x or
-  // bias slots, and the finite-difference contract of the backward
-  // confirms both are flat.
+  // The first-order head reads the softmax off the stored anchor,
+  // p = (alpha - ls/F) / (1 - ls), takes the traversal's alpha gradient
+  // ga_mix[e,f] = <grad_out[e,f,:], x_local[e,f,:]> / alpha[e,f], and emits
+  // gl = p (ga - <ga, p>) / tau with ga = (1 - ls) ga_mix, pushed into the
+  // gate slice through the head Jacobian (the stored weight column for the
+  // identity norm; J_j = r s_j w_j - (r^3 S / cf) g_j with the norm active,
+  // r the inverse RMS of the gate row g and S its scaled projection) and
+  // contracted into the parameters. This second order linearizes exactly
+  // that map from the logit cotangent s = <hgg, J> (hgg the gate slice of
+  // ``h_gu0``): it lands on (grad_out, x_local, alpha) through ga_mix, on
+  // the alpha anchor again through p, and on the parameters. With the norm
+  // active the Jacobian itself depends on the gate, so its Hessian
+  // contracted with hgg additionally lands on the rotation operands
+  // (applied in the rotation tail below). The autograd composition then
+  // routes the alpha and x_local cotangents back through the forward's own
+  // graph, where the head's dependence on its operands lives; nothing of
+  // it belongs to this operator's x or bias slots, and the
+  // finite-difference contract of the backward confirms both are flat.
   at::Tensor gwfc2 = at::empty({0}, x.options());
   at::Tensor gbias2 = at::empty({0}, x.options());
+  at::Tensor gscale2 = at::empty({0}, x.options());
   at::Tensor ggxl_scale;   // row scale of the upstream-gradient curvature
   at::Tensor galpha_head;  // head curvature on the alpha anchor
+  at::Tensor gu0_head;     // head-Hessian gradient on the rotation operands
+  at::Tensor jac_head;     // head Jacobian (E, F, Cf), norm only, non-kept
   at::Tensor gl_first;     // first-order logit gradient of the head
   const double ls = label_smoothing;
   const double inv_tau = 1.0 / softmax_tau;
@@ -670,9 +784,9 @@ value_bwd2(const at::Tensor& h_gx,
     // stored surfaces stay in fp32: promoting an (E, F, ROW) surface to
     // double costs hundreds of megabytes of traffic on the wide shapes and
     // contributes nothing -- the surfaces themselves carry working
-    // precision.
+    // precision. The head's own (E, F, Cf) slices are a small fraction of
+    // a ROW surface and follow the double chain.
     auto alpha_acc = alpha.to(at::kDouble);
-    auto p = ((alpha_acc - ls / (double)n_focus) / (1.0 - ls)).clamp_min(0.0);
     // The force traversal retains this scalar contraction from its first
     // order. A caller without retained state reconstructs it from the wide
     // rows, accumulating the reduction in fp32; only the (E, F) chain that
@@ -683,16 +797,66 @@ value_bwd2(const at::Tensor& h_gx,
                                 .sum(-1, false, at::kFloat)
                                 .to(at::kDouble) /
                             alpha_acc;
+    auto p = ((alpha_acc - ls / (double)n_focus) / (1.0 - ls)).clamp_min(0.0);
     auto ga = ga_mix * (1.0 - ls);
     auto A = (ga * p).sum(1, true);
     auto gl = p * (ga - A) * inv_tau;
     gl_first = gl;
-
     // Gate slice of the grad_u0 cotangent, focus-major -> edge-major.
     auto hgg =
         h_gu0.narrow(2, 0, cf).permute({1, 0, 2}).to(at::kDouble);  // (E,F,Cf)
     auto wfc_acc = w_fc->to(at::kDouble);
-    auto s = at::einsum("efi,if->ef", {hgg, wfc_acc});
+    at::Tensor s;
+    if (has_norm) {
+      // Per-row norm quantities: g the gate slice of the recomputed
+      // rotation output, r = (mean(g^2) + eps)^{-1/2}, q_i = s_i w_i,
+      // S = <g, q>, A1 = <hgg, q>, A2 = <hgg, g>. The logit cotangent is
+      // s = r A1 - (r^3 S / cf) A2, and the Jacobian's gate dependence
+      // contributes the Hessian route gl (H hgg) with
+      // (H hgg)_j = -(r^3/cf)(A1 g_j + A2 q_j + S hgg_j)
+      //             + (3 r^5 S / cf^2) A2 g_j.
+      auto gate = u0.narrow(2, 0, cf).permute({1, 0, 2}).to(at::kDouble);
+      auto q = norm_scale->to(at::kDouble) * wfc_acc.transpose(0, 1);
+      auto r = at::rsqrt(gate.square().mean(-1, false) + norm_eps);
+      auto S = at::einsum("efi,fi->ef", {gate, q});
+      auto A1 = at::einsum("efi,fi->ef", {hgg, q});
+      auto A2 = (hgg * gate).sum(-1);
+      auto r3 = r * r * r;
+      auto rS_cf = r3 * S / (double)cf;
+      s = r * A1 - rS_cf * A2;
+      auto hh =
+          (-r3 / (double)cf).unsqueeze(-1) *
+              (A1.unsqueeze(-1) * gate + A2.unsqueeze(-1) * q.unsqueeze(0) +
+               S.unsqueeze(-1) * hgg) +
+          (3.0 * r3 * r * r * S * A2 / ((double)cf * cf)).unsqueeze(-1) * gate;
+      gu0_head = (gl.unsqueeze(-1) * hh).to(u0.scalar_type());
+      if (!kept) {
+        jac_head =
+            r.unsqueeze(-1) * q.unsqueeze(0) - rS_cf.unsqueeze(-1) * gate;
+      }
+      // Parameter curvature through the Jacobian's parameter dependence:
+      // <hgg, dJ/dw_i> and <hgg, dJ/ds_i> share the bracket
+      // B_i = r hgg_i - (r^3 A2 / cf) g_i.
+      auto B =
+          r.unsqueeze(-1) * hgg - (r3 * A2 / (double)cf).unsqueeze(-1) * gate;
+      auto glB = at::einsum("ef,efi->fi", {gl, B});
+      gwfc2 = (glB * norm_scale->to(at::kDouble))
+                  .transpose(0, 1)
+                  .to(w_fc->scalar_type())
+                  .contiguous();
+      gscale2 = (glB * wfc_acc.transpose(0, 1))
+                    .to(norm_scale->scalar_type())
+                    .contiguous();
+    } else {
+      s = at::einsum("efi,if->ef", {hgg, wfc_acc});
+      // Parameter curvature: g_gate is linear in w_fc at fixed (p, ga).
+      gwfc2 = at::einsum("ef,efi->if", {gl, hgg})
+                  .to(w_fc->scalar_type())
+                  .contiguous();
+    }
+    if (fc_bias.has_value()) {
+      gbias2 = at::zeros_like(*fc_bias);
+    }
     auto S2 = (s * p).sum(1, true);
     // VJP onto ga_mix (the gl route at fixed p), then through ga_mix's own
     // operands: the upstream rows, the stored output rows, and the alpha
@@ -704,13 +868,6 @@ value_bwd2(const at::Tensor& h_gx,
                    h_ga * ga_mix / alpha_acc)
                       .to(alpha.scalar_type())
                       .contiguous();
-    // Parameter curvature: g_gate is linear in w_fc at fixed (p, ga).
-    gwfc2 = at::einsum("ef,efi->if", {gl, hgg})
-                .to(w_fc->scalar_type())
-                .contiguous();
-    if (fc_bias.has_value()) {
-      gbias2 = at::zeros_like(*fc_bias);
-    }
   }
 
   // === Step 3. Mixing traversal second order ===
@@ -743,8 +900,10 @@ value_bwd2(const at::Tensor& h_gx,
   // added here otherwise).
   at::Tensor grad_u0 = kept ? kept_grad_u0.value() : std::get<10>(mix2);
   if (apply_alpha && !kept) {
-    auto g_gate = at::einsum("ef,if->efi", {gl_first, w_fc->to(at::kDouble)})
-                      .to(u0.scalar_type());
+    auto g_gate =
+        has_norm ? (gl_first.unsqueeze(-1) * jac_head).to(u0.scalar_type())
+                 : at::einsum("ef,if->efi", {gl_first, w_fc->to(at::kDouble)})
+                       .to(u0.scalar_type());
     grad_u0.narrow(2, 0, cf).add_(g_gate.permute({1, 0, 2}));
   }
 
@@ -770,6 +929,23 @@ value_bwd2(const at::Tensor& h_gx,
                  ? dpa4_sezm::segment_sum_csr(gx2_edge, src_order, src_rowptr)
                  : at::zeros(x.sizes(), x.options());
 
+  // The head-Hessian gradient lives in u0 space; u0 is multilinear in
+  // (x, runs, kc, cb), so one rotation backward maps it onto their
+  // second-order slots.
+  if (gu0_head.defined() && gu0_head.size(0) > 0) {
+    auto gu0_full = at::zeros_like(grad_u0);
+    gu0_full.narrow(2, 0, cf).copy_(gu0_head.permute({1, 0, 2}));
+    auto rot_head = dpa4_sezm::rotate_mix_bwd(gu0_full, x, src, runs, kc, cb,
+                                              lmax, n_focus, rank);
+    gx2 = gx2 + dpa4_sezm::segment_sum_csr(std::get<0>(rot_head), src_order,
+                                           src_rowptr);
+    gruns2 = gruns2 + std::get<1>(rot_head);
+    gkc2 = gkc2 + std::get<2>(rot_head);
+    if (rank > 0) {
+      gcb2 = gcb2 + std::get<3>(rot_head);
+    }
+  }
+
   return {grad_grad_x_local,
           gx2,
           gruns2,
@@ -777,6 +953,7 @@ value_bwd2(const at::Tensor& h_gx,
           gcb2,
           gwfc2,
           gbias2,
+          gscale2,
           gw02,
           gw12,
           ggw2,
@@ -791,37 +968,44 @@ value_bwd2(const at::Tensor& h_gx,
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
   m.def(
       "sezm_so2_value_fwd(Tensor x, Tensor src, Tensor runs, Tensor kc, "
-      "Tensor cb, Tensor? w_fc, Tensor? fc_bias, Tensor w0_all, "
+      "Tensor cb, Tensor? w_fc, Tensor? fc_bias, Tensor? norm_scale, "
+      "Tensor w0_all, "
       "Tensor w1_all, Tensor gw_all, int lmax, int n_focus, int rank, "
-      "bool apply_alpha, float softmax_tau, float label_smoothing) "
+      "bool apply_alpha, float softmax_tau, float label_smoothing, "
+      "float norm_eps) "
       "-> (Tensor x_out, Tensor z_all, Tensor u_final, Tensor alpha)");
   m.def(
       "sezm_so2_value_bwd(Tensor grad_x_local, Tensor x, Tensor src, "
       "Tensor src_order, Tensor src_rowptr, Tensor runs, Tensor kc, "
-      "Tensor cb, Tensor? w_fc, Tensor? fc_bias, Tensor w0_all, "
+      "Tensor cb, Tensor? w_fc, Tensor? fc_bias, Tensor? norm_scale, "
+      "Tensor w0_all, "
       "Tensor w1_all, Tensor gw_all, Tensor x_local, Tensor z_all, "
       "Tensor u_final, Tensor alpha, Tensor? h_z, Tensor? h_uf, "
       "Tensor? h_alpha, int lmax, int n_focus, int rank, bool apply_alpha, "
-      "float softmax_tau, float label_smoothing, bool keep_state, "
-      "bool with_weights) "
+      "float softmax_tau, float label_smoothing, float norm_eps, "
+      "bool keep_state, bool with_weights) "
       "-> (Tensor grad_x, Tensor grad_runs, Tensor grad_kc, "
       "Tensor grad_cb, Tensor grad_w_fc, Tensor grad_bias, "
       "Tensor grad_w0_all, Tensor grad_w1_all, Tensor grad_gw_all, "
       "Tensor kept_grad_u0, Tensor kept_upstream, Tensor kept_grad_z, "
-      "Tensor kept_gate_logit, Tensor kept_grad_alpha_mix)");
+      "Tensor kept_gate_logit, Tensor kept_grad_alpha_mix, "
+      "Tensor grad_scale)");
   m.def(
       "sezm_so2_value_bwd2(Tensor h_gx, Tensor? h_gruns, Tensor? h_gkc, "
       "Tensor grad_x_local, Tensor x, "
       "Tensor src, Tensor src_order, Tensor src_rowptr, Tensor runs, "
-      "Tensor kc, Tensor cb, Tensor? w_fc, Tensor? fc_bias, Tensor w0_all, "
+      "Tensor kc, Tensor cb, Tensor? w_fc, Tensor? fc_bias, "
+      "Tensor? norm_scale, Tensor w0_all, "
       "Tensor w1_all, Tensor gw_all, Tensor x_local, Tensor z_all, "
       "Tensor u_final, Tensor alpha, Tensor? kept_grad_u0, "
       "Tensor? kept_upstream, Tensor? kept_grad_z, Tensor? kept_gate_logit, "
       "Tensor? kept_grad_alpha_mix, "
       "int lmax, int n_focus, int rank, "
-      "bool apply_alpha, float softmax_tau, float label_smoothing) "
+      "bool apply_alpha, float softmax_tau, float label_smoothing, "
+      "float norm_eps) "
       "-> (Tensor grad_grad_x_local, Tensor gx2, Tensor gruns2, Tensor gkc2, "
-      "Tensor gcb2, Tensor gwfc2, Tensor gbias2, Tensor gw02, Tensor gw12, "
+      "Tensor gcb2, Tensor gwfc2, Tensor gbias2, Tensor gscale2, "
+      "Tensor gw02, Tensor gw12, "
       "Tensor ggw2, Tensor gxl2, Tensor galpha2, Tensor gz2, Tensor guf2)");
 }
 

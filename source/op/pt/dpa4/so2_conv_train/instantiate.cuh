@@ -22,9 +22,9 @@ namespace dpa4_sezm_kernels {
 #define DPA4_SCT_ONE(T)                                                        \
   DPA4_SCT_EXTERN template void launch_so2_value_fwd<T, DPA4_SCT_L>(           \
       const T*, const long*, const T*, const T*, const T*, const T*, const T*, \
-      const T*, const T*, const T*, T*, T*, T*, acc_type<T>::type*, long,      \
-      long, long, int, int, int, bool, bool, float, float, int, int, long,     \
-      size_t, cudaStream_t);
+      const T*, const T*, const T*, const T*, T*, T*, T*, acc_type<T>::type*,  \
+      long, long, long, int, int, int, bool, bool, float, float, float, int,   \
+      int, long, size_t, cudaStream_t);
 
 #if defined(DPA4_SCT_TYPE)
 DPA4_SCT_ONE(DPA4_SCT_TYPE)
