@@ -2346,8 +2346,19 @@ class TestEdgeNorm(_SeZMTestCase):
                     torch.testing.assert_close(mlp(x), restored(x))
 
     def test_edge_norm_gates_all_cutoff_vanishing_norms(self) -> None:
-        """``edge_norm`` controls every cutoff-vanishing normalization path."""
-        for edge_norm in (True, False):
+        """``edge_norm`` controls every cutoff-vanishing normalization path.
+
+        A bool switches the radial, FiLM and focus norms together; a list of
+        three bools ``[radial, film, focus]`` switches them individually. The
+        post-SO(2) residual scaling follows the radial switch.
+        """
+        cases = [
+            (True, (True, True, True)),
+            (False, (False, False, False)),
+            ([False, True, False], (False, True, False)),
+            ([True, False, True], (True, False, True)),
+        ]
+        for edge_norm, (radial_on, film_on, focus_on) in cases:
             with self.subTest(edge_norm=edge_norm):
                 desc = DescrptSeZM(
                     **_descriptor_kwargs(
@@ -2362,26 +2373,84 @@ class TestEdgeNorm(_SeZMTestCase):
                 radial_has_norm = any(
                     type(m).__name__ == "RMSNorm" for m in desc.radial_embedding.net
                 )
-                self.assertEqual(radial_has_norm, edge_norm)
+                self.assertEqual(radial_has_norm, radial_on)
                 # env-seed FiLM scale/shift norms
                 self.assertEqual(
-                    type(desc.film_scale_norm).__name__ == "ScalarRMSNorm", edge_norm
+                    type(desc.film_scale_norm).__name__ == "ScalarRMSNorm", film_on
                 )
                 self.assertEqual(
-                    type(desc.film_shift_norm).__name__ == "ScalarRMSNorm", edge_norm
+                    type(desc.film_shift_norm).__name__ == "ScalarRMSNorm", film_on
                 )
                 # cross-focus competition norm (n_focus>1 -> competition active)
                 focus_norm_mod = desc.blocks[0].so2_conv.focus_compete_norm
                 self.assertEqual(
-                    type(focus_norm_mod).__name__ == "ScalarRMSNorm", edge_norm
+                    type(focus_norm_mod).__name__ == "ScalarRMSNorm", focus_on
                 )
-                # Only the post-SO(2) residual branch uses unit-floor scaling.
-                expected_eps = 1.0e-5 if edge_norm else 1.0
+                # Only the post-SO(2) residual branch uses unit-floor scaling,
+                # bound to the radial switch.
+                expected_eps = 1.0e-5 if radial_on else 1.0
                 self.assertEqual(desc.blocks[0].post_so2_norm.eps, expected_eps)
                 self.assertEqual(desc.blocks[0].pre_so2_norm.eps, 1.0e-5)
                 self.assertEqual(desc.blocks[0].pre_ffn_norms[0].eps, 1.0e-5)
                 self.assertEqual(desc.blocks[0].post_ffn_norms[0].eps, 1.0e-5)
-                self.assertEqual(desc.serialize()["config"]["edge_norm"], edge_norm)
+                canonical = [radial_on, film_on, focus_on]
+                self.assertEqual(desc.serialize()["config"]["edge_norm"], canonical)
+                restored = DescrptSeZM.deserialize(desc.serialize())
+                self.assertEqual(
+                    [
+                        restored.radial_norm,
+                        restored.film_norm,
+                        restored.focus_norm,
+                    ],
+                    canonical,
+                )
+
+    def test_edge_norm_legacy_checkpoint_formats(self) -> None:
+        """Serialized data from older checkpoints loads unchanged.
+
+        The oldest checkpoints predate the ``edge_norm`` option and carry no
+        such config key (the norms were always built, matching the default
+        ``True``); intermediate checkpoints store a plain bool. Both must
+        deserialize into the same module structure and reproduce the source
+        model's output exactly.
+        """
+        dtype = PRECISION_DICT["float64"]
+        cases = [
+            ("missing_key", True, None, (True, True, True)),
+            ("bool_true", True, True, (True, True, True)),
+            ("bool_false", False, False, (False, False, False)),
+        ]
+        for case_name, build_edge_norm, stored_edge_norm, expected in cases:
+            with self.subTest(case=case_name):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        edge_norm=build_edge_norm,
+                        use_env_seed=True,
+                        n_focus=2,
+                        precision="float64",
+                    )
+                )
+                data = model.serialize()
+                if stored_edge_norm is None:
+                    data["config"].pop("edge_norm")
+                else:
+                    data["config"]["edge_norm"] = stored_edge_norm
+                restored = DescrptSeZM.deserialize(data)
+                self.assertEqual(
+                    (
+                        restored.radial_norm,
+                        restored.film_norm,
+                        restored.focus_norm,
+                    ),
+                    expected,
+                )
+                coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=dtype)
+                extended_coord = coord.reshape(1, -1)
+                desc1, _, _, _, sw1 = model(extended_coord, atype, nlist)
+                desc2, _, _, _, sw2 = restored(extended_coord, atype, nlist)
+                atol, rtol = _forward_tols(dtype)
+                torch.testing.assert_close(desc1, desc2, atol=atol, rtol=rtol)
+                torch.testing.assert_close(sw1, sw2, atol=atol, rtol=rtol)
 
 
 class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):

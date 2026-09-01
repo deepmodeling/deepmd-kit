@@ -3931,19 +3931,52 @@ class TestDescriptorParity:
         self._assert_descr_parity(pt_mod, dp_mod)
 
     @pytest.mark.parametrize(
-        "edge_norm", [False, True]
-    )  # cutoff-vanishing normalization modes
+        "edge_norm", [False, True, [False, True, False]]
+    )  # cutoff-vanishing normalization modes: all off, all on, per-site
     def test_descriptor_edge_norm(self, edge_norm) -> None:
         # edge_norm=False drops the radial MLP RMSNorm, turns the FiLM scale/shift
         # norms into identity pass-throughs, drops the focus-compete norm, and
-        # selects unit-floor post-SO(2) residual scaling in both backends.
+        # selects unit-floor post-SO(2) residual scaling in both backends. A
+        # three-bool list [radial, film, focus] switches the sites individually,
+        # with the post-SO(2) scaling bound to the radial entry.
         pt_mod, dp_mod, _ = self._build_descr_pair(
             edge_norm=edge_norm, use_env_seed=True, n_focus=2
         )
-        assert dp_mod.edge_norm == edge_norm
-        expected_eps = 1.0e-5 if edge_norm else 1.0
+        radial_on = edge_norm if isinstance(edge_norm, bool) else edge_norm[0]
+        assert dp_mod.radial_norm == radial_on
+        expected_eps = 1.0e-5 if radial_on else 1.0
         assert pt_mod.blocks[0].post_so2_norm.eps == expected_eps
         assert dp_mod.blocks[0].post_so2_norm.eps == expected_eps
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize(
+        "stored_edge_norm", [None, True, False]
+    )  # legacy serialized data: no key (pre-option checkpoints) or a plain bool
+    def test_descriptor_edge_norm_legacy_serialized(self, stored_edge_norm) -> None:
+        # Checkpoints that predate the edge_norm option carry no such config
+        # key (their norms were always built, matching the default True), and
+        # intermediate checkpoints store a plain bool. Both forms must
+        # deserialize into the matching module structure and keep parity.
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+
+        build_edge_norm = True if stored_edge_norm is None else stored_edge_norm
+        pt_mod, _, _ = self._build_descr_pair(
+            edge_norm=build_edge_norm, use_env_seed=True, n_focus=2
+        )
+        data = pt_mod.serialize()
+        if stored_edge_norm is None:
+            data["config"].pop("edge_norm")
+        else:
+            data["config"]["edge_norm"] = stored_edge_norm
+        dp_mod = DescrptDPA4.deserialize(data)
+        expected = bool(build_edge_norm)
+        assert (dp_mod.radial_norm, dp_mod.film_norm, dp_mod.focus_norm) == (
+            expected,
+            expected,
+            expected,
+        )
         self._assert_descr_parity(pt_mod, dp_mod)
 
     @pytest.mark.parametrize(

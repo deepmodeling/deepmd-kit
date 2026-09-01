@@ -321,14 +321,16 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
     edge_norm
-        Whether to apply channel RMSNorm on the descriptor's cutoff-vanishing
-        branches: the radial network hidden layers, the environment-seed FiLM
-        scale/shift logits, the cross-focus competition scalars, and the
-        post-SO(2) residual messages. ``False`` replaces the first three norms
-        with identity and changes only the post-SO(2) norm to unit-floor residual
-        scaling. The unit floor uses ``sqrt(1 + variance)`` so small messages
-        retain their cutoff envelope instead of receiving the standard
-        ``1/sqrt(eps)`` small-signal gain.
+        Channel RMSNorm on the descriptor's cutoff-vanishing branches: the
+        radial network hidden layers, the environment-seed FiLM scale/shift
+        logits, and the cross-focus competition scalars. A bool switches all
+        three together; a list of three bools ``[radial, film, focus]``
+        switches them individually. Disabled norms are identity
+        pass-throughs. The post-SO(2) residual scaling follows the ``radial``
+        entry: with it disabled the norm uses the unit floor
+        ``sqrt(1 + variance)``, so small messages retain their cutoff
+        envelope instead of receiving the standard ``1/sqrt(eps)``
+        small-signal gain.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
@@ -610,7 +612,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
-        edge_norm: bool = True,
+        edge_norm: bool | list[bool] = True,
         use_env_seed: bool = True,
         random_gamma: bool = True,
         edge_cartesian: bool = False,
@@ -706,7 +708,22 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if radial_mlp is None:
             radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
-        self.edge_norm = bool(edge_norm)
+        if isinstance(edge_norm, bool):
+            self.radial_norm = edge_norm
+            self.film_norm = edge_norm
+            self.focus_norm = edge_norm
+        elif (
+            isinstance(edge_norm, (list, tuple))
+            and len(edge_norm) == 3
+            and all(isinstance(v, bool) for v in edge_norm)
+        ):
+            self.radial_norm = bool(edge_norm[0])
+            self.film_norm = bool(edge_norm[1])
+            self.focus_norm = bool(edge_norm[2])
+        else:
+            raise ValueError(
+                "edge_norm must be a bool or a list[bool] of length 3: [radial, film, focus]"
+            )
         if sandwich_norm is None:
             sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
@@ -1009,7 +1026,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             # vanishes at rcut; normalizing them shares the radial network's
             # cutoff-smoothness issue, so ``edge_norm=False`` also drops these
             # norms (identity pass-through) to keep the FiLM scale/shift smooth.
-            if self.edge_norm:
+            if self.film_norm:
                 self.film_scale_norm = ScalarRMSNorm(
                     channels=self.channels,
                     n_focus=1,
@@ -1066,7 +1083,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             activation_function=self.activation_function,
             precision=self.compute_precision,  # force fp32+
             trainable=self.trainable,
-            radial_norm=self.edge_norm,
+            radial_norm=self.radial_norm,
             seed=seed_radial_embedding,
         )
 
@@ -1129,7 +1146,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
-                    focus_norm=self.edge_norm,
+                    focus_norm=self.focus_norm,
                     so2_norm=self.so2_norm,
                     mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
@@ -1164,7 +1181,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     atten_o_proj=self.use_atten_o_proj,
                     so2_pre_norm=self.so2_pre_norm,
                     so2_post_norm=self.so2_post_norm,
-                    so2_post_norm_eps=1.0e-5 if self.edge_norm else 1.0,
+                    so2_post_norm_eps=1.0e-5 if self.radial_norm else 1.0,
                     so2_activation_function=self.so2_activation_function,
                     ffn_pre_norm=self.ffn_pre_norm,
                     ffn_post_norm=self.ffn_post_norm,
@@ -1618,10 +1635,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             scale_logits = film[:, : self.channels]  # (N, C)
             shift_logits = film[:, self.channels :]  # (N, C)
             scale_hat = (
-                self.film_scale_norm(scale_logits) if self.edge_norm else scale_logits
+                self.film_scale_norm(scale_logits) if self.film_norm else scale_logits
             )  # (N, C)
             shift_hat = (
-                self.film_shift_norm(shift_logits) if self.edge_norm else shift_logits
+                self.film_shift_norm(shift_logits) if self.film_norm else shift_logits
             )  # (N, C)
             scale_strength = xp.exp(
                 xp_asarray_nodetach(
@@ -2605,7 +2622,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if self.use_env_seed:
             for key, value in self.env_seed_embedding.serialize()["@variables"].items():
                 variables[f"env_seed_embedding.{key}"] = value
-            if self.edge_norm:
+            if self.film_norm:
                 for key, value in self.film_scale_norm.serialize()[
                     "@variables"
                 ].items():
@@ -2712,7 +2729,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.env_seed_embedding = load(
                 self.env_seed_embedding, "env_seed_embedding."
             )
-            if self.edge_norm:
+            if self.film_norm:
                 self.film_scale_norm = load(self.film_scale_norm, "film_scale_norm.")
                 self.film_shift_norm = load(self.film_shift_norm, "film_shift_norm.")
             self.film_scale_strength_log = np.asarray(
@@ -2826,7 +2843,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
-                "edge_norm": self.edge_norm,
+                "edge_norm": [
+                    self.radial_norm,
+                    self.film_norm,
+                    self.focus_norm,
+                ],
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "edge_cartesian": self.edge_cartesian,
