@@ -115,7 +115,7 @@ void PairDPA4SpinKokkos<DeviceType>::unpack_reverse_comm(int n,
 
 template <class DeviceType>
 int PairDPA4SpinKokkos<DeviceType>::pack_reverse_comm_kokkos(
-    int n, int first, DAT::tdual_double_1d& buf) {
+    int n, int first, DPA4SpinKokkosCommBuffer& buf) {
   auto d_buf = buf.template view<DeviceType>();
   if (reverse_virial) {
     auto reverse_virial_data = k_reverse_virial.template view<DeviceType>();
@@ -147,7 +147,7 @@ int PairDPA4SpinKokkos<DeviceType>::pack_reverse_comm_kokkos(
 
 template <class DeviceType>
 void PairDPA4SpinKokkos<DeviceType>::unpack_reverse_comm_kokkos(
-    int n, DAT::tdual_int_1d list, DAT::tdual_double_1d& buf) {
+    int n, DAT::tdual_int_1d list, DPA4SpinKokkosCommBuffer& buf) {
   auto d_buf = buf.template view<DeviceType>();
   auto d_list = list.template view<DeviceType>();
   if (reverse_virial) {
