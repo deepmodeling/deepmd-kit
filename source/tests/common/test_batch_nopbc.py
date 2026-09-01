@@ -31,9 +31,9 @@ class TestNormalizeBatchPBC(unittest.TestCase):
         }
 
     def test_nonperiodic_box_is_none(self) -> None:
-        for mixed_type, mesh_size in ((False, 0), (True, 1)):
-            with self.subTest(mixed_type=mixed_type):
-                box = np.zeros((1, 9))
+        for mesh_size in (0, 1):
+            with self.subTest(mesh_size=mesh_size):
+                box = np.eye(3).reshape(1, 9)
                 batch = self._batch(mesh_size, box)
 
                 normalized = normalize_batch(batch)
@@ -43,13 +43,30 @@ class TestNormalizeBatchPBC(unittest.TestCase):
                 self.assertIs(batch["box"], box)
 
     def test_periodic_box_is_preserved(self) -> None:
-        for mixed_type, mesh_size in ((False, 6), (True, 7)):
-            with self.subTest(mixed_type=mixed_type):
+        for mesh_size in (6, 7):
+            with self.subTest(mesh_size=mesh_size):
                 box = np.eye(3).reshape(1, 9)
 
                 normalized = normalize_batch(self._batch(mesh_size, box))
 
                 self.assertIs(normalized["box"], box)
+
+    def test_missing_default_mesh_preserves_box(self) -> None:
+        box = np.eye(3).reshape(1, 9)
+        batch = self._batch(0, box)
+        del batch["default_mesh"]
+
+        normalized = normalize_batch(batch)
+
+        self.assertIs(normalized["box"], box)
+
+    def test_nonperiodic_mesh_without_box_does_not_add_box(self) -> None:
+        batch = self._batch(0, np.eye(3).reshape(1, 9))
+        del batch["box"]
+
+        normalized = normalize_batch(batch)
+
+        self.assertNotIn("box", normalized)
 
 
 class TestDeepmdDataSystemNopbc(unittest.TestCase):

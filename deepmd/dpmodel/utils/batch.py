@@ -59,7 +59,10 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     default_mesh = batch.get("default_mesh")
-    is_nonperiodic = default_mesh is not None and np.size(default_mesh) in (0, 1)
+    mesh_says_nonperiodic = default_mesh is not None and np.size(default_mesh) in (
+        0,
+        1,
+    )
 
     for key, val in batch.items():
         if key in _DROP_KEYS:
@@ -78,7 +81,7 @@ def normalize_batch(batch: dict[str, Any]) -> dict[str, Any]:
         else:
             out[key] = val
 
-    if is_nonperiodic and "box" in out:
+    if mesh_says_nonperiodic and "box" in out:
         out["box"] = None
 
     if out.get("charge_spin") is not None and bool(out.get("find_charge_spin", True)):
