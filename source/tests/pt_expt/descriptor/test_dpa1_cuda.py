@@ -5,11 +5,11 @@ At ``DP_CUDA_INFER >= 1`` the concat, attention-free graph lower routes
 through three fused CUDA operator suites (see ``source/op/pt``):
 
 * ``deepmd::dpa1_graph_descriptor`` -- the descriptor mega kernels
-  (:mod:`deepmd.kernels.cuda.dpa1.graph_descriptor`);
+  (:mod:`deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor`);
 * ``deepmd::graph_fitting`` -- the fused energy fitting network
-  (:mod:`deepmd.kernels.cuda.graph_fitting`);
+  (:mod:`deepmd.pt_expt.kernels.graph_fitting`);
 * ``deepmd::edge_force_virial`` -- the fused force / virial assembly
-  (:mod:`deepmd.kernels.cuda.edge_force_virial`).
+  (:mod:`deepmd.pt_expt.kernels.edge_force_virial`).
 
 Covered properties:
 
@@ -51,7 +51,7 @@ _CUDA = torch.cuda.is_available()
 def _cuda_ops_loaded() -> bool:
     if not _CUDA:
         return False
-    from deepmd.kernels.cuda.dpa1.graph_descriptor import (
+    from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
         op_available,
     )
 
@@ -247,7 +247,7 @@ class TestDpa1GraphCudaDescriptor(unittest.TestCase):
         self._assert_parity(_build_dpa1_expt(self.device, [32, 32, 64]))
 
     def test_rotation_output_can_be_suppressed(self) -> None:
-        from deepmd.kernels.cuda.dpa1.graph_descriptor import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
             dpa1_graph_descriptor,
         )
 
@@ -276,7 +276,7 @@ class TestDpa1GraphCudaDescriptor(unittest.TestCase):
         implementation (the dpmodel graph reference does not implement
         strip).
         """
-        from deepmd.kernels.cuda.dpa1.graph_descriptor import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
             dpa1_graph_descriptor,
         )
 
@@ -486,7 +486,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         gradient against the operator's CPU implementation (an independent
         autograd formulation through the same quintic table).
         """
-        from deepmd.kernels.cuda.dpa1.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress,
         )
 
@@ -606,7 +606,7 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
 
     def test_int32_edge_index_parity(self) -> None:
         """Int32 edge addressing matches the default int64 graph ABI."""
-        from deepmd.kernels.cuda.dpa1.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress,
         )
 
@@ -642,10 +642,10 @@ class TestDpa1GraphCudaCompress(unittest.TestCase):
         from deepmd.dpmodel.utils.neighbor_graph import (
             canonicalize_neighbor_graph,
         )
-        from deepmd.kernels.cuda.dpa1.canonical import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
             ensure_registered,
         )
-        from deepmd.kernels.cuda.dpa1.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress,
         )
         from deepmd.pt_expt.utils.canonical_graph import (
@@ -1098,7 +1098,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         return fit
 
     def _assert_parity(self, fit) -> None:
-        from deepmd.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1126,15 +1126,44 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
     def test_parity_plain(self) -> None:
         self._assert_parity(self._build(resnet_dt=False))
 
-    def test_parity_resnet_dt_silu(self) -> None:
-        self._assert_parity(self._build(resnet_dt=True, act="silu"))
+    def test_parity_silu(self) -> None:
+        self._assert_parity(self._build(resnet_dt=False, act="silu"))
 
-    def test_fparam_falls_back(self) -> None:
-        from deepmd.kernels.cuda.graph_fitting import (
+    def test_parity_single_layer_residual(self) -> None:
+        self._assert_parity(
+            self._build(
+                resnet_dt=False,
+                act="silu",
+                neuron=[64],
+            )
+        )
+
+    def test_timestep_falls_back(self) -> None:
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
+
+        self.assertFalse(fitting_eligible(self._build(resnet_dt=True)))
+
+    def test_ineligible_network_is_refused_not_approximated(self) -> None:
+        """An unsupported network must raise where its arguments are built.
+
+        The operator has no representation for a layer timestep and would
+        evaluate the network without it, so the conversion refuses instead.
+        """
+        from deepmd.pt_expt.kernels.graph_fitting import (
+            fitting_operator_arguments,
+        )
+
+        with self.assertRaises(ValueError):
+            fitting_operator_arguments(self._build(resnet_dt=True))
+
+    def test_fparam_falls_back(self) -> None:
         from deepmd.pt_expt.fitting.ener_fitting import (
             EnergyFittingNet,
+        )
+        from deepmd.pt_expt.kernels.graph_fitting import (
+            fitting_eligible,
         )
 
         fit = EnergyFittingNet(
@@ -1149,7 +1178,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         self.assertFalse(fitting_eligible(fit))
 
     def test_width_doubling_residual_falls_back(self) -> None:
-        from deepmd.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1162,7 +1191,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         self.assertFalse(fitting_eligible(fit))
 
     def test_float64_parameters_fall_back(self) -> None:
-        from deepmd.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1202,6 +1231,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             ntypes=2,
             dim_descrpt=dim_descrpt,
             neuron=[48, 48],
+            resnet_dt=False,
             activation_function="silu",
             precision="float32",
             mixed_types=True,
@@ -1230,10 +1260,10 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
         return graph, self.atype.reshape(-1).to(self.device)
 
     def _assert_parity_vs_separate_ops(self, lmax: int) -> None:
-        from deepmd.kernels.cuda.dpa1.graph_energy_force import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_energy_force import (
             dpa1_graph_energy_force,
         )
-        from deepmd.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1273,7 +1303,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             (g_e,) = torch.autograd.grad(e_atom.sum(), ev)
             # The fused operator assembles force / virial in the model compute
             # precision (fp32), so mirror that dtype in the reference scatter.
-            r_force, r_atom_vir, r_virial = edge_force_virial(
+            r_force, r_atom_vir, r_virial, _ = edge_force_virial(
                 g_e.to(force.dtype),
                 ev.detach().to(force.dtype),
                 graph.edge_index,
@@ -1283,6 +1313,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
+                ev.new_empty(0),
                 n,
                 True,
             )
@@ -1411,7 +1442,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
             )
 
     def test_fused_energy_uses_owned_nodes_only(self) -> None:
-        from deepmd.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1432,7 +1463,10 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 do_atomic_virial=True,
             )
         assert fused is not None
-        energy, atom_energy, force, virial, atom_virial = fused
+        # A spin-free composition reports an empty magnetic force in the last
+        # position, which every implementation of the fused entry point emits.
+        energy, atom_energy, force, virial, atom_virial, magnetic = fused
+        assert magnetic.numel() == 0
 
         with _CudaLevel("1"):
             edge_vec = graph.edge_vec.detach().clone().requires_grad_(True)
@@ -1447,7 +1481,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 :, None
             ]
             (edge_gradient,) = torch.autograd.grad(atom_energy_ref.sum(), edge_vec)
-            force_ref, atom_virial_ref, virial_ref = edge_force_virial(
+            force_ref, atom_virial_ref, virial_ref, _ = edge_force_virial(
                 edge_gradient.to(force.dtype),
                 edge_vec.detach().to(force.dtype),
                 graph.edge_index,
@@ -1457,6 +1491,7 @@ class TestDpa1GraphEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
+                edge_vec.new_empty(0),
                 n_node,
                 True,
             )
@@ -1504,7 +1539,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             ntypes=ntypes,
             dim_descrpt=dim_descrpt,
             neuron=[64, 64, 64],
-            resnet_dt=True,
+            resnet_dt=False,
             activation_function="silu",
             precision="float32",
             mixed_types=True,
@@ -1533,12 +1568,12 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         return graph, self.atype.reshape(-1).to(self.device)
 
     def _assert_parity_vs_separate_ops(self, lmax: int) -> None:
-        from deepmd.kernels.cuda.dpa1.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress,
             dpa1_graph_compress_energy_force,
             mega_eligible,
         )
-        from deepmd.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
@@ -1592,7 +1627,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
             grrg, _rot = dpa1_graph_compress(des, g2, atype, tebd)
             e_atom = fit.call_graph(grrg, atype)[fit.var_name]
             (g_e,) = torch.autograd.grad(e_atom.sum(), ev)
-            r_force, r_atom_vir, r_virial = edge_force_virial(
+            r_force, r_atom_vir, r_virial, _ = edge_force_virial(
                 g_e.to(force.dtype),
                 ev.detach().to(force.dtype),
                 graph.edge_index,
@@ -1602,6 +1637,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 graph.source_order,
                 graph.source_row_ptr,
                 graph.n_node,
+                ev.new_empty(0),
                 n,
                 True,
             )
@@ -1705,6 +1741,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
 
         self.assertEqual(metadata["lower_input_kind"], "dpa1_canonical")
         self.assertEqual(metadata["graph_edge_dtype"], "float32")
+        self.assertEqual(metadata["canonical_index_dtype"], "uint32")
         self.assertNotIn("graph_index_dtype", metadata)
         self.assertEqual(
             output_keys,
@@ -1722,7 +1759,7 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_edge_csr,
         )
-        from deepmd.kernels.cuda.dpa1.graph_compress import (
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
             dpa1_graph_compress_energy_force,
         )
 
@@ -1920,11 +1957,11 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
         n_node,
         total,
     ):
-        from deepmd.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             edge_force_virial,
         )
 
-        return edge_force_virial(
+        force, atom_virial, virial, _ = edge_force_virial(
             g_e,
             edge_vec,
             edge_index,
@@ -1934,9 +1971,11 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             src_order,
             src_row_ptr,
             n_node,
+            edge_vec.new_empty(0),
             total,
             True,
         )
+        return force, atom_virial, virial
 
     def _assert_device_parity(self, device) -> None:
         args = self._random_graph(torch.device(device))
@@ -1955,7 +1994,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             NeighborGraph,
             build_edge_csr,
         )
-        from deepmd.kernels.cuda.edge_force_virial import (
+        from deepmd.pt_expt.kernels.edge_force_virial import (
             canonical_edge_force_virial,
             edge_force_virial,
         )
@@ -2016,6 +2055,7 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             source_order,
             source_row_ptr,
             n_node,
+            edge_vec.new_empty(0),
             total,
             True,
         )
@@ -2026,11 +2066,109 @@ class TestEdgeForceVirialCuda(unittest.TestCase):
             compact.source_row_ptr,
             compact.source_order,
             compact.n_node,
+            edge_vec.new_empty(0),
             total,
             True,
         )
         for actual, expected in zip(canonical, generic, strict=True):
             torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+
+    def test_magnetic_reduction_parity(self) -> None:
+        """The magnetic cotangent reduces onto its source nodes.
+
+        The reduction rides the source loop of the force assembly, so it has to
+        agree with the reference on the grouping and on which edges a mask
+        removes. Both are checked against the CPU implementation on the same
+        graph.
+        """
+        from deepmd.pt_expt.kernels.edge_force_virial import (
+            edge_force_virial,
+        )
+
+        args = self._random_graph(torch.device("cuda"))
+        g_e, edge_vec, edge_index, mask = args[:4]
+        dst_order, dst_row_ptr, src_order, src_row_ptr, n_node, total = args[4:]
+        spin = torch.randn_like(edge_vec)
+
+        def assemble(device: str) -> torch.Tensor:
+            move = lambda t: t.to(device)  # noqa: E731
+            return edge_force_virial(
+                move(g_e),
+                move(edge_vec),
+                move(edge_index),
+                move(mask),
+                move(dst_order),
+                move(dst_row_ptr),
+                move(src_order),
+                move(src_row_ptr),
+                move(n_node),
+                move(spin),
+                total,
+                True,
+            )[3]
+
+        device_magnetic = assemble("cuda")
+        self.assertEqual(tuple(device_magnetic.shape), (total, 3))
+        torch.testing.assert_close(
+            device_magnetic.cpu(), assemble("cpu"), atol=1e-10, rtol=1e-10
+        )
+
+        # An absent cotangent yields an empty output and leaves the force alone.
+        force, _, _, empty = edge_force_virial(
+            g_e,
+            edge_vec,
+            edge_index,
+            mask,
+            dst_order,
+            dst_row_ptr,
+            src_order,
+            src_row_ptr,
+            n_node,
+            edge_vec.new_empty(0),
+            total,
+            True,
+        )
+        self.assertEqual(tuple(empty.shape), (0,))
+        with_spin_force = edge_force_virial(
+            g_e,
+            edge_vec,
+            edge_index,
+            mask,
+            dst_order,
+            dst_row_ptr,
+            src_order,
+            src_row_ptr,
+            n_node,
+            spin,
+            total,
+            True,
+        )[0]
+        torch.testing.assert_close(force, with_spin_force)
+
+        # Rank distinguishes an absent spin cotangent from a present one on an
+        # empty edge axis. The latter still produces one zero row per node.
+        empty_vec = edge_vec[:0]
+        empty_rows = torch.zeros(
+            total + 1,
+            dtype=torch.int64,
+            device=edge_vec.device,
+        )
+        empty_magnetic = edge_force_virial(
+            empty_vec,
+            empty_vec,
+            edge_index[:, :0],
+            mask[:0],
+            dst_order[:0],
+            empty_rows,
+            src_order[:0],
+            empty_rows,
+            n_node,
+            empty_vec,
+            total,
+            True,
+        )[3]
+        self.assertEqual(tuple(empty_magnetic.shape), (total, 3))
+        torch.testing.assert_close(empty_magnetic, torch.zeros_like(empty_magnetic))
 
     def test_many_small_frames(self) -> None:
         """Frame reduction is valid beyond the CUDA grid-y limit."""

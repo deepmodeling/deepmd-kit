@@ -53,9 +53,6 @@ from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
 from deepmd.kernels.cute.neo import runtime_policy as cute_runtime_policy
-from deepmd.kernels.utils import (
-    use_amp_infer,
-)
 from deepmd.pt.utils import (
     env,
 )
@@ -68,6 +65,10 @@ from deepmd.pt.utils.exclude_mask import (
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    use_amp_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -165,14 +166,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
     edge_norm
-        Whether to apply channel RMSNorm on the descriptor's cutoff-vanishing
-        branches: the radial network hidden layers, the environment-seed FiLM
-        scale/shift logits, the cross-focus competition scalars, and the
-        post-SO(2) residual messages. ``False`` replaces the first three norms
-        with identity and changes only the post-SO(2) norm to unit-floor residual
-        scaling. The unit floor uses ``sqrt(1 + variance)`` so small messages
-        retain their cutoff envelope instead of receiving the standard
-        ``1/sqrt(eps)`` small-signal gain.
+        Channel RMSNorm on the descriptor's cutoff-vanishing branches: the
+        radial network hidden layers, the environment-seed FiLM scale/shift
+        logits, and the cross-focus competition scalars. A bool switches all
+        three together; a list of three bools ``[radial, film, focus]``
+        switches them individually. Disabled norms are identity
+        pass-throughs. The post-SO(2) residual scaling follows the ``radial``
+        entry: with it disabled the norm uses the unit floor
+        ``sqrt(1 + variance)``, so small messages retain their cutoff
+        envelope instead of receiving the standard ``1/sqrt(eps)``
+        small-signal gain.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
@@ -455,7 +458,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
-        edge_norm: bool = True,
+        edge_norm: bool | list[bool] = True,
         use_env_seed: bool = True,
         random_gamma: bool = True,
         edge_cartesian: bool = False,
@@ -557,7 +560,22 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if radial_mlp is None:
             radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
-        self.edge_norm = bool(edge_norm)
+        if isinstance(edge_norm, bool):
+            self.radial_norm = edge_norm
+            self.film_norm = edge_norm
+            self.focus_norm = edge_norm
+        elif (
+            isinstance(edge_norm, (list, tuple))
+            and len(edge_norm) == 3
+            and all(isinstance(v, bool) for v in edge_norm)
+        ):
+            self.radial_norm = bool(edge_norm[0])
+            self.film_norm = bool(edge_norm[1])
+            self.focus_norm = bool(edge_norm[2])
+        else:
+            raise ValueError(
+                "edge_norm must be a bool or a list[bool] of length 3: [radial, film, focus]"
+            )
         if sandwich_norm is None:
             sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
@@ -865,7 +883,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             # vanishes at rcut; normalizing them shares the radial network's
             # cutoff-smoothness issue, so ``edge_norm=False`` also drops these
             # norms (identity pass-through) to keep the FiLM scale/shift smooth.
-            if self.edge_norm:
+            if self.film_norm:
                 self.film_scale_norm: nn.Module = ScalarRMSNorm(
                     channels=self.channels,
                     n_focus=1,
@@ -916,6 +934,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             n_radial=self.n_radial,
             dtype=self.compute_dtype,  # force fp32+
             exponent=self.env_exp[0],
+            trainable=self.trainable,
         )
 
         # === Shared radial embedding: RBF -> per-l radial features ===
@@ -930,7 +949,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             activation_function=self.activation_function,
             dtype=self.compute_dtype,  # force fp32+
             trainable=self.trainable,
-            radial_norm=self.edge_norm,
+            radial_norm=self.radial_norm,
             seed=seed_radial_embedding,
         )
 
@@ -993,7 +1012,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
-                    focus_norm=self.edge_norm,
+                    focus_norm=self.focus_norm,
                     so2_norm=self.so2_norm,
                     mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
@@ -1028,7 +1047,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     atten_o_proj=self.use_atten_o_proj,
                     so2_pre_norm=self.so2_pre_norm,
                     so2_post_norm=self.so2_post_norm,
-                    so2_post_norm_eps=1.0e-5 if self.edge_norm else 1.0,
+                    so2_post_norm_eps=1.0e-5 if self.radial_norm else 1.0,
                     so2_activation_function=self.so2_activation_function,
                     ffn_pre_norm=self.ffn_pre_norm,
                     ffn_post_norm=self.ffn_post_norm,
@@ -1042,6 +1061,49 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 )
             )
         self.blocks = nn.ModuleList(blocks)
+
+        # The fused convolution paths consume only the three structural rows of
+        # each Wigner degree block. Source-gated attention bypasses that fused
+        # convolution, so its dense per-edge rotations remain available.
+        self._wigner_free_conv = (
+            self.bridging_switch is None
+            and bool(self.blocks)
+            and all(
+                getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
+                and not block.so2_conv._cuda_conv_fn._compete
+                for block in self.blocks
+            )
+        )
+        self._packed_wigner_train = bool(self.blocks) and all(
+            getattr(block.so2_conv, "_cuda_value_train", None) is not None
+            and block.so2_conv._flash_atten_fn is not None
+            and block.so2_conv._flash_atten_trains
+            for block in self.blocks
+        )
+
+        # The envelope and the radial basis are both functions of the pair
+        # distance and are cheap enough that the compiler inlines them into
+        # every consumer and re-evaluates them there. Behind an operator
+        # boundary the chain runs once per step.
+        self._cuda_radial_fn = None
+        self._cuda_wigner_fn = None
+        if cuda_infer_level() >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+            from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
+                make_cuda_wigner_dense,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
+            # The dense Wigner pair otherwise costs five full-size passes
+            # over the (E, D, D) tensors; the fused build pays only the
+            # output writes.
+            self._cuda_wigner_fn = make_cuda_wigner_dense(
+                self.mp_init_lmax, self.compute_dtype
+            )
 
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
@@ -1095,9 +1157,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             for layer_index in range(self.readout_layers - 1)
         )
         self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
-
-        for p in self.parameters():
-            p.requires_grad = self.trainable
 
         # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP).
         self.register_buffer(
@@ -1275,6 +1334,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # sparse-edge path, so ``forward`` keeps the original
         # bridging-free aggregation semantics.
         with nvtx_range("build_edge_cache"):
+            packed_wigner_candidate = self._packed_wigner_candidate(
+                type_ebed.device,
+                type_ebed.dtype,
+                extended_coord.dtype,
+            )
             edge_cache = build_edge_cache(
                 type_ebed=type_ebed,
                 extended_coord=extended_coord,
@@ -1292,12 +1356,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                packed_wigner_candidate=self._packed_wigner_candidate(
-                    type_ebed.device,
-                    type_ebed.dtype,
-                    extended_coord.dtype,
-                ),
-                build_wigner=self._need_full_wigner,
+                packed_wigner_candidate=packed_wigner_candidate,
+                build_wigner=(self._build_full_wigner() or packed_wigner_candidate),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1555,6 +1615,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         # === Step 3. Build edge cache once (sparse edges) ===
         with nvtx_range("build_edge_cache"):
+            packed_wigner_candidate = self._packed_wigner_candidate(
+                type_ebed.device,
+                type_ebed.dtype,
+                extended_coord.dtype,
+            )
             edge_cache = build_edge_cache_from_edges(
                 type_ebed=type_ebed,
                 atype_flat=atype_flat,
@@ -1570,19 +1635,17 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 bridging_switch=self.bridging_switch,
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
+                fused_radial=(None if self.training else self._cuda_radial_fn),
+                fused_wigner=(None if self.training else self._cuda_wigner_fn),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                packed_wigner_candidate=self._packed_wigner_candidate(
-                    type_ebed.device,
-                    type_ebed.dtype,
-                    extended_coord.dtype,
-                ),
+                packed_wigner_candidate=packed_wigner_candidate,
                 destinations_sorted=edge_index_sorted_by_dst,
-                build_wigner=self._need_full_wigner,
+                build_wigner=(self._build_full_wigner() or packed_wigner_candidate),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -1949,7 +2012,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             x_ro = x[:, : self.node_readout_dim, :, :].to(dtype=self.compute_dtype)
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
-        if not self.readout_pre_layers:
+        if not self.readout_pre_layers and self.so3_readout != "none":
             if (
                 not torch.jit.is_scripting()
                 and cute_runtime_policy.is_cute_infer_enabled()
@@ -1957,8 +2020,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 return self._run_output_readout(x_ro).reshape(
                     n_rows, 1, 1, self.channels
                 )
+        if self.so3_readout == "none":
             return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
-        return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        return x_ro[:, 0:1, :, :] + self.output_ffn.forward_scalar(x_ro)
 
     def _edge_quaternion(self, edge_cache: EdgeFeatureCache) -> torch.Tensor:
         """
@@ -1984,6 +2048,57 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 eps=self.eps,
             )
         return edge_quat
+
+    def _build_full_wigner(self) -> bool:
+        """Return whether the active execution path needs dense Wigner blocks."""
+        if not self._need_full_wigner:
+            return False
+        if self.training:
+            return not self._packed_wigner_train
+        return not self._wigner_free_conv
+
+    def _shared_wigner_runs(
+        self,
+        edge_cache: EdgeFeatureCache,
+        lmax: int,
+    ) -> torch.Tensor | None:
+        """
+        Zonal coupling taken from the packed runs the convolution already builds.
+
+        The fused convolution stages a packed block-diagonal Wigner run per
+        edge whose degree-``l`` ``m = 0`` row occupies entries ``l ** 2`` to
+        ``(l + 1) ** 2``. That is the same quantity as
+        ``Dt_full[:, row(l, m), col(l, 0)]``, so degrees ``1..lmax`` are one
+        contiguous slice and the rotation algebra runs once per step instead of
+        twice. The runs are cached on the edge cache, so whichever consumer
+        comes first pays for them.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            The step's edge feature cache.
+        lmax : int
+            Highest degree the coupling must cover.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
+            no convolution supplies runs of at least this degree.
+        """
+        if edge_cache.csr_cache is None:
+            return None
+        if self.training:
+            if not self._packed_wigner_train:
+                return None
+            fused = self.blocks[0].so2_conv._cuda_value_train
+        else:
+            if not self._wigner_free_conv:
+                return None
+            fused = self.blocks[0].so2_conv._cuda_conv_fn
+        if fused is None or lmax > self.lmax:
+            return None
+        return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
 
     def _build_gie_zonal_coupling(
         self,
@@ -2015,6 +2130,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             return torch.cat([mp_coupling, extra_coupling], dim=1)
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            shared = self._shared_wigner_runs(edge_cache, calc.lmax)
+            if shared is not None:
+                return shared
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None
@@ -2679,7 +2797,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
-                "edge_norm": self.edge_norm,
+                "edge_norm": [
+                    self.radial_norm,
+                    self.film_norm,
+                    self.focus_norm,
+                ],
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "edge_cartesian": self.edge_cartesian,

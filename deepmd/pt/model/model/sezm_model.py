@@ -260,13 +260,15 @@ both graphs.  The options are:
       gradients need fresh metadata per call, so cudagraphs would feed
       stale autograd state into the second backward. Packed K1 also retains
       Python-owned forward state, so direct graph capture remains disabled.
-* ``max_fusion_size=8``
+* ``max_fusion_size=DP_FUSION_SIZE`` (default 8)
       Caps kernel fusion complexity so Inductor's scheduler does not
       time out on the large edge-level reductions inside the
       descriptor when nsel is big.  The tighter value keeps both
       training and inference fusions small enough for Triton IR
       generation on GPU backends that are sensitive to large dynamic
-      edge graphs.
+      edge graphs. An explicit environment value permits a wider fusion
+      search on a validated compiler and workload without weakening the
+      portable default.
 * ``triton.persistent_reductions=False``
       Inductor's persistent-reduction scheduler fuses a ``sum`` with
       *all* neighbouring pointwise ops (``tanh_backward``, ``pow``,
@@ -1846,8 +1848,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             edge_energy_deriv(
                 energy_redu,
                 edge_vec,
-                edge_scatter_index[0],
-                edge_scatter_index[1],
+                edge_scatter_index,
                 edge_mask,
                 nf,
                 nscatter,
@@ -2682,6 +2683,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         inductor_config.max_autotune_report_choices_stats = False
         inductor_config.autotune_num_choices_displayed = 0
+        compile_options = self._inductor_compile_options(inference=not self.training)
 
         object.__setattr__(
             self,
@@ -2690,13 +2692,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 self.core_compute_dens,
                 backend="inductor",
                 dynamic=True,
-                options={
-                    "max_autotune": False,
-                    "epilogue_fusion": False,
-                    "triton.cudagraphs": False,
-                    "shape_padding": True,
-                    "max_fusion_size": 64,
-                },
+                options=compile_options,
             ),
         )
         self._dens_compiled = True

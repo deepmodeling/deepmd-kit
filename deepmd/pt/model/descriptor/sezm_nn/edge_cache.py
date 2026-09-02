@@ -42,6 +42,11 @@ from .wignerd import (
 
 WignerCalculatorFn = Callable[[torch.Tensor], tuple[torch.Tensor, torch.Tensor]]
 EdgeTypeKeepMaskFn = Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]
+# Distance and keep weight to the keep-weighted envelope and radial basis, the
+# fused replacement of applying the two modules separately.
+FusedRadialFn = Callable[
+    [torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]
+]
 
 
 class EdgeFeatureCache(NamedTuple):
@@ -86,6 +91,10 @@ class EdgeFeatureCache(NamedTuple):
     Dt_from_m_cache
         Lazy cache for projected Dt matrices keyed by a normalized
         ``"lmax:mmax"`` identifier.
+    csr_cache
+        Lazy cache for endpoint CSR views used by segmented accelerated
+        operators, keyed by endpoint role (``"dst"`` or ``"src"``). Built once
+        per step and shared by every consumer.
     edge_src_gate
         Optional per-edge Source Freeze Propagation Gate (SFPG) weight with
         shape (E, 1). Equals ``eta[src]`` where
@@ -117,6 +126,7 @@ class EdgeFeatureCache(NamedTuple):
     Dt_full: torch.Tensor | None = None
     D_to_m_cache: dict[str, torch.Tensor] | None = None
     Dt_from_m_cache: dict[str, torch.Tensor] | None = None
+    csr_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] | None = None
     edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
     destinations_sorted: bool = False
@@ -191,6 +201,47 @@ def build_sorted_edge_index_metadata(
     ).contiguous()
     source_order = source_order_i64.to(dtype=torch.int32).contiguous()
     return dst_ptr, source_order, source_ptr
+
+
+def cached_edge_csr(
+    edge_cache: EdgeFeatureCache, endpoint: str, n_node: int | torch.SymInt
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return the CSR view of one edge endpoint, built once per step.
+
+    Several accelerated operators walk the edges of one endpoint in segment
+    order: the fused convolution and the initial embedding on the CUDA path,
+    the flash aggregation and the rotate-mix backward on the Triton path. They
+    all share one edge set, so the sorted view is built once and kept on the
+    edge cache; whichever consumer runs first pays for it.
+
+    Parameters
+    ----------
+    edge_cache : EdgeFeatureCache
+        The step's edge feature cache.
+    endpoint : str
+        ``"dst"`` or ``"src"``.
+    n_node : int or torch.SymInt
+        Number of nodes the endpoint indexes into.
+
+    Returns
+    -------
+    tuple of torch.Tensor
+        The stable sorting permutation with shape (E,) and the row pointer with
+        shape (n_node + 1,), both int64. Stability fixes the within-segment
+        edge order, which is what makes the segment reductions bitwise
+        reproducible.
+    """
+    store = edge_cache.csr_cache
+    cached = None if store is None else store.get(endpoint)
+    if cached is not None:
+        return cached
+    key = getattr(edge_cache, endpoint)
+    order = torch.argsort(key, dim=0, stable=True)
+    counts = key.new_zeros(n_node).scatter_add(0, key, torch.ones_like(key))
+    row_ptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
+    if store is not None:
+        store[endpoint] = (order, row_ptr)
+    return order, row_ptr
 
 
 def compute_edge_src_gate(
@@ -518,6 +569,8 @@ def build_edge_cache_from_edges(
     destinations_sorted: bool = False,
     build_wigner: bool = True,
     node_partial_exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
+    fused_radial: FusedRadialFn | None = None,
+    fused_wigner: WignerCalculatorFn | None = None,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from a sparse edge list.
@@ -554,6 +607,9 @@ def build_edge_cache_from_edges(
         C^3 edge envelope module.
     radial_basis
         Radial basis module.
+    fused_radial
+        Optional fused replacement of ``edge_envelope`` and ``radial_basis``,
+        returning both keep-weighted results from one pass over the distance.
     has_exclude_types
         Whether excluded type pairs should be filtered in this path.
     edge_type_keep_mask
@@ -571,6 +627,9 @@ def build_edge_cache_from_edges(
         Host-side provenance that ``edge_index[1]`` is nondecreasing.
     build_wigner
         Whether to materialize Wigner-D blocks for the SO(2) path.
+    fused_wigner
+        Optional fused replacement of ``wigner_calc`` that builds the packed
+        pair in one kernel pass.
 
     Returns
     -------
@@ -608,8 +667,11 @@ def build_edge_cache_from_edges(
             scale = clamped / edge_len
             edge_vec = edge_vec * scale
             edge_len = clamped
-        edge_env = edge_envelope(edge_len) * edge_keep_f  # (E, 1)
-        edge_rbf = radial_basis(edge_len) * edge_keep_f  # (E, n_radial)
+        if fused_radial is not None:
+            edge_env, edge_rbf = fused_radial(edge_len, edge_keep_f)
+        else:
+            edge_env = edge_envelope(edge_len) * edge_keep_f  # (E, 1)
+            edge_rbf = radial_basis(edge_len) * edge_keep_f  # (E, n_radial)
 
     # === Step 4. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
@@ -618,7 +680,7 @@ def build_edge_cache_from_edges(
             edge_len=edge_len,
             eps=eps,
             random_gamma=random_gamma,
-            wigner_calc=wigner_calc,
+            wigner_calc=fused_wigner if fused_wigner is not None else wigner_calc,
             packed_wigner=(
                 build_wigner
                 and bridging_switch is None
@@ -859,6 +921,7 @@ def _finalize_edge_cache(
         D_packed=D_packed,
         D_to_m_cache={},
         Dt_from_m_cache={},
+        csr_cache={},
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
         destinations_sorted=destinations_sorted,
@@ -915,6 +978,7 @@ def _get_empty_edge_cache(
         D_packed=None,
         D_to_m_cache={},
         Dt_from_m_cache={},
+        csr_cache={},
         edge_src_gate=None,
         edge_quat=empty_quat,
         destinations_sorted=True,
@@ -1092,6 +1156,8 @@ def edge_cache_to_dtype(
     if _edge_quat is not None:
         edge_quat = _edge_quat.to(dtype=dtype)
 
+    # CSR views contain only integer topology. Preserve them across the dtype
+    # conversion so every accelerated consumer shares the per-step sort.
     return EdgeFeatureCache(
         src=cache.src,
         dst=cache.dst,
@@ -1106,6 +1172,7 @@ def edge_cache_to_dtype(
         D_packed=D_packed,
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
+        csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
         destinations_sorted=cache.destinations_sorted,

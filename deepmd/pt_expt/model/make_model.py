@@ -24,12 +24,13 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     compact_nodes,
     expand_node_values,
 )
-from deepmd.kernels.utils import (
-    cuda_infer_level,
-)
 from deepmd.pt_expt.common import (
     auto_wrapped_class,
     torch_module,
+)
+from deepmd.pt_expt.kernels.utils import (
+    fused_energy_force_enabled,
+    fused_operators_enabled,
 )
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
@@ -88,6 +89,7 @@ def _fused_energy_force_graph(
     graph: Any,
     atype: torch.Tensor,
     do_atomic_virial: bool,
+    spin: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor] | None:
     """End-to-end energy / force / virial via fused inference operators.
 
@@ -116,10 +118,13 @@ def _fused_energy_force_graph(
         output_mask,
         atom_bias,
         do_atomic_virial,
+        spin,
     )
     if out is None:
         return None
-    energy, atom_energy, force, virial, atom_virial = out
+    # Every implementation returns the same six outputs; a descriptor without
+    # native spin leaves the magnetic force empty.
+    energy, atom_energy, force, virial, atom_virial, force_mag = out
     n = atype.shape[0]
     nf = graph.n_node.shape[0]
     var = fit.var_name
@@ -130,6 +135,12 @@ def _fused_energy_force_graph(
         var + "_derv_c_redu": virial.reshape(nf, 1, 9),
         "mask": output_mask.to(torch.int32),
     }
+    if force_mag.ndim == 2:
+        ret[var + "_derv_r_mag"] = force_mag.reshape(n, 1, 3)
+    elif spin is not None:
+        # A moment was supplied but this descriptor emits no magnetic force,
+        # so the fused result is incomplete and the caller must fall back.
+        return None
     if do_atomic_virial:
         ret[var + "_derv_c"] = atom_virial.reshape(n, 1, 9)
     return ret
@@ -678,10 +689,13 @@ def make_model(
             )
             # Level 2 emits force as a value through the inference-only custom
             # operator pipeline. Ineligible models use the autograd lower.
-            # The fused pipeline has no mag output, so spin-conditioned models
-            # always take the autograd lower below.
-            if not self.training and cuda_infer_level() >= 2 and spin is None:
-                fused = _fused_energy_force_graph(self, graph, atype, do_atomic_virial)
+            # The fused pipeline emits the magnetic force as a value for a
+            # descriptor that declares native spin, and returns nothing when it
+            # cannot serve the request at all.
+            if not self.training and fused_energy_force_enabled():
+                fused = _fused_energy_force_graph(
+                    self, graph, atype, do_atomic_virial, spin
+                )
                 if fused is not None:
                     return fused
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
@@ -935,7 +949,7 @@ def make_model(
             _desc = getattr(self.atomic_model, "descriptor", None)
             with_csr = (
                 not self.training
-                and cuda_infer_level() >= 1
+                and fused_operators_enabled()
                 and _desc is not None
                 and _desc.get_geo_compress()
             )

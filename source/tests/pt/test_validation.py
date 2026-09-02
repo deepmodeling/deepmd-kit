@@ -36,13 +36,16 @@ from deepmd.pt_expt.train.validation import (
     resolve_full_validation_start_step,
 )
 from deepmd.utils.argcheck import (
+    is_valid_full_validation_metric,
     normalize,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
 )
 from deepmd.utils.eval_metrics import (
+    FULL_VALIDATION_PROFILES,
     SPIN_FULL_VALIDATION_PROFILE,
+    compute_full_validation_energy_metrics,
     compute_full_validation_spin_metrics,
 )
 
@@ -768,6 +771,94 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
         self.assertAlmostEqual(metrics["mae_fm"][0], 15.0)
         self.assertAlmostEqual(metrics["rmse_fm"][0], np.sqrt(250.0))
         self.assertEqual(metrics["mae_fm"][1], 6.0)
+
+    def test_profile_tables_derive_consistently_from_families(self) -> None:
+        for profile in FULL_VALIDATION_PROFILES.values():
+            with self.subTest(profile=profile.name):
+                self.assertEqual(
+                    set(profile.metric_key_map), set(profile.prefactor_by_metric)
+                )
+                self.assertEqual(
+                    set(profile.metric_family_by_key.values()),
+                    set(profile.unit_by_family),
+                )
+                for metric, key in profile.metric_key_map.items():
+                    self.assertEqual(
+                        profile.metric_family_by_key[key], metric.split(":")[0]
+                    )
+
+    def test_second_rank_column_follows_the_selected_metric(self) -> None:
+        for profile in FULL_VALIDATION_PROFILES.values():
+            with self.subTest(profile=profile.name):
+                default = [label for label, _ in profile.columns("e:mae")]
+                self.assertIn("S_MAE", default)
+                self.assertNotIn("V_MAE", default)
+                selected = [label for label, _ in profile.columns("v:rmse")]
+                self.assertIn("V_RMSE", selected)
+                self.assertNotIn("S_RMSE", selected)
+                # Every selectable metric stays reachable by the
+                # best-checkpoint selector, and one trained quantity never
+                # occupies two columns.
+                quantities = {family.prefactors for family in profile.families}
+                for metric, key in profile.metric_key_map.items():
+                    columns = profile.columns(metric)
+                    self.assertIn(key, [column_key for _, column_key in columns])
+                    self.assertEqual(len(columns), 2 * len(quantities))
+
+    def test_virial_metric_selectors_remain_accepted(self) -> None:
+        for metric in ("V:MAE", "V:RMSE", "v:mae", "v:rmse"):
+            self.assertTrue(is_valid_full_validation_metric(metric))
+
+    def test_energy_profile_reports_stress_and_per_atom_virial(self) -> None:
+        # A 2 Angstrom cubic cell has volume 8, so a unit virial error becomes
+        # 1/8 in stress and 1/natoms in per-atom virial.
+        prediction = {
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.ones((1, 9)),
+        }
+        test_data = {
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.zeros((1, 9)),
+            "box": np.tile((np.eye(3) * 2.0).reshape(9), (1, 1)),
+        }
+        metrics = compute_full_validation_energy_metrics(
+            prediction, test_data, natoms=4, has_pbc=True
+        )
+        self.assertAlmostEqual(metrics["mae_v_per_atom"][0], 0.25)
+        self.assertAlmostEqual(metrics["rmse_v_per_atom"][0], 0.25)
+        self.assertAlmostEqual(metrics["mae_s"][0], 0.125)
+        self.assertAlmostEqual(metrics["rmse_s"][0], 0.125)
+        # The two presentations carry the same virial error under different
+        # normalizations.
+        self.assertAlmostEqual(
+            metrics["mae_s"][0] * 8.0, metrics["mae_v_per_atom"][0] * 4.0
+        )
+
+    def test_singular_cell_drops_stress_but_keeps_virial(self) -> None:
+        prediction = {
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.ones((1, 9)),
+        }
+        test_data = {
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "energy": np.zeros((1, 1)),
+            "force": np.zeros((1, 12)),
+            "virial": np.zeros((1, 9)),
+            "box": np.zeros((1, 9)),
+        }
+        metrics = compute_full_validation_energy_metrics(
+            prediction, test_data, natoms=4, has_pbc=True
+        )
+        self.assertIn("mae_v_per_atom", metrics)
+        self.assertNotIn("mae_s", metrics)
 
     def test_spin_profile_omits_magnetic_force_when_unavailable(self) -> None:
         prediction = {

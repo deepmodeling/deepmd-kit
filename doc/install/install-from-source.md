@@ -1,5 +1,8 @@
 # Install from source code
 
+An AI agent can walk through this source build, including the C++ interface
+and LAMMPS with Kokkos. See [Install with an AI agent](install-with-agent.md).
+
 Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the source code of a specific version or the [development version](https://github.com/deepmodeling/deepmd-kit/tree/master).
 
 Or get the DeePMD-kit source code by `git clone`

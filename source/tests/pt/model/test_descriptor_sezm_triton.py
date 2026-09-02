@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Unit tests for the opt-in Triton inference kernels of the SeZM descriptor
 (enabled via the ``DP_TRITON_INFER`` level, see
-:func:`deepmd.kernels.utils.triton_infer_level`): the
+:func:`deepmd.pt_expt.kernels.utils.triton_infer_level`): the
 block-diagonal SO(2)/Wigner rotation, the fused dynamic radial degree mixer,
 the fused value path with its table-routed edge-block backwards, and the
 level-3 fp16x3 mixing stack.
@@ -31,14 +31,21 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
-from deepmd.kernels.triton.sezm import (
+from deepmd.pt.model.descriptor.sezm_nn.indexing import (
+    build_m_major_index,
+    get_so3_dim_of_lmax,
+)
+from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    DynamicRadialDegreeMixer,
+)
+from deepmd.pt_expt.kernels.triton.sezm import (
     TRITON_AVAILABLE,
 )
-from deepmd.kernels.triton.sezm.radial_mix import (
+from deepmd.pt_expt.kernels.triton.sezm.radial_mix import (
     radial_mix_block,
     radial_mix_reference,
 )
-from deepmd.kernels.triton.sezm.so2_rotation import (
+from deepmd.pt_expt.kernels.triton.sezm.so2_rotation import (
     rotate_back_block,
     rotate_back_block_so2,
     rotate_back_dense,
@@ -46,13 +53,6 @@ from deepmd.kernels.triton.sezm.so2_rotation import (
     rotate_to_local_block,
     rotate_to_local_dense,
     rotate_to_local_reference,
-)
-from deepmd.pt.model.descriptor.sezm_nn.indexing import (
-    build_m_major_index,
-    get_so3_dim_of_lmax,
-)
-from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-    DynamicRadialDegreeMixer,
 )
 
 _CUDA = torch.cuda.is_available()
@@ -83,6 +83,38 @@ def _block_diagonal_wigner(n_edge, lmax, device, dtype, generator):
             generator=generator,
         )
     return wigner
+
+
+def _pack_wigner_dt(wigner_dt, lmax):
+    """Pack the three structural transpose columns consumed by mmax=1."""
+    dim = get_so3_dim_of_lmax(lmax)
+    m0, mm, mp = [], [], []
+    for ll in range(lmax + 1):
+        start, end = ll * ll, (ll + 1) ** 2
+        row0 = start + ll
+        m0.append(wigner_dt[:, start:end, row0])
+        if ll >= 1:
+            mm.append(wigner_dt[:, start:end, row0 - 1])
+            mp.append(wigner_dt[:, start:end, row0 + 1])
+    runs = torch.cat(m0 + mm + mp, dim=1)
+    assert runs.shape[1] == 3 * dim - 2
+    return runs
+
+
+def _unpack_wigner_dt(runs, lmax):
+    """Expand packed mmax=1 structural entries into dense transpose blocks."""
+    dim = get_so3_dim_of_lmax(lmax)
+    wigner_dt = runs.new_zeros(runs.shape[0], dim, dim)
+    for ll in range(lmax + 1):
+        start, end = ll * ll, (ll + 1) ** 2
+        row0 = start + ll
+        wigner_dt[:, start:end, row0] = runs[:, start:end]
+        if ll >= 1:
+            wigner_dt[:, start:end, row0 - 1] = runs[:, dim + start - 1 : dim + end - 1]
+            wigner_dt[:, start:end, row0 + 1] = runs[
+                :, 2 * dim + start - 2 : 2 * dim + end - 2
+            ]
+    return wigner_dt
 
 
 def _block_mask(lmax, device):
@@ -604,7 +636,6 @@ class TestSeZMTritonRadialMix(unittest.TestCase):
         self.assertIn("sezm_triton.radial_mix_block", traced.code)
 
 
-@_GPU_KERNELS
 class TestSeZMTritonValuePath(unittest.TestCase):
     """Cross-check the fused SO(2) value path against ``SO2Convolution``.
 
@@ -690,8 +721,9 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         cache.D_to_m_cache = {}
         return x, cache, radial
 
+    @_GPU_KERNELS
     def test_forward_backward_matches_reference_across_family(self):
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
         )
 
@@ -747,8 +779,160 @@ class TestSeZMTritonValuePath(unittest.TestCase):
                         rtol=1e-4,
                     )
 
+    def test_float64_fallback_channel_basis_gradient_preserves_precision(self) -> None:
+        """The non-Triton fallback accumulates the basis gradient in float64."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _rotate_mix_op,
+            _rotate_mix_reference,
+        )
+
+        generator = torch.Generator(device="cpu").manual_seed(29)
+        lmax, n_focus, focus_dim, rank = 2, 2, 8, 2
+        n_node, n_edge = 5, 17
+        dim = (lmax + 1) ** 2
+        c_wide = n_focus * focus_dim
+        kernel_slots = dim + lmax**2
+        x = torch.randn(
+            n_node,
+            dim,
+            c_wide,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+        src = torch.randint(0, n_node, (n_edge,), device="cpu", generator=generator)
+        order = torch.argsort(src, stable=True)
+        counts = torch.bincount(src, minlength=n_node)
+        row_ptr = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
+        wigner = _block_diagonal_wigner(n_edge, lmax, "cpu", torch.float64, generator)
+        kernel = torch.randn(
+            n_edge,
+            kernel_slots * rank,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+        basis = torch.randn(
+            rank,
+            c_wide,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+        grad_out = torch.randn(
+            n_focus,
+            n_edge,
+            (3 * lmax + 1) * focus_dim,
+            dtype=torch.float64,
+            device="cpu",
+            generator=generator,
+        )
+
+        basis_fused = basis.clone().requires_grad_(True)
+        fused = _rotate_mix_op(
+            x,
+            src,
+            order,
+            row_ptr,
+            wigner,
+            kernel,
+            basis_fused,
+            lmax,
+            n_focus,
+            rank,
+        )
+        (grad_fused,) = torch.autograd.grad(fused, basis_fused, grad_out)
+
+        basis_reference = basis.clone().requires_grad_(True)
+        reference = _rotate_mix_reference(
+            x, src, wigner, kernel, basis_reference, lmax, n_focus, rank
+        )
+        (grad_reference,) = torch.autograd.grad(reference, basis_reference, grad_out)
+        torch.testing.assert_close(grad_fused, grad_reference, atol=1e-12, rtol=1e-12)
+
+    @_GPU_KERNELS
+    def test_competition_gradient_preserves_small_positive_scale(self) -> None:
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(31)
+        lmax, n_focus, focus_dim, n_edge, n_layers = 2, 2, 32, 9, 3
+        row = (3 * lmax + 1) * focus_dim
+        m0, m1 = (lmax + 1) * focus_dim, 2 * lmax * focus_dim
+        u0 = torch.randn(n_focus, n_edge, row, device="cuda", generator=generator)
+        alpha = torch.full((n_edge, n_focus), 1e-20, device="cuda", requires_grad=True)
+        w0 = (
+            torch.randn(n_layers, n_focus, m0, m0, device="cuda", generator=generator)
+            / m0**0.5
+        )
+        w1 = (
+            torch.randn(n_layers, n_focus, m1, m1, device="cuda", generator=generator)
+            / m1**0.5
+        )
+        gw = (
+            torch.randn(
+                n_layers - 1,
+                n_focus,
+                focus_dim,
+                lmax * focus_dim,
+                device="cuda",
+                generator=generator,
+            )
+            / focus_dim**0.5
+        )
+        out, _, _ = _mixing_stack_op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)
+        grad_out = torch.randn_like(out)
+        (grad_alpha,) = torch.autograd.grad(out, alpha, grad_out)
+        expected = (grad_out * out.detach()).sum(-1) / alpha.detach()
+        torch.testing.assert_close(grad_alpha, expected, atol=2e-5, rtol=2e-5)
+
+    @_GPU_KERNELS
+    def test_prepared_weights_follow_device_without_entering_state_dict(self) -> None:
+        """Frozen layouts move as buffers while training reads live weights."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+            prepare_triton_value_path_weights,
+        )
+
+        conv = self._build_conv(*self.CASES[1]).cpu()
+        value_path = make_triton_value_path(conv)
+        self.assertIsNotNone(value_path)
+        conv._triton_value_path = value_path
+
+        buffer_names = (
+            "_triton_w0_all",
+            "_triton_w1_all",
+            "_triton_gw_all",
+        )
+        for name in buffer_names:
+            self.assertFalse(hasattr(conv, name))
+
+        prepare_triton_value_path_weights(conv)
+        for name, weight in zip(
+            buffer_names,
+            value_path._pack_weights(differentiable=False),
+            strict=True,
+        ):
+            self.assertIs(weight, getattr(conv, name))
+            self.assertEqual(weight.device.type, "cpu")
+            self.assertNotIn(name, conv.state_dict())
+
+        conv.to("cuda")
+        cached = value_path._pack_weights(differentiable=False)
+        for name, weight in zip(buffer_names, cached, strict=True):
+            self.assertIs(weight, getattr(conv, name))
+            self.assertEqual(weight.device.type, "cuda")
+
+        with torch.no_grad():
+            conv.so2_linears[0].weight_m0.add_(0.125)
+        live = value_path._pack_weights(differentiable=True)
+        self.assertFalse(torch.equal(live[0], cached[0]))
+        self.assertIs(value_path._pack_weights(differentiable=False)[0], cached[0])
+
+    @_GPU_KERNELS
     def test_factory_rejects_unsupported_layouts(self):
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             make_triton_value_path,
         )
 
@@ -771,7 +955,7 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
         return exps
 
     def test_forward_backward_matches_reference(self):
-        from deepmd.kernels.triton.sezm.wigner_monomials import (
+        from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
             _monomials_reference,
             wigner_monomials,
         )
@@ -794,8 +978,60 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                 (grad_ref,) = torch.autograd.grad(ref, q_ref, grad_seed)
                 torch.testing.assert_close(grad_fused, grad_ref, atol=1e-5, rtol=1e-5)
 
+    def test_second_order_matches_reference(self):
+        """The force-loss Hessian contraction stays on the fused path."""
+        from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+            _monomials_reference,
+            wigner_monomials,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(17)
+        for degree in (4, 8, 12):
+            with self.subTest(degree=degree):
+                exponents = self._exponents(degree)
+                q = torch.randn(257, 4, device="cuda", generator=generator)
+                q = q / q.norm(dim=-1, keepdim=True)
+                q[0] = torch.tensor([1.0, 0.0, 0.0, 0.0], device="cuda")
+                grad_seed = torch.randn(
+                    257,
+                    len(exponents) // 4,
+                    device="cuda",
+                    generator=generator,
+                )
+                h = torch.randn(257, 4, device="cuda", generator=generator)
+
+                q_fused = q.clone().requires_grad_(True)
+                seed_fused = grad_seed.clone().requires_grad_(True)
+                grad_fused = torch.autograd.grad(
+                    wigner_monomials(q_fused, exponents, degree),
+                    q_fused,
+                    seed_fused,
+                    create_graph=True,
+                )[0]
+                second_fused = torch.autograd.grad(
+                    grad_fused,
+                    (seed_fused, q_fused),
+                    h,
+                )
+
+                q_ref = q.clone().requires_grad_(True)
+                seed_ref = grad_seed.clone().requires_grad_(True)
+                grad_ref = torch.autograd.grad(
+                    _monomials_reference(q_ref, exponents, degree),
+                    q_ref,
+                    seed_ref,
+                    create_graph=True,
+                )[0]
+                second_ref = torch.autograd.grad(
+                    grad_ref,
+                    (seed_ref, q_ref),
+                    h,
+                )
+                for got, want in zip(second_fused, second_ref, strict=True):
+                    torch.testing.assert_close(got, want, atol=2e-4, rtol=2e-5)
+
     def test_wigner_calculator_matches_reference_chain(self):
-        """The calculator's fused monomial path reproduces the dense chain."""
+        """The fused calculator matches the dense chain and inverse layout policy."""
         import os
         from unittest import (
             mock,
@@ -821,9 +1057,25 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                         .eval()
                     )
                 self.assertTrue(fused_calc._use_triton_monomials)
-                got = fused_calc(q)[0]
-                want = ref_calc(q)[0]
+                got, got_t = fused_calc(q)
+                want, want_t = ref_calc(q)
                 torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)
+                torch.testing.assert_close(got_t, want_t, atol=1e-5, rtol=1e-5)
+                if fused_calc._materialize_inverse_rotation:
+                    self.assertTrue(got_t.is_contiguous())
+                    self.assertNotEqual(
+                        got.untyped_storage().data_ptr(),
+                        got_t.untyped_storage().data_ptr(),
+                    )
+                else:
+                    self.assertEqual(
+                        got.untyped_storage().data_ptr(),
+                        got_t.untyped_storage().data_ptr(),
+                    )
+                    self.assertEqual(
+                        got_t.stride(),
+                        (got.stride(0), got.stride(2), got.stride(1)),
+                    )
 
 
 @_GPU_KERNELS
@@ -841,7 +1093,7 @@ class TestSeZMTritonForceAssembly(unittest.TestCase):
         return dst, src, dst_order, dst_row_ptr, src_order, src_row_ptr
 
     def test_matches_index_add_assembly(self):
-        from deepmd.kernels.triton.sezm.force_assembly import (
+        from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
             edge_force_assembly,
         )
 
@@ -860,10 +1112,9 @@ class TestSeZMTritonForceAssembly(unittest.TestCase):
         force_ref = torch.zeros(n_ext, 3, device="cuda")
         force_ref.index_add_(0, dst, g)
         force_ref.index_add_(0, src, -g)
-        half_w = -0.5 * torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
+        w_edge = -torch.einsum("ek,ej->ekj", g, edge_vec).reshape(-1, 9)
         virial_ref = torch.zeros(n_ext, 9, device="cuda")
-        virial_ref.index_add_(0, dst, half_w)
-        virial_ref.index_add_(0, src, half_w)
+        virial_ref.index_add_(0, src, w_edge)
 
         torch.testing.assert_close(force, force_ref, atol=1e-4, rtol=1e-5)
         torch.testing.assert_close(virial, virial_ref, atol=1e-4, rtol=1e-5)
@@ -874,14 +1125,14 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
     """Check the destination-segmented flash forward against the reference.
 
     Destinations are deliberately unsorted: the traced SeZM graph keeps
-    masked padding edges in arbitrary destination order, so the operator must
-    build its own sorted CSR topology (a sorted-input-only regression once
-    produced silently wrong aggregates on the compiled path).
+    masked padding edges in arbitrary destination order, so the CSR view the
+    caller supplies is what establishes the segment order (a
+    sorted-input-only regression once produced silently wrong aggregates on
+    the compiled path).
     """
 
     def test_forward_matches_reference_on_unsorted_destinations(self):
-        from deepmd.kernels.triton.sezm.flash_atten import (
-            build_row_ptr,
+        from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
             flash_atten_aggregate,
             flash_atten_aggregate_reference,
         )
@@ -901,10 +1152,13 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
         rescale = torch.rand(dim, device="cuda", generator=generator) + 0.5
         alpha = torch.rand(n_edge, n_focus, n_head, device="cuda", generator=generator)
         dst = torch.randint(0, n_node, (n_edge,), device="cuda", generator=generator)
-        row_ptr = build_row_ptr(torch.sort(dst).values, n_node)
+        # The destination CSR view the step would build once and share.
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_node)
+        row_ptr = torch.cat([counts.new_zeros(1), torch.cumsum(counts, 0)])
 
         got = flash_atten_aggregate(
-            x_local, wigner_dt, rescale, alpha, row_ptr, dst, lmax, n_head
+            x_local, wigner_dt, rescale, alpha, order, row_ptr, dst, lmax, n_head
         )
         want = flash_atten_aggregate_reference(
             x_local, wigner_dt, rescale, alpha, dst, n_node, lmax, n_head
@@ -919,10 +1173,10 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
         ``None`` for the wide one) so the test exercises both kernels
         regardless of the built-in coverage of the running GPU.
         """
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             tile_configs,
         )
-        from deepmd.kernels.triton.sezm.flash_atten import (
+        from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
             _flash_atten_backward_reference,
             _flash_bwd_op,
         )
@@ -931,17 +1185,27 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
         saved = dict(runtime)
         self.addCleanup(lambda: (runtime.clear(), runtime.update(saved)))
         tile_configs.register_tile_configs(
-            "flash_bwd_block", {(64, 3): (4, 2, 2), (256, 3): None}
+            "flash_bwd_block",
+            {(64, 2): (4, 2, 2), (64, 3): (4, 2, 2), (256, 3): None},
         )
 
         generator = torch.Generator(device="cuda").manual_seed(13)
         cases = [
-            # (lmax, n_focus, focus_dim, expects_block_dispatch)
-            (3, 2, 32, True),
-            (3, 2, 128, False),
+            # (lmax, storage_lmax, n_focus, focus_dim, dtype, block dispatch)
+            (3, 3, 2, 32, torch.float32, True),
+            (3, 3, 2, 128, torch.float32, False),
+            # A descending schedule reuses a rotation allocated at the
+            # preceding block's larger degree.
+            (2, 3, 2, 32, torch.float32, True),
+            (2, 3, 2, 32, torch.bfloat16, True),
         ]
-        for lmax, n_focus, focus_dim, expects_block in cases:
-            with self.subTest(lmax=lmax, c_wide=n_focus * focus_dim):
+        for lmax, storage_lmax, n_focus, focus_dim, dtype, expects_block in cases:
+            with self.subTest(
+                lmax=lmax,
+                storage_lmax=storage_lmax,
+                c_wide=n_focus * focus_dim,
+                dtype=dtype,
+            ):
                 self.assertEqual(
                     tile_configs.flash_bwd_block_config(n_focus * focus_dim, lmax)
                     is not None,
@@ -951,7 +1215,12 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                 reduced_dim = 3 * lmax + 1
                 dim = (lmax + 1) ** 2
                 grad_pre_gate = torch.randn(
-                    n_node, dim, n_focus * focus_dim, device="cuda", generator=generator
+                    n_node,
+                    dim,
+                    n_focus * focus_dim,
+                    device="cuda",
+                    dtype=dtype,
+                    generator=generator,
                 )
                 x_local = torch.randn(
                     n_edge,
@@ -959,26 +1228,57 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                     reduced_dim,
                     focus_dim,
                     device="cuda",
+                    dtype=dtype,
                     generator=generator,
                 )
                 wigner_dt = _block_diagonal_wigner(
-                    n_edge, lmax, "cuda", torch.float32, generator
+                    n_edge, storage_lmax, "cuda", dtype, generator
                 )
-                rescale = torch.rand(dim, device="cuda", generator=generator) + 0.5
+                if storage_lmax > lmax:
+                    wigner_dt = wigner_dt.transpose(-1, -2)
+                rescale = (
+                    torch.rand(dim, device="cuda", dtype=dtype, generator=generator)
+                    + 0.5
+                )
                 alpha = torch.rand(
-                    n_edge, n_focus, n_head, device="cuda", generator=generator
+                    n_edge,
+                    n_focus,
+                    n_head,
+                    device="cuda",
+                    dtype=dtype,
+                    generator=generator,
                 )
                 dst = torch.randint(
                     0, n_node, (n_edge,), device="cuda", generator=generator
                 )
 
+                order = torch.argsort(dst)
+                row_ptr = torch.cat(
+                    [
+                        torch.zeros(1, device="cuda", dtype=torch.long),
+                        torch.bincount(dst, minlength=n_node).cumsum(0),
+                    ]
+                )
                 got = _flash_bwd_op(
-                    grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head
+                    grad_pre_gate,
+                    x_local,
+                    wigner_dt,
+                    rescale,
+                    alpha,
+                    order,
+                    row_ptr,
+                    dst,
+                    lmax,
+                    n_head,
                 )
                 want = _flash_atten_backward_reference(
                     grad_pre_gate, x_local, wigner_dt, rescale, alpha, dst, lmax, n_head
                 )
-                mask = _block_mask(lmax, "cuda")
+                storage_dim = (storage_lmax + 1) ** 2
+                mask = torch.zeros(
+                    storage_dim, storage_dim, dtype=torch.bool, device="cuda"
+                )
+                mask[:dim, :dim] = _block_mask(lmax, "cuda")
                 comparisons = [
                     (got[0], want[0]),
                     (got[1] * mask, want[1] * mask),
@@ -986,12 +1286,96 @@ class TestSeZMTritonFlashAttenSegmented(unittest.TestCase):
                 ]
                 for got_grad, want_grad in comparisons:
                     scale = want_grad.abs().max().item()
+                    tolerance = 2e-2 if dtype is torch.bfloat16 else 1e-4
                     torch.testing.assert_close(
                         got_grad,
                         want_grad,
-                        atol=1e-4 * max(scale, 1.0),
-                        rtol=1e-4,
+                        atol=tolerance * max(scale, 1.0),
+                        rtol=tolerance,
                     )
+
+    def test_packed_rotation_matches_dense_through_second_order(self):
+        """Packed structural rows preserve the forward and force-loss graph."""
+        from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
+            flash_atten_aggregate,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(17)
+        lmax, n_focus, focus_dim, n_head = 3, 2, 32, 2
+        n_edge, n_node = 4096, 128
+        reduced_dim = 3 * lmax + 1
+        dim = (lmax + 1) ** 2
+        x_local = torch.randn(
+            n_edge,
+            n_focus,
+            reduced_dim,
+            focus_dim,
+            device="cuda",
+            generator=generator,
+        )
+        wigner_dt = _block_diagonal_wigner(
+            n_edge, lmax, "cuda", torch.float32, generator
+        )
+        runs = _pack_wigner_dt(wigner_dt, lmax)
+        rescale = torch.rand(dim, device="cuda", generator=generator) + 0.5
+        alpha = torch.rand(n_edge, n_focus, n_head, device="cuda", generator=generator)
+        dst = torch.randint(0, n_node, (n_edge,), device="cuda", generator=generator)
+        order = torch.argsort(dst, stable=True)
+        counts = torch.zeros(n_node, device="cuda", dtype=torch.long).scatter_add(
+            0, dst, torch.ones_like(dst)
+        )
+        row_ptr = torch.cat([counts.new_zeros(1), counts.cumsum(0)])
+        grad_out = torch.randn(
+            n_node, dim, n_focus * focus_dim, device="cuda", generator=generator
+        )
+        h_x = torch.randn_like(x_local)
+        h_runs = torch.randn_like(runs)
+        h_alpha = torch.randn_like(alpha)
+
+        def evaluate(rotation, h_rotation):
+            x = x_local.detach().clone().requires_grad_(True)
+            rot = rotation.detach().clone().requires_grad_(True)
+            weights = alpha.detach().clone().requires_grad_(True)
+            out = flash_atten_aggregate(
+                x,
+                rot,
+                rescale,
+                weights,
+                order,
+                row_ptr,
+                dst,
+                lmax,
+                n_head,
+            )
+            first = torch.autograd.grad(
+                out, (x, rot, weights), grad_out, create_graph=True
+            )
+            probe = sum(
+                (grad * tangent).sum()
+                for grad, tangent in zip(first, (h_x, h_rotation, h_alpha), strict=True)
+            )
+            second = torch.autograd.grad(probe, (x, rot, weights))
+            return out, first, second
+
+        dense = evaluate(wigner_dt, _unpack_wigner_dt(h_runs, lmax))
+        packed = evaluate(runs, h_runs)
+        comparisons = [
+            (packed[0], dense[0]),
+            (packed[1][0], dense[1][0]),
+            (packed[1][1], _pack_wigner_dt(dense[1][1], lmax)),
+            (packed[1][2], dense[1][2]),
+            (packed[2][0], dense[2][0]),
+            (packed[2][1], _pack_wigner_dt(dense[2][1], lmax)),
+            (packed[2][2], dense[2][2]),
+        ]
+        for got, want in comparisons:
+            scale = want.abs().max().item()
+            torch.testing.assert_close(
+                got,
+                want,
+                atol=2e-4 * max(scale, 1.0),
+                rtol=2e-4,
+            )
 
 
 class TestTritonInferLevel(unittest.TestCase):
@@ -1003,7 +1387,7 @@ class TestTritonInferLevel(unittest.TestCase):
             mock,
         )
 
-        from deepmd.kernels.utils import (
+        from deepmd.pt_expt.kernels.utils import (
             triton_infer_level,
         )
 
@@ -1050,7 +1434,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         against, and the fp64 comparisons of this class independently verify
         the numerics on whatever device runs the suite.
         """
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             tile_configs,
         )
 
@@ -1092,13 +1476,13 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         return u0, alpha, w0_all, w1_all, gw_all
 
     def _errors_against_fp64(self, op, u0, alpha, w0_all, w1_all, gw_all, grad_seed):
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_reference,
         )
 
         u0_ref = u0.double().requires_grad_(True)
         alpha_ref = alpha.double().requires_grad_(True)
-        x_ref, _ = _mixing_stack_reference(
+        x_ref, _, _ = _mixing_stack_reference(
             u0_ref,
             alpha_ref,
             w0_all.double(),
@@ -1112,9 +1496,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         u0_run = u0.clone().requires_grad_(True)
         alpha_run = alpha.clone().requires_grad_(True)
-        x_run, z_run = op(
+        stack_output = op(
             u0_run, alpha_run, w0_all, w1_all, gw_all, self.LMAX, self.FOCUS_DIM, True
         )
+        x_run, z_run = stack_output[:2]
         self.assertTrue(bool(torch.isfinite(x_run).all()))
         self.assertTrue(bool(torch.isfinite(z_run).all()))
         gu_run, _ = torch.autograd.grad(x_run, [u0_run, alpha_run], grad_seed)
@@ -1126,10 +1511,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         return relerr(x_run, x_ref), relerr(gu_run, gu_ref)
 
     def test_matches_fp64_within_fp32_error_budget(self):
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_op,
         )
 
@@ -1157,10 +1542,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         pins the ``2^11`` tail scaling (small magnitudes) and the ``2^-4``
         activation prescale (large magnitudes).
         """
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_op,
         )
 
@@ -1183,16 +1568,16 @@ class TestSeZMStackFP16x3(unittest.TestCase):
                 self.assertLess(x3_bwd, max(3.0 * fp32_bwd, 8e-6))
 
     def test_inductor_compiled_matches_eager(self):
-        """The Inductor-lowered operator is bitwise identical to eager.
+        """The Inductor-lowered force graph is bitwise identical to eager.
 
         Guards the weight fp16 splits: the tail of a split is defined by an
         ``fp32 -> fp16 -> fp32`` rounding round-trip, which Inductor's
         pointwise fusion elides when the split is expressed in aten (the
         intermediate stays in an fp32 register), zeroing the tails and
         silently degrading the compiled operator to fp16-head weights.  The
-        split therefore runs as a Triton kernel, and this test pins the
-        compiled-versus-eager parity through the same make_fx + Inductor
-        pipeline that model freezing uses.
+        split therefore runs as a Triton kernel. Tracing the input gradient
+        also keeps the fp16x3 backward inside the same make_fx + Inductor
+        pipeline that compiled force inference uses.
         """
         from torch._functorch.aot_autograd import (
             aot_module_simplified,
@@ -1207,21 +1592,23 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             make_fx,
         )
 
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
 
         generator = torch.Generator(device="cuda").manual_seed(23)
         inputs = self._stack_inputs(generator)
+        inputs = (inputs[0].requires_grad_(True), *inputs[1:])
         lmax, focus_dim = self.LMAX, self.FOCUS_DIM
 
         def fn(u0, alpha, w0_all, w1_all, gw_all):
             x_local, z_all = mixing_stack_fp16x3(
                 u0, alpha, w0_all, w1_all, gw_all, lmax, focus_dim, True
             )
-            return (x_local, z_all)
+            (grad_u0,) = torch.autograd.grad(x_local.sum(), u0)
+            return (x_local, z_all, grad_u0)
 
-        eager_x, eager_z = fn(*inputs)
+        eager = fn(*inputs)
         graph = make_fx(fn, tracing_mode="symbolic")(*inputs)
         # AOTAutograd's PhiloxStateTracker allocates tensors without an
         # explicit device and would trip the pt-test default-device sentinel
@@ -1229,18 +1616,19 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         saved_device = torch.get_default_device()
         torch.set_default_device(None)
         try:
-            compiled = aot_module_simplified(
-                graph,
-                inputs,
-                fw_compiler=lambda gm, args: compile_fx_inner(gm, args),
-                decompositions=select_decomp_table(),
-            )
-            with torch.no_grad():
-                compiled_x, compiled_z = compiled(*inputs)
+            with torch.no_grad(), torch.device("cuda"):
+                compiled = aot_module_simplified(
+                    graph,
+                    inputs,
+                    fw_compiler=lambda gm, args: compile_fx_inner(gm, args),
+                    inference_compiler=lambda gm, args: compile_fx_inner(gm, args),
+                    decompositions=select_decomp_table(),
+                )
+                actual = compiled(*inputs)
         finally:
             torch.set_default_device(saved_device)
-        torch.testing.assert_close(compiled_x, eager_x, atol=0.0, rtol=0.0)
-        torch.testing.assert_close(compiled_z, eager_z, atol=0.0, rtol=0.0)
+        for got, expected in zip(actual, eager, strict=True):
+            torch.testing.assert_close(got, expected, atol=0.0, rtol=0.0)
 
     def test_dynamic_compile_survives_int32_stride_overflow_edge_counts(self):
         """A graph traced on a small system must run beyond 2^31 / ROW edges.
@@ -1256,10 +1644,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         """
         if torch.cuda.get_device_properties(0).total_memory < 60 * 2**30:
             self.skipTest("requires ~40 GB of free device memory")
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
             _mixing_stack_op,
         )
 
@@ -1286,7 +1674,7 @@ class TestSeZMStackFP16x3(unittest.TestCase):
 
         def make_fn(op):
             def fn(u0, alpha, w0, w1, gw):
-                x_local, _ = op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)
+                x_local = op(u0, alpha, w0, w1, gw, lmax, focus_dim, True)[0]
                 return (x_local,)
 
             return fn
@@ -1314,15 +1702,15 @@ class TestSeZMStackFP16x3(unittest.TestCase):
             mock,
         )
 
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
-            mixing_stack_fp16x3,
-        )
-        from deepmd.kernels.triton.sezm.so2_value_path import (
-            _mixing_stack_op,
-            make_triton_value_path,
-        )
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
             SO2Convolution,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
+            mixing_stack_fp16x3,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+            make_triton_value_path,
         )
 
         def build_conv():
@@ -1350,10 +1738,10 @@ class TestSeZMStackFP16x3(unittest.TestCase):
         self.assertIs(entry._stack_op, _mixing_stack_op)
 
     def test_unswept_shape_has_no_config_and_operator_refuses_it(self):
-        from deepmd.kernels.triton.sezm.so2_stack_fp16x3 import (
+        from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
             mixing_stack_fp16x3,
         )
-        from deepmd.kernels.triton.sezm.tile_configs import (
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
             stack_fp16x3_configs,
         )
 
@@ -1372,7 +1760,7 @@ class _TileConfigRuntimeIsolation(unittest.TestCase):
     """Base fixture: snapshot and restore the process-local runtime tables."""
 
     def setUp(self) -> None:
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             tile_configs,
         )
 
@@ -1431,14 +1819,13 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         )
 
         tc = self.tile_configs
-        tc._builtin_tables.cache_clear()
-        self.addCleanup(tc._builtin_tables.cache_clear)
-        with mock.patch.object(
-            torch.cuda, "get_device_name", return_value="NVIDIA Imaginary GPU"
-        ):
+        with mock.patch.object(tc, "_builtin_tables", return_value={}):
             self.assertEqual(tc.gate_config(32, 3), (16, 8, 2))
             self.assertEqual(tc.rotate_mix_fwd_config(64, 3), (2, 2))
             self.assertIsNone(tc.flash_bwd_block_config(64, 3))
+            self.assertIsNone(tc.flash_bwd_edge_config(64, 3))
+            self.assertIsNone(tc.stack_m0_gate_config(32, 3))
+            self.assertEqual(tc.stack_fp32_configs(32, 3), ((64, 64, 32, 4, 2),) * 3)
             self.assertIsNone(tc.stack_fp16x3_configs(32, 3))
             self.assertFalse(tc.has_tile_config("gate", (32, 3)))
             # Runtime registrations still resolve on an untuned GPU.
@@ -1446,14 +1833,13 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
                 "stack_fp16x3", {(32, 3): ((64, 64, 32, 4, 1),) * 4}
             )
             self.assertIsNotNone(tc.stack_fp16x3_configs(32, 3))
-        tc._builtin_tables.cache_clear()
 
     def test_collect_model_shape_keys_reports_supported_convolutions(self):
-        from deepmd.kernels.triton.sezm.sweep_tile_configs import (
-            collect_model_shape_keys,
-        )
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
             SO2Convolution,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
+            collect_model_shape_keys,
         )
 
         def build_conv(**overrides):
@@ -1484,17 +1870,20 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         self.assertEqual(collect_model_shape_keys(model), [(32, 3, 2, 1)])
 
     def test_tune_missing_configs_sweeps_only_uncovered_groups(self):
+        from dataclasses import (
+            replace,
+        )
         from unittest import (
             mock,
         )
 
-        from deepmd.kernels.triton.sezm import (
+        from deepmd.pt_expt.kernels.triton.sezm import (
             sweep_tile_configs,
         )
 
         tc = self.tile_configs
-        # Cover the pointwise and fp16x3 groups; leave the (C_wide, lmax)
-        # groups uncovered so only they should be swept at level 2.
+        # Cover the base pointwise and fp16x3 groups; leave the independent
+        # point-recompute, fp32 and (C_wide, lmax) groups uncovered.
         tc.register_tile_configs("gate", {(48, 2): (16, 4, 1)})
         tc.register_tile_configs("stack_fp16x3", {(48, 2): None})
         calls: list[str] = []
@@ -1506,28 +1895,64 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
             return run
 
+        def fake_flash_sweep(cf, lmax, **kwargs):
+            calls.append("flash_bwd")
+            return {
+                "flash_bwd_edge": {(96, 2): (1, 1)},
+                "flash_bwd_block": {(96, 2): None},
+            }
+
         fake_sweeps = {
             "pointwise": fake_sweep("pointwise", "gate", (48, 2)),
+            "point_recompute": fake_sweep(
+                "point_recompute", "point_recompute", (48, 2)
+            ),
             "rotate_fwd": fake_sweep("rotate_fwd", "rotate_mix_fwd", (96, 2)),
             "rotate_bwd": fake_sweep("rotate_bwd", "rotate_mix_bwd_block", (96, 2)),
-            "flash_bwd": fake_sweep("flash_bwd", "flash_bwd_block", (96, 2)),
+            "flash_bwd": fake_flash_sweep,
+            "fp32": fake_sweep("fp32", "stack_fp32", (48, 2)),
+            "m0_gate": fake_sweep("m0_gate", "stack_m0_gate", (48, 2)),
             "fp16x3": fake_sweep("fp16x3", "stack_fp16x3", (48, 2)),
         }
+        fake_specs = {
+            name: replace(spec, sweep=fake_sweeps[name])
+            for name, spec in sweep_tile_configs._SWEEP_SPECS.items()
+            # Training-profile families are tuned by explicit sweep runs and
+            # are outside the freeze auto-tuner under test.
+            if not spec.train_only
+        }
         shape_keys = [(48, 2, 2, 1)]
-        with mock.patch.dict(sweep_tile_configs._SWEEPS, fake_sweeps):
+        with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             registered = sweep_tile_configs.tune_missing_configs(
                 shape_keys, level=2, device="cuda"
             )
-        self.assertEqual(sorted(calls), ["flash_bwd", "rotate_bwd", "rotate_fwd"])
+        self.assertEqual(
+            sorted(calls),
+            [
+                "flash_bwd",
+                "fp32",
+                "m0_gate",
+                "point_recompute",
+                "rotate_bwd",
+                "rotate_fwd",
+            ],
+        )
         self.assertEqual(
             sorted(registered),
-            ["flash_bwd_block", "rotate_mix_bwd_block", "rotate_mix_fwd"],
+            [
+                "flash_bwd_block",
+                "flash_bwd_edge",
+                "point_recompute",
+                "rotate_mix_bwd_block",
+                "rotate_mix_fwd",
+                "stack_fp32",
+                "stack_m0_gate",
+            ],
         )
-        # The registrations are now covered: a second tune is a no-op, and
-        # level 3 adds only the fp16x3 group (whose key was pre-covered by
-        # the explicit None above).
+        # Every level-2 group is covered, while the pre-registered fp16x3 key
+        # covers the only additional level-3 group.
         calls.clear()
-        with mock.patch.dict(sweep_tile_configs._SWEEPS, fake_sweeps):
+        with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             self.assertEqual(
                 sweep_tile_configs.tune_missing_configs(
                     shape_keys, level=3, device="cuda"
@@ -1536,7 +1961,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             )
         self.assertEqual(calls, [])
         # Levels below 2 never sweep.
-        with mock.patch.dict(sweep_tile_configs._SWEEPS, fake_sweeps):
+        with mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, fake_specs, clear=True):
             self.assertEqual(
                 sweep_tile_configs.tune_missing_configs(
                     [(64, 5, 2, 1)], level=1, device="cuda"

@@ -25,10 +25,10 @@ def graph_edge_dtype(model: Any, lower_kind: str) -> str:
     Returns
     -------
     str
-        ``"float32"`` for eligible geometrically compressed DPA1 graph
-        lowers, otherwise ``"float64"``.
+        ``"float32"`` for eligible compressed DPA1 or DPA4C graph lowers,
+        otherwise ``"float64"``.
     """
-    if lower_kind not in ("graph", "dpa1_canonical"):
+    if lower_kind not in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         return "float64"
     return str(model.atomic_model.graph_edge_dtype())
 

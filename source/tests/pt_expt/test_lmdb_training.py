@@ -116,6 +116,33 @@ def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
     env.close()
 
 
+def _create_charge_spin_lmdb(path: str, charge_spin: np.ndarray) -> None:
+    """Write one frame whose stored condition is *charge_spin*."""
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    fmt = "012d"
+    natoms = 6
+    with env.begin(write=True) as txn:
+        txn.put(
+            b"__metadata__",
+            msgpack.packb(
+                {
+                    "nframes": 1,
+                    "frame_idx_fmt": fmt,
+                    "system_info": {
+                        "formula": "O3H3",
+                        "natoms": [3, 3],
+                        "nframes": 1,
+                    },
+                },
+                use_bin_type=True,
+            ),
+        )
+        frame = _make_frame(natoms, 0)
+        frame["charge_spin"] = _encode_array(charge_spin.astype(np.float64))
+        txn.put(format(0, fmt).encode(), msgpack.packb(frame, use_bin_type=True))
+    env.close()
+
+
 def _create_partially_labeled_lmdb(path: str) -> None:
     """Write frames split between energy-only and force-only labels."""
     nframes = 4
@@ -185,6 +212,35 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
 
     def tearDown(self) -> None:
         shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_unaddressable_charge_state_is_rejected(self) -> None:
+        """An LMDB condition indexes the same tables, so it is checked too.
+
+        The gathers behind ``charge_spin`` are unguarded, so a stored value
+        that names no table row has to fail on the numpy batch rather than be
+        truncated onto a neighbouring row inside the forward.
+        """
+        for state, message in (
+            (np.array([[0.5, 1.0]]), "charge must be an integer"),
+            (np.array([[0.0, 100.0]]), r"multiplicity must lie in \[0, 100\)"),
+        ):
+            with self.subTest(charge_spin=state.tolist()):
+                path = os.path.join(self.tmpdir, f"cs{abs(hash(state.tobytes()))}.lmdb")
+                _create_charge_spin_lmdb(path, state)
+                ds = LmdbDataSystem(
+                    lmdb_path=path, type_map=["O", "H"], batch_size=1, seed=0
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    normalize_batch(ds.get_batch())
+
+    def test_addressable_charge_state_survives_the_batch(self) -> None:
+        path = os.path.join(self.tmpdir, "cs_ok.lmdb")
+        _create_charge_spin_lmdb(path, np.array([[-1.0, 3.0]]))
+        ds = LmdbDataSystem(lmdb_path=path, type_map=["O", "H"], batch_size=1, seed=0)
+        norm = normalize_batch(ds.get_batch())
+        np.testing.assert_allclose(
+            np.reshape(norm["charge_spin"], (-1, 2)), [[-1.0, 3.0]]
+        )
 
     def test_get_batch_shape_and_normalize(self) -> None:
         ds = LmdbDataSystem(

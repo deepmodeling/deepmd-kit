@@ -820,7 +820,13 @@ class TestDPModelEnergyLossForceGradAccum:
     Covers: mse, mae, huber; plus non-mixed no-op.
     """
 
-    def _make_loss(self, loss_func="mse", use_huber=False, f_use_norm=False):
+    def _make_loss(
+        self,
+        loss_func="mse",
+        use_huber=False,
+        f_use_norm=False,
+        relative_f=None,
+    ):
         return EnergyLoss(
             starter_learning_rate=1.0,
             start_pref_e=0.0,
@@ -836,6 +842,7 @@ class TestDPModelEnergyLossForceGradAccum:
             loss_func=loss_func,
             use_huber=use_huber,
             f_use_norm=f_use_norm,
+            relative_f=relative_f,
         )
 
     def _loss_fn(self, loss_obj, model_pred, label, natoms):
@@ -935,6 +942,38 @@ class TestDPModelEnergyLossForceGradAccum:
             f_B,
             f_B_hat,
         )
+
+    @pytest.mark.parametrize("masked", [False, True])
+    def test_relative_force_norm_uses_normalized_residual(self, masked):
+        """Vector-norm losses consume the relative-force residual."""
+        relative_f = 1.0
+        prediction = np.zeros((1, 2, 3), dtype=np.float64)
+        label_force = np.array(
+            [[[3.0, 4.0, 0.0], [0.0, 0.0, 2.0]]],
+            dtype=np.float64,
+        )
+        mask = np.ones((1, 2), dtype=np.float64) if masked else None
+        model_pred, label = _full_ener_dicts(
+            1,
+            2,
+            np.zeros((1, 1)),
+            np.zeros((1, 1)),
+            mask=mask,
+        )
+        model_pred["force"] = prediction
+        label["force"] = label_force
+        label["find_force"] = 1.0
+        loss_obj = self._make_loss(
+            "mae",
+            f_use_norm=True,
+            relative_f=relative_f,
+        )
+
+        actual = self._loss_fn(loss_obj, model_pred, label, 2)
+        label_norm = np.linalg.norm(label_force, axis=-1)
+        residual_norm = label_norm / (label_norm + relative_f)
+        expected = residual_norm.mean()
+        assert np.isclose(actual, expected)
 
     def test_no_op_for_non_mixed(self):
         """All-ones mask gives same force loss as no mask."""

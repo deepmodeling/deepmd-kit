@@ -20,47 +20,47 @@ from deepmd.dpmodel.utils.env_mat_stat import (
 from deepmd.dpmodel.utils.type_embed import (
     remap_atype_to_padding,
 )
-from deepmd.kernels.cuda.dpa1.graph_compress import (
-    dpa1_graph_compress,
-)
-from deepmd.kernels.cuda.dpa1.graph_compress import (
-    op_available as cuda_compress_available,
-)
-from deepmd.kernels.cuda.dpa1.graph_descriptor import (
-    dpa1_graph_descriptor,
-)
-from deepmd.kernels.cuda.dpa1.graph_descriptor import (
-    op_available as cuda_descriptor_available,
-)
-from deepmd.kernels.triton.dpa1.activation import (
-    ACT_CODES,
-    TRITON_AVAILABLE,
-)
-from deepmd.kernels.triton.dpa1.edge_conv import (
-    concat_gate_placeholders as edge_concat_gate_placeholders,
-)
-from deepmd.kernels.triton.dpa1.edge_conv import (
-    edge_conv,
-)
-from deepmd.kernels.triton.dpa1.gemm_fp16x3 import (
-    embed_last_gemm,
-)
-from deepmd.kernels.triton.dpa1.se_conv import (
-    concat_gate_placeholders,
-    se_conv,
-)
-from deepmd.kernels.triton.env_mat import edge_env_mat as _edge_env_mat_triton
-from deepmd.kernels.triton.env_mat import env_mat as _env_mat_triton
-from deepmd.kernels.utils import (
-    cuda_infer_level,
-    triton_infer_level,
-)
 from deepmd.pt_expt.common import (
     register_buffer_replacing_slot,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
+    dpa1_graph_compress,
+)
+from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
+    op_available as cuda_compress_available,
+)
+from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
+    dpa1_graph_descriptor,
+)
+from deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor import (
+    op_available as cuda_descriptor_available,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.activation import (
+    ACT_CODES,
+    TRITON_AVAILABLE,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.edge_conv import (
+    concat_gate_placeholders as edge_concat_gate_placeholders,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.edge_conv import (
+    edge_conv,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.gemm_fp16x3 import (
+    embed_last_gemm,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.se_conv import (
+    concat_gate_placeholders,
+    se_conv,
+)
+from deepmd.pt_expt.kernels.triton.env_mat import edge_env_mat as _edge_env_mat_triton
+from deepmd.pt_expt.kernels.triton.env_mat import env_mat as _env_mat_triton
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    triton_infer_level,
 )
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
@@ -111,10 +111,10 @@ def _env_mat(
     se = desc.se_atten
     nf, nloc, nnei = nlist.shape
     atype_ext_for_env = atype_ext.clamp_min(0)
-    if triton_infer_level() >= 1:
-        # Fused env-matrix operator, captured opaquely under the pt_expt trace and
-        # resolving to the Triton kernel at CUDA runtime; identical outputs to the
-        # array-API ``EnvMat.call`` below.
+    if not desc.training and triton_infer_level() >= 1:
+        # Inference-only env-matrix operator, captured opaquely under the pt_expt
+        # trace and resolving to the Triton kernel at CUDA runtime; identical
+        # outputs to the array-API ``EnvMat.call`` below.
         rr, diff, sw = _env_mat_triton(
             coord_ext,
             nlist,
@@ -307,6 +307,29 @@ def _type_pair_table(desc: Any, type_embedding: torch.Tensor) -> torch.Tensor:
     )
     two_side = torch.cat([nei, center], dim=-1).reshape(-1, nt * 2)
     return se.cal_g_strip(two_side, 0)
+
+
+def _without_magnetic_force(
+    output: tuple[torch.Tensor, ...],
+) -> tuple[torch.Tensor, ...]:
+    """Append the empty magnetic force of a spin-free fused composition.
+
+    Every implementation of ``fused_energy_force_graph`` returns the same six
+    outputs, so the caller reads the magnetic force by position rather than by
+    probing the arity of the result.
+
+    Parameters
+    ----------
+    output
+        The five spin-free outputs: energy, atom energy, force, virial and
+        atom virial.
+
+    Returns
+    -------
+    tuple of torch.Tensor
+        The same outputs followed by an empty magnetic force.
+    """
+    return (*output, output[2].new_empty(0))
 
 
 @BaseDescriptor.register("se_atten")
@@ -1034,7 +1057,7 @@ class DescrptDPA1(DescrptDPA1DP):
         """Fused CUDA graph-native geo-compressed strip descriptor (attn-free).
 
         Numerically equivalent to :meth:`DescrptDPA1._call_compressed` through
-        the :func:`~deepmd.kernels.cuda.dpa1.graph_compress.dpa1_graph_compress`
+        the :func:`~deepmd.pt_expt.kernels.cuda.dpa1.graph_compress.dpa1_graph_compress`
         operator: the environment matrix, quintic table lookup, strip type-pair
         gate, moment reduction and ``G^T G`` contraction collapse into one CUDA
         mega kernel whose registered backward exposes the ``edge_vec`` gradient
@@ -1051,7 +1074,7 @@ class DescrptDPA1(DescrptDPA1DP):
         """Fused CUDA graph-native descriptor (concat, attn-free).
 
         Numerically equivalent to :meth:`DescrptDPA1DP.call_graph` through the
-        :func:`~deepmd.kernels.cuda.dpa1.graph_descriptor.dpa1_graph_descriptor`
+        :func:`~deepmd.pt_expt.kernels.cuda.dpa1.graph_descriptor.dpa1_graph_descriptor`
         operator: the environment matrix, embedding MLP, moment reduction and
         ``G^T G`` contraction collapse into one CUDA mega kernel whose
         registered backward exposes the ``edge_vec`` gradient for the analytic
@@ -1068,18 +1091,20 @@ class DescrptDPA1(DescrptDPA1DP):
         ownership: torch.Tensor,
         atom_bias: torch.Tensor,
         do_atomic_virial: bool,
+        spin: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, ...] | None:
         """End-to-end fused energy / force / virial from the edge stream.
 
         Collapses this descriptor, the energy fitting and the analytic force /
         virial assembly into one value-returning CUDA operator (no autograd
-        tape). Returns ``(energy, atom_energy, force, virial, atom_virial)``, or
-        ``None`` when the descriptor or fitting is not fused-eligible or the
-        operator library is unavailable -- the caller then uses the autograd
-        lower. The geo-compressed descriptor dispatches to its tabulated operator
-        (:func:`~deepmd.kernels.cuda.dpa1.graph_compress.dpa1_graph_compress_energy_force`);
+        tape). Returns ``(energy, atom_energy, force, virial, atom_virial,
+        force_mag)``, with a rank-one empty magnetic-force sentinel, or ``None``
+        when the descriptor or fitting is not fused-eligible or the operator
+        library is unavailable -- the caller then uses the autograd lower. The
+        geo-compressed descriptor dispatches to its tabulated operator
+        (:func:`~deepmd.pt_expt.kernels.cuda.dpa1.graph_compress.dpa1_graph_compress_energy_force`);
         the embedding-MLP descriptor to
-        :func:`~deepmd.kernels.cuda.dpa1.graph_energy_force.dpa1_graph_energy_force`.
+        :func:`~deepmd.pt_expt.kernels.cuda.dpa1.graph_energy_force.dpa1_graph_energy_force`.
 
         Parameters
         ----------
@@ -1096,13 +1121,17 @@ class DescrptDPA1(DescrptDPA1DP):
             Combined fitting and atomic-model bias with shape (ntypes,).
         do_atomic_virial : bool
             Whether to also assemble the per-atom virial.
+        spin : torch.Tensor or None
+            Optional per-node magnetic moments. DPA1 does not consume them;
+            supplying one makes the caller select a spin-capable fallback.
 
         Returns
         -------
         tuple[torch.Tensor, ...] or None
-            ``(energy, atom_energy, force, virial, atom_virial)``, or ``None``.
+            ``(energy, atom_energy, force, virial, atom_virial, force_mag)``,
+            or ``None``.
         """
-        from deepmd.kernels.cuda.graph_fitting import (
+        from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_eligible,
         )
 
@@ -1115,7 +1144,7 @@ class DescrptDPA1(DescrptDPA1DP):
         type_embedding = self.type_embedding.call()
         node_capacity = atype.shape[0]
         if self.geo_compress:
-            from deepmd.kernels.cuda.dpa1.graph_compress import (
+            from deepmd.pt_expt.kernels.cuda.dpa1.graph_compress import (
                 dpa1_graph_compress_energy_force,
                 ef_op_available,
                 mega_eligible,
@@ -1123,7 +1152,28 @@ class DescrptDPA1(DescrptDPA1DP):
 
             if not (ef_op_available() and mega_eligible(self)):
                 return None
-            return dpa1_graph_compress_energy_force(
+            return _without_magnetic_force(
+                dpa1_graph_compress_energy_force(
+                    self,
+                    fit,
+                    graph,
+                    atype,
+                    type_embedding,
+                    ownership,
+                    atom_bias,
+                    node_capacity=node_capacity,
+                    do_atomic_virial=do_atomic_virial,
+                )
+            )
+        from deepmd.pt_expt.kernels.cuda.dpa1.graph_energy_force import (
+            dpa1_graph_energy_force,
+            op_available,
+        )
+
+        if not op_available():
+            return None
+        return _without_magnetic_force(
+            dpa1_graph_energy_force(
                 self,
                 fit,
                 graph,
@@ -1134,23 +1184,6 @@ class DescrptDPA1(DescrptDPA1DP):
                 node_capacity=node_capacity,
                 do_atomic_virial=do_atomic_virial,
             )
-        from deepmd.kernels.cuda.dpa1.graph_energy_force import (
-            dpa1_graph_energy_force,
-            op_available,
-        )
-
-        if not op_available():
-            return None
-        return dpa1_graph_energy_force(
-            self,
-            fit,
-            graph,
-            atype,
-            type_embedding,
-            ownership,
-            atom_bias,
-            node_capacity=node_capacity,
-            do_atomic_virial=do_atomic_virial,
         )
 
     def _call_graph_triton(

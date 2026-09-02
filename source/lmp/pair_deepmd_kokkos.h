@@ -20,6 +20,7 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 #include <cstddef>
 #include <cstdint>
 
+#include "compact_canonical_graph_kokkos.h"
 #include "kokkos_base.h"
 #include "kokkos_type.h"
 #include "neigh_list_kokkos.h"
@@ -27,17 +28,13 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 
 namespace LAMMPS_NS {
 
-template <class DeviceType>
-struct CompactCanonicalGraphWorkspace {
-  Kokkos::View<std::int64_t*, DeviceType> source;
-  Kokkos::View<float*, DeviceType> edge_vec;
-  Kokkos::View<std::int64_t*, DeviceType> destination_row_ptr;
-  Kokkos::View<std::int64_t*, DeviceType> source_counts;
-  Kokkos::View<std::int64_t*, DeviceType> source_row_ptr;
-  Kokkos::View<std::int64_t*, DeviceType> source_cursor;
-  Kokkos::View<std::int64_t*, DeviceType> source_order;
-  std::size_t edge_capacity = 0;
-};
+// LAMMPS 22Jul2025 exposes reverse-communication buffers as X_FLOAT; starting
+// with 10Sep2025, Kokkos pair styles use a fixed double buffer.
+#if LAMMPS_VERSION_NUMBER < 20250910
+using DeepMDKokkosCommBuffer = DAT::tdual_xfloat_1d;
+#else
+using DeepMDKokkosCommBuffer = DAT::tdual_double_1d;
+#endif
 
 // GPU-resident inference for exported ``.pt2`` models whose forward consumes
 // an explicit edge graph: both the graph-input form (a compact, unpadded
@@ -75,45 +72,22 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // host-staged path.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
-  int pack_reverse_comm_kokkos(int, int, DAT::tdual_double_1d&) override;
+  int pack_reverse_comm_kokkos(int, int, DeepMDKokkosCommBuffer&) override;
   void unpack_reverse_comm_kokkos(int,
                                   DAT::tdual_int_1d,
-                                  DAT::tdual_double_1d&) override;
+                                  DeepMDKokkosCommBuffer&) override;
 
-  // Build the device edge graph from the Kokkos full neighbor list, returning
-  // the edge count. A single rank folds ghosts onto local owners (minimum
-  // image); domain decomposition keeps the extended local-plus-ghost node set.
-  // Public because it launches extended device lambdas, which CUDA forbids
-  // inside non-public members.
-  void prepare_model_nodes();
+  // Build the device edge graph of the edge-input schema from the Kokkos full
+  // neighbor list, returning the edge count. Public because it launches
+  // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
-  std::int64_t build_canonical_edges_device(
-      CompactCanonicalGraphWorkspace<DeviceType>& workspace);
 
  protected:
-  // LAMMPS type (1-based) -> model type, resident on the device.
-  Kokkos::View<int*, DeviceType> d_type_map;
+  // Model node set and, for a compact canonical artifact, the graph itself.
+  CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   Kokkos::View<int*, DeviceType>
-      d_model_type;  // (nnode_model) type per model node
-  Kokkos::View<std::int64_t*, DeviceType>
-      d_model_type_i64;  // compact canonical artifact type per model node
-  // Ghost -> local owner fold, rebuilt on the host at each neighbor rebuild.
-  DAT::tdual_int_1d k_owner;
-  typename AT::t_int_1d d_owner;
-
-  // Virtual-atom (NULL type) compaction, rebuilt with the neighbor list: the
-  // model sees only the local atoms with a real model type, so ``model2loc``
-  // lists those local indices and ``loc2model`` inverts it (-1 for virtual).
-  // When no type maps to NULL the compaction is the identity.
-  bool has_null_types;
-  bool multi_rank;  // domain-decomposed run -> extended (local+ghost) node set
-  int nloc_model;   // real local model nodes; the energy is summed over these
-  int nnode_model;  // total model nodes (== nloc_model folded; + ghost
-                    // extended)
-  DAT::tdual_int_1d k_loc2model;  // (nall) atom -> model node index, or -1
-  DAT::tdual_int_1d k_model2loc;  // (nall) model node index -> atom index
-  typename AT::t_int_1d d_loc2model;
-  typename AT::t_int_1d d_model2loc;
+      d_model_type;  // (nnode_model) edge-input type per model node
+  bool multi_rank;   // domain-decomposed run -> extended (local+ghost) node set
   Kokkos::View<double*, DeviceType>
       d_coord_model;  // (3 * nnode_model), NULL case
 
@@ -124,7 +98,6 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   Kokkos::View<double*, DeviceType> d_edge_vec;           // (3 * nedge)
   Kokkos::View<float*, DeviceType>
       d_edge_vec_float;  // (3 * nedge), compressed graph ABI
-  CompactCanonicalGraphWorkspace<DeviceType> canonical_workspace;
 
   // Model outputs on the device. Energy is per local atom; force and virial
   // span the model node set (up to ``nall`` under domain decomposition).
@@ -136,8 +109,14 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 
   // Per-atom energy accumulator (aliases the base Pair ``eatom`` host array so
   // downstream per-atom computes/dumps see it after the device-to-host sync).
+  // The transformed accumulator view was added in the 10Sep2025 release.
+#if LAMMPS_VERSION_NUMBER < 20250910
+  DAT::tdual_double_1d k_eatom;
+  typename AT::t_double_1d d_eatom;
+#else
   DAT::ttransform_kkacc_1d k_eatom;
   typename AT::t_kkacc_1d d_eatom;
+#endif
 
   int edge_capacity;       // allocated edges in d_edge_index / d_edge_vec
   bool edge_vec_fp32;      // model graph ABI consumes edge vectors in fp32

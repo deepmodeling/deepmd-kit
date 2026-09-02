@@ -6,16 +6,16 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
-from deepmd.kernels.cuda.graph_fitting import (
+from deepmd.pt_expt.common import (
+    torch_module,
+)
+from deepmd.pt_expt.kernels.graph_fitting import (
     fitting_eligible,
     graph_fitting,
 )
-from deepmd.kernels.cuda.graph_fitting import op_available as cuda_fitting_available
-from deepmd.kernels.utils import (
-    cuda_infer_level,
-)
-from deepmd.pt_expt.common import (
-    torch_module,
+from deepmd.pt_expt.kernels.graph_fitting import op_available as fused_fitting_available
+from deepmd.pt_expt.kernels.utils import (
+    fused_operators_enabled,
 )
 
 from .base_fitting import (
@@ -43,21 +43,21 @@ class EnergyFittingNet(EnergyFittingNetDP):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Graph-native fitting forward, fused on CUDA when eligible.
+        """Graph-native fitting forward, fused when the backend supports it.
 
-        At ``DP_CUDA_INFER >= 1`` an inference-mode call on an eligible
-        network (see
-        :func:`~deepmd.kernels.cuda.graph_fitting.fitting_eligible`)
-        routes through the fused cuBLAS operator; anything else keeps the
-        dpmodel reference. Routing is device-free, so a CPU ``make_fx`` trace
-        bakes the operator into the exported graph.
+        An inference-mode call on an eligible network (see
+        :func:`~deepmd.pt_expt.kernels.graph_fitting.fitting_eligible`)
+        routes through the fused operator of the backend device; anything else
+        keeps the dpmodel reference. Routing resolves against the backend
+        device rather than a traced tensor, because every export traces on CPU
+        and moves the program afterwards.
         """
         if (
             not self.training
             and fparam is None
             and aparam is None
-            and cuda_infer_level() >= 1
-            and cuda_fitting_available()
+            and fused_operators_enabled()
+            and fused_fitting_available()
             and fitting_eligible(self)
         ):
             return graph_fitting(self, descriptor, atype)

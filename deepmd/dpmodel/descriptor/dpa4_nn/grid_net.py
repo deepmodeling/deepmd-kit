@@ -39,6 +39,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_einsum,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -99,35 +100,26 @@ def _build_frame_degree_index(
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 
-def _degree_batched_matmul(xp: Any, coeff: Any, weight: Any) -> Any:
-    """Contract ``einsum("ndfi,dio->ndfo")`` batched over the degree axis.
+def _build_so3_scalar_product_weight(
+    projector: SO3GridProjector,
+) -> np.ndarray:
+    """Build the Haar inner-product weight for every ``(l, m, k)`` slot.
 
-    Parameters
-    ----------
-    xp : Any
-        The array namespace of ``coeff``.
-    coeff : Array
-        Coefficients with shape ``(N, D, F, i)``.
-    weight : Array
-        Per-degree weights with shape ``(D, i, o)``.
-
-    Returns
-    -------
-    Array
-        Contracted coefficients with shape ``(N, D, F, o)``.
-
-    Notes
-    -----
-    Batching over the ``(D, F)`` axes, not over ``N``: expanding ``weight``
-    across ``F`` costs ``D*F*i*o`` elements, whereas batching over ``N``
-    (or collapsing ``N*F``, which needs a materialized permuted copy of
-    ``coeff``) touches ``N*D*F*i`` elements — a factor ``N/o`` more. No
-    reshape is involved, so an empty ``N`` batch (empty graph/edge set, or
-    a distributed rank owning no nodes) flows through naturally.
+    Real Wigner-D coefficients obey
+    ``integral D_lmk D_l'm'k' dR = delta_ll' delta_mm' delta_kk' / (2*l+1)``.
+    Frame slots with ``abs(k) > l`` are structural zeros in the regular SeZM
+    layout and therefore receive zero weight.
     """
-    coeff_df = xp.permute_dims(coeff, (1, 2, 0, 3))  # (D, F, N, i)
-    out = xp.matmul(coeff_df, weight[:, None, :, :])  # (D, F, N, o)
-    return xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, o)
+    degree_index = _build_frame_degree_index(
+        lmax=projector.lmax,
+        mmax=projector.mmax,
+        coefficient_layout=projector.coefficient_layout,
+    ).reshape(-1, 1)
+    frame_values = projector.frame_values.reshape(1, -1)
+    valid_frame = np.abs(frame_values) <= degree_index
+    dtype = PRECISION_DICT[projector.precision.lower()]
+    degree_weight = (1.0 / (2 * degree_index + 1)).astype(dtype)
+    return valid_frame.astype(dtype) * degree_weight
 
 
 def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
@@ -161,6 +153,42 @@ def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
     return xp.reshape(projected, (n_batch, coeff_dim, n_focus, -1))
 
 
+def _project_pair_in_one_transform(
+    left: Any,
+    right: Any,
+    *,
+    n_frames: int,
+    to_grid: Callable[[Any], Any],
+) -> tuple[Any, Any]:
+    """Project two equally shaped coefficient operands in one linear transform."""
+    xp = array_api_compat.array_namespace(left, right)
+    n_batch, coeff_dim, n_focus, _ = left.shape
+    frame_shape = (n_batch, coeff_dim, n_focus, n_frames, -1)
+    pair = xp.reshape(
+        xp.concat(
+            [xp.reshape(left, frame_shape), xp.reshape(right, frame_shape)],
+            axis=-1,
+        ),
+        (n_batch, coeff_dim, n_focus, -1),
+    )
+    pair_grid = to_grid(pair)
+    split = pair_grid.shape[-1] // 2
+    return pair_grid[..., :split], pair_grid[..., split:]
+
+
+def _project_pair(
+    left: Any,
+    right: Any,
+    *,
+    to_grid: Callable[[Any], Any],
+    project_pair: Callable[[Any, Any], tuple[Any, Any]] | None,
+) -> tuple[Any, Any]:
+    """Project two operands through the selected projector composition."""
+    if project_pair is not None:
+        return project_pair(left, right)
+    return to_grid(left), to_grid(right)
+
+
 class GridProduct(NativeOP):
     """Parameter-free quadratic grid product ``u(g) * v(g)``."""
 
@@ -172,6 +200,9 @@ class GridProduct(NativeOP):
         *,
         to_grid: Callable[[Any], Any],
         from_grid: Callable[[Any], Any],
+        pair_grid: Callable[[Any, Any], Any | None] | None = None,
+        project_pair: Callable[[Any, Any], tuple[Any, Any]] | None = None,
+        scalar_product: Callable[[Any, Any], Any] | None = None,
     ) -> Any:
         """
         Combine two coefficient operands by a point-wise grid product.
@@ -184,13 +215,28 @@ class GridProduct(NativeOP):
             Invariant routing signal; unused on this path.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        pair_grid, project_pair, scalar_product : Callable, optional
+            Optional fused full composition, paired forward projection, and
+            direct scalar coefficient contraction.
 
         Returns
         -------
         Array
-            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+            Coefficient result. A direct scalar contraction has shape
+            ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
-        return from_grid(to_grid(left) * to_grid(right))
+        if scalar_product is not None:
+            return scalar_product(left, right)
+        fused = pair_grid(left, right) if pair_grid is not None else None
+        if fused is not None:
+            return fused
+        left_grid, right_grid = _project_pair(
+            left,
+            right,
+            to_grid=to_grid,
+            project_pair=project_pair,
+        )
+        return from_grid(left_grid * right_grid)
 
 
 class GridMLP(NativeOP):
@@ -250,6 +296,9 @@ class GridMLP(NativeOP):
         *,
         to_grid: Callable[[Any], Any],
         from_grid: Callable[[Any], Any],
+        pair_grid: Callable[[Any, Any], Any | None] | None = None,
+        project_pair: Callable[[Any, Any], tuple[Any, Any]] | None = None,
+        scalar_product: Callable[[Any, Any], Any] | None = None,
     ) -> Any:
         """
         Apply the polynomial point-wise MLP on coefficient operands.
@@ -267,14 +316,43 @@ class GridMLP(NativeOP):
             Invariant routing signal; unused on this path.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        pair_grid, project_pair, scalar_product : Callable, optional
+            Optional fused full composition, paired forward projection, and
+            direct scalar coefficient contraction.
 
         Returns
         -------
         Array
-            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+            Coefficient result. A direct scalar contraction has shape
+            ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
-        xp = array_api_compat.array_namespace(left)
         # === Step 1. Channel projections at coefficient resolution ===
+        left, right = self._project_operands(left, right)
+
+        # === Step 2. Quadratic product on the grid, projected back ===
+        if scalar_product is not None:
+            coeff = scalar_product(left, right)
+        else:
+            coeff = pair_grid(left, right) if pair_grid is not None else None
+            if coeff is None:
+                left_grid, right_grid = _project_pair(
+                    left,
+                    right,
+                    to_grid=to_grid,
+                    project_pair=project_pair,
+                )
+                coeff = from_grid(left_grid * right_grid)
+        if scalar_product is not None:
+            return self.out_proj(coeff)
+        return _project_frames(coeff, self.out_proj, self.n_frames)
+
+    def _project_operands(
+        self,
+        left: Any,
+        right: Any,
+    ) -> tuple[Any, Any]:
+        """Apply the two coefficient-space channel projections."""
+        xp = array_api_compat.array_namespace(left)
         if self.mode == "self":
             shape = (*left.shape[:-1], self.n_frames, -1)
             fused = xp.reshape(
@@ -286,10 +364,7 @@ class GridMLP(NativeOP):
         else:
             left = _project_frames(left, self.left_proj, self.n_frames)
             right = _project_frames(right, self.right_proj, self.n_frames)
-
-        # === Step 2. Quadratic product on the grid, projected back ===
-        coeff = from_grid(to_grid(left) * to_grid(right))
-        return _project_frames(coeff, self.out_proj, self.n_frames)
+        return left, right
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridMLP to a dict."""
@@ -374,12 +449,18 @@ class GridBranch(NativeOP):
             trainable=trainable,
             seed=child_seed(seed, 1),
         )
+        # A single branch makes the routing softmax identically one, so the
+        # router carries no degree of freedom: its gradient is exactly zero on
+        # every path, and the fused grid product skips it altogether. Freezing
+        # it states that, and keeps DDP from waiting for a gradient that never
+        # arrives -- which aborts the step unless ``find_unused_parameters`` is
+        # paid for. The parameter itself stays, so checkpoints round-trip.
         self.router = ChannelLinear(
             in_channels=2 * self.channels,
             out_channels=self.n_branches,
             precision=precision,
             bias=False,
-            trainable=trainable,
+            trainable=trainable and self.n_branches > 1,
             seed=child_seed(seed, 2),
         )
         self.out_proj = ChannelLinear(
@@ -399,6 +480,9 @@ class GridBranch(NativeOP):
         *,
         to_grid: Callable[[Any], Any],
         from_grid: Callable[[Any], Any],
+        pair_grid: Callable[[Any, Any], Any | None] | None = None,
+        project_pair: Callable[[Any, Any], tuple[Any, Any]] | None = None,
+        scalar_product: Callable[[Any, Any], Any] | None = None,
     ) -> Any:
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
@@ -411,11 +495,15 @@ class GridBranch(NativeOP):
             Invariant router source with shape ``(N, F, 2*C)``.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        pair_grid, project_pair, scalar_product : Callable, optional
+            Optional fused full composition, paired forward projection, and
+            direct scalar coefficient contraction.
 
         Returns
         -------
         Array
-            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+            Coefficient result. A direct scalar contraction has shape
+            ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
         xp = array_api_compat.array_namespace(left)
         # === Step 1. Branch channel projections at coefficient resolution ===
@@ -423,20 +511,54 @@ class GridBranch(NativeOP):
         right = _project_frames(right, self.right_proj, self.n_frames)
 
         # === Step 2. Quadratic branches on the grid, routed by scalars ===
-        value = to_grid(left) * to_grid(right)  # (N, G, F, N_branches * C)
-        n_batch, n_grid, n_focus, _ = value.shape
-        value = xp.reshape(
-            value, (n_batch, n_grid, n_focus, self.n_branches, self.channels)
-        )
-        # torch.softmax over the branch axis -> (N, F, N_branches)
-        router = self.router(scalar_pair)
-        router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
-        router = router / xp.sum(router, axis=-1, keepdims=True)
-        # einsum "ngfhc,nfh->ngfc" as a broadcast sum over the branch axis
-        out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
+        # A single branch makes the router softmax identically one, which
+        # reduces the routed product to the plain grid product the fused
+        # operator evaluates.
+        if scalar_product is not None:
+            coeff = scalar_product(left, right)
+            n_batch, coeff_dim, n_focus, _ = coeff.shape
+            value = xp.reshape(
+                coeff,
+                (
+                    n_batch,
+                    coeff_dim,
+                    n_focus,
+                    self.n_branches,
+                    self.channels,
+                ),
+            )
+            router = self.router(scalar_pair)
+            router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
+            router = router / xp.sum(router, axis=-1, keepdims=True)
+            coeff = xp.sum(value * router[:, None, :, :, None], axis=3)
+        else:
+            coeff = (
+                pair_grid(left, right)
+                if self.n_branches == 1 and pair_grid is not None
+                else None
+            )
+        if coeff is None:
+            left_grid, right_grid = _project_pair(
+                left,
+                right,
+                to_grid=to_grid,
+                project_pair=project_pair,
+            )
+            value = left_grid * right_grid  # (N, G, F, N_branches * C)
+            n_batch, n_grid, n_focus, _ = value.shape
+            value = xp.reshape(
+                value, (n_batch, n_grid, n_focus, self.n_branches, self.channels)
+            )
+            router = self.router(scalar_pair)
+            router = xp.exp(router - xp.max(router, axis=-1, keepdims=True))
+            router = router / xp.sum(router, axis=-1, keepdims=True)
+            out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
+            coeff = from_grid(out)
 
         # === Step 3. Project back to coefficients and mix output channels ===
-        return _project_frames(from_grid(out), self.out_proj, self.n_frames)
+        if scalar_product is not None:
+            return self.out_proj(coeff)
+        return _project_frames(coeff, self.out_proj, self.n_frames)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridBranch to a dict."""
@@ -524,8 +646,26 @@ class FrameContract(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # Batched over the (D, F) axes, never over N -- see the helper's note.
-        return _degree_batched_matmul(xp, coeff, weight)
+        return xp_einsum("ndfi,dio->ndfo", coeff, weight)
+
+    def call_scalar(self, coeff: Any) -> Any:
+        """Contract the single ``l=0`` coefficient with its frame weights.
+
+        Parameters
+        ----------
+        coeff : Array
+            Scalar coefficient with shape ``(N, 1, F, K*C)``.
+
+        Returns
+        -------
+        Array
+            Contracted scalar with shape ``(N, 1, F, C)``.
+        """
+        xp = array_api_compat.array_namespace(coeff)
+        weight = xp_asarray_nodetach(
+            xp, self.weight[0:1], device=array_api_compat.device(coeff)
+        )
+        return xp_einsum("ndfi,dio->ndfo", coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameContract to a dict."""
@@ -605,8 +745,7 @@ class FrameExpand(NativeOP):
         weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
         weight = xp.take(weight, degree_index, axis=0)
-        # Batched over the (D, F) axes, never over N -- see the helper's note.
-        return _degree_batched_matmul(xp, coeff, weight)
+        return xp_einsum("ndfi,dio->ndfo", coeff, weight)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the FrameExpand to a dict."""
@@ -653,6 +792,8 @@ class BaseGridNet(NativeOP):
     is the key/value or second product branch.
     """
 
+    CONFIG_DERIVED_ARRAYS = ("_from_grid_t", "_scalar_product_weight")
+
     def __init__(
         self,
         *,
@@ -676,6 +817,11 @@ class BaseGridNet(NativeOP):
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.n_frames = int(projector.n_frames)
+        coefficient_rows = int(projector.coeff_dim) // self.n_frames
+        # One wider projection reduces launch overhead for at most 25 coefficient
+        # rows. Larger operands retain independent projections to bound the
+        # short-lived concatenated tensor in the compiled training graph.
+        self._combine_grid_projection = coefficient_rows <= 25
         self.mode = str(mode).lower()
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
@@ -711,6 +857,26 @@ class BaseGridNet(NativeOP):
             self.channels if self.frame_contract is not None else self.expanded_channels
         )
         self.frame_zero_index = int(getattr(projector, "frame_zero_index", 0))
+        scalar_product_weight = (
+            _build_so3_scalar_product_weight(projector)
+            if isinstance(projector, SO3GridProjector)
+            else None
+        )
+        self._scalar_product_weight = scalar_product_weight
+
+        # The fused grid pair product needs the grid-to-coefficient projector
+        # transposed so both matrices are read row-major by grid point.
+        # The operator is instantiated per coefficient-slot count, which this
+        # projector fixes, so the choice is made once here rather than per call.
+        # The array-API reference leaves the backend hooks unbound; ``pt_expt``
+        # binds them at construction when an operator serves the slot count.
+        # The inference hook serves the compact ``(N, P, C)`` layout; the
+        # training hook differentiates the same expression inside the force
+        # graph on the frame-packed operands, with analytic first and second
+        # order.
+        self._grid_pair_fn = None
+        self._grid_pair_train_fn = None
+        self._from_grid_t = np.ascontiguousarray(projector.from_grid_mat.T)
 
         self.scalar_act = SwiGLU()
         self.scalar_gate = FocusLinear(
@@ -755,21 +921,89 @@ class BaseGridNet(NativeOP):
 
     def call(self, query: Any, context: Any = None) -> Any:
         """Apply the configured grid net and restore the input layout."""
+        return self._forward(query, context, scalar_only=False)
+
+    def call_scalar(self, query: Any, context: Any = None) -> Any:
+        """Apply the grid net and return only the scalar coefficient.
+
+        Parameters
+        ----------
+        query : Array
+            Query coefficient tensor in the configured layout.
+        context : Array, optional
+            Optional context coefficient tensor for cross mode.
+
+        Returns
+        -------
+        Array
+            Grid-net output with the degree axis restricted to ``l=0``.
+
+        Notes
+        -----
+        The final SeZM readout consumes only ``l=0``. SO(3) Haar orthogonality
+        reduces its quadratic grid projection to a weighted coefficient inner
+        product. Other projectors restrict the inverse grid projection to the
+        scalar row. Accelerated inference keeps the full fused pair projection
+        because materializing a scalar-only fallback grid would be slower than
+        that fused operator.
+        """
+        if self._grid_pair_fn is not None and not getattr(self, "training", False):
+            return self._slice_scalar_layout(self.call(query, context))
+        return self._forward(query, context, scalar_only=True)
+
+    def _forward(
+        self,
+        query: Any,
+        context: Any,
+        *,
+        scalar_only: bool,
+    ) -> Any:
+        """Run the shared full or scalar-only grid path."""
+        # === Step 1. Normalize the input layout and build product operands ===
         xp = array_api_compat.array_namespace(query)
         input_dtype = query.dtype
         query_ndfc, shape_info = self._to_ndfc(query)
         left, right, scalar_pair = self._prepare_pair(query_ndfc, context)
+
+        # === Step 2. Select the static projection plan and apply the grid op ===
+        direct_scalar = scalar_only and self._scalar_product_weight is not None
         coeff_out = self.grid_op(
             xp.astype(left, get_xp_precision(xp, self.precision)),
             xp.astype(right, get_xp_precision(xp, self.precision)),
             scalar_pair,
             to_grid=self._to_grid,
-            from_grid=self._from_grid,
+            project_pair=(
+                self._project_pair_in_one_transform
+                if not direct_scalar
+                and (
+                    scalar_only
+                    or (
+                        getattr(self, "training", False)
+                        and self._combine_grid_projection
+                    )
+                )
+                else None
+            ),
+            from_grid=self._from_grid_scalar if scalar_only else self._from_grid,
+            pair_grid=None if scalar_only else self._pair_grid,
+            scalar_product=self._scalar_so3_product if direct_scalar else None,
         )
-        coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
-        coeff_out = self._contract_frames(coeff_out)
+
+        # === Step 3. Apply scalar gating and contract Wigner-D frames ===
+        coeff_out = self._apply_scalar_path(
+            coeff_out,
+            scalar_pair,
+            compact_scalar=direct_scalar,
+        )
+        coeff_out = self._contract_frames(coeff_out, scalar_only=scalar_only)
         coeff_out = self._apply_residual_scale(coeff_out)
-        return self._restore_layout(xp.astype(coeff_out, input_dtype), shape_info)
+
+        # === Step 4. Restore the caller layout and dtype ===
+        return self._restore_layout(
+            xp.astype(coeff_out, input_dtype),
+            shape_info,
+            scalar_only=scalar_only,
+        )
 
     def _prepare_pair(
         self,
@@ -819,9 +1053,16 @@ class BaseGridNet(NativeOP):
             scalar_pair,
         )
 
-    def _contract_frames(self, coeff: Any) -> Any:
+    def _contract_frames(
+        self,
+        coeff: Any,
+        *,
+        scalar_only: bool,
+    ) -> Any:
         if self.frame_contract is None:
             return coeff
+        if scalar_only:
+            return self.frame_contract.call_scalar(coeff)
         return self.frame_contract(coeff)
 
     def _apply_residual_scale(self, coeff: Any) -> Any:
@@ -841,10 +1082,16 @@ class BaseGridNet(NativeOP):
         self,
         coeff: Any,
         scalar_pair: Any,
+        *,
+        compact_scalar: bool,
     ) -> Any:
         xp = array_api_compat.array_namespace(coeff)
         scalar_out = self.scalar_act(scalar_pair)
         scalar_gate = xp_sigmoid(self.scalar_gate(scalar_pair))
+        if compact_scalar:
+            scalar_coeff = coeff * scalar_gate[:, None, :, :]
+            scalar_coeff = scalar_coeff + scalar_out[:, None, :, :]
+            return self._pack_scalar_frame(scalar_coeff)
         n_batch, coeff_dim, n_focus, _ = coeff.shape
         coeff_view = xp.reshape(
             coeff,
@@ -874,6 +1121,39 @@ class BaseGridNet(NativeOP):
         return xp.reshape(
             coeff_view, (n_batch, coeff_dim, n_focus, self.expanded_channels)
         )
+
+    def _pack_scalar_frame(self, scalar: Any) -> Any:
+        """Embed ``(N, 1, F, C)`` scalars in the ``k=0`` slot of ``K*C``."""
+        xp = array_api_compat.array_namespace(scalar)
+        device = array_api_compat.device(scalar)
+        n_batch, _, n_focus, channels = scalar.shape
+        before = xp.zeros(
+            (
+                n_batch,
+                1,
+                n_focus,
+                self.frame_zero_index,
+                channels,
+            ),
+            dtype=scalar.dtype,
+            device=device,
+        )
+        after = xp.zeros(
+            (
+                n_batch,
+                1,
+                n_focus,
+                self.n_frames - self.frame_zero_index - 1,
+                channels,
+            ),
+            dtype=scalar.dtype,
+            device=device,
+        )
+        coeff = xp.concat(
+            [before, scalar[:, :, :, None, :], after],
+            axis=3,
+        )
+        return xp.reshape(coeff, (n_batch, 1, n_focus, self.expanded_channels))
 
     def _split_self_query(self, query: Any) -> tuple[Any, Any]:
         self._check_last_dim(query, self.query_channels, "query")
@@ -911,6 +1191,68 @@ class BaseGridNet(NativeOP):
         )
         return coeff_view[:, 0, :, self.frame_zero_index, :]
 
+    def _pair_grid(self, left: Any, right: Any) -> Any | None:
+        """
+        Evaluate ``from_grid(to_grid(left) * to_grid(right))`` in one operator.
+
+        The grid field is 39 times larger than its coefficient operand at the
+        production SO(3) shape, so keeping it off device memory is worth a
+        dedicated kernel. Returns ``None`` when the fused operator does not
+        serve this shape, and the caller keeps the projector composition.
+
+        Parameters
+        ----------
+        left, right : Array
+            Coefficient operands with shape ``(N, D, F, n_frames * C)``.
+
+        Returns
+        -------
+        Array or None
+            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+        """
+        c_wide = left.shape[3] // self.n_frames
+        if c_wide % 32 != 0 or left.shape != right.shape:
+            return None
+        if getattr(self, "training", False):
+            # Training form: frame-packed operands ride through unreshaped,
+            # with analytic first and second order behind the call; under
+            # autocast it runs the same reduced-precision regime as the dense
+            # einsum composition it replaces.
+            if self._grid_pair_train_fn is None:
+                return None
+            return self._grid_pair_train_fn(
+                left,
+                right,
+                self.projector.to_grid_mat,
+                self._from_grid_t,
+                self.n_frames,
+            )
+        if self._grid_pair_fn is None or left.shape[2] != 1:
+            return None
+        n_batch, coeff_dim = left.shape[0], left.shape[1]
+        flat_p = coeff_dim * self.n_frames
+        xp = array_api_compat.array_namespace(left, right)
+        out = self._grid_pair_fn(
+            xp.reshape(left, (n_batch, flat_p, c_wide)),
+            xp.reshape(right, (n_batch, flat_p, c_wide)),
+            self.projector.to_grid_mat,
+            self._from_grid_t,
+        )
+        return xp.reshape(out, (n_batch, coeff_dim, 1, self.n_frames * c_wide))
+
+    def _project_pair_in_one_transform(
+        self,
+        left: Any,
+        right: Any,
+    ) -> tuple[Any, Any]:
+        """Project scalar-output operands with one shared linear transform."""
+        return _project_pair_in_one_transform(
+            left,
+            right,
+            n_frames=self.n_frames,
+            to_grid=self._to_grid,
+        )
+
     def _to_grid(self, coeff: Any) -> Any:
         # The per-frame channel width is inferred so the projector also serves
         # widened operands (e.g. a branch hidden width ``n_branches * C``).
@@ -924,6 +1266,14 @@ class BaseGridNet(NativeOP):
         # einsum "gdk,ndfkc->ngfc" (with to_grid reshaped (G, D, K)) as a
         # broadcast batched matmul: the contracted (d, k) axes are flattened
         # (d outer, k inner) and to_grid is already stored as (G, D*K).
+        #
+        # Two alternatives were measured on the Pro shape and both lost, so
+        # this spelling is deliberate: folding the node axis into the GEMM
+        # (`xp_einsum("gj,njc->ngc")`) costs 5 ms per step, and stating the
+        # five-axis contraction the way the pt backend does
+        # (`xp_einsum("gdk,ndfkc->ngfc")`) costs 3.6 ms. The same contraction
+        # is faster there and slower here, so the choice belongs to the graph
+        # around it rather than to the contraction itself.
         n_channels = coeff_view.shape[-1]
         coeff_dk = xp.permute_dims(coeff_view, (0, 1, 3, 2, 4))  # (N, D, K, F, C)
         coeff_flat = xp.reshape(
@@ -957,6 +1307,42 @@ class BaseGridNet(NativeOP):
             coeff, (n_batch, coeff_dim, n_focus, self.n_frames * n_channels)
         )
 
+    def _from_grid_scalar(self, grid: Any) -> Any:
+        """Project a grid field to the ``l=0`` coefficient only."""
+        xp = array_api_compat.array_namespace(grid)
+        n_batch, _, n_focus, _ = grid.shape
+        from_grid = xp_asarray_nodetach(
+            xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
+        )
+        from_grid = xp.astype(from_grid[: self.n_frames], grid.dtype)
+        n_channels = grid.shape[-1]
+        grid_flat = xp.reshape(
+            grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
+        )
+        coeff = xp.matmul(from_grid[None, ...], grid_flat)  # (N, K, F*C)
+        coeff = xp.reshape(coeff, (n_batch, 1, self.n_frames, n_focus, n_channels))
+        coeff = xp.permute_dims(coeff, (0, 1, 3, 2, 4))  # (N, 1, F, K, C)
+        return xp.reshape(coeff, (n_batch, 1, n_focus, self.n_frames * n_channels))
+
+    def _scalar_so3_product(self, left: Any, right: Any) -> Any:
+        """Contract a quadratic SO(3) product directly to ``l=0, k=0``."""
+        weight = self._scalar_product_weight
+        if weight is None:
+            raise RuntimeError("SO(3) scalar product weights are unavailable")
+        xp = array_api_compat.array_namespace(left, right)
+        weight = xp_asarray_nodetach(
+            xp, weight[...], device=array_api_compat.device(left)
+        )
+        weight = xp.astype(weight, left.dtype)
+        n_batch, coeff_dim, n_focus, _ = left.shape
+        left_view = xp.reshape(left, (n_batch, coeff_dim, n_focus, self.n_frames, -1))
+        right_view = xp.reshape(right, (n_batch, coeff_dim, n_focus, self.n_frames, -1))
+        scalar = xp.sum(
+            left_view * weight[None, :, None, :, None] * right_view,
+            axis=(1, 3),
+        )
+        return scalar[:, None, :, :]
+
     def _to_ndfc(self, value: Any) -> tuple[Any, tuple[int, ...]]:
         # All grid operations run in the canonical ``(N, D, F, C)`` layout; the
         # ``fndc`` re-orientation folds the focus-major SO(2) mixing layout into the
@@ -979,6 +1365,8 @@ class BaseGridNet(NativeOP):
         self,
         value: Any,
         shape_info: tuple[int, ...],
+        *,
+        scalar_only: bool = False,
     ) -> Any:
         xp = array_api_compat.array_namespace(value)
         if self.layout == "ndfc":
@@ -987,8 +1375,17 @@ class BaseGridNet(NativeOP):
             return xp.permute_dims(value, (0, 2, 1, 3))
         if self.layout == "fndc":
             return xp.permute_dims(value, (2, 0, 1, 3))
-        n_batch, coeff_dim, _ = shape_info
+        n_batch, input_coeff_dim, _ = shape_info
+        coeff_dim = 1 if scalar_only else input_coeff_dim
         return xp.reshape(value, (n_batch, coeff_dim, -1))
+
+    def _slice_scalar_layout(self, value: Any) -> Any:
+        """Select the degree axis from a restored full-layout tensor."""
+        if self.layout == "ndfc":
+            return value[:, 0:1, :, :]
+        if self.layout in {"nfdc", "fndc"}:
+            return value[:, :, 0:1, :]
+        return value[:, 0:1, :]
 
     def _check_last_dim(
         self,

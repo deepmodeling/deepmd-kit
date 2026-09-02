@@ -68,7 +68,6 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
                         int64_t basis_dim,
                         std::vector<torch::Tensor> fit_ws,
                         std::vector<torch::Tensor> fit_bs,
-                        std::vector<torch::Tensor> fit_idts,
                         std::vector<int64_t> fit_resnets,
                         torch::Tensor w_head,
                         torch::Tensor b_head,
@@ -102,8 +101,8 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
   const torch::Tensor& g_saved = std::get<6>(desc);
 
   // === Step 2. Fitting forward: descriptor -> per-atom energy. ===
-  auto fit = graph_fitting(grrg, atype, fit_ws, fit_bs, fit_idts, fit_resnets,
-                           w_head, b_head, bias_atom_e, fit_act);
+  auto fit = graph_fitting(grrg, atype, fit_ws, fit_bs, fit_resnets, w_head,
+                           b_head, bias_atom_e, fit_act);
   const torch::Tensor& atom_energy_raw = std::get<0>(fit);  // (N, 1) fp64
   const torch::Tensor& fit_saved = std::get<1>(fit);
   auto owned = ownership.reshape({-1, 1}).to(atom_energy_raw.scalar_type());
@@ -119,8 +118,8 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
 
   // === Step 4. Force = grad of the reduced energy; dE_redu/d(atom_e) == 1. ===
   std::get<0>(desc) = torch::Tensor();
-  auto d_grrg = graph_fitting_backward(energy_seed, fit_saved, fit_ws,
-                                       fit_resnets, w_head);
+  auto d_grrg = graph_fitting_backward(energy_seed, fit_saved, fit_ws, fit_bs,
+                                       fit_resnets, w_head, fit_act);
   std::get<1>(fit) = torch::Tensor();
   auto g_e = dpa1_graph_descriptor_backward(
       d_grrg, std::nullopt, gr, edge_order, pair_table, pre2_saved, g_saved,
@@ -131,10 +130,11 @@ dpa1_graph_energy_force(torch::Tensor edge_vec,
   // === Step 5. Scatter dE/d(edge_vec) into force / virial / atom virial. ===
   // g_e and edge_vec_f are already in the compute precision; the per-node force
   // is a short neighbor sum and the per-frame virial reduces hierarchically.
-  auto fv = edge_force_virial(g_e, edge_vec_f, edge_index, edge_mask,
-                              destination_order, destination_row_ptr,
-                              source_order, source_row_ptr, n_node,
-                              node_capacity, do_atomic_virial);
+  // DPA1 has no magnetic degree of freedom, so the spin cotangent is absent.
+  auto fv = edge_force_virial(
+      g_e, edge_vec_f, edge_index, edge_mask, destination_order,
+      destination_row_ptr, source_order, source_row_ptr, n_node,
+      torch::empty({0}, edge_vec_f.options()), node_capacity, do_atomic_virial);
   return {energy, atom_energy, std::get<0>(fv), std::get<2>(fv),
           std::get<1>(fv)};
 }
@@ -151,9 +151,9 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
       "b2, Tensor idt2, Tensor w3, Tensor b3, Tensor idt3, Tensor gate_table, "
       "int act, int type_one_side, int concat_tebd, int smooth, int axis, int "
       "resnet2, int resnet3, float rcut, float rcut_smth, float protection, "
-      "float nnei, int basis_dim, Tensor[] fit_ws, Tensor[] fit_bs, Tensor[] "
-      "fit_idts, int[] "
-      "fit_resnets, Tensor w_head, Tensor b_head, Tensor bias_atom_e, int "
+      "float nnei, int basis_dim, Tensor[] fit_ws, Tensor[] fit_bs, "
+      "int[] fit_resnets, Tensor w_head, Tensor b_head, Tensor bias_atom_e, "
+      "int "
       "fit_act, SymInt node_capacity, bool do_atomic_virial) -> (Tensor, "
       "Tensor, Tensor, Tensor, Tensor)");
   m.impl("dpa1_graph_energy_force", torch::kCUDA, &dpa1_graph_energy_force);

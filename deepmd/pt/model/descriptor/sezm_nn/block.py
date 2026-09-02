@@ -359,6 +359,7 @@ class SeZMInteractionBlock(nn.Module):
         trainable: bool,
     ) -> None:
         super().__init__()
+        self.trainable = bool(trainable)
         self.lmax = int(lmax)
         self.node_lmax = self.lmax if node_lmax is None else int(node_lmax)
         if self.node_lmax < self.lmax:
@@ -1120,7 +1121,6 @@ class SeZMInteractionBlock(nn.Module):
         return block_output, block_summary, None, None
 
     def serialize(self) -> dict[str, Any]:
-        trainable = all(p.requires_grad for p in self.parameters())
         state = self.state_dict()
         return {
             "@class": "SeZMInteractionBlock",
@@ -1177,7 +1177,7 @@ class SeZMInteractionBlock(nn.Module):
                 "layer_scale": self.layer_scale,
                 "eps": self.eps,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
-                "trainable": trainable,
+                "trainable": self.trainable,
                 "seed": None,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},

@@ -88,7 +88,7 @@ STALE_FULL_VALIDATION_INFO_KEYS = (
 BEST_CKPT_PREFIX = "best.ckpt"
 EMA_BEST_CKPT_PREFIX = "best_ema.ckpt"
 VAL_LOG_SIGNIFICANT_DIGITS = 5
-VAL_LOG_COLUMN_GAP = "   "
+VAL_LOG_COLUMN_GAP = " "
 VAL_LOG_HEADER_PREFIX = "# "
 VAL_LOG_DATA_PREFIX = "  "
 
@@ -279,13 +279,13 @@ class FullValidator:
         )
         self.auto_batch_size = AutoBatchSize(silent=True)
         self.table_column_specs = []
-        for column_name, metric_key in self.profile.column_order:
+        for column_name, metric_key in self.profile.columns(self.metric_name):
             _, metric_unit = format_metric_value_for_table(
                 metric_key, 1.0, self.profile
             )
             header_label = f"{column_name}({metric_unit})"
             self.table_column_specs.append(
-                (metric_key, header_label, max(len(header_label), 18))
+                (metric_key, header_label, max(len(header_label), 10))
             )
 
         self.topk_records = self._load_topk_records()
@@ -431,7 +431,7 @@ class FullValidator:
         aggregated = weighted_average([metric for metric in system_metrics if metric])
         return {
             metric_key: float(aggregated[metric_key])
-            for _, metric_key in self.profile.column_order
+            for metric_key, _, _ in self.table_column_specs
             if metric_key in aggregated
         }
 
@@ -524,11 +524,7 @@ class FullValidator:
         test_data = data_system.get_test()
         natoms = int(test_data["type"].shape[1])
         nframes = int(test_data["coord"].shape[0])
-        include_virial = (
-            not self.profile.needs_spin
-            and data_system.pbc
-            and bool(test_data.get("find_virial", 0.0))
-        )
+        include_virial = data_system.pbc and bool(test_data.get("find_virial", 0.0))
         spin = (
             test_data["spin"].reshape(nframes, -1) if self.profile.needs_spin else None
         )

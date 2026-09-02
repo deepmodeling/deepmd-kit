@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Fused compressed operators for the DPA4C graph lower.
+
+The bindings are device neutral: the CUDA kernels live in
+``source/op/pt/dpa4c/*.cu`` and the CPU kernels in
+``source/op/pt/dpa4c/*_cpu.cc``, and the dispatcher selects between them.
+"""
+
+from .canonical import (
+    canonical_model_eligible,
+    dpa4c_canonical_compress_energy_force,
+)
+from .graph_compress import (
+    build_radial_table,
+    dpa4c_graph_compress,
+    dpa4c_graph_compress_energy_force,
+    ef_op_available,
+    ensure_registered,
+    mega_eligible,
+    op_available,
+)
+
+__all__ = [
+    "build_radial_table",
+    "canonical_model_eligible",
+    "dpa4c_canonical_compress_energy_force",
+    "dpa4c_graph_compress",
+    "dpa4c_graph_compress_energy_force",
+    "ef_op_available",
+    "ensure_registered",
+    "mega_eligible",
+    "op_available",
+]

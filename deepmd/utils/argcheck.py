@@ -217,17 +217,18 @@ def spin_args() -> list[Argument]:
         "Required for the `deepspin` scheme; ignored by the `native` scheme."
     )
     doc_scheme = (
-        "The spin implementation scheme, only effective for the DPA4/SeZM model. "
+        "The spin implementation scheme, only effective for descriptors that declare "
+        "native spin support (currently DPA4/SeZM and DPA4C). "
         "`native` injects the per-atom spin vector as an equivariant feature "
-        "(l=0 magnitude and l=1 direction) directly into the descriptor and "
+        "directly into the descriptor and "
         "derives the magnetic force as the negative spin gradient of the energy, "
         "without virtual atoms. `deepspin` uses the classical DeepSpin virtual-atom "
         "representation and is the default. Other models always use the `deepspin` scheme."
     )
     doc_allow_missing_label = (
         "Whether to admit training systems that lack a `spin` data file, filling their "
-        "per-atom spin with zeros instead of raising. Supported only by the SeZM/DPA4 "
-        "spin model; defaults to false."
+        "per-atom spin with zeros instead of raising. Supported only by the native "
+        "spin models (SeZM/DPA4 and DPA4C); defaults to false."
     )
 
     return [
@@ -452,6 +453,149 @@ def descrpt_se_a_args() -> list[Argument]:
 
 
 @descrpt_args_plugin.register(
+    "dpa4c",
+    alias=["DPA4C"],
+    doc=supported_backends("pt_expt")
+    + "DPA4C is the compact and compressible degree-wise descriptor of the DPA4 family.",
+)
+def descrpt_dpa4c_args() -> list[Argument]:
+    """Return the DPA4C descriptor arguments."""
+    return [
+        Argument(
+            "rcut",
+            float,
+            optional=True,
+            default=6.0,
+            doc="The outer cutoff radius.",
+        ),
+        Argument(
+            "channels",
+            int,
+            optional=True,
+            default=32,
+            doc=(
+                "Scalar degree-zero and edge channel width. Supported values "
+                "are 8, 16, 32, 64, and 128. This is the primary scaling "
+                "knob: it widens the edge features, the per-atom angular "
+                "state, and the descriptor output together. The fitting "
+                "network is sized against it; the released grades pair "
+                "channels 8, 32, 64, and 128 with fitting hidden widths 96, "
+                "192, 256, and 384."
+            ),
+        ),
+        Argument(
+            "lmax",
+            int,
+            optional=True,
+            default=2,
+            doc="Maximum angular degree. Supported values are 2, 3, and 4.",
+        ),
+        Argument(
+            "basis_type",
+            str,
+            optional=True,
+            default="bessel",
+            doc="DPA4 radial basis type: `bessel` or `gaussian`.",
+        ),
+        Argument(
+            "n_radial",
+            int,
+            optional=True,
+            default=16,
+            doc=(
+                "Number of DPA4 radial basis functions forming the fixed "
+                "analytic radial input."
+            ),
+        ),
+        Argument(
+            "radial_modes",
+            int,
+            optional=True,
+            default=0,
+            doc=(
+                "Number of shared radial mode profiles that every ordered "
+                "atom-type pair mixes with its own coefficients. Zero leaves "
+                "each pair with a rescaled copy of one shared radial "
+                "function; larger values let each pair select its own radial "
+                "shape."
+            ),
+        ),
+        Argument(
+            "use_amp",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "If True, run the per-edge stage under bfloat16 automatic "
+                "mixed precision on CUDA during training. This lowers the "
+                "dominant activation footprint, which scales with the edge "
+                "count. The destination reduction and the invariant readout "
+                "stay in the descriptor precision. Evaluation and inference "
+                "are governed independently by the `DP_AMP_INFER` environment "
+                "variable, so a model trained in full precision can still "
+                "infer under mixed precision, and the reverse."
+            ),
+        ),
+        Argument(
+            "exclude_types",
+            list[list[int]],
+            optional=True,
+            default=[],
+            doc="Ordered atom-type pairs excluded from the descriptor.",
+        ),
+        Argument(
+            "precision",
+            str,
+            optional=True,
+            default="float32",
+            doc="Floating-point precision of descriptor parameters.",
+        ),
+        Argument(
+            "trainable",
+            bool,
+            optional=True,
+            default=True,
+            doc="Whether descriptor parameters are trainable.",
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=(
+                "Whether to condition the descriptor on the frame-level "
+                "`charge_spin` input `[charge, multiplicity]` of shape "
+                "`[nframes, 2]`. The embedded condition is added to the "
+                "center type embedding and to the hidden state of the "
+                "ordered type-pair encoder, so it changes how a given "
+                "geometry maps to the degree-wise moments. This is unrelated "
+                "to `model.spin`, which carries a per-atom magnetic moment."
+            ),
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=(
+                "Fallback `[charge, multiplicity]` used when `charge_spin` is "
+                "absent from the input data. Only read when "
+                "`add_chg_spin_ebd` is enabled. Compression folds this value "
+                "into the frozen tables, so a compressed model evaluates "
+                "exactly this charge state and requires the option to be set."
+            ),
+        ),
+        Argument(
+            "seed",
+            [int, None],
+            optional=True,
+            default=None,
+            doc="Random seed for parameter initialization.",
+        ),
+    ]
+
+
+@descrpt_args_plugin.register(
     "dpa4",
     alias=["DPA4", "SeZM", "sezm"],
     doc=supported_backends("pt", "jax", "pt_expt") + doc_se_zm,
@@ -473,7 +617,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
-    doc_edge_norm = "Whether to apply standard channel RMSNorm on cutoff-vanishing feature branches. Setting to `false` removes RMSNorm from the radial network, environment-seed FiLM, and cross-focus competition, and uses unit-floor residual scaling for post-SO(2) messages. Setting to `false` is recommended."
+    doc_edge_norm = "Channel RMSNorm on the cutoff-vanishing feature branches. A bool switches every site together: `false` removes the RMSNorm from the radial-network hidden layers, the environment-seed FiLM scale/shift logits and the cross-focus competition scalars, and uses unit-floor residual scaling for post-SO(2) messages. A list of three bools `[radial, film, focus]` switches the sites individually; the post-SO(2) treatment follows the first (radial) entry. Recommended: `[false, true, false]` — the radial-site norms amplify noise where the radial features vanish at the cutoff and produce a spurious long-range force step, while the FiLM and focus norms are safe to keep."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
@@ -794,7 +938,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument(
             "edge_norm",
-            bool,
+            [bool, list],
             optional=True,
             default=True,
             doc=doc_edge_norm,
@@ -5989,10 +6133,13 @@ def validating_args() -> Argument:
         "Metric used to determine the best checkpoint during full validation. "
         "The string is case-insensitive. For energy training the supported "
         f"values are {energy_metrics}; for spin-energy training they are "
-        f"{spin_metrics}. `E` and `V` are per-atom metrics, `F` and `FR` use "
+        f"{spin_metrics}. `E` and `V` are per-atom metrics, `S` is stress, the "
+        "negated virial divided by the cell volume, `F` and `FR` use "
         "component-wise force errors, and `FM` uses magnetic-force errors, "
         "matching `dp test`. The corresponding loss prefactors must not both "
-        "be 0."
+        "be 0; `S` and `V` are two presentations of the virial and both "
+        "require `start_pref_v` and `limit_pref_v`. The validation log reports "
+        "whichever of `S` and `V` is selected, defaulting to `S`."
     )
     doc_full_val_file = "The file for writing full validation results only. This file is independent from `training.disp_file`."
     doc_full_val_start = (

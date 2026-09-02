@@ -236,7 +236,7 @@ class TestDescrptDPA4:
             # Charge/spin condition embedding; default_chg_spin lets forward run
             # without an explicit charge_spin input.
             pytest.param(
-                {"add_chg_spin_ebd": True, "default_chg_spin": [0.5, -0.5]},
+                {"add_chg_spin_ebd": True, "default_chg_spin": [-1.0, 3.0]},
                 id="add_chg_spin_ebd",
             ),
             pytest.param({"so2_attn_res": "independent"}, id="so2_attn_res"),

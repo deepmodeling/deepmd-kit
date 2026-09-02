@@ -26,8 +26,14 @@ from deepmd.dpmodel.utils.region import (
 from deepmd.dpmodel.utils.serialization import (
     traverse_model_dict,
 )
+from deepmd.pt.utils.compile_compat import (
+    traced_output_keys,
+)
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
+)
+from deepmd.utils.charge_state import (
+    CHARGE_STATE_TABLE_RANGES,
 )
 
 # ---------------------------------------------------------------------------
@@ -83,6 +89,45 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
         ):
             node.args = (True, node.args[1])
     graph_module.recompile()
+
+
+#: Graph-lower inputs that carry the source-major permutation of the edge axis.
+_SOURCE_CSR_INPUTS = ("source_order", "source_row_ptr")
+
+
+def _graph_reads_source_csr(exported: Any) -> bool:
+    """Return whether an exported graph lower consumes the source CSR.
+
+    Only message passing and the magnetic cotangent reduce along the source
+    axis; a one-hop destination-major descriptor leaves both inputs unread, and
+    their placeholders then have no users. Reading that off the graph rather
+    than off a model predicate keeps the answer exact as models change.
+
+    Parameters
+    ----------
+    exported : torch.export.ExportedProgram
+        The traced and exported graph lower.
+
+    Returns
+    -------
+    bool
+        Whether either source-CSR input reaches an operation. An absent
+        placeholder counts as unread; an unrecognised graph counts as read, so
+        that a consumer of the answer stays correct by default.
+    """
+    nodes = [
+        node for node in exported.graph_module.graph.nodes if node.op == "placeholder"
+    ]
+    if not nodes:
+        return True
+    found = False
+    for node in nodes:
+        name = str(node.target)
+        if any(candidate in name for candidate in _SOURCE_CSR_INPUTS):
+            found = True
+            if len(node.users) > 0:
+                return True
+    return not found
 
 
 def _numpy_to_json_serializable(model_obj: dict) -> dict:
@@ -614,8 +659,14 @@ def build_synthetic_canonical_graph_inputs(
     e_max: int,
     *,
     device: torch.device,
+    want_spin: bool = False,
 ) -> tuple[torch.Tensor, ...]:
-    """Build the compact canonical trace inputs for compressed DPA1."""
+    """Build compact canonical trace inputs for compressed CUDA descriptors.
+
+    ``want_spin`` appends the per-node moment at slot 8, the last slot of the
+    compact ABI, matching
+    :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
+    """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -632,6 +683,7 @@ def build_synthetic_canonical_graph_inputs(
         want_fparam=False,
         want_aparam=False,
         want_charge_spin=False,
+        want_spin=want_spin,
     )
     (
         atype,
@@ -644,10 +696,9 @@ def build_synthetic_canonical_graph_inputs(
         destination_row_ptr,
         source_order,
         source_row_ptr,
-        _fparam,
-        _aparam,
-        _charge_spin,
+        *tail,
     ) = sample
+    spin = tail[0] if want_spin else None
     graph = NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
@@ -661,7 +712,7 @@ def build_synthetic_canonical_graph_inputs(
         destination_sorted=True,
     )
     compact = canonical_graph_from_neighbor_graph(graph)
-    return (
+    compact_sample = (
         atype,
         compact.n_node,
         compact.n_local,
@@ -671,17 +722,29 @@ def build_synthetic_canonical_graph_inputs(
         compact.source_row_ptr,
         compact.source_order,
     )
+    return compact_sample if spin is None else (*compact_sample, spin)
 
 
 def _build_canonical_graph_dynamic_shapes(
     *sample_inputs: torch.Tensor,
 ) -> tuple:
-    """Build dynamic shapes for the eight-tensor compact deployment ABI."""
-    del sample_inputs
+    """Build dynamic shapes for the compact deployment ABI.
+
+    The trailing spin slot is present only for a native-spin model, so the
+    sample length selects the shape tuple.
+    """
+    from deepmd.pt_expt.utils.canonical_graph import (
+        UINT32_MAX,
+    )
+
     nframes_dim = torch.export.Dim("nframes", min=1)
     node_dim = torch.export.Dim("n_node_total", min=1)
-    edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
-    return (
+    edge_storage_dim = torch.export.Dim(
+        "nedge_storage",
+        min=2,
+        max=UINT32_MAX,
+    )
+    shapes = (
         {0: node_dim},
         {0: nframes_dim},
         {0: nframes_dim},
@@ -691,6 +754,7 @@ def _build_canonical_graph_dynamic_shapes(
         {0: node_dim + 1},
         {0: edge_storage_dim},
     )
+    return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
 
 
 def count_synthetic_graph_edges(
@@ -922,8 +986,13 @@ def _build_dynamic_shapes(
         Whether the inputs include the 8 comm tensors.
     model_nnei : int
         The model's sum(sel).  Used as the min for the dynamic nnei dim.
-    Returns a tuple (not dict) to match positional args of the make_fx
-    traced module, whose arg names may have suffixes like ``_1``.
+
+    Returns
+    -------
+    tuple
+        Dynamic-shape specifications in the positional order of the make_fx
+        traced module. A tuple is required because traced argument names may
+        carry generated suffixes such as ``_1``.
     """
     # When tracing the with-comm variant, nframes is static at 1.
     # Rationale: pt_expt's Repflow/Repformer parallel-mode override
@@ -1006,9 +1075,34 @@ def _supports_graph_export(model: torch.nn.Module) -> bool:
     return bool(model.atomic_model.supports_graph_export())
 
 
+def _spin_scheme(model_type: str | None) -> str | None:
+    """Return the spin scheme a model wire type implements.
+
+    ``"native"`` treats the magnetic moment as an equivariant descriptor input
+    and keeps one node per atom; ``"deepspin"`` is the virtual-atom scheme.
+    The scheme selects the C++ backend class that serves the artifact and is
+    independent of the lower-forward schema it was frozen with.
+
+    Parameters
+    ----------
+    model_type : str or None
+        The serialized model wire type.
+
+    Returns
+    -------
+    str or None
+        ``"native"``, ``"deepspin"``, or ``None`` for a spin-free model.
+    """
+    if model_type == "native_spin":
+        return "native"
+    if model_type == "spin_ener":
+        return "deepspin"
+    return None
+
+
 def _collect_metadata(
     model: torch.nn.Module,
-    is_spin: bool = False,
+    spin_scheme: str | None = None,
     lower_kind: str = "nlist",
 ) -> dict:
     """Collect metadata from the model for C++ inference.
@@ -1021,7 +1115,13 @@ def _collect_metadata(
 
     The ``fitting_output_defs`` list is also included so that
     ``ModelOutputDef`` can be reconstructed without loading the full model.
+
+    ``spin_scheme`` (see :func:`_spin_scheme`) is the model's spin scheme, or
+    ``None`` for a spin-free model; it drives both the ``is_spin`` gate on the
+    spin-only fields and the ``spin_scheme`` field the C++ backend factory
+    dispatches on.
     """
+    is_spin = spin_scheme is not None
     if is_spin:
         fitting_output_def = model.model_output_def().def_outp
     else:
@@ -1061,6 +1161,14 @@ def _collect_metadata(
         "has_chg_spin_ebd": model.has_chg_spin_ebd(),
         "has_default_chg_spin": model.get_default_chg_spin() is not None,
         "default_chg_spin": _metadata_value_to_json(model.get_default_chg_spin()),
+        # The condition indexes embedding tables, so the archive carries their
+        # row ranges and a deployment rejects an unaddressable state without a
+        # Python model. Absent when the model reads no condition.
+        "chg_spin_table_ranges": (
+            [list(bounds) for bounds in CHARGE_STATE_TABLE_RANGES]
+            if model.has_chg_spin_ebd()
+            else None
+        ),
         "fitting_output_defs": fitting_output_defs,
         # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
         # round-trip; required for dipole/polar/wfc models in metadata-only
@@ -1069,6 +1177,11 @@ def _collect_metadata(
         "is_spin": is_spin,
     }
     if is_spin:
+        # The scheme is what selects the serving backend class in C++
+        # (``deepmd_create_deepspin_backend_v1``): "native" is served by
+        # NativeSpinPTExpt, "deepspin" by DeepSpinPTExpt. It is a property of
+        # the model alone, orthogonal to ``lower_input_kind`` below.
+        meta["spin_scheme"] = spin_scheme
         meta["ntypes_spin"] = model.spin.get_ntypes_spin()
         meta["use_spin"] = [bool(v) for v in model.spin.use_spin]
     # Whether multi-rank LAMMPS needs a second "with-comm" AOTI artifact
@@ -1123,6 +1236,8 @@ def _collect_metadata(
     # The C++ loader branches on this to build the matching inputs.
     meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
+    if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
+        meta["canonical_index_dtype"] = "uint32"
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1218,21 +1333,28 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
 
 
 @contextlib.contextmanager
-def _cuda_infer_at_least_2() -> Iterator[None]:
-    """Pin ``DP_CUDA_INFER`` to at least 2 for the duration of a trace.
+def _fused_operators_for_export() -> Iterator[None]:
+    """Select the complete fused inference pipeline for the duration of a trace.
 
-    Level 2 emits the inference pipeline as explicit descriptor, fitting,
-    descriptor-backward, and CSR force/virial custom operators. These operators
-    remain opaque through ``torch.export``. The level-1 autograd lower can
-    decompose the analytic backward to aten, while level 0 selects the
-    untraceable reference tabulation. Level 2 degrades internally when an
-    operator is unavailable or ineligible, so it is a safe floor for graph
-    export.
+    The pipeline is emitted as explicit descriptor, fitting,
+    descriptor-backward, and CSR force/virial custom operators, which remain
+    opaque through ``torch.export``. A partial selection would let the
+    analytic backward decompose to aten or, at the bottom, select the
+    untraceable reference tabulation, so the export asks for all of it and
+    lets each operator's own eligibility predicate decline.
+
+    Only CUDA carries a level to pin. The CPU operators are always selected,
+    and a CUDA pin would apply to a CPU target as well, baking CUDA-only
+    operators into an artifact that can never dispatch them.
     """
-    from deepmd.kernels.utils import (
+    from deepmd.pt_expt.kernels.utils import (
+        backend_device_type,
         cuda_infer_level,
     )
 
+    if backend_device_type() != "cuda":
+        yield
+        return
     saved = os.environ.get("DP_CUDA_INFER")
     if cuda_infer_level() < 2:
         os.environ["DP_CUDA_INFER"] = "2"
@@ -1245,12 +1367,152 @@ def _cuda_infer_at_least_2() -> Iterator[None]:
             os.environ["DP_CUDA_INFER"] = saved
 
 
+# Kernel levels the DPA4 archive is built against when the caller expresses no
+# preference. Both are baked into the exported graph, so the default is the
+# combination that is fastest without trading accuracy for it.
+#
+# ``DP_CUDA_INFER=1`` rather than 2: level 1 holds the operators whose profit is
+# memory traffic and is faster on every part and every checkpoint measured,
+# while level 2 also replaces the mixing stack with float32 SIMT arithmetic.
+# That substitution wins on narrow checkpoints and on parts with a large
+# float32 peak, and loses as the arithmetic per edge grows -- measured from
+# 1.8x down to 0.7x across the model zoo on one part -- so it is left to an
+# explicit choice.
+#
+# ``DP_TRITON_INFER=2`` rather than 3: level 3 adds fp16x3 split-compensated
+# GEMMs to the mixing stack. For DPA4 that is their only site, so they matter
+# exactly while the mixing stack is still Triton's -- that is, below
+# ``DP_CUDA_INFER=2``, which the default above is. Where they do run they
+# perturb the forces by up to 4e-1 eV/Å on the wider checkpoints against the
+# float32 reference, and a frozen archive is what runs molecular dynamics, so
+# it defaults to exact float32.
+_DPA4_FREEZE_KERNEL_LEVELS = {"DP_TRITON_INFER": "2", "DP_CUDA_INFER": "1"}
+_DPA4_FREEZE_DISABLED_LEVELS = {
+    "DP_CUTILE_INFER": "0",
+    "DP_CUTE_INFER": "0",
+}
+
+
+@contextlib.contextmanager
+def _dpa4_kernel_level_defaults() -> Iterator[None]:
+    """Pin the default DPA4 inference kernel levels for the duration of a trace.
+
+    The levels are read once at model construction time and baked into the
+    exported graph. An explicit setting in the environment always wins. The
+    defaults match the PT DPA4 freeze path: Triton level 2 keeps the exact
+    float32 mixing stack, while CUDA level 1 enables the uniformly profitable
+    memory-traffic operators without selecting the checkpoint-dependent fused
+    SO(2) convolution. cuTile and CuTe are Python-only eager backends and are
+    disabled because their operators cannot be captured in a frozen archive.
+    """
+    levels = _DPA4_FREEZE_KERNEL_LEVELS | _DPA4_FREEZE_DISABLED_LEVELS
+    saved = {name: os.environ.get(name) for name in levels}
+    for name, default in _DPA4_FREEZE_KERNEL_LEVELS.items():
+        if saved[name] is None:
+            os.environ[name] = default
+    os.environ.update(_DPA4_FREEZE_DISABLED_LEVELS)
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+_DPA4_SERIALIZED_TYPES = frozenset(("dpa4", "SeZM"))
+_LEVEL_TWO_GRAPH_TYPES = frozenset(("dpa1", "dpa4c", "se_atten", "se_atten_v2"))
+
+
+def _serialized_model_types(value: Any) -> set[str]:
+    """Collect exact ``type`` tags from a serialized model tree."""
+    if isinstance(value, dict):
+        model_types = {value["type"]} if isinstance(value.get("type"), str) else set()
+        for item in value.values():
+            model_types.update(_serialized_model_types(item))
+        return model_types
+    if isinstance(value, (list, tuple)):
+        model_types = set()
+        for item in value:
+            model_types.update(_serialized_model_types(item))
+        return model_types
+    return set()
+
+
+def _uses_dpa4_kernel_defaults(model_data: dict) -> bool:
+    """Return whether only the DPA4 family claims an accelerated graph policy."""
+    model_types = _serialized_model_types(model_data)
+    return bool(model_types & _DPA4_SERIALIZED_TYPES) and not bool(
+        model_types & _LEVEL_TWO_GRAPH_TYPES
+    )
+
+
+def _prepare_dpa4_triton_value_path_weights(
+    model: torch.nn.Module,
+    model_data: dict,
+) -> None:
+    """Prepare packed weights only for a bound DPA4 Triton value path."""
+    if not _uses_dpa4_kernel_defaults(model_data):
+        return
+    if not any(
+        getattr(module, "_triton_value_path", None) is not None
+        for module in model.modules()
+    ):
+        return
+
+    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+        prepare_triton_value_path_weights,
+    )
+
+    prepare_triton_value_path_weights(model)
+
+
+@contextlib.contextmanager
+def _dpa4_kernel_levels_for_target(
+    model_data: dict,
+    target_device: torch.device,
+) -> Iterator[None]:
+    """Select DPA4 kernel backends that a frozen target can execute.
+
+    The model is constructed on CPU for every export. A CUDA target records
+    CUDA-only operators through their fake implementations and moves the
+    exported program afterwards; a non-CUDA target must construct the reference
+    path instead. cuTile and CuTe remain eager-only for every target. The
+    caller's environment is restored after the export.
+    """
+    if not _uses_dpa4_kernel_defaults(model_data):
+        yield
+        return
+    accelerator_levels = (
+        "DP_TRITON_INFER",
+        "DP_CUDA_INFER",
+        "DP_CUTILE_INFER",
+        "DP_CUTE_INFER",
+    )
+    saved = {name: os.environ.get(name) for name in accelerator_levels}
+    if target_device.type == "cuda":
+        os.environ.update(_DPA4_FREEZE_DISABLED_LEVELS)
+    else:
+        for name in accelerator_levels:
+            os.environ[name] = "0"
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
     """Resolve ``lower_kind="auto"`` to a concrete lower-forward schema.
 
     ``"auto"`` selects the graph lower for a graph-lower model whose graph
     implementation is exportable to ``.pt2`` and the dense nlist lower for
-    everything else. An explicit ``"nlist"`` / ``"graph"`` is returned
+    everything else. Eligible compressed DPA1 and DPA4C energy models select
+    their compact canonical graph schemas. Any explicit lower kind is returned
     unchanged.
     """
     if lower_kind != "auto":
@@ -1266,11 +1528,18 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
 
     model = BaseModel.deserialize(data["model"])
     if model_uses_graph_lower(model) and _supports_graph_export(model):
-        from deepmd.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible,
+        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
+            canonical_model_eligible as dpa1_canonical_eligible,
+        )
+        from deepmd.pt_expt.kernels.dpa4c.canonical import (
+            canonical_model_eligible as dpa4c_canonical_eligible,
         )
 
-        return "dpa1_canonical" if canonical_model_eligible(model) else "graph"
+        if dpa4c_canonical_eligible(model):
+            return "dpa4c_canonical"
+        if dpa1_canonical_eligible(model):
+            return "dpa1_canonical"
+        return "graph"
     return "nlist"
 
 
@@ -1314,31 +1583,47 @@ def deserialize_to_file(
         (``Dim("nedge", min=2)``), so the artifact accepts any system size.
         ``"auto"`` (used by ``convert-backend``) resolves to ``"graph"`` for an
         exportable graph-lower ``.pt2`` and ``"nlist"`` otherwise (see
-        :func:`_resolve_lower_kind`). A graph lower always preserves the fused
-        inference operators (``DP_CUDA_INFER >= 2``) and the per-atom virial.
+        :func:`_resolve_lower_kind`). A graph lower preserves the selected
+        inference operators and always includes the per-atom virial. DPA1 and
+        DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``; DPA4 ``.pt2`` follows
+        its PT freeze defaults unless the environment explicitly selects other
+        levels.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
     """
     lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
-    if data["model"].get("type") == "native_spin" and lower_kind != "graph":
-        # Native-spin models implement ONLY the NeighborGraph lower; the
-        # dense/nlist trace branch does not exist for them. The public freeze
-        # layer resolves this before calling here (see
+    if data["model"].get("type") == "native_spin" and lower_kind not in (
+        "graph",
+        "dpa4c_canonical",
+    ):
+        # Native-spin models implement the NeighborGraph lower and, for an
+        # eligible compressed DPA4C, the compact canonical one; the dense/nlist
+        # trace branch does not exist for them. The public freeze layer
+        # resolves this before calling here (see
         # deepmd.pt_expt.entrypoints.main.freeze); this guard pins the
         # contract for direct programmatic callers with a clear error instead
         # of an opaque trace-time failure.
         raise ValueError(
-            "native-spin models implement only the NeighborGraph lower "
-            f"(got lower_kind={lower_kind!r}); use lower_kind='graph' with a "
-            ".pt2 output."
+            "native-spin models implement only the NeighborGraph and compact "
+            f"canonical lowers (got lower_kind={lower_kind!r}); use "
+            "lower_kind='graph', or lower_kind='dpa4c_canonical' for an "
+            "eligible compressed DPA4C model, with a .pt2 output."
         )
-    # A graph lower deploys the fused inference pipeline. The trace runs at
-    # DP_CUDA_INFER >= 2 so the analytic backward and CSR scatter remain custom
-    # operators, while the per-atom virial is mandatory for the LAMMPS Kokkos
-    # consumer.
-    if lower_kind in ("graph", "dpa1_canonical"):
+    uses_dpa4_defaults = model_file.endswith(".pt2") and _uses_dpa4_kernel_defaults(
+        data["model"]
+    )
+    # A graph lower deploys the selected inference pipeline, while the per-atom
+    # virial is mandatory for the LAMMPS Kokkos consumer. DPA1 and DPA4C retain
+    # their level-two opaque pipeline; DPA4 .pt2 uses the same defaults as PT.
+    if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         do_atomic_virial = True
-        ctx: contextlib.AbstractContextManager = _cuda_infer_at_least_2()
+        ctx: contextlib.AbstractContextManager = (
+            _dpa4_kernel_level_defaults()
+            if uses_dpa4_defaults
+            else _fused_operators_for_export()
+        )
+    elif uses_dpa4_defaults:
+        ctx = _dpa4_kernel_level_defaults()
     else:
         ctx = contextlib.nullcontext()
     with ctx:
@@ -1366,6 +1651,30 @@ def _trace_and_export(
     with_comm_dict: bool = False,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+) -> tuple:
+    """Trace and export under the kernel levels of the deployment target."""
+    import deepmd.pt_expt.utils.env as _env
+
+    target_device = _env.DEVICE
+    with _dpa4_kernel_levels_for_target(data["model"], target_device):
+        return _trace_and_export_impl(
+            data,
+            model_json_override,
+            with_comm_dict,
+            do_atomic_virial,
+            lower_kind,
+            target_device=target_device,
+        )
+
+
+def _trace_and_export_impl(
+    data: dict,
+    model_json_override: dict | None = None,
+    with_comm_dict: bool = False,
+    do_atomic_virial: bool = False,
+    lower_kind: str = "nlist",
+    *,
+    target_device: torch.device,
 ) -> tuple:
     """Common logic: build model, trace, export.
 
@@ -1395,6 +1704,8 @@ def _trace_and_export(
         ``"nlist"`` (default) traces the dense quartet forward; ``"graph"``
         traces ``forward_lower_graph_exportable`` over the NeighborGraph schema
         with a dynamic edge axis. Recorded as ``lower_input_kind`` in metadata.
+    target_device
+        Device for which the exported program is compiled after CPU tracing.
 
     Returns
     -------
@@ -1410,19 +1721,18 @@ def _trace_and_export(
         BaseModel,
     )
 
-    target_device = _env.DEVICE
-
-    # Detect spin model. Two flavors share the ``is_spin`` gate below (both
+    # Detect spin model. Two schemes share the ``is_spin`` gate below (both
     # need the spin-only metadata fields — ``ntypes_spin``/``use_spin`` —
-    # and the nlist-lower spin ABI probes), but only the NATIVE flavor
+    # and the nlist-lower spin ABI probes), but only the NATIVE scheme
     # (``native_spin``, ``NativeSpinEnergyModel``)
-    # rides the graph lower: the virtual-atom flavor (``spin_ener``,
+    # rides the graph lower: the virtual-atom scheme (``spin_ener``,
     # ``SpinModel``) doubles the atom count and has no graph-lower
     # implementation. ``is_native_spin`` distinguishes them at every seam
     # below (model rebuild, graph rejection, graph sample-input/dynamic-shape
     # ABI, trace call site).
-    is_native_spin = data["model"].get("type") == "native_spin"
-    is_spin = is_native_spin or data["model"].get("type") == "spin_ener"
+    spin_scheme = _spin_scheme(data["model"].get("type"))
+    is_native_spin = spin_scheme == "native"
+    is_spin = spin_scheme is not None
 
     # 1. Deserialize model on CPU for make_fx tracing.
     # make_fx with _allow_non_fake_inputs=True keeps real model parameters;
@@ -1441,6 +1751,25 @@ def _trace_and_export(
         model = BaseModel.deserialize(data["model"])
     model.to("cpu")
     model.eval()
+
+    # Device-dependent Python branches resolve on the CPU tracing inputs, so
+    # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
+    # contraction, while CUDA targets also bake the fused GIE scatter.
+    from deepmd.pt_expt.descriptor.dpa4_nn.embedding import (
+        GeometricInitialEmbedding,
+    )
+    from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
+        SO2Linear,
+    )
+
+    force_block_diag = target_device.type != "cpu"
+    force_fused_scatter = target_device.type == "cuda"
+    for module in model.modules():
+        if isinstance(module, SO2Linear):
+            module._force_block_diag_matmul = force_block_diag
+        if isinstance(module, GeometricInitialEmbedding):
+            module._force_fused_scatter = force_fused_scatter
+
     if lower_kind == "graph" and not _supports_graph_export(model):
         raise NotImplementedError(
             "graph-form export of a compressed descriptor requires its "
@@ -1449,21 +1778,27 @@ def _trace_and_export(
 
     # Autotune checkpoint-specific custom-kernel launch tables on the target
     # GPU before tracing. The model itself remains on CPU for tracing.
-    from deepmd.kernels.autotune import (
+    from deepmd.pt_expt.kernels.autotune import (
         run_autotune,
     )
 
     run_autotune(model, target_device)
 
+    # Pack after checkpoint deserialization. The non-persistent buffers become
+    # constants in the CPU trace and move with the exported graph to the
+    # requested AOTI target. The helper leaves every non-DPA4 or reference path
+    # untouched and avoids importing the SeZM Triton implementation for it.
+    _prepare_dpa4_triton_value_path_weights(model, data["model"])
+
     # 2. Collect metadata
     metadata = _collect_metadata(
         model,
-        is_spin=is_spin,
+        spin_scheme=spin_scheme,
         lower_kind=lower_kind,
     )
 
     # Graph-form exports use a dynamic edge axis and an energy-model contract.
-    if lower_kind in ("graph", "dpa1_canonical"):
+    if lower_kind in ("graph", "dpa1_canonical", "dpa4c_canonical"):
         import math
 
         check_graph_trace_torch_version(model)
@@ -1509,7 +1844,7 @@ def _trace_and_export(
                 "forward_lower_graph_exportable_with_comm; graph-form "
                 "with-comm .pt2 export requires an energy model"
             )
-        canonical = lower_kind == "dpa1_canonical"
+        canonical = lower_kind in ("dpa1_canonical", "dpa4c_canonical")
         required_method = (
             "forward_lower_canonical_graph_exportable"
             if canonical
@@ -1520,14 +1855,19 @@ def _trace_and_export(
                 f"model {type(model).__name__} has no {required_method}"
             )
         if canonical:
-            from deepmd.kernels.cuda.dpa1.canonical import (
-                canonical_model_eligible,
-            )
+            if lower_kind == "dpa4c_canonical":
+                from deepmd.pt_expt.kernels.dpa4c.canonical import (
+                    canonical_model_eligible,
+                )
+            else:
+                from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
+                    canonical_model_eligible,
+                )
 
             if not canonical_model_eligible(model):
                 raise NotImplementedError(
                     "compact canonical export requires an eligible compressed "
-                    "DPA1 energy model"
+                    "DPA1 or DPA4C energy model"
                 )
 
         # Trace-time sizes must be pairwise-distinct AND avoid every static
@@ -1575,6 +1915,7 @@ def _trace_and_export(
                 model,
                 e_sample,
                 device=torch.device("cpu"),
+                want_spin=is_native_spin,
             )
             traced = model.forward_lower_canonical_graph_exportable(
                 *sample_inputs,
@@ -1687,8 +2028,7 @@ def _trace_and_export(
             dynamic_shapes = _build_graph_dynamic_shapes(
                 *sample_inputs, is_native_spin=is_native_spin
             )
-        sample_out = traced(*sample_inputs)
-        output_keys = list(sample_out.keys())
+        output_keys = traced_output_keys(traced)
         exported = torch.export.export(
             traced,
             sample_inputs,
@@ -1704,6 +2044,14 @@ def _trace_and_export(
         # preserves graph structure while allowing the AOTI artifact to
         # generalise across edge counts.
         _strip_shape_assertions(exported.graph_module)
+
+        # A destination-major descriptor never reads the source permutation:
+        # only message passing and the magnetic cotangent do. Recording what
+        # the compiled graph actually consumes lets the C++ ingestion seam skip
+        # a counting sort over the edge axis, which is pure overhead for the
+        # models that do not read it. The probe is the exported graph itself
+        # rather than a model predicate, so it cannot drift.
+        metadata["graph_source_csr"] = _graph_reads_source_csr(exported)
 
         if target_device.type != "cpu":
             from torch.export.passes import (
@@ -1852,8 +2200,6 @@ def _trace_and_export(
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-        # 5. Extract output keys from the CPU-traced module.
-        sample_out = traced(*sample_inputs)
     else:
         if with_comm_dict:
             traced = model.forward_common_lower_exportable_with_comm(
@@ -1882,10 +2228,10 @@ def _trace_and_export(
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-        # 5. Extract output keys from the CPU-traced module.
-        sample_out = traced(*sample_inputs)
-
-    output_keys = list(sample_out.keys())
+    # 5. Extract output keys from the static CPU-traced graph. CUDA-target
+    # graphs may already contain CUDA-only custom operators, so executing the
+    # graph on the tracing device is invalid.
+    output_keys = traced_output_keys(traced)
 
     # 6. Export on CPU.
     # make_fx on CPU bakes device='cpu' into tensor-creation ops in the
@@ -1962,6 +2308,189 @@ def _deserialize_to_file_pte(
     torch.export.save(exported, model_file, extra_files=extra_files)
 
 
+def _charge_state_descriptor(data: dict, metadata: dict) -> Any | None:
+    """Return the descriptor whose charge state a deployment can rebuild.
+
+    Only a compressed charge-conditioned descriptor qualifies. An
+    uncompressed one reads its frame condition as an ordinary input, so
+    serving another condition costs nothing and needs no rebuild.
+
+    That combination is already visible in the collected metadata: a model
+    that carries a charge state embedding and yet reports a conditioning
+    width of zero has folded the condition into frozen tables. Every other
+    export answers from those two fields, and only a candidate pays for
+    rebuilding the model to reach its descriptor.
+
+    Parameters
+    ----------
+    data
+        Serialized model dictionary, as passed to the export entry point.
+        This is the dictionary the exported lower was traced from, whose
+        descriptor therefore owns the constants a fold would rewrite.
+    metadata
+        Archive metadata collected from that same model.
+
+    Returns
+    -------
+    Any or None
+        The evaluated descriptor, or ``None`` when the model carries no
+        compressed charge conditioning.
+    """
+    if not metadata["has_chg_spin_ebd"] or metadata["dim_chg_spin"] != 0:
+        return None
+
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(data["model"])
+    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    if (
+        descriptor is None
+        or not getattr(descriptor, "compress", False)
+        or getattr(descriptor, "charge_spin_embedding", None) is None
+    ):
+        return None
+    model.to("cpu")
+    model.eval()
+    return descriptor
+
+
+def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
+    """Name, per fold output, the constant of ``exported`` it replaces.
+
+    A compressed charge-conditioned descriptor carries its frame condition in
+    four of its frozen tables, which reach a compiled lower as lifted
+    constants. A deployment can therefore serve any charge state by rebuilding
+    those four once, when the state becomes known, and writing them over the
+    corresponding constants.
+
+    The result is positional: entry ``i`` names the constant that output ``i``
+    of the fold replaces, so a consumer writes the outputs back without
+    knowing what any of them mean. An empty entry marks an output that no
+    constant receives, which is how a disabled mechanism appears: it
+    contributes an empty artifact and carries no charge state.
+
+    ``make_fx`` traces a plain function, so it names every lifted tensor
+    positionally and the buffer names are gone by the time the program is
+    exported. The names are therefore recovered by value against the
+    descriptor's own artifacts, and an artifact matching anything other than
+    exactly one constant is an error rather than a guess.
+
+    Each exported lower lifts its constants independently, so the names hold
+    only for the lower they were resolved against. Only a compressed DPA4C
+    descriptor folds a charge state, and that family never carries message
+    passing across ranks, so an archive with a fold holds exactly one lower.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed charge-conditioned descriptor, as returned by
+        :func:`_charge_state_descriptor`.
+    exported
+        Exported lower whose constants are to be named.
+
+    Returns
+    -------
+    list[str]
+        Per fold output, the name of the constant it replaces.
+
+    Raises
+    ------
+    RuntimeError
+        If an artifact does not match exactly one lifted constant.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        CHARGE_STATE_ARTIFACTS,
+    )
+
+    lifted = {
+        name: tensor.detach().cpu()
+        for name, tensor in exported.state_dict.items()
+        if isinstance(tensor, torch.Tensor)
+    }
+    constants: list[str] = []
+    for name in CHARGE_STATE_ARTIFACTS:
+        artifact = getattr(descriptor, f"compress_{name}").detach().cpu()
+        if artifact.numel() == 0:
+            constants.append("")
+            continue
+        matches = [
+            key
+            for key, value in lifted.items()
+            if value.shape == artifact.shape
+            and value.dtype == artifact.dtype
+            and torch.equal(value, artifact)
+        ]
+        if len(matches) != 1:
+            raise RuntimeError(
+                f"The compressed artifact {name!r} matches {len(matches)} "
+                "constants of the exported lower; a runtime charge state "
+                "needs exactly one so that the deployment knows which "
+                "constant to overwrite."
+            )
+        constants.append(matches[0])
+    return constants
+
+
+def _compile_charge_state_fold(
+    descriptor: Any,
+    aoti_configs: dict,
+) -> bytes:
+    """Compile the rebuild of the charge-state artifacts as its own archive.
+
+    Compiling the rebuild beside the inference lower is what lets one
+    deployed artifact serve any charge state: the deployment runs it once when
+    the state becomes known, then writes its outputs over the constants named
+    by :func:`_match_charge_state_constants`.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed charge-conditioned descriptor, as returned by
+        :func:`_charge_state_descriptor`.
+    aoti_configs
+        Inductor options the inference lower was compiled with.
+
+    Returns
+    -------
+    bytes
+        The compiled fold archive.
+    """
+    import os
+    import tempfile
+
+    from torch._inductor import (
+        aoti_compile_and_package,
+    )
+
+    import deepmd.pt_expt.utils.env as _env
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        ChargeStateFold,
+    )
+
+    log.info("Compiling the charge-state fold...")
+    # The descriptor is evaluated on the host, so the fold traces there and is
+    # moved to the target device with the rest of the program below.
+    sample = torch.tensor(
+        [descriptor.get_default_chg_spin()],
+        dtype=torch.float32,
+        device="cpu",
+    )
+    fold = torch.export.export(ChargeStateFold(descriptor), (sample,))
+    if _env.DEVICE.type != "cpu":
+        from torch.export.passes import (
+            move_to_device_pass,
+        )
+
+        fold = move_to_device_pass(fold, _env.DEVICE)
+    with tempfile.TemporaryDirectory() as directory:
+        path = os.path.join(directory, "charge_state.pt2")
+        aoti_compile_and_package(fold, package_path=path, inductor_configs=aoti_configs)
+        with open(path, "rb") as archive:
+            return archive.read()
+
+
 def _deserialize_to_file_pt2(
     model_file: str,
     data: dict,
@@ -2011,6 +2540,18 @@ def _deserialize_to_file_pt2(
         lower_kind=lower_kind,
     )
     metadata["output_keys"] = output_keys
+
+    # A charge-state update swaps constants in one compiled artifact. A model
+    # that also needs the with-comm lower would own two independent constant
+    # buffers, so reject that unsupported combination before compiling either
+    # artifact rather than packaging two states that can silently diverge.
+    charge_state_descriptor = _charge_state_descriptor(data, metadata)
+    has_comm_artifact = bool(metadata.get("has_comm_artifact"))
+    if charge_state_descriptor is not None and has_comm_artifact:
+        raise ValueError(
+            "a charge-state fold cannot be packaged with a with-comm lower "
+            "because each compiled lower owns independent constants"
+        )
 
     # On CUDA, aggressive kernel fusion (default realize_opcount_threshold=30)
     # causes NaN in the backward pass (force/virial) of attention-based
@@ -2064,11 +2605,22 @@ def _deserialize_to_file_pt2(
         exported, package_path=model_file, inductor_configs=aoti_configs
     )
 
+    # Charge-state fold. Present only for a compressed charge-conditioned
+    # descriptor, whose frozen tables the deployment rebuilds once when the
+    # state becomes known.
+    charge_state_bytes: bytes | None = None
+    if charge_state_descriptor is not None:
+        metadata["charge_state_constants"] = _match_charge_state_constants(
+            charge_state_descriptor, exported
+        )
+        charge_state_bytes = _compile_charge_state_fold(
+            charge_state_descriptor, aoti_configs
+        )
+
     # Second artifact: with-comm. Only for descriptors whose message
     # passing extends across rank boundaries. The flag was computed
     # from the model in ``_collect_metadata`` and is already in
     # ``metadata`` here.
-    has_comm_artifact = bool(metadata.get("has_comm_artifact"))
     with_comm_bytes: bytes | None = None
     with_comm_output_keys: list[str] | None = None
     if has_comm_artifact:
@@ -2121,3 +2673,5 @@ def _deserialize_to_file_pt2(
             zf.writestr(
                 PT2_EXTRA_PREFIX + "forward_lower_with_comm.pt2", with_comm_bytes
             )
+        if charge_state_bytes is not None:
+            zf.writestr(PT2_EXTRA_PREFIX + "charge_state.pt2", charge_state_bytes)

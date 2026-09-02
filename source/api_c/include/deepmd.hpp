@@ -1288,6 +1288,19 @@ class DeepPot : public DeepBaseModel {
   }
 
   /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * It becomes the condition of every later evaluation that is not given one
+   * explicitly. Intended to be called once, before the first evaluation.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepPotSetChargeSpin(dp, charge_spin.data(),
+                            static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
    * @brief Evaluate a device-resident edge graph with FP64 edge vectors.
    *
    * Edge, coordinate, type, and output pointers reside on the model device.
@@ -1351,11 +1364,11 @@ class DeepPot : public DeepBaseModel {
                                    double* d_force,
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
-                                   const int64_t* d_source,
+                                   const uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
                                    const int64_t* d_source_row_ptr,
-                                   const int64_t* d_source_order,
+                                   const uint32_t* d_source_order,
                                    const int nloc,
                                    const int nall_nodes,
                                    const int64_t edge_storage) {
@@ -1887,6 +1900,64 @@ class DeepSpin : public DeepBaseModel {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * It becomes the condition of every later evaluation that is not given one
+   * explicitly. Intended to be called once, before the first evaluation.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepSpinSetChargeSpin(dp, charge_spin.data(),
+                             static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
+  }
+
+  /**
+   * @brief Evaluate a compact canonical graph on the model device.
+   *
+   * Graph, moment, and output pointers reside on the model device; the halo
+   * rows of the moment carry their owner's value.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_force_mag,
+                                   double* d_atom_virial,
+                                   const int64_t* d_atype,
+                                   const uint32_t* d_source,
+                                   const float* d_edge_vec,
+                                   const int64_t* d_destination_row_ptr,
+                                   const int64_t* d_source_row_ptr,
+                                   const uint32_t* d_source_order,
+                                   const float* d_spin,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const int64_t edge_storage) {
+    DP_DeepSpinComputeCanonicalGraphGPU(
+        dp, d_atom_energy, d_force, d_force_mag, d_atom_virial, d_atype,
+        d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+        d_source_order, d_spin, nloc, nall_nodes, edge_storage);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
+  }
+
+  /**
+   * @brief Query whether the compact canonical graph ABI is active.
+   */
+  bool uses_canonical_graph_inference() const {
+    const bool result = DP_DeepSpinUsesCanonicalGraphInference(dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
+    return result;
+  }
+
+  /**
+   * @brief Query whether the native spin scheme is active.
+   */
+  bool uses_native_spin_scheme() const {
+    const bool result = DP_DeepSpinUsesNativeSpinScheme(dp);
+    DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
+    return result;
   }
 
   /**
@@ -2538,6 +2609,19 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
   }
 
   /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * Applied to every model, so that the deviation is taken between models
+   * under the same condition.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepPotModelDeviSetChargeSpin(dp, charge_spin.data(),
+                                     static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
+  }
+
+  /**
    * @brief Evaluate the energy, force and virial by using this DP model
    *deviation.
    * @param[out] ener The system energy.
@@ -3018,6 +3102,19 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Fix the charge/spin condition served for the rest of the run.
+   * Applied to every model, so that the deviation is taken between models
+   * under the same condition.
+   * @param[in] charge_spin The condition, of length dim_chg_spin().
+   **/
+  void set_charge_spin(const std::vector<double>& charge_spin) {
+    assert(dp);
+    DP_DeepSpinModelDeviSetChargeSpin(dp, charge_spin.data(),
+                                      static_cast<int>(charge_spin.size()));
+    DP_CHECK_OK(DP_DeepSpinModelDeviCheckOK, dp);
   }
 
   /**

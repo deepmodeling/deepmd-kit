@@ -505,3 +505,14 @@ class PairTabAtomicModel(BaseAtomicModel):
     ) -> None:
         """Pairtab model does not support compression."""
         pass
+
+    def compression_needs_min_nbor_dist(self) -> bool:
+        """Return whether compression consumes the minimum neighbor distance.
+
+        Returns
+        -------
+        bool
+            Always ``False``. The tabulated pair potential carries its own
+            domain, so compression is a no-op here.
+        """
+        return False

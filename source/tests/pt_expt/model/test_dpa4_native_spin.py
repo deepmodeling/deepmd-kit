@@ -1628,12 +1628,12 @@ class TestNativeSpinModelPairExcludeContract:
         )
 
         meta = _collect_metadata(
-            self._generic_model([[0, 1]]), is_spin=True, lower_kind="graph"
+            self._generic_model([[0, 1]]), spin_scheme="native", lower_kind="graph"
         )
         assert meta["pair_exclude_types"] == [[0, 1]]
 
         base_meta = _collect_metadata(
-            self._generic_model(None), is_spin=True, lower_kind="graph"
+            self._generic_model(None), spin_scheme="native", lower_kind="graph"
         )
         assert base_meta["pair_exclude_types"] == []
 
