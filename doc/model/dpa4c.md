@@ -238,11 +238,12 @@ pair_coeff * * O H
 
 The compact canonical graph form exists so that the whole step can stay on the
 device. Only the Kokkos pair styles use that device-resident entry point; the
-host styles run the same archive through a per-step host round trip. Reaching
-DPA4C's advertised throughput therefore takes three things together: a
+host styles run the same archive through a per-step host round trip. On a GPU,
+reaching DPA4C's advertised throughput therefore takes three things together: a
 Kokkos-enabled LAMMPS build on the GPU backend, the compressed archive, and
 `DP_CUDA_INFER` set at export time as described under
-[Inference settings](#inference-settings).
+[Inference settings](#inference-settings). On a CPU host none of that applies --
+see [CPU hosts](#cpu-hosts).
 
 | Pair style    | Build                    | Accepted archive          | Execution                                      |
 | ------------- | ------------------------ | ------------------------- | ---------------------------------------------- |
@@ -256,6 +257,78 @@ Run under Kokkos with one GPU:
 ```bash
 lmp -k on g 1 -sf kk -in in.lammps
 ```
+
+### CPU hosts
+
+DPA4C has a second set of hand-written operators for the CPU, so a compressed
+archive runs the same fused pipeline on a host without a GPU. They are selected
+automatically -- there is no level to set, because they replace a lowering of
+the same arithmetic and are faster wherever they apply -- and they carry the
+same numerical contract as the CUDA ones: float32 model computation, no
+reduced-precision path.
+
+```bash
+export OMP_NUM_THREADS=$(nproc --all)
+export DP_INTRA_OP_PARALLELISM_THREADS=$OMP_NUM_THREADS
+export DP_INTER_OP_PARALLELISM_THREADS=1
+lmp -in in.lammps
+```
+
+Three conditions have to hold for the fused CPU path to be taken:
+
+- the archive is **compressed**, because the operator reads the radial table
+  rather than evaluating the radial network;
+- `channels` is one of 8, 16, 32, 64, 128, `lmax` one of 2, 3, 4, `radial_modes`
+  one of 0, 2, 4, 8, the parameters are float32, and no type pairs are excluded;
+- the descriptor is **not** spin-conditioned. The magnetic families need a
+  source-major counterpart of the destination scan, which only the CUDA kernels
+  carry; a spin model on a CPU host falls back to the portable path.
+
+`deepmd/kk` brings nothing on a CPU. Its purpose is to keep the neighbor list
+device-resident and avoid host-device synchronization, which on a host is
+already absent, and everything outside the pair style is about 2% of the step.
+Use the plain `deepmd` style.
+
+Two settings are worth knowing:
+
+- **Thread count.** The C++ interface reads
+  `DP_INTRA_OP_PARALLELISM_THREADS`, not `OMP_NUM_THREADS`, and warns when it
+  is unset. Set both, and prefer one thread per *physical* core.
+- **Processor affinity.** If LAMMPS is launched from a process that has already
+  initialized an OpenMP runtime under `OMP_PROC_BIND` -- a Python driver, for
+  instance -- it inherits that process's affinity mask, which may be a single
+  core, and will then run the model on one thread whatever `OMP_NUM_THREADS`
+  says. The symptom is a low `CPU use` percentage in the LAMMPS timing summary
+  next to a high thread count. Launch LAMMPS directly, or reset the mask in the
+  child.
+
+Whole-step throughput of the released grades on a fully periodic 8000-atom
+diamond supercell, 158 neighbours per atom, on two 45-core Xeon Platinum 8457C
+sockets using 83 physical cores:
+
+| Grade | ms per step | atoms per ms |
+| ----- | ----------: | -----------: |
+| Nano  |         7.1 |         1126 |
+| Mini  |         9.7 |          828 |
+| Neo   |        10.1 |          794 |
+| Air   |        12.5 |          639 |
+| Plus  |        18.4 |          435 |
+
+Throughput peaks between roughly 16 000 and 66 000 atoms and declines beyond it
+as the step's working set leaves the last-level cache.
+
+Resident memory is roughly 16 to 31 KB per atom depending on the grade, so a 4
+GiB budget holds between 124 000 atoms (Plus) and 230 000 atoms (Nano). Most of
+that is the neighbor graph, which depends on the cutoff rather than on the model
+width.
+
+`DP_CPU_MALLOC_RETAIN` controls a heap policy that matters at these sizes. By
+default the operator library keeps large blocks that a step reuses instead of
+returning them to the kernel on every free; without it a molecular-dynamics step
+re-faults its whole working set and loses more than half its throughput above
+about 32 000 atoms. Retaining them costs a few hundred megabytes to a gigabyte
+of resident memory. Set `DP_CPU_MALLOC_RETAIN=0` on a memory-constrained host to
+trade that back.
 
 ### Multiple GPUs
 
@@ -276,15 +349,17 @@ GPU memory stable; a zero skin rebuilds the neighbor list every step.
 Inference behavior is controlled by environment variables read when the model is
 constructed:
 
-| Environment variable | Default | Effect                                                                                                                                                          |
-| -------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DP_CUDA_INFER`      | `0`     | Fused CUDA kernel level: `0` off, `1` fused descriptor and fitting, `2` additionally fuses force and virial assembly. Levels 1 and 2 are numerically identical. |
-| `DP_AMP_INFER`       | off     | bf16 autocast over the per-edge stage during inference. Independent of the training-time `use_amp`.                                                             |
-| `DP_TF32_INFER`      | `0`     | float32 matmul precision: `0` highest, `1` high, `2` medium.                                                                                                    |
+| Environment variable   | Default | Effect                                                                                                                                                          |
+| ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_CUDA_INFER`        | `0`     | Fused CUDA kernel level: `0` off, `1` fused descriptor and fitting, `2` additionally fuses force and virial assembly. Levels 1 and 2 are numerically identical. |
+| `DP_AMP_INFER`         | off     | bf16 autocast over the per-edge stage during inference. Independent of the training-time `use_amp`.                                                             |
+| `DP_TF32_INFER`        | `0`     | float32 matmul precision: `0` highest, `1` high, `2` medium.                                                                                                    |
+| `DP_CPU_MALLOC_RETAIN` | `1`     | Whether the CPU operator library retains large heap blocks between steps. See [CPU hosts](#cpu-hosts).                                                          |
 
 A compressed model needs `DP_CUDA_INFER` of at least `1` to reach its fused
-path; at `0` it evaluates through the portable path and the compression brings
-no speedup. For molecular dynamics sensitive to the smoothness of the potential
+path on a GPU; at `0` it evaluates through the portable path and the compression
+brings no speedup. On a CPU host there is no equivalent level: the fused
+operators are always selected when the model is eligible. For molecular dynamics sensitive to the smoothness of the potential
 energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
 
 > [!IMPORTANT]
@@ -418,8 +493,10 @@ order consistent across the dataset, the input file, and any downstream
 
 - DPA4C is implemented for the PyTorch Exportable backend (`dp --pt-expt`).
 - Export uses `.pt2` (AOTInductor); the TorchScript freeze path is not used.
-- Model compression requires CUDA, `float32`, and a configuration inside the
-  compiled sets listed under [Model compression](#model-compression).
+- Model compression requires `float32` and a configuration inside the compiled
+  sets listed under [Model compression](#model-compression). The resulting
+  archive runs fused kernels on either a CUDA device or a CPU host; only a
+  spin-conditioned model is CUDA-only.
 - The device-resident inference path requires a Kokkos-enabled LAMMPS build on
   the GPU backend.
 - The descriptor is one-hop local by construction. Interactions beyond `rcut`

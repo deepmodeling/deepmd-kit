@@ -840,6 +840,7 @@ class DescrptBlockSeT(DescriptorBlock):
             self.rcut,
             self.rcut_smth,
             protection=self.env_protection,
+            training=self.training,
         )
         dmatrix = dmatrix.view(-1, self.nnei, 4)
         nfnl = dmatrix.shape[0]

@@ -22,10 +22,6 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.utils import (
-    triton_infer_level,
-    use_cute_infer,
-)
 from deepmd.pt.utils import (
     env,
 )
@@ -35,6 +31,14 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.utils import (
     get_generator,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    cuda_train_enabled,
+    triton_infer_level,
+    triton_train_level,
+    use_cute_infer,
+    use_cutile_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -52,6 +56,9 @@ from .attn_res import (
 from .cartesian import (
     EdgeCartesianTensorProduct,
     NodeCartesianTensorProduct,
+)
+from .edge_cache import (
+    cached_edge_csr,
 )
 from .grid_net import (
     S2GridNet,
@@ -91,6 +98,30 @@ if TYPE_CHECKING:
     from .edge_cache import (
         EdgeFeatureCache,
     )
+
+
+def active_triton_level(module: nn.Module) -> int:
+    """
+    Return the Triton acceleration level that applies to a module's mode.
+
+    Inference and training are gated independently: an operator qualifies for
+    inference as soon as it reproduces the forward and the coordinate gradient
+    with the parameters held fixed, whereas training additionally requires the
+    gradient of every parameter it consumes and a second derivative of its own
+    backward, which the force loss traverses. Both levels are captured at
+    construction, so the branch this drives resolves at trace time.
+
+    Parameters
+    ----------
+    module : nn.Module
+        Module carrying ``triton_infer_level`` and ``triton_train_level``.
+
+    Returns
+    -------
+    int
+        The level in effect for the module's current mode.
+    """
+    return module.triton_train_level if module.training else module.triton_infer_level
 
 
 class SO2Linear(nn.Module):
@@ -353,8 +384,10 @@ class SO2Linear(nn.Module):
         # without a contiguity copy. Bound only when Triton is available and every
         # block width aligns to BN=64; otherwise the eager path is kept.
         self._block_diag_gemm = None
-        if triton_infer_level() >= 1:
-            from deepmd.kernels.triton.sezm.so2_block_gemm import (
+        self.triton_infer_level = triton_infer_level()
+        self.triton_train_level = triton_train_level()
+        if max(self.triton_infer_level, self.triton_train_level) >= 1:
+            from deepmd.pt_expt.kernels.triton.sezm.so2_block_gemm import (
                 SO2_BLOCK_GEMM_TRITON_AVAILABLE,
                 block_diag_gemm,
                 slices_supported,
@@ -543,7 +576,7 @@ class SO2Linear(nn.Module):
             Flattened output with shape ``(F, E, D_m*Cout)``.
         """
         weight = weight.permute(1, 0, 2)  # (F, D_m*Cin, D_m*Cout)
-        if self._block_diag_gemm is not None and not self.training:
+        if self._block_diag_gemm is not None and active_triton_level(self) >= 1:
             return self._block_diag_gemm(x_flat, weight, self._block_diag_slices)
         blocks = [
             torch.bmm(
@@ -689,18 +722,19 @@ class DynamicRadialDegreeMixer(nn.Module):
         for p in self.parameters():
             p.requires_grad = trainable
 
-        # Inference fast path (``DP_TRITON_INFER >= 1``): a fused Triton
-        # kernel replaces the dense scatter and the tiny batched matmul of the
-        # ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
-        self.use_triton_infer = triton_infer_level() >= 1
+        # Fused fast path (``DP_TRITON_INFER >= 1`` / ``DP_TRITON_TRAIN >= 1``):
+        # a Triton kernel replaces the dense scatter and the tiny batched matmul
+        # of the ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
+        self.triton_infer_level = triton_infer_level()
+        self.triton_train_level = triton_train_level()
         self._radial_mix_block = None
         if (
-            self.use_triton_infer
+            max(self.triton_infer_level, self.triton_train_level) >= 1
             and self.mode == "degree_channel"
             and self.rank > 0
             and self.mmax == 1
         ):
-            from deepmd.kernels.triton.sezm.radial_mix import (
+            from deepmd.pt_expt.kernels.triton.sezm.radial_mix import (
                 radial_mix_block,
             )
 
@@ -798,7 +832,7 @@ class DynamicRadialDegreeMixer(nn.Module):
             compact = kernel_flat.view(
                 x_local.shape[0], self.degree_kernel_size, self.rank
             )
-            if self._radial_mix_block is not None and not self.training:
+            if self._radial_mix_block is not None and active_triton_level(self) >= 1:
                 return self._radial_mix_block(
                     compact, x_local, self.channel_basis, self.lmax
                 )
@@ -1054,6 +1088,7 @@ class SO2Convolution(nn.Module):
         trainable: bool,
     ) -> None:
         super().__init__()
+        self.trainable = bool(trainable)
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
         if self.mmax < 0:
@@ -1178,32 +1213,35 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        # Opt-in inference fast paths, selected by ``DP_TRITON_INFER`` (a
-        # cumulative level, see :func:`triton_infer_level`) and
-        # ``DP_CUTE_INFER``. Each is read once at construction so it becomes a
-        # compile-time constant in the traced (``make_fx``) graph, and each
-        # only takes effect during inference. Level 1 replaces the dense
-        # ``bmm`` rotation with universal Triton kernels; level 2 additionally
-        # binds the table-configured fused value path; level 3 routes the
-        # mixing stack through the fp16x3 tensor-core operator on swept
-        # shapes. ``DP_CUTE_INFER`` selects the experimental CuTe value-path
-        # operator instead; both gates claim the same ``so2_message`` value
-        # path, so enabling them together has no coherent meaning and is
-        # rejected at construction. The fused value-path entries are bound at
-        # the end of construction (once every submodule exists) and stay
-        # ``None`` when the backend is unavailable or the block layout is
-        # unsupported.
+        # Opt-in fused fast paths, selected by ``DP_TRITON_INFER`` /
+        # ``DP_TRITON_TRAIN`` (cumulative levels, see :func:`triton_infer_level`
+        # and :func:`triton_train_level`) and ``DP_CUTE_INFER``. Each is read
+        # once at construction so it becomes a compile-time constant in the
+        # traced (``make_fx``) graph. Level 1 replaces the dense ``bmm``
+        # rotation with universal Triton kernels; level 2 additionally binds the
+        # table-configured fused value path; inference level 3 routes the mixing
+        # stack through the fp16x3 tensor-core operator on swept shapes.
+        # ``DP_CUTE_INFER`` selects the experimental CuTe value-path operator
+        # instead; both gates claim the same ``so2_message`` value path, so
+        # enabling them together has no coherent meaning and is rejected at
+        # construction. The CuTe, cuTile and hand-written CUDA paths remain
+        # inference-only. The fused value-path entries are bound at the end of
+        # construction (once every submodule exists) and stay ``None`` when the
+        # backend is unavailable or the block layout is unsupported.
         self.triton_infer_level = triton_infer_level()
+        self.triton_train_level = triton_train_level()
         self.use_triton_infer = self.triton_infer_level >= 1
         self.use_cute_infer = use_cute_infer()
-        if self.use_triton_infer and self.use_cute_infer:
+        self.use_cutile_infer = use_cutile_infer()
+        if sum((self.use_triton_infer, self.use_cute_infer, self.use_cutile_infer)) > 1:
             raise ValueError(
-                "DP_TRITON_INFER and DP_CUTE_INFER are mutually exclusive: "
-                "both select the fused SO(2) value-path backend. Enable "
-                "exactly one of them."
+                "DP_TRITON_INFER, DP_CUTE_INFER and DP_CUTILE_INFER are mutually "
+                "exclusive: each selects a complete accelerated inference path. "
+                "Enable exactly one of them."
             )
         self._cute_value_path = None
         self._triton_value_path = None
+        self._cutile_value_path = None
 
         # === Step 1. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
@@ -1240,7 +1278,7 @@ class SO2Convolution(nn.Module):
                 trainable=trainable,
             )
 
-        # === Step 2b. Optional per-node Cartesian mixing on the aggregated message ===
+        # === Step 3. Optional per-node Cartesian mixing on the aggregated message ===
         self.node_cartesian_tp: NodeCartesianTensorProduct | None = None
         if self._node_cartesian_enabled:
             self.node_cartesian_tp = NodeCartesianTensorProduct(
@@ -1256,7 +1294,7 @@ class SO2Convolution(nn.Module):
                 trainable=trainable,
             )
 
-        # === Step 7. Optional attention projections (n_atten_head > 0) ===
+        # === Step 4. Optional attention projections (n_atten_head > 0) ===
         self.attn_qk_norm: ScalarRMSNorm | None = None
         self.attn_q_proj: FocusLinear | None = None
         self.attn_k_proj: FocusLinear | None = None
@@ -1376,7 +1414,7 @@ class SO2Convolution(nn.Module):
                 generator=get_generator(child_seed(seed_gate, 3)),
             )
 
-        # === Step 7.5. Optional cross-focus competition ===
+        # === Step 5. Optional cross-focus competition ===
         self.focus_compete_norm: nn.Module | None = None
         self.adamw_focus_compete_w: nn.Parameter | None = None
         self.focus_compete_bias: nn.Parameter | None = None
@@ -1421,7 +1459,7 @@ class SO2Convolution(nn.Module):
                     requires_grad=trainable,
                 )
 
-        # === Step 8. Optional radial hidden projection ===
+        # === Step 6. Optional radial hidden projection and degree mixer ===
         self.radial_hidden_proj: ChannelLinear | None = None
         if self.use_hidden_projection:
             self.radial_hidden_proj = ChannelLinear(
@@ -1444,6 +1482,7 @@ class SO2Convolution(nn.Module):
                 seed=seed_radial_degree,
                 trainable=trainable,
             )
+        # === Step 7. Optional node-wise / message-node grid products ===
         node_wise_op = (
             "branch"
             if self.node_wise_grid_branch > 0
@@ -1534,7 +1573,7 @@ class SO2Convolution(nn.Module):
                     seed=seed_message_node_s2,
                 )
 
-        # === Step 9. Pre-focus channel mixing ===
+        # === Step 8. Pre-focus channel mixing ===
         # This projects the full channel width before the SO(2) focus split.
         self.pre_focus_mix = SO3Linear(
             lmax=self.lmax,
@@ -1547,7 +1586,7 @@ class SO2Convolution(nn.Module):
             seed=seed_so3_pre,
         )
 
-        # === Step 10. Post-focus channel mixing ===
+        # === Step 9. Post-focus channel mixing ===
         self.post_focus_mix = SO3Linear(
             lmax=self.lmax,
             in_channels=self.hidden_channels,
@@ -1560,28 +1599,31 @@ class SO2Convolution(nn.Module):
             init_std=0.0,
         )
 
-        # === Step 11. Edge-frame requirement for the SO(2) message ===
+        # === Step 10. Edge-frame requirement for the SO(2) message ===
         self.needs_local_frame = (not self.edge_cartesian) and (
             self.mixing_layers > 0
             or self.radial_so2_mode != "none"
             or self.node_wise_grid_product is not None
         )
 
-        # === Step 12. Optional fused flash-attention aggregation kernel ===
+        # === Step 11. Optional fused flash-attention aggregation kernel ===
         # Folds the entire ``n_atten_head > 0`` value aggregation -- block-diagonal
         # rotate-back, inverse-rotation rescale, envelope-gated softmax weighting,
         # and the destination scatter -- into a single destination-segmented
-        # Triton kernel, removing the transient ``x_message`` and weighted-value
-        # edge tensors and the ``index_add`` round trip. It shares the
-        # ``DP_TRITON_INFER`` gate with the other SeZM inference kernels and only
-        # engages for the supported ``mmax == 1`` attention layout without the
-        # optional focus-mix / value / output projections (the deployed DPA4
-        # configuration); the op itself dispatches to an eager reference off the
-        # CUDA fp32 path. The output-side head gate stays a cheap node-level
-        # elementwise applied after the kernel.
-        self.use_flash_atten = (
-            self.use_triton_infer
-            and self.n_atten_head > 0
+        # kernel, removing the transient ``x_message`` and weighted-value edge
+        # tensors and the ``index_add`` round trip; the op itself dispatches to an
+        # eager reference off the CUDA fp32 path. The output-side head gate stays
+        # a cheap node-level elementwise applied after the kernel.
+        #
+        # Layout support is a property of the block, so it is expressed
+        # independently of the backend: the kernel only serves the ``mmax == 1``
+        # attention layout without the optional focus-mix / value / output
+        # projections (the deployed DPA4 configuration). Whichever of the
+        # mutually exclusive inference gates is active then supplies the
+        # implementation, and ``self._flash_atten_fn`` being bound is what marks
+        # the fused path as live.
+        self._flash_atten_layout_ok = (
+            self.n_atten_head > 0
             and self.mmax == 1
             and self.needs_local_frame
             and not self.edge_cartesian
@@ -1590,18 +1632,28 @@ class SO2Convolution(nn.Module):
             and self.attn_o_proj is None
             and self.attn_focus_mix is None
         )
+        # The cuTile aggregation is inference-only; the Triton one also serves
+        # training, so it is bound whenever either gate asks for level 1.
         self._flash_atten_fn = None
-        self._build_row_ptr_fn = None
-        if self.use_flash_atten:
-            from deepmd.kernels.triton.sezm.flash_atten import (
-                build_row_ptr,
+        self._flash_atten_trains = False
+        if self._flash_atten_layout_ok and self.use_cutile_infer:
+            from deepmd.pt_expt.kernels.cutile.sezm.flash_atten import (
                 flash_atten_aggregate,
             )
 
             self._flash_atten_fn = flash_atten_aggregate
-            self._build_row_ptr_fn = build_row_ptr
+        elif (
+            self._flash_atten_layout_ok
+            and max(self.triton_infer_level, self.triton_train_level) >= 1
+        ):
+            from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
+                flash_atten_aggregate,
+            )
 
-        # === Step 13. Optional fused Triton SO(2) value-path operators ===
+            self._flash_atten_fn = flash_atten_aggregate
+            self._flash_atten_trains = self.triton_train_level >= 1
+
+        # === Step 12. Optional fused Triton SO(2) value path (inference) ===
         # Fuses rotate-to-local, the radial degree mixing, the gated mixing
         # stack, and the focus competition of ``so2_message`` into the
         # ``sezm_triton::so2_rotate_mix`` / ``so2_mixing_stack`` operators.
@@ -1612,23 +1664,115 @@ class SO2Convolution(nn.Module):
         # it engages at ``DP_TRITON_INFER >= 2``; at level 3 the factory
         # additionally routes the mixing stack through the fp16x3 tensor-core
         # operator on shapes whose configuration passed the fp64 validation
-        # sweep.
+        # sweep. Training never composes this path: the training value stream
+        # is either the level-1 operator composition (step 13 and the dense
+        # mixing stack) or the fused CUDA value path (step 15).
         if self.triton_infer_level >= 2:
-            from deepmd.kernels.triton.sezm.so2_value_path import (
+            from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
                 make_triton_value_path,
             )
 
             self._triton_value_path = make_triton_value_path(self)
 
-        # === Step 14. Optional fused CuTe SO(2) value-path operator ===
+        # === Step 13. Optional fused rotate-to-local + radial degree mixing ===
+        # Level-1 companion of the value path: only the rotation and the
+        # degree mixing fuse into one edge-parallel operator writing the
+        # focus-major mixing input directly, while the mixing stack itself
+        # stays with the compiler. This removes the degree-expanded local
+        # intermediate and its relayout from the traced graph; the operator's
+        # backward reduces through the source CSR view and carries a
+        # hand-derived second order, so it serves force-loss training.
+        #
+        # The operator is quadrilinear, so a force loss re-enters its forward
+        # and backward several times for the second order. That fixed cost is
+        # repaid only where the materialization it removes is large: the wide
+        # hidden widths. Below the bound the separate rotation and radial-mix
+        # kernels win end to end (a 64-wide stack loses ~10%, a 128-wide one
+        # gains), so the binding follows the measured crossover.
+        self._triton_rotate_mix = None
+        if (
+            max(self.triton_infer_level, self.triton_train_level) >= 1
+            and self.hidden_channels >= 128
+        ):
+            from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+                make_triton_rotate_mix,
+            )
+
+            self._triton_rotate_mix = make_triton_rotate_mix(self)
+
+        # === Step 14. Optional fused CUDA SO(2) convolution (inference) ===
+        # One hand-written CUDA operator spans the complete per-edge path:
+        # rotate-to-local, the radial degree mixing, the gated mixing stack, the
+        # inverse rotation, the attention weighting and the destination
+        # reduction. It therefore supersedes both the fused value path and the
+        # flash aggregation, and takes precedence over them when the block
+        # matches its supported configuration. The factory returns ``None``
+        # otherwise, leaving whichever narrower path is bound in charge.
+        self._cuda_conv_fn = None
+        if cuda_infer_level() >= 2 and self._flash_atten_layout_ok:
+            from deepmd.pt_expt.kernels.cuda.dpa4 import (
+                make_cuda_so2_conv,
+            )
+
+            self._cuda_conv_fn = make_cuda_so2_conv(self)
+
+        # === Step 15. Optional fused CUDA SO(2) value path (training) ===
+        # One CUDA operator spans the training value stream up to the attention
+        # aggregation: rotate-to-local, radial degree mixing, the cross-focus
+        # competition weight, the whole gated mixing stack and the final
+        # identity layer. Narrow layouts stay in a resident tile kernel; wide
+        # layouts compose the rotation kernels and strided cuBLASLt contractions
+        # behind the same differentiable boundary. The attention span stays on
+        # the Triton operator composition inside the traced graph. Bound under
+        # ``DP_CUDA_TRAIN=1``; ``so2_message`` dispatches to it in training mode.
+        self._cuda_value_train = None
+        if cuda_train_enabled():
+            from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
+                make_cuda_so2_value,
+            )
+
+            self._cuda_value_train = make_cuda_so2_value(self)
+
+        # === Step 16. Optional fused destination-segmented attention softmax ===
+        # One CSR-segmented operator per direction replaces the
+        # scatter/gather softmax chain of the attention weights, sharing the
+        # destination-sorted view with the flash aggregation; its backward and
+        # hand-derived second order keep the force-loss trace from expanding
+        # the chain into materialized surfaces and serialized scatters. The
+        # source-gated (SFPG) form keeps the reference path.
+        self._segment_softmax_fn = None
+        if (
+            max(self.triton_infer_level, self.triton_train_level) >= 1
+            and self.attn_n_focus * self.n_atten_head <= 16
+        ):
+            from deepmd.pt_expt.kernels.triton.sezm.segment_softmax import (
+                SEGMENT_SOFTMAX_TRITON_AVAILABLE,
+                segment_softmax,
+            )
+
+            if SEGMENT_SOFTMAX_TRITON_AVAILABLE:
+                self._segment_softmax_fn = segment_softmax
+
+        # === Step 17. Optional fused CuTe SO(2) value-path operator ===
         # Experimental alternative backend; mutually exclusive with the Triton
         # flag (enforced above).
         if self.use_cute_infer:
-            from deepmd.kernels.cute.sezm import (
+            from deepmd.pt_expt.kernels.cute.sezm import (
                 make_cute_value_path,
             )
 
             self._cute_value_path = make_cute_value_path(self)
+
+        # === Step 18. Optional fused cuTile SO(2) value-path operators ===
+        # Complete cuTile inference path, mutually exclusive with the two gates
+        # above. The factory validates the block layout and returns ``None``
+        # otherwise, leaving the dense reference path in charge.
+        if self.use_cutile_infer:
+            from deepmd.pt_expt.kernels.cutile.sezm.so2_value_path import (
+                make_cutile_value_path,
+            )
+
+            self._cutile_value_path = make_cutile_value_path(self)
 
     def forward(
         self,
@@ -1653,231 +1797,547 @@ class SO2Convolution(nn.Module):
         torch.Tensor
             Message updates with shape (N, D, C).
         """
-        src, dst = edge_cache.src, edge_cache.dst
-        n_node = x.shape[0]
-        n_edge = src.numel()
-
         # === Step 1. Pre-focus channel mixing on full width ===
         with nvtx_range("SO2Conv/pre_focus_mix"):
             # (N, D, C_wide), C_wide = F * Cf
             x = self.pre_focus_mix(x.unsqueeze(2)).squeeze(2)
 
-        # === Step 2. Edge message: Cartesian product, SO(2) mixing, or the
-        # rotation-free radial message when no local-frame operation is needed ===
-        # In the fused flash-attention path the SO(2) message returns the
-        # pre-rotate-back per-focus local features; the rotate-back is folded into
-        # the aggregation kernel (Step 4).
-        run_flash = self.use_flash_atten and not self.training
-        x_local_flash: torch.Tensor | None = None
-        x_message: torch.Tensor | None = None
-        if run_flash:
-            x_local_flash, rad_feat = self.so2_message(
-                x, edge_cache, radial_feat, return_local=True
-            )
-        elif self.edge_cartesian:
-            x_message, rad_feat = self.cartesian_message(x, edge_cache, radial_feat)
-        elif self.needs_local_frame:
-            x_message, rad_feat = self.so2_message(x, edge_cache, radial_feat)
-        else:
-            x_message, rad_feat = self.radial_message(x, edge_cache, radial_feat)
-
-        # === Step 3. Optional focus mixing for the attention stream ===
-        if self.attn_focus_mix is not None:
-            x_message = self.attn_focus_mix(x_message.unsqueeze(2)).squeeze(2)
-
-        # === Step 4. Aggregate with optional head-wise gating ===
+        # === Step 2. Node update from the edge messages ===
         with nvtx_range("SO2Conv/aggregate"):
-            # Source Freeze Propagation Gate: broadcast the per-edge scalar
-            # eta[src] to the edge message before destination aggregation.
-            # ``edge_src_gate`` is ``None`` outside bridging mode, in which
-            # case this branch disappears and the baseline / attention paths
-            # run unchanged.
-            edge_src_gate = edge_cache.edge_src_gate
             if self.n_atten_head == 0:
-                # Baseline path: fused envelope-weighted scatter add -> degree norm.
-                # Folding edge_src_gate into the scalar envelope keeps the
-                # op count unchanged.
-                edge_weight = edge_cache.edge_env  # (E, 1)
-                if edge_src_gate is not None:
-                    edge_weight = edge_weight * edge_src_gate.to(
-                        dtype=edge_weight.dtype
-                    )
-                x_message = x_message * edge_weight.unsqueeze(-1)
-                out = x.new_zeros(x.shape, dtype=self.compute_dtype)
-                out.index_add_(0, dst, x_message.to(dtype=self.compute_dtype))
-                out.mul_(edge_cache.inv_sqrt_deg.to(dtype=self.compute_dtype))
-                out = out.to(dtype=self.dtype)  # (N, D, C_wide)
+                out = self.forward_envelope(x, edge_cache, radial_feat)
             else:
-                # === Step 4.1. Build attention logits from scalar channels ===
-                compute_dtype = self.compute_dtype
-                x_l0_node = x[:, 0, :].reshape(
-                    n_node, self.attn_n_focus, self.attn_focus_dim
-                )  # (N, Fa, Ca)
-                qk_input = self.attn_qk_norm(x_l0_node.to(dtype=compute_dtype))
-                q_node = self.attn_q_proj(qk_input)  # (N, Fa, Ca)
-                k_node = self.attn_k_proj(qk_input)  # (N, Fa, Ca)
-                q_edge = q_node.index_select(0, dst).reshape(
-                    n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim
-                )  # (E, Fa, H, Ch), Ca = H * Ch
-                k_edge = k_node.index_select(0, src).reshape(
-                    n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim
-                )  # (E, Fa, H, Ch)
-                radial_l0 = rad_feat[:, 0, :].reshape(
-                    n_edge, self.attn_n_focus, self.attn_focus_dim
-                )  # (E, Fa, Ca)
-                radial_bias = torch.einsum(
-                    "efi,ifo->efo",
-                    radial_l0.to(dtype=compute_dtype),
-                    self.adamw_attn_logit_w,
-                )  # (E, F, H)
-                attn_logits: torch.Tensor = (q_edge * k_edge).sum(-1) * (
-                    self.head_dim**-0.5
-                )
-                attn_logits = attn_logits + radial_bias
+                out = self.forward_attention(x, edge_cache, radial_feat)
+            # (N, D, C_wide)
 
-                # === Step 4.2. Destination-wise stable envelope-gated softmax ===
-                # ``src_weight=edge_src_gate`` folds SFPG into both the
-                # numerator and the denominator of the softmax. A muted
-                # source (``eta_src = 0``) therefore drops out of the
-                # destination's attention normalization entirely, which
-                # is required for the attention path to honor the
-                # frozen-zone invariance: a post-multiplication on
-                # ``attn_alpha`` alone would still leave the muted
-                # source leaking through the shared denominator.
-                attn_alpha = segment_envelope_gated_softmax(
-                    logits=attn_logits,
-                    edge_env=edge_cache.edge_env.to(dtype=compute_dtype),
-                    dst=dst,
-                    n_nodes=n_node,
-                    z_bias_raw=self.adamw_attn_z_bias_raw,
-                    eps=self.eps,
-                    src_weight=(
-                        None
-                        if edge_src_gate is None
-                        else edge_src_gate.to(dtype=compute_dtype)
-                    ),
-                )  # (E, F, H)
-
-                if run_flash:
-                    # === Step 4.3f. Fused rotate-back + envelope-softmax-weighted
-                    # segment scatter. One destination-segmented Triton kernel
-                    # folds the block-diagonal rotate-back, the inverse-rotation
-                    # rescale, the per-edge ``attn_alpha`` weighting, and the
-                    # destination reduction into a single atomic-free pass,
-                    # returning the ungated aggregate ``(N, D, C_wide)``. The
-                    # transient rotate-back message and weighted value tensors are
-                    # never materialized.
-                    row_ptr = self._build_row_ptr_fn(dst, n_node)
-                    pre_gate = self._flash_atten_fn(
-                        x_local_flash,
-                        edge_cache.Dt_full,
-                        self.rotate_inv_rescale_full,
-                        attn_alpha,
-                        row_ptr,
-                        dst,
-                        self.lmax,
-                        self.n_atten_head,
-                    )  # (N, D, C_wide)
-
-                    # === Step 4.4f. Output-side head gate (cheap node-level) ===
-                    attn_output_gate = torch.sigmoid(
-                        torch.einsum(
-                            "nfi,ifo->nfo",
-                            self.attn_output_gate_norm(
-                                x_l0_node.to(dtype=compute_dtype)
-                            ),
-                            self.adamw_attn_gate_w,
-                        )
-                    )  # (N, Fa, H)
-                    # Broadcast the per-(focus, head) gate over the head channels
-                    # to the packed hidden width ``c = f * Cf + h * head_dim + ch``.
-                    gate_full = (
-                        attn_output_gate.reshape(
-                            n_node, self.attn_n_focus, self.n_atten_head, 1
-                        )
-                        .expand(
-                            n_node,
-                            self.attn_n_focus,
-                            self.n_atten_head,
-                            self.head_dim,
-                        )
-                        .reshape(n_node, self.hidden_channels)
-                    )  # (N, C_wide)
-                    out = (pre_gate * gate_full.unsqueeze(1)).to(dtype=self.dtype)
-                else:
-                    # === Step 4.3. Value projection and head-wise aggregation ===
-                    value_focus = x_message.reshape(
-                        n_edge,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.attn_focus_dim,
-                    ).to(dtype=compute_dtype)  # (E, D, Fa, Ca)
-                    if self.attn_v_proj is not None:
-                        value_focus = self.attn_v_proj(value_focus)
-                    value_heads = value_focus.reshape(
-                        n_edge,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.n_atten_head,
-                        self.head_dim,
-                    )  # (E, D, Fa, H, Ch)
-                    weighted_value = value_heads * attn_alpha.reshape(
-                        n_edge, 1, self.attn_n_focus, self.n_atten_head, 1
-                    )
-                    out_heads = torch.zeros(
-                        n_node,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.n_atten_head,
-                        self.head_dim,
-                        device=x.device,
-                        dtype=compute_dtype,
-                    )  # (N, D, Fa, H, Ch)
-                    out_heads.index_add_(0, dst, weighted_value)
-
-                    # === Step 4.4. Output-side head gate ===
-                    attn_output_gate = torch.sigmoid(
-                        torch.einsum(
-                            "nfi,ifo->nfo",
-                            self.attn_output_gate_norm(
-                                x_l0_node.to(dtype=compute_dtype)
-                            ),
-                            self.adamw_attn_gate_w,
-                        )
-                    )  # (N, F, H)
-                    out_heads = out_heads * attn_output_gate.reshape(
-                        n_node, 1, self.attn_n_focus, self.n_atten_head, 1
-                    )  # (N, D, Fa, H, Ch)
-
-                    # === Step 4.5. Output projection and merge heads ===
-                    out_focus = out_heads.reshape(
-                        n_node,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.attn_focus_dim,
-                    )  # (N, D, Fa, Ca)
-                    if self.attn_o_proj is not None:
-                        out_focus = self.attn_o_proj(out_focus)
-                    out = out_focus.reshape(
-                        n_node, self.ebed_dim_full, self.hidden_channels
-                    ).to(dtype=self.dtype)  # (N, D, C_wide)
-
-        # === Step 5. Optional message-node grid product ===
+        # === Step 3. Optional message-node grid product ===
         if self.message_node_grid_product is not None:
             with nvtx_range("SO2Conv/message_node_grid"):
                 out = out + self.message_node_grid_product(out, x)
 
-        # === Step 6. Optional per-node Cartesian tensor-product mixing ===
+        # === Step 4. Optional per-node Cartesian tensor-product mixing ===
         # Couples the aggregated message with the destination node feature ``x``,
         # the Cartesian analog of the message-node grid product.
         if self.node_cartesian_tp is not None:
             with nvtx_range("SO2Conv/node_cartesian"):
                 out = self.node_cartesian_tp(out, x)
 
-        # === Step 7. Final channel mixing ===
+        # === Step 5. Final channel mixing ===
         with nvtx_range("SO2Conv/post_focus_mix"):
             out = self.post_focus_mix(out.unsqueeze(2)).squeeze(2)
         return out  # (N, D, C)
+
+    def forward_envelope(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Reduce the edge messages with the scalar envelope weight.
+
+        The attention-free path: an envelope-weighted scatter add followed by the
+        degree normalization. Folding the Source Freeze Propagation Gate into the
+        envelope keeps the operation count unchanged; ``edge_src_gate`` is ``None``
+        outside bridging mode, where the branch disappears.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        torch.Tensor
+            Node update with shape (N, D, C_wide).
+        """
+        # === Step 1. Edge message in the global frame ===
+        x_message, _ = self.edge_message(x, edge_cache, radial_feat)
+        # (E, D, C_wide)
+
+        # === Step 2. Envelope weighting, with the source gate folded in ===
+        edge_weight = edge_cache.edge_env  # (E, 1)
+        edge_src_gate = edge_cache.edge_src_gate
+        if edge_src_gate is not None:
+            edge_weight = edge_weight * edge_src_gate.to(dtype=edge_weight.dtype)
+        x_message = x_message * edge_weight.unsqueeze(-1)  # (E, D, C_wide)
+
+        # === Step 3. Destination reduction and degree normalization ===
+        out = x.new_zeros(x.shape, dtype=self.compute_dtype)
+        out.index_add_(0, edge_cache.dst, x_message.to(dtype=self.compute_dtype))
+        out.mul_(edge_cache.inv_sqrt_deg.to(dtype=self.compute_dtype))
+        return out.to(dtype=self.dtype)  # (N, D, C_wide)
+
+    def forward_attention(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Reduce the edge messages with head-wise attention weights.
+
+        Dispatches to one of three backends that share the same contract and
+        differ only in how much of the per-edge span their operator absorbs:
+        the fused CUDA convolution spans everything from the attention logits to
+        the gated aggregate, the fused flash aggregation spans the rotate-back
+        and the weighted reduction, and the dense reference materializes every
+        stage.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        torch.Tensor
+            Node update with shape (N, D, C_wide).
+        """
+        # === Step 1. Scalar channels shared by every attention component ===
+        x_l0_node = x[:, 0, :].reshape(
+            x.shape[0], self.attn_n_focus, self.attn_focus_dim
+        )  # (N, Fa, Ca)
+
+        # === Step 2. Backend dispatch ===
+        # The fused CUDA operator computes the attention weights itself, so it
+        # does not serve the bridging mode, whose source gate reshapes the
+        # softmax normalization.
+        run_cuda = (
+            self._cuda_conv_fn is not None
+            and not self.training
+            and edge_cache.edge_src_gate is None
+        )
+        run_flash = (
+            self._flash_atten_fn is not None
+            and (self._flash_atten_trains or not self.training)
+            and not run_cuda
+        )
+        if run_cuda:
+            return self.forward_attention_cuda(x, edge_cache, radial_feat, x_l0_node)
+        if run_flash:
+            return self.forward_attention_flash(x, edge_cache, radial_feat, x_l0_node)
+        return self.forward_attention_dense(x, edge_cache, radial_feat, x_l0_node)
+
+    def forward_attention_cuda(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+        x_l0_node: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Evaluate the whole per-edge span with the fused CUDA convolution.
+
+        One operator covers the attention logits and their envelope-gated
+        segment softmax, the rotation into the edge frame, the radial degree
+        mixer, the gated mixing stack, the inverse rotation, the attention
+        weighting, the destination reduction and the output-side head gate, so
+        neither a per-edge activation nor the ungated node aggregate reaches
+        device memory. Only the node-level projections are built here.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax+1, C).
+        x_l0_node : torch.Tensor
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        torch.Tensor
+            Node update with shape (N, D, C_wide).
+        """
+        # === Step 1. Projected radial features ===
+        rad_feat = self._cuda_conv_fn.radial_features(
+            radial_feat
+        )  # (E, lmax+1, C_wide)
+
+        # === Step 2. Attention query and key projections ===
+        q_node, k_node = self.attention_qk(x_l0_node)  # (N, Fa, Ca) each
+
+        # === Step 3. Output-side head gate ===
+        head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
+
+        # === Step 4. Fused convolution ===
+        out = self._cuda_conv_fn(x, edge_cache, rad_feat, q_node, k_node, head_gate)
+        return out.to(dtype=self.dtype)  # (N, D, C_wide)
+
+    def forward_attention_flash(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+        x_l0_node: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Evaluate the attention path with the fused flash aggregation.
+
+        The SO(2) message stays in the local frame, and one destination-segmented
+        kernel folds the block-diagonal rotate-back, the inverse-rotation
+        rescale, the per-edge weighting and the destination reduction into a
+        single atomic-free pass, so the transient rotate-back message and
+        weighted value tensors are never materialized.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax+1, C).
+        x_l0_node : torch.Tensor
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        torch.Tensor
+            Node update with shape (N, D, C_wide).
+        """
+        # === Step 1. Local-frame edge message ===
+        x_local, rad_feat = self.so2_message(
+            x, edge_cache, radial_feat, return_local=True
+        )  # (E, F, D_m, Cf), (E, lmax+1, C_wide)
+
+        # === Step 2. Attention weights ===
+        attn_alpha = self.attention_weights(
+            x_l0_node, edge_cache, rad_feat
+        )  # (E, F, H)
+
+        # === Step 3. Output-side head gate ===
+        head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
+
+        # === Step 4. Fused rotate-back and weighted destination reduction ===
+        # The destination CSR view is built once per step and shared by every
+        # segment consumer of the graph.
+        dst = edge_cache.dst
+        n_node = x.shape[0]
+        order, row_ptr = cached_edge_csr(edge_cache, "dst", n_node)
+        rotation = edge_cache.Dt_full
+        if rotation is None:
+            rotation = self._cuda_value_train.edge_runs(edge_cache)
+        pre_gate = self._flash_atten_fn(
+            x_local,
+            rotation,
+            self.rotate_inv_rescale_full,
+            attn_alpha,
+            order,
+            row_ptr,
+            dst,
+            self.lmax,
+            self.n_atten_head,
+        )  # (N, D, C_wide)
+
+        # === Step 5. Output-side head gate, node-level elementwise ===
+        gate_full = self.broadcast_head_gate(head_gate)  # (N, C_wide)
+        return (pre_gate * gate_full.unsqueeze(1)).to(dtype=self.dtype)
+
+    def forward_attention_dense(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+        x_l0_node: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Evaluate the attention path with dense head-wise aggregation.
+
+        The reference backend: it materializes the per-head weighted value and
+        carries the optional value and output projections, which the fused
+        backends do not support.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax+1, C).
+        x_l0_node : torch.Tensor
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        torch.Tensor
+            Node update with shape (N, D, C_wide).
+        """
+        dst = edge_cache.dst
+        n_node = x.shape[0]
+        compute_dtype = self.compute_dtype
+
+        # === Step 1. Global-frame edge message ===
+        x_message, rad_feat = self.edge_message(
+            x, edge_cache, radial_feat
+        )  # (E, D, C_wide), (E, lmax+1, C_wide)
+        n_edge = x_message.shape[0]
+
+        # === Step 2. Attention weights ===
+        attn_alpha = self.attention_weights(
+            x_l0_node, edge_cache, rad_feat
+        )  # (E, F, H)
+
+        # === Step 3. Output-side head gate ===
+        head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
+
+        # === Step 4. Value projection ===
+        value_focus = x_message.reshape(
+            n_edge, self.ebed_dim_full, self.attn_n_focus, self.attn_focus_dim
+        ).to(dtype=compute_dtype)  # (E, D, Fa, Ca)
+        if self.attn_v_proj is not None:
+            value_focus = self.attn_v_proj(value_focus)
+
+        # === Step 5. Head-wise weighting and destination reduction ===
+        value_heads = value_focus.reshape(
+            n_edge,
+            self.ebed_dim_full,
+            self.attn_n_focus,
+            self.n_atten_head,
+            self.head_dim,
+        )  # (E, D, Fa, H, Ch)
+        weighted_value = value_heads * attn_alpha.reshape(
+            n_edge, 1, self.attn_n_focus, self.n_atten_head, 1
+        )  # (E, D, Fa, H, Ch)
+        out_heads = torch.zeros(
+            n_node,
+            self.ebed_dim_full,
+            self.attn_n_focus,
+            self.n_atten_head,
+            self.head_dim,
+            device=x.device,
+            dtype=compute_dtype,
+        )  # (N, D, Fa, H, Ch)
+        out_heads.index_add_(0, dst, weighted_value)
+
+        # === Step 6. Output-side head gate ===
+        out_heads = out_heads * head_gate.reshape(
+            n_node, 1, self.attn_n_focus, self.n_atten_head, 1
+        )  # (N, D, Fa, H, Ch)
+
+        # === Step 7. Output projection and head merge ===
+        out_focus = out_heads.reshape(
+            n_node, self.ebed_dim_full, self.attn_n_focus, self.attn_focus_dim
+        )  # (N, D, Fa, Ca)
+        if self.attn_o_proj is not None:
+            out_focus = self.attn_o_proj(out_focus)
+        return out_focus.reshape(n_node, self.ebed_dim_full, self.hidden_channels).to(
+            dtype=self.dtype
+        )  # (N, D, C_wide)
+
+    def attention_qk(
+        self, x_l0_node: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Project the normalized scalar channels into queries and keys.
+
+        Parameters
+        ----------
+        x_l0_node : torch.Tensor
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            ``(q_node, k_node)``, each with shape (N, Fa, Ca).
+        """
+        qk_input = self.attn_qk_norm(x_l0_node.to(dtype=self.compute_dtype))
+        return self.attn_q_proj(qk_input), self.attn_k_proj(qk_input)
+
+    def attention_weights(
+        self,
+        x_l0_node: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        rad_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Build envelope-gated attention weights from the scalar channels.
+
+        The softmax takes ``src_weight`` so that the Source Freeze Propagation
+        Gate enters both the numerator and the denominator. A muted source
+        (``eta_src = 0``) then drops out of the destination's normalization
+        entirely, which the frozen-zone invariance requires: post-multiplying the
+        weights alone would still leak the muted source through the shared
+        denominator.
+
+        Parameters
+        ----------
+        x_l0_node : torch.Tensor
+            Node scalar channels with shape (N, Fa, Ca).
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        rad_feat : torch.Tensor
+            Projected radial features with shape (E, lmax+1, C_wide).
+
+        Returns
+        -------
+        torch.Tensor
+            Attention weights with shape (E, F, H).
+        """
+        src, dst = edge_cache.src, edge_cache.dst
+        n_edge = src.numel()
+        compute_dtype = self.compute_dtype
+
+        # === Step 1. Query-key logits on the edges ===
+        q_node, k_node = self.attention_qk(x_l0_node)  # (N, Fa, Ca) each
+        q_edge = q_node.index_select(0, dst).reshape(
+            n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim
+        )  # (E, Fa, H, Ch), Ca = H * Ch
+        k_edge = k_node.index_select(0, src).reshape(
+            n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim
+        )  # (E, Fa, H, Ch)
+        attn_logits = (q_edge * k_edge).sum(-1) * (self.head_dim**-0.5)  # (E, F, H)
+
+        # === Step 2. Radial logit bias ===
+        radial_l0 = rad_feat[:, 0, :].reshape(
+            n_edge, self.attn_n_focus, self.attn_focus_dim
+        )  # (E, Fa, Ca)
+        attn_logits = attn_logits + torch.einsum(
+            "efi,ifo->efo",
+            radial_l0.to(dtype=compute_dtype),
+            self.adamw_attn_logit_w,
+        )  # (E, F, H)
+
+        # === Step 3. Envelope-gated segment softmax with a null mass ===
+        edge_src_gate = edge_cache.edge_src_gate
+        n_nodes = x_l0_node.shape[0]
+        if (
+            self._segment_softmax_fn is not None
+            and edge_src_gate is None
+            and attn_logits.is_cuda
+            and active_triton_level(self) >= 1
+        ):
+            # The fused operator runs the whole normalization as one
+            # CSR-segmented kernel per direction (forward, backward, second
+            # order), sharing the destination-sorted view with the flash
+            # aggregation; the scatter/gather chain and its expansion under
+            # the force loss never reach the traced graph.
+            order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
+            null_logit = torch.log(
+                torch.nn.functional.softplus(
+                    self.adamw_attn_z_bias_raw.to(dtype=torch.float32)
+                )
+                + float(self.eps)
+            ).reshape(-1)  # (F * H,)
+            n_channel = self.attn_n_focus * self.n_atten_head
+            alpha = self._segment_softmax_fn(
+                attn_logits.reshape(n_edge, n_channel).to(dtype=torch.float32),
+                edge_cache.edge_env.reshape(n_edge).to(dtype=torch.float32),
+                null_logit,
+                order,
+                row_ptr,
+                dst,
+            )
+            return alpha.to(dtype=attn_logits.dtype).reshape(
+                n_edge, self.attn_n_focus, self.n_atten_head
+            )
+        return segment_envelope_gated_softmax(
+            logits=attn_logits,
+            edge_env=edge_cache.edge_env.to(dtype=compute_dtype),
+            dst=dst,
+            n_nodes=n_nodes,
+            z_bias_raw=self.adamw_attn_z_bias_raw,
+            eps=self.eps,
+            src_weight=(
+                None if edge_src_gate is None else edge_src_gate.to(dtype=compute_dtype)
+            ),
+        )  # (E, F, H)
+
+    def attention_head_gate(self, x_l0_node: torch.Tensor) -> torch.Tensor:
+        """
+        Build the output-side head gate from the scalar channels.
+
+        Parameters
+        ----------
+        x_l0_node : torch.Tensor
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        torch.Tensor
+            One gate per node, focus stream and head, with shape (N, Fa, H).
+        """
+        return torch.sigmoid(
+            torch.einsum(
+                "nfi,ifo->nfo",
+                self.attn_output_gate_norm(x_l0_node.to(dtype=self.compute_dtype)),
+                self.adamw_attn_gate_w,
+            )
+        )
+
+    def broadcast_head_gate(self, head_gate: torch.Tensor) -> torch.Tensor:
+        """
+        Spread a per-head gate over the channels of its head.
+
+        Parameters
+        ----------
+        head_gate : torch.Tensor
+            Gate with shape (N, Fa, H).
+
+        Returns
+        -------
+        torch.Tensor
+            Gate with shape (N, C_wide), laid out as the packed hidden width
+            ``c = f * Cf + h * head_dim + ch``.
+        """
+        n_node = head_gate.shape[0]
+        return (
+            head_gate.reshape(n_node, self.attn_n_focus, self.n_atten_head, 1)
+            .expand(n_node, self.attn_n_focus, self.n_atten_head, self.head_dim)
+            .reshape(n_node, self.hidden_channels)
+        )
+
+    def edge_message(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Build the edge message in the global frame.
+
+        Dispatches to the Cartesian product, the SO(2) mixing stack, or the
+        rotation-free radial message when no local-frame operation is needed.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeFeatureCache
+            Precomputed edge cache.
+        radial_feat : torch.Tensor
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            ``(x_message, rad_feat)`` with shapes (E, D, C_wide) and
+            (E, lmax+1, C_wide).
+        """
+        # === Step 1. Message construction ===
+        if self.edge_cartesian:
+            x_message, rad_feat = self.cartesian_message(x, edge_cache, radial_feat)
+        elif self.needs_local_frame:
+            x_message, rad_feat = self.so2_message(x, edge_cache, radial_feat)
+        else:
+            x_message, rad_feat = self.radial_message(x, edge_cache, radial_feat)
+
+        # === Step 2. Optional focus mixing for the attention stream ===
+        if self.attn_focus_mix is not None:
+            x_message = self.attn_focus_mix(x_message.unsqueeze(2)).squeeze(2)
+        return x_message, rad_feat  # (E, D, C_wide), (E, lmax+1, C_wide)
 
     def radial_message(
         self,
@@ -1974,13 +2434,31 @@ class SO2Convolution(nn.Module):
         src, dst = edge_cache.src, edge_cache.dst
         n_edge = src.numel()
 
-        if self._triton_value_path is not None and not self.training:
-            # === Steps 1-5 (fused Triton operators). ``so2_rotate_mix`` folds
-            # the rotation and the radial degree mixing into one edge-parallel
-            # kernel writing the focus-major layout; ``so2_mixing_stack`` runs
-            # the whole gated stack with the competition weight fused into its
-            # final store, keeping the inter-layer activations off the traced
-            # graph. ===
+        if self._cutile_value_path is not None and not self.training:
+            # === Steps 1-5 (fused cuTile operators). ``rotate_mix`` folds the
+            # rotation and the radial degree mixing into one edge-parallel
+            # kernel writing the focus-major layout; ``mixing_stack`` runs the
+            # whole gated stack, keeping the inter-layer activations and the
+            # gated-layer pre-activations off the traced graph entirely. ===
+            x_local, rad_feat = self._cutile_value_path(x, edge_cache, radial_feat)
+        elif self._cuda_value_train is not None and self.training:
+            # === Steps 1-5 (one CUDA kernel, training). The whole value
+            # stream up to the attention aggregation runs in a single launch;
+            # only the backward anchors reach device memory. ===
+            cached_edge_csr(edge_cache, "src", x.shape[0])
+            x_local, rad_feat = self._cuda_value_train(x, edge_cache, radial_feat)
+        elif (
+            self._triton_value_path is not None
+            and not self.training
+            and active_triton_level(self) >= 2
+        ):
+            # === Steps 1-5 (fused Triton operators, inference).
+            # ``so2_rotate_mix`` folds the rotation and the radial degree
+            # mixing into one edge-parallel kernel writing the focus-major
+            # layout; ``so2_mixing_stack`` runs the whole gated stack with
+            # the competition weight fused into its final store, keeping the
+            # inter-layer activations off the traced graph. ===
+            cached_edge_csr(edge_cache, "src", x.shape[0])
             x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
         elif self._cute_value_path is not None and not self.training:
             # === Steps 1-5 (fused CuTe operator). The operator folds
@@ -1988,12 +2466,35 @@ class SO2Convolution(nn.Module):
             # stack, and the focus competition into the bucketed kernels; the
             # per-edge focus-major intermediates stay resident on chip. ===
             x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
+        elif self._triton_rotate_mix is not None and active_triton_level(self) >= 1:
+            # === Steps 1-3 (fused rotate-mix operator). One edge-parallel
+            # kernel gathers the source features, applies the block-diagonal
+            # Wigner rotation and the radial degree mixing, and writes the
+            # focus-major mixing input directly; the degree-expanded local
+            # intermediate and its relayout never reach the traced graph. Its
+            # backward reduces through the source CSR view, built once per
+            # step and kept on the edge cache. ===
+            with nvtx_range("SO2Conv/rotate_mix"):
+                cached_edge_csr(edge_cache, "src", x.shape[0])
+                u0, rad_feat = self._triton_rotate_mix(x, edge_cache, radial_feat)
+                x_local = u0.view(
+                    self.n_focus, n_edge, self.reduced_dim, self.so2_focus_dim
+                )  # (F, E, D_m, Cf)
+                rad_feat_l0_focus = rad_feat[:, 0, :].reshape(
+                    n_edge, self.n_focus, self.so2_focus_dim
+                )  # (E, F, Cf)
+                focus_gate_src = None
+                if self.focus_compete and self.n_focus > 1:
+                    focus_gate_src = x_local[:, :, 0, :]  # (F, E, Cf)
+            x_local = self._so2_mixing_layers(
+                x_local, rad_feat_l0_focus, focus_gate_src, edge_cache
+            )
         else:
             # === Step 1. Rotate to edge-aligned local frame ===
             with nvtx_range("SO2Conv/rotate_to_local"):
                 D_full = edge_cache.D_full
                 x_dst_local: torch.Tensor | None = None
-                if self.use_triton_infer and not self.training:
+                if active_triton_level(self) >= 1:
                     # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
                     # block kernel for the m-major ``mmax == 1`` layout, dense
                     # otherwise).
@@ -2052,115 +2553,10 @@ class SO2Convolution(nn.Module):
                 if self.focus_compete and self.n_focus > 1:
                     focus_gate_src = x_local[:, :, 0, :]  # (F, E, Cf)
 
-            # === Step 4. Multi-layer SO(2) mixing (pre-norm + residual) ===
-            with nvtx_range("SO2Conv/so2_layers"):
-
-                def so2_l0_extractor(v: torch.Tensor) -> torch.Tensor:
-                    """Extract scalar features from the edge-major layout (E, F, D_m, Cf)."""
-                    return v[:, :, 0, :].reshape(v.shape[0], self.hidden_channels)
-
-                def apply_bias_correction(
-                    x_local: torch.Tensor,
-                    so2_linear: SO2Linear,
-                    layer_idx: int,
-                ) -> None:
-                    if layer_idx != 0 or so2_linear.bias0 is None:
-                        return
-                    if so2_linear.out_channels == self.so2_focus_dim:
-                        radial_factor = rad_feat_l0_focus
-                    elif so2_linear.out_channels == 2 * self.so2_focus_dim:
-                        radial_factor = torch.cat(
-                            [rad_feat_l0_focus, rad_feat_l0_focus], dim=-1
-                        )
-                    else:
-                        raise RuntimeError(
-                            "Unexpected SO2Linear output width in bias correction"
-                        )
-                    # Focus-major broadcast: bias0 (F, Cout), the radial l=0 factor
-                    # (E, F, .) transposed to (F, E, .), the per-edge envelope over the
-                    # edge axis, applied to the l=0 scalar slice (F, E, Cout).
-                    bias0 = so2_linear.bias0.view(self.n_focus, so2_linear.out_channels)
-                    radial_factor = radial_factor.transpose(0, 1)  # (F, E, .)
-                    bias_correction = bias0.unsqueeze(1) * (
-                        radial_factor * edge_cache.edge_env.reshape(1, -1, 1) - 1.0
-                    )
-                    x_local[:, :, 0, :].add_(bias_correction)
-
-                if self.use_so2_attn_res:
-                    # The depth-attention residual is a per-edge reduction over the
-                    # layer history (``DepthAttnRes`` batches on axis 0), so the history
-                    # is kept in the edge-major orientation and each mixing step
-                    # transposes into the focus-major layout for the linear.
-                    so2_depth_sources = [x_local.transpose(0, 1)]  # (E, F, D_m, Cf)
-                    for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-                        zip(
-                            self.so2_linears,
-                            self.so2_inter_norms,
-                            self.non_linearities,
-                            strict=True,
-                        )
-                    ):
-                        x_edge: torch.Tensor = self.so2_layer_attn_res[layer_idx](
-                            sources=so2_depth_sources,
-                            scalar_extractor=so2_l0_extractor,
-                            current_x=x_local.transpose(0, 1),
-                        )
-                        x_local = x_edge.transpose(0, 1)  # (F, E, D_m, Cf)
-                        residual = x_local
-                        x_local = inter_norm(x_local)
-                        x_local = so2_linear(x_local)
-                        apply_bias_correction(x_local, so2_linear, layer_idx)
-
-                        x_local = non_linear(x_local)
-
-                        if self.layer_scale:
-                            scale: torch.Tensor = self.adam_so2_layer_scales[
-                                layer_idx
-                            ].reshape(self.n_focus, 1, 1, self.so2_focus_dim)
-                            x_local = residual + scale * x_local
-                        else:
-                            x_local = residual + x_local
-                        so2_depth_sources.append((x_local - residual).transpose(0, 1))
-                else:
-                    for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-                        zip(
-                            self.so2_linears,
-                            self.so2_inter_norms,
-                            self.non_linearities,
-                            strict=True,
-                        )
-                    ):
-                        residual = x_local
-                        x_local = inter_norm(x_local)
-                        x_local = so2_linear(x_local)
-                        apply_bias_correction(x_local, so2_linear, layer_idx)
-
-                        x_local = non_linear(x_local)
-
-                        if self.layer_scale:
-                            scale = self.adam_so2_layer_scales[layer_idx].reshape(
-                                self.n_focus, 1, 1, self.so2_focus_dim
-                            )
-                            x_local = residual + scale * x_local
-                        else:
-                            x_local = residual + x_local
-
-            # === Step 5. Cross-focus softmax competition ===
-            if self.focus_compete and self.n_focus > 1:
-                # ``_focus_alpha`` is shared with the rotation-free radial and Cartesian
-                # messages in the edge-major (E, F) orientation; feed it the transposed
-                # view of the focus-major scalar and broadcast the weights back over the
-                # focus-major activation.
-                alpha = self._focus_alpha(focus_gate_src.transpose(0, 1))  # (E, F)
-                x_local = x_local * alpha.transpose(0, 1).to(
-                    dtype=x_local.dtype
-                ).unsqueeze(-1).unsqueeze(-1)
-
-            # === Exit. Restore the (E, F, D_m, Cf) orientation ===
-            # Both the fused flash-attention aggregation kernel and the rotate-back
-            # consume this orientation through explicit strides, so the focus-major
-            # buffer is handed back as a view with no copy.
-            x_local = x_local.permute(1, 0, 2, 3)  # (E, F, D_m, Cf), strided view
+            # === Steps 4-5. Mixing layers and cross-focus competition ===
+            x_local = self._so2_mixing_layers(
+                x_local, rad_feat_l0_focus, focus_gate_src, edge_cache
+            )
 
         # The fused flash-attention aggregation consumes the per-focus
         # ``(E, F, D_m, Cf)`` local layout directly and performs the rotate-back
@@ -2169,9 +2565,172 @@ class SO2Convolution(nn.Module):
             return x_local, rad_feat
 
         # === Step 6. Rotate back to global frame ===
+        return self._so2_rotate_back(x_local, edge_cache, n_edge), rad_feat
+
+    def _so2_mixing_layers(
+        self,
+        x_local: torch.Tensor,
+        rad_feat_l0_focus: torch.Tensor,
+        focus_gate_src: torch.Tensor | None,
+        edge_cache: EdgeFeatureCache,
+    ) -> torch.Tensor:
+        """Run the SO(2) mixing layers and the cross-focus competition.
+
+        Parameters
+        ----------
+        x_local : torch.Tensor
+            Mixing input in the focus-major layout, with shape (F, E, D_m, Cf).
+        rad_feat_l0_focus : torch.Tensor
+            Radial ``l = 0`` features with shape (E, F, Cf), consumed by the
+            first layer's bias correction.
+        focus_gate_src : torch.Tensor or None
+            Pre-mixing ``l = 0`` scalars with shape (F, E, Cf) when the
+            cross-focus competition is active; None otherwise.
+        edge_cache : EdgeFeatureCache
+            Per-edge cache providing the cutoff envelope.
+
+        Returns
+        -------
+        torch.Tensor
+            Mixed local features restored to the edge-major (E, F, D_m, Cf)
+            orientation, as a strided view without a copy.
+        """
+        # === Step 1. Multi-layer SO(2) mixing (pre-norm + residual) ===
+        with nvtx_range("SO2Conv/so2_layers"):
+
+            def so2_l0_extractor(v: torch.Tensor) -> torch.Tensor:
+                """Extract scalar features from the edge-major layout (E, F, D_m, Cf)."""
+                return v[:, :, 0, :].reshape(v.shape[0], self.hidden_channels)
+
+            def apply_bias_correction(
+                x_local: torch.Tensor,
+                so2_linear: SO2Linear,
+                layer_idx: int,
+            ) -> None:
+                if layer_idx != 0 or so2_linear.bias0 is None:
+                    return
+                if so2_linear.out_channels == self.so2_focus_dim:
+                    radial_factor = rad_feat_l0_focus
+                elif so2_linear.out_channels == 2 * self.so2_focus_dim:
+                    radial_factor = torch.cat(
+                        [rad_feat_l0_focus, rad_feat_l0_focus], dim=-1
+                    )
+                else:
+                    raise RuntimeError(
+                        "Unexpected SO2Linear output width in bias correction"
+                    )
+                # Focus-major broadcast: bias0 (F, Cout), the radial l=0 factor
+                # (E, F, .) transposed to (F, E, .), the per-edge envelope over the
+                # edge axis, applied to the l=0 scalar slice (F, E, Cout).
+                bias0 = so2_linear.bias0.view(self.n_focus, so2_linear.out_channels)
+                radial_factor = radial_factor.transpose(0, 1)  # (F, E, .)
+                bias_correction = bias0.unsqueeze(1) * (
+                    radial_factor * edge_cache.edge_env.reshape(1, -1, 1) - 1.0
+                )
+                x_local[:, :, 0, :].add_(bias_correction)
+
+            if self.use_so2_attn_res:
+                # The depth-attention residual is a per-edge reduction over the
+                # layer history (``DepthAttnRes`` batches on axis 0), so the history
+                # is kept in the edge-major orientation and each mixing step
+                # transposes into the focus-major layout for the linear.
+                so2_depth_sources = [x_local.transpose(0, 1)]  # (E, F, D_m, Cf)
+                for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
+                    zip(
+                        self.so2_linears,
+                        self.so2_inter_norms,
+                        self.non_linearities,
+                        strict=True,
+                    )
+                ):
+                    x_edge: torch.Tensor = self.so2_layer_attn_res[layer_idx](
+                        sources=so2_depth_sources,
+                        scalar_extractor=so2_l0_extractor,
+                        current_x=x_local.transpose(0, 1),
+                    )
+                    x_local = x_edge.transpose(0, 1)  # (F, E, D_m, Cf)
+                    residual = x_local
+                    x_local = inter_norm(x_local)
+                    x_local = so2_linear(x_local)
+                    apply_bias_correction(x_local, so2_linear, layer_idx)
+
+                    x_local = non_linear(x_local)
+
+                    if self.layer_scale:
+                        scale: torch.Tensor = self.adam_so2_layer_scales[
+                            layer_idx
+                        ].reshape(self.n_focus, 1, 1, self.so2_focus_dim)
+                        x_local = residual + scale * x_local
+                    else:
+                        x_local = residual + x_local
+                    so2_depth_sources.append((x_local - residual).transpose(0, 1))
+            else:
+                for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
+                    zip(
+                        self.so2_linears,
+                        self.so2_inter_norms,
+                        self.non_linearities,
+                        strict=True,
+                    )
+                ):
+                    residual = x_local
+                    x_local = inter_norm(x_local)
+                    x_local = so2_linear(x_local)
+                    apply_bias_correction(x_local, so2_linear, layer_idx)
+
+                    x_local = non_linear(x_local)
+
+                    if self.layer_scale:
+                        scale = self.adam_so2_layer_scales[layer_idx].reshape(
+                            self.n_focus, 1, 1, self.so2_focus_dim
+                        )
+                        x_local = residual + scale * x_local
+                    else:
+                        x_local = residual + x_local
+
+        # === Step 2. Cross-focus softmax competition ===
+        if self.focus_compete and self.n_focus > 1:
+            # ``_focus_alpha`` is shared with the rotation-free radial and Cartesian
+            # messages in the edge-major (E, F) orientation; feed it the transposed
+            # view of the focus-major scalar and broadcast the weights back over the
+            # focus-major activation.
+            alpha = self._focus_alpha(focus_gate_src.transpose(0, 1))  # (E, F)
+            x_local = x_local * alpha.transpose(0, 1).to(dtype=x_local.dtype).unsqueeze(
+                -1
+            ).unsqueeze(-1)
+
+        # === Exit. Restore the (E, F, D_m, Cf) orientation ===
+        # Both the fused flash-attention aggregation kernel and the rotate-back
+        # consume this orientation through explicit strides, so the focus-major
+        # buffer is handed back as a view with no copy.
+        return x_local.permute(1, 0, 2, 3)  # (E, F, D_m, Cf), strided view
+
+    def _so2_rotate_back(
+        self,
+        x_local: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        n_edge: int,
+    ) -> torch.Tensor:
+        """Rotate the mixed local features back to the global frame.
+
+        Parameters
+        ----------
+        x_local : torch.Tensor
+            Mixed local features with shape (E, F, D_m, Cf).
+        edge_cache : EdgeFeatureCache
+            Per-edge cache providing the transposed Wigner rotation.
+        n_edge : int
+            Number of edges.
+
+        Returns
+        -------
+        torch.Tensor
+            Global-frame message with shape (E, D, C_wide), including the
+            inverse-rotation degree rescale.
+        """
         with nvtx_range("SO2Conv/rotate_back"):
             Dt_full = edge_cache.Dt_full
-            if self.use_triton_infer and self.mmax == 1 and not self.training:
+            if active_triton_level(self) >= 1 and self.mmax == 1:
                 # The block kernel consumes the (E, F, D_m, Cf) focus layout in
                 # place, folding the inverse transpose into its channel addressing.
                 x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
@@ -2182,7 +2741,7 @@ class SO2Convolution(nn.Module):
                     .contiguous()
                     .reshape(n_edge, self.reduced_dim, self.hidden_channels)
                 )
-                if self.use_triton_infer and not self.training:
+                if active_triton_level(self) >= 1:
                     x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
                 else:
                     Dt_from_m = project_Dt_from_m(
@@ -2197,8 +2756,7 @@ class SO2Convolution(nn.Module):
             # Reduced layouts keep only 2*mmax+1 orders for l>mmax. Applying the
             # inverse-rotation degree rescale after the global lift restores the
             # full-basis amplitude expected by the block output contract.
-            x_message = x_message * self.rotate_inv_rescale_full.view(1, -1, 1)
-        return x_message, rad_feat
+            return x_message * self.rotate_inv_rescale_full.view(1, -1, 1)
 
     def cartesian_message(
         self,
@@ -2337,8 +2895,8 @@ class SO2Convolution(nn.Module):
         # === Step 2. Triton rotation kernels: block for mmax == 1, dense otherwise ===
         self._rotate_to_local_fn = None
         self._rotate_back_fn = None
-        if self.use_triton_infer:
-            from deepmd.kernels.triton.sezm.so2_rotation import (
+        if max(self.triton_infer_level, self.triton_train_level) >= 1:
+            from deepmd.pt_expt.kernels.triton.sezm.so2_rotation import (
                 rotate_back_block_so2,
                 rotate_back_dense,
                 rotate_to_local_block,
@@ -2490,7 +3048,6 @@ class SO2Convolution(nn.Module):
             self.adam_so2_layer_scales = None
 
     def serialize(self) -> dict[str, Any]:
-        trainable = all(p.requires_grad for p in self.parameters())
         state = self.state_dict()
         return {
             "@class": "SO2Convolution",
@@ -2530,7 +3087,7 @@ class SO2Convolution(nn.Module):
                 "node_cartesian": self.node_cartesian,
                 "eps": self.eps,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
-                "trainable": trainable,
+                "trainable": self.trainable,
                 "seed": None,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
