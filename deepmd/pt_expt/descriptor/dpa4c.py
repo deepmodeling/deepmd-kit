@@ -425,7 +425,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         layout keeps ``int32``; every other artifact is the ``float32`` the
         kernel consumes.
         """
-        device = next(self.parameters()).device
+        device = self.stddev.device
         info = torch.as_tensor(artifacts["info"])
         self._compression_scalars = tuple(
             float(value) for value in info.detach().cpu().tolist()

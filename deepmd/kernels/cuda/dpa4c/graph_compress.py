@@ -522,8 +522,7 @@ def build_radial_table(
     """
     if stride <= 0.0:
         raise ValueError(f"`stride` must be positive, got {stride}")
-    sample_parameter = next(descriptor.radial_embedding.parameters())
-    device = sample_parameter.device
+    device = descriptor.stddev.device
     radial_basis = copy.deepcopy(descriptor.radial_basis).to(
         device=device,
         dtype=torch.float64,
@@ -625,11 +624,11 @@ def build_compression_artifacts(
             "fused path. Drop the exclusions, or deploy the uncompressed "
             "graph archive."
         )
-    sample_parameter = next(descriptor.parameters())
-    if sample_parameter.dtype != torch.float32:
+    descriptor_state = descriptor.stddev
+    if descriptor_state.dtype != torch.float32:
         raise ValueError(
             "DPA4C compressed CUDA requires descriptor precision `float32`, "
-            f"got {sample_parameter.dtype}"
+            f"got {descriptor_state.dtype}"
         )
     if not mega_eligible(descriptor):
         raise ValueError(
@@ -639,7 +638,7 @@ def build_compression_artifacts(
             f"channels={descriptor.channels}, lmax={descriptor.lmax}, "
             f"radial_modes={descriptor.radial_modes}"
         )
-    device = sample_parameter.device
+    device = descriptor_state.device
     profile = descriptor_profile(
         descriptor.channels,
         descriptor.lmax,
@@ -733,7 +732,7 @@ def charge_state_artifacts(
     ValueError
         If a charge-conditioned descriptor is given no condition.
     """
-    device = next(descriptor.parameters()).device
+    device = descriptor.stddev.device
     type_embedding = descriptor.type_embedding.call().to(
         device=device,
         dtype=torch.float32,
@@ -822,7 +821,7 @@ def build_charge_state_artifacts(
         state = torch.tensor(
             validate_charge_state(charge_spin),
             dtype=torch.float32,
-            device=next(descriptor.parameters()).device,
+            device=descriptor.stddev.device,
         )
     with torch.no_grad():
         return {
