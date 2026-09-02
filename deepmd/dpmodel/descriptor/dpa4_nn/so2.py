@@ -1616,7 +1616,6 @@ class SO2Convolution(NativeOP):
         # value path: every hook stays ``None`` and ``so2_message`` takes the
         # dense branch. The ``pt_expt`` backend binds the selected implementation.
         self._triton_value_path = None
-        self._cute_value_path = None
         self._cutile_value_path = None
 
         # === Step 14. Optional fused training seams ===
@@ -2375,12 +2374,6 @@ class SO2Convolution(NativeOP):
             if self._cached_edge_csr_fn is not None:
                 self._cached_edge_csr_fn(edge_cache, "src", x.shape[0])
             x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
-        elif self._cute_value_path is not None and not training:
-            # === Steps 1-5 (fused CuTe operator). The operator folds
-            # rotate_to_local, radial degree mixing, the multi-layer gated SO(2)
-            # stack, and the focus competition into the bucketed kernels; the
-            # per-edge focus-major intermediates stay resident on chip. ===
-            x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
         else:
             # === Steps 1-3. Rotation, radial mixing and the focus-major cast ===
             x_local, rad_feat = self._rotate_mix(x, edge_cache, radial_feat)

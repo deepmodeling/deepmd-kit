@@ -18,12 +18,12 @@ from unittest import (
 import pytest
 import torch
 
-from deepmd.kernels.cute.neo import (
-    k1,
-    runtime_policy,
-)
 from deepmd.pt.model.network import (
     mlp,
+)
+from deepmd.pt_expt.kernels.cute.sezm import (
+    k1,
+    runtime_policy,
 )
 
 
@@ -125,7 +125,7 @@ def test_k1_prepare_uses_requested_device_instead_of_current_device() -> None:
 
 def test_k4_custom_ops_are_called_directly() -> None:
     pytest.importorskip("cutlass.cute")
-    k4_wignerd = importlib.import_module("deepmd.kernels.cute.neo.k4_wignerd")
+    k4_wignerd = importlib.import_module("deepmd.pt_expt.kernels.cute.sezm.k4_wignerd")
     operand = _cuda_operand()
     sentinel = object()
 
@@ -161,7 +161,7 @@ def test_mlp_selector_and_forward_use_input_device() -> None:
     with (
         mock.patch.dict(
             os.environ,
-            {"DP_NEO_CUTE_INFER": "1"},
+            {"DP_CUTE_INFER": "1"},
             clear=True,
         ),
         mock.patch.object(torch.cuda, "is_available", return_value=True),
@@ -208,7 +208,7 @@ def test_nv_neighbor_list_selector_and_build_use_coordinate_device() -> None:
     with (
         mock.patch.dict(
             os.environ,
-            {"DP_NEO_CUTE_INFER": "1"},
+            {"DP_CUTE_INFER": "1"},
             clear=True,
         ),
         mock.patch.object(torch.cuda, "is_available", return_value=True),

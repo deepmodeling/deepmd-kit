@@ -22,12 +22,12 @@ SUPPORTED_HIDDEN_CHANNELS = (96, 192)
 REPO_ROOT = Path(__file__).resolve().parents[4]
 TILED_KERNEL_PATH = (
     REPO_ROOT
-    / "deepmd/kernels/cute/neo/output_grid_kernels"
+    / "deepmd/pt_expt/kernels/cute/sezm/output_grid_kernels"
     / "cute_tiled_grid_product.py"
 )
 MESSAGE_GRID_PATH = (
     REPO_ROOT
-    / "deepmd/kernels/cute/neo/k1_kernels"
+    / "deepmd/pt_expt/kernels/cute/sezm/k1_kernels"
     / "cute_neo_message_grid_product.py"
 )
 
@@ -184,7 +184,7 @@ def _inputs(nodes: int, hidden_channels: int):
 
 
 def test_architecture_policy_shares_sm80_backend_with_sm86():
-    from deepmd.kernels.cute.neo.runtime_policy import (
+    from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
         PORTABLE_TILED_BACKEND,
         PYTORCH_BACKEND,
         output_grid_arch_key,
@@ -226,7 +226,7 @@ class TestTiledOutputGridProductForwardCuda:
         nodes: int,
         hidden_channels: int,
     ):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             run_tiled_output_grid_product,
         )
 
@@ -241,7 +241,7 @@ class TestTiledOutputGridProductForwardCuda:
     )
     @pytest.mark.parametrize("nodes", [1, 7, 65])
     def test_sm80_c96_n48_matches_strict_fp32_reference(self, nodes: int):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             run_tiled_output_grid_product,
         )
 
@@ -258,7 +258,7 @@ class TestTiledOutputGridProductForwardCuda:
 
     @pytest.mark.parametrize("hidden_channels", SUPPORTED_HIDDEN_CHANNELS)
     def test_one_compile_accepts_symbolic_node_counts(self, hidden_channels: int):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             _compiled_tiled_forward,
             run_tiled_output_grid_product,
         )
@@ -284,7 +284,7 @@ class TestTiledOutputGridProductForwardCuda:
 
     @pytest.mark.parametrize("hidden_channels", SUPPORTED_HIDDEN_CHANNELS)
     def test_launches_on_current_non_default_stream(self, hidden_channels: int):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             run_tiled_output_grid_product,
         )
 
@@ -314,7 +314,7 @@ class TestTiledOutputGridProductBackwardCuda:
         nodes: int,
         hidden_channels: int,
     ):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             run_tiled_output_grid_product_backward,
         )
 
@@ -340,7 +340,7 @@ class TestTiledOutputGridProductBackwardCuda:
         self,
         nodes: int,
     ):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             run_tiled_output_grid_product_backward,
         )
 
@@ -363,7 +363,7 @@ class TestTiledOutputGridProductBackwardCuda:
         self,
         hidden_channels: int,
     ):
-        from deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product import (
             _compiled_tiled_backward,
             run_tiled_output_grid_product_backward,
         )

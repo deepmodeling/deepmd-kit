@@ -185,19 +185,17 @@ def _reference_product(left, right, to_grid, from_grid):
     )
 
 
-def test_sm80_readout_input_fold_selector_uses_only_full_neo_gate(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+def test_sm80_readout_input_fold_selector_uses_cute_gate(monkeypatch):
+    from deepmd.pt_expt.kernels.cute.sezm import (
         runtime_policy,
     )
 
-    monkeypatch.delenv("DP_NEO_CUTE_INFER", raising=False)
-    monkeypatch.setenv("DP_CUTE_INFER", "1")
+    monkeypatch.delenv("DP_CUTE_INFER", raising=False)
     monkeypatch.delenv("DP_CUTE_READOUT_INPUT_FOLD_SM80", raising=False)
     assert not runtime_policy.is_cute_infer_enabled()
     assert not runtime_policy.is_readout_input_fold_sm80_enabled((8, 0))
 
-    monkeypatch.setenv("DP_CUTE_INFER", "0")
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     assert runtime_policy.is_cute_infer_enabled()
     assert runtime_policy.is_readout_input_fold_sm80_enabled((8, 0))
     monkeypatch.setenv("DP_CUTE_READOUT_INPUT_FOLD_SM80", "0")
@@ -207,18 +205,16 @@ def test_sm80_readout_input_fold_selector_uses_only_full_neo_gate(monkeypatch):
     assert not runtime_policy.is_readout_input_fold_sm80_enabled((9, 0))
 
 
-def test_sm90_readout_input_fold_selector_uses_only_full_neo_gate(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+def test_sm90_readout_input_fold_selector_uses_cute_gate(monkeypatch):
+    from deepmd.pt_expt.kernels.cute.sezm import (
         runtime_policy,
     )
 
-    monkeypatch.delenv("DP_NEO_CUTE_INFER", raising=False)
-    monkeypatch.setenv("DP_CUTE_INFER", "1")
+    monkeypatch.delenv("DP_CUTE_INFER", raising=False)
     monkeypatch.delenv("DP_CUTE_READOUT_INPUT_FOLD_SM90", raising=False)
     assert not runtime_policy.is_readout_input_fold_sm90_enabled((9, 0))
 
-    monkeypatch.setenv("DP_CUTE_INFER", "0")
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     assert runtime_policy.is_readout_input_fold_sm90_enabled((9, 0))
     assert runtime_policy.is_readout_input_fold_enabled((9, 0))
     monkeypatch.setenv("DP_CUTE_READOUT_INPUT_FOLD_SM90", "0")
@@ -229,7 +225,7 @@ def test_sm90_readout_input_fold_selector_uses_only_full_neo_gate(monkeypatch):
 
 
 def test_readout_input_fold_guard_accepts_validated_architectures(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
         runtime_policy,
     )
@@ -257,7 +253,7 @@ def test_readout_input_fold_guard_accepts_validated_architectures(monkeypatch):
 
 
 def test_sm80_readout_input_fold_matches_forward_and_input_vjp(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -321,7 +317,7 @@ def test_sm80_readout_input_fold_matches_forward_and_input_vjp(monkeypatch):
 
 
 def test_sm80_readout_input_fold_is_fullgraph_safe(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -350,7 +346,7 @@ def test_sm80_readout_input_fold_is_fullgraph_safe(monkeypatch):
 
 
 def test_sm80_readout_input_fold_cache_refreshes_after_inplace_change(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -383,7 +379,7 @@ def test_sm80_readout_input_fold_cache_refreshes_after_inplace_change(monkeypatc
 
 
 def test_sm80_readout_input_fold_cache_refreshes_after_parameter_replacement():
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -402,7 +398,7 @@ def test_sm80_readout_input_fold_cache_refreshes_after_parameter_replacement():
 
 @pytest.mark.parametrize("assign", [False, True])
 def test_sm80_readout_input_fold_load_state_dict_invalidates_cache(assign):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -425,7 +421,7 @@ def test_sm80_readout_input_fold_load_state_dict_invalidates_cache(assign):
 
 
 def test_sm80_readout_input_fold_buffers_follow_device_moves():
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -445,7 +441,7 @@ def test_sm80_readout_input_fold_buffers_follow_device_moves():
 def test_sm80_readout_input_fold_compile_requires_explicit_preparation(
     monkeypatch,
 ):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -458,7 +454,7 @@ def test_sm80_readout_input_fold_compile_requires_explicit_preparation(
 def test_sm80_readout_input_fold_compiled_lookup_returns_prepared_buffers(
     monkeypatch,
 ):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -479,7 +475,7 @@ def test_shape_guard_accepts_only_exact_c192_readout(
     hidden_channels: int,
     expected: bool,
 ):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -488,7 +484,7 @@ def test_shape_guard_accepts_only_exact_c192_readout(
 
 
 def test_fake_registrations_return_canonical_strides():
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -518,7 +514,7 @@ def test_custom_ops_use_canonical_fake_metadata():
         FakeTensorMode,
     )
 
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -545,7 +541,7 @@ def test_custom_ops_use_canonical_fake_metadata():
 
 
 def test_reference_completion_matches_module_output_and_input_vjp():
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -567,7 +563,7 @@ def test_reference_completion_matches_module_output_and_input_vjp():
 
 
 def test_exact_structure_and_frozen_inference_guards():
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -585,14 +581,14 @@ def test_exact_structure_and_frozen_inference_guards():
 
 
 def test_module_boundary_falls_back_when_device_is_unsupported(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
     module = _output_ffn()
     value = torch.randn(2, COEFF_DIM, 1, 32, device="cpu")
     expected = (value + module(value))[:, 0, 0, :]
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
 
     assert readout_l0.maybe_run_neo_readout_l0(module, value) is None
     torch.testing.assert_close(
@@ -601,7 +597,7 @@ def test_module_boundary_falls_back_when_device_is_unsupported(monkeypatch):
 
 
 def test_descriptor_freeze_guard_and_readout_wiring(cpu_neo_descriptor, monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -625,7 +621,7 @@ def test_descriptor_freeze_guard_and_readout_wiring(cpu_neo_descriptor, monkeypa
 
 
 def test_trainable_descriptor_state_bypasses_candidate(monkeypatch):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -651,7 +647,7 @@ def test_legacy_matmul_precision_guard_is_eager_and_fullgraph_safe(
     precision: str,
     expected: bool,
 ):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -680,7 +676,7 @@ def test_modern_matmul_precision_guard_rejects_tf32(
     precision: str,
     expected: bool,
 ):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         readout_l0,
     )
 
@@ -724,7 +720,7 @@ class TestReadoutL0Cuda:
         self,
         nodes: int,
     ):
-        from deepmd.kernels.cute.neo.readout_l0 import (
+        from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
             readout_l0_product_cute,
         )
 
@@ -749,7 +745,7 @@ class TestReadoutL0Cuda:
         )
 
     def test_opcheck_and_fullgraph_preserve_metadata_and_vjp(self):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             readout_l0,
         )
 
@@ -774,7 +770,7 @@ class TestReadoutL0Cuda:
         assert grads[1].shape == right.shape
 
     def test_exact_module_fullgraph_uses_full_neo_gate(self, monkeypatch):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             readout_l0,
         )
 
@@ -785,11 +781,11 @@ class TestReadoutL0Cuda:
         seed = torch.randn(3, 32, device="cuda")
         value_ref = value.detach().clone().requires_grad_(True)
         value_actual = value.detach().clone().requires_grad_(True)
-        monkeypatch.delenv("DP_NEO_CUTE_INFER", raising=False)
+        monkeypatch.delenv("DP_CUTE_INFER", raising=False)
         expected = (value_ref + module(value_ref))[:, 0, 0, :]
         expected_grad = torch.autograd.grad(expected, value_ref, seed)[0]
 
-        monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+        monkeypatch.setenv("DP_CUTE_INFER", "1")
         readout_l0.prepare_sm80_readout_input_fold(module)
         compiled = torch.compile(
             lambda tensor: readout_l0.run_neo_output_readout(module, tensor),
@@ -803,7 +799,7 @@ class TestReadoutL0Cuda:
         torch.testing.assert_close(actual_grad, expected_grad, atol=TOL, rtol=TOL)
 
     def test_sm80_input_fold_preparation_is_cross_stream_ready(self):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             readout_l0,
         )
 
@@ -827,7 +823,7 @@ class TestReadoutL0Cuda:
             torch.testing.assert_close(actual, reference, atol=0.0, rtol=0.0)
 
     def test_sm80_input_fold_fullgraph_matches_module_vjp(self, monkeypatch):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             readout_l0,
         )
 
@@ -844,7 +840,7 @@ class TestReadoutL0Cuda:
         expected = (value_ref + module(value_ref))[:, 0, 0, :]
         expected_grad = torch.autograd.grad(expected, value_ref, seed)[0]
 
-        monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+        monkeypatch.setenv("DP_CUTE_INFER", "1")
         monkeypatch.setenv("DP_CUTE_READOUT_INPUT_FOLD_SM80", "1")
         assert readout_l0._can_use_sm80_readout_input_fold(module, value_actual)
         readout_l0.prepare_sm80_readout_input_fold(module)

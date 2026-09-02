@@ -17,11 +17,6 @@ from types import (
 import pytest
 import torch
 
-from deepmd.kernels.cute.neo import k1 as _K1
-from deepmd.kernels.cute.neo import k1_runner as _K1_RUNNER
-from deepmd.kernels.cute.neo import (
-    runtime_policy,
-)
 from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
     EdgeFeatureCache,
     _build_edge_wigner,
@@ -29,6 +24,11 @@ from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
 )
 from deepmd.pt.model.descriptor.sezm_nn.norm import (
     EquivariantRMSNorm,
+)
+from deepmd.pt_expt.kernels.cute.sezm import k1 as _K1
+from deepmd.pt_expt.kernels.cute.sezm import k1_runner as _K1_RUNNER
+from deepmd.pt_expt.kernels.cute.sezm import (
+    runtime_policy,
 )
 
 NeoK1BackwardWorkspace = _K1_RUNNER.NeoK1BackwardWorkspace
@@ -213,7 +213,7 @@ def test_sm89_and_sm120_use_combined_so2_gate(
 def test_combined_so2_gate_rejects_misaligned_contiguous_tensor() -> None:
     pytest.importorskip("cutlass.cute")
     pytest.importorskip("cuda.bindings.driver")
-    from deepmd.kernels.cute.neo.k1_kernels.cute_neo_so2_gate_combined_fwd import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_kernels.cute_neo_so2_gate_combined_fwd import (
         _require_16_byte_alignment,
     )
 
@@ -316,7 +316,7 @@ def test_packed_wigner_has_a_separate_backward_compatible_cache_field() -> None:
 def test_ineligible_wigner_build_does_not_import_cute(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     edge_vec = torch.tensor([[1.0, 0.0, 0.0]], device="cpu")
     edge_len = torch.linalg.vector_norm(edge_vec, dim=-1, keepdim=True)
 
@@ -355,7 +355,7 @@ def test_ineligible_runtime_contracts_fall_back(
     node_count: int,
     destinations_sorted: bool,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     block = _neo_like_block().eval()
 
     assert not _K1.is_neo_k1_runtime_eligible(
@@ -372,7 +372,7 @@ def test_ineligible_runtime_contracts_fall_back(
 def test_runtime_contract_allows_fewer_edges_than_nodes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     block = _neo_like_block().eval()
 
     assert _K1.is_neo_k1_runtime_eligible(
@@ -402,7 +402,7 @@ def _cute_cuda_runtime_available() -> bool:
     reason="CuTe attention-prelude regression requires CUDA and CuTe DSL",
 )
 def test_attention_prelude_initializes_all_qk_rows_when_edges_are_sparse() -> None:
-    from deepmd.kernels.cute.neo.k1_kernels.cute_neo_focus_src_backward import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_kernels.cute_neo_focus_src_backward import (
         compile_neo_attention_prelude_forward,
     )
 
@@ -478,7 +478,7 @@ def test_attention_prelude_initializes_all_qk_rows_when_edges_are_sparse() -> No
 def test_exact_runtime_contract_is_eligible_without_autocast(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     monkeypatch.setattr(runtime_policy, "uses_strict_fp32_matmul", lambda: True)
     block = _neo_like_block().eval()
     kwargs = {
@@ -498,7 +498,7 @@ def test_exact_runtime_contract_is_eligible_without_autocast(
 def test_runtime_contract_rejects_tf32_matmul_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     monkeypatch.setattr(torch, "is_autocast_enabled", lambda device_type: False)
     block = _neo_like_block().eval()
     kwargs = {

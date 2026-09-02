@@ -52,7 +52,6 @@ from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.cute.neo import runtime_policy as cute_runtime_policy
 from deepmd.pt.utils import (
     env,
 )
@@ -66,6 +65,7 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.pt_expt.kernels.cute.sezm import runtime_policy as cute_runtime_policy
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
@@ -1776,7 +1776,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     @torch.jit.unused
     def _run_output_readout(self, ffn_in: torch.Tensor) -> torch.Tensor:
         """Return the residual-inclusive scalar output with guarded CuTe routing."""
-        from deepmd.kernels.cute.neo.readout_l0 import (
+        from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
             run_neo_output_readout,
         )
 
@@ -1953,7 +1953,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         geometry_dtype: torch.dtype,
     ) -> bool:
         """Return whether all blocks satisfy packed K1's stable contract."""
-        from deepmd.kernels.cute.neo.k1 import (
+        from deepmd.pt_expt.kernels.cute.sezm.k1 import (
             is_packed_wigner_candidate,
         )
 

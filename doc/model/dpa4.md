@@ -424,14 +424,15 @@ equivalent input-file option used during training validation:
 | `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                     |
 | `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference, independently of `descriptor.use_amp`. Training AMP remains controlled by `descriptor.use_amp`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                   |
 | `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). Levels `1` and `2` are exact float32; level `3` trades a small accuracy margin for a substantial speedup. Detailed below.                                                                                                              |
+| `DP_CUTE_INFER`      | —                           | off           | CuTe inference kernels for supported SeZM shapes (PyTorch CUDA eval only, compatible with `DP_TRITON_INFER` and `DP_COMPILE_INFER`). Unsupported shapes retain the selected fallback. Python inference only, and **not** captured in a frozen `.pt2`. Detailed below.                                                              |
 | `DP_CUTILE_INFER`    | —                           | off           | cuTile inference path (CUDA eval only, compatible with `DP_COMPILE_INFER`, mutually exclusive with `DP_TRITON_INFER`). Python inference only, and **not** captured in a frozen `.pt2`. Detailed below.                                                                                                                             |
 | `DP_CUDA_INFER`      | —                           | `0`           | Hand-written CUDA operator level `0`-`2` (CUDA eval only, stacks on top of `DP_TRITON_INFER`). Level `1` is faster on every GPU and checkpoint measured; level `2` additionally offers the fused convolution, which routes itself per checkpoint and falls back to the level-`1` behaviour where it would not pay. Detailed below. |
 
 Accepted boolean values for the other switches are `1`/`true`/`yes`/`on` and
 `0`/`false`/`no`/`off`; `DP_TRITON_INFER` accepts only the numeric levels.
-`DP_TRITON_INFER`, `DP_CUTILE_INFER` and `DP_CUTE_INFER` each select a complete
-accelerated inference path and are mutually exclusive; enabling more than one is
-rejected when the model is constructed.
+`DP_TRITON_INFER` and `DP_CUTILE_INFER` select mutually exclusive complete
+SO(2) paths. `DP_CUTE_INFER` is an exact-shape overlay and may coexist with
+either fallback.
 Shell exports take precedence over the input-file options and over values
 written in the input; they are read when the model is constructed and changing
 them afterward has no effect.
@@ -448,6 +449,15 @@ speedup; only shapes validated by the tuning sweep are affected. Levels `2` and
 shipping built in. On other GPUs the kernels fall back to conservative
 configurations, and `dp --pt freeze` tunes the missing entries on the local GPU
 before exporting, a one-off sweep of a few minutes baked into the `.pt2`.
+
+`DP_CUTE_INFER` enables CuTe kernels for the current DPA4-Neo inference
+contract. The path fuses the eligible K1 interaction block, packed Wigner-D
+construction, geometric initial embedding, output grid product, and scalar
+readout while retaining strict float32 arithmetic. Eligibility checks cover the
+model structure, tensor layout, dtype, device, and GPU capability. Any
+unsupported configuration falls through to the enabled Triton, CUDA, cuTile, or
+reference implementation rather than entering a partially compatible kernel.
+The kernels are JIT compiled at runtime and are not captured in a frozen `.pt2`.
 
 `DP_CUTILE_INFER` replaces the whole SeZM edge pipeline — Wigner monomials,
 rotate-and-mix, the gated SO(2) mixing stack, the attention aggregation and the
@@ -552,9 +562,9 @@ of being unavailable to the frozen `.pt2` route.
 > chosen levels and whether each came from the environment or the default are
 > logged at export. A CPU-targeted archive disables GPU-only inference paths
 > and keeps the reference CPU implementation regardless of these settings.
-> `DP_CUTILE_INFER` is the exception:
-> its kernels are JIT compiled at runtime and do not bake into the artifact, so
-> it applies to Python inference only and has no effect on a frozen model. A frozen `.pt2` runs a forward-only
+> `DP_CUTILE_INFER` and `DP_CUTE_INFER` are the exceptions: their kernels are
+> JIT compiled at runtime and do not bake into the artifact, so they apply to
+> Python inference only and have no effect on a frozen model. A frozen `.pt2` runs a forward-only
 > package, so training-time memory-saving switches do not apply to it.
 
 ### Hardware selection

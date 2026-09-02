@@ -30,13 +30,13 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.cute.neo import runtime_policy as cute_runtime_policy
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.utils import (
     get_generator,
 )
+from deepmd.pt_expt.kernels.cute.sezm import runtime_policy as cute_runtime_policy
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     triton_train_level,
@@ -1062,7 +1062,7 @@ class BaseGridNet(nn.Module):
             and cute_runtime_policy.is_cute_infer_enabled()
             and _inference_mode_is_frozen(self)
         ):
-            from deepmd.kernels.cute.neo.output_grid_product import (
+            from deepmd.pt_expt.kernels.cute.sezm.output_grid_product import (
                 maybe_run_cute_output_grid_product,
             )
 

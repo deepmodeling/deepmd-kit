@@ -13,7 +13,7 @@ from types import (
 
 import torch
 
-from deepmd.kernels.cute.neo import gie as gie_module
+from deepmd.pt_expt.kernels.cute.sezm import gie as gie_module
 
 
 def _load_gie_module():

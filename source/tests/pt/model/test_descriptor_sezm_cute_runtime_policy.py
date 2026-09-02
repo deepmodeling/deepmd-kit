@@ -17,7 +17,7 @@ from unittest import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-POLICY_PATH = REPO_ROOT / "deepmd/kernels/cute/neo/runtime_policy.py"
+POLICY_PATH = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm/runtime_policy.py"
 
 
 def _load_policy():
@@ -34,15 +34,15 @@ def _load_policy():
     return module
 
 
-def test_full_neo_master_is_independent_from_inner_cute_selector() -> None:
+def test_cute_master_gate_controls_sezm_path() -> None:
     policy = _load_policy()
     cases = (
         ({}, False),
-        ({"DP_CUTE_INFER": "1"}, False),
-        ({"DP_NEO_CUTE_INFER": "1"}, True),
-        ({"DP_CUTE_INFER": "0", "DP_NEO_CUTE_INFER": "1"}, True),
-        ({"DP_CUTE_INFER": "1", "DP_NEO_CUTE_INFER": "0"}, False),
-        ({"DP_NEO_CUTE_INFER": "1", "DP_TRITON_INFER": "2"}, True),
+        ({"DP_CUTE_INFER": "0"}, False),
+        ({"DP_CUTE_INFER": "1"}, True),
+        ({"DP_CUTE_INFER": "true"}, True),
+        ({"DP_CUTE_INFER": "unsupported"}, False),
+        ({"DP_CUTE_INFER": "1", "DP_TRITON_INFER": "2"}, True),
     )
     for environment, expected in cases:
         with mock.patch.dict(os.environ, environment, clear=True):
@@ -76,7 +76,7 @@ def test_master_switch_controls_every_sm80_subfeature() -> None:
 
 def test_sm80_family_profile_defaults_from_master_only() -> None:
     policy = _load_policy()
-    with mock.patch.dict(os.environ, {"DP_NEO_CUTE_INFER": "1"}, clear=True):
+    with mock.patch.dict(os.environ, {"DP_CUTE_INFER": "1"}, clear=True):
         assert policy.SM80_PROFILE_CAPABILITIES == frozenset({(8, 0), (8, 6)})
         for capability in policy.SM80_PROFILE_CAPABILITIES:
             assert policy.is_sm80_profile_enabled(capability)
@@ -107,7 +107,7 @@ def test_every_sm80_profile_feature_can_be_disabled() -> None:
     for name, checker in checks.items():
         with mock.patch.dict(
             os.environ,
-            {"DP_NEO_CUTE_INFER": "1", name: "0"},
+            {"DP_CUTE_INFER": "1", name: "0"},
             clear=True,
         ):
             assert not checker()
@@ -115,7 +115,7 @@ def test_every_sm80_profile_feature_can_be_disabled() -> None:
 
 def test_non_sm80_family_uses_architecture_defaults_without_sm80_features() -> None:
     policy = _load_policy()
-    with mock.patch.dict(os.environ, {"DP_NEO_CUTE_INFER": "1"}, clear=True):
+    with mock.patch.dict(os.environ, {"DP_CUTE_INFER": "1"}, clear=True):
         capability = (8, 9)
         assert not policy.is_sm80_profile_enabled(capability)
         assert not policy.is_gie_enabled(capability)
@@ -130,14 +130,14 @@ def test_sm90_c96_asymmetric_panels_default_is_exact_arch_disable_only() -> None
     policy = _load_policy()
     switch = policy.OUTPUT_GRID_SM90_C96_ASYMMETRIC_PANELS_ENV
 
-    with mock.patch.dict(os.environ, {"DP_NEO_CUTE_INFER": "1"}, clear=True):
+    with mock.patch.dict(os.environ, {"DP_CUTE_INFER": "1"}, clear=True):
         assert policy.is_output_grid_sm90_c96_asymmetric_panels_enabled((9, 0))
         assert not policy.is_output_grid_sm90_c96_asymmetric_panels_enabled((8, 9))
         assert not policy.is_output_grid_sm90_c96_asymmetric_panels_enabled((9, 1))
 
     with mock.patch.dict(
         os.environ,
-        {"DP_NEO_CUTE_INFER": "1", switch: "0"},
+        {"DP_CUTE_INFER": "1", switch: "0"},
         clear=True,
     ):
         assert not policy.is_output_grid_sm90_c96_asymmetric_panels_enabled((9, 0))
@@ -147,7 +147,7 @@ def test_sm90_c96_asymmetric_panels_default_is_exact_arch_disable_only() -> None
 
     with mock.patch.dict(
         os.environ,
-        {"DP_NEO_CUTE_INFER": "1", switch: "1"},
+        {"DP_CUTE_INFER": "1", switch: "1"},
         clear=True,
     ):
         assert policy.is_output_grid_sm90_c96_asymmetric_panels_enabled((9, 0))
@@ -159,7 +159,7 @@ def test_overrides_remain_architecture_safe() -> None:
     with mock.patch.dict(
         os.environ,
         {
-            "DP_NEO_CUTE_INFER": "1",
+            "DP_CUTE_INFER": "1",
             "DP_CUTE_K1_THIN_WRAPPER": "1",
             "DP_CUTE_OUTPUT_GRID_BWD_SM80_C96_N48_PANEL": "1",
             "DP_CUTE_OUTPUT_GRID_FWD_SM80_C96_N48": "1",
@@ -175,7 +175,7 @@ def test_overrides_remain_architecture_safe() -> None:
     with mock.patch.dict(
         os.environ,
         {
-            "DP_NEO_CUTE_INFER": "1",
+            "DP_CUTE_INFER": "1",
             "DP_CUTE_GIE": "1",
             "DP_CUTE_K1_PACKED_WIGNER": "1",
         },
@@ -224,12 +224,12 @@ def test_neighbor_list_eager_island_policy_is_owned_by_neo_runtime() -> None:
     policy = _load_policy()
     cases = (
         ({}, (8, 0), False),
-        ({"DP_NEO_CUTE_INFER": "1"}, (8, 0), True),
-        ({"DP_NEO_CUTE_INFER": "1"}, (8, 6), False),
-        ({"DP_NEO_CUTE_INFER": "1"}, (9, 0), False),
+        ({"DP_CUTE_INFER": "1"}, (8, 0), True),
+        ({"DP_CUTE_INFER": "1"}, (8, 6), False),
+        ({"DP_CUTE_INFER": "1"}, (9, 0), False),
         (
             {
-                "DP_NEO_CUTE_INFER": "1",
+                "DP_CUTE_INFER": "1",
                 "DP_CUTE_K1_EAGER_ISLANDS": "0",
             },
             (8, 0),
@@ -237,7 +237,7 @@ def test_neighbor_list_eager_island_policy_is_owned_by_neo_runtime() -> None:
         ),
         (
             {
-                "DP_NEO_CUTE_INFER": "1",
+                "DP_CUTE_INFER": "1",
                 "DP_CUTE_K1_EAGER_ISLANDS": "1",
             },
             (9, 0),

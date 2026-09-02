@@ -532,7 +532,7 @@ SeZMModel_ = make_model(SeZMAtomicModel)
 
 def _neo_cute_infer_enabled() -> bool:
     """Return whether the model builder must destination-sort CuTe edges."""
-    from deepmd.kernels.cute.neo.runtime_policy import (
+    from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
         is_cute_infer_enabled,
     )
 
@@ -548,7 +548,7 @@ def _neo_cute_nlist_eager_island_enabled(device: torch.device) -> bool:
         compute_capability = tuple(torch.cuda.get_device_capability(device))
     except RuntimeError:
         return False
-    from deepmd.kernels.cute.neo.runtime_policy import (
+    from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
         is_k1_eager_island_enabled,
     )
 
@@ -929,7 +929,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             ):
                 continue
             if k1_invalidator is None:
-                from deepmd.kernels.cute.neo.k1 import (
+                from deepmd.pt_expt.kernels.cute.sezm.k1 import (
                     invalidate_cute_k1_state,
                 )
 
@@ -2156,7 +2156,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # Register Python-owned K1 state before make_fx starts. The opt-in thin
         # path can then keep adjacent linears in this graph while the CuTe work
         # remains opaque behind its existing custom op.
-        from deepmd.kernels.cute.neo import runtime_policy as cute_runtime_policy
+        from deepmd.pt_expt.kernels.cute.sezm import (
+            runtime_policy as cute_runtime_policy,
+        )
 
         compute_capability = (
             tuple(torch.cuda.get_device_capability(coord.device))
@@ -2164,7 +2166,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             else None
         )
         if not self.training and cute_runtime_policy.is_cute_infer_enabled():
-            from deepmd.kernels.cute.neo.readout_l0 import (
+            from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
                 maybe_prepare_sm80_readout_input_fold,
             )
 
@@ -2179,7 +2181,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             and cute_runtime_policy.is_cute_infer_enabled()
             and cute_runtime_policy.is_supported_k1_capability(compute_capability)
         ):
-            from deepmd.kernels.cute.neo.k1 import (
+            from deepmd.pt_expt.kernels.cute.sezm.k1 import (
                 prepare_cute_k1_blocks,
             )
 

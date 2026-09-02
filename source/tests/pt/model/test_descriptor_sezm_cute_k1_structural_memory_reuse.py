@@ -25,8 +25,8 @@ from .test_descriptor_sezm_cute_k1 import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-STRUCTURAL_HELPER = REPO_ROOT / "deepmd/kernels/cute/neo/k1_gate_structural.py"
-SO2_HELPER = REPO_ROOT / "deepmd/kernels/cute/neo/k1_so2linear.py"
+STRUCTURAL_HELPER = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm/k1_gate_structural.py"
+SO2_HELPER = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm/k1_so2linear.py"
 
 
 def _load_module(name: str, path: Path):

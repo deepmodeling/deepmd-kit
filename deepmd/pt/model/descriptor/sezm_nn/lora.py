@@ -487,11 +487,11 @@ def _clear_sezm_compile_cache(model: nn.Module) -> None:
     crash or silently skip LoRA parameters.  Mirrors the pattern used in
     :meth:`SeZMModel.reset_head_for_mode`.
     """
-    from deepmd.kernels.cute.neo.k1 import (
-        invalidate_cute_k1_state,
-    )
     from deepmd.pt.model.model.sezm_model import (
         _clear_shared_sezm_compile_cache,
+    )
+    from deepmd.pt_expt.kernels.cute.sezm.k1 import (
+        invalidate_cute_k1_state,
     )
 
     readout_invalidator = None
@@ -500,7 +500,7 @@ def _clear_sezm_compile_cache(model: nn.Module) -> None:
         invalidate_cute_k1_state(m)
         if hasattr(m, "_neo_sm80_readout_input_fold_cache"):
             if readout_invalidator is None:
-                from deepmd.kernels.cute.neo.readout_l0 import (
+                from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
                     invalidate_neo_readout_input_fold,
                 )
 

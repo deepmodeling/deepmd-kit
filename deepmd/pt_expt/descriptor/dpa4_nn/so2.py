@@ -9,11 +9,11 @@ reference PT inference paths around three hot paths, mirroring
 - the two rotation hot paths of :class:`SO2Convolution`, and
 - the low-rank branch of :class:`DynamicRadialDegreeMixer`.
 
-Triton, CuTe, and cuTile are mutually exclusive complete SO(2) paths. The
-hand-written CUDA operators form an independent cumulative layer and take
-precedence where their factories bind. Every gate is resolved at construction
-so export records a static dispatch choice; training and unsupported layouts
-retain the dpmodel reference path.
+Triton and cuTile are mutually exclusive complete SO(2) paths. The hand-written
+CUDA operators form an independent cumulative layer and take precedence where
+their factories bind. Every gate is resolved at construction so export records a
+static dispatch choice; training and unsupported layouts retain the dpmodel
+reference path.
 """
 
 from __future__ import (
@@ -40,7 +40,6 @@ from deepmd.pt_expt.kernels.utils import (
     cuda_train_enabled,
     triton_infer_level,
     triton_train_level,
-    use_cute_infer,
     use_cutile_infer,
 )
 
@@ -182,22 +181,19 @@ class SO2Convolution(SO2ConvolutionDP):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # The inference gates are read once at construction so they become
-        # compile-time constants in the traced (``make_fx``) graph. Triton,
-        # CuTe and cuTile claim the same SO(2) value path and are mutually
-        # exclusive; the hand-written CUDA operators form an independent,
-        # cumulative layer and take precedence where their factories bind.
+        # compile-time constants in the traced (``make_fx``) graph. Triton and
+        # cuTile claim the same SO(2) value path and are mutually exclusive; the
+        # hand-written CUDA operators form an independent, cumulative layer and
+        # take precedence where their factories bind.
         self.triton_infer_level = triton_infer_level()
         self.triton_train_level = triton_train_level()
         self.use_triton_infer = self.triton_infer_level >= 1
-        self.use_cute_infer = use_cute_infer()
         self.use_cutile_infer = use_cutile_infer()
-        if sum((self.use_triton_infer, self.use_cute_infer, self.use_cutile_infer)) > 1:
+        if self.use_triton_infer and self.use_cutile_infer:
             raise ValueError(
-                "DP_TRITON_INFER, DP_CUTE_INFER and DP_CUTILE_INFER are mutually "
-                "exclusive: each selects a complete accelerated inference path. "
-                "Enable exactly one of them."
+                "DP_TRITON_INFER and DP_CUTILE_INFER are mutually exclusive: "
+                "each selects a complete accelerated SO(2) inference path."
             )
-        self._cute_value_path = None
         self._triton_value_path = None
         self._cutile_value_path = None
         self._cached_edge_csr_fn = cached_edge_csr
@@ -305,19 +301,9 @@ class SO2Convolution(SO2ConvolutionDP):
 
             self._cuda_conv_fn = make_cuda_so2_conv(self)
 
-        # === Step 14. Optional fused CuTe SO(2) value-path operator ===
-        # Experimental alternative backend; mutually exclusive with the Triton
-        # flag (enforced above).
-        if self.use_cute_infer:
-            from deepmd.pt_expt.kernels.cute.sezm import (
-                make_cute_value_path,
-            )
-
-            self._cute_value_path = make_cute_value_path(self)
-
-        # === Step 15. Optional fused cuTile SO(2) value-path operators ===
-        # Complete cuTile inference path, mutually exclusive with the two gates
-        # above. The factory validates the block layout and returns ``None``
+        # === Step 14. Optional fused cuTile SO(2) value-path operators ===
+        # Complete cuTile inference path, mutually exclusive with Triton. The
+        # factory validates the block layout and returns ``None``
         # otherwise, leaving the dense reference path in charge.
         if self.use_cutile_infer:
             from deepmd.pt_expt.kernels.cutile.sezm.so2_value_path import (

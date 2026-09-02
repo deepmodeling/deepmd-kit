@@ -13,7 +13,7 @@ from torch.utils._python_dispatch import (
     TorchDispatchMode,
 )
 
-from deepmd.kernels.cute.neo import (
+from deepmd.pt_expt.kernels.cute.sezm import (
     k1_so2linear,
 )
 

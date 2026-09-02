@@ -22,7 +22,7 @@ from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
 def test_single_branch_bypasses_router_and_accepts_fused_middle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     branch = (
         GridBranch(
             channels=2,
@@ -67,7 +67,7 @@ def test_single_branch_bypasses_router_and_accepts_fused_middle(
 def test_single_branch_keeps_pytorch_middle_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     branch = (
         GridBranch(
             channels=2,
@@ -135,7 +135,7 @@ def test_single_branch_opt_in_matches_routed_result(
         return original_forward(value)
 
     monkeypatch.setattr(branch.router, "forward", tracked_router)
-    monkeypatch.delenv("DP_NEO_CUTE_INFER", raising=False)
+    monkeypatch.delenv("DP_CUTE_INFER", raising=False)
     routed = branch(
         left,
         right,
@@ -143,7 +143,7 @@ def test_single_branch_opt_in_matches_routed_result(
         to_grid=lambda value: value,
         from_grid=lambda value: value,
     )
-    monkeypatch.setenv("DP_NEO_CUTE_INFER", "1")
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
     shortcut = branch(
         left,
         right,

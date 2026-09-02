@@ -121,7 +121,7 @@ def test_scalar_readout_matches_row_zero_of_generic_grid_product():
 
 
 def test_dense_gram_matches_both_projected_input_adjoints():
-    from deepmd.kernels.cute.neo.readout_l0 import (
+    from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
         build_readout_l0_gram,
     )
 
@@ -184,7 +184,7 @@ def test_dense_gram_matches_both_projected_input_adjoints():
 
 
 def test_dense_gram_forward_matches_row_zero_grid_projection():
-    from deepmd.kernels.cute.neo.readout_l0 import (
+    from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
         build_readout_l0_gram,
     )
 

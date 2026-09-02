@@ -465,7 +465,7 @@ class TestSeZMModelCompile(unittest.TestCase):
 
     def test_neo_cute_flag_is_noop_for_ineligible_model(self) -> None:
         """An unsupported SeZM shape must remain bit-identical with the flag on."""
-        from deepmd.kernels.cute.neo import k1 as cute_k1
+        from deepmd.pt_expt.kernels.cute.sezm import k1 as cute_k1
 
         cpu = torch.device("cpu")
         with (
@@ -513,14 +513,14 @@ class TestSeZMModelCompile(unittest.TestCase):
 
             with mock.patch.dict(
                 os.environ,
-                {"DP_NEO_CUTE_INFER": "0"},
+                {"DP_CUTE_INFER": "0"},
                 clear=False,
             ):
                 reference = run_lower()
             with (
                 mock.patch.dict(
                     os.environ,
-                    {"DP_NEO_CUTE_INFER": "1"},
+                    {"DP_CUTE_INFER": "1"},
                     clear=False,
                 ),
                 mock.patch.object(
@@ -538,7 +538,7 @@ class TestSeZMModelCompile(unittest.TestCase):
                     continue
                 self.assertTrue(
                     torch.equal(actual[name], expected),
-                    msg=f"DP_NEO_CUTE_INFER changed ineligible-model {name}",
+                    msg=f"DP_CUTE_INFER changed ineligible-model {name}",
                 )
 
     def test_neo_cute_sort_guard_uses_post_cast_geometry_dtype(self) -> None:

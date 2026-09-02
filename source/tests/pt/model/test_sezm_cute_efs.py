@@ -196,7 +196,7 @@ _FRAME_FACTORIES = {
 
 
 def _assert_runtime_profile() -> dict[str, bool]:
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         k1,
         runtime_policy,
     )
@@ -256,7 +256,7 @@ def _assert_runtime_profile() -> dict[str, bool]:
     missing = sorted(name for name, enabled in selected.items() if not enabled)
     if missing:
         raise AssertionError(
-            "DP_NEO_CUTE_INFER did not select the expected runtime profile: "
+            "DP_CUTE_INFER did not select the expected runtime profile: "
             + ", ".join(missing)
         )
     return selected
@@ -268,7 +268,7 @@ def _run_efs_child(
     use_compile: bool,
     output_path: Path,
 ) -> None:
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         k1,
     )
 
@@ -319,7 +319,7 @@ def _run_efs_child(
 def _clean_child_environment() -> dict[str, str]:
     environment = os.environ.copy()
     for name in tuple(environment):
-        if name.startswith(("DP_CUTE_", "DP_NEO_CUTE_")):
+        if name.startswith("DP_CUTE_"):
             environment.pop(name)
     for name in (
         "DP_COMPILE_INFER",
@@ -351,7 +351,7 @@ def _child_environment(*, use_compile: bool) -> dict[str, str]:
             {
                 "DP_COMPILE_INFER": "1",
                 "DP_CUTE_STRICT": "1",
-                "DP_NEO_CUTE_INFER": "1",
+                "DP_CUTE_INFER": "1",
                 "DP_TRITON_INFER": "2",
             }
         )
@@ -360,7 +360,6 @@ def _child_environment(*, use_compile: bool) -> dict[str, str]:
             {
                 "DP_COMPILE_INFER": "0",
                 "DP_CUTE_INFER": "0",
-                "DP_NEO_CUTE_INFER": "0",
                 "DP_TRITON_INFER": "0",
             }
         )

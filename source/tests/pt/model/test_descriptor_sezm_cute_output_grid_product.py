@@ -58,7 +58,7 @@ def _reference(left, right, to_grid, from_grid):
     return out.reshape_as(left)
 
 
-def test_grid_mlp_accepts_fused_middle_callback():
+def test_grid_mlp_accepts_fused_pair_callback():
     from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
         GridMLP,
     )
@@ -76,7 +76,7 @@ def test_grid_mlp_accepts_fused_middle_callback():
     scalar_pair = torch.empty(2, 1, 4, device="cpu")
     calls = 0
 
-    def fused_middle(projected_left, projected_right):
+    def fused_pair(projected_left, projected_right):
         nonlocal calls
         calls += 1
         return projected_left * projected_right
@@ -87,7 +87,7 @@ def test_grid_mlp_accepts_fused_middle_callback():
         scalar_pair,
         to_grid=lambda value: value,
         from_grid=lambda value: value,
-        grid_product=fused_middle,
+        pair_grid=fused_pair,
     )
 
     assert calls == 1
@@ -99,7 +99,7 @@ def test_dispatch_falls_back_without_exact_cuda_contract(
     monkeypatch: pytest.MonkeyPatch,
     hidden_channels: int,
 ):
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         output_grid_product,
     )
 
@@ -133,7 +133,7 @@ def test_exact_shape_guard_accepts_only_validated_widths(
     hidden_channels: int,
     expected: int | None,
 ) -> None:
-    from deepmd.kernels.cute.neo.output_grid_product import (
+    from deepmd.pt_expt.kernels.cute.sezm.output_grid_product import (
         _exact_hidden_channels,
     )
 
@@ -143,7 +143,7 @@ def test_exact_shape_guard_accepts_only_validated_widths(
 
 @pytest.mark.parametrize("hidden_channels", SUPPORTED_HIDDEN_CHANNELS)
 def test_fake_registrations_allocate_canonical_strides(hidden_channels: int) -> None:
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         output_grid_product,
     )
 
@@ -205,12 +205,12 @@ def test_sm90_c96_asymmetric_panel_dispatch_is_explicit(
     policy_enabled: bool,
     expected: bool,
 ) -> None:
-    from deepmd.kernels.cute.neo import (
+    from deepmd.pt_expt.kernels.cute.sezm import (
         output_grid_product,
     )
 
     kernel_module_name = (
-        "deepmd.kernels.cute.neo.output_grid_kernels.cute_tiled_grid_product"
+        "deepmd.pt_expt.kernels.cute.sezm.output_grid_kernels.cute_tiled_grid_product"
     )
     kernel_module = types.ModuleType(kernel_module_name)
     calls: dict[str, dict[str, bool]] = {}
@@ -339,7 +339,7 @@ class TestOutputGridProductCuda:
         nodes: int,
         hidden_channels: int,
     ):
-        from deepmd.kernels.cute.neo.output_grid_product import (
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid_product import (
             output_grid_product_cute,
         )
 
@@ -387,7 +387,7 @@ class TestOutputGridProductCuda:
         monkeypatch: pytest.MonkeyPatch,
         nodes: int,
     ):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             output_grid_product,
         )
 
@@ -415,7 +415,7 @@ class TestOutputGridProductCuda:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             output_grid_product,
         )
 
@@ -464,7 +464,7 @@ class TestOutputGridProductCuda:
         monkeypatch: pytest.MonkeyPatch,
         hidden_channels: int,
     ):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             output_grid_product,
         )
 
@@ -511,7 +511,7 @@ class TestOutputGridProductCuda:
         monkeypatch: pytest.MonkeyPatch,
         hidden_channels: int,
     ):
-        from deepmd.kernels.cute.neo import (
+        from deepmd.pt_expt.kernels.cute.sezm import (
             output_grid_product,
         )
 

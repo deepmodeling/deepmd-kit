@@ -19,7 +19,7 @@ def _has_supported_gpu() -> bool:
 
 
 def test_source_csr_preserves_equal_source_order() -> None:
-    from deepmd.kernels.cute.neo.k1_radial_phase_a_node import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_radial_phase_a_node import (
         build_source_csr,
     )
 
@@ -35,7 +35,7 @@ def test_source_csr_preserves_equal_source_order() -> None:
 @unittest.skipUnless(_has_supported_gpu(), "requires an SM80 or SM90 CUDA device")
 class TestRadialFocusSourceFusion(unittest.TestCase):
     def test_fused_load_matches_standalone_scalar_lane_add(self) -> None:
-        from deepmd.kernels.cute.neo.k1_radial_phase_a_node import (
+        from deepmd.pt_expt.kernels.cute.sezm.k1_radial_phase_a_node import (
             build_source_csr,
             prepare_batched_radial_projection_weight,
             run_neo_radial_phase_a_backward_node_tiled,

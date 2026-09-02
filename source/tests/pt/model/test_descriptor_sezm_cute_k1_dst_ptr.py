@@ -29,7 +29,7 @@ except ModuleNotFoundError:  # pragma: no cover - lightweight source-test host
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-K1_PATH = REPO_ROOT / "deepmd/kernels/cute/neo/k1.py"
+K1_PATH = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm/k1.py"
 EDGE_CACHE_PATH = REPO_ROOT / "deepmd/pt/model/descriptor/sezm_nn/edge_cache.py"
 
 
@@ -264,7 +264,7 @@ class TestK1DstPtrTorch(unittest.TestCase):
     )
     def test_compile_cold_registration_survives_into_packed_custom_op_runtime(self):
         assert torch is not None
-        k1 = importlib.import_module("deepmd.kernels.cute.neo.k1")
+        k1 = importlib.import_module("deepmd.pt_expt.kernels.cute.sezm.k1")
         prior_registry = dict(k1._REGISTRY)
         prior_next_handle = k1._NEXT_HANDLE
 

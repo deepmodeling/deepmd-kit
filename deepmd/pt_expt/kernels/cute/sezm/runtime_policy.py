@@ -10,9 +10,12 @@ import os
 
 import torch
 
+from deepmd.pt_expt.kernels.utils import (
+    use_cute_infer,
+)
+
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 _FALSE_VALUES = frozenset({"0", "false", "no", "off"})
-NEO_CUTE_INFER_ENV = "DP_NEO_CUTE_INFER"
 SM80_PROFILE_CAPABILITIES = frozenset({(8, 0), (8, 6)})
 SM90_CAPABILITY = (9, 0)
 FUSED_SO2_GATE_CAPABILITIES = frozenset({(8, 9), (12, 0)})
@@ -55,13 +58,8 @@ def _env_override(name: str) -> bool | None:
 
 
 def is_cute_infer_enabled() -> bool:
-    """Return whether the process opted into the full Neo CuTe K1 path.
-
-    ``DP_NEO_CUTE_INFER`` is deliberately separate from the
-    ``DP_CUTE_INFER`` inner SO2 value-path selector. The full K1 replacement
-    may therefore coexist with ``DP_TRITON_INFER=2``.
-    """
-    return _env_override(NEO_CUTE_INFER_ENV) is True
+    """Return whether ``DP_CUTE_INFER`` enables the SeZM CuTe path."""
+    return use_cute_infer()
 
 
 def _current_compute_capability() -> tuple[int, int] | None:

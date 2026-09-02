@@ -14,9 +14,6 @@ from types import (
 import pytest
 import torch
 
-from deepmd.kernels.cute.neo import (
-    k1,
-)
 from deepmd.pt.model.descriptor.sezm_nn.activation import (
     SwiGLU,
 )
@@ -31,6 +28,9 @@ from deepmd.pt.model.descriptor.sezm_nn.so3 import (
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt_expt.kernels.cute.sezm import (
+    k1,
 )
 
 
@@ -196,10 +196,10 @@ def test_sm90_message_grid_forward_and_adjoint_match_real_module() -> None:
     if tuple(torch.cuda.get_device_capability()) != (9, 0):
         pytest.skip("SM90 message-grid differential requires an SM90 GPU")
 
-    from deepmd.kernels.cute.neo.k1_message_grid_packed import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_message_grid_packed import (
         run_packed_message_grid_forward,
     )
-    from deepmd.kernels.cute.neo.message_grid_readout_sm90 import (
+    from deepmd.pt_expt.kernels.cute.sezm.message_grid_readout_sm90 import (
         prepare_sm90_message_grid_state,
         run_sm90_message_grid_backward,
     )
@@ -301,7 +301,7 @@ def test_sm90_message_grid_forward_and_adjoint_match_real_module() -> None:
     reason="Q/K CuTe adjoint regression requires CUDA and CuTe DSL",
 )
 def test_qk_manual_adjoint_matches_autograd_with_sparse_edges() -> None:
-    from deepmd.kernels.cute.neo.k1_kernels.cute_neo_qk_edge import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_kernels.cute_neo_qk_edge import (
         compile_neo_qk_edge_backward,
         compile_neo_qk_node_input_adjoint,
     )

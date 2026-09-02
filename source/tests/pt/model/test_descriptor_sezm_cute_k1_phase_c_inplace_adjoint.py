@@ -54,7 +54,7 @@ SENTINEL = 937.25
 
 def _phase_c_api():
     pytest.importorskip("cutlass")
-    from deepmd.kernels.cute.neo.k1_kernels.cute_neo_phase_c_backward_layout_runner import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_kernels.cute_neo_phase_c_backward_layout_runner import (
         CuteNeoPhaseCBackwardLayout,
         NeoPhaseCBackwardLayoutOutputs,
     )

@@ -16,8 +16,10 @@ from unittest import (
 
 import torch
 
-from deepmd.kernels.cute.neo import k1_radial_phase_a_node as _RADIAL_PROJECTION
-from deepmd.kernels.cute.neo import k1_runner as _K1_RUNNER
+from deepmd.pt_expt.kernels.cute.sezm import (
+    k1_radial_phase_a_node as _RADIAL_PROJECTION,
+)
+from deepmd.pt_expt.kernels.cute.sezm import k1_runner as _K1_RUNNER
 
 COMPACT_WIDTH = _RADIAL_PROJECTION.COMPACT_WIDTH
 FOCUS_COUNT = _RADIAL_PROJECTION.FOCUS_COUNT

@@ -25,7 +25,7 @@ from einops import (
     rearrange,
 )
 
-from deepmd.kernels.cute.neo.runtime_policy import (
+from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
     is_cute_infer_enabled,
 )
 
@@ -795,7 +795,7 @@ def _build_edge_wigner(
     if not build_full:
         return None, None, edge_quat
     if packed_wigner:
-        from deepmd.kernels.cute.neo.k4_wignerd import (
+        from deepmd.pt_expt.kernels.cute.sezm.k4_wignerd import (
             run_cute_wignerd,
         )
 
@@ -819,7 +819,7 @@ def _packed_wigner_edges_eligible(
     runtime_dtypes: tuple[torch.dtype, ...] = (),
 ) -> bool:
     """Finish packed eligibility from scalar shape and provenance metadata."""
-    from deepmd.kernels.cute.neo.k1 import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1 import (
         packed_wigner_edges_eligible,
     )
 

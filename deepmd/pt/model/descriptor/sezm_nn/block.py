@@ -26,15 +26,15 @@ from torch.utils.checkpoint import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.cute.neo.runtime_policy import (
-    is_cute_infer_enabled,
-)
 from deepmd.pt.utils import (
     env,
 )
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
+)
+from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
+    is_cute_infer_enabled,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -834,7 +834,7 @@ class SeZMInteractionBlock(nn.Module):
     ) -> torch.Tensor:
         """Run the SO(2) unit implementation."""
         if not self.training and is_cute_infer_enabled():
-            from deepmd.kernels.cute.neo.k1 import (
+            from deepmd.pt_expt.kernels.cute.sezm.k1 import (
                 maybe_run_cute_k1,
             )
 

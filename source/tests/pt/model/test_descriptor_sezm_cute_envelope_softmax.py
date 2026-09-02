@@ -44,7 +44,7 @@ def test_cute_envelope_softmax_matches_eager_across_extreme_frames(
     logit_scale: float,
     edge_gate: float,
 ) -> None:
-    from deepmd.kernels.cute.neo.k1_kernels.cute_envelope_gated_softmax import (
+    from deepmd.pt_expt.kernels.cute.sezm.k1_kernels.cute_envelope_gated_softmax import (
         compile_envelope_softmax_forward,
     )
 

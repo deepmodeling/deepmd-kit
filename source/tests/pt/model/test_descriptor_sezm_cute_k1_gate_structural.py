@@ -10,7 +10,7 @@ import unittest
 
 import torch
 
-from deepmd.kernels.cute.neo import (
+from deepmd.pt_expt.kernels.cute.sezm import (
     k1_gate_structural,
 )
 

@@ -54,7 +54,7 @@ def _use_k1_compile_visible_linear(
     """Keep the SM80 linear topology stable for one compiled graph."""
     truthy = {"1", "true", "yes", "on"}
     falsy = {"0", "false", "no", "off"}
-    cute_enabled = os.environ.get("DP_NEO_CUTE_INFER", "").strip().lower()
+    cute_enabled = os.environ.get("DP_CUTE_INFER", "").strip().lower()
     if cute_enabled not in truthy:
         return False
     thin_enabled = os.environ.get("DP_CUTE_K1_THIN_WRAPPER", "").strip().lower()

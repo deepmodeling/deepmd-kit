@@ -638,7 +638,7 @@ def run_neo_output_readout(
         candidate = maybe_run_neo_readout_l0(output_ffn, ffn_in)
         if candidate is not None:
             return candidate
-    return (ffn_in + output_ffn(ffn_in))[:, 0:1, :, :].reshape(
+    return (ffn_in[:, 0:1, :, :] + output_ffn.forward_scalar(ffn_in)).reshape(
         ffn_in.shape[0], output_ffn.channels
     )
 

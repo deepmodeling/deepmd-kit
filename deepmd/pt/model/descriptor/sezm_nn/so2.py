@@ -37,7 +37,6 @@ from deepmd.pt_expt.kernels.utils import (
     cuda_train_enabled,
     triton_infer_level,
     triton_train_level,
-    use_cute_infer,
     use_cutile_infer,
 )
 from deepmd.utils.version import (
@@ -1215,31 +1214,27 @@ class SO2Convolution(nn.Module):
         self.compute_dtype = get_promoted_dtype(self.dtype)
         # Opt-in fused fast paths, selected by ``DP_TRITON_INFER`` /
         # ``DP_TRITON_TRAIN`` (cumulative levels, see :func:`triton_infer_level`
-        # and :func:`triton_train_level`) and ``DP_CUTE_INFER``. Each is read
+        # and :func:`triton_train_level`). Each is read
         # once at construction so it becomes a compile-time constant in the
         # traced (``make_fx``) graph. Level 1 replaces the dense ``bmm``
         # rotation with universal Triton kernels; level 2 additionally binds the
         # table-configured fused value path; inference level 3 routes the mixing
         # stack through the fp16x3 tensor-core operator on swept shapes.
-        # ``DP_CUTE_INFER`` selects the experimental CuTe value-path operator
-        # instead; both gates claim the same ``so2_message`` value path, so
-        # enabling them together has no coherent meaning and is rejected at
-        # construction. The CuTe, cuTile and hand-written CUDA paths remain
-        # inference-only. The fused value-path entries are bound at the end of
-        # construction (once every submodule exists) and stay ``None`` when the
-        # backend is unavailable or the block layout is unsupported.
+        # ``DP_CUTILE_INFER`` selects a complete alternative SO(2) path and is
+        # therefore mutually exclusive with Triton. CuTe dispatch is resolved at
+        # the enclosing SeZM block, where its exact-shape K1 kernel can coexist
+        # with these fallback paths. cuTile and the hand-written CUDA paths remain
+        # inference-only. Fused entries stay ``None`` when their backend is
+        # unavailable or the block layout is unsupported.
         self.triton_infer_level = triton_infer_level()
         self.triton_train_level = triton_train_level()
         self.use_triton_infer = self.triton_infer_level >= 1
-        self.use_cute_infer = use_cute_infer()
         self.use_cutile_infer = use_cutile_infer()
-        if sum((self.use_triton_infer, self.use_cute_infer, self.use_cutile_infer)) > 1:
+        if self.use_triton_infer and self.use_cutile_infer:
             raise ValueError(
-                "DP_TRITON_INFER, DP_CUTE_INFER and DP_CUTILE_INFER are mutually "
-                "exclusive: each selects a complete accelerated inference path. "
-                "Enable exactly one of them."
+                "DP_TRITON_INFER and DP_CUTILE_INFER are mutually exclusive: "
+                "each selects a complete accelerated SO(2) inference path."
             )
-        self._cute_value_path = None
         self._triton_value_path = None
         self._cutile_value_path = None
 
@@ -1753,19 +1748,9 @@ class SO2Convolution(nn.Module):
             if SEGMENT_SOFTMAX_TRITON_AVAILABLE:
                 self._segment_softmax_fn = segment_softmax
 
-        # === Step 17. Optional fused CuTe SO(2) value-path operator ===
-        # Experimental alternative backend; mutually exclusive with the Triton
-        # flag (enforced above).
-        if self.use_cute_infer:
-            from deepmd.pt_expt.kernels.cute.sezm import (
-                make_cute_value_path,
-            )
-
-            self._cute_value_path = make_cute_value_path(self)
-
-        # === Step 18. Optional fused cuTile SO(2) value-path operators ===
-        # Complete cuTile inference path, mutually exclusive with the two gates
-        # above. The factory validates the block layout and returns ``None``
+        # === Step 17. Optional fused cuTile SO(2) value-path operators ===
+        # Complete cuTile inference path, mutually exclusive with Triton. The
+        # factory validates the block layout and returns ``None``
         # otherwise, leaving the dense reference path in charge.
         if self.use_cutile_infer:
             from deepmd.pt_expt.kernels.cutile.sezm.so2_value_path import (
@@ -2460,12 +2445,6 @@ class SO2Convolution(nn.Module):
             # inter-layer activations off the traced graph. ===
             cached_edge_csr(edge_cache, "src", x.shape[0])
             x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
-        elif self._cute_value_path is not None and not self.training:
-            # === Steps 1-5 (fused CuTe operator). The operator folds
-            # rotate_to_local, radial degree mixing, the multi-layer gated SO(2)
-            # stack, and the focus competition into the bucketed kernels; the
-            # per-edge focus-major intermediates stay resident on chip. ===
-            x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
         elif self._triton_rotate_mix is not None and active_triton_level(self) >= 1:
             # === Steps 1-3 (fused rotate-mix operator). One edge-parallel
             # kernel gathers the source features, applies the block-diagonal

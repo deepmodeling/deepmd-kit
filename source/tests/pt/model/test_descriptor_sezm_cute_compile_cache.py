@@ -19,7 +19,7 @@ from unittest import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-CACHE_PATH = REPO_ROOT / "deepmd/kernels/cute/neo/compile_cache.py"
+CACHE_PATH = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm/compile_cache.py"
 
 
 def _load_cache_module():

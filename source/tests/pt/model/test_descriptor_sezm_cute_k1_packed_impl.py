@@ -39,7 +39,7 @@ def _randn(
 
 
 def _dense_wigner(edge_count: int, generator: torch.Generator) -> torch.Tensor:
-    from deepmd.kernels.cute.neo import k1_wigner_layout as layout
+    from deepmd.pt_expt.kernels.cute.sezm import k1_wigner_layout as layout
 
     dense = torch.zeros(
         edge_count,
@@ -70,12 +70,12 @@ _CUTE_SKIP_REASON = _cute_runtime_skip_reason()
     reason=_CUTE_SKIP_REASON or "CuTe runtime unavailable",
 )
 def test_panel_native_quaternion_backward_matches_dense_torch():
-    from deepmd.kernels.cute.neo import k1_wigner_layout as layout
-    from deepmd.kernels.cute.neo import (
-        k4_wignerd,
-    )
     from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
         WignerDCalculator,
+    )
+    from deepmd.pt_expt.kernels.cute.sezm import k1_wigner_layout as layout
+    from deepmd.pt_expt.kernels.cute.sezm import (
+        k4_wignerd,
     )
 
     generator = torch.Generator(device="cuda").manual_seed(20260702)

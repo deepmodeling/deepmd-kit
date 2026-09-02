@@ -17,7 +17,7 @@ from pathlib import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-CUTE_ROOT = REPO_ROOT / "deepmd/kernels/cute/neo"
+CUTE_ROOT = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm"
 KERNEL_PATH = CUTE_ROOT / "k1_kernels/cute_neo_gate_split_structural_vec4_sm80.py"
 DYNAMIC_EDGE_COUNTS = (0, 1, 7, 8, 9, 31, 32, 33)
 
@@ -223,7 +223,9 @@ def _module_constants(tree: ast.Module) -> dict[str, object]:
 
 
 def _load_wrapper_module():
-    return importlib.import_module("deepmd.kernels.cute.neo.k1_gate_structural")
+    return importlib.import_module(
+        "deepmd.pt_expt.kernels.cute.sezm.k1_gate_structural"
+    )
 
 
 class TestSM80StructuralGateVec4Contract(unittest.TestCase):
@@ -403,7 +405,7 @@ class TestSM80StructuralGateVec4Dispatch(unittest.TestCase):
 class TestSM80StructuralGateVec4CudaDifferential(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from deepmd.kernels.cute.neo.k1_kernels.cute_neo_gate_split_structural_vec4_sm80 import (
+        from deepmd.pt_expt.kernels.cute.sezm.k1_kernels.cute_neo_gate_split_structural_vec4_sm80 import (
             compile_neo_gate_split_structural_vec4_sm80_backward,
             compile_neo_gate_split_structural_vec4_sm80_forward,
         )

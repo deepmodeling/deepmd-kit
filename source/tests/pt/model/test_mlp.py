@@ -106,7 +106,7 @@ class TestMLPLayer(unittest.TestCase):
         mlp_module.enable_neo_cute_compile_visible_linears(layer)
         value = torch.randn(7, 5, device=env.DEVICE, dtype=torch.float32)
         environment = {
-            "DP_NEO_CUTE_INFER": "1",
+            "DP_CUTE_INFER": "1",
             "DP_CUTE_K1_THIN_WRAPPER": "1",
         }
 
@@ -139,7 +139,7 @@ class TestMLPLayer(unittest.TestCase):
         layer.eval()
         value = torch.randn(7, 5, device=env.DEVICE, dtype=torch.float32)
         environment = {
-            "DP_NEO_CUTE_INFER": "1",
+            "DP_CUTE_INFER": "1",
             "DP_CUTE_K1_THIN_WRAPPER": "1",
         }
 
@@ -160,7 +160,7 @@ class TestMLPLayer(unittest.TestCase):
         with (
             mock.patch.dict(
                 os.environ,
-                {"DP_NEO_CUTE_INFER": "1"},
+                {"DP_CUTE_INFER": "1"},
                 clear=True,
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
@@ -172,7 +172,7 @@ class TestMLPLayer(unittest.TestCase):
             mock.patch.dict(
                 os.environ,
                 {
-                    "DP_NEO_CUTE_INFER": "1",
+                    "DP_CUTE_INFER": "1",
                     "DP_CUTE_K1_THIN_WRAPPER": "0",
                 },
                 clear=True,

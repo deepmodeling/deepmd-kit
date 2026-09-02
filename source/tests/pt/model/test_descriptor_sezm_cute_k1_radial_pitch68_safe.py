@@ -13,7 +13,7 @@ from pathlib import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-CUTE_PATH = REPO_ROOT / "deepmd/kernels/cute/neo"
+CUTE_PATH = REPO_ROOT / "deepmd/pt_expt/kernels/cute/sezm"
 WRAPPER_PATH = CUTE_PATH / "k1_radial_phase_a_node.py"
 KERNEL_PATH = CUTE_PATH / "k1_kernels/cute_neo_radial_phase_a_backward_node.py"
 

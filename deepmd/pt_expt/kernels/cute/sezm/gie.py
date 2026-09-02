@@ -11,7 +11,7 @@ into ``(N, D, C)`` using the destination-sorted edge list. Its first backward
 produces radial, zonal/Wigner, source-gate, and degree-normalization gradients
 without an edge-by-row-by-channel temporary.
 
-``DP_NEO_CUTE_INFER`` is the master opt-in. The SM80/SM86 path enables this
+``DP_CUTE_INFER`` is the master opt-in. The SM80/SM86 path enables this
 fusion by default; ``DP_CUTE_GIE=0`` disables it explicitly.
 """
 

@@ -22,10 +22,6 @@ import torch.nn as nn
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.cute.neo.k1_wigner_layout import (
-    PACKED_VALUE_COUNT,
-    ZONAL_PANEL_OFFSETS,
-)
 from deepmd.pt.model.network.mlp import (
     MLPLayer,
 )
@@ -38,6 +34,10 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.utils import (
     get_generator,
+)
+from deepmd.pt_expt.kernels.cute.sezm.k1_wigner_layout import (
+    PACKED_VALUE_COUNT,
+    ZONAL_PANEL_OFFSETS,
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
@@ -305,7 +305,7 @@ class GeometricInitialEmbedding(nn.Module):
 
         # === Step 3. Optional fused message construction and reduction ===
         if not self.training:
-            from deepmd.kernels.cute.neo.gie import (
+            from deepmd.pt_expt.kernels.cute.sezm.gie import (
                 is_cute_gie_enabled,
                 maybe_run_cute_gie,
             )
