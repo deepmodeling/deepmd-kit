@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// CMake-generated compile shard of the rotation / degree-mixing training
+// kernels. One translation unit owns one (degree, rank, dtype) specialization.
+
+#define DPA4_RMT_L @DPA4_RMT_L@
+#define DPA4_RMT_RANK @DPA4_RMT_RANK@
+#define DPA4_RMT_TYPE @DPA4_RMT_TYPE@
+
+#include "@DPA4_RMT_INSTANTIATE_HEADER@"

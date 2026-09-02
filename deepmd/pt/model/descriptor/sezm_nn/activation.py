@@ -32,6 +32,10 @@ from deepmd.pt.utils.utils import (
     ActivationFn,
     get_generator,
 )
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
+    triton_train_level,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -162,6 +166,50 @@ class GatedActivation(nn.Module):
         for p in self.parameters():
             p.requires_grad = trainable
 
+        # === Fused kernel binding for the focus-major SO(2) layout ===
+        # The fused operator serves the standard (self-gated) mode in the
+        # ``fndc`` layout with the ``mmax = 1`` m-major coefficient order, the
+        # SiLU scalar activation, and no gate bias -- the configuration of the
+        # SO(2) mixing stack.  Forward, backward and second order each run as
+        # one kernel per focus stream, so a force-loss training step traverses
+        # the activation without expanding it into per-operation elementwise
+        # kernels.
+        #
+        # The binding is limited to the register-dot regime, where the gate
+        # projection lives inside the Triton kernels and the fusion win is
+        # measured: all degrees at ``Cf <= 32`` and ``lmax <= 3`` at
+        # ``Cf = 64``.  The wider shapes are numerically complete through the
+        # operator's batched-matmul form (with hand-written CUDA elementwise
+        # bodies when ``libdeepmd_op_pt.so`` is loaded), but end to end they
+        # lose to the compiler-fused dense expression: the operator boundary
+        # forces its saved tensors and gradient surfaces to materialize,
+        # while the scheduler shares the dense expression's intermediates
+        # with the surrounding graph. The dense path therefore stays in
+        # place there.
+        self.triton_infer_level = triton_infer_level()
+        self.triton_train_level = triton_train_level()
+        self._fused_gated_act = None
+        register_footprint_ok = self.channels <= 32 or (
+            self.channels <= 64 and self.lmax <= 3
+        )
+        if (
+            1 <= self.lmax <= 6
+            and self.mmax == 1
+            and self.layout == "fndc"
+            and activation_function == "silu"
+            and not self.mlp_bias
+            and register_footprint_ok
+            and max(self.triton_infer_level, self.triton_train_level) >= 1
+        ):
+            try:
+                from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+                    fused_gated_activation,
+                )
+
+                self._fused_gated_act = fused_gated_activation
+            except ImportError:
+                self._fused_gated_act = None
+
     def forward(
         self, x: torch.Tensor, gate: torch.Tensor | None = None
     ) -> torch.Tensor:
@@ -184,6 +232,31 @@ class GatedActivation(nn.Module):
         torch.Tensor
             Gated features with the same layout as ``x``.
         """
+        # === Fused path: one kernel per focus stream, self-gated fndc mode ===
+        active_level = (
+            self.triton_train_level if self.training else self.triton_infer_level
+        )
+        if (
+            self._fused_gated_act is not None
+            and gate is None
+            and x.is_cuda
+            and active_level >= 1
+        ):
+            n_focus, n_edge = x.shape[0], x.shape[1]
+            weight = self.gate_linear.weight.view(
+                self.channels, self.n_focus, self.lmax * self.channels
+            )
+            gw = weight.permute(1, 0, 2).contiguous()
+            gwt = weight.permute(1, 2, 0).contiguous()
+            out = self._fused_gated_act(
+                x.reshape(n_focus, n_edge, -1).contiguous(),
+                gw,
+                gwt,
+                self.lmax,
+                self.channels,
+            )
+            return out.view_as(x)
+
         # ``ndfc`` carries the degree axis at position 1; ``nfdc`` and the
         # focus-major ``fndc`` carry it at position 2. Every select/narrow/reshape
         # below is expressed against this single degree axis, so the three layouts

@@ -13,6 +13,9 @@ import json
 import os
 import tempfile
 import zipfile
+from types import (
+    SimpleNamespace,
+)
 
 import numpy as np
 import pytest
@@ -25,12 +28,51 @@ from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
 )
 from deepmd.pt_expt.utils.serialization import (
+    _graph_reads_source_csr,
     _needs_with_comm_artifact,
     _resolve_target_lower_kind,
     _supports_graph_export,
     deserialize_to_file,
     serialize_from_file,
 )
+
+
+def _exported_graph(
+    placeholder_names: tuple[str, ...], used_name: str | None
+) -> SimpleNamespace:
+    """Build the graph surface consumed by ``_graph_reads_source_csr``."""
+    graph = torch.fx.Graph()
+    placeholders = {name: graph.placeholder(name) for name in placeholder_names}
+    graph.output(placeholders[used_name] if used_name is not None else 0)
+    return SimpleNamespace(graph_module=SimpleNamespace(graph=graph))
+
+
+@pytest.mark.parametrize(
+    ("placeholder_names", "used_name", "expected"),
+    [
+        ((), None, True),
+        (("source_order", "source_row_ptr"), "source_order", True),
+        (("source_order", "source_row_ptr"), "source_row_ptr", True),
+        (("source_order", "source_row_ptr"), None, False),
+        (("edge_index", "edge_vec"), None, True),
+    ],
+    ids=[
+        "unrecognized_graph",
+        "source_order_used",
+        "source_row_ptr_used",
+        "source_csr_unused",
+        "source_csr_absent",
+    ],
+)
+def test_graph_reads_source_csr(
+    placeholder_names: tuple[str, ...], used_name: str | None, expected: bool
+) -> None:
+    """Source-CSR metadata follows actual graph users and fails safe."""
+    assert (
+        _graph_reads_source_csr(_exported_graph(placeholder_names, used_name))
+        is expected
+    )
+
 
 # dpa1 with attn_layer == 0 — the energy model exercised by the graph path.
 DPA1_CONFIG = {
@@ -354,6 +396,7 @@ def test_graph_pt2_has_lower_input_kind_graph(dpa1_dpmodel_data) -> None:
         meta = _read_metadata(p)
     assert meta["lower_input_kind"] == "graph"
     assert meta["graph_edge_dtype"] == "float64"
+    assert meta["graph_source_csr"] is True
     # A dynamic edge axis has no persisted static capacity.
     assert "edge_capacity" not in meta
 
