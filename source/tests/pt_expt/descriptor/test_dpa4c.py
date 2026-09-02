@@ -237,6 +237,7 @@ class TestDPA4C:
 
         assert restored.trainable is False
         assert restored.compress
+        assert not tuple(restored.radial_embedding.parameters())
         assert not any(parameter.requires_grad for parameter in restored.parameters())
         torch.testing.assert_close(self._evaluate(restored, self.coord), reference)
 
