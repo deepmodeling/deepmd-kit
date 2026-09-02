@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from deepmd.pt.utils.stat import (
+    _append_missing_type_frames,
     _restore_observed_type_from_file,
     _save_observed_type_to_file,
     collect_observed_types,
@@ -70,6 +71,132 @@ class TestCollectObservedTypes(unittest.TestCase):
         type_map = ["O", "H"]
         result = collect_observed_types(sampled, type_map)
         self.assertEqual(result, ["O"])
+
+
+class _FakeTypePath:
+    """Fake path object that returns in-memory atom types."""
+
+    def __init__(self, real_types: np.ndarray) -> None:
+        self.real_types = real_types
+
+    def load_numpy(self) -> np.ndarray:
+        """Return the stored atom-type array."""
+        return self.real_types
+
+
+class _FakeSetDir:
+    """Fake set directory exposing ``real_atom_types.npy``."""
+
+    def __init__(self, real_types: np.ndarray) -> None:
+        self.real_types = real_types
+
+    def __truediv__(self, name: str) -> _FakeTypePath:
+        """Return a fake path for the atom-type file."""
+        assert name == "real_atom_types.npy"
+        return _FakeTypePath(self.real_types)
+
+
+class _FakeMixedDataSystem:
+    """Minimal mixed-type data system for stat sampling tests."""
+
+    mixed_type = True
+    enforce_type_map = False
+    natoms = 2
+    dirs: list[_FakeSetDir]
+    prefix_sum: list[int]
+
+    def __init__(self) -> None:
+        self.dirs = [_FakeSetDir(np.array([[0, -1], [1, -1], [1, -1]], dtype=np.int32))]
+        self.prefix_sum = [3]
+
+    def get_ntypes(self) -> int:
+        """Return the number of real atom types."""
+        return 2
+
+
+class _FakeMixedDataset:
+    """Minimal PyTorch dataset wrapper for mixed-type stat sampling."""
+
+    data_system: _FakeMixedDataSystem
+
+    def __init__(self, min_pair_distances: tuple[float, ...] = (1.0, 1.0, 1.0)) -> None:
+        self.data_system = _FakeMixedDataSystem()
+        self.min_pair_distances = min_pair_distances
+
+    def __getitem__(self, index: int) -> dict:
+        """Return the representative frame containing the missing type."""
+        atom_type = 0 if index == 0 else 1
+        return {
+            "coord": np.full((6,), index, dtype=np.float32),
+            "atype": np.array([atom_type, -1], dtype=np.int32),
+            "box": np.eye(3, dtype=np.float32).reshape(-1),
+            "real_natoms_vec": np.array(
+                [2, 2, int(atom_type == 0), int(atom_type == 1)], dtype=np.int32
+            ),
+            "min_pair_dist": np.array(
+                [self.min_pair_distances[index]], dtype=np.float64
+            ),
+        }
+
+
+class TestStatSamplingCoverage(unittest.TestCase):
+    """Mixed-type statistics samples should cover all dataset types."""
+
+    def test_append_missing_mixed_type_frame(self) -> None:
+        """Append a representative frame under an explicit CPU device."""
+        with torch.device("cpu"):
+            sys_stat = {
+                "coord": [torch.zeros((1, 6), dtype=torch.float32)],
+                "atype": [torch.tensor([[0, -1]], dtype=torch.int32)],
+                "box": [torch.eye(3, dtype=torch.float32).reshape(1, 9)],
+                "real_natoms_vec": [torch.tensor([[2, 2, 1, 0]], dtype=torch.int32)],
+            }
+
+            _append_missing_type_frames(sys_stat, _FakeMixedDataset())
+
+            self.assertEqual(len(sys_stat["real_natoms_vec"]), 2)
+            sampled_counts = torch.cat(sys_stat["real_natoms_vec"], dim=0)[:, 2:].sum(
+                dim=0
+            )
+            self.assertTrue(torch.all(sampled_counts > 0))
+
+    def test_append_missing_type_uses_later_valid_distance_frame(self) -> None:
+        """Skip a too-close rare-type frame and append a later valid one."""
+        with torch.device("cpu"):
+            sys_stat = {
+                "coord": [torch.zeros((1, 6), dtype=torch.float32)],
+                "atype": [torch.tensor([[0, -1]], dtype=torch.int32)],
+                "box": [torch.eye(3, dtype=torch.float32).reshape(1, 9)],
+                "real_natoms_vec": [torch.tensor([[2, 2, 1, 0]], dtype=torch.int32)],
+            }
+
+            _append_missing_type_frames(
+                sys_stat,
+                _FakeMixedDataset((1.0, 0.1, 0.8)),
+                min_pair_dist=0.5,
+            )
+
+            self.assertEqual(len(sys_stat["real_natoms_vec"]), 2)
+            torch.testing.assert_close(sys_stat["coord"][-1], torch.full((1, 6), 2.0))
+
+    def test_append_missing_type_warns_when_all_frames_are_too_close(self) -> None:
+        """Leave a type uncovered when no representative passes the threshold."""
+        with torch.device("cpu"):
+            sys_stat = {
+                "coord": [torch.zeros((1, 6), dtype=torch.float32)],
+                "atype": [torch.tensor([[0, -1]], dtype=torch.int32)],
+                "box": [torch.eye(3, dtype=torch.float32).reshape(1, 9)],
+                "real_natoms_vec": [torch.tensor([[2, 2, 1, 0]], dtype=torch.int32)],
+            }
+
+            with self.assertLogs("deepmd.pt.utils.stat", level="WARNING"):
+                _append_missing_type_frames(
+                    sys_stat,
+                    _FakeMixedDataset((1.0, 0.1, 0.2)),
+                    min_pair_dist=0.5,
+                )
+
+            self.assertEqual(len(sys_stat["real_natoms_vec"]), 1)
 
 
 class TestObservedTypeStatFile(unittest.TestCase):
