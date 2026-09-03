@@ -860,6 +860,24 @@ def run_neo_phase_a_persistent_complex_backward_fp32(
     )
     for name, tensor, shape, dtype in specs:
         _expect(name, tensor, shape, device, dtype)
+    torch._assert_async(
+        source_ptr[0] == 0,
+        "SM90 Phase-A backward requires source_ptr[0] == 0",
+    )
+    torch._assert_async(
+        source_ptr[-1] == edge_count,
+        "SM90 Phase-A backward requires source_ptr[-1] == edge_count",
+    )
+    if source_ptr.numel() > 1:
+        torch._assert_async(
+            torch.all(source_ptr[1:] >= source_ptr[:-1]),
+            "SM90 Phase-A backward requires nondecreasing source_ptr",
+        )
+    if source_order.numel() != 0:
+        torch._assert_async(
+            torch.all((source_order >= 0) & (source_order < edge_count)),
+            "SM90 Phase-A backward requires source_order entries in [0, E)",
+        )
 
     if outputs is None or workspace is None:
         if outputs is not None or workspace is not None:

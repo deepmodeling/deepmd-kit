@@ -980,12 +980,20 @@ class TestSeZMModelCompile(unittest.TestCase):
                 wraps=edge_cache_module._build_edge_wigner,
             ) as build_edge_wigner,
         ):
+            sorted_edge_index, sorted_edge_vec, sorted_edge_mask, _ = (
+                _sort_edge_tensors_by_destination(
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    edge_index,
+                )
+            )
             cache_sfpg = build_edge_cache_from_edges(
                 type_ebed=type_ebed,
                 atype_flat=atype_loc.reshape(-1),
-                edge_index=edge_index,
-                edge_vec=edge_vec,
-                edge_mask=edge_mask,
+                edge_index=sorted_edge_index,
+                edge_vec=sorted_edge_vec,
+                edge_mask=sorted_edge_mask,
                 compute_dtype=descriptor.compute_dtype,
                 eps=descriptor.eps,
                 deg_norm_floor=descriptor.deg_norm_floor,

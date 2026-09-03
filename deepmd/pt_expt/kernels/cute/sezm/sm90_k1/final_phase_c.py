@@ -37,6 +37,9 @@ from cutlass.cute.runtime import (
 from ..compile_cache import (
     device_aware_lru_cache,
 )
+from ..k1_wigner_layout import (
+    PACKED_VALUE_COUNT,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -53,7 +56,7 @@ CHANNELS = 32
 DEGREE_COUNT = 16
 M0_WIDTH = 128
 M1_WIDTH = 96
-PACKED_WIGNER_VALUES = 46
+PACKED_WIGNER_VALUES = PACKED_VALUE_COUNT
 M0_THREADS = M0_WIDTH
 M1_THREADS = M1_WIDTH * 2
 THREADS = M0_THREADS + M1_THREADS

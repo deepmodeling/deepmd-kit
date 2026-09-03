@@ -337,6 +337,10 @@ def test_qk_manual_adjoint_matches_autograd_with_sparse_edges() -> None:
     k_node = torch.einsum("nfi,ifo->nfo", x_norm, k_weight)
     logits = (q_node[dst.long()] * k_node[src.long()]).sum(dim=-1) * scale
     reference = torch.autograd.grad(logits, x_wide, grad_logits)[0]
+    compile_identity = (
+        torch.cuda.current_device(),
+        *torch.cuda.get_device_capability(device),
+    )
 
     runner = SimpleNamespace(
         so2=SimpleNamespace(
@@ -351,8 +355,11 @@ def test_qk_manual_adjoint_matches_autograd_with_sparse_edges() -> None:
         k_node=k_node.detach().contiguous(),
         src_i32=src,
         dst_i32=dst,
-        qk_edge_backward=compile_neo_qk_edge_backward(scale),
-        qk_node_input_adjoint=compile_neo_qk_node_input_adjoint(eps),
+        qk_edge_backward=compile_neo_qk_edge_backward(scale, compile_identity),
+        qk_node_input_adjoint=compile_neo_qk_node_input_adjoint(
+            eps,
+            compile_identity,
+        ),
     )
     actual = k1._qk_manual_backward(runner, grad_logits)
     torch.cuda.synchronize(device)

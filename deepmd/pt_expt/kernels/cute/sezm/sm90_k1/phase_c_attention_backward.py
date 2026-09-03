@@ -40,6 +40,9 @@ from cutlass.cute.runtime import (
 from ..compile_cache import (
     device_aware_lru_cache,
 )
+from ..k1_wigner_layout import (
+    PACKED_VALUE_COUNT,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -55,7 +58,7 @@ CHANNELS = 32
 DEGREE_COUNT = 16
 M0_WIDTH = 128
 M1_WIDTH = 96
-PACKED_WIGNER_VALUES = 46
+PACKED_WIGNER_VALUES = PACKED_VALUE_COUNT
 MAX_EDGES_PER_NODE = 128
 QK_SCALE = CHANNELS**-0.5
 B0_NODE_VALUES = FOCUS_COUNT * DEGREE_COUNT * M0_WIDTH
@@ -753,6 +756,14 @@ def run_grouped_expanded_final_phase_c_attention_adjoint(
     )
     for name, tensor, shape, dtype in expected_inputs:
         _require_tensor(name, tensor, shape, dtype, device)
+    torch._assert_async(
+        dst_ptr[0] == 0,
+        "SM90 Phase-C backward requires dst_ptr[0] == 0",
+    )
+    torch._assert_async(
+        dst_ptr[-1] == edge_count,
+        "SM90 Phase-C backward requires dst_ptr[-1] == edge_count",
+    )
     if dst_ptr.numel() > 1:
         destination_degrees = dst_ptr[1:] - dst_ptr[:-1]
         torch._assert_async(

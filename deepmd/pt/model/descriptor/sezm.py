@@ -1802,6 +1802,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         torch.Tensor | None,
     ]:
         """Build one per-forward CSR tensor bundle for eligible K1 blocks."""
+        if torch.jit.is_scripting():
+            return None, None, None
         if (
             self.training
             or not edge_cache.destinations_sorted

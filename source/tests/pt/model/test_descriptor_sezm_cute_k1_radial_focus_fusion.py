@@ -8,6 +8,7 @@ from __future__ import (
 
 import unittest
 
+import pytest
 import torch
 
 
@@ -30,6 +31,27 @@ def test_source_csr_preserves_equal_source_order() -> None:
         source_csr.source_order,
         torch.tensor([1, 4, 3, 0, 2, 5], dtype=torch.int32, device="cpu"),
     )
+
+
+@pytest.mark.parametrize("src_values", ([-1, 0], [0, 3]))
+def test_source_csr_rejects_out_of_range_sources(src_values: list[int]) -> None:
+    from deepmd.pt_expt.kernels.cute.sezm.k1_radial_phase_a_node import (
+        build_source_csr,
+    )
+
+    src = torch.tensor(src_values, dtype=torch.int64, device="cpu")
+    with pytest.raises(RuntimeError, match="source indices"):
+        build_source_csr(src, node_count=3)
+
+
+def test_source_csr_eager_validation_reports_value_error() -> None:
+    from deepmd.pt_expt.kernels.cute.sezm.k1_radial_phase_a_node import (
+        build_source_csr,
+    )
+
+    src = torch.tensor([0, 3], dtype=torch.int64, device="cpu")
+    with pytest.raises(ValueError, match="source indices"):
+        build_source_csr(src, node_count=3, validate_sources=True)
 
 
 @unittest.skipUnless(_has_supported_gpu(), "requires an SM80 or SM90 CUDA device")

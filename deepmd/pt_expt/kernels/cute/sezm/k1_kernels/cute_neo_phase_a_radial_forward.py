@@ -346,8 +346,10 @@ def run_neo_phase_a_radial_forward_packed_direct(
         )
     if tuple(radial_degree_mixer.weight.shape) != (4 * 64, 25):
         raise NotImplementedError("collapsed radial mixer expects lmax=3,mmax=1,C=64")
-    if tuple(radial_degree_mixer.channel_basis.shape) != (64,):
-        raise NotImplementedError("collapsed radial mixer expects 64 channel weights")
+    if tuple(radial_degree_mixer.channel_basis.shape) != (1, 64):
+        raise NotImplementedError(
+            "collapsed radial mixer expects a rank-1, 64-channel basis"
+        )
 
     combined_weight = _combined_radial_weight(
         radial_hidden_proj,

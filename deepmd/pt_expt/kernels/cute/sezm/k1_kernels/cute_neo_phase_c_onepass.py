@@ -512,6 +512,19 @@ def run_neo_phase_c_onepass_output_gate(
         raise ValueError("dst_ptr must be on the input CUDA device")
     if dst_ptr.dtype not in (torch.int32, torch.int64):
         raise TypeError(f"dst_ptr must be int32 or int64, got {dst_ptr.dtype}")
+    torch._assert_async(
+        dst_ptr[0] == 0,
+        "Phase-C forward requires dst_ptr[0] == 0",
+    )
+    torch._assert_async(
+        dst_ptr[-1] == edge_count,
+        "Phase-C forward requires dst_ptr[-1] == edge_count",
+    )
+    if dst_ptr.numel() > 1:
+        torch._assert_async(
+            torch.all(dst_ptr[1:] >= dst_ptr[:-1]),
+            "Phase-C forward requires nondecreasing dst_ptr",
+        )
 
     if out is None:
         out = torch.empty(
