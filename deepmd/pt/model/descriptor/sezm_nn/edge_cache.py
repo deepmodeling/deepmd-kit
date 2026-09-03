@@ -28,9 +28,6 @@ from einops import (
 from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
     is_cute_infer_enabled,
 )
-from deepmd.pt_expt.kernels.cute.sezm.so2.metadata import (
-    build_sorted_edge_index_metadata as build_sorted_edge_index_metadata,
-)
 
 from .utils import (
     get_promoted_dtype,

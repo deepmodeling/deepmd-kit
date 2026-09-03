@@ -72,6 +72,11 @@ def _load_extracted_sorted_metadata_function():
     return namespace["build_sorted_edge_index_metadata"]
 
 
+def _load_sorted_metadata_function() -> Any:
+    module = importlib.import_module("deepmd.pt_expt.kernels.cute.sezm.so2.metadata")
+    return module.build_sorted_edge_index_metadata
+
+
 class _FakeDst:
     device = "cuda:0"
     dtype = "int64"
@@ -384,9 +389,7 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
 
     def test_builds_destination_and_indirect_source_csr(self):
         assert torch is not None
-        edge_cache = importlib.import_module(
-            "deepmd.pt.model.descriptor.sezm_nn.edge_cache"
-        )
+        builder = _load_sorted_metadata_function()
         src = torch.tensor(
             [2, 0, 3, 0, 1, 2],
             dtype=torch.int64,
@@ -397,9 +400,7 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
             dtype=torch.int64,
             device="cpu",
         )
-        dst_ptr, source_order, source_ptr = edge_cache.build_sorted_edge_index_metadata(
-            src, dst, 4
-        )
+        dst_ptr, source_order, source_ptr = builder(src, dst, 4)
 
         self.assertEqual(dst_ptr.dtype, torch.int32)
         self.assertEqual(source_order.dtype, torch.int32)
@@ -437,10 +438,8 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
 
     def test_empty_edges_build_valid_zero_csr(self):
         assert torch is not None
-        edge_cache = importlib.import_module(
-            "deepmd.pt.model.descriptor.sezm_nn.edge_cache"
-        )
-        dst_ptr, source_order, source_ptr = edge_cache.build_sorted_edge_index_metadata(
+        builder = _load_sorted_metadata_function()
+        dst_ptr, source_order, source_ptr = builder(
             torch.empty(0, dtype=torch.int64, device="cpu"),
             torch.empty(0, dtype=torch.int64, device="cpu"),
             4,
@@ -509,15 +508,13 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
 
     def test_dynamic_node_and_edge_counts_build_independent_metadata(self):
         assert torch is not None
-        edge_cache = importlib.import_module(
-            "deepmd.pt.model.descriptor.sezm_nn.edge_cache"
-        )
-        first = edge_cache.build_sorted_edge_index_metadata(
+        builder = _load_sorted_metadata_function()
+        first = builder(
             torch.tensor([0, 1, 2], dtype=torch.int64, device="cpu"),
             torch.tensor([0, 1, 2], dtype=torch.int64, device="cpu"),
             4,
         )
-        second = edge_cache.build_sorted_edge_index_metadata(
+        second = builder(
             torch.tensor(
                 [0, 2, 4, 1, 3],
                 dtype=torch.int64,
@@ -553,9 +550,7 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
 
     def test_explicit_tensor_metadata_survives_disabled_so2_boundary(self):
         assert torch is not None
-        edge_cache = importlib.import_module(
-            "deepmd.pt.model.descriptor.sezm_nn.edge_cache"
-        )
+        builder = _load_sorted_metadata_function()
         dynamo = getattr(torch, "_dynamo", None)
         if dynamo is None:
             self.skipTest("torch._dynamo is unavailable")
@@ -616,12 +611,10 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
         )
         for src, dst, node_count in cases:
             cache = self._cache(src, dst, node_count)
-            dst_ptr, source_order, source_ptr = (
-                edge_cache.build_sorted_edge_index_metadata(
-                    src,
-                    dst,
-                    node_count,
-                )
+            dst_ptr, source_order, source_ptr = builder(
+                src,
+                dst,
+                node_count,
             )
             radial = torch.ones(src.numel(), 4, 1, device="cpu")
             args = (

@@ -66,6 +66,9 @@ from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.pt_expt.kernels.cute.sezm import runtime_policy as cute_runtime_policy
+from deepmd.pt_expt.kernels.cute.sezm.so2.metadata import (
+    build_sorted_edge_index_metadata,
+)
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
@@ -107,9 +110,6 @@ from .sezm_nn import (
     nvtx_range,
     safe_norm,
     safe_numpy_to_tensor,
-)
-from .sezm_nn.edge_cache import (
-    build_sorted_edge_index_metadata,
 )
 
 if TYPE_CHECKING:
