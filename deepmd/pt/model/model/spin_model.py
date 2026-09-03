@@ -454,6 +454,17 @@ class SpinModel(torch.nn.Module):
         """Returns whether it has spin input and output."""
         return True
 
+    def export_lower_input_kind(self) -> str:
+        """Return the dense ABI used by the virtual-atom spin model.
+
+        Returns
+        -------
+        str
+            ``"nlist"``, because virtual atoms are expanded inside the
+            bounded neighbor-list contract.
+        """
+        return "nlist"
+
     @torch.jit.export
     def has_message_passing(self) -> bool:
         """Returns whether the model has message passing."""

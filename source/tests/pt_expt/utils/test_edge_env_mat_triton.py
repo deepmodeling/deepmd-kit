@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Graph-native (edge-stream) environment-matrix Triton kernel.
 
-The edge form (:func:`deepmd.kernels.triton.env_mat.edge_env_mat`) is the
+The edge form (:func:`deepmd.pt_expt.kernels.triton.env_mat.edge_env_mat`) is the
 slot-free analogue used only by the pt_expt graph lower: the relative vector
 ``edge_vec`` is given directly (no neighbor gather) and the backward
 differentiates ``edge_vec`` (the graph-path force leaf), so no scatter is
@@ -9,7 +9,8 @@ needed. These tests check parity against the dpmodel reference
 (:func:`deepmd.dpmodel.utils.neighbor_graph.env.edge_env_mat`) in fp32 and fp64,
 including padding (zero-vector) edges, the optionally returned smooth switch
 ``sw`` and its gradient (the strip type-pair gate consumes it), and
-composability under ``make_fx``.
+composability under ``make_fx``. The Triton kernel handles fp32 inference and
+its first-order force derivative; fp64 follows the eager path.
 """
 
 import os
@@ -17,7 +18,7 @@ import unittest
 
 import torch
 
-from deepmd.kernels.triton.env_mat import (
+from deepmd.pt_expt.kernels.triton.env_mat import (
     TRITON_AVAILABLE,
     edge_env_mat,
 )

@@ -418,18 +418,113 @@ Three options control training precision and the compiled path:
 Inference behavior is controlled by environment variables, each with an
 equivalent input-file option used during training validation:
 
-| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------------- | --------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference, independently of `descriptor.use_amp`. Training AMP remains controlled by `descriptor.use_amp`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). `1`: universal fused kernels, numerically equivalent to the dense path with full float32 accumulation. `2`: adds the table-configured fused SO(2) value path and edge-block backward kernels (still exact float32). `3`: additionally runs the SO(2) mixing stack on fp16 tensor cores with split compensation — roughly float32-level accuracy (maximum force deviation about 4e-6 eV/Å on a 4-thousand-atom system) at a substantial speedup; only shapes validated by the tuning sweep are affected. Levels 2 and 3 read launch tables tuned per GPU model (H20 ships built in); on other GPUs the kernels fall back to conservative configurations, and `dp --pt freeze` tunes the missing entries automatically on the local GPU before exporting (a one-off sweep of a few minutes, baked into the `.pt2`). |
+| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                                                                                                                             |
+| -------------------- | --------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                               |
+| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                     |
+| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference, independently of `descriptor.use_amp`. Training AMP remains controlled by `descriptor.use_amp`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                   |
+| `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). Levels `1` and `2` are exact float32; level `3` trades a small accuracy margin for a substantial speedup. Detailed below.                                                                                                              |
+| `DP_CUTILE_INFER`    | —                           | off           | cuTile inference path (CUDA eval only, compatible with `DP_COMPILE_INFER`, mutually exclusive with `DP_TRITON_INFER`). Python inference only, and **not** captured in a frozen `.pt2`. Detailed below.                                                                                                                             |
+| `DP_CUDA_INFER`      | —                           | `0`           | Hand-written CUDA operator level `0`-`2` (CUDA eval only, stacks on top of `DP_TRITON_INFER`). Level `1` is faster on every GPU and checkpoint measured; level `2` additionally offers the fused convolution, which routes itself per checkpoint and falls back to the level-`1` behaviour where it would not pay. Detailed below. |
 
 Accepted boolean values for the other switches are `1`/`true`/`yes`/`on` and
 `0`/`false`/`no`/`off`; `DP_TRITON_INFER` accepts only the numeric levels.
+`DP_TRITON_INFER`, `DP_CUTILE_INFER` and `DP_CUTE_INFER` each select a complete
+accelerated inference path and are mutually exclusive; enabling more than one is
+rejected when the model is constructed.
 Shell exports take precedence over the input-file options and over values
 written in the input; they are read when the model is constructed and changing
 them afterward has no effect.
+
+`DP_TRITON_INFER` selects how much of the descriptor runs in fused Triton
+kernels. Level `1` adds universal fused kernels, numerically equivalent to the
+dense path with full float32 accumulation. Level `2` adds the table-configured
+fused SO(2) value path and the edge-block backward kernels, still in exact
+float32. Level `3` additionally runs the SO(2) mixing stack on fp16 tensor
+cores with split compensation, reaching roughly float32-level accuracy (maximum
+force deviation about 4e-6 eV/Å on a 4-thousand-atom system) at a substantial
+speedup; only shapes validated by the tuning sweep are affected. Levels `2` and
+`3` read launch tables tuned per GPU model, with H20 and RTX PRO 6000 Blackwell
+shipping built in. On other GPUs the kernels fall back to conservative
+configurations, and `dp --pt freeze` tunes the missing entries on the local GPU
+before exporting, a one-off sweep of a few minutes baked into the `.pt2`.
+
+`DP_CUTILE_INFER` replaces the whole SeZM edge pipeline — Wigner monomials,
+rotate-and-mix, the gated SO(2) mixing stack, the attention aggregation and the
+force / virial assembly — with kernels written in the `cuda.tile` DSL. On an
+8-thousand-atom cell it runs about 1.07x faster than `DP_TRITON_INFER=3` at
+1.19x lower peak memory, because the fused stack keeps its inter-layer
+activations off DRAM and recomputes them in the backward. The mixing stack uses
+the same fp16 split-compensated tensor-core arithmetic as Triton level `3` and
+carries the same accuracy caveat; every other kernel is exact float32. Launch
+configurations come from a table tuned per GPU model, with RTX PRO 6000
+Blackwell shipping built in and conservative defaults elsewhere. A convolution
+whose layout it does not support falls back to the dense reference rather than
+to Triton. The kernels are JIT compiled at runtime, so this path serves Python
+inference only and is not captured in a frozen `.pt2`.
+
+`DP_CUDA_INFER` enables hand-written CUDA operators that fuse spans of the SeZM
+descriptor. Unlike the paths above it is not an alternative backend: it stacks
+on top of `DP_TRITON_INFER`, taking over the spans it covers and leaving the
+rest to Triton, so the recommended setting is `DP_TRITON_INFER=3` together with
+`DP_COMPILE_INFER=1`. Every operator is exact float32 with TF32 disabled, and
+the two levels differ in how their profit depends on the GPU:
+
+- Level `1` fuses the spans whose profit is memory traffic, which is a win on
+  every part measured:
+  - the SO(3) grid pair product, `from_grid(to_grid(a) * to_grid(b))`, which
+    every grid operator of the model evaluates. The grid field is up to 39
+    times larger than the coefficient operand that produces it, so keeping it
+    in registers removes hundreds of megabytes of traffic per call;
+  - the geometric initial embedding, whose per-edge message is a
+    `(n_edge, n_coeff - 1, n_channel)` tensor — 1.3 GB at 8 thousand atoms —
+    that is now built in registers and reduced through the neighbour list
+    directly;
+  - the dense Wigner rotation pair, built directly from the edge quaternions
+    as fitted sparse polynomials in one kernel instead of five full passes
+    over the `(n_edge, n_coeff, n_coeff)` matrices;
+  - the cutoff envelope and the radial basis, which the compiler otherwise
+    inlines into every consumer and re-evaluates there.
+- Level `2` additionally fuses the whole per-edge span of the SO(2) convolution
+  — the attention logits and their envelope-gated softmax, the Wigner rotation,
+  the radial degree mixer, the gated mixing stack, the inverse rotation, the
+  attention-weighted destination reduction and the output head gate — into one
+  operator pair, so no per-edge intermediate reaches device memory. It also
+  builds the Wigner rotations from the edge quaternions as a fitted polynomial,
+  which removes the dense per-edge matrices entirely.
+
+The fused convolution trades memory traffic for float32 arithmetic, so its
+profit shrinks as the arithmetic per edge grows. Level `2` therefore routes
+per checkpoint: a convolution block whose per-edge arithmetic exceeds a fixed
+threshold stays on the Triton path, which makes level `2` never slower than
+level `1` and safe to set unconditionally on a part with a large float32 peak.
+Where the convolution is taken over, the fp16x3 GEMMs that `DP_TRITON_INFER=3`
+adds no longer run, and the two Triton levels coincide.
+
+| checkpoint | degree, width | `DP_CUDA_INFER=1` | `DP_CUDA_INFER=2` |    peak, level 2 |
+| ---------- | ------------- | ----------------: | ----------------: | ---------------: |
+| `nano`     | `l1 c32`      |             1.10x |         **1.64x** |  6.2 GiB (1.23x) |
+| `mini`     | `l2 c32`      |             1.29x |         **1.77x** | 10.1 GiB (1.53x) |
+| `neo`      | `l3 c32 F2`   |         **1.12x** |             1.11x | 16.5 GiB (1.53x) |
+| `air`      | `l3 c64`      |         **1.15x** |             1.15x | 27.6 GiB (1.17x) |
+| `plus`     | `l4 c64`      |         **1.12x** |             1.12x | 20.5 GiB (1.33x) |
+| `pro`      | `l5 c64 F2`   |         **1.04x** |             1.04x | 46.8 GiB (1.05x) |
+
+Measured on an RTX PRO 6000 Blackwell against `DP_TRITON_INFER=2` with
+`DP_COMPILE_INFER=1`; from `neo` upward the router declines the convolution and
+the two levels coincide. On an H20, whose float32 peak is a third of this
+part's, the routing threshold would admit no checkpoint, so level `1` is the
+operative setting there. Peak memory falls at both levels and on every
+checkpoint. Maximum force deviation is about 1e-5 eV/Å at either level, from
+the order of summation in the fused reductions. (The `air` benchmark
+configuration is the one exception: its force Jacobian is ill-conditioned on
+large periodic diamond cells, which amplifies rounding-order noise of any
+backend by about a factor of 1e6; the deviation observed there measures the
+checkpoint, not the kernels.)
+
+Both levels are precompiled custom operators that `make_fx` traces, so unlike
+`DP_CUTILE_INFER` they are baked into a frozen `.pt2` and keep their effect when
+it is later loaded by ASE or LAMMPS.
 
 For molecular dynamics and other workflows sensitive to the smoothness of the
 potential energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
@@ -439,14 +534,27 @@ there. `DP_TRITON_INFER` levels `1` and `2` retain full float32 accumulation
 regardless of the precision policy and are therefore safe for those workflows;
 level `3` perturbs forces at the 2^-22 rounding scale (three orders of
 magnitude finer than TF32) and is the recommended fast setting once validated
-for the target system.
+for the target system. `DP_CUTILE_INFER` inherits that same rounding scale
+through its mixing stack and is the faster of the two on Blackwell, at the cost
+of being unavailable to the frozen `.pt2` route.
 
 > [!IMPORTANT]
-> Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
-> an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
-> matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
-> captured into the graph at export time and are **not** re-evaluated when the
-> `.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
+> Set these variables **before** running `dp --pt freeze` or
+> `dp --pt-expt freeze`. The exported `.pt2` is an AOTInductor artifact, so the
+> SO(2) rotation branch (`DP_TRITON_INFER`), the CUDA operator level
+> (`DP_CUDA_INFER`), the matmul precision (`DP_TF32_INFER`), and inference AMP
+> (`DP_AMP_INFER`) are captured into the graph at export time and are **not**
+> re-evaluated when the `.pt2` is later loaded by ASE or LAMMPS.
+> When `DP_TRITON_INFER` and `DP_CUDA_INFER` are unset, freezing uses
+> `DP_TRITON_INFER=2` with `DP_CUDA_INFER=1` rather than the plain `0` of Python
+> inference: that is the fastest combination in which every operator is exact
+> float32, which is what a molecular dynamics archive should default to. The
+> chosen levels and whether each came from the environment or the default are
+> logged at export. A CPU-targeted archive disables GPU-only inference paths
+> and keeps the reference CPU implementation regardless of these settings.
+> `DP_CUTILE_INFER` is the exception:
+> its kernels are JIT compiled at runtime and do not bake into the artifact, so
+> it applies to Python inference only and has no effect on a frozen model. A frozen `.pt2` runs a forward-only
 > package, so training-time memory-saving switches do not apply to it.
 
 ### Hardware selection
@@ -468,7 +576,12 @@ ordinary TorchScript freeze path is not used. Run the standard freeze command:
 dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
-The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`.
+The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`. The
+pt_expt backend uses the same kernel-level policy for a DPA4/SeZM `.pt2`.
+Unless the environment says otherwise, a CUDA archive is built at
+`DP_TRITON_INFER=2` and `DP_CUDA_INFER=1`, the fastest all-float32 combination;
+set either variable to override, for instance `DP_CUDA_INFER=2` on a part with
+a large float32 peak. A CPU archive uses the reference CPU paths.
 
 ### Single GPU
 

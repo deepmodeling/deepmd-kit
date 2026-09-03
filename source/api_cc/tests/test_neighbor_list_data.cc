@@ -274,6 +274,31 @@ TEST(TestEdgeTensorPack, CanonicalizeGraphPayloadIsStableWithinDestination) {
                            torch::tensor({0, 1, 2, 3}, torch::kInt64)));
 }
 
+TEST(TestEdgeTensorPack, CanonicalizeGraphPayloadPreservesCudaDevice) {
+  if (!torch::cuda::is_available()) {
+    GTEST_SKIP() << "CUDA is unavailable";
+  }
+  const auto options = torch::TensorOptions().device(torch::kCUDA);
+  GraphTensorPack graph;
+  graph.edge_index =
+      torch::tensor({{2, 1, 0, 0}, {1, 0, 0, 0}}, options.dtype(torch::kInt64));
+  graph.edge_vec =
+      torch::arange(12, options.dtype(torch::kFloat64)).reshape({4, 3});
+  graph.edge_mask =
+      torch::tensor({true, true, true, false}, options.dtype(torch::kBool));
+
+  canonicalizeGraphPayload(graph, 3);
+
+  EXPECT_TRUE(graph.destination_order.device().is_cuda());
+  EXPECT_TRUE(graph.destination_row_ptr.device().is_cuda());
+  EXPECT_TRUE(graph.source_order.device().is_cuda());
+  EXPECT_TRUE(graph.source_row_ptr.device().is_cuda());
+  EXPECT_TRUE(
+      torch::equal(graph.edge_index.select(0, 0).cpu(),
+                   torch::tensor({1, 0, 2, 0},
+                                 torch::TensorOptions().dtype(torch::kInt64))));
+}
+
 #endif
 
 }  // namespace deepmd

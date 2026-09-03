@@ -454,7 +454,10 @@ def compact_nodes(
     # nodes that go away. Renumbering by a prefix sum keeps the frame blocks
     # contiguous and in order.
     renumber = xp.cumulative_sum(xp.astype(node_mask, xp.int64)) - 1
-    renumber = xp.where(node_mask, renumber, xp.asarray(-1, device=device))
+    # ``full_like`` keeps the sentinel a kernel argument; materializing it as a
+    # 0-dim array with ``asarray`` would copy it from the host, which
+    # synchronizes once per call on the graph-construction hot path.
+    renumber = xp.where(node_mask, renumber, xp.full_like(renumber, -1))
 
     frame_id = frame_id_from_n_node(graph.n_node, n_total=n_total)
     n_node = xp.astype(
@@ -469,7 +472,7 @@ def compact_nodes(
     if bool(xp.any(xp.logical_and(edge_index < 0, graph.edge_mask[None, :]))):
         raise ValueError("cannot compact a node that still carries an edge")
     edge_index = xp.astype(
-        xp.maximum(edge_index, xp.asarray(0, device=device)), graph.edge_index.dtype
+        xp.maximum(edge_index, xp.full_like(edge_index, 0)), graph.edge_index.dtype
     )
 
     compacted = dataclasses.replace(
