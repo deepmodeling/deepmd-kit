@@ -310,6 +310,8 @@ def _compute_model_predict(
             "aparam": aparam,
             "charge_spin": charge_spin,
         }
+        if "grid" in system:
+            model_kwargs["grid"] = system["grid"]
         if spin is not None:
             model_kwargs["spin"] = spin
         sample_predict = model_forward_auto_batch_size(
