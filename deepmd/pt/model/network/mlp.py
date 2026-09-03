@@ -48,7 +48,7 @@ def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
 
 
 @torch.compiler.assume_constant_result
-def _use_k1_compile_visible_linear(
+def _use_so2_compile_visible_linear(
     input_device: torch.device | None = None,
 ) -> bool:
     """Keep the SM80 linear topology stable for one compiled graph."""
@@ -57,7 +57,7 @@ def _use_k1_compile_visible_linear(
     cute_enabled = os.environ.get("DP_CUTE_INFER", "").strip().lower()
     if cute_enabled not in truthy:
         return False
-    thin_enabled = os.environ.get("DP_CUTE_K1_THIN_WRAPPER", "").strip().lower()
+    thin_enabled = os.environ.get("DP_CUTE_SO2_THIN_WRAPPER", "").strip().lower()
     if thin_enabled in falsy:
         return False
     if thin_enabled in truthy:
@@ -250,7 +250,7 @@ class MLPLayer(nn.Module):
             and (self.bias is None or self.bias.dtype == torch.float32)
             and not torch.is_autocast_enabled(xx.device.type)
             and self._deepmd_cute_compile_visible_linear
-            and _use_k1_compile_visible_linear(xx.device)
+            and _use_so2_compile_visible_linear(xx.device)
         ):
             yy = _matmul_bias(xx, self.matrix, self.bias)
         else:

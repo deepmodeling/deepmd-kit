@@ -463,9 +463,9 @@ class TestSeZMModelCompile(unittest.TestCase):
         )
         return coord, atype, box
 
-    def test_neo_cute_flag_is_noop_for_ineligible_model(self) -> None:
-        """An unsupported SeZM shape must remain bit-identical with the flag on."""
-        from deepmd.pt_expt.kernels.cute.sezm import k1 as cute_k1
+    def test_neo_cute_flag_skips_ineligible_kernel(self) -> None:
+        """Reject an unsupported model before entering the per-block CuTe path."""
+        from deepmd.pt_expt.kernels.cute.sezm.so2 import operation as cute_so2
 
         cpu = torch.device("cpu")
         with (
@@ -524,14 +524,14 @@ class TestSeZMModelCompile(unittest.TestCase):
                     clear=False,
                 ),
                 mock.patch.object(
-                    cute_k1,
-                    "maybe_run_cute_k1",
-                    wraps=cute_k1.maybe_run_cute_k1,
+                    cute_so2,
+                    "maybe_run_cute_so2",
+                    wraps=cute_so2.maybe_run_cute_so2,
                 ) as maybe_run,
             ):
                 actual = run_lower()
 
-            self.assertGreater(maybe_run.call_count, 0)
+            self.assertEqual(maybe_run.call_count, 0)
             self.assertEqual(actual.keys(), reference.keys())
             for name, expected in reference.items():
                 if not isinstance(expected, torch.Tensor):
@@ -542,27 +542,27 @@ class TestSeZMModelCompile(unittest.TestCase):
                 )
 
     def test_neo_cute_sort_guard_uses_post_cast_geometry_dtype(self) -> None:
-        """Raw FP64 coordinates do not hide an otherwise eligible FP32 K1."""
+        """Raw FP64 coordinates do not hide an otherwise eligible FP32 SO2."""
         from deepmd.pt.model.model import (
             sezm_model,
         )
 
         descriptor = mock.Mock()
         descriptor.compute_dtype = torch.float32
-        descriptor._packed_wigner_candidate.return_value = True
+        descriptor.is_cute_infer_packed_wigner_candidate.return_value = True
         device = torch.device("cuda")
 
         with mock.patch.object(
             sezm_model, "_neo_cute_infer_enabled", return_value=True
         ):
-            actual = sezm_model._neo_cute_k1_requires_sorted_edges(
+            actual = sezm_model._neo_cute_so2_requires_sorted_edges(
                 descriptor,
                 training=False,
                 device=device,
             )
 
         self.assertTrue(actual)
-        descriptor._packed_wigner_candidate.assert_called_once_with(
+        descriptor.is_cute_infer_packed_wigner_candidate.assert_called_once_with(
             device,
             torch.float32,
             torch.float32,
@@ -748,7 +748,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         object.__setattr__(model, "_embedding_task_buf_order", ("task",))
         object.__setattr__(model, "compiled_dens_compute", local_callable)
         model._dens_compiled = True
-        model._deepmd_cute_k1_state = False
+        model._deepmd_cute_so2_state = False
 
         with (
             mock.patch.dict(
@@ -769,7 +769,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             self.assertIsNone(model._embedding_task_buf_order)
             self.assertIsNone(model.compiled_dens_compute)
             self.assertFalse(model._dens_compiled)
-            self.assertFalse(hasattr(model, "_deepmd_cute_k1_state"))
+            self.assertFalse(hasattr(model, "_deepmd_cute_so2_state"))
             self.assertEqual(sezm_model_module._SEZM_COMPILE_CACHE, {})
             self.assertEqual(sezm_model_module._SEZM_TASK_BUF_ORDER, {})
 

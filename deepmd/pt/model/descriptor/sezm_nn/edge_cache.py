@@ -28,6 +28,9 @@ from einops import (
 from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
     is_cute_infer_enabled,
 )
+from deepmd.pt_expt.kernels.cute.sezm.so2.metadata import (
+    build_sorted_edge_index_metadata as build_sorted_edge_index_metadata,
+)
 
 from .utils import (
     get_promoted_dtype,
@@ -95,6 +98,9 @@ class EdgeFeatureCache(NamedTuple):
         Lazy cache for endpoint CSR views used by segmented accelerated
         operators, keyed by endpoint role (``"dst"`` or ``"src"``). Built once
         per step and shared by every consumer.
+    cute_infer_so2_metadata
+        Optional ``(destination_row_ptr, source_order, source_row_ptr)`` tuple
+        prepared once for the destination-sorted CuTe SO2 path.
     edge_src_gate
         Optional per-edge Source Freeze Propagation Gate (SFPG) weight with
         shape (E, 1). Equals ``eta[src]`` where
@@ -107,7 +113,7 @@ class EdgeFeatureCache(NamedTuple):
         the frozen zone from propagating information along its outgoing
         edges.
     destinations_sorted
-        Host-side provenance indicating that ``dst`` is nondecreasing. CuTe K1
+        Host-side provenance indicating that ``dst`` is nondecreasing. CuTe SO2
         may only consume caches carrying this guarantee.
     D_packed
         Opt-in Neo packed Wigner panel with shape (E, 46). This is kept
@@ -129,6 +135,9 @@ class EdgeFeatureCache(NamedTuple):
     csr_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] | None = None
     edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
+    cute_infer_so2_metadata: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = (
+        None
+    )
     destinations_sorted: bool = False
     D_packed: torch.Tensor | None = None
 
@@ -143,64 +152,6 @@ def _separate_packed_wigner(
     if Dt_full is not D_full:
         raise RuntimeError("packed Wigner forward and transpose must share storage")
     return None, None, D_full
-
-
-def build_sorted_edge_index_metadata(
-    src: torch.Tensor,
-    dst: torch.Tensor,
-    n_nodes: int,
-    *,
-    validate_sorted: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Build destination and source CSR metadata for one sorted edge list."""
-    if src.dim() != 1 or dst.dim() != 1:
-        raise ValueError("src and dst must be one-dimensional")
-    if src.shape != dst.shape:
-        raise ValueError("src and dst must have the same shape")
-    if src.device != dst.device:
-        raise ValueError("src and dst must be on the same device")
-    if src.dtype not in (torch.int32, torch.int64):
-        raise TypeError("src must have dtype int32 or int64")
-    if dst.dtype not in (torch.int32, torch.int64):
-        raise TypeError("dst must have dtype int32 or int64")
-    if n_nodes < 0:
-        raise ValueError("n_nodes must be non-negative")
-    if src.numel() > 2**31 - 1:
-        raise ValueError("sorted edge metadata requires E <= 2**31 - 1")
-
-    src = src.contiguous()
-    dst = dst.contiguous()
-    if validate_sorted and dst.numel() > 1:
-        torch._assert_async(
-            torch.all(dst[1:] >= dst[:-1]),
-            "Neo K1 destinations_sorted=True requires monotonically "
-            "nondecreasing destination indices",
-        )
-    dst_boundaries = torch.arange(
-        n_nodes + 1,
-        device=dst.device,
-        dtype=dst.dtype,
-    )
-    dst_ptr = torch.searchsorted(
-        dst,
-        dst_boundaries,
-        out_int32=True,
-    ).contiguous()
-
-    source_order_i64 = torch.argsort(src, stable=True)
-    sorted_src = src.index_select(0, source_order_i64)
-    src_boundaries = torch.arange(
-        n_nodes + 1,
-        device=src.device,
-        dtype=src.dtype,
-    )
-    source_ptr = torch.searchsorted(
-        sorted_src,
-        src_boundaries,
-        out_int32=True,
-    ).contiguous()
-    source_order = source_order_i64.to(dtype=torch.int32).contiguous()
-    return dst_ptr, source_order, source_ptr
 
 
 def cached_edge_csr(
@@ -446,7 +397,7 @@ def build_edge_cache(
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
     packed_wigner_candidate
-        Whether descriptor-level strict-FP32 K1 checks passed. Concrete edge
+        Whether descriptor-level strict-FP32 SO2 checks passed. Concrete edge
         count and destination ordering are checked before panel generation.
     build_wigner
         Whether to materialize Wigner-D blocks for the SO(2) path.
@@ -621,7 +572,7 @@ def build_edge_cache_from_edges(
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
     packed_wigner_candidate
-        Whether descriptor-level strict-FP32 K1 checks passed. Concrete edge
+        Whether descriptor-level strict-FP32 SO2 checks passed. Concrete edge
         count and destination ordering are checked before panel generation.
     destinations_sorted
         Host-side provenance that ``edge_index[1]`` is nondecreasing.
@@ -767,7 +718,7 @@ def _build_edge_wigner(
         quaternion is returned and the blocks are ``None``; the geometric
         initial embedding reconstructs the zonal coupling from the quaternion.
     packed_wigner
-        Whether the exact packed K1 eligibility contract has passed.
+        Whether the exact packed SO2 eligibility contract has passed.
 
     Returns
     -------
@@ -795,7 +746,7 @@ def _build_edge_wigner(
     if not build_full:
         return None, None, edge_quat
     if packed_wigner:
-        from deepmd.pt_expt.kernels.cute.sezm.k4_wignerd import (
+        from deepmd.pt_expt.kernels.cute.sezm.wignerd import (
             run_cute_wignerd,
         )
 
@@ -819,7 +770,7 @@ def _packed_wigner_edges_eligible(
     runtime_dtypes: tuple[torch.dtype, ...] = (),
 ) -> bool:
     """Finish packed eligibility from scalar shape and provenance metadata."""
-    from deepmd.pt_expt.kernels.cute.sezm.k1 import (
+    from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
         packed_wigner_edges_eligible,
     )
 
@@ -1137,7 +1088,7 @@ def edge_cache_to_dtype(
     # Use local variables with explicit None check and assignment.
     _D_full = cache.D_full
     _Dt_full = cache.Dt_full
-    _D_packed = cache.D_packed
+    cached_D_packed = cache.D_packed
     _edge_src_gate = cache.edge_src_gate
     _edge_quat = cache.edge_quat
     D_full: torch.Tensor | None = None
@@ -1149,8 +1100,8 @@ def edge_cache_to_dtype(
         D_full = _D_full.to(dtype=dtype)
     if _Dt_full is not None:
         Dt_full = _Dt_full.to(dtype=dtype)
-    if _D_packed is not None:
-        D_packed = _D_packed.to(dtype=dtype)
+    if cached_D_packed is not None:
+        D_packed = cached_D_packed.to(dtype=dtype)
     if _edge_src_gate is not None:
         edge_src_gate = _edge_src_gate.to(dtype=dtype)
     if _edge_quat is not None:
@@ -1175,5 +1126,6 @@ def edge_cache_to_dtype(
         csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        cute_infer_so2_metadata=cache.cute_infer_so2_metadata,
         destinations_sorted=cache.destinations_sorted,
     )

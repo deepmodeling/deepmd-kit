@@ -1592,9 +1592,9 @@ class SO2Convolution(NativeOP):
         # attention layout without the optional focus-mix / value / output
         # projections (the deployed DPA4 configuration). Whichever of the
         # mutually exclusive inference gates is active then supplies the
-        # implementation, and ``self._flash_atten_fn`` being bound is what marks
+        # implementation, and ``self.flash_attention`` being bound is what marks
         # the fused path as live. The array-API reference leaves the hook unbound.
-        self._flash_atten_layout_ok = (
+        self.flash_attention_layout_supported = (
             self.n_atten_head > 0
             and self.mmax == 1
             and self.needs_local_frame
@@ -1604,9 +1604,10 @@ class SO2Convolution(NativeOP):
             and self.attn_o_proj is None
             and self.attn_focus_mix is None
         )
-        self._flash_atten_fn = None
-        self._cuda_conv_fn = None
-        self._cached_edge_csr_fn = None
+        self.flash_attention = None
+        self.flash_attention_supports_training = False
+        self.cuda_infer_l_2_conv = None
+        self.edge_csr = None
 
         # === Step 13. Optional fused SO(2) value-path seam ===
         # The fused value path folds the rotate-to-local projection, radial
@@ -1615,20 +1616,20 @@ class SO2Convolution(NativeOP):
         # array-API reference has no such kernel, so it never runs the fused
         # value path: every hook stays ``None`` and ``so2_message`` takes the
         # dense branch. The ``pt_expt`` backend binds the selected implementation.
-        self._triton_value_path = None
-        self._cutile_value_path = None
+        self.triton_infer_l_2_value = None
+        self.cutile_infer_value = None
 
         # === Step 14. Optional fused training seams ===
         # Training differentiates the convolution twice under a force loss, so
         # its accelerated forms carry analytic backward and second-order
         # implementations of their own: one fused operator for the value stream
-        # up to the attention aggregation (``_cuda_value_train``), and the
+        # up to the attention aggregation (``cuda_train_value``), and the
         # segmented attention softmax / flash aggregation pair for the
-        # attention span (``_flash_atten_trains`` marks the bound aggregation
+        # attention span (``flash_attention_supports_training`` marks the bound
+        # aggregation
         # as training-capable). The array-API reference leaves every hook
         # unbound and trains through the dense expression.
-        self._cuda_value_train = None
-        self._flash_atten_trains = False
+        self.cuda_train_value = None
         self.trainable = bool(trainable)
 
     def call(
@@ -1772,23 +1773,25 @@ class SO2Convolution(NativeOP):
         # does not serve the bridging mode, whose source gate reshapes the
         # softmax normalization.
         training = getattr(self, "training", False)
-        run_cuda = (
-            self._cuda_conv_fn is not None
+        run_cuda_infer_l_2 = (
+            self.cuda_infer_l_2_conv is not None
             and not training
             and edge_cache.edge_src_gate is None
         )
-        run_flash = (
-            self._flash_atten_fn is not None
-            and (not training or self._flash_atten_trains)
-            and not run_cuda
+        run_flash_attention = (
+            self.flash_attention is not None
+            and (self.flash_attention_supports_training or not training)
+            and not run_cuda_infer_l_2
         )
-        if run_cuda:
-            return self.forward_attention_cuda(x, edge_cache, radial_feat, x_l0_node)
-        if run_flash:
+        if run_cuda_infer_l_2:
+            return self.forward_attention_cuda_infer_l_2(
+                x, edge_cache, radial_feat, x_l0_node
+            )
+        if run_flash_attention:
             return self.forward_attention_flash(x, edge_cache, radial_feat, x_l0_node)
         return self.forward_attention_dense(x, edge_cache, radial_feat, x_l0_node)
 
-    def forward_attention_cuda(
+    def forward_attention_cuda_infer_l_2(
         self,
         x: Array,
         edge_cache: EdgeCache,
@@ -1824,7 +1827,7 @@ class SO2Convolution(NativeOP):
         xp = array_api_compat.array_namespace(x)
 
         # === Step 1. Projected radial features ===
-        rad_feat = self._cuda_conv_fn.radial_features(
+        rad_feat = self.cuda_infer_l_2_conv.radial_features(
             radial_feat
         )  # (E, lmax+1, C_wide)
 
@@ -1835,7 +1838,9 @@ class SO2Convolution(NativeOP):
         head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
 
         # === Step 4. Fused convolution ===
-        out = self._cuda_conv_fn(x, edge_cache, rad_feat, q_node, k_node, head_gate)
+        out = self.cuda_infer_l_2_conv(
+            x, edge_cache, rad_feat, q_node, k_node, head_gate
+        )
         return xp.astype(out, get_xp_precision(xp, self.precision))
 
     def forward_attention_flash(
@@ -1852,7 +1857,10 @@ class SO2Convolution(NativeOP):
         kernel folds the block-diagonal rotate-back, the inverse-rotation
         rescale, the per-edge weighting and the destination reduction into a
         single atomic-free pass, so the transient rotate-back message and
-        weighted value tensors are never materialized.
+        weighted value tensors are never materialized. The value producer is
+        selected independently inside ``so2_message``: training uses
+        ``cuda_train_value`` when it is bound, while the flash operator remains
+        the aggregation consumer selected by the Triton training gate.
 
         Parameters
         ----------
@@ -1888,14 +1896,14 @@ class SO2Convolution(NativeOP):
         # === Step 4. Fused rotate-back and weighted destination reduction ===
         # The destination CSR view is built once per step and shared by every
         # segment consumer of the graph.
-        if self._cached_edge_csr_fn is None:
+        if self.edge_csr is None:
             raise RuntimeError("The fused attention path requires a CSR builder")
         dst = edge_cache.dst
-        order, row_ptr = self._cached_edge_csr_fn(edge_cache, "dst", x.shape[0])
+        order, row_ptr = self.edge_csr(edge_cache, "dst", x.shape[0])
         rotation = edge_cache.Dt_full
         if rotation is None:
-            rotation = self._cuda_value_train.edge_runs(edge_cache)
-        pre_gate = self._flash_atten_fn(
+            rotation = self.cuda_train_value.edge_runs(edge_cache)
+        pre_gate = self.flash_attention(
             x_local,
             rotation,
             self.rotate_inv_rescale_full,
@@ -2348,22 +2356,22 @@ class SO2Convolution(NativeOP):
         n_edge = src.shape[0]
 
         training = getattr(self, "training", False)
-        if self._cutile_value_path is not None and not training:
+        if self.cutile_infer_value is not None and not training:
             # === Steps 1-5 (fused cuTile operators). ``rotate_mix`` folds the
             # rotation and the radial degree mixing into one edge-parallel
             # kernel writing the focus-major layout; ``mixing_stack`` runs the
             # whole gated stack, keeping the inter-layer activations and the
             # gated-layer pre-activations off the traced graph entirely. ===
-            x_local, rad_feat = self._cutile_value_path(x, edge_cache, radial_feat)
-        elif self._cuda_value_train is not None and training:
+            x_local, rad_feat = self.cutile_infer_value(x, edge_cache, radial_feat)
+        elif self.cuda_train_value is not None and training:
             # === Steps 1-5 (one CUDA kernel, training). The whole value
             # stream up to the attention aggregation runs in a single launch
             # with analytic backward and second order; only the backward
             # anchors reach device memory. ===
-            if self._cached_edge_csr_fn is not None:
-                self._cached_edge_csr_fn(edge_cache, "src", x.shape[0])
-            x_local, rad_feat = self._cuda_value_train(x, edge_cache, radial_feat)
-        elif self._triton_value_path is not None and not training:
+            if self.edge_csr is not None:
+                self.edge_csr(edge_cache, "src", x.shape[0])
+            x_local, rad_feat = self.cuda_train_value(x, edge_cache, radial_feat)
+        elif self.triton_infer_l_2_value is not None and not training:
             # === Steps 1-5 (fused Triton operators). ``so2_rotate_mix`` folds
             # the rotation and the radial degree mixing into one edge-parallel
             # kernel writing the focus-major layout; ``so2_mixing_stack`` runs
@@ -2371,9 +2379,9 @@ class SO2Convolution(NativeOP):
             # final store, keeping the inter-layer activations off the traced
             # graph. The rotate-mix backward reduces through the source CSR
             # view, which is built once per step and kept on the edge cache. ===
-            if self._cached_edge_csr_fn is not None:
-                self._cached_edge_csr_fn(edge_cache, "src", x.shape[0])
-            x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
+            if self.edge_csr is not None:
+                self.edge_csr(edge_cache, "src", x.shape[0])
+            x_local, rad_feat = self.triton_infer_l_2_value(x, edge_cache, radial_feat)
         else:
             # === Steps 1-3. Rotation, radial mixing and the focus-major cast ===
             x_local, rad_feat = self._rotate_mix(x, edge_cache, radial_feat)

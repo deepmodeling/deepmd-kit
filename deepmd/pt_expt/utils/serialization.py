@@ -1456,7 +1456,7 @@ def _prepare_dpa4_triton_value_path_weights(
     if not _uses_dpa4_kernel_defaults(model_data):
         return
     if not any(
-        getattr(module, "_triton_value_path", None) is not None
+        getattr(module, "triton_infer_l_2_value", None) is not None
         for module in model.modules()
     ):
         return
@@ -1766,9 +1766,9 @@ def _trace_and_export_impl(
     force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
         if isinstance(module, SO2Linear):
-            module._force_block_diag_matmul = force_block_diag
+            module.force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
-            module._force_fused_scatter = force_fused_scatter
+            module.force_cuda_infer_l_1_scatter = force_fused_scatter
 
     if lower_kind == "graph" and not _supports_graph_export(model):
         raise NotImplementedError(

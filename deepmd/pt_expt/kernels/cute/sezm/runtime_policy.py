@@ -23,13 +23,13 @@ OUTPUT_GRID_SM90_C96_ASYMMETRIC_PANELS_ENV = (
     "DP_CUTE_OUTPUT_GRID_SM90_C96_ASYMMETRIC_PANELS"
 )
 READOUT_INPUT_FOLD_SM90_ENV = "DP_CUTE_READOUT_INPUT_FOLD_SM90"
-SUPPORTED_K1_CAPABILITIES = SM80_PROFILE_CAPABILITIES | frozenset(
+SUPPORTED_SO2_CAPABILITIES = SM80_PROFILE_CAPABILITIES | frozenset(
     {(8, 9), (9, 0), (10, 0), (12, 0)}
 )
 _GIE_DEFAULT_CAPABILITIES = SM80_PROFILE_CAPABILITIES
 INT32_MAX = (1 << 31) - 1
-K1_VALUES_PER_EDGE = 10 * 64
-K1_VALUES_PER_NODE = 16 * 64
+SO2_VALUES_PER_EDGE = 10 * 64
+SO2_VALUES_PER_NODE = 16 * 64
 PORTABLE_TILED_BACKEND = "portable_tiled"
 PYTORCH_BACKEND = "pytorch"
 SUPPORTED_HIDDEN_CHANNELS = (96, 192)
@@ -129,12 +129,12 @@ def _profile_or_explicit_feature(
 
 
 @torch.compiler.assume_constant_result
-def is_k1_thin_wrapper_enabled(
+def is_so2_thin_wrapper_enabled(
     compute_capability: tuple[int, int] | None = None,
 ) -> bool:
-    """Select compile-visible K1 dispatch for the SM80 profile."""
+    """Select compile-visible SO2 dispatch for the SM80 profile."""
     return _profile_or_explicit_feature(
-        "DP_CUTE_K1_THIN_WRAPPER",
+        "DP_CUTE_SO2_THIN_WRAPPER",
         compute_capability,
     )
 
@@ -213,22 +213,22 @@ def is_readout_input_fold_enabled(
     ) or is_readout_input_fold_sm90_enabled(compute_capability)
 
 
-def is_supported_k1_capability(compute_capability: tuple[int, int]) -> bool:
-    """Return whether K1 supports this compute capability."""
-    return tuple(compute_capability) in SUPPORTED_K1_CAPABILITIES
+def is_supported_so2_capability(compute_capability: tuple[int, int]) -> bool:
+    """Return whether SO2 supports this compute capability."""
+    return tuple(compute_capability) in SUPPORTED_SO2_CAPABILITIES
 
 
-def k1_int32_indexing_is_safe(
+def so2_int32_indexing_is_safe(
     *,
     edge_count: int,
     node_count: int,
 ) -> bool:
-    """Check every flattened K1 offset represented with signed Int32."""
+    """Check every flattened SO2 offset represented with signed Int32."""
     if edge_count < 0 or node_count < 0:
         return False
     return (
-        edge_count <= INT32_MAX // K1_VALUES_PER_EDGE
-        and node_count <= INT32_MAX // K1_VALUES_PER_NODE
+        edge_count <= INT32_MAX // SO2_VALUES_PER_EDGE
+        and node_count <= INT32_MAX // SO2_VALUES_PER_NODE
     )
 
 
@@ -266,21 +266,21 @@ def is_gie_enabled(compute_capability: tuple[int, int]) -> bool:
 
 
 def is_packed_wigner_enabled(compute_capability: tuple[int, int]) -> bool:
-    """Select packed Wigner storage required by the optimized K1 profiles."""
+    """Select packed Wigner storage required by the optimized SO2 profiles."""
     return _master_gated_feature(
-        "DP_CUTE_K1_PACKED_WIGNER",
-        default=compute_capability in SUPPORTED_K1_CAPABILITIES,
+        "DP_CUTE_SO2_PACKED_WIGNER",
+        default=compute_capability in SUPPORTED_SO2_CAPABILITIES,
     )
 
 
 @torch.compiler.assume_constant_result
-def is_k1_eager_island_enabled(
+def is_so2_eager_island_enabled(
     compute_capability: tuple[int, int] | None = None,
 ) -> bool:
-    """Select the SM80 neighbor-list eager island for the Neo K1 path."""
+    """Select the SM80 neighbor-list eager island for the Neo SO2 path."""
     if not is_cute_infer_enabled():
         return False
-    override = _env_override("DP_CUTE_K1_EAGER_ISLANDS")
+    override = _env_override("DP_CUTE_SO2_EAGER_ISLANDS")
     if override is not None:
         return override
     if compute_capability is None:

@@ -258,7 +258,7 @@ both graphs.  The options are:
 * ``triton.cudagraphs=False``
       cudagraphs capture autograd metadata only once.  Higher-order
       gradients need fresh metadata per call, so cudagraphs would feed
-      stale autograd state into the second backward. Packed K1 also retains
+      stale autograd state into the second backward. Packed SO2 also retains
       Python-owned forward state, so direct graph capture remains disabled.
 * ``max_fusion_size=DP_FUSION_SIZE`` (default 8)
       Caps kernel fusion complexity so Inductor's scheduler does not
@@ -549,10 +549,10 @@ def _neo_cute_nlist_eager_island_enabled(device: torch.device) -> bool:
     except RuntimeError:
         return False
     from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
-        is_k1_eager_island_enabled,
+        is_so2_eager_island_enabled,
     )
 
-    return is_k1_eager_island_enabled(compute_capability)
+    return is_so2_eager_island_enabled(compute_capability)
 
 
 @torch.compiler.disable
@@ -610,13 +610,13 @@ def _build_neo_neighbor_list(
     )
 
 
-def _neo_cute_k1_requires_sorted_edges(
+def _neo_cute_so2_requires_sorted_edges(
     descriptor: Any,
     *,
     training: bool,
     device: torch.device,
 ) -> bool:
-    """Return whether this descriptor can consume packed destination-sorted K1.
+    """Return whether this descriptor can use packed Wigner-D on sorted edges.
 
     ``forward_with_edges`` promotes coordinates and edge vectors to the
     descriptor compute dtype before constructing Wigner data.  Mirror that
@@ -626,7 +626,7 @@ def _neo_cute_k1_requires_sorted_edges(
     return bool(
         not training
         and _neo_cute_infer_enabled()
-        and descriptor._packed_wigner_candidate(
+        and descriptor.is_cute_infer_packed_wigner_candidate(
             device,
             compute_dtype,
             compute_dtype,
@@ -921,20 +921,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         module._core_compute_pending_compile_t0 = None
         module._core_compute_pending_compile_key = None
         module._dens_pending_compile_t0 = None
-        k1_invalidator = None
+        so2_invalidator = None
         for child in module.modules():
             if not (
-                hasattr(child, "_deepmd_cute_k1_state")
+                hasattr(child, "_deepmd_cute_so2_state")
                 or hasattr(child, "_deepmd_cute_gate_expand_contract")
             ):
                 continue
-            if k1_invalidator is None:
-                from deepmd.pt_expt.kernels.cute.sezm.k1 import (
-                    invalidate_cute_k1_state,
+            if so2_invalidator is None:
+                from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+                    invalidate_cute_so2_state,
                 )
 
-                k1_invalidator = invalidate_cute_k1_state
-            k1_invalidator(child)
+                so2_invalidator = invalidate_cute_so2_state
+            so2_invalidator(child)
         # Shared callables can contain make_fx get_attr constants, including
         # prepared CuTe readout folds. A checkpoint load therefore invalidates
         # the process-level cache as well as this instance's local slots.
@@ -1663,7 +1663,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         descriptor_model = self.atomic_model.descriptor
 
         # === Step 1. Establish the force-autograd endpoint ===
-        sort_edges_by_dst = _neo_cute_k1_requires_sorted_edges(
+        sort_edges_by_dst = _neo_cute_so2_requires_sorted_edges(
             descriptor_model,
             training=self.training,
             device=edge_vec.device,
@@ -1928,7 +1928,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         descriptor_model = self.atomic_model.descriptor
 
         # === Step 1. Build compact sparse edges ===
-        sort_edges_by_dst = _neo_cute_k1_requires_sorted_edges(
+        sort_edges_by_dst = _neo_cute_so2_requires_sorted_edges(
             descriptor_model,
             training=self.training,
             device=extended_coord.device,
@@ -2153,7 +2153,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             )
             return
 
-        # Register Python-owned K1 state before make_fx starts. The opt-in thin
+        # Register Python-owned SO2 state before make_fx starts. The opt-in thin
         # path can then keep adjacent linears in this graph while the CuTe work
         # remains opaque behind its existing custom op.
         from deepmd.pt_expt.kernels.cute.sezm import (
@@ -2166,7 +2166,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             else None
         )
         if not self.training and cute_runtime_policy.is_cute_infer_enabled():
-            from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
+            from deepmd.pt_expt.kernels.cute.sezm.output_grid.readout_l0 import (
                 maybe_prepare_sm80_readout_input_fold,
             )
 
@@ -2174,24 +2174,24 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 self.atomic_model.descriptor.output_ffn,
                 compute_capability,
             )
-        prepared_cute_k1 = False
+        prepared_cute_so2 = False
         if (
             not self.training
             and compute_capability is not None
             and cute_runtime_policy.is_cute_infer_enabled()
-            and cute_runtime_policy.is_supported_k1_capability(compute_capability)
+            and cute_runtime_policy.is_supported_so2_capability(compute_capability)
         ):
-            from deepmd.pt_expt.kernels.cute.sezm.k1 import (
-                prepare_cute_k1_blocks,
+            from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+                prepare_cute_so2_blocks,
             )
 
-            prepared_cute_k1 = prepare_cute_k1_blocks(
+            prepared_cute_so2 = prepare_cute_so2_blocks(
                 self.atomic_model.descriptor.blocks,
                 training=self.training,
                 device=coord.device,
                 dtype=coord.dtype,
             )
-        if prepared_cute_k1 and cute_runtime_policy.is_k1_thin_wrapper_enabled(
+        if prepared_cute_so2 and cute_runtime_policy.is_so2_thin_wrapper_enabled(
             compute_capability
         ):
             from ..network.mlp import (
@@ -3116,7 +3116,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             edge_schema.edge_scatter_index,
         )
         should_sort = (
-            _neo_cute_k1_requires_sorted_edges(
+            _neo_cute_so2_requires_sorted_edges(
                 self.atomic_model.descriptor,
                 training=self.training,
                 device=extended_coord.device,

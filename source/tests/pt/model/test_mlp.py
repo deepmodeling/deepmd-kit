@@ -89,7 +89,7 @@ class TestMLPLayer(unittest.TestCase):
             ml1 = MLPLayer.deserialize(ml.serialize())
             model = torch.jit.script(ml1)
 
-    def test_thin_k1_eval_linear_traces_without_addmm(self) -> None:
+    def test_thin_so2_eval_linear_traces_without_addmm(self) -> None:
         from torch.fx.experimental.proxy_tensor import (
             make_fx,
         )
@@ -107,7 +107,7 @@ class TestMLPLayer(unittest.TestCase):
         value = torch.randn(7, 5, device=env.DEVICE, dtype=torch.float32)
         environment = {
             "DP_CUTE_INFER": "1",
-            "DP_CUTE_K1_THIN_WRAPPER": "1",
+            "DP_CUTE_SO2_THIN_WRAPPER": "1",
         }
 
         with mock.patch.dict(os.environ, environment, clear=False):
@@ -127,7 +127,7 @@ class TestMLPLayer(unittest.TestCase):
         self.assertIn(torch.ops.aten.mm.default, targets)
         self.assertNotIn(torch.ops.aten.addmm.default, targets)
 
-    def test_thin_k1_eval_linear_is_scoped_to_marked_model(self) -> None:
+    def test_thin_so2_eval_linear_is_scoped_to_marked_model(self) -> None:
         layer = MLPLayer(
             5,
             8,
@@ -140,7 +140,7 @@ class TestMLPLayer(unittest.TestCase):
         value = torch.randn(7, 5, device=env.DEVICE, dtype=torch.float32)
         environment = {
             "DP_CUTE_INFER": "1",
-            "DP_CUTE_K1_THIN_WRAPPER": "1",
+            "DP_CUTE_SO2_THIN_WRAPPER": "1",
         }
 
         with (
@@ -156,7 +156,7 @@ class TestMLPLayer(unittest.TestCase):
         expected = mlp_module.F.linear(value, layer.matrix.t(), layer.bias)
         torch.testing.assert_close(actual, expected)
 
-    def test_thin_k1_linear_defaults_on_only_for_sm80(self) -> None:
+    def test_thin_so2_linear_defaults_on_only_for_sm80(self) -> None:
         with (
             mock.patch.dict(
                 os.environ,
@@ -166,21 +166,21 @@ class TestMLPLayer(unittest.TestCase):
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(torch.cuda, "get_device_capability", return_value=(8, 0)),
         ):
-            self.assertTrue(mlp_module._use_k1_compile_visible_linear())
+            self.assertTrue(mlp_module._use_so2_compile_visible_linear())
 
         with (
             mock.patch.dict(
                 os.environ,
                 {
                     "DP_CUTE_INFER": "1",
-                    "DP_CUTE_K1_THIN_WRAPPER": "0",
+                    "DP_CUTE_SO2_THIN_WRAPPER": "0",
                 },
                 clear=True,
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
             mock.patch.object(torch.cuda, "get_device_capability", return_value=(8, 0)),
         ):
-            self.assertFalse(mlp_module._use_k1_compile_visible_linear())
+            self.assertFalse(mlp_module._use_so2_compile_visible_linear())
 
 
 class TestMLP(unittest.TestCase):

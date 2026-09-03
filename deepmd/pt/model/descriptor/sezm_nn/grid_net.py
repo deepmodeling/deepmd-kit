@@ -714,7 +714,7 @@ class BaseGridNet(nn.Module):
         # transposed so both matrices are read row-major by grid point.
         # The operator is instantiated per coefficient-slot count, which this
         # projector fixes, so the choice is made once here rather than per call.
-        self._grid_pair_fn = None
+        self.cuda_infer_l_1_grid_pair = None
         if (
             cuda_infer_level() >= 1
             and self.projector.to_grid_mat.dtype is torch.float32
@@ -727,7 +727,7 @@ class BaseGridNet(nn.Module):
 
             slots = int(self.projector.to_grid_mat.shape[1])
             if op_available() and slots in SUPPORTED_SLOTS:
-                self._grid_pair_fn = grid_pair
+                self.cuda_infer_l_1_grid_pair = grid_pair
         # The training form differentiates the same expression inside the
         # force graph: a Triton tensor-core sandwich (grid-axis blocks, one
         # resident output tile) with analytic first and second order, one
@@ -738,7 +738,7 @@ class BaseGridNet(nn.Module):
         # dense section is small and the operator's dispatch chain costs
         # more than its kernels save on the host-bound configurations, so
         # the narrow grids stay with the compiler.
-        self._grid_pair_train_fn = None
+        self.triton_train_l_1_grid_pair = None
         if (
             triton_train_level() >= 1
             and self.projector.to_grid_mat.dtype is torch.float32
@@ -750,7 +750,7 @@ class BaseGridNet(nn.Module):
             )
 
             if GRID_PAIR_TRITON_AVAILABLE:
-                self._grid_pair_train_fn = grid_pair_train
+                self.triton_train_l_1_grid_pair = grid_pair_train
         self.register_buffer(
             "_from_grid_t",
             self.projector.from_grid_mat.transpose(0, 1).contiguous(),
@@ -839,7 +839,7 @@ class BaseGridNet(nn.Module):
         because materializing a scalar-only fallback grid would be slower than
         that fused operator.
         """
-        if self._grid_pair_fn is not None and not self.training:
+        if self.cuda_infer_l_1_grid_pair is not None and not self.training:
             return self._slice_scalar_layout(self.forward(query, context))
         return self._forward(query, context, scalar_only=True)
 
@@ -1057,22 +1057,8 @@ class BaseGridNet(nn.Module):
         c_wide = left.shape[3] // self.n_frames
         if c_wide % 32 != 0 or left.shape != right.shape:
             return None
-        if (
-            not self.training
-            and cute_runtime_policy.is_cute_infer_enabled()
-            and _inference_mode_is_frozen(self)
-        ):
-            from deepmd.pt_expt.kernels.cute.sezm.output_grid_product import (
-                maybe_run_cute_output_grid_product,
-            )
-
-            candidate = maybe_run_cute_output_grid_product(
-                left,
-                right,
-                self.projector.to_grid_mat,
-                self.projector.from_grid_mat,
-                n_frames=self.n_frames,
-            )
+        if not self.training:
+            candidate = self.run_cute_infer_grid_pair(left, right)
             if candidate is not None:
                 return candidate
         if self.training:
@@ -1081,26 +1067,63 @@ class BaseGridNet(nn.Module):
             # operator carries an autocast rule, so under AMP it runs the
             # same bf16-with-fp32-accumulation regime as the dense einsum
             # composition it replaces.
-            if self._grid_pair_train_fn is None:
+            if self.triton_train_l_1_grid_pair is None:
                 return None
-            return self._grid_pair_train_fn(
+            return self.triton_train_l_1_grid_pair(
                 left,
                 right,
                 self.projector.to_grid_mat,
                 self._from_grid_t,
                 self.n_frames,
             )
-        if self._grid_pair_fn is None or left.shape[2] != 1:
+        if self.cuda_infer_l_1_grid_pair is None or left.shape[2] != 1:
             return None
         n_batch, coeff_dim = left.shape[0], left.shape[1]
         flat_p = coeff_dim * self.n_frames
-        out = self._grid_pair_fn(
+        out = self.cuda_infer_l_1_grid_pair(
             left.reshape(n_batch, flat_p, c_wide),
             right.reshape(n_batch, flat_p, c_wide),
             self.projector.to_grid_mat,
             self._from_grid_t,
         )
         return out.reshape(n_batch, coeff_dim, 1, self.n_frames * c_wide)
+
+    def run_cute_infer_grid_pair(
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """Run the CuTe grid product when its exact inference contract matches.
+
+        Parameters
+        ----------
+        left : torch.Tensor
+            Left coefficient operand with shape ``(N, D, F, n_frames * C)``.
+        right : torch.Tensor
+            Right coefficient operand with the same shape as ``left``.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coefficient result with the same shape as ``left``, or ``None``
+            when the exact CuTe contract is not satisfied.
+        """
+        if (
+            not cute_runtime_policy.is_cute_infer_enabled()
+            or not _inference_mode_is_frozen(self)
+        ):
+            return None
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid.product import (
+            maybe_run_cute_output_grid_product,
+        )
+
+        return maybe_run_cute_output_grid_product(
+            left,
+            right,
+            self.projector.to_grid_mat,
+            self.projector.from_grid_mat,
+            n_frames=self.n_frames,
+        )
 
     def _project_pair_in_one_transform(
         self,

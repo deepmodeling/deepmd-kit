@@ -566,7 +566,7 @@ class TestSeZMTritonRadialMix(unittest.TestCase):
             with self.subTest(lmax=lmax):
                 mixer = self._mixer(lmax)
                 # Force the dense scatter path regardless of the ambient flag.
-                mixer._radial_mix_block = None
+                mixer.triton_l_1_radial_mix = None
                 x_local, radial_feat, compact = self._inputs(mixer, seed=lmax)
                 with torch.no_grad():
                     module_out = mixer(x_local, radial_feat)
@@ -898,7 +898,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         conv = self._build_conv(*self.CASES[1]).cpu()
         value_path = make_triton_value_path(conv)
         self.assertIsNotNone(value_path)
-        conv._triton_value_path = value_path
+        conv.triton_infer_l_2_value = value_path
 
         buffer_names = (
             "_triton_w0_all",
@@ -1056,7 +1056,7 @@ class TestSeZMTritonWignerMonomials(unittest.TestCase):
                         .to("cuda")
                         .eval()
                     )
-                self.assertTrue(fused_calc._use_triton_monomials)
+                self.assertTrue(fused_calc.triton_infer_l_1_monomials)
                 got, got_t = fused_calc(q)
                 want, want_t = ref_calc(q)
                 torch.testing.assert_close(got, want, atol=1e-5, rtol=1e-5)

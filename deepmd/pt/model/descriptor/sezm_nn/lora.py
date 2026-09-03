@@ -490,17 +490,17 @@ def _clear_sezm_compile_cache(model: nn.Module) -> None:
     from deepmd.pt.model.model.sezm_model import (
         _clear_shared_sezm_compile_cache,
     )
-    from deepmd.pt_expt.kernels.cute.sezm.k1 import (
-        invalidate_cute_k1_state,
+    from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+        invalidate_cute_so2_state,
     )
 
     readout_invalidator = None
 
     for m in model.modules():
-        invalidate_cute_k1_state(m)
+        invalidate_cute_so2_state(m)
         if hasattr(m, "_neo_sm80_readout_input_fold_cache"):
             if readout_invalidator is None:
-                from deepmd.pt_expt.kernels.cute.sezm.readout_l0 import (
+                from deepmd.pt_expt.kernels.cute.sezm.output_grid.readout_l0 import (
                     invalidate_neo_readout_input_fold,
                 )
 
