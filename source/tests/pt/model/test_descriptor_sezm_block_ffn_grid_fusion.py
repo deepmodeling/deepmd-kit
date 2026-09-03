@@ -22,7 +22,6 @@ from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
 def test_single_branch_bypasses_router_and_accepts_fused_middle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_CUTE_INFER", "1")
     branch = (
         GridBranch(
             channels=2,
@@ -57,7 +56,7 @@ def test_single_branch_bypasses_router_and_accepts_fused_middle(
         torch.randn(2, 1, 4, device="cpu"),
         to_grid=lambda value: value,
         from_grid=lambda value: value,
-        grid_product=fused_middle,
+        pair_grid=fused_middle,
     )
 
     assert calls == 1
@@ -67,7 +66,6 @@ def test_single_branch_bypasses_router_and_accepts_fused_middle(
 def test_single_branch_keeps_pytorch_middle_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DP_CUTE_INFER", "1")
     branch = (
         GridBranch(
             channels=2,
@@ -80,11 +78,15 @@ def test_single_branch_keeps_pytorch_middle_fallback(
         .to("cpu")
         .eval()
     )
-    monkeypatch.setattr(
-        branch.router,
-        "forward",
-        lambda value: pytest.fail("single-branch router must not run"),
-    )
+    original_forward = branch.router.forward
+    router_calls = 0
+
+    def tracked_router(value: torch.Tensor) -> torch.Tensor:
+        nonlocal router_calls
+        router_calls += 1
+        return original_forward(value)
+
+    monkeypatch.setattr(branch.router, "forward", tracked_router)
     calls = {"to_grid": 0, "from_grid": 0}
 
     def to_grid(value: torch.Tensor) -> torch.Tensor:
@@ -105,10 +107,11 @@ def test_single_branch_keeps_pytorch_middle_fallback(
     )
 
     assert calls == {"to_grid": 2, "from_grid": 1}
+    assert router_calls == 1
     assert out.shape == left.shape
 
 
-def test_single_branch_opt_in_matches_routed_result(
+def test_single_branch_fused_pair_matches_routed_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     branch = (
@@ -135,7 +138,6 @@ def test_single_branch_opt_in_matches_routed_result(
         return original_forward(value)
 
     monkeypatch.setattr(branch.router, "forward", tracked_router)
-    monkeypatch.delenv("DP_CUTE_INFER", raising=False)
     routed = branch(
         left,
         right,
@@ -143,13 +145,13 @@ def test_single_branch_opt_in_matches_routed_result(
         to_grid=lambda value: value,
         from_grid=lambda value: value,
     )
-    monkeypatch.setenv("DP_CUTE_INFER", "1")
     shortcut = branch(
         left,
         right,
         scalar_pair,
         to_grid=lambda value: value,
         from_grid=lambda value: value,
+        pair_grid=lambda lhs, rhs: lhs * rhs,
     )
 
     assert router_calls == 1
@@ -186,7 +188,7 @@ def test_multi_branch_preserves_softmax_router(
         torch.randn(2, 1, 4, device="cpu"),
         to_grid=lambda value: value,
         from_grid=lambda value: value,
-        grid_product=lambda left, right: pytest.fail(
+        pair_grid=lambda left, right: pytest.fail(
             "multi-branch routing must keep the generic path"
         ),
     )
@@ -196,7 +198,7 @@ def test_multi_branch_preserves_softmax_router(
     assert torch.isfinite(out).all()
 
 
-def test_single_branch_training_preserves_router_zero_gradient(
+def test_single_branch_training_uses_frozen_router_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     branch = (
@@ -231,20 +233,15 @@ def test_single_branch_training_preserves_router_zero_gradient(
         torch.randn(2, 1, 4, device="cpu"),
         to_grid=lambda value: value,
         from_grid=lambda value: value,
-        grid_product=lambda left, right: pytest.fail(
-            "training must keep the generic router path"
-        ),
     )
     out.sum().backward()
 
     assert softmax_calls == 1
-    assert branch.router.weight.grad is not None
-    assert torch.count_nonzero(branch.router.weight.grad) == 0
+    assert branch.router.weight.grad is None
+    assert left.grad is not None
 
 
-def test_single_branch_eval_with_trainable_parameters_preserves_router_gradient(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_single_branch_eval_with_trainable_parameters_uses_router_fallback() -> None:
     branch = (
         GridBranch(
             channels=2,
@@ -264,19 +261,15 @@ def test_single_branch_eval_with_trainable_parameters_preserves_router_gradient(
         torch.randn(2, 1, 4, device="cpu"),
         to_grid=lambda value: value,
         from_grid=lambda value: value,
-        grid_product=lambda left, right: pytest.fail(
-            "trainable eval must preserve the generic router path"
-        ),
     )
     out.sum().backward()
 
-    assert branch.router.weight.grad is not None
-    assert torch.count_nonzero(branch.router.weight.grad) == 0
+    assert branch.router.weight.grad is None
+    assert left.grad is not None
 
 
 @pytest.mark.parametrize("training", (False, True))
-def test_grid_net_with_trainable_parameters_does_not_offer_fused_product(
-    monkeypatch: pytest.MonkeyPatch,
+def test_grid_net_with_trainable_parameters_keeps_differentiable_path(
     training: bool,
 ) -> None:
     net = S2GridNet(
@@ -294,13 +287,6 @@ def test_grid_net_with_trainable_parameters_does_not_offer_fused_product(
         seed=23,
     ).to("cpu")
     net.train(training)
-    monkeypatch.setattr(
-        net,
-        "_grid_product",
-        lambda left, right: pytest.fail(
-            "trainable grid net must not offer its first-order-only fused product"
-        ),
-    )
 
     query = torch.randn(2, 4, 1, 4, device="cpu", requires_grad=True)
     net(query).sum().backward()
@@ -335,7 +321,7 @@ def test_frozen_eval_grid_net_offers_fused_product(
         calls += 1
         return net._from_grid(net._to_grid(left) * net._to_grid(right))
 
-    monkeypatch.setattr(net, "_grid_product", tracked_product)
+    monkeypatch.setattr(net, "_pair_grid", tracked_product)
     output = net(torch.randn(2, 4, 1, 4, device="cpu"))
 
     assert calls == 1

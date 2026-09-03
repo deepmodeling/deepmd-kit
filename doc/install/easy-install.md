@@ -192,7 +192,8 @@ pip install deepmd-kit
 ::::::
 
 Optional CuTe inference kernels are available on Linux with Python 3.11 or
-newer for the PT and PT-expt backends:
+newer for the PT and PT-expt backends on supported NVIDIA Ampere, Ada, Hopper,
+and Blackwell GPUs:
 
 ```bash
 pip install "deepmd-kit[torch,cute]"

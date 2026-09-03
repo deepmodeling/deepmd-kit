@@ -55,6 +55,21 @@ from deepmd.utils.charge_state import (
 # ---------------------------------------------------------------------------
 PT2_EXTRA_PREFIX = "model/extra/"
 
+# Backend conversion supplies the source artifact's lower ABI. Concrete target
+# schemas pass through unchanged. PT SeZM's ``edge_vec`` identifies an edge-list
+# source contract rather than a pt_expt schema; the target model capabilities
+# determine whether that contract is materialized as NeighborGraph or dense
+# nlist input.
+_LOWER_INPUT_KINDS = frozenset(
+    {
+        "nlist",
+        "graph",
+        "dpa1_canonical",
+        "dpa4c_canonical",
+        "edge_vec",
+    }
+)
+
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
     """Neutralise deferred shape-guard assertion nodes in an exported graph.
@@ -1284,7 +1299,8 @@ def serialize_from_file(model_file: str) -> dict:
     dict
         The serialized model data.  If the archive contains
         ``model_def_script.json`` (training config), it is included
-        under the ``"model_def_script"`` key.
+        under the ``"model_def_script"`` key. ``lower_input_kind`` records
+        the concrete lower ABI from the artifact metadata.
     """
     if model_file.endswith(".pt2"):
         return _serialize_from_file_pt2(model_file)
@@ -1294,10 +1310,20 @@ def serialize_from_file(model_file: str) -> dict:
 
 def _serialize_from_file_pte(model_file: str) -> dict:
     """Serialize a .pte model file to a dictionary."""
-    extra_files = {"model.json": "", "model_def_script.json": ""}
+    extra_files = {
+        "model.json": "",
+        "model_def_script.json": "",
+        "metadata.json": "",
+    }
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
+    metadata = (
+        json.loads(extra_files["metadata.json"]) if extra_files["metadata.json"] else {}
+    )
+    model_dict["lower_input_kind"] = metadata.get(
+        "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
+    )
     if extra_files["model_def_script.json"]:
         model_dict["model_def_script"] = json.loads(
             extra_files["model_def_script.json"]
@@ -1315,6 +1341,7 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
 
     model_json_entry = PT2_EXTRA_PREFIX + "model.json"
     model_def_script_entry = PT2_EXTRA_PREFIX + "model_def_script.json"
+    metadata_entry = PT2_EXTRA_PREFIX + "metadata.json"
     with zipfile.ZipFile(model_file, "r") as zf:
         names = zf.namelist()
         if model_json_entry not in names:
@@ -1325,8 +1352,15 @@ def _serialize_from_file_pt2(model_file: str) -> dict:
         model_def_script_json = ""
         if model_def_script_entry in names:
             model_def_script_json = zf.read(model_def_script_entry).decode("utf-8")
+        metadata_json = ""
+        if metadata_entry in names:
+            metadata_json = zf.read(metadata_entry).decode("utf-8")
     model_dict = json.loads(model_json)
     model_dict = _json_to_numpy(model_dict)
+    metadata = json.loads(metadata_json) if metadata_json else {}
+    model_dict["lower_input_kind"] = metadata.get(
+        "lower_input_kind", model_dict.get("lower_input_kind", "nlist")
+    )
     if model_def_script_json:
         model_dict["model_def_script"] = json.loads(model_def_script_json)
     return model_dict
@@ -1506,6 +1540,47 @@ def _dpa4_kernel_levels_for_target(
                 os.environ[name] = value
 
 
+def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None:
+    """Select the graph schema supported by the target model.
+
+    Parameters
+    ----------
+    data : dict
+        Serialized model data.
+    allow_canonical : bool
+        Whether an eligible compact canonical schema may replace NeighborGraph.
+
+    Returns
+    -------
+    str or None
+        The supported graph schema, or ``None`` when the model uses the dense
+        lower.
+    """
+    from deepmd.pt_expt.model.graph_lower import (
+        model_uses_graph_lower,
+    )
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(data["model"])
+    if not (model_uses_graph_lower(model) and _supports_graph_export(model)):
+        return None
+    if allow_canonical:
+        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
+            canonical_model_eligible as dpa1_canonical_eligible,
+        )
+        from deepmd.pt_expt.kernels.dpa4c.canonical import (
+            canonical_model_eligible as dpa4c_canonical_eligible,
+        )
+
+        if dpa4c_canonical_eligible(model):
+            return "dpa4c_canonical"
+        if dpa1_canonical_eligible(model):
+            return "dpa1_canonical"
+    return "graph"
+
+
 def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
     """Resolve ``lower_kind="auto"`` to a concrete lower-forward schema.
 
@@ -1519,28 +1594,46 @@ def _resolve_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
         return lower_kind
     if not model_file.endswith(".pt2") or data["model"].get("type") == "spin_ener":
         return "nlist"
-    from deepmd.pt_expt.model.graph_lower import (
-        model_uses_graph_lower,
-    )
-    from deepmd.pt_expt.model.model import (
-        BaseModel,
-    )
+    return _select_graph_lower_kind(data, allow_canonical=True) or "nlist"
 
-    model = BaseModel.deserialize(data["model"])
-    if model_uses_graph_lower(model) and _supports_graph_export(model):
-        from deepmd.pt_expt.kernels.cuda.dpa1.canonical import (
-            canonical_model_eligible as dpa1_canonical_eligible,
+
+def _resolve_target_lower_kind(model_file: str, data: dict, lower_kind: str) -> str:
+    """Resolve a source lower ABI to a concrete pt_expt export schema."""
+    source_lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
+    if source_lower_kind not in _LOWER_INPUT_KINDS:
+        raise ValueError(
+            f"Unsupported lower_kind {source_lower_kind!r}; expected one of "
+            f"{sorted(_LOWER_INPUT_KINDS)}."
         )
-        from deepmd.pt_expt.kernels.dpa4c.canonical import (
-            canonical_model_eligible as dpa4c_canonical_eligible,
+    target_lower_kind = source_lower_kind
+    if source_lower_kind == "edge_vec":
+        target_lower_kind = (
+            _select_graph_lower_kind(data, allow_canonical=False) or "nlist"
         )
 
-        if dpa4c_canonical_eligible(model):
-            return "dpa4c_canonical"
-        if dpa1_canonical_eligible(model):
-            return "dpa1_canonical"
-        return "graph"
-    return "nlist"
+    if data["model"].get("type") == "native_spin" and target_lower_kind not in (
+        "graph",
+        "dpa4c_canonical",
+    ):
+        if lower_kind == "auto":
+            if not model_file.endswith(".pt2"):
+                raise ValueError(
+                    "automatic lower selection for native-spin models requires "
+                    "a .pt2 output because native-spin models do not implement "
+                    "the dense nlist lower"
+                )
+            raise ValueError(
+                "automatic lower selection found no exportable graph lower for "
+                "this native-spin model, which does not implement the dense "
+                "nlist lower"
+            )
+        raise ValueError(
+            "native-spin models implement only the NeighborGraph and compact "
+            f"canonical lowers (got lower_kind={target_lower_kind!r}); use "
+            "lower_kind='graph', or lower_kind='dpa4c_canonical' for an "
+            "eligible compressed DPA4C model, with a .pt2 output."
+        )
+    return target_lower_kind
 
 
 def deserialize_to_file(
@@ -1581,34 +1674,19 @@ def deserialize_to_file(
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask`` and
         the destination/source CSR views) with a DYNAMIC edge axis ``E``
         (``Dim("nedge", min=2)``), so the artifact accepts any system size.
-        ``"auto"`` (used by ``convert-backend``) resolves to ``"graph"`` for an
-        exportable graph-lower ``.pt2`` and ``"nlist"`` otherwise (see
-        :func:`_resolve_lower_kind`). A graph lower preserves the selected
-        inference operators and always includes the per-atom virial. DPA1 and
-        DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``; DPA4 ``.pt2`` follows
-        its PT freeze defaults unless the environment explicitly selects other
-        levels.
+        ``"auto"`` resolves to ``"graph"`` for an exportable graph-lower
+        ``.pt2`` and ``"nlist"`` otherwise (see :func:`_resolve_lower_kind`).
+        Backend conversion passes the source artifact's concrete lower kind;
+        compatible source ABIs are mapped to the target's native schema while
+        preserving their execution semantics. A graph lower preserves the
+        selected inference operators and always includes the per-atom virial.
+        DPA1 and DPA4C graph pipelines use ``DP_CUDA_INFER >= 2``; DPA4
+        ``.pt2`` follows its PT freeze defaults unless the environment
+        explicitly selects other levels.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
     """
-    lower_kind = _resolve_lower_kind(model_file, data, lower_kind)
-    if data["model"].get("type") == "native_spin" and lower_kind not in (
-        "graph",
-        "dpa4c_canonical",
-    ):
-        # Native-spin models implement the NeighborGraph lower and, for an
-        # eligible compressed DPA4C, the compact canonical one; the dense/nlist
-        # trace branch does not exist for them. The public freeze layer
-        # resolves this before calling here (see
-        # deepmd.pt_expt.entrypoints.main.freeze); this guard pins the
-        # contract for direct programmatic callers with a clear error instead
-        # of an opaque trace-time failure.
-        raise ValueError(
-            "native-spin models implement only the NeighborGraph and compact "
-            f"canonical lowers (got lower_kind={lower_kind!r}); use "
-            "lower_kind='graph', or lower_kind='dpa4c_canonical' for an "
-            "eligible compressed DPA4C model, with a .pt2 output."
-        )
+    lower_kind = _resolve_target_lower_kind(model_file, data, lower_kind)
     uses_dpa4_defaults = model_file.endswith(".pt2") and _uses_dpa4_kernel_defaults(
         data["model"]
     )

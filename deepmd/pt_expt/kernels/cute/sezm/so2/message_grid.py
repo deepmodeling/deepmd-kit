@@ -7,8 +7,8 @@ from __future__ import (
 )
 
 from typing import (
-    TYPE_CHECKING,
     Any,
+    Protocol,
 )
 
 import torch
@@ -16,15 +16,17 @@ from torch import (
     Tensor,
 )
 
-if TYPE_CHECKING:
-    from .sm90.message_grid_readout import (
-        Sm90MessageGridState,
-    )
-
-
 COEFF_DIM = 16
 N_FOCUS = 2
 N_FRAMES = 3
+
+
+class _Sm90MessageGridState(Protocol):
+    """State subset consumed by the packed SM90 forward path."""
+
+    schedule: Tensor
+
+
 CHANNELS = 32
 HIDDEN_CHANNELS = N_FOCUS * CHANNELS
 
@@ -205,7 +207,7 @@ def run_packed_message_grid_forward(
     context_flat: Tensor,
     *,
     return_product: bool = False,
-    sm90_state: Sm90MessageGridState | None = None,
+    sm90_state: _Sm90MessageGridState | None = None,
 ) -> Tensor | tuple[Tensor, Tensor]:
     """Run only the message-grid module and return its canonical flat output."""
     query, context = _validate_contract(net, query_flat, context_flat)

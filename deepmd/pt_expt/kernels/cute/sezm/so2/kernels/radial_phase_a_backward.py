@@ -120,27 +120,25 @@ def _warp_owned_grad_compact(
     shared_row_pitch: cutlass.Constexpr[int],
 ):
     """Reduce one compact-kernel gradient inside a four-lane subgroup."""
-    in_coeff = cutlass.Int32(0)
-    out_coeff = cutlass.Int32(0)
+    value = cutlass.Float32(0.0)
     if compact_idx < 16:
         in_coeff = compact_idx // 4
         out_coeff = compact_idx - in_coeff * 4
-    else:
-        pair = compact_idx - 16
-        in_coeff = pair // 3
-        out_coeff = pair - in_coeff * 3
-
-    value = cutlass.Float32(0.0)
-    for channel_step in cutlass.range_constexpr(CHANNELS_PER_SUBGROUP_LANE):
-        hidden_channel = subgroup_lane + channel_step * WARP_REDUCTION_GROUP
-        basis = channel_basis[hidden_channel].to(cutlass.Float32)
-        if compact_idx < 16:
+        for channel_step in cutlass.range_constexpr(CHANNELS_PER_SUBGROUP_LANE):
+            hidden_channel = subgroup_lane + channel_step * WARP_REDUCTION_GROUP
+            basis = channel_basis[hidden_channel].to(cutlass.Float32)
             value += (
                 focus_grad[out_coeff * shared_row_pitch + hidden_channel]
                 * local_values[in_coeff * shared_row_pitch + hidden_channel]
                 * basis
             )
-        else:
+    else:
+        pair = compact_idx - 16
+        in_coeff = pair // 3
+        out_coeff = pair - in_coeff * 3
+        for channel_step in cutlass.range_constexpr(CHANNELS_PER_SUBGROUP_LANE):
+            hidden_channel = subgroup_lane + channel_step * WARP_REDUCTION_GROUP
+            basis = channel_basis[hidden_channel].to(cutlass.Float32)
             value += basis * (
                 focus_grad[(4 + out_coeff) * shared_row_pitch + hidden_channel]
                 * local_values[(4 + in_coeff) * shared_row_pitch + hidden_channel]

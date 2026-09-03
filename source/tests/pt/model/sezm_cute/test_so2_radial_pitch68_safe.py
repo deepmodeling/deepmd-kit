@@ -57,8 +57,24 @@ class TestRadialPitch68SafeStatic(unittest.TestCase):
     def test_pitch68_specialization_contract(self) -> None:
         wrapper_source = WRAPPER_PATH.read_text(encoding="utf-8")
         kernel_source = KERNEL_PATH.read_text(encoding="utf-8")
+        kernel_tree = ast.parse(kernel_source)
+        pitch_assignment = next(
+            node
+            for node in kernel_tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "SHARED_ROW_PITCH"
+                for target in node.targets
+            )
+        )
+        pitch_expression = pitch_assignment.value
 
-        self.assertIn("SHARED_ROW_PITCH = HIDDEN + 4", kernel_source)
+        self.assertIsInstance(pitch_expression, ast.BinOp)
+        self.assertIsInstance(pitch_expression.op, ast.Add)
+        self.assertIsInstance(pitch_expression.left, ast.Name)
+        self.assertEqual(pitch_expression.left.id, "HIDDEN")
+        self.assertIsInstance(pitch_expression.right, ast.Constant)
+        self.assertEqual(pitch_expression.right.value, 4)
         self.assertNotIn("pitch68_safe", wrapper_source)
         self.assertNotIn("pitch68_safe", kernel_source)
 

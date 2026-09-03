@@ -492,7 +492,6 @@ def _final_manual_backward_sm90(
 
     phase = runner.phase_c_out.detach()
     x_wide = runner.x_wide.detach()
-    post_in = runner.post_mix_input.unsqueeze(2)
     grad_post_norm_in = _equivariant_rmsnorm_backward(
         block.post_so2_norm,
         runner.post_norm_input,
@@ -500,7 +499,6 @@ def _final_manual_backward_sm90(
     )
     grad_post_mix = _so3_linear_backward_input(
         so2.post_focus_mix,
-        post_in,
         grad_post_norm_in.squeeze(2).unsqueeze(2),
     ).squeeze(2)
 

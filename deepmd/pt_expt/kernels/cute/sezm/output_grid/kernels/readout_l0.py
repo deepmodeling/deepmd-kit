@@ -15,6 +15,7 @@ from functools import (
 
 import cutlass
 import cutlass.cute as cute
+import cutlass.pipeline as pipeline
 from cuda.bindings.driver import (
     CUstream,
 )
@@ -32,7 +33,6 @@ from .tiled_product import (
     TILE_K,
     TILE_M,
     TILE_N,
-    TiledOutputGridProductBackward,
 )
 
 # CuTe JIT functions use DSL-inferred argument and return types.
@@ -116,11 +116,16 @@ class TiledReadoutL0GramForward:
         out[node, channel] = value.to(out.element_type)
 
 
-class TiledReadoutL0GramBackward(TiledOutputGridProductBackward):
+class TiledReadoutL0GramBackward:
     """Apply the frozen 48x48 Gram matrix to one 64-channel tile."""
 
     def __init__(self) -> None:
-        super().__init__(HIDDEN_CHANNELS)
+        self.cta_tiler = (TILE_M, TILE_N, TILE_K)
+        self.channel_tiles = HIDDEN_CHANNELS // TILE_N
+        self.cta_sync_barrier = pipeline.NamedBarrier(
+            barrier_id=1,
+            num_threads=THREADS,
+        )
 
     @cute.jit
     def __call__(

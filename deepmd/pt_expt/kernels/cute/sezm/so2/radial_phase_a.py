@@ -63,8 +63,11 @@ def build_source_csr(
 ) -> NeoSourceCSR:
     """Build indirect source CSR without changing the physical edge order.
 
-    ``validate_sources=True`` synchronizes when ``src`` is CUDA. Callers should
-    build this once with the edge cache and retain both tensors.
+    Source bounds are always checked before constructing the CSR. Setting
+    ``validate_sources=True`` reports an eager ``ValueError`` and therefore
+    synchronizes when ``src`` is CUDA; the default uses an asynchronous device
+    assertion. Callers should build this once with the edge cache and retain
+    both tensors.
     """
     import torch
 
@@ -78,11 +81,16 @@ def build_source_csr(
         raise ValueError("source CSR int32 indexing requires E <= 2**31 - 1")
 
     src = src.contiguous()
-    if validate_sources and src.numel() != 0:
+    if src.numel() != 0:
         valid = torch.all((src >= 0) & (src < node_count))
-        if not bool(valid):
-            raise ValueError(
-                "source-CSR backward requires source indices in [0, node_count)"
+        message = "source-CSR backward requires source indices in [0, node_count)"
+        if validate_sources:
+            if not bool(valid):
+                raise ValueError(message)
+        else:
+            torch._assert_async(
+                valid,
+                message,
             )
 
     source_order_i64 = torch.argsort(src, stable=True)
@@ -169,6 +177,10 @@ def _project_batched_radial_adjoint(
     """Project the 27-column adjoint packed in consumed edge scratch."""
     import torch
 
+    if torch.backends.cuda.matmul.allow_tf32:
+        raise RuntimeError("strict FP32 requires allow_tf32=False")
+    if torch.get_float32_matmul_precision() != "highest":
+        raise RuntimeError("strict FP32 requires float32 matmul precision 'highest'")
     edge_count = consumed_workspace.shape[0]
     device = consumed_workspace.device
     tensors = (
@@ -330,6 +342,24 @@ def run_neo_radial_phase_a_backward_node_tiled(
     )
     if node_count == 0 and edge_count != 0:
         raise ValueError("a non-empty edge list requires at least one source node")
+    torch._assert_async(
+        source_ptr[0] == 0,
+        "source-CSR backward requires source_ptr[0] == 0",
+    )
+    torch._assert_async(
+        source_ptr[-1] == edge_count,
+        "source-CSR backward requires source_ptr[-1] == edge_count",
+    )
+    if source_ptr.numel() > 1:
+        torch._assert_async(
+            torch.all(source_ptr[1:] >= source_ptr[:-1]),
+            "source-CSR backward requires nondecreasing source_ptr",
+        )
+    if source_order.numel() != 0:
+        torch._assert_async(
+            torch.all((source_order >= 0) & (source_order < edge_count)),
+            "source-CSR backward requires source_order entries in [0, E)",
+        )
     if validate_csr:
         _validate_csr_values(source_order, source_ptr, edge_count)
 

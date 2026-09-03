@@ -15,6 +15,9 @@ from dataclasses import (
 from functools import (
     lru_cache,
 )
+from itertools import (
+    count,
+)
 from types import (
     SimpleNamespace,
 )
@@ -500,7 +503,7 @@ class _RunnerState:
 
 
 _REGISTRY: dict[int, _RegistryEntry] = {}
-_NEXT_HANDLE = 1
+_HANDLE_COUNTER = count(1)
 _REGISTRY_LOCK = threading.Lock()
 _PACKED_RUNNER_CACHE: dict[tuple[str, int | None, int], _RunnerState] = {}
 _PACKED_RUNNER_CACHE_LOCK = threading.Lock()
@@ -542,7 +545,6 @@ def _compile_output_gate_backward(
 
 def register_cute_so2_block(block: Any, config: Any) -> int:
     """Register a DeePMD block/config pair and return a stable integer handle."""
-    global _NEXT_HANDLE
 
     def remove_collected_entry(block_ref: weakref.ReferenceType[Any]) -> None:
         with _REGISTRY_LOCK:
@@ -551,8 +553,7 @@ def register_cute_so2_block(block: Any, config: Any) -> int:
                 _REGISTRY.pop(handle, None)
 
     with _REGISTRY_LOCK:
-        handle = _NEXT_HANDLE
-        _NEXT_HANDLE += 1
+        handle = next(_HANDLE_COUNTER)
         _REGISTRY[handle] = _RegistryEntry(
             block=block,
             config=config,
@@ -821,8 +822,7 @@ def _equivariant_rmsnorm_backward(norm: Any, x: Tensor, grad_out: Tensor) -> Ten
     return torch.cat([grad_x0_in, grad_xt_in], dim=1).to(dtype=in_dtype)
 
 
-def _so3_linear_backward_input(linear: Any, x: Tensor, grad_out: Tensor) -> Tensor:
-    del x
+def _so3_linear_backward_input(linear: Any, grad_out: Tensor) -> Tensor:
     weight = linear.weight.view(
         linear.lmax + 1,
         linear.in_channels,
@@ -1015,14 +1015,9 @@ def _so3_grid_cross_glu_flat_backward(
     coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, left_grid * right_grid)
     coeff_flat = coeff.reshape(n_batch, coeff_dim, n_focus, expanded)
 
-    scalar_out = _swiglu_forward(scalar_pair)
     scalar_logits = _focus_linear_forward(net.scalar_gate, scalar_pair)
     scalar_gate = torch.sigmoid(scalar_logits)
     coeff_view = coeff_flat.reshape(n_batch, coeff_dim, n_focus, n_frames, channels)
-    scalar_path = coeff_view * scalar_gate[:, None, :, None, :]
-    scalar_path = scalar_path.clone()
-    scalar_path[:, 0, :, net.frame_zero_index, :].add_(scalar_out)
-    scalar_path_flat = scalar_path.reshape(n_batch, coeff_dim, n_focus, expanded)
 
     grad = grad_out_flat.reshape(n_batch, coeff_dim, n_focus, channels).to(
         dtype=net.dtype
@@ -1067,7 +1062,6 @@ def _so3_grid_cross_glu_flat_backward(
     grad_context = _frame_expand_backward_input(net.frame_expand, grad_right)
     grad_query[:, 0, :, :].add_(grad_scalar_pair[:, :, :channels])
     grad_context[:, 0, :, :].add_(grad_scalar_pair[:, :, channels:])
-    del scalar_path_flat
     return (
         grad_query.reshape_as(query_flat).to(dtype=q_dtype),
         grad_context.reshape_as(context_flat).to(dtype=c_dtype),
@@ -1086,7 +1080,6 @@ def _final_manual_backward(runner: Any, grad_out: Tensor) -> tuple[Tensor, Tenso
     phase = runner.phase_c_out.detach()
     x_wide = runner.x_wide.detach()
     out_gate_flat = runner.out_gate_flat
-    post_in = runner.post_mix_input.unsqueeze(2)
     post_norm_in = runner.post_norm_input
 
     grad_post_norm_in = _equivariant_rmsnorm_backward(
@@ -1096,7 +1089,6 @@ def _final_manual_backward(runner: Any, grad_out: Tensor) -> tuple[Tensor, Tenso
     )
     grad_post_mix = _so3_linear_backward_input(
         so2.post_focus_mix,
-        post_in,
         grad_post_norm_in.squeeze(2).unsqueeze(2),
     ).squeeze(2)
 
@@ -1166,7 +1158,6 @@ def _qk_manual_backward(
 ) -> Tensor:
     so2 = runner.so2
     n_node = runner.node_count
-    n_edge = runner.edge_count
     x_wide = runner.x_wide.detach()
     x_l0 = x_wide[:, 0, :].reshape(n_node, 2, 32)
     q_node = runner.q_node
@@ -1306,20 +1297,16 @@ def _stack_backward_manual(runner: Any, grad_stack_out: Tensor) -> Tensor:
 def _x_wide_manual_backward(runner: Any, grad_x_wide_total: Tensor) -> Tensor:
     block = runner.block
     so2 = runner.so2
-    n_node = runner.node_count
     x_so2 = runner.x if runner.use_full_node else runner.x[:, : block.mp_ebed_dim, :, :]
-    x_pre = block.pre_so2_norm(x_so2)
-    x_pre_flat = x_pre.reshape(n_node, x_so2.shape[1], block.channels).unsqueeze(2)
-    grad_x_pre_flat = _so3_linear_backward_input(
-        so2.pre_focus_mix,
-        x_pre_flat,
-        grad_x_wide_total.unsqueeze(2),
-    )
-    grad_x_pre = grad_x_pre_flat.squeeze(2).reshape_as(x_so2)
-    if type(block.pre_so2_norm).__name__ != "Identity":
+    if not _is_identity(block.pre_so2_norm):
         raise NotImplementedError(
             "manual x-wide backward currently expects Identity pre norm"
         )
+    grad_x_pre_flat = _so3_linear_backward_input(
+        so2.pre_focus_mix,
+        grad_x_wide_total.unsqueeze(2),
+    )
+    grad_x_pre = grad_x_pre_flat.squeeze(2).reshape_as(x_so2)
     if runner.use_full_node:
         grad_x = grad_x_pre
     else:

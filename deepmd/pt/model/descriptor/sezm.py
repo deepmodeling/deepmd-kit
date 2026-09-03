@@ -1816,6 +1816,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             Destination row pointers, source order, and source row pointers, or
             ``None`` when the exact CuTe contract is not satisfied.
         """
+        if torch.jit.is_scripting():
+            return None
         if (
             self.training
             or not edge_cache.destinations_sorted
