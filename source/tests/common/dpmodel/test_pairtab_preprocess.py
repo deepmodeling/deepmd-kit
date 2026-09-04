@@ -345,7 +345,15 @@ class TestPairTabGridSpacing(unittest.TestCase):
             ]
         )
         tab = PairTab(filename="dummy_path", rcut=4e-9)
-        self.assertAlmostEqual(tab.hh, 1e-9)
+        np.testing.assert_allclose(tab.hh, 1e-9, rtol=1e-6)
+
+    @patch("numpy.loadtxt")
+    def test_hh_from_node_positions_not_first_interval(self, mock_loadtxt) -> None:
+        rr = np.linspace(0.0, 1.0, 1001)
+        rr[1] += 9.9e-6
+        mock_loadtxt.return_value = np.stack((rr, np.zeros_like(rr)), axis=1)
+        tab = PairTab(filename="dummy_path", rcut=1.0)
+        np.testing.assert_allclose(tab.hh, 1.0 / 1000, rtol=1e-6)
 
     @patch("numpy.loadtxt")
     def test_failed_reinit_keeps_state(self, mock_loadtxt) -> None:
@@ -403,7 +411,7 @@ class TestPairTabGridSpacing(unittest.TestCase):
             path = os.path.join(tmpdir, "table.txt")
             np.savetxt(path, np.stack((rr, ee), axis=1), fmt="%.6f")
             tab = PairTab(filename=path)
-        self.assertAlmostEqual(tab.hh, rr[1] - rr[0], places=6)
+        np.testing.assert_allclose(tab.hh, 6.0 / 999, rtol=1e-6)
 
 
 if __name__ == "__main__":

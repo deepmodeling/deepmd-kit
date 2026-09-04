@@ -60,7 +60,6 @@ class PairTab:
         vdata = np.loadtxt(filename, dtype=self.data_type)
         rmin = vdata[0][0]
         rmax = vdata[-1][0]
-        hh = vdata[1][0] - vdata[0][0]
         dx = np.diff(vdata[:, 0])
         if not np.all(dx > 0):
             raise ValueError(
@@ -73,11 +72,11 @@ class PairTab:
         # spacing: consumers (the C++ kernel and _make_data) index by
         # rmin + i * hh, so that is what must stay accurate, not each dx.
         n = vdata.shape[0]
-        hh_ref = (rmax - rmin) / (n - 1)
+        hh = (rmax - rmin) / (n - 1)
         deviation = np.abs(
-            vdata[:, 0] - (rmin + hh_ref * np.arange(n, dtype=self.data_type))
+            vdata[:, 0] - (rmin + hh * np.arange(n, dtype=self.data_type))
         )
-        tol = 1e-2 * abs(hh_ref)
+        tol = 1e-2 * abs(hh)
         if np.any(deviation > tol):
             bad_row = int(np.argmax(deviation > tol))
             raise ValueError(
@@ -85,7 +84,7 @@ class PairTab:
                 "evenly spaced. The tabulated potential must be provided on a "
                 f"uniform grid, but row {bad_row} (distance "
                 f"{vdata[bad_row, 0]}) does not match the constant step "
-                f"inferred from rmin and rmax ({hh_ref}). Please regrid the "
+                f"inferred from rmin and rmax ({hh}). Please regrid the "
                 "table to use a constant distance step."
             )
         ncol = vdata.shape[1] - 1
