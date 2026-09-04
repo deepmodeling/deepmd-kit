@@ -44,7 +44,7 @@ from deepmd.pt_expt.descriptor.dpa4_nn.so2 import (
     DynamicRadialDegreeMixer,
     SO2Convolution,
     SO2Linear,
-    _active_triton_level,
+    active_triton_level,
 )
 from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
     op_available as cuda_value_available,
@@ -140,34 +140,34 @@ def test_triton_mode_gate_binds_each_stage(
         assert conv.triton_infer_level == infer_level
         # Rotation and flash wrappers retain their eager implementations when
         # Triton is unavailable, so their binding follows the mode gates alone.
-        assert (conv._rotate_to_local_fn is not None) is requested
-        assert (conv._rotate_back_fn is not None) is requested
-        assert (conv._flash_atten_fn is not None) is requested
-        assert conv._flash_atten_trains is (requested and training)
+        assert (conv.triton_l_1_rotate_to_local is not None) is requested
+        assert (conv.triton_l_1_rotate_back is not None) is requested
+        assert (conv.flash_attention is not None) is requested
+        assert conv.flash_attention_supports_training is (requested and training)
         # Segment softmax has no wrapper-level fallback and binds only when its
         # own Triton implementation is importable.
-        assert (conv._segment_softmax_fn is not None) is (
+        assert (conv.triton_l_1_segment_softmax is not None) is (
             requested and SEGMENT_SOFTMAX_TRITON_AVAILABLE
         )
         # The rotate-mix front end is bound by a profitability bound on the
         # hidden width, which this narrow block sits below.
         assert conv.hidden_channels < 128
-        assert conv._triton_rotate_mix is None
+        assert conv.triton_l_1_rotate_mix is None
         # The CUDA gate is off, so the value stream stays on the stages.
-        assert conv._cuda_value_train is None
+        assert conv.cuda_train_value is None
 
     for module in descriptor.modules():
         if isinstance(module, SO2Linear):
             # The fused GEMM additionally needs every |m| block width to align
             # to its BN=64 tile, which a narrow block does not satisfy.
             aligned = slices_supported(module._block_diag_slices)
-            assert (module._block_diag_gemm is not None) is (
+            assert (module.triton_l_1_block_diag_gemm is not None) is (
                 requested and SO2_BLOCK_GEMM_TRITON_AVAILABLE and aligned
             )
         if isinstance(module, DynamicRadialDegreeMixer):
             # The callable contains its eager fallback, so construction binds it
             # whenever either mode requests the stage.
-            assert (module._radial_mix_block is not None) is requested
+            assert (module.triton_l_1_radial_mix is not None) is requested
         if isinstance(module, GatedActivation):
             assert module.triton_train_level == train_level
             assert module.triton_infer_level == infer_level
@@ -188,9 +188,9 @@ def test_triton_mode_gate_binds_each_stage(
             if isinstance(
                 module, (SO2Convolution, SO2Linear, DynamicRadialDegreeMixer)
             ):
-                assert _active_triton_level(module) == active_level
+                assert active_triton_level(module) == active_level
             if isinstance(module, SO2Convolution):
-                assert module._rotation_active() is bool(active_level)
+                assert module.rotation_kernel_active() is bool(active_level)
             if isinstance(module, GatedActivation):
                 level = (
                     module.triton_train_level
@@ -213,13 +213,13 @@ def test_cuda_train_gate_binds_the_value_stream(monkeypatch) -> None:
     ]
     assert convolutions
     for conv in convolutions:
-        assert conv._cuda_value_train is not None
+        assert conv.cuda_train_value is not None
         # The two layers are independent: the CUDA value stream does not
         # switch on any Triton stage, and the attention span stays dense
         # until the Triton gate asks for it.
         assert conv.triton_train_level == 0
-        assert conv._segment_softmax_fn is None
-        assert conv._flash_atten_trains is False
+        assert conv.triton_l_1_segment_softmax is None
+        assert conv.flash_attention_supports_training is False
 
 
 def test_cuda_triton_train_reuses_packed_wigner_runs(monkeypatch) -> None:
@@ -233,14 +233,14 @@ def test_cuda_triton_train_reuses_packed_wigner_runs(monkeypatch) -> None:
     monkeypatch.setenv("DP_TRITON_TRAIN", "1")
 
     descriptor = _make_descriptor(2, [20], 4.0).train()
-    assert descriptor._packed_wigner_train
+    assert descriptor.cuda_train_covers_all_blocks
     assert not descriptor._build_full_wigner()
 
     for block in descriptor.blocks:
         conv = block.so2_conv
-        assert conv._cuda_value_train is not None
-        assert conv._flash_atten_fn is not None
-        assert conv._flash_atten_trains
+        assert conv.cuda_train_value is not None
+        assert conv.flash_attention is not None
+        assert conv.flash_attention_supports_training
 
 
 @pytest.mark.parametrize("gate_name", ["DP_TRITON_TRAIN", "DP_TRITON_INFER"])
@@ -267,7 +267,7 @@ def test_grid_pair_train_follows_its_gate_and_slot_bound(
             and GRID_PAIR_TRITON_AVAILABLE
             and slots >= 75
         )
-        assert (net._grid_pair_train_fn is not None) is expected
+        assert (net.triton_train_l_1_grid_pair is not None) is expected
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
@@ -327,9 +327,9 @@ class TestDPA4TrainPathParity(TestCaseSingleFrameWithNlist):
             module for module in fused.modules() if isinstance(module, SO2Convolution)
         )
         if path in ("cuda", "cuda-triton"):
-            assert conv._cuda_value_train is not None
+            assert conv.cuda_train_value is not None
         if path in ("triton", "cuda-triton"):
-            assert conv._segment_softmax_fn is not None
+            assert conv.triton_l_1_segment_softmax is not None
         fused_objective, fused_gradient = self._step(fused)
 
         np.testing.assert_allclose(

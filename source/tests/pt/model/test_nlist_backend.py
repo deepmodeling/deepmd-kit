@@ -10,6 +10,9 @@ unavailable.
 """
 
 import copy
+from types import (
+    SimpleNamespace,
+)
 
 import numpy as np
 import pytest
@@ -170,6 +173,55 @@ def test_self_built_model_forces_native(pt_files, monkeypatch) -> None:
     for backend in ("auto", "vesin", "nv", "bogus"):
         deep_eval._setup_nlist_backend(backend)
         assert deep_eval._nlist_builder is None
+
+
+def test_edge_strategy_freezes_parameters_only_during_inference_call() -> None:
+    from deepmd.pt.infer.deep_eval import DeepEval as PTDeepEval
+
+    class ProbeModel(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones((), device="cpu"))
+            self.saw_frozen = False
+
+        def get_sel(self) -> list[int]:
+            return [4]
+
+        def forward_common_lower(self, *args, **kwargs) -> dict[str, torch.Tensor]:
+            self.saw_frozen = not self.weight.requires_grad
+            return {}
+
+    class ProbeBuilder:
+        def build(self, coord, atype, *args, **kwargs) -> SimpleNamespace:
+            return SimpleNamespace(
+                coord=coord,
+                atype=atype,
+                edge_index=torch.empty((2, 0), dtype=torch.long, device="cpu"),
+                edge_vec=torch.empty((0, 3), dtype=coord.dtype, device="cpu"),
+                edge_scatter_index=torch.empty((2, 0), dtype=torch.long, device="cpu"),
+                edge_mask=torch.empty((0,), dtype=torch.bool, device="cpu"),
+            )
+
+    inner = ProbeModel()
+    deep_eval = object.__new__(PTDeepEval)
+    deep_eval.dp = ModelWrapper(inner)
+    deep_eval._uses_edge_schema = True
+    deep_eval._nlist_builder = ProbeBuilder()
+    deep_eval.rcut = 4.0
+
+    PTDeepEval._eval_lower_strategy(
+        deep_eval,
+        torch.zeros((1, 1, 3), device="cpu"),
+        torch.zeros((1, 1), dtype=torch.long, device="cpu"),
+        None,
+        None,
+        None,
+        None,
+        False,
+    )
+
+    assert inner.saw_frozen
+    assert inner.weight.requires_grad
 
 
 # --- equivalence with the native dense builder ------------------------------

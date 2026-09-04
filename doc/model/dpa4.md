@@ -413,28 +413,166 @@ Three options control training precision and the compiled path:
   through the energy gradient) and can speed training markedly on supported
   setups.
 
+Two environment variables independently select the fused training kernels:
+
+| Environment variable | Default | Effect                                                                                                             |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `DP_TRITON_TRAIN`    | `0`     | Triton training level `0` or `1`. Level `1` enables the eligible second-order-complete stage kernels.              |
+| `DP_CUDA_TRAIN`      | off     | Enable the fused CUDA SO(2) value path on supported blocks. Accepted true values are `1`, `true`, `yes`, and `on`. |
+
+The corresponding false values for `DP_CUDA_TRAIN` are `0`, `false`, `no`,
+and `off`.
+
+#### Training kernel composition
+
+Training and inference use separate gates because their derivative contracts
+are different. Inference holds model parameters fixed and requires the forward
+and coordinate gradient. A force-loss training step additionally requires
+gradients of every consumed parameter and differentiates the coordinate
+gradient once more. The training kernels therefore provide their own parameter
+backward and second-order formulas rather than reusing inference-only kernels.
+
+`DP_TRITON_TRAIN=1` enables a composition of eligible Triton operators,
+including Wigner monomials, the local-frame rotations, radial degree mixing,
+SO(2) block GEMMs, gated activations, segmented attention softmax, flash
+attention aggregation, and the wider SO(3) grid products. Unsupported stages
+remain ordinary PyTorch operations. There are no training levels `2` or `3`:
+the fused Triton value path and fp16x3 mixing selected by
+`DP_TRITON_INFER>=2` are inference-only.
+
+`DP_CUDA_TRAIN=1` enables one fused CUDA operator for each supported SO(2)
+block. It owns the value stream from the source-node rotation through radial
+degree mixing, focus competition, and the gated mixing stack, stopping before
+the attention aggregation. The operator supplies parameter gradients and the
+second derivative required by force-loss training. A block outside its
+supported layout or an installation without the CUDA operator falls through to
+the enabled Triton stages or to PyTorch.
+
+The CUDA and Triton training gates are complementary, not mutually exclusive.
+For a span covered by both, CUDA takes precedence only over the SO(2) value
+stream; Triton remains active for the attention span and other non-overlapping
+operators. Their combinations are:
+
+| `DP_TRITON_TRAIN` | `DP_CUDA_TRAIN` | Result                                                                                                                                    |
+| ----------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`               | `0`             | PyTorch implements the complete training graph.                                                                                           |
+| `1`               | `0`             | Eligible stages use the Triton composition.                                                                                               |
+| `0`               | `1`             | Eligible value streams use CUDA; attention and unsupported blocks use PyTorch.                                                            |
+| `1`               | `1`             | Eligible value streams use CUDA, Triton serves attention and the other supported stages, and unsupported CUDA blocks fall back to Triton. |
+
+When every block supports the CUDA value path and Triton flash attention, the
+descriptor reuses the CUDA operator's packed Wigner runs instead of
+materializing dense per-edge Wigner-D matrices. Enabling both gates can
+therefore reduce memory as well as compose the two faster execution paths.
+The current inference-only force and virial assembly kernels are not selected
+during training. The training path keeps this assembly in the differentiable
+PyTorch graph so the force loss can traverse it.
+
+The intended combined setting is:
+
+```bash
+export DP_TRITON_TRAIN=1
+export DP_CUDA_TRAIN=1
+```
+
+Both gates serve PT and PT-expt and are read when the model is constructed.
+Set them before loading or constructing the model and before `torch.compile`.
+They do not change inference dispatch; likewise, `DP_CUTE_INFER`,
+`DP_TRITON_INFER`, and `DP_CUDA_INFER` do not change training dispatch.
+
 ### Inference and deployment settings
 
 Inference behavior is controlled by environment variables, each with an
 equivalent input-file option used during training validation:
 
-| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                                                                                                                             |
-| -------------------- | --------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                               |
-| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                     |
-| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference, independently of `descriptor.use_amp`. Training AMP remains controlled by `descriptor.use_amp`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                   |
-| `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). Levels `1` and `2` are exact float32; level `3` trades a small accuracy margin for a substantial speedup. Detailed below.                                                                                                              |
-| `DP_CUTILE_INFER`    | —                           | off           | cuTile inference path (CUDA eval only, compatible with `DP_COMPILE_INFER`, mutually exclusive with `DP_TRITON_INFER`). Python inference only, and **not** captured in a frozen `.pt2`. Detailed below.                                                                                                                             |
-| `DP_CUDA_INFER`      | —                           | `0`           | Hand-written CUDA operator level `0`-`2` (CUDA eval only, stacks on top of `DP_TRITON_INFER`). Level `1` is faster on every GPU and checkpoint measured; level `2` additionally offers the fused convolution, which routes itself per checkpoint and falls back to the level-`1` behaviour where it would not pay. Detailed below. |
+| Environment variable | Input-file option           | Default       | Effect                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | --------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                                                                                                                                    |
+| `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                                                                                                                          |
+| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference, independently of `descriptor.use_amp`. Training AMP remains controlled by `descriptor.use_amp`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                                                        |
+| `DP_TRITON_INFER`    | —                           | `0`           | Triton inference kernel level `0`-`3` (CUDA eval only, compatible with `DP_COMPILE_INFER`). Levels `1` and `2` are exact float32; level `3` trades a small accuracy margin for a substantial speedup. Detailed below.                                                                                                                   |
+| `DP_CUTE_INFER`      | —                           | off           | CuTe inference kernels for supported SeZM shapes (PT and PT-expt CUDA eval only, compatible with `DP_TRITON_INFER`, `DP_CUDA_INFER`, and `DP_COMPILE_INFER`). Unsupported shapes retain the selected fallback. Python inference only, and **not** captured in a frozen `.pt2`. Detailed below.                                          |
+| `DP_CUTILE_INFER`    | —                           | off           | cuTile inference path (CUDA eval only, compatible with `DP_COMPILE_INFER`, mutually exclusive with `DP_TRITON_INFER`). Python inference only, and **not** captured in a frozen `.pt2`. Detailed below.                                                                                                                                  |
+| `DP_CUDA_INFER`      | —                           | `0`           | Hand-written CUDA operator level `0`-`2` (CUDA eval only, composed with the CuTe and Triton paths). Level `1` is faster on every GPU and checkpoint measured; level `2` additionally offers the fused convolution, which routes itself per checkpoint and falls back to the level-`1` behaviour where it would not pay. Detailed below. |
 
-Accepted boolean values for the other switches are `1`/`true`/`yes`/`on` and
-`0`/`false`/`no`/`off`; `DP_TRITON_INFER` accepts only the numeric levels.
-`DP_TRITON_INFER`, `DP_CUTILE_INFER` and `DP_CUTE_INFER` each select a complete
-accelerated inference path and are mutually exclusive; enabling more than one is
-rejected when the model is constructed.
+Accepted boolean values are `1`/`true`/`yes`/`on` and
+`0`/`false`/`no`/`off`. `DP_TRITON_INFER` and `DP_CUDA_INFER` instead accept
+only their documented numeric levels.
 Shell exports take precedence over the input-file options and over values
 written in the input; they are read when the model is constructed and changing
 them afterward has no effect.
+
+#### How the inference kernels compose
+
+`DP_CUTE_INFER`, `DP_TRITON_INFER`, and `DP_CUDA_INFER` are permissions for
+different implementations, not mutually exclusive backend selectors. The
+model selects one implementation independently for each computational span;
+enabling several paths never evaluates the same span more than once. A larger
+eligible fused span takes precedence, and an unsupported span falls through to
+the next enabled implementation.
+
+For the main SO(2) interaction block, the dispatch order is:
+
+1. the exact-shape CuTe block when its complete eligibility contract holds;
+1. the level-2 CUDA fused convolution when its structure and profitability
+   checks hold;
+1. the selected Triton composition;
+1. the dense PyTorch implementation.
+
+The surrounding operations are selected separately:
+
+| Computational span                                 | First available implementation                                     |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| cutoff envelope and radial basis                   | CUDA level 1, then PyTorch                                         |
+| Wigner-D construction                              | CuTe packed Wigner-D, CUDA level 1, Triton monomials, then PyTorch |
+| complete SO(2) interaction block                   | CuTe, CUDA level 2, Triton, then PyTorch                           |
+| geometric initial embedding and SO(3) grid product | CuTe, CUDA level 1, then PyTorch                                   |
+| force and virial assembly                          | CUDA level 1, Triton level 1, then PyTorch                         |
+
+The packed Wigner-D layout used by the CuTe SO(2) path is descriptor-wide.
+Consequently, every interaction block must satisfy the CuTe contract before
+any block enters that path. Other CuTe kernels, such as the grid product, apply
+their own local eligibility checks. CUDA level 1 remains useful around a CuTe
+block because it covers independent spans such as the radial basis and force
+assembly.
+
+With `DP_CUTILE_INFER=0`, the common combinations behave as follows, where `T`
+is a nonzero Triton level:
+
+| `DP_CUTE_INFER` | `DP_TRITON_INFER` | `DP_CUDA_INFER` | Result                                                                                                                                 |
+| --------------- | ----------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`             | `0`               | `0`             | The dense PyTorch path is used.                                                                                                        |
+| `0`             | `T`               | `0`             | Triton serves its supported spans; other spans remain in PyTorch.                                                                      |
+| `0`             | `T`               | `1`             | CUDA level 1 serves its spans, while Triton serves the remaining accelerated spans.                                                    |
+| `0`             | `T`               | `2`             | Eligible SO(2) blocks use the CUDA fused convolution; ineligible blocks fall back to Triton. CUDA level 1 remains enabled.             |
+| `1`             | any               | any             | Eligible exact-shape spans use CuTe; the configured CUDA, Triton, and PyTorch paths remain as fallbacks and for non-overlapping spans. |
+
+When CUDA level 2 takes over an SO(2) block, its fused convolution also takes
+over the mixing stack. The fp16x3 GEMMs added by Triton level 3 therefore do not
+run inside that block, although they remain available to a block rejected by
+the CUDA gate. The same principle applies to a block selected by CuTe.
+
+Among these three variables there is no prohibited combination. Do not confuse
+`DP_CUTE_INFER` with `DP_CUTILE_INFER`: cuTile and Triton are mutually exclusive
+complete SO(2) paths, while CuTe is an exact-shape overlay that may coexist with
+either path and with the CUDA operators.
+
+With the default `DP_TF32_INFER=0` and `DP_AMP_INFER=0` precision policy, a
+conservative exact-float32 Python inference configuration enables CuTe with
+both general fallbacks:
+
+```bash
+export DP_CUTE_INFER=1
+export DP_TRITON_INFER=2
+export DP_CUDA_INFER=1
+```
+
+CUDA level 2 can replace level 1 for narrow checkpoints on GPUs where its fused
+SO(2) convolution is profitable. See
+[Training kernel composition](#training-kernel-composition) for the independent
+training gates.
+
+#### Triton levels
 
 `DP_TRITON_INFER` selects how much of the descriptor runs in fused Triton
 kernels. Level `1` adds universal fused kernels, numerically equivalent to the
@@ -449,6 +587,20 @@ shipping built in. On other GPUs the kernels fall back to conservative
 configurations, and `dp --pt freeze` tunes the missing entries on the local GPU
 before exporting, a one-off sweep of a few minutes baked into the `.pt2`.
 
+#### CuTe overlay
+
+`DP_CUTE_INFER` enables CuTe kernels for the current DPA4-Neo inference
+contract in both PT and PT-expt. The path fuses the eligible SO(2) interaction
+block, packed Wigner-D construction, geometric initial embedding, output grid
+product, and scalar readout while retaining strict float32 arithmetic.
+Eligibility checks cover the model structure, tensor layout, dtype, device, and
+GPU capability. Any unsupported configuration falls through to the enabled
+Triton, CUDA, cuTile, or reference implementation rather than entering a
+partially compatible kernel. The kernels are JIT compiled at runtime and are
+not captured in a frozen `.pt2`.
+
+#### cuTile path
+
 `DP_CUTILE_INFER` replaces the whole SeZM edge pipeline — Wigner monomials,
 rotate-and-mix, the gated SO(2) mixing stack, the attention aggregation and the
 force / virial assembly — with kernels written in the `cuda.tile` DSL. On an
@@ -462,6 +614,8 @@ Blackwell shipping built in and conservative defaults elsewhere. A convolution
 whose layout it does not support falls back to the dense reference rather than
 to Triton. The kernels are JIT compiled at runtime, so this path serves Python
 inference only and is not captured in a frozen `.pt2`.
+
+#### CUDA levels
 
 `DP_CUDA_INFER` enables hand-written CUDA operators that fuse spans of the SeZM
 descriptor. Unlike the paths above it is not an alternative backend: it stacks
@@ -526,6 +680,8 @@ Both levels are precompiled custom operators that `make_fx` traces, so unlike
 `DP_CUTILE_INFER` they are baked into a frozen `.pt2` and keep their effect when
 it is later loaded by ASE or LAMMPS.
 
+#### Precision guidance
+
 For molecular dynamics and other workflows sensitive to the smoothness of the
 potential energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
 `DP_AMP_INFER` can coexist with `DP_TF32_INFER`, but bf16 autocast dominates
@@ -537,6 +693,8 @@ magnitude finer than TF32) and is the recommended fast setting once validated
 for the target system. `DP_CUTILE_INFER` inherits that same rounding scale
 through its mixing stack and is the faster of the two on Blackwell, at the cost
 of being unavailable to the frozen `.pt2` route.
+
+#### Frozen `.pt2` kernel selection
 
 > [!IMPORTANT]
 > Set these variables **before** running `dp --pt freeze` or
@@ -552,9 +710,9 @@ of being unavailable to the frozen `.pt2` route.
 > chosen levels and whether each came from the environment or the default are
 > logged at export. A CPU-targeted archive disables GPU-only inference paths
 > and keeps the reference CPU implementation regardless of these settings.
-> `DP_CUTILE_INFER` is the exception:
-> its kernels are JIT compiled at runtime and do not bake into the artifact, so
-> it applies to Python inference only and has no effect on a frozen model. A frozen `.pt2` runs a forward-only
+> `DP_CUTILE_INFER` and `DP_CUTE_INFER` are the exceptions: their kernels are
+> JIT compiled at runtime and do not bake into the artifact, so they apply to
+> Python inference only and have no effect on a frozen model. A frozen `.pt2` runs a forward-only
 > package, so training-time memory-saving switches do not apply to it.
 
 ### Hardware selection

@@ -258,7 +258,8 @@ both graphs.  The options are:
 * ``triton.cudagraphs=False``
       cudagraphs capture autograd metadata only once.  Higher-order
       gradients need fresh metadata per call, so cudagraphs would feed
-      stale autograd state into the second backward.
+      stale autograd state into the second backward. Packed SO2 also retains
+      Python-owned forward state, so direct graph capture remains disabled.
 * ``max_fusion_size=DP_FUSION_SIZE`` (default 8)
       Caps kernel fusion complexity so Inductor's scheduler does not
       time out on the large edge-level reductions inside the
@@ -353,7 +354,8 @@ differentiated region.
 NOTE 10 -- Tail dummy edges
 ---------------------------
 
-The edge-schema builders append two masked edges at the end of every batch.
+The edge-schema builders append two masked edges to every batch. They remain
+trailing unless a later destination sort permutes them with the real edges.
 Real edge compaction happens via
 ``torch.nonzero(valid_mask)``, whose output length is data-dependent
 and can be zero in sparse or single-atom systems (e.g. isolated-atom
@@ -363,9 +365,9 @@ would fall back to concrete shape specialization and break
 ``dynamic=True``.  A pair of dummy slots also gives Inductor's batched
 matmul lowering a static ``E >= 2`` edge-axis bound, avoiding
 data-dependent layout guards on ``E == 1`` that would otherwise cause
-an extra recompile when the first batch contains no real edges.  Each
-dummy's ``edge_mask`` is ``False`` so it contributes exactly zero to
-every downstream sum or gather.
+an extra recompile when the first batch contains no real edges. Each dummy's
+``edge_mask`` is ``False`` wherever sorting places it, so it contributes
+exactly zero to every downstream sum or gather.
 
 NOTE 11 -- Edge-vector leaf (gather outside the AD region)
 ----------------------------------------------------------
@@ -528,6 +530,131 @@ log = logging.getLogger(__name__)
 SeZMModel_ = make_model(SeZMAtomicModel)
 
 
+def _neo_cute_infer_enabled() -> bool:
+    """Return whether the model builder must destination-sort CuTe edges."""
+    from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
+        is_cute_infer_enabled,
+    )
+
+    return is_cute_infer_enabled()
+
+
+@torch.compiler.assume_constant_result
+def _neo_cute_nlist_eager_island_enabled(device: torch.device) -> bool:
+    """Return whether Neo requests an eager Toolkit-Ops neighbor-list call."""
+    if not _neo_cute_infer_enabled() or device.type != "cuda":
+        return False
+    try:
+        compute_capability = tuple(torch.cuda.get_device_capability(device))
+    except RuntimeError:
+        return False
+    from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
+        is_so2_eager_island_enabled,
+    )
+
+    return is_so2_eager_island_enabled(compute_capability)
+
+
+@torch.compiler.disable
+def _build_neo_neighbor_list_eager_island(
+    builder: NeighborList,
+    coord: torch.Tensor,
+    atype: torch.Tensor,
+    box: torch.Tensor | None,
+    rcut: float,
+    sel: list[int],
+    *,
+    return_mode: str,
+) -> Any:
+    """Build Neo neighbors outside Dynamo when the runtime policy requests it."""
+    return builder.build(
+        coord,
+        atype,
+        box,
+        rcut,
+        sel,
+        return_mode=return_mode,
+    )
+
+
+def _build_neo_neighbor_list(
+    builder: NeighborList,
+    coord: torch.Tensor,
+    atype: torch.Tensor,
+    box: torch.Tensor | None,
+    rcut: float,
+    sel: list[int],
+    *,
+    return_mode: str,
+) -> Any:
+    """Apply Neo runtime policy around a general neighbor-list strategy."""
+    if isinstance(builder, NvNeighborList) and _neo_cute_nlist_eager_island_enabled(
+        coord.device
+    ):
+        return _build_neo_neighbor_list_eager_island(
+            builder,
+            coord,
+            atype,
+            box,
+            rcut,
+            sel,
+            return_mode=return_mode,
+        )
+    return builder.build(
+        coord,
+        atype,
+        box,
+        rcut,
+        sel,
+        return_mode=return_mode,
+    )
+
+
+def _neo_cute_so2_requires_sorted_edges(
+    descriptor: Any,
+    *,
+    training: bool,
+    device: torch.device,
+) -> bool:
+    """Return whether this descriptor can use packed Wigner-D on sorted edges.
+
+    ``forward_with_edges`` promotes coordinates and edge vectors to the
+    descriptor compute dtype before constructing Wigner data.  Mirror that
+    post-cast contract here; model inputs may still be FP64 at this boundary.
+    """
+    compute_dtype = descriptor.compute_dtype
+    return bool(
+        not training
+        and _neo_cute_infer_enabled()
+        and descriptor.is_cute_infer_packed_wigner_candidate(
+            device,
+            compute_dtype,
+            compute_dtype,
+        )
+    )
+
+
+def _sort_edge_tensors_by_destination(
+    edge_index: torch.Tensor,
+    edge_vec: torch.Tensor,
+    edge_mask: torch.Tensor,
+    edge_scatter_index: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Stably sort aligned edge tensors by destination, then source."""
+    if edge_index.shape[1] == 0:
+        return edge_index, edge_vec, edge_mask, edge_scatter_index
+    src = edge_index[0].to(dtype=torch.long)
+    dst = edge_index[1].to(dtype=torch.long)
+    source_stride = src.max().clamp_min(0) + 1
+    permutation = torch.argsort(dst * source_stride + src, stable=True)
+    return (
+        edge_index.index_select(1, permutation).contiguous(),
+        edge_vec.index_select(0, permutation).contiguous(),
+        edge_mask.index_select(0, permutation).contiguous(),
+        edge_scatter_index.index_select(1, permutation).contiguous(),
+    )
+
+
 def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
     """Select the O(N) neighbor builder for the given batch shape and device.
 
@@ -585,6 +712,13 @@ _SEZM_COMPILE_CACHE: dict[tuple[Any, ...], Any] = {}
 # Maps structure_key -> task_buf_order so every instance in the same group
 # knows which buffers were promoted and in what order.
 _SEZM_TASK_BUF_ORDER: dict[tuple[Any, ...], tuple[str, ...]] = {}
+
+
+def _clear_shared_sezm_compile_cache() -> None:
+    """Drop shared graphs that may contain frozen parameter constants."""
+    _SEZM_COMPILE_CACHE.clear()
+    _SEZM_TASK_BUF_ORDER.clear()
+
 
 _ENV_BOOL_CHOICES = {
     "1": True,
@@ -733,6 +867,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # Maps cache_key -> task_buf_order for this instance so forward()
         # knows which buffers to pass and in what order.
         object.__setattr__(self, "_task_buf_order_cache", {})
+        self.register_load_state_dict_post_hook(
+            self._invalidate_compiled_state_after_load
+        )
 
         # Training follows `use_compile`. Evaluation/inference samples env
         # policy at init time so path and precision stay fixed per model.
@@ -767,6 +904,41 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             if self.bridging_method != "NONE"
             else None
         )
+
+    @staticmethod
+    def _invalidate_compiled_state_after_load(
+        module: SeZMModel,
+        incompatible_keys: Any,
+    ) -> None:
+        """Discard graphs that may have captured state from before a load."""
+        del incompatible_keys
+        module.compiled_core_compute_cache.clear()
+        module._task_buf_order_cache.clear()
+        object.__setattr__(module, "compiled_embedding", None)
+        object.__setattr__(module, "_embedding_task_buf_order", None)
+        object.__setattr__(module, "compiled_dens_compute", None)
+        module._dens_compiled = False
+        module._core_compute_pending_compile_t0 = None
+        module._core_compute_pending_compile_key = None
+        module._dens_pending_compile_t0 = None
+        so2_invalidator = None
+        for child in module.modules():
+            if not (
+                hasattr(child, "_deepmd_cute_so2_state")
+                or hasattr(child, "_deepmd_cute_gate_expand_contract")
+            ):
+                continue
+            if so2_invalidator is None:
+                from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+                    invalidate_cute_so2_state,
+                )
+
+                so2_invalidator = invalidate_cute_so2_state
+            so2_invalidator(child)
+        # Shared callables can contain make_fx get_attr constants, including
+        # prepared CuTe readout folds. A checkpoint load therefore invalidates
+        # the process-level cache as well as this instance's local slots.
+        _clear_shared_sezm_compile_cache()
 
     # =========================================================================
     # Forward Methods
@@ -1491,6 +1663,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         descriptor_model = self.atomic_model.descriptor
 
         # === Step 1. Establish the force-autograd endpoint ===
+        sort_edges_by_dst = _neo_cute_so2_requires_sorted_edges(
+            descriptor_model,
+            training=self.training,
+            device=edge_vec.device,
+        )
+        if sort_edges_by_dst:
+            edge_index, edge_vec, edge_mask, edge_scatter_index = (
+                _sort_edge_tensors_by_destination(
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    edge_scatter_index,
+                )
+            )
+
         # Neighbor-list construction and periodic-image resolution are explicit
         # caller responsibilities.  Once the edge displacements are supplied,
         # SeZM differentiates only the pure map ``(edge_vec, theta) -> E``.
@@ -1561,6 +1748,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
+                edge_index_sorted_by_dst=sort_edges_by_dst,
                 charge_spin=charge_spin,
                 spin=spin,
                 comm_dict=comm_dict,
@@ -1740,10 +1928,16 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         descriptor_model = self.atomic_model.descriptor
 
         # === Step 1. Build compact sparse edges ===
+        sort_edges_by_dst = _neo_cute_so2_requires_sorted_edges(
+            descriptor_model,
+            training=self.training,
+            device=extended_coord.device,
+        )
         edge_index, edge_vec, edge_mask, _ = self.build_edge_list_from_nlist(
             extended_coord=extended_coord,
             nlist=nlist,
             mapping=mapping,
+            sort_by_destination=sort_edges_by_dst,
         )
 
         # === Step 2. Force embedding ===
@@ -1761,6 +1955,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
+                edge_index_sorted_by_dst=sort_edges_by_dst,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
             )
@@ -1957,6 +2152,53 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 has_coord_corr,
             )
             return
+
+        # Register Python-owned SO2 state before make_fx starts. The opt-in thin
+        # path can then keep adjacent linears in this graph while the CuTe work
+        # remains opaque behind its existing custom op.
+        from deepmd.pt_expt.kernels.cute.sezm import (
+            runtime_policy as cute_runtime_policy,
+        )
+
+        compute_capability = (
+            tuple(torch.cuda.get_device_capability(coord.device))
+            if coord.device.type == "cuda"
+            else None
+        )
+        if not self.training and cute_runtime_policy.is_cute_infer_enabled():
+            from deepmd.pt_expt.kernels.cute.sezm.output_grid.readout_l0 import (
+                maybe_prepare_sm80_readout_input_fold,
+            )
+
+            maybe_prepare_sm80_readout_input_fold(
+                self.atomic_model.descriptor.output_ffn,
+                compute_capability,
+            )
+        prepared_cute_so2 = False
+        if (
+            not self.training
+            and compute_capability is not None
+            and cute_runtime_policy.is_cute_infer_enabled()
+            and cute_runtime_policy.is_supported_so2_capability(compute_capability)
+        ):
+            from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+                prepare_cute_so2_blocks,
+            )
+
+            prepared_cute_so2 = prepare_cute_so2_blocks(
+                self.atomic_model.descriptor.blocks,
+                training=self.training,
+                device=coord.device,
+                dtype=coord.dtype,
+            )
+        if prepared_cute_so2 and cute_runtime_policy.is_so2_thin_wrapper_enabled(
+            compute_capability
+        ):
+            from ..network.mlp import (
+                enable_neo_cute_compile_visible_linears,
+            )
+
+            enable_neo_cute_compile_visible_linears(self)
 
         log.info(
             "SeZM: start tracing and compiling (mode=%s, coord_corr=%s)",
@@ -2764,8 +3006,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     ) -> EdgeNeighborList:
         """Build the unified edge-vector schema for the ``forward`` entry."""
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
-            coord.view(nf, nloc, 3),
+        coord = coord.view(nf, nloc, 3)
+        return _build_neo_neighbor_list(
+            _select_neighbor_builder(nf, coord.device),
+            coord,
             atype,
             box,
             self.get_rcut(),
@@ -2791,8 +3035,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         contract order ``(extended_coord, extended_atype, nlist, mapping)``.
         """
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
-            coord.view(nf, nloc, 3),
+        coord = coord.view(nf, nloc, 3)
+        return _build_neo_neighbor_list(
+            _select_neighbor_builder(nf, coord.device),
+            coord,
             atype,
             box,
             self.get_rcut(),
@@ -2806,6 +3052,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         extended_coord: torch.Tensor,
         nlist: torch.Tensor,
         mapping: torch.Tensor | None,
+        sort_by_destination: bool | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Build a compact edge list from a DeePMD padded neighbor list.
@@ -2830,6 +3077,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             DeePMD padded neighbor list with shape (nf, nloc, nsel).
         mapping
             Extended-to-local mapping with shape (nf, nall), or ``None``.
+        sort_by_destination
+            Whether to sort edges by destination and source. ``None`` preserves
+            the environment-controlled CuTe inference behavior.
 
         Returns
         -------
@@ -2839,7 +3089,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         edge_vec
             Edge vectors with shape (E+2, 3).
         edge_mask
-            Boolean mask with shape (E+2,).  The two trailing elements are ``False``.
+            Boolean mask with shape (E+2,). The two padded elements are
+            ``False``. They are trailing only when sorting is disabled;
+            destination sorting may move them into the interior, so consumers
+            must select valid edges through this mask rather than by position.
         edge_scatter_index
             Scatter-domain (src, dst) indices with shape (2, E+2), aligned
             1:1 with ``edge_index`` and ``edge_vec``.
@@ -2856,12 +3109,24 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             nlist,
             mapping,
         )
-        return (
+        edge_tensors = (
             edge_schema.edge_index,
             edge_schema.edge_vec,
             edge_schema.edge_mask,
             edge_schema.edge_scatter_index,
         )
+        should_sort = (
+            _neo_cute_so2_requires_sorted_edges(
+                self.atomic_model.descriptor,
+                training=self.training,
+                device=extended_coord.device,
+            )
+            if sort_by_destination is None
+            else bool(sort_by_destination)
+        )
+        if should_sort:
+            return _sort_edge_tensors_by_destination(*edge_tensors)
+        return edge_tensors
 
     # =========================================================================
     # Input Canonicalization

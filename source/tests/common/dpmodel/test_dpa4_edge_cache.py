@@ -66,3 +66,42 @@ def test_fused_builders_replace_reference_and_initialize_step_cache() -> None:
 
     cache.csr_cache = None
     assert edge_cache_to_dtype(cache, np.float32).csr_cache is None
+
+
+def test_edge_cache_normalizes_graph_csr_to_int64() -> None:
+    def wigner_calc(quaternion: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        block = np.ones((quaternion.shape[0], 1, 1), dtype=quaternion.dtype)
+        return block, block
+
+    cache = _edge_cache_from_arrays(
+        type_ebed=np.array([[1.0], [2.0]]),
+        edge_index=np.array([[1, 0], [0, 1]], dtype=np.int32),
+        edge_vec=np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        edge_mask=np.array([True, True]),
+        compute_dtype=np.float64,
+        eps=1.0e-12,
+        deg_norm_floor=1.0,
+        inner_clamp=None,
+        bridging_switch=None,
+        edge_envelope=np.ones_like,
+        radial_basis=np.ones_like,
+        random_gamma=False,
+        wigner_calc=wigner_calc,
+        csr_cache={
+            "dst": (
+                np.array([0, 1], dtype=np.int32),
+                np.array([0, 1, 2], dtype=np.int32),
+            ),
+            "src": (
+                np.array([1, 0], dtype=np.int32),
+                np.array([0, 1, 2], dtype=np.int32),
+            ),
+        },
+    )
+
+    assert cache.src.dtype == np.int64
+    assert cache.dst.dtype == np.int64
+    assert cache.csr_cache is not None
+    for order, row_ptr in cache.csr_cache.values():
+        assert order.dtype == np.int64
+        assert row_ptr.dtype == np.int64
