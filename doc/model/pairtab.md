@@ -54,6 +54,10 @@ DeePMD-kit also supports combination with a pairwise potential {{ tensorflow_ico
 
 The table file should be a text file that can be read by {py:meth}`numpy.loadtxt`.
 The first column is the distance between two atoms, where upper range should be larger than the cutoff radius.
+It must be strictly increasing and evenly spaced: every distance has to sit within one percent of a grid step of `rmin + i * hh`,
+where `rmin` is the first distance and `hh` is the constant step inferred from the first and last distances.
+A table that violates this raises a `ValueError` when the model is constructed, because the spline coefficients and both
+evaluators index the table by that constant step and cannot represent a non-uniform grid.
 Other columns are two-body interaction energies for pairs of certain types,
 in the order of Type_0-Type_0, Type_0-Type_1, ..., Type_0-Type_N, Type_1-Type_1, ..., Type_1-Type_N, ..., and Type_N-Type_N.
 
