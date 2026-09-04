@@ -746,6 +746,12 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         config = data.pop("config")
         variables = data.pop("@variables")
         obj = cls(**config)
-        state = {key: safe_numpy_to_tensor(value) for key, value in variables.items()}
+        template = obj.state_dict()
+        state = {
+            key: safe_numpy_to_tensor(
+                value, device=template[key].device, dtype=template[key].dtype
+            )
+            for key, value in variables.items()
+        }
         obj.load_state_dict(state)
         return obj
