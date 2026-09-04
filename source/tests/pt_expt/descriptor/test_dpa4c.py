@@ -226,6 +226,21 @@ class TestDPA4C:
         included.enable_compression(0.5)
         assert included.compress
 
+    def test_compression_round_trip_preserves_frozen_descriptor(self) -> None:
+        """Compression must depend on tensor values, not optimizer registration."""
+        frozen = self.build(precision="float32", trainable=False).eval()
+        assert not tuple(frozen.radial_embedding.parameters())
+        reference = self._evaluate(frozen, self.coord)
+
+        frozen.enable_compression(0.5, table_stride_1=0.2)
+        restored = DescrptDPA4C.deserialize(frozen.serialize()).to(env.DEVICE).eval()
+
+        assert restored.trainable is False
+        assert restored.compress
+        assert not tuple(restored.radial_embedding.parameters())
+        assert not any(parameter.requires_grad for parameter in restored.parameters())
+        torch.testing.assert_close(self._evaluate(restored, self.coord), reference)
+
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)
         original_parameters = dict(self.descriptor.named_parameters())
