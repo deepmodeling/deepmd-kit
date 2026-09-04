@@ -480,17 +480,30 @@ class NeoFullCuteBackward:
             self.source_ptr_i32 = source_csr.source_ptr
         self.rotate = self.so2.rotate_inv_rescale_full.contiguous()
         self.edge_gate = _edge_gate(torch, record.edge_cache)
+        self.focus_norm_enabled = bool(self.so2.focus_norm)
+        if self.focus_norm_enabled:
+            focus_norm = self.so2.focus_compete_norm
+            self.focus_norm_eps = float(focus_norm.eps)
+            self.focus_norm_scale = focus_norm.adam_scale.detach().float().contiguous()
+        else:
+            self.focus_norm_eps = 0.0
+            # The no-norm specialization does not read this fixed-ABI argument;
+            # reuse an existing shape-compatible tensor instead of allocating one.
+            self.focus_norm_scale = (
+                self.so2.attn_qk_norm.adam_scale.detach().float().contiguous()
+            )
         from .kernels.focus_source_backward import (
             compile_neo_attention_prelude_forward,
         )
 
         with torch.cuda.device(self.device_index):
             self.attention_prelude_forward = compile_neo_attention_prelude_forward(
-                float(self.so2.focus_compete_norm.eps),
+                self.focus_norm_eps,
                 float(self.so2.attn_qk_norm.eps),
                 float(self.so2.focus_softmax_tau),
                 float(self.so2.focus_label_smoothing),
                 self.compile_identity,
+                use_focus_norm=self.focus_norm_enabled,
             )
         from .kernels.qk_edge import (
             compile_neo_qk_edge_backward,
@@ -521,9 +534,10 @@ class NeoFullCuteBackward:
         )
 
         self.phase_c_layout_backward = CuteNeoPhaseCBackwardLayout(
-            focus_eps=float(self.so2.focus_compete_norm.eps),
+            focus_eps=self.focus_norm_eps,
             focus_tau=float(self.so2.focus_softmax_tau),
             focus_label_smoothing=float(self.so2.focus_label_smoothing),
+            use_focus_norm=self.focus_norm_enabled,
         )
         with torch.cuda.device(self.device_index):
             self.softmax_fwd = compile_envelope_softmax_forward(
@@ -815,7 +829,7 @@ class NeoFullCuteBackward:
             self.focus_gate_src.view(n_edge, 64),
             x_l0_node.contiguous(),
             so2.adamw_focus_compete_w.detach().float().contiguous(),
-            so2.focus_compete_norm.adam_scale.detach().float().contiguous(),
+            self.focus_norm_scale,
             so2.attn_q_proj.weight.detach().float().view(32, 2, 32).contiguous(),
             so2.attn_k_proj.weight.detach().float().view(32, 2, 32).contiguous(),
             so2.attn_qk_norm.adam_scale.detach().float().contiguous(),

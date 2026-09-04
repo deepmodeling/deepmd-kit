@@ -113,11 +113,13 @@ def _prepare_persistent_weights(so2: Any) -> NeoPersistentComplexWeights:
     for nonlinearity in nonlinearities[:GATED_LAYERS]:
         if getattr(nonlinearity, "layout", None) != "fndc":
             raise NotImplementedError("SM90 SO2 requires fndc gates")
-        activation = getattr(
-            getattr(nonlinearity, "scalar_act", None),
-            "activation",
-            None,
-        )
+        activation = getattr(nonlinearity, "activation_function", None)
+        if activation is None:
+            activation = getattr(
+                getattr(nonlinearity, "scalar_act", None),
+                "activation",
+                None,
+            )
         if str(activation).lower() != "silu":
             raise NotImplementedError("SM90 SO2 requires SiLU gates")
         if getattr(nonlinearity.gate_linear, "bias", None) is not None:
@@ -353,7 +355,7 @@ class NeoSm90SO2Runner(NeoFullCuteBackward):
             self.focus_gate_src.view(edge_count, HIDDEN),
             x_l0_node.contiguous(),
             so2.adamw_focus_compete_w.detach().float().contiguous(),
-            so2.focus_compete_norm.adam_scale.detach().float().contiguous(),
+            self.focus_norm_scale,
             so2.attn_q_proj.weight.detach()
             .float()
             .view(CHANNELS, FOCUS_COUNT, CHANNELS)
@@ -586,19 +588,17 @@ def _runner_backward(
         focus_alpha=runner.focus_alpha,
         focus_src=runner.focus_gate_src,
         focus_weight=so2.adamw_focus_compete_w.detach().float().contiguous(),
-        focus_scale=so2.focus_compete_norm.adam_scale.detach()
-        .float()
-        .reshape(FOCUS_COUNT, CHANNELS)
-        .contiguous(),
+        focus_scale=runner.focus_norm_scale,
         q_node=runner.q_node,
         k_node=runner.k_node,
         edge_gate=runner.edge_gate,
         src=runner.src_i32,
         dst_ptr=runner.dst_ptr_i32,
-        focus_eps=float(so2.focus_compete_norm.eps),
+        focus_eps=runner.focus_norm_eps,
         focus_tau=float(so2.focus_softmax_tau),
         label_smoothing=float(so2.focus_label_smoothing),
         qk_scale=CHANNELS**-0.5,
+        use_focus_norm=runner.focus_norm_enabled,
         outputs=fused_outputs,
     )
     grad_stack = NeoPersistentComplexState(

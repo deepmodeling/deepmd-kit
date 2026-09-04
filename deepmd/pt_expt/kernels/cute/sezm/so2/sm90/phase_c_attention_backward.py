@@ -162,6 +162,7 @@ def _grouped_expanded_adjoint_jit(
     focus_tau: cutlass.Constexpr[float],
     label_smoothing: cutlass.Constexpr[float],
     qk_scale: cutlass.Constexpr[float],
+    use_focus_norm: cutlass.Constexpr[bool],
     stream: CUstream,
 ):
     _grouped_expanded_adjoint_kernel(
@@ -193,6 +194,7 @@ def _grouped_expanded_adjoint_jit(
         focus_tau,
         label_smoothing,
         qk_scale,
+        use_focus_norm,
     ).launch(
         grid=[dst_ptr.shape[0] - 1, 1, 1],
         block=[THREADS, 1, 1],
@@ -230,6 +232,7 @@ def _grouped_expanded_adjoint_kernel(
     focus_tau: cutlass.Constexpr[float],
     label_smoothing: cutlass.Constexpr[float],
     qk_scale: cutlass.Constexpr[float],
+    use_focus_norm: cutlass.Constexpr[bool],
 ):
     tidx, _, _ = cute.arch.thread_idx()
     node, _, _ = cute.arch.block_idx()
@@ -470,19 +473,22 @@ def _grouped_expanded_adjoint_kernel(
             focus_grad_probability = focus_grad1
         focus_grad_logit = probability * (focus_grad_probability - focus_dot) * inv_tau
 
-        focus_value_raw = focus_src[edge, focus, lane].to(cutlass.Float32)
-        scale = focus_scale[focus, lane].to(cutlass.Float32)
         weight = focus_weight[lane, focus].to(cutlass.Float32)
-        inv_rms = cute.rsqrt(
-            _warp_sum(focus_value_raw * focus_value_raw) / cutlass.Float32(CHANNELS)
-            + cutlass.Float32(focus_eps)
-        )
-        grad_scaled = focus_grad_logit * weight * scale
-        coeff = _warp_sum(grad_scaled * focus_value_raw) / cutlass.Float32(CHANNELS)
-        grad_focus_src[focus, edge, lane] = (
-            grad_scaled * inv_rms
-            - focus_value_raw * inv_rms * inv_rms * inv_rms * coeff
-        )
+        if cutlass.const_expr(use_focus_norm):
+            focus_value_raw = focus_src[edge, focus, lane].to(cutlass.Float32)
+            scale = focus_scale[focus, lane].to(cutlass.Float32)
+            inv_rms = cute.rsqrt(
+                _warp_sum(focus_value_raw * focus_value_raw) / cutlass.Float32(CHANNELS)
+                + cutlass.Float32(focus_eps)
+            )
+            grad_scaled = focus_grad_logit * weight * scale
+            coeff = _warp_sum(grad_scaled * focus_value_raw) / cutlass.Float32(CHANNELS)
+            grad_focus_src[focus, edge, lane] = (
+                grad_scaled * inv_rms
+                - focus_value_raw * inv_rms * inv_rms * inv_rms * coeff
+            )
+        else:
+            grad_focus_src[focus, edge, lane] = focus_grad_logit * weight
 
         if local == 0:
             grad_attention0 = beta_adjoint[edge_slot * FOCUS_COUNT] * focus_alpha[
@@ -518,6 +524,7 @@ def compile_grouped_expanded_final_phase_c_attention_adjoint(
     focus_tau: float,
     label_smoothing: float,
     qk_scale: float = QK_SCALE,
+    use_focus_norm: bool = True,
 ) -> Callable:
     """Compile the fixed four-group SM90 schedule."""
     edges = cute.sym_int64()
@@ -594,6 +601,7 @@ def compile_grouped_expanded_final_phase_c_attention_adjoint(
         float(focus_tau),
         float(label_smoothing),
         float(qk_scale),
+        bool(use_focus_norm),
         make_fake_stream(use_tvm_ffi_env_stream=True),
         options="--enable-tvm-ffi",
     )
@@ -685,6 +693,7 @@ def run_grouped_expanded_final_phase_c_attention_adjoint(
     focus_tau: float,
     label_smoothing: float,
     qk_scale: float = QK_SCALE,
+    use_focus_norm: bool = True,
     outputs: GroupedExpandedFinalPhaseCAttentionAdjointOutputs | None = None,
 ) -> GroupedExpandedFinalPhaseCAttentionAdjointOutputs:
     """Run the adjoint; reusable outputs require clearing ``grad_k_node``."""
@@ -824,6 +833,7 @@ def run_grouped_expanded_final_phase_c_attention_adjoint(
             float(focus_tau),
             float(label_smoothing),
             float(qk_scale),
+            bool(use_focus_norm),
         )(
             b0,
             torch.view_as_real(b1),

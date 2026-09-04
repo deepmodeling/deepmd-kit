@@ -133,11 +133,13 @@ def _compile_layout_boundary(
     focus_eps: float,
     focus_tau: float,
     focus_label_smoothing: float,
+    use_focus_norm: bool,
 ) -> Any:
     return compile_neo_phase_c_backward_layout(
         focus_eps=focus_eps,
         focus_tau=focus_tau,
         focus_label_smoothing=focus_label_smoothing,
+        use_focus_norm=use_focus_norm,
     )
 
 
@@ -159,11 +161,13 @@ class CuteNeoPhaseCBackwardLayout:
         focus_eps: float,
         focus_tau: float,
         focus_label_smoothing: float,
+        use_focus_norm: bool = True,
     ) -> None:
         self._compiled = _compile_layout_boundary(
             float(focus_eps),
             float(focus_tau),
             float(focus_label_smoothing),
+            bool(use_focus_norm),
         )
 
     def __call__(

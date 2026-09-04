@@ -172,12 +172,26 @@ def has_equivariant_rms_norm_contract(module: Any) -> bool:
     )
 
 
+def has_focus_compete_norm_contract(so2: Any) -> bool:
+    """Return whether focus competition matches the optional norm contract."""
+    module = getattr(so2, "focus_compete_norm", None)
+    if not bool(getattr(so2, "focus_norm", False)):
+        return module is None or _is_identity(module)
+    return (
+        type(module).__name__ == "ScalarRMSNorm"
+        and int(getattr(module, "channels", -1)) == 32
+        and int(getattr(module, "n_focus", -1)) == 2
+        and tuple(getattr(getattr(module, "adam_scale", None), "shape", ())) == (2, 32)
+        and hasattr(module, "eps")
+    )
+
+
 def is_supported_neo_so2_block(block: Any) -> bool:
     """Return whether this block can use the current Neo CuTe SO2 path."""
     so2 = block.so2_conv
     return (
         get_neo_so2_spec(block).is_current_neo_target
-        and bool(so2.focus_norm)
+        and has_focus_compete_norm_contract(so2)
         and not bool(so2.edge_cartesian)
         and getattr(so2, "node_cartesian_tp", None) is None
         and has_equivariant_rms_norm_contract(block.post_so2_norm)
@@ -1629,7 +1643,7 @@ def _runner_backward_manual(
         runner.denom,
         runner.focus_gate_src.detach().contiguous(),
         so2.adamw_focus_compete_w.detach().float().contiguous(),
-        so2.focus_compete_norm.adam_scale.detach().float().reshape(2, 32).contiguous(),
+        runner.focus_norm_scale,
         layout_outputs,
     )
     grad_stack_out = _native_edge_major_stack_grad(layout_outputs.grad_stack)

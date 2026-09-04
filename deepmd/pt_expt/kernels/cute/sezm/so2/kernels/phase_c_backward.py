@@ -138,17 +138,10 @@ def _focus_source_backward(
     eps: cutlass.Constexpr[float],
     tau: cutlass.Constexpr[float],
     label_smoothing: cutlass.Constexpr[float],
+    use_focus_norm: cutlass.Constexpr[bool],
 ):
     """Consume the Phase-C focus-alpha reduction without a global temporary."""
-    value = params.focus_src[edge, head, lane].to(cutlass.Float32)
-    scale = params.focus_scale[head, lane].to(cutlass.Float32)
     weight = params.focus_weight[lane, head].to(cutlass.Float32)
-
-    square_sum = _warp_sum(value * value)
-    if lane == 0:
-        focus_inv[head] = cute.rsqrt(
-            square_sum / cutlass.Float32(FOCUS_CHANNELS) + cutlass.Float32(eps)
-        )
 
     if tidx == 0:
         probability_keep = cutlass.Float32(1.0 - label_smoothing)
@@ -168,15 +161,25 @@ def _focus_source_backward(
         focus_grad_logits[1] = probability1 * (grad1 - dot) * inv_tau
     cute.arch.sync_threads()
 
-    grad_scaled = focus_grad_logits[head] * weight * scale
-    coeff_sum = _warp_sum(grad_scaled * value)
-    if lane == 0:
-        focus_coeff[head] = coeff_sum / cutlass.Float32(FOCUS_CHANNELS)
-    cute.arch.sync_warp()
+    if cutlass.const_expr(use_focus_norm):
+        value = params.focus_src[edge, head, lane].to(cutlass.Float32)
+        scale = params.focus_scale[head, lane].to(cutlass.Float32)
+        square_sum = _warp_sum(value * value)
+        if lane == 0:
+            focus_inv[head] = cute.rsqrt(
+                square_sum / cutlass.Float32(FOCUS_CHANNELS) + cutlass.Float32(eps)
+            )
+        grad_scaled = focus_grad_logits[head] * weight * scale
+        coeff_sum = _warp_sum(grad_scaled * value)
+        if lane == 0:
+            focus_coeff[head] = coeff_sum / cutlass.Float32(FOCUS_CHANNELS)
+        cute.arch.sync_warp()
 
-    inv = focus_inv[head]
-    grad_value = grad_scaled * inv
-    grad_value -= value * inv * inv * inv * focus_coeff[head]
+        inv = focus_inv[head]
+        grad_value = grad_scaled * inv
+        grad_value -= value * inv * inv * inv * focus_coeff[head]
+    else:
+        grad_value = focus_grad_logits[head] * weight
     params.grad_focus_src[head, edge, lane] = grad_value.to(
         params.grad_focus_src.element_type
     )
@@ -190,6 +193,7 @@ def neo_phase_c_backward_layout_kernel(
     focus_eps: cutlass.Constexpr[float],
     focus_tau: cutlass.Constexpr[float],
     focus_label_smoothing: cutlass.Constexpr[float],
+    use_focus_norm: cutlass.Constexpr[bool],
 ):
     tidx, _, _ = cute.arch.thread_idx()
     node, _, _ = cute.arch.block_idx()
@@ -359,6 +363,7 @@ def neo_phase_c_backward_layout_kernel(
             focus_eps,
             focus_tau,
             focus_label_smoothing,
+            use_focus_norm,
         )
         cute.arch.sync_threads()
 
@@ -462,6 +467,7 @@ def neo_phase_c_backward_layout_jit(
     focus_eps: cutlass.Constexpr[float],
     focus_tau: cutlass.Constexpr[float],
     focus_label_smoothing: cutlass.Constexpr[float],
+    use_focus_norm: cutlass.Constexpr[bool],
 ):
     params = NeoPhaseCBackwardLayoutParams(
         grad_out=grad_out,
@@ -507,6 +513,7 @@ def neo_phase_c_backward_layout_jit(
         focus_eps,
         focus_tau,
         focus_label_smoothing,
+        use_focus_norm,
     ).launch(
         grid=[node_count, 1, 1],
         block=[HIDDEN, 1, 1],
@@ -524,9 +531,10 @@ def compile_neo_phase_c_backward_layout(
     focus_eps: float,
     focus_tau: float,
     focus_label_smoothing: float,
+    use_focus_norm: bool = True,
 ) -> Callable:
     """Compile the exact Neo Phase-C layout-boundary backward callable."""
-    if focus_eps <= 0.0:
+    if use_focus_norm and focus_eps <= 0.0:
         raise ValueError("focus_eps must be positive")
     if focus_tau <= 0.0:
         raise ValueError("focus_tau must be positive")
@@ -689,5 +697,6 @@ def compile_neo_phase_c_backward_layout(
         focus_eps,
         focus_tau,
         focus_label_smoothing,
+        bool(use_focus_norm),
         options="--enable-tvm-ffi",
     )

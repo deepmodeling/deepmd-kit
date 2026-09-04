@@ -98,7 +98,11 @@ def _make_descriptor(
     )
 
 
-def make_neo_descriptor(sel: int | list[int] = 4) -> DescrptDPA4:
+def make_neo_descriptor(
+    sel: int | list[int] = 4,
+    *,
+    edge_norm: bool = True,
+) -> DescrptDPA4:
     """Build the exact Neo layout served by the current CuTe kernels."""
     return DescrptDPA4(
         ntypes=2,
@@ -117,6 +121,7 @@ def make_neo_descriptor(sel: int | list[int] = 4) -> DescrptDPA4:
         so3_readout="mlp",
         use_amp=False,
         random_gamma=False,
+        edge_norm=edge_norm,
         precision="float32",
         trainable=False,
         seed=42,
@@ -476,7 +481,12 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)
         np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
 
-    def test_cute_neo_forward_and_coordinate_gradient(self, monkeypatch) -> None:
+    @pytest.mark.parametrize("edge_norm", [True, False])
+    def test_cute_neo_forward_and_coordinate_gradient(
+        self,
+        monkeypatch,
+        edge_norm: bool,
+    ) -> None:
         """Exercise packed Wigner and SO2 through the PT-expt descriptor."""
         try:
             import cuda.bindings.driver  # noqa: F401
@@ -499,7 +509,7 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             "DP_CUTE_INFER",
         ):
             monkeypatch.setenv(name, "0")
-        data = make_neo_descriptor(self.sel_mix).serialize()
+        data = make_neo_descriptor(self.sel_mix, edge_norm=edge_norm).serialize()
         reference = DescrptDPA4.deserialize(data).to(self.device).eval()
         reference_output, reference_gradient = self._step(reference)
 

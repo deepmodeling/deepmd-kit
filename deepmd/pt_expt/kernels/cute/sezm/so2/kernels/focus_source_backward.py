@@ -5,7 +5,7 @@
 
 The forward kernel fuses two independent PyTorch producer chains in one launch:
 
-    focus RMSNorm -> two-focus logits -> softmax -> label smoothing
+    optional focus RMSNorm -> two-focus logits -> softmax -> label smoothing
     scalar Q/K RMSNorm -> Q projection + K projection
 
 The kernel is specialized to the Neo SO2 shape `(E, F=2, C=32)`.
@@ -57,6 +57,7 @@ def neo_attention_prelude_forward_jit(
     qk_eps: cutlass.Float32,
     tau: cutlass.Float32,
     label_smoothing: cutlass.Float32,
+    use_focus_norm: cutlass.Constexpr[bool],
 ):
     edges, _ = focus.shape
     nodes, _, _ = x_l0.shape
@@ -75,6 +76,7 @@ def neo_attention_prelude_forward_jit(
         qk_eps,
         tau,
         label_smoothing,
+        use_focus_norm,
     ).launch(
         # The launch covers two independent domains.  Using their sum avoids a
         # host-side branch on symbolic E/N while guaranteeing coverage of both.
@@ -100,6 +102,7 @@ def neo_attention_prelude_forward_kernel(
     qk_eps: cutlass.Float32,
     tau: cutlass.Float32,
     label_smoothing: cutlass.Float32,
+    use_focus_norm: cutlass.Constexpr[bool],
 ):
     tid, _, _ = cute.arch.thread_idx()
     block, _, _ = cute.arch.block_idx()
@@ -110,10 +113,14 @@ def neo_attention_prelude_forward_kernel(
     if edge < edges:
         x0 = focus[edge, lane].to(cutlass.Float32)
         x1 = focus[edge, 32 + lane].to(cutlass.Float32)
-        inv0 = cute.rsqrt(_warp_sum(x0 * x0) / cutlass.Float32(32.0) + focus_eps)
-        inv1 = cute.rsqrt(_warp_sum(x1 * x1) / cutlass.Float32(32.0) + focus_eps)
-        norm0 = x0 * inv0 * focus_scale[0, lane].to(cutlass.Float32)
-        norm1 = x1 * inv1 * focus_scale[1, lane].to(cutlass.Float32)
+        if cutlass.const_expr(use_focus_norm):
+            inv0 = cute.rsqrt(_warp_sum(x0 * x0) / cutlass.Float32(32.0) + focus_eps)
+            inv1 = cute.rsqrt(_warp_sum(x1 * x1) / cutlass.Float32(32.0) + focus_eps)
+            norm0 = x0 * inv0 * focus_scale[0, lane].to(cutlass.Float32)
+            norm1 = x1 * inv1 * focus_scale[1, lane].to(cutlass.Float32)
+        else:
+            norm0 = x0
+            norm1 = x1
         logit0 = _warp_sum(norm0 * focus_weight[lane, 0].to(cutlass.Float32))
         logit1 = _warp_sum(norm1 * focus_weight[lane, 1].to(cutlass.Float32))
 
@@ -176,6 +183,8 @@ def compile_neo_attention_prelude_forward(
     tau: float,
     label_smoothing: float,
     compile_identity: tuple[int, int, int] | None = None,
+    *,
+    use_focus_norm: bool = True,
 ) -> Callable:
     # The identity keeps independently compiled device/architecture binaries in
     # distinct cache entries. Compilation itself runs under the runner's device.
@@ -230,6 +239,7 @@ def compile_neo_attention_prelude_forward(
         cutlass.Float32(qk_eps),
         cutlass.Float32(tau),
         cutlass.Float32(label_smoothing),
+        bool(use_focus_norm),
         options="--enable-tvm-ffi",
     )
 

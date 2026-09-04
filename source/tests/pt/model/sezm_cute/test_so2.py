@@ -24,6 +24,7 @@ from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
 )
 from deepmd.pt.model.descriptor.sezm_nn.norm import (
     EquivariantRMSNorm,
+    ScalarRMSNorm,
 )
 from deepmd.pt_expt.kernels.cute.sezm import (
     runtime_policy,
@@ -89,6 +90,16 @@ def _neo_like_block(**overrides):
     )
     for key, value in overrides.items():
         setattr(so2, key, value)
+    so2.focus_compete_norm = (
+        ScalarRMSNorm(
+            channels=32,
+            n_focus=2,
+            dtype=torch.float32,
+            trainable=False,
+        )
+        if so2.focus_norm
+        else None
+    )
     block = torch.nn.Module()
     block.so2_conv = so2
     block.lmax = 3
@@ -107,8 +118,9 @@ def _neo_like_block(**overrides):
     return block
 
 
-def test_exact_neo_contract_is_supported() -> None:
-    block = _neo_like_block()
+@pytest.mark.parametrize("focus_norm", [True, False])
+def test_exact_neo_contract_is_supported(focus_norm: bool) -> None:
+    block = _neo_like_block(focus_norm=focus_norm)
 
     assert _SO2.get_neo_so2_spec(block).is_current_neo_target
     assert _SO2.is_supported_neo_so2_block(block)
@@ -401,7 +413,10 @@ def _cute_cuda_runtime_available() -> bool:
     not _cute_cuda_runtime_available(),
     reason="CuTe attention-prelude regression requires CUDA and CuTe DSL",
 )
-def test_attention_prelude_initializes_all_qk_rows_when_edges_are_sparse() -> None:
+@pytest.mark.parametrize("use_focus_norm", [True, False])
+def test_attention_prelude_initializes_all_qk_rows_when_edges_are_sparse(
+    use_focus_norm: bool,
+) -> None:
     from deepmd.pt_expt.kernels.cute.sezm.so2.kernels.focus_source_backward import (
         compile_neo_attention_prelude_forward,
     )
@@ -426,14 +441,16 @@ def test_attention_prelude_initializes_all_qk_rows_when_edges_are_sparse() -> No
     label_smoothing = 0.1
 
     focus_view = focus.view(edge_count, 2, 32)
-    focus_norm = (
-        focus_view
-        * torch.rsqrt(focus_view.square().mean(dim=-1, keepdim=True) + focus_eps)
-        * focus_scale.unsqueeze(0)
-    )
+    focus_input = focus_view
+    if use_focus_norm:
+        focus_input = (
+            focus_view
+            * torch.rsqrt(focus_view.square().mean(dim=-1, keepdim=True) + focus_eps)
+            * focus_scale.unsqueeze(0)
+        )
     focus_logits = torch.stack(
         [
-            (focus_norm[:, focus_idx] * focus_weight[:, focus_idx]).sum(dim=-1)
+            (focus_input[:, focus_idx] * focus_weight[:, focus_idx]).sum(dim=-1)
             for focus_idx in range(2)
         ],
         dim=-1,
@@ -453,6 +470,7 @@ def test_attention_prelude_initializes_all_qk_rows_when_edges_are_sparse() -> No
         qk_eps,
         tau,
         label_smoothing,
+        use_focus_norm=use_focus_norm,
     )
     run(
         focus,
