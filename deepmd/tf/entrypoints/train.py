@@ -52,6 +52,7 @@ from deepmd.tf.utils.finetune import (
     replace_model_params_with_pretrained_model,
 )
 from deepmd.utils.data_system import (
+    close_data_systems,
     get_data,
 )
 from deepmd.utils.path import (
@@ -308,26 +309,31 @@ def _do_work(
     if (
         origin_type_map is not None and not origin_type_map
     ):  # get the type_map from data if not provided
-        origin_type_map = get_data(
-            jdata["training"]["training_data"], rcut, None, modifier
-        ).get_type_map()
-    model.build(
-        train_data,
-        stop_batch,
-        origin_type_map=origin_type_map,
-        stat_file_path=stat_file_path,
-    )
+        origin_data = get_data(jdata["training"]["training_data"], rcut, None, modifier)
+        try:
+            origin_type_map = origin_data.get_type_map()
+        finally:
+            close_data_systems(origin_data)
+    try:
+        model.build(
+            train_data,
+            stop_batch,
+            origin_type_map=origin_type_map,
+            stat_file_path=stat_file_path,
+        )
 
-    if not is_compress:
-        # train the model with the provided systems in a cyclic way
-        start_time = time.time()
-        model.train(train_data, valid_data)
-        end_time = time.time()
-        log.info("finished training")
-        log.info(f"wall time: {(end_time - start_time):.3f} s")
-    else:
-        model.save_compressed()
-        log.info("finished compressing")
+        if not is_compress:
+            # train the model with the provided systems in a cyclic way
+            start_time = time.time()
+            model.train(train_data, valid_data)
+            end_time = time.time()
+            log.info("finished training")
+            log.info(f"wall time: {(end_time - start_time):.3f} s")
+        else:
+            model.save_compressed()
+            log.info("finished compressing")
+    finally:
+        close_data_systems(train_data, valid_data)
 
 
 def get_modifier(modi_data: dict | None = None) -> BaseModifier | None:
@@ -355,9 +361,12 @@ def update_sel(jdata: dict) -> dict:
         type_map,
         None,  # not used
     )
-    jdata_cpy["model"], min_nbor_dist = Model.update_sel(
-        train_data, type_map, jdata["model"]
-    )
+    try:
+        jdata_cpy["model"], min_nbor_dist = Model.update_sel(
+            train_data, type_map, jdata["model"]
+        )
+    finally:
+        close_data_systems(train_data)
 
     if min_nbor_dist is not None:
         tf.constant(
