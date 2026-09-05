@@ -5,8 +5,9 @@ A preset names a released model architecture. Writing ``"preset":
 "<family>-<grade>-<version>"`` in the ``model`` section of an input file
 fills in the four architecture-defining regions of the model configuration:
 ``type``, ``type_map``, ``descriptor`` and ``fitting_net``. Entries written
-explicitly next to the preset take precedence, key by key, so a cutoff radius
-or a fitting width can be overridden, and options that are not part of an
+explicitly next to the preset take precedence: ``type`` and ``type_map`` as a
+whole, ``descriptor`` and ``fitting_net`` key by key, so a cutoff radius or a
+fitting width can be overridden, and options that are not part of an
 architecture (``use_amp``, ``seed``, ``sel``, charge and spin conditioning,
 ...) are supplied alongside the preset.
 
@@ -358,12 +359,16 @@ def expand_model_preset(model_config: dict[str, Any]) -> dict[str, Any]:
     The single-task ``model`` section and every branch of a multi-task
     ``model_dict`` may carry a ``preset``. In the multi-task layout a
     ``preset`` next to ``model_dict`` is the default for every branch that
-    has none of its own. The preset supplies ``type``, ``type_map``,
-    ``descriptor`` and ``fitting_net``; entries written explicitly take
-    precedence key by key inside ``descriptor`` and ``fitting_net`` and as a
-    whole for ``type`` and ``type_map``. The ``preset`` key itself is removed,
-    so the result is a plain model configuration and the function is
-    idempotent. Branches that are not mappings are left to the argument check.
+    has none of its own, and ``type``, ``type_map``, ``descriptor`` and
+    ``fitting_net`` written next to ``model_dict`` are branch defaults in the
+    same way as the model-wide options of the PyTorch backend, so they take
+    part in the merge of every branch that expands a preset. The preset
+    supplies ``type``, ``type_map``, ``descriptor`` and ``fitting_net``;
+    entries written explicitly take precedence key by key inside
+    ``descriptor`` and ``fitting_net`` and as a whole for ``type`` and
+    ``type_map``. The ``preset`` key itself is removed, so the result is a
+    plain model configuration and the function is idempotent. A ``model_dict``
+    or a branch that is not a mapping is left to the argument check.
 
     Parameters
     ----------
@@ -386,17 +391,25 @@ def expand_model_preset(model_config: dict[str, Any]) -> dict[str, Any]:
         return _expand_single(model_config)
     branches = model_config["model_dict"]
     has_default = "preset" in model_config
-    if not has_default and not any(
-        isinstance(branch, dict) and "preset" in branch for branch in branches.values()
+    if not isinstance(branches, dict) or (
+        not has_default
+        and not any(
+            isinstance(branch, dict) and "preset" in branch
+            for branch in branches.values()
+        )
     ):
         return model_config
-    default_preset = model_config.get("preset")
+    # Branch defaults: the default preset and the region entries written next
+    # to ``model_dict``. Branch entries replace them as whole values.
+    defaults = {
+        key: model_config[key]
+        for key in ("preset", *_PRESET_REGIONS)
+        if key in model_config
+    }
     expanded = {key: value for key, value in model_config.items() if key != "preset"}
     expanded["model_dict"] = {}
     for branch_name, branch in branches.items():
-        if isinstance(branch, dict):
-            if has_default and "preset" not in branch:
-                branch = {"preset": default_preset, **branch}
-            branch = _expand_single(branch)
+        if isinstance(branch, dict) and (has_default or "preset" in branch):
+            branch = _expand_single({**defaults, **branch})
         expanded["model_dict"][branch_name] = branch
     return expanded

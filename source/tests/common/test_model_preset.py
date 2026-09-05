@@ -237,6 +237,48 @@ def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
     assert set(normalized["model"]["model_dict"]) == {"water_1", "water_2"}
 
 
+def test_multi_task_top_level_regions_are_branch_defaults() -> None:
+    model = {
+        "preset": "dpa4-nano-v20260901",
+        "descriptor": {"rcut": 7.0},
+        "fitting_net": {"seed": 3},
+        "shared_dict": {"type_map": ["O", "H"]},
+        "model_dict": {
+            "water_1": {"type_map": "type_map"},
+            "water_2": {
+                "preset": "dpa4-mini-v20260901",
+                "type_map": "type_map",
+                "descriptor": {"rcut": 5.0},
+            },
+        },
+    }
+    expanded = expand_model_preset(model)
+    water_1 = expanded["model_dict"]["water_1"]
+    assert water_1["descriptor"]["rcut"] == 7.0
+    assert water_1["descriptor"]["lmax"] == 1
+    assert water_1["fitting_net"] == {"neuron": [0], "precision": "float32", "seed": 3}
+    # A branch entry replaces the top-level default as a whole.
+    water_2 = expanded["model_dict"]["water_2"]
+    assert water_2["descriptor"]["rcut"] == 5.0
+    assert water_2["descriptor"]["lmax"] == 2
+    assert water_2["fitting_net"]["seed"] == 3
+    # The top-level entries stay for the backend's model-wide handling.
+    assert expanded["descriptor"] == {"rcut": 7.0}
+    assert "preset" not in expanded
+
+
+def test_malformed_multi_task_layout_is_left_to_argcheck() -> None:
+    malformed = {"preset": "dpa4-nano-v20260901", "model_dict": "water"}
+    assert expand_model_preset(malformed) is malformed
+    branch_not_mapping = {
+        "preset": "dpa4-nano-v20260901",
+        "model_dict": {"water": "not a mapping"},
+    }
+    assert expand_model_preset(branch_not_mapping)["model_dict"] == {
+        "water": "not a mapping"
+    }
+
+
 def test_update_deepmd_input_expands_presets() -> None:
     jdata = {
         "model": {"preset": "dpa4c-mini-v20260901"},
