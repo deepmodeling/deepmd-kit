@@ -24,6 +24,11 @@ from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
 )
+from deepmd.utils.data_conversion import (
+    expand_extxyz_cache,
+    is_extxyz_path,
+    materialize_extxyz,
+)
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
@@ -851,6 +856,7 @@ def process_systems(
 
     If it is a single directory, search for all the systems in the directory.
     If it is a list, each item in the list is treated as a directory to search.
+    If it is an explicit extxyz file, materialize and expand its ordered cache.
     If it is a single LMDB path, return it directly without expansion.
     Check if the systems are valid.
 
@@ -888,7 +894,20 @@ def process_systems(
     # Iterate over the search_paths list and apply expansion logic to each path
     result_systems = []
     for path in search_paths:
-        if patterns is None:
+        cached_paths = expand_extxyz_cache(path)
+        if cached_paths is not None:
+            # A cache manifest records the deterministic order of systems split
+            # from one heterogeneous extxyz input. rglob_patterns deliberately
+            # does not filter explicitly named extxyz files.
+            expanded_paths = cached_paths
+        elif is_extxyz_path(path):
+            cache_root, _ = materialize_extxyz(path)
+            expanded_paths = expand_extxyz_cache(cache_root)
+            if expanded_paths is None:  # pragma: no cover - cache is validated
+                raise RuntimeError(
+                    f"Extxyz cache for '{path}' was created without a valid manifest"
+                )
+        elif patterns is None:
             expanded_paths = expand_sys_str(path)
         else:
             expanded_paths = rglob_sys_str(path, patterns)
