@@ -51,6 +51,66 @@ def make_descriptor(nt, sel, rcut, **overrides) -> DescrptDPA4:
     return DescrptDPA4(**kwargs)
 
 
+@pytest.mark.parametrize("counts", [(1, 2), (1, 3), (2, 2)])
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("use_default", [False, True])
+def test_call_graph_ragged_charge_spin(counts, precision, use_default) -> None:
+    """Ragged outputs and embedding parameter gradients match single frames."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
+
+    dtype = PRECISION_DICT[precision]
+    descriptor = DescrptDPA4(
+        ntypes=1,
+        sel=2,
+        rcut=3.0,
+        channels=4,
+        n_radial=2,
+        lmax=0,
+        kmax=0,
+        n_blocks=0,
+        use_env_seed=False,
+        random_gamma=False,
+        add_chg_spin_ebd=True,
+        default_chg_spin=[-1.0, 3.0],
+        precision=precision,
+        seed=1,
+    )
+    descriptor = DescrptDPA4.deserialize(descriptor.serialize()).to(env.DEVICE)
+    conditions = torch.tensor(
+        [[0.0, 1.0], [1.0, 2.0]],
+        dtype=dtype,
+        device=env.DEVICE,
+    )
+
+    def evaluate(frame_counts, charge_spin):
+        graph = NeighborGraph(
+            n_node=torch.tensor(frame_counts, dtype=torch.int64, device=env.DEVICE),
+            edge_index=torch.zeros((2, 2), dtype=torch.int64, device=env.DEVICE),
+            edge_vec=torch.zeros((2, 3), dtype=dtype, device=env.DEVICE),
+            edge_mask=torch.zeros(2, dtype=torch.bool, device=env.DEVICE),
+        )
+        return descriptor.call_graph(
+            graph,
+            torch.zeros(sum(frame_counts), dtype=torch.int64, device=env.DEVICE),
+            charge_spin=None if use_default else charge_spin,
+        )[0]
+
+    expected = torch.cat(
+        [evaluate([n], conditions[i : i + 1]) for i, n in enumerate(counts)]
+    )
+    actual = evaluate(counts, conditions)
+    tol = 1e-6 if precision == "float32" else 1e-12
+    torch.testing.assert_close(actual, expected, rtol=tol, atol=tol)
+    parameters = tuple(descriptor.charge_spin_embedding.parameters())
+    expected_grads = torch.autograd.grad(expected.sum(), parameters)
+    actual_grads = torch.autograd.grad(actual.sum(), parameters)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        assert expected_grad.abs().max() > 1e-8
+        torch.testing.assert_close(actual_grad, expected_grad, rtol=tol, atol=tol)
+
+
 class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
     def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
