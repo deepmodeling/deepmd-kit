@@ -478,9 +478,9 @@ def descrpt_dpa4c_args() -> list[Argument]:
                 "are 8, 16, 32, 64, and 128. This is the primary scaling "
                 "knob: it widens the edge features, the per-atom angular "
                 "state, and the descriptor output together. The fitting "
-                "network is sized against it; the released grades pair "
-                "channels 8, 32, 64, and 128 with fitting hidden widths 96, "
-                "192, 256, and 384."
+                "network is sized against it; the released grades are "
+                "available as named model presets (see the DPA4C model "
+                "documentation)."
             ),
         ),
         Argument(

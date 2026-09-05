@@ -8,6 +8,8 @@ Input files:
 
 - `input.json`: baseline conservative energy training, using a compact
   DPA4-Mini-style parameter set.
+- `input_preset.json`: energy training with the model architecture taken from
+  the named preset `dpa4-nano-v20260901` instead of being written out.
 - `input-zbl.json`: energy training with ZBL zone bridging.
 - `input_dens.json`: direct-force denoising training.
 - `input_multitask.json`: multitask training with a shared descriptor and

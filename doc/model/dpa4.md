@@ -83,6 +83,71 @@ unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 > `sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
 > the training data.
 
+### Presets
+
+The released DPA4 grades are available as named model presets. Setting
+`model.preset` fills in the four architecture-defining regions of the model
+section, `type`, `type_map` (all 118 elements), `descriptor` and
+`fitting_net`, from the release configuration, so an input only names the grade
+and adds what is specific to the run:
+
+```json
+{
+  "model": {
+    "preset": "dpa4-nano-v20260901",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "rcut": 6.0,
+      "use_amp": true,
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    }
+  }
+}
+```
+
+The preset is expanded when the input is read, before fine-tuning rules,
+multi-task sharing and argument checking, and the `preset` key is removed, so
+`out.json` records the fully expanded model. Entries written next to the preset
+take precedence over it:
+
+- `type` and `type_map` are replaced as a whole. The two-element `type_map`
+  above replaces the 118-element periodic table of the preset.
+- Inside `descriptor` and `fitting_net` the merge is key by key: a key that the
+  preset defines takes the explicit value (`rcut` above, written here with the
+  value the preset has anyway), and a key it does not define is added. Options
+  that are not part of an architecture are meant to be added this way:
+  `use_amp`, `seed`, `sel`, `trainable`, and the charge and spin conditioning
+  pair `add_chg_spin_ebd` / `default_chg_spin` for molecular datasets.
+
+Every explicit entry that changes a preset value is reported in the log. A
+`preset` inside a multi-task `model_dict` branch applies to that branch, and a
+`preset` next to `model_dict` is the default for every branch without one.
+Shared-dictionary references written in a branch keep precedence over the
+preset, and the entries of `shared_dict` itself are still written out in full,
+since a preset cannot feed them.
+
+Preset names are `<family>-<grade>-<version>`. The version tag identifies the
+release a preset reproduces: a later release with different settings gets a new
+version, and existing presets are never changed. The available DPA4 presets
+are, in ascending cost:
+
+- `v20260901`, the current release grades: `dpa4-nano-v20260901`,
+  `dpa4-mini-v20260901`, `dpa4-neo-v20260901`, `dpa4-air-v20260901`,
+  `dpa4-plus-v20260901`, `dpa4-pro-v20260901`, `dpa4-max-v20260901` and
+  `dpa4-ultra-v20260901`.
+- `v20260820`, the earlier baseline grades: `dpa4-nano-v20260820`,
+  `dpa4-mini-v20260820`, `dpa4-neo-v20260820`, `dpa4-air-v20260820`,
+  `dpa4-plus-v20260820` and `dpa4-pro-v20260820`.
+
+`examples/water/dpa4/input_preset.json` is a water example that names a preset
+instead of spelling out the architecture.
+
 ### Main options
 
 Every descriptor option, with its default and full description, is listed in

@@ -70,6 +70,9 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
 )
+from deepmd.utils.model_preset import (
+    expand_model_preset,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -255,6 +258,7 @@ def train(
     if LOCAL_RANK == 0:
         SummaryPrinter()()
     config = j_loader(input_file)
+    config["model"] = expand_model_preset(config["model"])
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pd"):
         init_model += ".pd"
