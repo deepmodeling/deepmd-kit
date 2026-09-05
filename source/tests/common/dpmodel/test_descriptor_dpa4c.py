@@ -804,6 +804,32 @@ def make_spin_descriptor(**overrides: Any) -> DescrptDPA4C:
     return descriptor
 
 
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("channels", [8, 32])
+@pytest.mark.parametrize("node_count", [0, 2])
+def test_native_spin_graph_without_edges(
+    precision: str, channels: int, node_count: int
+) -> None:
+    """Both zero-node graphs and isolated atoms retain the feature width."""
+    descriptor = make_spin_descriptor(precision=precision, channels=channels)
+    graph = neighbor_graph.NeighborGraph(
+        n_node=np.array([node_count], dtype=np.int64),
+        n_local=np.array([node_count], dtype=np.int64),
+        edge_index=np.empty((2, 0), dtype=np.int64),
+        edge_vec=np.empty((0, 3), dtype=precision),
+        edge_mask=np.empty((0,), dtype=bool),
+    )
+    output, rot_mat = descriptor.call_graph(
+        graph,
+        np.arange(node_count, dtype=np.int64) % 2,
+        spin=np.ones((node_count, 3), dtype=precision),
+    )
+    assert output.shape == (node_count, descriptor.get_dim_out())
+    assert output.dtype == graph.edge_vec.dtype
+    assert np.isfinite(output).all()
+    assert rot_mat is None
+
+
 def spin_reference_terms(
     descriptor: DescrptDPA4C,
     graph: Any,
