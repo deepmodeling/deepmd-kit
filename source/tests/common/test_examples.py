@@ -84,6 +84,7 @@ input_files_multi = (
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch_with_alias.json",
     p_examples / "hessian" / "multi_task" / "input.json",
     p_examples / "water" / "dpa4" / "input_multitask.json",
+    p_examples / "water" / "dpa4" / "input_multitask_preset.json",
     p_examples
     / "water_multi_task"
     / "pytorch_example"

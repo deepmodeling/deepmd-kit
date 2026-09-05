@@ -130,7 +130,10 @@ def test_multi_task_branches_expand_with_shared_references() -> None:
     }
     expanded = expand_model_preset(model)
     assert "preset" not in expanded
-    assert expanded["shared_dict"] == model["shared_dict"]
+    # The shared descriptor is the mini descriptor with the explicit keys on top.
+    mini = get_model_preset("dpa4-mini-v20260901")
+    assert expanded["shared_dict"]["descriptor"] == {**mini["descriptor"], "rcut": 6.0}
+    assert expanded["shared_dict"]["type_map"] == ["O", "H"]
 
     water_1 = expanded["model_dict"]["water_1"]
     assert "preset" not in water_1
@@ -138,7 +141,7 @@ def test_multi_task_branches_expand_with_shared_references() -> None:
     # Shared-dict references are kept for the multi-task preprocessing.
     assert water_1["type_map"] == "type_map"
     assert water_1["descriptor"] == "descriptor"
-    assert water_1["fitting_net"] == {"neuron": [0], "precision": "float32", "seed": 2}
+    assert water_1["fitting_net"] == {**mini["fitting_net"], "seed": 2}
 
     water_2 = expanded["model_dict"]["water_2"]
     assert "preset" not in water_2
@@ -216,10 +219,11 @@ def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
         expand_model_preset(model), lambda item_key, params: dict
     )
     assert set(shared_links) == {"descriptor"}
+    nano = get_model_preset("dpa4-nano-v20260901")
     for branch in processed["model_dict"].values():
         assert branch["type"] == "dpa4"
         assert branch["type_map"] == ["O", "H"]
-        assert branch["descriptor"] == {"type": "dpa4", "rcut": 6.0}
+        assert branch["descriptor"] == nano["descriptor"]
         assert branch["fitting_net"]["neuron"] == [0]
     config = {
         "model": processed,
@@ -256,7 +260,8 @@ def test_multi_task_top_level_regions_are_branch_defaults() -> None:
     water_1 = expanded["model_dict"]["water_1"]
     assert water_1["descriptor"]["rcut"] == 7.0
     assert water_1["descriptor"]["lmax"] == 1
-    assert water_1["fitting_net"] == {"neuron": [0], "precision": "float32", "seed": 3}
+    nano = get_model_preset("dpa4-nano-v20260901")
+    assert water_1["fitting_net"] == {**nano["fitting_net"], "seed": 3}
     # A branch entry replaces the top-level default as a whole.
     water_2 = expanded["model_dict"]["water_2"]
     assert water_2["descriptor"]["rcut"] == 5.0
@@ -265,6 +270,60 @@ def test_multi_task_top_level_regions_are_branch_defaults() -> None:
     # The top-level entries stay for the backend's model-wide handling.
     assert expanded["descriptor"] == {"rcut": 7.0}
     assert "preset" not in expanded
+
+
+def test_shared_dict_entries_take_the_top_level_preset_as_base() -> None:
+    model = {
+        "preset": "dpa4-nano-v20260901",
+        "shared_dict": {
+            "type_map": ["O", "H"],
+            "descriptor": {"use_amp": True, "seed": 42},
+            "shared_fit": {"dim_case_embd": 2, "seed": 42},
+            "unreferenced": {"rcut": 5.0},
+        },
+        "model_dict": {
+            "water_1": {
+                "type_map": "type_map",
+                "descriptor": "descriptor:1",
+                "fitting_net": "shared_fit",
+            },
+            "water_2": {
+                "preset": "dpa4-mini-v20260901",
+                "type_map": "type_map",
+                "descriptor": "descriptor",
+            },
+        },
+    }
+    expanded = expand_model_preset(model)
+    nano = get_model_preset("dpa4-nano-v20260901")
+    shared = expanded["shared_dict"]
+    # Referenced entries: preset region plus the run-specific keys; a shared
+    # level suffix in the reference does not change the entry it names.
+    assert shared["descriptor"] == {**nano["descriptor"], "use_amp": True, "seed": 42}
+    assert shared["shared_fit"] == {
+        **nano["fitting_net"],
+        "dim_case_embd": 2,
+        "seed": 42,
+    }
+    # Entries nobody references and the type map are left as written.
+    assert shared["unreferenced"] == {"rcut": 5.0}
+    assert shared["type_map"] == ["O", "H"]
+    # A branch-level preset shapes only that branch's own regions.
+    water_2 = expanded["model_dict"]["water_2"]
+    assert water_2["descriptor"] == "descriptor"
+    assert water_2["fitting_net"]["neuron"] == [0]
+    # Without a top-level preset the shared dictionary is untouched.
+    branch_only = {
+        "shared_dict": {"type_map": ["O"], "descriptor": {"rcut": 5.0}},
+        "model_dict": {
+            "a": {
+                "preset": "dpa4-nano-v20260901",
+                "type_map": "type_map",
+                "descriptor": "descriptor",
+            }
+        },
+    }
+    assert expand_model_preset(branch_only)["shared_dict"] == branch_only["shared_dict"]
 
 
 def test_malformed_multi_task_layout_is_left_to_argcheck() -> None:

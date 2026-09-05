@@ -14,6 +14,9 @@ Input files:
 - `input_dens.json`: direct-force denoising training.
 - `input_multitask.json`: multitask training with a shared descriptor and
   case-conditioned shared fitting network.
+- `input_multitask_preset.json`: the same multitask training with the shared
+  descriptor and fitting network taken from the named preset
+  `dpa4-nano-v20260901`.
 - `lora_ft.json`: LoRA fine-tuning.
 - `lmp/`: compact checkpoint and LAMMPS smoke-test files.
 

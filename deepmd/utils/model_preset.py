@@ -17,6 +17,11 @@ version lists the options it changed together with the grades it ships. A new
 version therefore adds one entry to the family's version table, and a new
 grade adds one entry to its grade table. Existing versions are never edited.
 
+In the multi-task layout a preset next to ``model_dict`` is the base of every
+branch and of the ``shared_dict`` entries the branches reference as
+``descriptor`` or ``fitting_net``, so a shared descriptor is written as just
+its run-specific keys.
+
 Presets are expanded before any other processing of the model configuration
 (multi-task sharing, fine-tuning rules, argument checking), see
 :func:`expand_model_preset`.
@@ -63,6 +68,7 @@ _PRESET_REGIONS = ("type", "type_map", "descriptor", "fitting_net")
 # === DPA4 (SeZM) ===
 # Descriptor and fitting options shared by every DPA4 grade and version.
 _DPA4_DESCRIPTOR: dict[str, Any] = {
+    "type": "dpa4",
     "rcut": 6.0,
     "n_radial": 16,
     "use_env_seed": True,
@@ -79,7 +85,11 @@ _DPA4_DESCRIPTOR: dict[str, Any] = {
     "so3_readout": "mlp",
     "precision": "float32",
 }
-_DPA4_FITTING: dict[str, Any] = {"neuron": [0], "precision": "float32"}
+_DPA4_FITTING: dict[str, Any] = {
+    "type": "dpa4_ener",
+    "neuron": [0],
+    "precision": "float32",
+}
 # Scaling knobs of each grade.
 _DPA4_GRADES: dict[str, dict[str, dict[str, Any]]] = {
     "nano": {
@@ -198,6 +208,7 @@ _DPA4C_DESCRIPTOR: dict[str, Any] = {
     "precision": "float32",
 }
 _DPA4C_FITTING: dict[str, Any] = {
+    "type": "ener",
     "resnet_dt": False,
     "activation_function": "silu",
     "precision": "float32",
@@ -311,6 +322,41 @@ def get_model_preset(name: str) -> dict[str, Any]:
     return deepcopy(MODEL_PRESETS[key])
 
 
+def _merge_region(
+    region: str, preset_value: Any, explicit: Any, overrides: list[str]
+) -> Any:
+    """Combine one preset region with its explicit counterpart.
+
+    A mapping is merged key by key: explicit keys replace preset keys, other
+    keys supplement the preset, and lists inside are replaced as a whole. Any
+    other explicit value (a scalar, a list, a multi-task shared-dict reference)
+    replaces the region entirely. Entries that change a preset value are
+    appended to ``overrides``; a shared-dict reference is wiring, not an
+    override, and is not reported.
+    """
+    if isinstance(explicit, dict):
+        overrides.extend(
+            f"{region}.{key}"
+            for key, value in explicit.items()
+            if key in preset_value and value != preset_value[key]
+        )
+        return {**preset_value, **explicit}
+    if isinstance(explicit, str) and region != "type":
+        return explicit
+    if explicit != preset_value:
+        overrides.append(region)
+    return explicit
+
+
+def _log_expansion(name: str, overrides: list[str], scope: str = "") -> None:
+    log.info(
+        "Expanded model preset %r%s%s.",
+        name,
+        scope,
+        f" with explicit overrides: {', '.join(overrides)}" if overrides else "",
+    )
+
+
 def _expand_single(model_config: dict[str, Any]) -> dict[str, Any]:
     """Expand the preset of one single-task model or one multi-task branch."""
     if "preset" not in model_config:
@@ -324,31 +370,42 @@ def _expand_single(model_config: dict[str, Any]) -> dict[str, Any]:
             continue
         if region not in model_config:
             expanded[region] = preset[region]
-            continue
-        explicit = model_config[region]
-        if isinstance(explicit, dict):
-            # Key-wise merge: explicit keys replace preset keys, other keys
-            # supplement the preset. Lists inside are replaced as a whole.
-            overrides.extend(
-                f"{region}.{key}"
-                for key, value in explicit.items()
-                if key in preset[region] and value != preset[region][key]
-            )
-            expanded[region] = {**preset[region], **explicit}
         else:
-            # A scalar, a list or a multi-task shared-dict reference replaces
-            # the preset region entirely.
-            if explicit != preset[region]:
-                overrides.append(region)
-            expanded[region] = explicit
+            expanded[region] = _merge_region(
+                region, preset[region], model_config[region], overrides
+            )
     for key, value in model_config.items():
         if key != "preset" and key not in expanded:
             expanded[key] = value
-    log.info(
-        "Expanded model preset %r%s.",
-        name,
-        f" with explicit overrides: {', '.join(overrides)}" if overrides else "",
-    )
+    _log_expansion(name, overrides)
+    return expanded
+
+
+def _expand_shared_dict(
+    name: str, shared_dict: dict[str, Any], branches: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge the shared entries referenced as ``descriptor`` or ``fitting_net``
+    over the corresponding regions of the preset ``name``.
+    """
+    roles: dict[str, str] = {}
+    for branch in branches.values():
+        if not isinstance(branch, dict):
+            continue
+        for region in ("descriptor", "fitting_net"):
+            reference = branch.get(region)
+            if isinstance(reference, str):
+                roles[reference.split(":")[0]] = region
+    preset = get_model_preset(name)
+    expanded: dict[str, Any] = {}
+    overrides: list[str] = []
+    merged: list[str] = []
+    for key, entry in shared_dict.items():
+        if key in roles and isinstance(entry, dict):
+            entry = _merge_region(key, preset[roles[key]], entry, overrides)
+            merged.append(key)
+        expanded[key] = entry
+    if merged:
+        _log_expansion(name, overrides, f" for shared entries {', '.join(merged)}")
     return expanded
 
 
@@ -359,11 +416,13 @@ def expand_model_preset(model_config: dict[str, Any]) -> dict[str, Any]:
     The single-task ``model`` section and every branch of a multi-task
     ``model_dict`` may carry a ``preset``. In the multi-task layout a
     ``preset`` next to ``model_dict`` is the default for every branch that
-    has none of its own, and ``type``, ``type_map``, ``descriptor`` and
-    ``fitting_net`` written next to ``model_dict`` are branch defaults in the
-    same way as the model-wide options of the PyTorch backend, so they take
-    part in the merge of every branch that expands a preset. The preset
-    supplies ``type``, ``type_map``, ``descriptor`` and ``fitting_net``;
+    has none of its own and the base of the ``shared_dict`` entries that the
+    branches reference as ``descriptor`` or ``fitting_net``; ``type``,
+    ``type_map``, ``descriptor`` and ``fitting_net`` written next to
+    ``model_dict`` are branch defaults in the same way as the model-wide
+    options of the PyTorch backend, so they take part in the merge of every
+    branch that expands a preset. The preset supplies ``type``, ``type_map``,
+    ``descriptor`` and ``fitting_net``;
     entries written explicitly take precedence key by key inside
     ``descriptor`` and ``fitting_net`` and as a whole for ``type`` and
     ``type_map``. The ``preset`` key itself is removed, so the result is a
@@ -407,6 +466,10 @@ def expand_model_preset(model_config: dict[str, Any]) -> dict[str, Any]:
         if key in model_config
     }
     expanded = {key: value for key, value in model_config.items() if key != "preset"}
+    if has_default and isinstance(model_config.get("shared_dict"), dict):
+        expanded["shared_dict"] = _expand_shared_dict(
+            model_config["preset"], model_config["shared_dict"], branches
+        )
     expanded["model_dict"] = {}
     for branch_name, branch in branches.items():
         if isinstance(branch, dict) and (has_default or "preset" in branch):

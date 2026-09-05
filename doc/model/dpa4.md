@@ -125,12 +125,13 @@ take precedence over it:
   `use_amp`, `seed`, `sel`, `trainable`, and the charge and spin conditioning
   pair `add_chg_spin_ebd` / `default_chg_spin` for molecular datasets.
 
-Every explicit entry that changes a preset value is reported in the log. A
-`preset` inside a multi-task `model_dict` branch applies to that branch, and a
-`preset` next to `model_dict` is the default for every branch without one.
-Shared-dictionary references written in a branch keep precedence over the
-preset, and the entries of `shared_dict` itself are still written out in full,
-since a preset cannot feed them.
+Every explicit entry that changes a preset value is reported in the log. In
+multi-task training a `preset` next to `model_dict` is the base of every branch
+and of the `shared_dict` entries that the branches reference as `descriptor` or
+`fitting_net`, so a shared descriptor is written as just its run-specific keys;
+a `preset` inside a branch applies to that branch alone, and shared-dictionary
+references written in a branch keep precedence over the preset. See
+`examples/water/dpa4/input_multitask_preset.json`.
 
 Preset names are `<family>-<grade>-<version>`. The version tag identifies the
 release a preset reproduces: a later release with different settings gets a new
@@ -349,7 +350,9 @@ DPA4/SeZM supports shared-fitting multitask training. With
 of being concatenated to the descriptor, which keeps the descriptor
 case-independent while letting the energy map depend on the task branch. See
 [multi-task training](../train/multi-task-training.md) for the workflow and
-`examples/water/dpa4/input_multitask.json` for an example.
+`examples/water/dpa4/input_multitask.json` for an example;
+`examples/water/dpa4/input_multitask_preset.json` is the same setup with the
+shared descriptor and fitting network taken from a [preset](#presets).
 
 ### LoRA fine-tuning
 
