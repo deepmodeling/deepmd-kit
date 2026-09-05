@@ -47,6 +47,11 @@ def _reshape_force_by_atom(force_array: np.ndarray, natoms: int) -> np.ndarray:
     return np.reshape(force_array, [-1, natoms, 3])
 
 
+def _real_atom_mask(atype: np.ndarray, nframes: int, natoms: int) -> np.ndarray:
+    """Select non-padding atoms, broadcasting fixed types across frames."""
+    return np.broadcast_to(np.reshape(atype, [-1, natoms]) >= 0, (nframes, natoms))
+
+
 def _concat_force_rows(
     force_blocks: list[np.ndarray], dtype: np.dtype | type[np.generic]
 ) -> np.ndarray:
@@ -482,19 +487,33 @@ class EnerTester(ModelTester):
             find_atom_pref=find_atom_pref,
         )
 
+        real_atoms = _real_atom_mask(atype, nframes, natoms)
+        has_real_atoms = bool(np.any(real_atoms))
+        metric_force = force
+        metric_reference_force = test_data["force"]
+        if self.reports_plain_force:
+            # Select before subtracting so even NaN padding cannot enter the
+            # numerator. The selected scalar count also supplies chunk weights.
+            metric_force = _reshape_force_by_atom(force, natoms)[real_atoms]
+            metric_reference_force = _reshape_force_by_atom(test_data["force"], natoms)[
+                real_atoms
+            ]
+
         reports_virial = find_virial == 1 and data.pbc
         shared_metrics = compute_energy_type_metrics(
             prediction={
                 "energy": energy,
-                "force": force,
+                "force": metric_force,
                 **({"virial": virial} if reports_virial else {}),
             },
             test_data={
                 "find_energy": find_energy,
-                "find_force": find_force if self.reports_plain_force else 0.0,
+                "find_force": (
+                    find_force if self.reports_plain_force and has_real_atoms else 0.0
+                ),
                 "find_virial": find_virial,
                 "energy": test_data["energy"],
-                "force": test_data["force"],
+                "force": metric_reference_force,
                 **(
                     {"virial": test_data["virial"], "box": box}
                     if reports_virial
@@ -531,10 +550,17 @@ class EnerTester(ModelTester):
             prediction_stress = -virial / volume
             reference_stress = -test_data["virial"] / volume
 
-        if dp.has_hessian:
+        if dp.has_hessian and has_real_atoms:
+            # A Hessian entry is valid only when both Cartesian indices
+            # belong to real atoms in the same frame.
+            real_dof = np.repeat(real_atoms, 3, axis=1)
+            real_pairs = (real_dof[:, :, None] & real_dof[:, None, :]).reshape(
+                nframes, -1
+            )
             errors.update(
                 compute_error_stat(
-                    optional_outputs.hessian, test_data["hessian"]
+                    optional_outputs.hessian[real_pairs],
+                    test_data["hessian"].reshape(nframes, -1)[real_pairs],
                 ).as_weighted_average_errors(*DP_TEST_HESSIAN_METRIC_KEYS)
             )
         if self.atomic:
@@ -616,13 +642,20 @@ class EnerTester(ModelTester):
             forces the shared detail writer already covers.
         """
         if find_force == 1 and find_atom_pref == 1:
-            errors.update(
-                compute_weighted_error_stat(
-                    prediction_force,
-                    test_data["force"],
-                    test_data["atom_pref"],
-                ).as_weighted_average_errors(*DP_TEST_WEIGHTED_FORCE_METRIC_KEYS)
+            real_atoms = _real_atom_mask(atype, prediction_force.shape[0], natoms)
+            if not np.any(real_atoms):
+                return _ForceDetails()
+            weighted_force = compute_weighted_error_stat(
+                _reshape_force_by_atom(prediction_force, natoms)[real_atoms],
+                _reshape_force_by_atom(test_data["force"], natoms)[real_atoms],
+                _reshape_force_by_atom(test_data["atom_pref"], natoms)[real_atoms],
             )
+            if weighted_force.weight > 0.0:
+                errors.update(
+                    weighted_force.as_weighted_average_errors(
+                        *DP_TEST_WEIGHTED_FORCE_METRIC_KEYS
+                    )
+                )
         return _ForceDetails()
 
 
