@@ -30,7 +30,6 @@ from deepmd.utils.eval_metrics import (
     DP_TEST_WEIGHTED_METRIC_KEYS,
     compute_energy_type_metrics,
     compute_error_stat,
-    compute_spin_force_metrics,
     compute_weighted_error_stat,
 )
 
@@ -71,8 +70,13 @@ def _align_spin_force_arrays(
     prediction_force_mag: np.ndarray | None,
     reference_force_mag: np.ndarray | None,
     mask_mag: np.ndarray | None,
+    exclude_padding: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
-    """Align spin force arrays into real-atom and magnetic subsets."""
+    """Align spin forces, optionally omitting type -1 rows for metrics.
+
+    The default preserves the detail-file layout. Legacy spin partner types
+    are magnetic degrees of freedom, not padding, and remain selected.
+    """
     prediction_force_by_atom = _reshape_force_by_atom(prediction_force, natoms)
     reference_force_by_atom = _reshape_force_by_atom(reference_force, natoms)
     if dp.get_ntypes_spin() != 0:  # old tf support for spin
@@ -98,7 +102,9 @@ def _align_spin_force_arrays(
             strict=False,
         ):
             real_mask = frame_atype < ntypes_real
-            magnetic_mask = ~real_mask
+            magnetic_mask = frame_atype >= ntypes_real
+            if exclude_padding:
+                real_mask &= frame_atype >= 0
             force_real_prediction_chunks.append(frame_prediction[real_mask])
             force_real_reference_chunks.append(frame_reference[real_mask])
             force_magnetic_prediction_chunks.append(frame_prediction[magnetic_mask])
@@ -124,9 +130,17 @@ def _align_spin_force_arrays(
 
     force_real_prediction = prediction_force_by_atom.reshape(-1, 3)
     force_real_reference = reference_force_by_atom.reshape(-1, 3)
+    if exclude_padding:
+        real_mask = _real_atom_mask(
+            atype, prediction_force_by_atom.shape[0], natoms
+        ).reshape(-1)
+        force_real_prediction = force_real_prediction[real_mask]
+        force_real_reference = force_real_reference[real_mask]
     if prediction_force_mag is None or reference_force_mag is None or mask_mag is None:
         return force_real_prediction, force_real_reference, None, None
     magnetic_mask = mask_mag.reshape(-1).astype(bool)
+    if exclude_padding:
+        magnetic_mask &= real_mask
     return (
         force_real_prediction,
         force_real_reference,
@@ -695,36 +709,42 @@ class SpinEnerTester(EnerTester):
             reference_force_mag=test_data.get("force_mag"),
             mask_mag=optional_outputs.mask_mag,
         )
-        if find_force_mag == 1 and (force_mag is None or reference_mag is None):
-            raise RuntimeError(
-                "Spin magnetic force metrics require magnetic force arrays and mask."
+        # Filter metric inputs before subtraction, independently of the raw
+        # arrays above that retain padding positions for detail output.
+        metric_real, metric_reference_real, metric_mag, metric_reference_mag = (
+            _align_spin_force_arrays(
+                dp=self.dp,
+                atype=atype,
+                natoms=natoms,
+                prediction_force=prediction_force,
+                reference_force=test_data["force"],
+                prediction_force_mag=optional_outputs.force_mag,
+                reference_force_mag=test_data.get("force_mag"),
+                mask_mag=optional_outputs.mask_mag,
+                exclude_padding=True,
             )
-        spin_metrics = compute_spin_force_metrics(
-            force_real_prediction=force_real,
-            force_real_reference=reference_real,
-            force_magnetic_prediction=force_mag if find_force_mag == 1 else None,
-            force_magnetic_reference=reference_mag if find_force_mag == 1 else None,
         )
-        if spin_metrics.force_real is None:
-            raise RuntimeError("Spin force metrics are unavailable for dp test.")
-        if find_force == 1:
+        if find_force == 1 and metric_real.size:
             errors.update(
-                spin_metrics.as_weighted_average_errors(
-                    {"force_real": DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_real"]}
+                compute_error_stat(
+                    metric_real, metric_reference_real
+                ).as_weighted_average_errors(
+                    *DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_real"]
                 )
             )
         if find_force_mag == 1:
-            if spin_metrics.force_magnetic is None:
-                raise RuntimeError("Spin magnetic force metrics are unavailable.")
-            errors.update(
-                spin_metrics.as_weighted_average_errors(
-                    {
-                        "force_magnetic": DP_TEST_SPIN_WEIGHTED_METRIC_KEYS[
-                            "force_magnetic"
-                        ]
-                    }
+            if metric_mag is None or metric_reference_mag is None:
+                raise RuntimeError(
+                    "Spin magnetic force metrics require magnetic force arrays and mask."
                 )
-            )
+            if metric_mag.size:
+                errors.update(
+                    compute_error_stat(
+                        metric_mag, metric_reference_mag
+                    ).as_weighted_average_errors(
+                        *DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_magnetic"]
+                    )
+                )
         return _ForceDetails(
             reference_real=reference_real,
             prediction_real=force_real,
