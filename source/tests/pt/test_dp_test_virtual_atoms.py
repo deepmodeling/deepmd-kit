@@ -28,6 +28,7 @@ from deepmd.utils.data import (
 
 @pytest.mark.parametrize("padding_label", [0.0, np.nan])
 def test_dp_test_virtual_atom_metrics(tmp_path, monkeypatch, padding_label):
+    """Check checkpoint, disk-data and CLI metrics without counting padding."""
     params = {
         "type_map": ["H"],
         "descriptor": {

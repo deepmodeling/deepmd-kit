@@ -28,19 +28,24 @@ class _Evaluator:
     has_hessian = True
 
     def __init__(self, force, hessian):
+        """Store the controlled force and Hessian predictions."""
         self.force = force
         self.hessian = hessian
 
     def get_dim_fparam(self):
+        """Report that this evaluator needs no frame parameters."""
         return 0
 
     def get_dim_aparam(self):
+        """Report that this evaluator needs no atom parameters."""
         return 0
 
     def has_chg_spin_ebd(self):
+        """Keep charge/spin conditioning outside this metric-only evaluator."""
         return False
 
     def eval(self, coord, box, atype, **kwargs):
+        """Return controlled predictions in the energy-model output order."""
         nframes = len(coord)
         return (
             np.zeros((nframes, 1)),
@@ -59,6 +64,7 @@ def _evaluate(
     mixed_type=True,
     zero_real_pref=False,
 ):
+    """Evaluate padding cases together and per frame for reduction checks."""
     types = np.asarray(types)
     nframes, natoms = types.shape
     valid = np.repeat(types >= 0, 3, axis=1)
@@ -125,6 +131,7 @@ def _evaluate(
 )
 @pytest.mark.parametrize("padding_error", [0.0, 10.0, np.nan])
 def test_virtual_atom_metrics(types, padding_error):
+    """Padding cannot alter errors or their chunk/system aggregation weights."""
     errors, chunks, force, hessian, pref = _evaluate(types, padding_error)
     expected = {
         "mae_f": (np.mean(abs(force)), force.size),
@@ -144,18 +151,21 @@ def test_virtual_atom_metrics(types, padding_error):
 
 
 def test_all_virtual_chunk_has_no_atom_metrics():
+    """An all-padding chunk contributes no atom metrics or zero-weight values."""
     errors, chunks, *_ = _evaluate([[-1, -1]], np.nan)
     assert errors == {}
     assert merge_weighted_errors(chunks) == {}
 
 
 def test_fixed_atom_types_broadcast_across_frames():
+    """Fixed-type and mixed-type inputs select the same valid components."""
     mixed, *_ = _evaluate([[0, -1], [0, -1]], np.nan)
     fixed, *_ = _evaluate([[0, -1], [0, -1]], np.nan, mixed_type=False)
     assert mixed == fixed
 
 
 def test_only_virtual_atoms_have_force_weights():
+    """Preferences assigned only to padding do not create weighted metrics."""
     errors, chunks, *_ = _evaluate([[0, -1], [-1, 0]], np.nan, zero_real_pref=True)
     assert errors.keys() == {"mae_f", "rmse_f", "mae_h", "rmse_h"}
     for key, value in merge_weighted_errors(chunks).items():
@@ -163,11 +173,13 @@ def test_only_virtual_atoms_have_force_weights():
 
 
 def test_missing_force_labels_do_not_report_force():
+    """Absent force labels leave only the available Hessian metrics."""
     errors, *_ = _evaluate([[0, -1]], np.nan, find_force=0.0)
     assert errors.keys() == {"mae_h", "rmse_h"}
 
 
 def test_padding_keeps_detail_file_layout(tmp_path):
+    """Detail files retain the padded force and Hessian row counts."""
     detail = str(tmp_path / "details")
     _evaluate([[0, -1], [-1, 0]], 10.0, detail_file=detail)
     assert np.loadtxt(detail + ".f.out").shape == (4, 6)
