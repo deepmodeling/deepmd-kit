@@ -267,9 +267,15 @@ def test_multi_task_top_level_regions_are_branch_defaults() -> None:
     assert water_2["descriptor"]["rcut"] == 5.0
     assert water_2["descriptor"]["lmax"] == 2
     assert water_2["fitting_net"]["seed"] == 3
-    # The top-level entries stay for the backend's model-wide handling.
-    assert expanded["descriptor"] == {"rcut": 7.0}
+    # The top-level region is consumed once distributed to every branch, so a
+    # downstream backend without its own model-wide cascade (dpmodel-based
+    # entrypoints) does not see it as an unknown top-level key.
+    assert "descriptor" not in expanded
     assert "preset" not in expanded
+    processed, _ = preprocess_shared_params(
+        expanded, lambda item_key, params: dict, cascade_defaults=False
+    )
+    assert "descriptor" not in processed
 
 
 def test_shared_dict_entries_take_the_top_level_preset_as_base() -> None:
@@ -324,6 +330,50 @@ def test_shared_dict_entries_take_the_top_level_preset_as_base() -> None:
         },
     }
     assert expand_model_preset(branch_only)["shared_dict"] == branch_only["shared_dict"]
+
+
+def test_explicit_alias_replaces_the_preset_canonical_key() -> None:
+    """A legacy key alias for a preset-defined key overrides it in place,
+    instead of sitting next to it and failing the strict argument check.
+    """
+    model = expand_model_preset(
+        {
+            "preset": "dpa4-nano-v20260901",
+            "type_map": ["O", "H"],
+            "descriptor": {"so2_layers": 5},
+        }
+    )
+    assert model["descriptor"]["mixing_layers"] == 5
+    assert "so2_layers" not in model["descriptor"]
+    _normalize_model(model)
+
+
+def test_explicit_dict_for_a_whole_value_region_does_not_crash() -> None:
+    """`type_map` (and `type`) are always replaced as a whole; a malformed
+    dict there must not raise before the argument check reports it.
+    """
+    expanded = expand_model_preset(
+        {"preset": "dpa4-nano-v20260901", "type_map": {"O": 0, "H": 1}}
+    )
+    assert expanded["type_map"] == {"O": 0, "H": 1}
+    with pytest.raises(Exception):
+        _normalize_model(expanded)
+
+
+def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
+    """A `descriptor`/`fitting_net` reference inherited by a branch only
+    through the top-level default must still be recognised as referenced.
+    """
+    nano = get_model_preset("dpa4-nano-v20260901")
+    model = {
+        "preset": "dpa4-nano-v20260901",
+        "descriptor": "desc",
+        "shared_dict": {"type_map": ["O", "H"], "desc": {"seed": 42}},
+        "model_dict": {"water_1": {"type_map": "type_map"}},
+    }
+    expanded = expand_model_preset(model)
+    assert expanded["shared_dict"]["desc"] == {**nano["descriptor"], "seed": 42}
+    assert expanded["model_dict"]["water_1"]["descriptor"] == "desc"
 
 
 def test_malformed_multi_task_layout_is_left_to_argcheck() -> None:

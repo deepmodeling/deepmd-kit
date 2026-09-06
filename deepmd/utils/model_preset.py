@@ -35,6 +35,11 @@ from typing import (
     Any,
 )
 
+from deepmd.utils.argcheck import (
+    descrpt_args_plugin,
+    fitting_args_plugin,
+)
+
 log = logging.getLogger(__name__)
 
 __all__ = [
@@ -64,6 +69,13 @@ PERIODIC_TABLE: tuple[str, ...] = (
 # preset defines first, in this order, followed by the remaining explicit
 # entries in their original order.
 _PRESET_REGIONS = ("type", "type_map", "descriptor", "fitting_net")
+
+# Argument-schema plugin that resolves the legacy key aliases of a region's
+# component, keyed by the region name.
+_REGION_ARGS_PLUGIN = {
+    "descriptor": descrpt_args_plugin,
+    "fitting_net": fitting_args_plugin,
+}
 
 # === DPA4 (SeZM) ===
 # Descriptor and fitting options shared by every DPA4 grade and version.
@@ -322,19 +334,41 @@ def get_model_preset(name: str) -> dict[str, Any]:
     return deepcopy(MODEL_PRESETS[key])
 
 
+def _canonicalize_aliases(
+    region: str, component_type: Any, explicit: dict[str, Any]
+) -> dict[str, Any]:
+    """Resolve legacy key aliases in ``explicit`` to their canonical name.
+
+    Without this, an override that names a preset-defined key by a legacy
+    alias (for example ``so2_layers`` for ``mixing_layers``) would sit next to
+    the preset's canonical key instead of replacing it, and the argument check
+    would then reject the alias as an unknown key.
+    """
+    plugin = _REGION_ARGS_PLUGIN.get(region)
+    if plugin is None or not isinstance(component_type, str):
+        return explicit
+    try:
+        schema = plugin.get_argument(component_type)
+    except KeyError:
+        return explicit
+    return schema.normalize_value(explicit, do_default=False, do_alias=True)
+
+
 def _merge_region(
     region: str, preset_value: Any, explicit: Any, overrides: list[str]
 ) -> Any:
     """Combine one preset region with its explicit counterpart.
 
-    A mapping is merged key by key: explicit keys replace preset keys, other
-    keys supplement the preset, and lists inside are replaced as a whole. Any
-    other explicit value (a scalar, a list, a multi-task shared-dict reference)
-    replaces the region entirely. Entries that change a preset value are
-    appended to ``overrides``; a shared-dict reference is wiring, not an
-    override, and is not reported.
+    ``descriptor`` and ``fitting_net`` are merged key by key: explicit keys
+    replace preset keys, other keys supplement the preset, and lists inside
+    are replaced as a whole. ``type`` and ``type_map``, and any other explicit
+    value given for ``descriptor`` or ``fitting_net`` (a multi-task shared-dict
+    reference), replace the region entirely. Entries that change a preset
+    value are appended to ``overrides``; a shared-dict reference is wiring,
+    not an override, and is not reported.
     """
-    if isinstance(explicit, dict):
+    if region in ("descriptor", "fitting_net") and isinstance(explicit, dict):
+        explicit = _canonicalize_aliases(region, preset_value.get("type"), explicit)
         overrides.extend(
             f"{region}.{key}"
             for key, value in explicit.items()
@@ -401,7 +435,8 @@ def _expand_shared_dict(
     merged: list[str] = []
     for key, entry in shared_dict.items():
         if key in roles and isinstance(entry, dict):
-            entry = _merge_region(key, preset[roles[key]], entry, overrides)
+            region = roles[key]
+            entry = _merge_region(region, preset[region], entry, overrides)
             merged.append(key)
         expanded[key] = entry
     if merged:
@@ -465,14 +500,34 @@ def expand_model_preset(model_config: dict[str, Any]) -> dict[str, Any]:
         for key in ("preset", *_PRESET_REGIONS)
         if key in model_config
     }
-    expanded = {key: value for key, value in model_config.items() if key != "preset"}
+    # Every branch that receives the top-level default, or carries its own
+    # preset, is merged with the defaults before its own preset is expanded;
+    # a branch that reaches neither path is passed through untouched. The
+    # shared-dict role scan below reads these merged branches, so an entry
+    # inherited only through a top-level default (a shared-dict reference
+    # among them) is still recognised as referenced.
+    merged_branches = {
+        branch_name: (
+            {**defaults, **branch}
+            if isinstance(branch, dict) and (has_default or "preset" in branch)
+            else branch
+        )
+        for branch_name, branch in branches.items()
+    }
+    expanded = {
+        key: value
+        for key, value in model_config.items()
+        # The regions distributed to every branch above no longer belong at
+        # the top level; a downstream backend without its own model-wide
+        # cascade would otherwise reject them as unknown top-level keys.
+        if key != "preset" and not (has_default and key in _PRESET_REGIONS)
+    }
     if has_default and isinstance(model_config.get("shared_dict"), dict):
         expanded["shared_dict"] = _expand_shared_dict(
-            model_config["preset"], model_config["shared_dict"], branches
+            model_config["preset"], model_config["shared_dict"], merged_branches
         )
-    expanded["model_dict"] = {}
-    for branch_name, branch in branches.items():
-        if isinstance(branch, dict) and (has_default or "preset" in branch):
-            branch = _expand_single({**defaults, **branch})
-        expanded["model_dict"][branch_name] = branch
+    expanded["model_dict"] = {
+        branch_name: (_expand_single(branch) if isinstance(branch, dict) else branch)
+        for branch_name, branch in merged_branches.items()
+    }
     return expanded
