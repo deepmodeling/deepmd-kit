@@ -47,7 +47,7 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction.
   If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _fparam_from_fix_ or _aparam_from_compute_ or _charge_spin_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
+- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _fparam_from_fix_ or _aparam_from_compute_ or _charge_spin_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_ or _center_group_ or _environment_cutoff_ or _include_molecule_
 
 <pre>
     <i>out_file</i> value = filename
@@ -75,6 +75,13 @@ pair_style deepmd models ... keyword value ...
         parameters = one or more atomic parameters of each atom required for model evaluation
     <i>ttm</i> value = id
         id = fix ID of fix ttm
+    <i>center_group</i> value = group-ID
+        group-ID = atoms that are always included and define the centers of compact subsystem selection
+    <i>environment_cutoff</i> value = distance
+        distance = cutoff around center_group atoms, in the current LAMMPS distance units
+    <i>include_molecule</i> value = yes or no
+        yes = include every DeePMD-mapped atom with the same positive molecule ID as an atom inside environment_cutoff (default)
+        no = include only individual atoms inside environment_cutoff
 </pre>
 
 ### Examples
@@ -93,6 +100,9 @@ pair_style deepmd ener.pb aparam_from_compute 1
 compute    1 all ke/atom
 
 pair_style deepmd dpa3.pth charge_spin 1.0 2.0
+
+group qm id 1:16
+pair_style deepmd dprc.pb center_group qm environment_cutoff 6.0 include_molecule yes
 ```
 
 ### Description
@@ -121,6 +131,12 @@ If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the
 If the keyword `charge_spin` is set, the given per-frame charge/spin value(s) will be fed to models that were trained with a charge/spin embedding (e.g. DPA-3 with `add_chg_spin_ebd`). If the keyword is not set, the model's stored `default_chg_spin` (if any) is used.
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
 
+If `center_group` and `environment_cutoff` are set, `pair_style deepmd` evaluates the model on a dynamically selected compact subsystem. Every atom in `center_group` is included. Every other model atom within `environment_cutoff` of a center atom is included using periodic minimum-image distances; orthogonal and restricted triclinic cells are supported. With the default `include_molecule yes`, a cutoff hit promotes every DeePMD-mapped atom with the same positive LAMMPS molecule ID, so a solvent molecule represented by the model is not truncated. With `include_molecule no`, only the individual atom is selected.
+
+Atoms outside the compact subsystem are removed before the model backend is called. Their DeePMD force, atomic energy, atomic virial, and atomic model-deviation output are zero. Energy and global virial are accumulated from the compact subsystem normally. When multiple models are supplied, every model receives the same selection, and the force and virial deviation summaries are normalized by the number of selected model atoms rather than the full LAMMPS atom count.
+
+Compact evaluation is intended to be physically equivalent to full-system evaluation when atoms outside `environment_cutoff` have no contribution to the model. The user must choose an environment cutoff that covers the relevant model interaction range and ensure that excluded atom-type energy biases are zero where required by the model construction. For whole-molecule selection, every environment atom that can enter the cutoff must have a positive molecule ID. The center group must contain only atom types mapped to the model, not `NULL` types.
+
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.
 If a mapping value is specified as `NULL`, the mapping is not performed. This can be used when a deepmd potential is used as part of the hybrid pair style. The `NULL` values are placeholders for atom types that will be used with other potentials.
@@ -129,6 +145,7 @@ If the training parameter {ref}`type_map <model/type_map>` is not set, atom name
 ### Restrictions
 
 - The `deepmd` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+- Compact `center_group` evaluation is currently supported by `pair_style deepmd`; `pair_style deepmd/kk` diagnoses this mode as unsupported.
 
 ## pair_style `deepspin`
 
