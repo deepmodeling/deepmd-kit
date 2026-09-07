@@ -130,23 +130,41 @@ carry the accuracy–cost trade-off:
 > `dp --pt-expt compress` rejects it. Choose these values with deployment in
 > mind.
 
-### Recommended configurations
+### Recommended configurations and presets
 
-The released grades pair each descriptor width with a fitting width sized
-against it, in ascending cost. They are good starting points; `Neo` is the
-general-purpose default.
+The released grades, Nano, Mini, Neo, Air and Plus in ascending cost, pair each
+descriptor width with a fitting width sized against it. They are good starting
+points; `Neo` is the general-purpose default. Each grade is available as a named
+model preset, `dpa4c-nano-v20260901`, `dpa4c-mini-v20260901`,
+`dpa4c-neo-v20260901`, `dpa4c-air-v20260901` and `dpa4c-plus-v20260901`:
+setting `model.preset` fills in `type_map` (all 118 elements), `descriptor` and
+`fitting_net` from the release configuration, and entries written next to the
+preset take precedence, as a whole for `type_map` and key by key inside
+`descriptor` and `fitting_net`. Run-specific options such as `use_amp` and
+`seed` are added alongside:
 
-| Grade | `channels` | `lmax` | `radial_modes` | Fitting hidden width |
-| ----- | ---------: | -----: | -------------: | -------------------: |
-| Nano  |          8 |      2 |              0 |                   96 |
-| Mini  |         32 |      2 |              0 |                  192 |
-| Neo   |         32 |      2 |              4 |                  192 |
-| Air   |         64 |      3 |              4 |                  256 |
-| Plus  |        128 |      3 |              4 |                  384 |
+```json
+{
+  "model": {
+    "preset": "dpa4c-neo-v20260901",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    }
+  }
+}
+```
 
-`Mini` and `Neo` share a descriptor width and differ only in the radial modes,
-which buys accuracy at a per-edge cost while leaving the largest tractable
-system unchanged. `Air` and `Plus` additionally raise the angular degree.
+The version tag identifies the release a preset reproduces: a later release
+with different settings gets a new version, and existing presets are never
+changed. The expansion and merge rules are described on the
+[DPA4 page](dpa4.md#presets).
 
 The fitting network is sized against the descriptor because the invariant
 output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
@@ -301,21 +319,6 @@ Two settings are worth knowing:
   says. The symptom is a low `CPU use` percentage in the LAMMPS timing summary
   next to a high thread count. Launch LAMMPS directly, or reset the mask in the
   child.
-
-Whole-step throughput of the released grades on a fully periodic 8000-atom
-diamond supercell, 158 neighbours per atom, on two 45-core Xeon Platinum 8457C
-sockets using 83 physical cores:
-
-| Grade | ms per step | atoms per ms |
-| ----- | ----------: | -----------: |
-| Nano  |         7.1 |         1126 |
-| Mini  |         9.7 |          828 |
-| Neo   |        10.1 |          794 |
-| Air   |        12.5 |          639 |
-| Plus  |        18.4 |          435 |
-
-Throughput peaks between roughly 16 000 and 66 000 atoms and declines beyond it
-as the step's working set leaves the last-level cache.
 
 Resident memory is roughly 16 to 31 KB per atom depending on the grade, so a 4
 GiB budget holds between 124 000 atoms (Plus) and 230 000 atoms (Nano). Most of

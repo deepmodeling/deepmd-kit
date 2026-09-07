@@ -47,6 +47,8 @@ The two subsections, {ref}`descriptor <model[standard]/descriptor>` and {ref}`fi
 
 The {ref}`type_map <model/type_map>` is optional, which provides the element names (but not necessarily same as the actual name of the element) of the corresponding atom types. A water model, as in this example, has two kinds of atoms. The atom types are internally recorded as integers, e.g., `0` for oxygen and `1` for hydrogen here. A mapping from the atom type to their names is provided by {ref}`type_map <model/type_map>`.
 
+Some model families ship named presets of their released architectures. Setting `preset` in the {ref}`model <model>` section fills in `type`, `type_map`, `descriptor` and `fitting_net` from the named architecture, and entries written next to it take precedence. See [DPA4](dpa4.md#presets) and [DPA4C](dpa4c.md) for the available presets and the merge rules.
+
 DeePMD-kit implements the following descriptors:
 
 1. [`se_e2_a`](train-se-e2-a.md): DeepPot-SE constructed from all information (both angular and radial) of atomic configurations. The embedding takes the distance between atoms as input.

@@ -1,45 +1,30 @@
 {
-  "_comment": "DPA4C energy-training example for the water dataset.",
+  "_comment": "DPA4-Nano energy-training example for the water dataset. The model architecture comes from the named preset; the explicit type_map and rcut override it and use_amp and seed supplement it.",
   "model": {
+    "preset": "dpa4-nano-v20260901",
     "type_map": [
       "O",
       "H"
     ],
     "descriptor": {
-      "type": "dpa4c",
-      "_comment": "The Neo grade, the architecture of the preset dpa4c-neo-v20260901: channels and lmax fix every derived width, and radial_modes 0 leaves each ordered atom-type pair with a rescaled copy of one shared radial function.",
       "rcut": 6.0,
-      "channels": 64,
-      "lmax": 2,
-      "basis_type": "bessel",
-      "n_radial": 16,
-      "radial_modes": 0,
-      "_comment_precision": "float32 is required by the compressed CUDA path.",
-      "precision": "float32",
-      "use_amp": false,
+      "use_amp": true,
       "seed": 42
     },
     "fitting_net": {
-      "_comment": "The fitting width paired with the Neo descriptor width.",
-      "neuron": [
-        256,
-        256,
-        256
-      ],
-      "resnet_dt": false,
-      "activation_function": "silu",
-      "precision": "float32",
       "seed": 42
-    }
+    },
+    "use_compile": false,
+    "enable_tf32": true
   },
   "learning_rate": {
     "type": "wsd",
-    "start_lr": 1e-3,
+    "start_lr": 4.5e-4,
     "stop_lr": 1e-6,
     "warmup_ratio": 0.003,
     "warmup_start_factor": 0.2,
-    "decay_phase_ratio": 0.2,
-    "decay_type": "inverse_linear"
+    "decay_phase_ratio": 0.65,
+    "decay_type": "cosine"
   },
   "loss": {
     "type": "ener",
@@ -57,7 +42,7 @@
     "weight_decay": 0.001
   },
   "training": {
-    "stat_file": "./dpa4c.hdf5",
+    "stat_file": "./dpa4.hdf5",
     "stat_file_mode": "update",
     "training_data": {
       "systems": [
@@ -72,20 +57,34 @@
         "../data/data_3"
       ],
       "batch_size": 1,
-      "numb_btch": 1
+      "numb_batch": 1
     },
-    "numb_steps": 1000000,
+    "numb_steps": 2000000,
     "gradient_max_norm": 5.0,
     "save_freq": 2000,
+    "save_dir": "ckpt",
     "max_ckpt_keep": 3,
+    "enable_ema": true,
+    "ema_decay": 0.999,
+    "ema_ckpt_keep": 3,
     "disp_file": "lcurve.out",
     "disp_freq": 1000,
+    "disp_avg": true,
     "disp_training": true,
     "time_training": true,
-    "enable_compile": true,
+    "tensorboard": false,
+    "enable_profiler": false,
+    "tensorboard_freq": 1000,
+    "tensorboard_log_dir": "tb_log",
+    "profiling": false,
+    "profiling_file": "timeline.json",
+    "zero_stage": 1,
     "seed": 42
   },
   "validating": {
+    "compiled_infer": false,
+    "tf32_infer": false,
+    "amp_infer": false,
     "save_best_dir": "ckpt_best"
   }
 }

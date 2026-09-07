@@ -14,6 +14,9 @@ from deepmd.common import (
 from deepmd.utils.argcheck import (
     normalize,
 )
+from deepmd.utils.model_preset import (
+    expand_model_preset,
+)
 
 from ..pt.test_multitask import (
     preprocess_shared_params,
@@ -64,6 +67,7 @@ input_files = (
     p_examples / "water" / "dpa3" / "input_torch.json",
     p_examples / "water" / "dpa3" / "input_torch_dynamic.json",
     p_examples / "water" / "dpa4" / "input.json",
+    p_examples / "water" / "dpa4" / "input_preset.json",
     p_examples / "water" / "dpa4" / "input-zbl.json",
     p_examples / "water" / "dpa4" / "lmp" / "input.json",
     p_examples / "water" / "dpa4c" / "input.json",
@@ -80,6 +84,7 @@ input_files_multi = (
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch_with_alias.json",
     p_examples / "hessian" / "multi_task" / "input.json",
     p_examples / "water" / "dpa4" / "input_multitask.json",
+    p_examples / "water" / "dpa4" / "input_multitask_preset.json",
     p_examples
     / "water_multi_task"
     / "pytorch_example"
@@ -94,6 +99,7 @@ class TestExamples(unittest.TestCase):
             fn = str(fn)
             with self.subTest(fn=fn):
                 jdata = j_loader(fn)
+                jdata["model"] = expand_model_preset(jdata["model"])
                 if multi_task:
                     jdata["model"], _ = preprocess_shared_params(jdata["model"])
                 normalize(jdata, multi_task=multi_task)
