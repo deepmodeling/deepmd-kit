@@ -1,12 +1,8 @@
 # Prepare data with dpdata
 
-One can use a convenient tool [`dpdata`](https://github.com/deepmodeling/dpdata) to convert data directly from the output of first principle packages to the DeePMD-kit format.
+DeePMD-kit includes [`dpdata`](https://github.com/deepmodeling/dpdata) and uses it to convert data from first-principles packages to the DeePMD-kit format.
 
-To install one can execute
-
-```bash
-pip install dpdata
-```
+Labeled `.xyz` and `.extxyz` files are accepted directly by the `systems` key in training and validation configurations. That path is converted automatically; the explicit Python conversion shown below remains useful for other source formats and standalone data preparation.
 
 An example of converting data [VASP](https://www.vasp.at/) data in `OUTCAR` format to DeePMD-kit data can be found at
 

@@ -5360,12 +5360,12 @@ def training_data_args() -> list[
     doc_systems = (
         "The data systems for training. "
         "This key can be a list or a str. "
-        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "Each value can be a system directory path (containing 'type.raw'), a parent directory path to recursively search for system subdirectories, or an explicitly named labeled '.xyz' or '.extxyz' file. "
+        "Extended-XYZ files are read with dpdata and transparently cached as DeePMD NumPy systems. Every frame must contain species, positions, total energy, and atomic forces; virial or ASE-style stress is also required when virial loss is enabled. "
+        "Files containing heterogeneous atom counts or compositions are split into fixed-shape systems in first-occurrence order. Partially periodic PBC cannot be represented by traditional DeePMD NumPy systems and is rejected. If such a file expands into multiple systems, list-valued batch_size, sys_probs, and indexed auto_prob blocks are rejected as ambiguous. "
+        "Lists may contain multiple extended-XYZ files and may mix them with existing DeePMD system directories."
     )
-    doc_patterns = (
-        "The customized patterns used in `rglob` to collect all training systems. "
-    )
+    doc_patterns = "The customized patterns used in `rglob` to collect DeePMD system directories. Explicit '.xyz' and '.extxyz' files are not discovered or filtered by these patterns. "
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -5458,12 +5458,12 @@ def validation_data_args() -> list[
     doc_systems = (
         "The data systems for validation. "
         "This key can be a list or a str. "
-        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "Each value can be a system directory path (containing 'type.raw'), a parent directory path to recursively search for system subdirectories, or an explicitly named labeled '.xyz' or '.extxyz' file. "
+        "Extended-XYZ files are read with dpdata and transparently cached as DeePMD NumPy systems. Every frame must contain species, positions, total energy, and atomic forces; virial or ASE-style stress is also required when virial loss is enabled. "
+        "Files containing heterogeneous atom counts or compositions are split into fixed-shape systems in first-occurrence order. Partially periodic PBC cannot be represented by traditional DeePMD NumPy systems and is rejected. If such a file expands into multiple systems, list-valued batch_size, sys_probs, and indexed auto_prob blocks are rejected as ambiguous. "
+        "Lists may contain multiple extended-XYZ files and may mix them with existing DeePMD system directories."
     )
-    doc_patterns = (
-        "The customized patterns used in `rglob` to collect all validation systems. "
-    )
+    doc_patterns = "The customized patterns used in `rglob` to collect DeePMD system directories. Explicit '.xyz' and '.extxyz' files are not discovered or filtered by these patterns. "
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -6543,7 +6543,14 @@ def normalize(
     _check_dpa3_chg_spin_migration(data)
     validate_no_multitask_lora(data, multi_task=multi_task)
 
-    return data
+    # External training files are materialized only after schema validation.
+    # Every backend then receives ordinary DeePMD system paths through its
+    # existing data-loader and neighbor-statistics code.
+    from deepmd.utils.data_conversion import (
+        normalize_extxyz_training_data,
+    )
+
+    return normalize_extxyz_training_data(data, multi_task=multi_task)
 
 
 if __name__ == "__main__":
