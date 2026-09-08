@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+import unittest.mock
 
 import numpy as np
 
 from deepmd.utils.out_stat import (
+    ReduStatAccumulator,
+    ReduStatScanner,
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
@@ -203,3 +206,114 @@ class TestOutStat(unittest.TestCase):
             reference_std,
             rtol=1e-7,
         )
+
+
+class TestReduStatAccumulator(unittest.TestCase):
+    """The streaming accumulator must reproduce compute_stats_from_redu exactly."""
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(20260908)
+        self.ntypes = 6
+        self.ndim = 3
+        nframes = 500
+        self.natoms = rng.integers(1, 8, size=(nframes, self.ntypes))
+        # a rare element present in a single frame, which batch sampling misses
+        self.natoms[:, 3] = 0
+        self.natoms[0, 3] = 1
+        self.mean = rng.random((self.ntypes, self.ndim)) * 1e3
+        self.output_redu = self.natoms @ self.mean + rng.normal(
+            scale=1e-2, size=(nframes, self.ndim)
+        )
+        return super().setUp()
+
+    def _accumulate(self, intensive: bool = False) -> ReduStatAccumulator:
+        acc = ReduStatAccumulator(
+            self.ntypes, self.ndim, [self.ndim], intensive=intensive
+        )
+        for start in range(0, self.natoms.shape[0], 7):
+            acc.add(self.output_redu[start : start + 7], self.natoms[start : start + 7])
+        return acc
+
+    def test_matches_compute_stats_from_redu(self) -> None:
+        for intensive in (False, True):
+            with self.subTest(intensive=intensive):
+                ref_bias, ref_std = compute_stats_from_redu(
+                    self.output_redu, self.natoms, intensive=intensive
+                )
+                bias, std = self._accumulate(intensive).solve()
+                np.testing.assert_allclose(bias, ref_bias, rtol=1e-9)
+                np.testing.assert_allclose(std, ref_std, rtol=1e-9)
+
+    def test_matches_with_assigned_bias(self) -> None:
+        assigned_bias = np.full((self.ntypes, self.ndim), np.nan)
+        assigned_bias[1] = self.mean[1]
+        assigned_bias[4] = self.mean[4]
+        ref_bias, ref_std = compute_stats_from_redu(
+            self.output_redu.copy(),
+            self.natoms.copy(),
+            assigned_bias=assigned_bias,
+        )
+        bias, std = self._accumulate().solve(assigned_bias=assigned_bias)
+        np.testing.assert_allclose(bias, ref_bias, rtol=1e-9)
+        np.testing.assert_allclose(std, ref_std, rtol=1e-9)
+
+    def test_matches_with_type_mask(self) -> None:
+        type_mask = np.ones(self.ntypes, dtype=np.int64)
+        type_mask[2] = 0
+        ref_bias, ref_std = compute_stats_from_redu(
+            self.output_redu, self.natoms * type_mask.reshape(1, -1)
+        )
+        bias, std = self._accumulate().solve(type_mask=type_mask)
+        # the excluded type is left at the numerical zero of the min-norm solution
+        np.testing.assert_allclose(bias, ref_bias, rtol=1e-9, atol=1e-9)
+        np.testing.assert_allclose(std, ref_std, rtol=1e-9)
+
+    def test_repeated_compression_is_exact(self) -> None:
+        ref_bias, ref_std = compute_stats_from_redu(self.output_redu, self.natoms)
+        acc = ReduStatAccumulator(self.ntypes, self.ndim, [self.ndim])
+        acc._compress_every = 16
+        for start in range(self.natoms.shape[0]):
+            acc.add(self.output_redu[start : start + 1], self.natoms[start : start + 1])
+        bias, std = acc.solve()
+        np.testing.assert_allclose(bias, ref_bias, rtol=1e-9)
+        np.testing.assert_allclose(std, ref_std, rtol=1e-9)
+
+    def test_counts_every_frame(self) -> None:
+        acc = self._accumulate()
+        self.assertEqual(acc.nframes, self.natoms.shape[0])
+        np.testing.assert_array_equal(acc.natoms_total, self.natoms.sum(axis=0))
+
+    def test_output_shape_is_preserved(self) -> None:
+        rng = np.random.default_rng(0)
+        acc = ReduStatAccumulator(self.ntypes, 6, [2, 3])
+        acc.add(rng.random((10, 2, 3)), rng.integers(1, 5, (10, self.ntypes)))
+        bias, std = acc.solve()
+        self.assertEqual(bias.shape, (self.ntypes, 2, 3))
+        self.assertEqual(std.shape, (2, 3))
+
+    def test_empty_accumulator_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            ReduStatAccumulator(self.ntypes, self.ndim).solve()
+
+
+class TestReduStatScanner(unittest.TestCase):
+    def test_scan_is_performed_once_per_request(self) -> None:
+        calls = []
+
+        def scan_fn(ntypes, keys, intensive):
+            calls.append((ntypes, keys, intensive))
+            return unittest.mock.Mock(natoms_total=np.array([1, 0, 2]))
+
+        scanner = ReduStatScanner(scan_fn)
+        scanner.scan(3, ["energy"])
+        scanner.scan(3, ["energy"])
+        scanner.scan(3, ["energy"], intensive=True)
+        self.assertEqual(len(calls), 2)
+
+    def test_natoms_total_reuses_a_previous_scan(self) -> None:
+        counts = np.array([1, 0, 2])
+        scanner = ReduStatScanner(
+            lambda ntypes, keys, intensive: unittest.mock.Mock(natoms_total=counts)
+        )
+        scanner.scan(3, ["energy"])
+        np.testing.assert_array_equal(scanner.natoms_total(3), counts)

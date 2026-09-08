@@ -65,6 +65,32 @@ def collect_observed_types(sampled: list[dict], type_map: list[str]) -> list[str
     return sort_element_type(observed_types)
 
 
+def observed_types_from_counts(
+    natoms_total: np.ndarray, type_map: list[str]
+) -> list[str]:
+    """Collect observed element types from per-type atom counts.
+
+    Parameters
+    ----------
+    natoms_total : np.ndarray
+        Total occurrences of each type, shape ``[ntypes]``.
+    type_map : list[str]
+        Mapping from type index to element symbol.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of observed element symbols.
+    """
+    from deepmd.utils.econf_embd import (
+        sort_element_type,
+    )
+
+    return sort_element_type(
+        [type_map[i] for i in np.flatnonzero(np.asarray(natoms_total) > 0)]
+    )
+
+
 def _restore_observed_type_from_file(
     stat_file_path: DPPath | None,
 ) -> list[str] | None:

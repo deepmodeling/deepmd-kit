@@ -409,6 +409,12 @@ class DPAtomicModel(BaseAtomicModel):
                     sample["atom_exclude_types"] = list(atom_exclude_types)
             return sampled
 
+        # the full-data scanner, when the trainer attached one, is part of the
+        # sampler contract and must survive wrapping
+        wrapped_sampler.redu_stat_scanner = getattr(
+            sampled_func, "redu_stat_scanner", None
+        )
+
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
