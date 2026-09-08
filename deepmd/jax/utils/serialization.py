@@ -427,6 +427,7 @@ def serialize_from_file(model_file: str) -> dict:
             "jax_version": jax.__version__,
             "model": model_dict,
             "model_def_script": model_def_script,
+            "lower_input_kind": "nlist",
             "@variables": {},
         }
         if min_nbor_dist is not None:
@@ -436,6 +437,7 @@ def serialize_from_file(model_file: str) -> dict:
         data = load_dp_model(model_file)
         data.pop("constants")
         data["@variables"].pop("stablehlo")
+        data["lower_input_kind"] = "nlist"
         return data
     elif model_file.endswith(".savedmodel"):
         raise ValueError(

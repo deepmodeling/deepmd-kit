@@ -39,9 +39,9 @@ class DeepDensity(DeepEval):
     def output_def(self) -> ModelOutputDef:
         """Get the output definition of this model.
 
-        The density is predicted on grid points rather than on atoms, but it
-        is declared with the same per-site output definition as the fitting
-        net of the model.
+        The output definition is identical to that of the density
+        fitting net of the model: the density is predicted on grid
+        points, and is neither reducible nor differentiable.
         """
         return ModelOutputDef(
             FittingOutputDef(
@@ -49,9 +49,9 @@ class DeepDensity(DeepEval):
                     OutputVariableDef(
                         "density",
                         [1],
-                        reducible=True,
-                        r_differentiable=True,
-                        c_differentiable=True,
+                        reducible=False,
+                        r_differentiable=False,
+                        c_differentiable=False,
                     ),
                 ]
             )
@@ -103,7 +103,7 @@ class DeepDensity(DeepEval):
             fparam,
             aparam,
             nframes,
-            natoms,
+            _,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
         results = self.deep_eval.eval(
             coords,

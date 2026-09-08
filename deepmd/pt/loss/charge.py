@@ -45,7 +45,7 @@ class GridDensityLoss(TaskLoss):
         """
         super().__init__()
         self.starter_learning_rate = starter_learning_rate
-        self.has_d = (start_pref_d != 0.0 and limit_pref_d != 0.0) or inference
+        self.has_d = (start_pref_d != 0.0 or limit_pref_d != 0.0) or inference
 
         self.start_pref_d = start_pref_d
         self.limit_pref_d = limit_pref_d
@@ -90,11 +90,19 @@ class GridDensityLoss(TaskLoss):
         more_loss = {}
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
-        atom_norm = 1.0 / natoms
         if self.has_d and "density" in model_pred and "density" in label:
-            density_pred = model_pred["density"]
-            density_label = label["density"]
             find_density = label.get("find_density", 0.0)
+            density_pred = model_pred["density"]
+            if find_density == 0:
+                # density label is absent: the loader fills an atom-shaped
+                # default tensor, which cannot be subtracted from the
+                # grid-point prediction; skip the residual but keep the
+                # graph connected for backward
+                loss = loss + (density_pred.sum() * 0.0).to(GLOBAL_PT_FLOAT_PRECISION)
+                more_loss["rmse_d"] = torch.nan
+                more_loss["mae_d"] = torch.nan
+                return model_pred, loss, more_loss
+            density_label = label["density"]
             pref_d = pref_d * find_density
             density_pred_reshape = density_pred.reshape(-1)
             density_label_reshape = density_label.reshape(-1)

@@ -319,19 +319,18 @@ def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
         grad_w_mod.numpy(), pt_mod.weight.grad.numpy(), rtol=1e-12, atol=1e-12
     )
 
-    # the dpmodel lowering agrees on the torch namespace, gradients included
-    import array_api_compat
-
-    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-        _degree_batched_matmul,
+    # the dpmodel spelling of the contraction agrees on the torch namespace,
+    # gradients included
+    from deepmd.dpmodel.array_api import (
+        xp_einsum,
     )
 
     coeff_dp = coeff.detach().clone().requires_grad_(True)
     # leaf copy of the per-degree parameter: its gradient pins the dpmodel
-    # lowering's WEIGHT backward too, not only the input backward
+    # contraction's WEIGHT backward too, not only the input backward
     weight_dp = pt_mod.weight.detach().clone().requires_grad_(True)
-    dp_out = _degree_batched_matmul(
-        array_api_compat.array_namespace(coeff_dp),
+    dp_out = xp_einsum(
+        "ndfi,dio->ndfo",
         coeff_dp,
         weight_dp.index_select(0, pt_mod.degree_index),
     )
@@ -344,4 +343,29 @@ def test_focus_batched_lowering_matches_einsum_backward(kind) -> None:
     )
     np.testing.assert_allclose(
         weight_dp.grad.numpy(), grad_w_mod.numpy(), rtol=1e-12, atol=1e-12
+    )
+
+    # The namespaces without a native einsum reach the same contraction
+    # through the array-API fallback, which is the only lowering left that
+    # could drift from the contract.
+    from deepmd.dpmodel.array_api import (
+        _xp_einsum_fallback,
+    )
+
+    coeff_fb = coeff.detach().clone().requires_grad_(True)
+    weight_fb = pt_mod.weight.detach().clone().requires_grad_(True)
+    fb_out = _xp_einsum_fallback(
+        "ndfi,dio->ndfo",
+        coeff_fb,
+        weight_fb.index_select(0, pt_mod.degree_index),
+    )
+    np.testing.assert_allclose(
+        fb_out.detach().numpy(), out.detach().numpy(), rtol=1e-12, atol=1e-12
+    )
+    fb_out.backward(grad_out)
+    np.testing.assert_allclose(
+        coeff_fb.grad.numpy(), grad_in_mod.numpy(), rtol=1e-12, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        weight_fb.grad.numpy(), grad_w_mod.numpy(), rtol=1e-12, atol=1e-12
     )

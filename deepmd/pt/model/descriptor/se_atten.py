@@ -13,15 +13,6 @@ import torch.nn.functional as torch_func
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.triton.dpa1.activation import (
-    ACT_CODES,
-)
-from deepmd.kernels.triton.dpa1.se_conv import (
-    se_atten_conv,
-)
-from deepmd.kernels.utils import (
-    triton_infer_level,
-)
 from deepmd.pt.model.descriptor.descriptor import (
     DescriptorBlock,
 )
@@ -54,6 +45,15 @@ from deepmd.pt.utils.exclude_mask import (
 )
 from deepmd.pt.utils.utils import (
     get_generator,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.activation import (
+    ACT_CODES,
+)
+from deepmd.pt_expt.kernels.triton.dpa1.se_conv import (
+    se_atten_conv,
+)
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
 )
 from deepmd.utils.env_mat_stat import (
     StatItem,
@@ -781,6 +781,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             self.rcut,
             self.rcut_smth,
             protection=self.env_protection,
+            training=self.training,
         )
         # nb x nloc x nnei
         exclude_mask = self.emask(nlist, extended_atype)

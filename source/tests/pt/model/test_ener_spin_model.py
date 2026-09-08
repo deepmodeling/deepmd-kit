@@ -111,6 +111,10 @@ class SpinTest:
         torch.testing.assert_close(result["force"].shape, [nframes, nloc, 3])
         torch.testing.assert_close(result["force_mag"].shape, [nframes, nloc, 3])
 
+    def test_export_lower_input_kind(self) -> None:
+        """Virtual-atom spin models retain the dense export ABI."""
+        self.assertEqual(self.model.export_lower_input_kind(), "nlist")
+
     def test_input_output_process(self) -> None:
         nframes, nloc = self.coord.shape[:2]
         self.real_ntypes = self.model.spin.get_ntypes_real()

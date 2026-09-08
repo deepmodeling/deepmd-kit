@@ -153,6 +153,14 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
     """The supported suffixes of the saved model.
 
     The first element is considered as the default suffix."""
+    preserves_lower_input_kind: ClassVar[bool] = False
+    """Whether the IO hook preserves lower-ABI metadata without materializing it.
+
+    Schema-neutral model containers retain ``lower_input_kind`` as provenance
+    even though their deserializer does not accept a concrete ``lower_kind``.
+    Executable backends instead materialize a lower ABI and must expose that
+    choice through their deserializer signature.
+    """
 
     @abstractmethod
     def is_available(self) -> bool:

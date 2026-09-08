@@ -873,6 +873,211 @@ class TestSO3GridNet(unittest.TestCase):
                     rtol=1e-12,
                 )
 
+    def test_combined_training_projection_matches_separate_projection(self) -> None:
+        """The paired training projection preserves outputs and gradients."""
+        for op_type in ["glu", "mlp", "branch"]:
+            with self.subTest(op_type=op_type):
+                torch.manual_seed(8440)
+                net = SO3GridNet(
+                    lmax=2,
+                    kmax=1,
+                    channels=2,
+                    n_focus=1,
+                    mode="self",
+                    op_type=op_type,
+                    dtype=torch.float64,
+                    layout="ndfc",
+                    grid_branches=2,
+                    trainable=True,
+                ).to(self.device)
+                coeff_dim = net.projector.coeff_dim // net.n_frames
+                paired_input = torch.randn(
+                    2,
+                    coeff_dim,
+                    1,
+                    net.query_channels,
+                    dtype=torch.float64,
+                    device=self.device,
+                    requires_grad=True,
+                )
+                separate_input = paired_input.detach().clone().requires_grad_(True)
+                probe = torch.randn(
+                    2,
+                    coeff_dim,
+                    1,
+                    net.output_channels,
+                    dtype=torch.float64,
+                    device=self.device,
+                )
+                parameters = tuple(net.parameters())
+
+                net.train()
+                paired_output = net(paired_input)
+                paired_grads = torch.autograd.grad(
+                    torch.sum(paired_output * probe),
+                    (paired_input, *parameters),
+                    allow_unused=True,
+                )
+
+                net._combine_grid_projection = False
+                separate_output = net(separate_input)
+                separate_grads = torch.autograd.grad(
+                    torch.sum(separate_output * probe),
+                    (separate_input, *parameters),
+                    allow_unused=True,
+                )
+
+                torch.testing.assert_close(
+                    paired_output,
+                    separate_output,
+                    atol=1e-12,
+                    rtol=1e-12,
+                )
+                for paired_grad, separate_grad in zip(
+                    paired_grads,
+                    separate_grads,
+                    strict=True,
+                ):
+                    self.assertEqual(paired_grad is None, separate_grad is None)
+                    if paired_grad is not None:
+                        torch.testing.assert_close(
+                            paired_grad,
+                            separate_grad,
+                            atol=1e-12,
+                            rtol=1e-12,
+                        )
+
+    def test_scalar_readout_matches_full_so3_projection(self) -> None:
+        """Direct Haar contraction matches the full grid output and gradients."""
+        for op_type in ["glu", "mlp", "branch"]:
+            with self.subTest(op_type=op_type):
+                torch.manual_seed(8450)
+                net = SO3GridNet(
+                    lmax=3,
+                    mmax=1,
+                    kmax=2,
+                    channels=2,
+                    n_focus=1,
+                    mode="self",
+                    op_type=op_type,
+                    dtype=torch.float64,
+                    layout="ndfc",
+                    grid_branches=2,
+                    trainable=True,
+                ).to(self.device)
+                coeff_dim = net.projector.coeff_dim // net.n_frames
+                full_input = torch.randn(
+                    2,
+                    coeff_dim,
+                    1,
+                    net.query_channels,
+                    dtype=torch.float64,
+                    device=self.device,
+                    requires_grad=True,
+                )
+                scalar_input = full_input.detach().clone().requires_grad_(True)
+                probe = torch.randn(
+                    2,
+                    1,
+                    1,
+                    net.output_channels,
+                    dtype=torch.float64,
+                    device=self.device,
+                )
+
+                full = net(full_input)[:, 0:1]
+                scalar = net.forward_scalar(scalar_input)
+                torch.testing.assert_close(full, scalar, atol=1e-12, rtol=1e-12)
+
+                parameters = tuple(net.parameters())
+                full_grads = torch.autograd.grad(
+                    torch.sum(full * probe),
+                    (full_input, *parameters),
+                    allow_unused=True,
+                )
+                scalar_grads = torch.autograd.grad(
+                    torch.sum(scalar * probe),
+                    (scalar_input, *parameters),
+                    allow_unused=True,
+                )
+                for full_grad, scalar_grad in zip(
+                    full_grads,
+                    scalar_grads,
+                    strict=True,
+                ):
+                    self.assertEqual(full_grad is None, scalar_grad is None)
+                    if full_grad is not None:
+                        torch.testing.assert_close(
+                            full_grad,
+                            scalar_grad,
+                            atol=1e-12,
+                            rtol=1e-12,
+                        )
+
+    def test_cross_scalar_readout_matches_full_so3_projection(self) -> None:
+        """The scalar cross path contracts only the degree-zero frame weights."""
+        torch.manual_seed(8460)
+        net = SO3GridNet(
+            lmax=3,
+            mmax=1,
+            kmax=2,
+            channels=2,
+            n_focus=1,
+            mode="cross",
+            op_type="mlp",
+            dtype=torch.float64,
+            layout="ndfc",
+            trainable=True,
+        ).to(self.device)
+        coeff_dim = net.projector.coeff_dim // net.n_frames
+        shape = (2, coeff_dim, 1, net.context_channels)
+        full_query = torch.randn(
+            shape,
+            dtype=torch.float64,
+            device=self.device,
+            requires_grad=True,
+        )
+        full_context = torch.randn_like(full_query, requires_grad=True)
+        scalar_query = full_query.detach().clone().requires_grad_(True)
+        scalar_context = full_context.detach().clone().requires_grad_(True)
+        probe = torch.randn(
+            2,
+            1,
+            1,
+            net.output_channels,
+            dtype=torch.float64,
+            device=self.device,
+        )
+
+        full = net(full_query, full_context)[:, 0:1]
+        scalar = net.forward_scalar(scalar_query, scalar_context)
+        torch.testing.assert_close(full, scalar, atol=1e-12, rtol=1e-12)
+
+        parameters = tuple(net.parameters())
+        full_grads = torch.autograd.grad(
+            torch.sum(full * probe),
+            (full_query, full_context, *parameters),
+            allow_unused=True,
+        )
+        scalar_grads = torch.autograd.grad(
+            torch.sum(scalar * probe),
+            (scalar_query, scalar_context, *parameters),
+            allow_unused=True,
+        )
+        for full_grad, scalar_grad in zip(
+            full_grads,
+            scalar_grads,
+            strict=True,
+        ):
+            self.assertEqual(full_grad is None, scalar_grad is None)
+            if full_grad is not None:
+                torch.testing.assert_close(
+                    full_grad,
+                    scalar_grad,
+                    atol=1e-12,
+                    rtol=1e-12,
+                )
+
     def test_packed_truncated_cross_grid_net_forward(self) -> None:
         torch.manual_seed(8500)
         net = SO3GridNet(

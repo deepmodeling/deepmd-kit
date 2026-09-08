@@ -213,7 +213,7 @@ class DeepPot(DeepEval):
             **kwargs,
         )
         # TODO: if the grid is requested, we can directly return it without reshaping to energy, force and virial. We can also consider to return the grid in a separate key in the results dict, instead of reshaping it to energy, force and virial.
-        if "grid" in kwargs:
+        if kwargs.get("grid") is not None:
             result = results["density"].reshape(nframes, -1)
             return result
 

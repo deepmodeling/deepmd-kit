@@ -111,6 +111,9 @@ from __future__ import (
 )
 
 import math
+from dataclasses import (
+    dataclass,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -220,6 +223,18 @@ MAGMA_MIN_SCALE: float = 0.1
 MAGMA_EPS: float = 1e-12
 MAGMA_SIGMOID_MIN: float = 1.0 / (1.0 + math.exp(1.0 / MAGMA_TAU))
 MAGMA_SIGMOID_MAX: float = 1.0 / (1.0 + math.exp(-1.0 / MAGMA_TAU))
+CUDA_GRAPH_WARMUP_STEPS: int = 2
+
+
+_GradientSignature = tuple[int, ...]
+
+
+@dataclass(slots=True)
+class _CudaGraphStep:
+    """Captured optimizer step for one gradient-owner signature."""
+
+    graph: torch.cuda.CUDAGraph
+    static_grads: tuple[torch.Tensor, ...]
 
 
 # ============================================================================
@@ -439,6 +454,9 @@ def _batched_newton_schulz_orth(
     ``NS_STEPS_FAST`` fast iters with ``NS_COEFF_FAST`` followed by
     ``NS_STEPS_POLISH`` polish iters with ``NS_COEFF_POLISH``.
 
+    Runs as plain eager launches: the whole optimizer step is captured into
+    one CUDA graph, which absorbs the launch overhead of every iteration.
+
     Parameters
     ----------
     G : torch.Tensor
@@ -498,15 +516,14 @@ class _GramNewtonSchulzOrthogonalizer:
             (float(a), float(b), float(c)) for a, b, c in POLAR_EXPRESS_COEFFICIENTS
         )
         self._restart_iteration_set = frozenset((2,))
-        self._compiled_call = torch.compile(
-            self._orthogonalize_impl,
-            fullgraph=True,
-            dynamic=True,
-        )
 
     def __call__(self, X: torch.Tensor) -> torch.Tensor:
         """
         Orthogonalize a tensor of rectangular matrices.
+
+        Runs as plain eager launches: the whole optimizer step is captured
+        into one CUDA graph, which absorbs the launch overhead of every
+        iteration and forbids nested graph or compiler regions inside.
 
         Parameters
         ----------
@@ -519,8 +536,7 @@ class _GramNewtonSchulzOrthogonalizer:
         torch.Tensor
             Orthogonalized tensor with the same shape and dtype as ``X``.
         """
-        with torch.device(X.device):
-            return self._compiled_call(X)
+        return self._orthogonalize_impl(X)
 
     def _orthogonalize_impl(self, X: torch.Tensor) -> torch.Tensor:
         # === Step 1. Canonicalize leading batch dimensions ===
@@ -980,6 +996,30 @@ class HybridMuonOptimizer(Optimizer):
         # ops lack DTensor sharding propagation on older PyTorch builds.
         self._use_foreach = self._resolve_foreach(use_foreach)
 
+        # === Step 6. Whole-step CUDA graphs ===
+        # The optimizer update is host-bound, so each gradient-owner signature
+        # is captured after its own eager warmup and replayed thereafter.
+        # Signatures share one graph memory pool and one static gradient buffer
+        # per parameter: task-specific graphs are mutually exclusive and run on
+        # the same stream, so their temporary allocations may safely alias.
+        # A fixed Adam owner set uses one clock per parameter group. The first
+        # owner-set change materializes equivalent per-parameter clocks, which
+        # preserve eager semantics without slowing the common single-task path.
+        # Parameters that are not plain CUDA tensors execute the same update
+        # eagerly.
+        self._graph_enabled = True
+        self._graphs: dict[_GradientSignature, _CudaGraphStep] = {}
+        self._graph_warmups: dict[_GradientSignature, int] = {}
+        self._graph_params: tuple[torch.Tensor, ...] = ()
+        self._static_grad_buffers: list[torch.Tensor | None] = []
+        self._graph_pool: Any | None = None
+        self._graph_capture_stream: torch.cuda.Stream | None = None
+        self._adam_ones: dict[torch.device, torch.Tensor] = {}
+        self._adam_param_indices: frozenset[int] = frozenset()
+        self._adam_signature: _GradientSignature | None = None
+        self._per_parameter_adam_clock = False
+        self._bias_corrections_migrated = False
+
     def set_param_names(
         self, named_parameters: Iterable[tuple[str, torch.Tensor]]
     ) -> None:
@@ -995,6 +1035,29 @@ class HybridMuonOptimizer(Optimizer):
             id(param): str(name) for name, param in named_parameters
         }
         self._routing_built = False
+
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """
+        Load optimizer state and invalidate captured runtime state.
+
+        Parameters
+        ----------
+        state_dict : dict[str, Any]
+            Optimizer state returned by :meth:`state_dict`.
+        """
+        super().load_state_dict(state_dict)
+        self._adam_signature = None
+        self._per_parameter_adam_clock = False
+        self._bias_corrections_migrated = False
+        self._clear_cuda_graphs()
+
+    def _clear_cuda_graphs(self) -> None:
+        """Discard captures whose tensor addresses or routing may be stale."""
+        self._graphs.clear()
+        self._graph_warmups.clear()
+        self._static_grad_buffers = [None] * len(self._graph_params)
+        self._graph_pool = None
+        self._graph_capture_stream = None
 
     @staticmethod
     def _resolve_foreach(use_foreach: bool | None) -> bool:
@@ -1169,6 +1232,10 @@ class HybridMuonOptimizer(Optimizer):
             Damping scales with shape (batch_size,) in [MAGMA_MIN_SCALE, 1.0].
         """
         # === Step 1. Restore or initialize EMA score state ===
+        # The EMA advances in place on the persistent state tensor: a fresh
+        # tensor rebound into the state dict is a host-side assignment that a
+        # captured CUDA graph executes only at capture time, which would
+        # freeze the EMA recursion at that step's value on every replay.
         state = self.state[param]
         magma_score = state.get("magma_score")
         if (
@@ -1183,8 +1250,10 @@ class HybridMuonOptimizer(Optimizer):
                 dtype=torch.float32,
                 device=param.device,
             )
-        else:
+            state["magma_score"] = magma_score
+        elif magma_score.dtype != torch.float32:
             magma_score = magma_score.to(dtype=torch.float32, device=param.device)
+            state["magma_score"] = magma_score
 
         # === Step 2. Build matrix-view for block-wise cosine ===
         grad_view = grad.reshape(batch_size, rows, cols).reshape(batch_size, -1)
@@ -1207,10 +1276,7 @@ class HybridMuonOptimizer(Optimizer):
         raw_score = raw_score.clamp(min=0.0, max=1.0)
 
         # === Step 5. Update EMA score and convert to damping scale ===
-        magma_score = (
-            MAGMA_EMA_DECAY * magma_score + (1.0 - MAGMA_EMA_DECAY) * raw_score
-        )
-        state["magma_score"] = magma_score
+        magma_score.mul_(MAGMA_EMA_DECAY).add_(raw_score, alpha=1.0 - MAGMA_EMA_DECAY)
         return MAGMA_MIN_SCALE + (1.0 - MAGMA_MIN_SCALE) * magma_score
 
     def _compute_magma_scales_for_bucket(
@@ -1358,10 +1424,11 @@ class HybridMuonOptimizer(Optimizer):
             tuple[int, int, torch.device, torch.dtype],
             list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]],
         ],
-        lr: float,
         lr_adjust: float,
         lr_adjust_coeff: float,
         magma_scales_map: dict[int, torch.Tensor],
+        out_params: list[torch.Tensor],
+        out_deltas: list[torch.Tensor],
     ) -> None:
         """Column-pad merge across rectangular buckets sharing the same min_dim.
 
@@ -1402,6 +1469,8 @@ class HybridMuonOptimizer(Optimizer):
 
         Per-entry ``scale`` and Magma damping are applied *after* unpadding,
         since different original shapes have different ``max(rows, cols)``.
+        The finished deltas are appended to ``out_params`` / ``out_deltas``;
+        the caller applies every route's update as one multi-tensor kernel.
         """
         # --- Group rectangular buckets by (min_dim, device, dtype) ---
         super_buckets: dict[
@@ -1494,8 +1563,8 @@ class HybridMuonOptimizer(Optimizer):
                         dtype=orth_slice.dtype, device=orth_slice.device
                     )
 
-                delta = orth_slice.reshape(entry["param"].shape)
-                entry["param"].add_(delta, alpha=-lr)
+                out_params.append(entry["param"])
+                out_deltas.append(orth_slice.reshape(entry["param"].shape))
 
     def _build_param_routing(self) -> None:
         """
@@ -1511,6 +1580,7 @@ class HybridMuonOptimizer(Optimizer):
         if self._routing_built:
             return
 
+        self._clear_cuda_graphs()
         self._routing = []
         for group in self.param_groups:
             muon_params: list[dict[str, Any]] = []
@@ -1563,6 +1633,21 @@ class HybridMuonOptimizer(Optimizer):
                 }
             )
 
+        self._graph_params = tuple(
+            p for group in self.param_groups for p in group["params"]
+        )
+        adam_param_ids = {
+            id(entry["param"])
+            for route in self._routing
+            for key in ("adam_no_decay", "adam_decay")
+            for entry in route[key]
+        }
+        self._adam_param_indices = frozenset(
+            index
+            for index, param in enumerate(self._graph_params)
+            if id(param) in adam_param_ids
+        )
+        self._static_grad_buffers = [None] * len(self._graph_params)
         self._routing_built = True
 
     # ------------------------------------------------------------------
@@ -1596,14 +1681,157 @@ class HybridMuonOptimizer(Optimizer):
     def _weight_decay_inplace(
         self,
         params: list[torch.Tensor],
-        factor: float,
+        factor: torch.Tensor,
     ) -> None:
-        """Apply multiplicative weight decay, foreach-accelerated when safe."""
+        """Apply multiplicative weight decay, foreach-accelerated when safe.
+
+        ``factor`` is a 0-dim device tensor (``1 - lr * weight_decay``), so
+        the decay follows the learning-rate schedule inside a captured graph.
+        """
         if self._use_foreach and len(params) > 1:
             torch._foreach_mul_(params, factor)
         else:
             for p in params:
                 p.mul_(factor)
+
+    def _ensure_group_tensors(
+        self, group: dict[str, Any], device: torch.device
+    ) -> None:
+        """Materialize device scalars used by eager and captured updates."""
+        if "lr_device" not in group:
+            group["lr_device"] = torch.zeros((), dtype=torch.float32, device=device)
+        elif (
+            group["lr_device"].device != device
+            or group["lr_device"].dtype != torch.float32
+        ):
+            group["lr_device"] = group["lr_device"].to(
+                device=device, dtype=torch.float32
+            )
+
+        if self._per_parameter_adam_clock:
+            return
+        for key in ("beta1_pow_device", "beta2_pow_device"):
+            if key not in group:
+                group[key] = torch.ones((), dtype=torch.float32, device=device)
+            elif group[key].device != device or group[key].dtype != torch.float32:
+                group[key] = group[key].to(device=device, dtype=torch.float32)
+
+    def _adam_one(self, device: torch.device) -> torch.Tensor:
+        """Return the cached scalar target for Adam correction recurrences."""
+        one = self._adam_ones.get(device)
+        if one is None:
+            one = torch.ones((), dtype=torch.float32, device=device)
+            self._adam_ones[device] = one
+        return one
+
+    def _update_adam_bias_corrections(
+        self,
+        bias_correction1: list[torch.Tensor],
+        bias_correction2: list[torch.Tensor],
+        beta1: float,
+        beta2: float,
+    ) -> None:
+        """Advance per-parameter Adam corrections with fused EMA kernels."""
+        one = self._adam_one(bias_correction1[0].device)
+        targets = [one] * len(bias_correction1)
+        if self._use_foreach and len(bias_correction1) > 1:
+            torch._foreach_lerp_(bias_correction1, targets, 1.0 - beta1)
+            torch._foreach_lerp_(bias_correction2, targets, 1.0 - beta2)
+            return
+        for correction1, correction2 in zip(
+            bias_correction1, bias_correction2, strict=True
+        ):
+            correction1.lerp_(one, 1.0 - beta1)
+            correction2.lerp_(one, 1.0 - beta2)
+
+    def _adam_apply_updates(
+        self,
+        params: list[torch.Tensor],
+        exp_avgs: list[torch.Tensor],
+        exp_avg_sqs: list[torch.Tensor],
+        bias_correction1: list[torch.Tensor],
+        bias_correction2: list[torch.Tensor],
+        group: dict[str, Any],
+        lr_factor: float,
+    ) -> None:
+        """Apply the bias-corrected Adam update as multi-tensor kernels.
+
+        A fixed owner set broadcasts one correction per parameter group. Once
+        the owner set changes, each active parameter supplies its own device
+        correction so inactive task heads do not advance their Adam clock.
+        """
+        if self._use_foreach and len(params) > 1:
+            if self._per_parameter_adam_clock:
+                step_sizes = torch._foreach_reciprocal(bias_correction1)
+                torch._foreach_mul_(step_sizes, group["lr_device"] * lr_factor)
+                denom = torch._foreach_div(exp_avg_sqs, bias_correction2)
+            else:
+                correction1 = 1.0 - group["beta1_pow_device"]
+                correction2 = 1.0 - group["beta2_pow_device"]
+                step_size = group["lr_device"] * (lr_factor / correction1)
+                denom = torch._foreach_div(exp_avg_sqs, correction2)
+            torch._foreach_sqrt_(denom)
+            torch._foreach_add_(denom, ADAM_EPS)
+            deltas = torch._foreach_div(exp_avgs, denom)
+            if self._per_parameter_adam_clock:
+                torch._foreach_mul_(deltas, step_sizes)
+            else:
+                torch._foreach_mul_(deltas, step_size)
+
+            groups: dict[torch.dtype, list[int]] = {}
+            for i, p in enumerate(params):
+                groups.setdefault(p.dtype, []).append(i)
+            for dtype, idxs in groups.items():
+                dtype_deltas = [deltas[i] for i in idxs]
+                if dtype is not torch.float32:
+                    dtype_deltas = [d.to(dtype) for d in dtype_deltas]
+                torch._foreach_add_([params[i] for i in idxs], dtype_deltas, alpha=-1)
+        else:
+            if self._per_parameter_adam_clock:
+                for p, exp_avg, exp_avg_sq, correction1, correction2 in zip(
+                    params,
+                    exp_avgs,
+                    exp_avg_sqs,
+                    bias_correction1,
+                    bias_correction2,
+                    strict=True,
+                ):
+                    step_size = group["lr_device"] * (lr_factor / correction1)
+                    denom = (exp_avg_sq / correction2).sqrt().add_(ADAM_EPS)
+                    delta = (exp_avg / denom).mul_(step_size)
+                    p.add_(delta.to(p.dtype), alpha=-1)
+            else:
+                correction1 = 1.0 - group["beta1_pow_device"]
+                correction2 = 1.0 - group["beta2_pow_device"]
+                for p, exp_avg, exp_avg_sq in zip(
+                    params, exp_avgs, exp_avg_sqs, strict=True
+                ):
+                    step_size = group["lr_device"] * (lr_factor / correction1)
+                    denom = (exp_avg_sq / correction2).sqrt().add_(ADAM_EPS)
+                    delta = (exp_avg / denom).mul_(step_size)
+                    p.add_(delta.to(p.dtype), alpha=-1)
+
+    def _apply_param_deltas(
+        self,
+        params: list[torch.Tensor],
+        deltas: list[torch.Tensor],
+        lr_device: torch.Tensor,
+    ) -> None:
+        """Apply ``p -= lr * delta`` over a route as multi-tensor kernels."""
+        if not params:
+            return
+        if self._use_foreach and len(params) > 1:
+            groups: dict[torch.dtype, list[int]] = {}
+            for i, p in enumerate(params):
+                groups.setdefault(p.dtype, []).append(i)
+            for dtype, idxs in groups.items():
+                scaled = torch._foreach_mul([deltas[i] for i in idxs], lr_device)
+                if dtype is not torch.float32:
+                    scaled = [d.to(dtype) for d in scaled]
+                torch._foreach_add_([params[i] for i in idxs], scaled, alpha=-1)
+        else:
+            for p, delta in zip(params, deltas, strict=True):
+                p.add_((delta * lr_device).to(p.dtype), alpha=-1)
 
     # ------------------------------------------------------------------
     # step()
@@ -1616,6 +1844,13 @@ class HybridMuonOptimizer(Optimizer):
     ) -> torch.Tensor | None:
         """
         Perform a single optimization step.
+
+        On CUDA each gradient-owner signature is captured after two eager
+        warmup steps and replayed thereafter. This preserves whole-step graph
+        acceleration when multi-task training alternates parameter subsets.
+        The signatures share static gradient buffers and one graph memory
+        pool. Parameters that are not plain CUDA tensors run the identical
+        update eagerly.
 
         Parameters
         ----------
@@ -1634,10 +1869,266 @@ class HybridMuonOptimizer(Optimizer):
 
         # Build static parameter routing on first call.
         self._build_param_routing()
+        self._migrate_bias_corrections()
 
+        signature, grads = self._collect_gradients()
+        if not signature:
+            return loss
+        self._prepare_adam_clock(signature)
+
+        # Host-driven scalars refresh outside every capture or replay.
+        device = self.param_groups[0]["params"][0].device
+        for group in self.param_groups:
+            group_device = group["params"][0].device
+            self._ensure_group_tensors(group, group_device)
+            group["lr_device"].fill_(float(group["lr"]))
+
+        if not self._graph_supported(device):
+            self._step_impl(None)
+            return loss
+
+        graph_step = self._graphs.get(signature)
+        if graph_step is not None:
+            torch._foreach_copy_(graph_step.static_grads, grads)
+            graph_step.graph.replay()
+            return loss
+
+        warmups = self._graph_warmups.get(signature, 0)
+        if warmups < CUDA_GRAPH_WARMUP_STEPS:
+            self._graph_warmups[signature] = warmups + 1
+            self._step_impl(None)
+            return loss
+
+        graph_step = self._capture_cuda_graph(signature, grads, device)
+        self._graphs[signature] = graph_step
+        self._graph_warmups.pop(signature)
+        graph_step.graph.replay()
+        return loss
+
+    def _graph_supported(self, device: torch.device) -> bool:
+        """Whether the whole-step CUDA graph serves this configuration."""
+        if not self._graph_enabled or device.type != "cuda":
+            return False
+        for group in self.param_groups:
+            for p in group["params"]:
+                if (
+                    type(p) not in (torch.Tensor, torch.nn.Parameter)
+                    or p.device != device
+                ):
+                    return False
+        return True
+
+    def _migrate_bias_corrections(self) -> None:
+        """Restore either uniform or per-parameter Adam clock state.
+
+        Per-parameter powers from eager checkpoints and corrections from
+        dynamic-signature checkpoints select the dynamic clock. A checkpoint
+        containing only group powers retains the uniform fast path.
+        """
+        if self._bias_corrections_migrated:
+            return
+
+        has_per_parameter_clock = False
+        for group in self.param_groups:
+            for p in group["params"]:
+                state = self.state.get(p)
+                if not state or "exp_avg" not in state:
+                    continue
+                if any(
+                    key in state
+                    for key in (
+                        "bias_correction1",
+                        "bias_correction2",
+                        "beta1_pow",
+                        "beta2_pow",
+                    )
+                ):
+                    has_per_parameter_clock = True
+
+        if has_per_parameter_clock:
+            self._per_parameter_adam_clock = True
+            for group in self.param_groups:
+                group_beta1_pow = group.pop("beta1_pow_device", None)
+                group_beta2_pow = group.pop("beta2_pow_device", None)
+                if (group_beta1_pow is None) != (group_beta2_pow is None):
+                    raise RuntimeError(
+                        "HybridMuon checkpoint contains an incomplete group Adam clock"
+                    )
+                for p in group["params"]:
+                    state = self.state.get(p)
+                    if not state or "exp_avg" not in state:
+                        continue
+                    correction1 = state.get("bias_correction1")
+                    correction2 = state.get("bias_correction2")
+                    if (correction1 is None) != (correction2 is None):
+                        raise RuntimeError(
+                            "HybridMuon checkpoint contains an incomplete "
+                            "per-parameter Adam correction"
+                        )
+                    beta1_pow = state.pop("beta1_pow", None)
+                    beta2_pow = state.pop("beta2_pow", None)
+                    if (beta1_pow is None) != (beta2_pow is None):
+                        raise RuntimeError(
+                            "HybridMuon checkpoint contains an incomplete "
+                            "per-parameter Adam power"
+                        )
+                    if correction1 is None:
+                        beta1_pow = group_beta1_pow if beta1_pow is None else beta1_pow
+                        beta2_pow = group_beta2_pow if beta2_pow is None else beta2_pow
+                        if beta1_pow is None or beta2_pow is None:
+                            raise RuntimeError(
+                                "HybridMuon Adam state is missing its clock"
+                            )
+                        correction1 = 1.0 - torch.as_tensor(
+                            beta1_pow, dtype=torch.float32, device=p.device
+                        )
+                        correction2 = 1.0 - torch.as_tensor(
+                            beta2_pow, dtype=torch.float32, device=p.device
+                        )
+                    state["bias_correction1"] = torch.as_tensor(
+                        correction1, dtype=torch.float32, device=p.device
+                    ).reshape(())
+                    state["bias_correction2"] = torch.as_tensor(
+                        correction2, dtype=torch.float32, device=p.device
+                    ).reshape(())
+            self._adam_signature = None
+        else:
+            self._per_parameter_adam_clock = False
+            for group in self.param_groups:
+                beta1_pow = group.get("beta1_pow_device")
+                beta2_pow = group.get("beta2_pow_device")
+                if (beta1_pow is None) != (beta2_pow is None):
+                    raise RuntimeError(
+                        "HybridMuon checkpoint contains an incomplete group Adam clock"
+                    )
+                has_adam_state = any(
+                    "exp_avg" in self.state.get(p, {}) for p in group["params"]
+                )
+                if has_adam_state and beta1_pow is None:
+                    raise RuntimeError("HybridMuon Adam state is missing its clock")
+                if beta1_pow is not None:
+                    device = group["params"][0].device
+                    group["beta1_pow_device"] = torch.as_tensor(
+                        beta1_pow, dtype=torch.float32, device=device
+                    ).reshape(())
+                    group["beta2_pow_device"] = torch.as_tensor(
+                        beta2_pow, dtype=torch.float32, device=device
+                    ).reshape(())
+            self._adam_signature = (
+                tuple(
+                    index
+                    for index, param in enumerate(self._graph_params)
+                    if index in self._adam_param_indices
+                    and "exp_avg" in self.state.get(param, {})
+                )
+                or None
+            )
+
+        self._bias_corrections_migrated = True
+
+    def _prepare_adam_clock(self, signature: _GradientSignature) -> None:
+        """Select the exact Adam clock representation for this owner set."""
+        if self._per_parameter_adam_clock:
+            return
+        adam_signature = tuple(
+            index for index in signature if index in self._adam_param_indices
+        )
+        if self._adam_signature is None:
+            self._adam_signature = adam_signature
+            return
+        if adam_signature == self._adam_signature:
+            return
+
+        self._materialize_per_parameter_adam_clock()
+        self._clear_cuda_graphs()
+
+    def _materialize_per_parameter_adam_clock(self) -> None:
+        """Split uniform group clocks without changing any Adam step count."""
+        for group in self.param_groups:
+            beta1_pow = group.pop("beta1_pow_device", None)
+            beta2_pow = group.pop("beta2_pow_device", None)
+            if beta1_pow is None or beta2_pow is None:
+                raise RuntimeError("HybridMuon group Adam clock is not initialized")
+            correction1 = 1.0 - beta1_pow
+            correction2 = 1.0 - beta2_pow
+            for p in group["params"]:
+                state = self.state.get(p)
+                if not state or "exp_avg" not in state:
+                    continue
+                state["bias_correction1"] = torch.as_tensor(
+                    correction1.detach().clone(),
+                    dtype=torch.float32,
+                    device=p.device,
+                ).reshape(())
+                state["bias_correction2"] = torch.as_tensor(
+                    correction2.detach().clone(),
+                    dtype=torch.float32,
+                    device=p.device,
+                ).reshape(())
+        self._per_parameter_adam_clock = True
+        self._adam_signature = None
+
+    def _collect_gradients(
+        self,
+    ) -> tuple[_GradientSignature, tuple[torch.Tensor, ...]]:
+        """Collect live gradients and their stable parameter indices."""
+        signature: list[int] = []
+        grads: list[torch.Tensor] = []
+        for index, param in enumerate(self._graph_params):
+            if param.grad is None:
+                continue
+            signature.append(index)
+            grads.append(param.grad)
+        return tuple(signature), tuple(grads)
+
+    def _capture_cuda_graph(
+        self,
+        signature: _GradientSignature,
+        grads: tuple[torch.Tensor, ...],
+        device: torch.device,
+    ) -> _CudaGraphStep:
+        """Capture one warmed gradient-owner signature."""
+        static_grads: list[torch.Tensor] = []
+        grad_map: dict[int, torch.Tensor] = {}
+        for index, grad in zip(signature, grads, strict=True):
+            static_grad = self._static_grad_buffers[index]
+            if static_grad is None:
+                static_grad = torch.zeros_like(grad)
+                self._static_grad_buffers[index] = static_grad
+            static_grads.append(static_grad)
+            grad_map[id(self._graph_params[index])] = static_grad
+
+        static_grads_tuple = tuple(static_grads)
+        torch._foreach_copy_(static_grads_tuple, grads)
+
+        with torch.cuda.device(device):
+            if self._graph_pool is None:
+                self._graph_pool = torch.cuda.graph_pool_handle()
+                self._graph_capture_stream = torch.cuda.Stream(device=device)
+            if self._graph_capture_stream is None:
+                raise RuntimeError(
+                    "HybridMuon CUDA graph capture stream is not initialized"
+                )
+            torch.cuda.synchronize(device)
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(
+                graph,
+                pool=self._graph_pool,
+                stream=self._graph_capture_stream,
+            ):
+                self._step_impl(grad_map)
+
+        return _CudaGraphStep(graph=graph, static_grads=static_grads_tuple)
+
+    def _step_impl(self, grad_map: dict[int, torch.Tensor] | None) -> None:
+        """Run one optimization update over every parameter group.
+
+        ``grad_map`` routes parameter ids to the static gradient buffers when
+        the update runs under graph capture; ``None`` reads the live
+        ``p.grad`` directly (warmup and the eager fallback).
+        """
         for group_idx, group in enumerate(self.param_groups):
             route = self._routing[group_idx]
-            lr = group["lr"]
             momentum = group["momentum"]
             weight_decay = group["weight_decay"]
             adam_betas = group["adam_betas"]
@@ -1645,123 +2136,97 @@ class HybridMuonOptimizer(Optimizer):
             lr_adjust_coeff = group["lr_adjust_coeff"]
             enable_gram = bool(group.get("enable_gram", True))
             magma_muon = bool(group.get("magma_muon", True))
+            lr_device = group["lr_device"]
+            adam_lr_factor = 1.0 if lr_adjust <= 0 else 1.0 / lr_adjust
 
-            # === Step 1. Adam update for non-decay Adam path ===
-            # === Step 1.1. Collect gradients and initialize state ===
-            adam_no_decay_params: list[torch.Tensor] = []
-            adam_no_decay_grads_fp32: list[torch.Tensor] = []
-            adam_no_decay_exp_avgs: list[torch.Tensor] = []
-            adam_no_decay_exp_avg_sqs: list[torch.Tensor] = []
-            adam_no_decay_states: list[dict[str, Any]] = []
+            def read_grad(p: torch.Tensor) -> torch.Tensor | None:
+                if grad_map is not None:
+                    return grad_map.get(id(p))
+                return p.grad
 
-            for entry in route["adam_no_decay"]:
-                p = entry["param"]
-                grad = p.grad
-                if grad is None:
-                    continue
-
-                grad_fp32 = grad.float()
-
-                state = self.state[p]
-                if "exp_avg" not in state:
-                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
-                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
-                    state["beta1_pow"] = 1.0
-                    state["beta2_pow"] = 1.0
-
-                state["beta1_pow"] *= adam_betas[0]
-                state["beta2_pow"] *= adam_betas[1]
-
-                adam_no_decay_params.append(p)
-                adam_no_decay_grads_fp32.append(grad_fp32)
-                adam_no_decay_exp_avgs.append(state["exp_avg"])
-                adam_no_decay_exp_avg_sqs.append(state["exp_avg_sq"])
-                adam_no_decay_states.append(state)
-
-            if adam_no_decay_params:
-                # === Step 1.2. Update exp_avg / exp_avg_sq ===
-                adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
-                self._adam_update_moments(
-                    adam_no_decay_exp_avgs,
-                    adam_no_decay_exp_avg_sqs,
-                    adam_no_decay_grads_fp32,
-                    adam_betas[0],
-                    adam_betas[1],
-                )
-                # === Step 1.3. Bias correction and parameter update ===
-                # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
-                for i, p in enumerate(adam_no_decay_params):
-                    state = adam_no_decay_states[i]
-                    bias_corr1 = 1 - state["beta1_pow"]
-                    bias_corr2 = 1 - state["beta2_pow"]
-                    step_size = adam_lr / bias_corr1
-                    denom = (
-                        (adam_no_decay_exp_avg_sqs[i] / bias_corr2)
-                        .sqrt()
-                        .add_(ADAM_EPS)
-                    )
-                    delta_fp32 = -step_size * (adam_no_decay_exp_avgs[i] / denom)
-                    p.add_(delta_fp32.to(p.dtype))
-
-            # === Step 2. AdamW-style update for decay-enabled Adam path ===
-            # === Step 2.1. Collect gradients and initialize state ===
+            # === Step 1. Collect Adam and AdamW routes ===
+            adam_params: list[torch.Tensor] = []
             adam_decay_params: list[torch.Tensor] = []
-            adam_decay_grads_fp32: list[torch.Tensor] = []
-            adam_decay_exp_avgs: list[torch.Tensor] = []
-            adam_decay_exp_avg_sqs: list[torch.Tensor] = []
-            adam_decay_states: list[dict[str, Any]] = []
+            adam_grads_fp32: list[torch.Tensor] = []
+            adam_exp_avgs: list[torch.Tensor] = []
+            adam_exp_avg_sqs: list[torch.Tensor] = []
+            adam_bias_correction1: list[torch.Tensor] = []
+            adam_bias_correction2: list[torch.Tensor] = []
 
-            for entry in route.get("adam_decay", []):
-                p = entry["param"]
-                grad = p.grad
-                if grad is None:
-                    continue
+            for entries, decay in (
+                (route["adam_no_decay"], False),
+                (route["adam_decay"], True),
+            ):
+                for entry in entries:
+                    p = entry["param"]
+                    grad = read_grad(p)
+                    if grad is None:
+                        continue
 
-                grad_fp32 = grad.float()
+                    state = self.state[p]
+                    if "exp_avg" not in state:
+                        state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
+                        state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
+                        if self._per_parameter_adam_clock:
+                            state["bias_correction1"] = torch.zeros(
+                                (), dtype=torch.float32, device=p.device
+                            )
+                            state["bias_correction2"] = torch.zeros(
+                                (), dtype=torch.float32, device=p.device
+                            )
 
-                state = self.state[p]
-                if "exp_avg" not in state:
-                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32)
-                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32)
-                    state["beta1_pow"] = 1.0
-                    state["beta2_pow"] = 1.0
+                    adam_params.append(p)
+                    adam_grads_fp32.append(grad.float())
+                    adam_exp_avgs.append(state["exp_avg"])
+                    adam_exp_avg_sqs.append(state["exp_avg_sq"])
+                    if decay:
+                        adam_decay_params.append(p)
+                    if self._per_parameter_adam_clock:
+                        if (
+                            "bias_correction1" not in state
+                            or "bias_correction2" not in state
+                        ):
+                            raise RuntimeError(
+                                "HybridMuon Adam state is missing its dynamic clock"
+                            )
+                        adam_bias_correction1.append(state["bias_correction1"])
+                        adam_bias_correction2.append(state["bias_correction2"])
 
-                state["beta1_pow"] *= adam_betas[0]
-                state["beta2_pow"] *= adam_betas[1]
-
-                adam_decay_params.append(p)
-                adam_decay_grads_fp32.append(grad_fp32)
-                adam_decay_exp_avgs.append(state["exp_avg"])
-                adam_decay_exp_avg_sqs.append(state["exp_avg_sq"])
-                adam_decay_states.append(state)
-
-            if adam_decay_params:
-                adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
-                # AdamW decoupled weight decay for >=2D Adam path.
-                if weight_decay > 0:
+            # === Step 2. Apply the fused Adam update ===
+            if adam_params:
+                if weight_decay > 0 and adam_decay_params:
                     self._weight_decay_inplace(
-                        adam_decay_params, 1.0 - adam_lr * weight_decay
+                        adam_decay_params,
+                        1.0 - lr_device * (adam_lr_factor * weight_decay),
                     )
-                # === Step 2.2. Update exp_avg / exp_avg_sq ===
+
+                if self._per_parameter_adam_clock:
+                    self._update_adam_bias_corrections(
+                        adam_bias_correction1,
+                        adam_bias_correction2,
+                        adam_betas[0],
+                        adam_betas[1],
+                    )
+                else:
+                    group["beta1_pow_device"].mul_(adam_betas[0])
+                    group["beta2_pow_device"].mul_(adam_betas[1])
+
                 self._adam_update_moments(
-                    adam_decay_exp_avgs,
-                    adam_decay_exp_avg_sqs,
-                    adam_decay_grads_fp32,
+                    adam_exp_avgs,
+                    adam_exp_avg_sqs,
+                    adam_grads_fp32,
                     adam_betas[0],
                     adam_betas[1],
                 )
-                # === Step 2.3. Bias correction and parameter update ===
-                # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
-                for i, p in enumerate(adam_decay_params):
-                    state = adam_decay_states[i]
-                    bias_corr1 = 1 - state["beta1_pow"]
-                    bias_corr2 = 1 - state["beta2_pow"]
-                    step_size = adam_lr / bias_corr1
-                    denom = (
-                        (adam_decay_exp_avg_sqs[i] / bias_corr2).sqrt().add_(ADAM_EPS)
-                    )
-                    delta_fp32 = -step_size * (adam_decay_exp_avgs[i] / denom)
-                    p.add_(delta_fp32.to(p.dtype))
+                self._adam_apply_updates(
+                    adam_params,
+                    adam_exp_avgs,
+                    adam_exp_avg_sqs,
+                    adam_bias_correction1,
+                    adam_bias_correction2,
+                    group,
+                    adam_lr_factor,
+                )
 
             # === Step 3. Muon update for matrix parameters ===
             # === Step 3.1. Collect gradients and initialize momentum ===
@@ -1772,7 +2237,7 @@ class HybridMuonOptimizer(Optimizer):
 
             for entry in route["muon_params"]:
                 p = entry["param"]
-                grad = p.grad
+                grad = read_grad(p)
                 if grad is None:
                     continue
 
@@ -1792,7 +2257,7 @@ class HybridMuonOptimizer(Optimizer):
             # === Step 3.2. Apply weight decay on Muon path ===
             if weight_decay > 0 and muon_params_for_decay:
                 self._weight_decay_inplace(
-                    muon_params_for_decay, 1.0 - lr * weight_decay
+                    muon_params_for_decay, 1.0 - lr_device * weight_decay
                 )
 
             if not active_entries:
@@ -1874,14 +2339,20 @@ class HybridMuonOptimizer(Optimizer):
                 else:
                     square_buckets[key] = bucket_entries
 
+            # The per-entry deltas of both NS paths are collected and applied
+            # as one multi-tensor update after the buckets finish.
+            muon_apply_params: list[torch.Tensor] = []
+            muon_apply_deltas: list[torch.Tensor] = []
+
             # --- 3.6a  Rectangular buckets → column-pad merged Gram NS ---
             if gram_buckets:
                 self._process_merged_gram_buckets(
                     gram_buckets=gram_buckets,
-                    lr=lr,
                     lr_adjust=lr_adjust,
                     lr_adjust_coeff=lr_adjust_coeff,
                     magma_scales_map=magma_scales_map,
+                    out_params=muon_apply_params,
+                    out_deltas=muon_apply_deltas,
                 )
 
             # --- 3.6b  Square buckets → standard / flash NS path ---
@@ -1934,7 +2405,7 @@ class HybridMuonOptimizer(Optimizer):
                             dtype=orth_slice.dtype,
                             device=orth_slice.device,
                         )
-                    delta = orth_slice.reshape(entry["param"].shape)
-                    entry["param"].add_(delta, alpha=-lr)
+                    muon_apply_params.append(entry["param"])
+                    muon_apply_deltas.append(orth_slice.reshape(entry["param"].shape))
 
-        return loss
+            self._apply_param_deltas(muon_apply_params, muon_apply_deltas, lr_device)

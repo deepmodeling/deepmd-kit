@@ -345,16 +345,8 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
         ]:
             """Cast the input data to global float type."""
             input_prec = self.reverse_precision_dict[coord.dtype]
-            ###
-            ### type checking would not pass jit, convert to coord prec anyway
-            ###
-            # for vv, kk in zip([fparam, aparam], ["frame", "atomic"]):
-            #     if vv is not None and self.reverse_precision_dict[vv.dtype] != input_prec:
-            #         log.warning(
-            #           f"type of {kk} parameter {self.reverse_precision_dict[vv.dtype]}"
-            #           " does not match"
-            #           f" that of the coordinate {input_prec}"
-            #         )
+            # dtype mismatch warnings are not emitted here: type checking
+            # would not pass jit, so inputs are converted to coord prec anyway.
             _lst: list[torch.Tensor | None] = [
                 vv.to(coord.dtype) if vv is not None else None
                 for vv in [grid, box, fparam, aparam]

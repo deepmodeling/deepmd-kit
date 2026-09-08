@@ -73,6 +73,8 @@ class DPDensityAtomicModel(DPAtomicModel):
         grid: torch.Tensor | None = None,
         grid_type: torch.Tensor | None = None,
         grid_nlist: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -97,15 +99,15 @@ class DPDensityAtomicModel(DPAtomicModel):
             the result dict, defined by the `FittingOutputDef`.
 
         """
-        nframes, nloc, nnei = nlist.shape
-        atype = extended_atype[:, :nloc]
+        del charge_spin, return_atomic_feature
+        nframes, _, _ = nlist.shape
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
         assert mapping is not None
         assert grid is not None
         assert grid_type is not None
         assert grid_nlist is not None
-        bsz, ngrid, nnei = grid_nlist.shape
+        _, ngrid, _ = grid_nlist.shape
         # nb x (ngrid+nall) x 3
         merged_coord = torch.cat([grid, extended_coord], dim=1)
 
@@ -134,7 +136,7 @@ class DPDensityAtomicModel(DPAtomicModel):
         # nb x (ngrid+nall)
         merged_mapping = torch.cat([grid_mapping, mapping + ngrid], dim=1)
 
-        descriptor, rot_mat, g2, h2, sw = self.descriptor(
+        descriptor, rot_mat, g2, h2, _sw = self.descriptor(
             merged_coord,
             merged_atype,
             merged_nlist,
@@ -152,7 +154,6 @@ class DPDensityAtomicModel(DPAtomicModel):
             g2=g2,
             h2=h2,
             fparam=fparam,
-            aparam=aparam,
         )
         return ret
 
@@ -168,6 +169,7 @@ class DPDensityAtomicModel(DPAtomicModel):
         grid: torch.Tensor | None = None,
         grid_type: torch.Tensor | None = None,
         grid_nlist: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -205,9 +207,9 @@ class DPDensityAtomicModel(DPAtomicModel):
         assert grid is not None
         assert grid_type is not None
         assert grid_nlist is not None
-        nframes, nloc, _ = nlist.shape
+        del charge_spin
+        nframes, _, _ = nlist.shape
         _, ngrid, _ = grid_nlist.shape
-        atype = extended_atype[:, :nloc]
 
         if self.pair_excl is not None:
             pair_mask = self.pair_excl(nlist, extended_atype)
@@ -228,8 +230,6 @@ class DPDensityAtomicModel(DPAtomicModel):
             grid_nlist=grid_nlist,
         )
         ret_dict = self.apply_out_stat(ret_dict, grid_type)
-
-        ext_grid_mask = self.make_atom_mask(grid_type)
 
         # nf x ngrid
         grid_mask = torch.ones(
@@ -260,15 +260,11 @@ class DPDensityAtomicModel(DPAtomicModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        return self.forward_common_atomic(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping=mapping,
-            fparam=fparam,
-            aparam=aparam,
-            comm_dict=comm_dict,
+        raise NotImplementedError(
+            "DPDensityAtomicModel.forward requires grid, grid_type and grid_nlist; "
+            "use forward_common_atomic with explicit grid inputs instead."
         )
 
     def _get_forward_wrapper_func(
@@ -367,4 +363,3 @@ class DPDensityAtomicModel(DPAtomicModel):
 
         """
         log.warning("Not implemented yet for density out stat!")
-        pass

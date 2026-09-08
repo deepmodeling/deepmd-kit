@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import copy
 import logging
 from typing import (
     Any,
@@ -69,6 +68,12 @@ class DensityFittingNet(InvarFitting):
             type_map=type_map,
             **kwargs,
         )
+        if numb_aparam > 0:
+            raise ValueError(
+                "density fitting does not support atomic parameters (aparam): "
+                "the fitting net consumes the grid-point descriptor rows, "
+                "which have no per-atom parameters"
+            )
 
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
@@ -85,8 +90,8 @@ class DensityFittingNet(InvarFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
-        data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        data = data.copy()
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)

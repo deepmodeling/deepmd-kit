@@ -22,12 +22,17 @@ from typing import (
 
 import torch
 import torch.nn as nn
-
-from deepmd.kernels.utils import (
-    triton_infer_level,
+from packaging.version import (
+    Version,
 )
+
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
+    triton_train_level,
+    use_cutile_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -36,6 +41,8 @@ from deepmd.utils.version import (
 from .utils import (
     nvtx_range,
 )
+
+_TORCH_RELEASE = Version(torch.__version__).release[:2]
 
 
 class CaseCoefficients(nn.Module):
@@ -416,6 +423,7 @@ class WignerDCalculator(nn.Module):
         self.dtype = dtype
         self.device = env.DEVICE
         self.eps = float(eps)
+        self._materialize_inverse_rotation = _TORCH_RELEASE == (2, 11)
         self.dim_full = (self.lmax + 1) ** 2
         self.poly_lmin = 11
         self.poly_offset = self.poly_lmin * self.poly_lmin
@@ -449,7 +457,11 @@ class WignerDCalculator(nn.Module):
                     self._monomial_exponents_flat[exp_name] = [
                         int(v) for v in exps.reshape(-1).tolist()
                     ]
+            # The monomial basis routes through whichever accelerated backend
+            # is selected; the two gates are mutually exclusive.
+            self._use_cutile_monomials = use_cutile_infer()
             self._use_triton_monomials = triton_infer_level() >= 1
+            self._use_triton_train_monomials = triton_train_level() >= 1
             # The l = 2 contraction tensor collapsed onto the 35 unique
             # degree-4 monomials: column m of the coefficient matrix sums
             # C_l2[:, :, p] over the 4^4 index tuples p whose component
@@ -618,7 +630,15 @@ class WignerDCalculator(nn.Module):
                 )
                 D_full[:, self.poly_offset :, self.poly_offset :] = D_poly
 
-        Dt_full = D_full.transpose(-1, -2).contiguous()
+        # Consumers address the inverse rotation through explicit strides or
+        # PyTorch strided operators, so the transpose can share D_full's storage.
+        Dt_full = D_full.transpose(-1, -2)
+        if self._materialize_inverse_rotation:
+            # PyTorch 2.11 Inductor cannot safely lower this escaping transpose
+            # view after the slice assignments that assemble D_full. The
+            # materialized layout keeps the compiled graph semantically
+            # identical; later releases retain the shared-storage view.
+            Dt_full = Dt_full.contiguous()
         return D_full, Dt_full
 
     def forward_zonal(
@@ -1125,16 +1145,26 @@ class WignerDCalculator(nn.Module):
         """
         exponents = self._monomial_exponents_flat.get(exp_name)
         if (
-            self._use_triton_monomials
-            and exponents is not None
+            exponents is not None
             and edge_quaternion.is_cuda
-            and not self.training
-        ):
-            from deepmd.kernels.triton.sezm.wigner_monomials import (
-                wigner_monomials,
+            and (
+                (
+                    not self.training
+                    and (self._use_triton_monomials or self._use_cutile_monomials)
+                )
+                or (self.training and self._use_triton_train_monomials)
             )
+        ):
+            if not self.training and self._use_cutile_monomials:
+                from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
+            else:
+                from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
 
-            return wigner_monomials(edge_quaternion, exponents, max_power)
+            return monomial_basis(edge_quaternion, exponents, max_power)
         powers = self._precompute_powers(edge_quaternion, max_power)
         return self._build_monomial_matrix(
             powers, getattr(self.small_order_kernels, exp_name)
@@ -1156,16 +1186,26 @@ class WignerDCalculator(nn.Module):
         """
         exponents = self._monomial_exponents_flat.get("exp_l2")
         if (
-            self._use_triton_monomials
-            and exponents is not None
+            exponents is not None
             and edge_quaternion.is_cuda
-            and not self.training
-        ):
-            from deepmd.kernels.triton.sezm.wigner_monomials import (
-                wigner_monomials,
+            and (
+                (
+                    not self.training
+                    and (self._use_triton_monomials or self._use_cutile_monomials)
+                )
+                or (self.training and self._use_triton_train_monomials)
             )
+        ):
+            if not self.training and self._use_cutile_monomials:
+                from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
+            else:
+                from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+                    wigner_monomials as monomial_basis,
+                )
 
-            monomials = wigner_monomials(edge_quaternion, exponents, 4)
+            monomials = monomial_basis(edge_quaternion, exponents, 4)
             D_flat = torch.matmul(monomials, self._l2_monomial_coeff)
             return D_flat.view(edge_quaternion.shape[0], 5, 5)
         q2 = edge_quaternion.unsqueeze(-1) * edge_quaternion.unsqueeze(-2)
