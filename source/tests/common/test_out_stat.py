@@ -7,10 +7,10 @@ import numpy as np
 from deepmd.utils.out_stat import (
     ReduStatAccumulator,
     ReduStatScanner,
-    get_redu_stat_scanner,
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
+    get_redu_stat_scanner,
 )
 
 
