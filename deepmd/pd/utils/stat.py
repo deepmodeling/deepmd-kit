@@ -541,6 +541,9 @@ def compute_output_stats(
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
+            # withdraw any standing claim before the values it describes are
+            # replaced, so an interruption leaves the cache looking sampled
+            save_output_stat_full_scan(stat_file_path, False)
             _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
             save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
