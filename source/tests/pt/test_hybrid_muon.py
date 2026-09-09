@@ -774,5 +774,345 @@ class TestColumnPadMergeEquivalence(unittest.TestCase):
         self.assertIn("exp_avg", optimizer.state[model.bias])
 
 
+class _MixedRouteModel(torch.nn.Module):
+    """Small model covering every optimizer route.
+
+    ``square`` exercises the square Newton-Schulz path (weight) and the Adam
+    path (bias), ``rect`` the rectangular Gram path, ``adamw_gate`` the
+    name-routed AdamW path, and ``scale`` the 1D Adam path.
+    """
+
+    def __init__(self, device: torch.device) -> None:
+        super().__init__()
+        self.square = torch.nn.Linear(32, 32, bias=True, device=device)
+        self.rect = torch.nn.Linear(32, 48, bias=False, device=device)
+        self.adamw_gate = torch.nn.Parameter(torch.randn(48, 16, device=device) * 0.1)
+        self.scale = torch.nn.Parameter(torch.ones(16, device=device))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = torch.tanh(self.square(x))
+        h = torch.tanh(self.rect(h))
+        return (h @ self.adamw_gate) * self.scale
+
+
+class _AlternatingHeadModel(torch.nn.Module):
+    """Model whose task-specific heads produce two gradient signatures."""
+
+    def __init__(self, device: torch.device) -> None:
+        super().__init__()
+        self.shared = torch.nn.Linear(32, 32, device=device)
+        self.heads = torch.nn.ModuleList(
+            [torch.nn.Linear(32, 16, device=device) for _ in range(2)]
+        )
+
+    def forward(self, x: torch.Tensor, head: int) -> torch.Tensor:
+        return self.heads[head](torch.tanh(self.shared(x)))
+
+
+@unittest.skipIf(not torch.cuda.is_available(), "CUDA graph capture needs CUDA")
+class TestHybridMuonCudaGraph(unittest.TestCase):
+    """The whole-step CUDA graph must be an exact execution detail.
+
+    Every test runs a coupled trajectory -- the gradients of each step
+    depend on every earlier update -- with a per-step learning-rate
+    schedule, so the graph's device-resident scalars (learning rate,
+    bias corrections) are exercised against the eager execution of
+    the identical update.
+    """
+
+    N_STEPS = 8
+
+    def setUp(self) -> None:
+        self.device = torch.device("cuda")
+        torch.manual_seed(1234)
+        self.inputs = torch.randn(16, 32, device=self.device)
+        self.targets = torch.randn(16, 16, device=self.device)
+
+    def _make(self, graph_on: bool) -> tuple[torch.nn.Module, HybridMuonOptimizer]:
+        torch.manual_seed(7)
+        model = _MixedRouteModel(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            weight_decay=0.01,
+            named_parameters=list(model.named_parameters()),
+        )
+        optimizer._graph_enabled = graph_on
+        return model, optimizer
+
+    def _make_alternating(
+        self, graph_on: bool
+    ) -> tuple[_AlternatingHeadModel, HybridMuonOptimizer]:
+        torch.manual_seed(17)
+        model = _AlternatingHeadModel(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            weight_decay=0.01,
+            named_parameters=list(model.named_parameters()),
+        )
+        optimizer._graph_enabled = graph_on
+        return model, optimizer
+
+    def _run(
+        self,
+        model: torch.nn.Module,
+        optimizer: HybridMuonOptimizer,
+        n_steps: int,
+        lr_decay: float = 0.8,
+    ) -> list[torch.Tensor]:
+        for step in range(n_steps):
+            for group in optimizer.param_groups:
+                group["lr"] = 0.02 * (lr_decay**step)
+            optimizer.zero_grad(set_to_none=True)
+            loss = ((model(self.inputs) - self.targets) ** 2).mean()
+            loss.backward()
+            optimizer.step()
+        torch.cuda.synchronize()
+        return [p.detach().clone() for p in model.parameters()]
+
+    def _run_alternating(
+        self,
+        model: _AlternatingHeadModel,
+        optimizer: HybridMuonOptimizer,
+        start_step: int,
+        end_step: int,
+    ) -> list[torch.Tensor]:
+        for step in range(start_step, end_step):
+            for group in optimizer.param_groups:
+                group["lr"] = 0.02 * (0.8**step)
+            optimizer.zero_grad(set_to_none=True)
+            loss = ((model(self.inputs, step % 2) - self.targets) ** 2).mean()
+            loss.backward()
+            optimizer.step()
+        torch.cuda.synchronize()
+        return [p.detach().clone() for p in model.parameters()]
+
+    def test_graph_matches_eager_trajectory(self) -> None:
+        """Graph and eager trajectories agree on a deterministic model."""
+        eager = self._run(*self._make(graph_on=False), self.N_STEPS)
+        graph_model, graph_opt = self._make(graph_on=True)
+        graph = self._run(graph_model, graph_opt, self.N_STEPS)
+        self.assertEqual(len(graph_opt._graphs), 1, "graph was never captured")
+        # The replay re-executes the captured kernel sequence on the same
+        # operands, so on a deterministic model the trajectories are
+        # bitwise identical; any tolerance would hide a replay-frozen
+        # scalar or state tensor.
+        for pe, pg in zip(eager, graph, strict=True):
+            torch.testing.assert_close(pe, pg, rtol=0.0, atol=0.0)
+
+    def test_lr_schedule_reaches_replays(self) -> None:
+        """The device learning rate follows the host schedule across replays.
+
+        A frozen learning rate is the canonical capture bug; two schedules
+        that share the capture-time value but diverge afterwards must
+        produce different trajectories.
+        """
+        model_a, opt_a = self._make(graph_on=True)
+        flat = self._run(model_a, opt_a, self.N_STEPS, lr_decay=1.0)
+        model_b, opt_b = self._make(graph_on=True)
+        decayed = self._run(model_b, opt_b, self.N_STEPS, lr_decay=0.5)
+        max_diff = max(
+            (a - b).abs().max().item() for a, b in zip(flat, decayed, strict=True)
+        )
+        self.assertGreater(max_diff, 1e-5)
+
+    def test_uniform_bias_clock_advances_inside_graph(self) -> None:
+        """A fixed owner set retains the group-clock fast path."""
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, self.N_STEPS)
+        group = optimizer.param_groups[0]
+        beta1, beta2 = group["adam_betas"]
+        self.assertFalse(optimizer._per_parameter_adam_clock)
+        self.assertAlmostEqual(
+            group["beta1_pow_device"].item(), beta1**self.N_STEPS, places=6
+        )
+        self.assertAlmostEqual(
+            group["beta2_pow_device"].item(), beta2**self.N_STEPS, places=6
+        )
+        for param in model.parameters():
+            state = optimizer.state[param]
+            if "exp_avg" in state:
+                self.assertNotIn("bias_correction1", state)
+                self.assertNotIn("bias_correction2", state)
+
+    def test_legacy_bias_power_migration(self) -> None:
+        """Per-parameter float powers become float32 device corrections."""
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, 3)
+        state_dict = optimizer.state_dict()
+        for group in state_dict["param_groups"]:
+            group.pop("lr_device", None)
+        for state in state_dict["state"].values():
+            if "exp_avg" in state:
+                state["beta1_pow"] = 0.9**3
+                state["beta2_pow"] = 0.95**3
+
+        _model2, optimizer2 = self._make(graph_on=True)
+        optimizer2.load_state_dict(state_dict)
+        optimizer2._build_param_routing()
+        optimizer2._migrate_bias_corrections()
+        self.assertTrue(optimizer2._per_parameter_adam_clock)
+        for param, state in optimizer2.state.items():
+            if "exp_avg" in state:
+                self.assertEqual(state["bias_correction1"].dtype, torch.float32)
+                self.assertEqual(state["bias_correction1"].device, param.device)
+                self.assertAlmostEqual(
+                    state["bias_correction1"].item(), 1.0 - 0.9**3, places=6
+                )
+                self.assertAlmostEqual(
+                    state["bias_correction2"].item(), 1.0 - 0.95**3, places=6
+                )
+
+    def test_group_bias_power_migration(self) -> None:
+        """Single-signature checkpoints retain the uniform fast path."""
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, 3)
+        state_dict = optimizer.state_dict()
+        for group in state_dict["param_groups"]:
+            group["beta1_pow_device"] = torch.tensor(0.9**3, device=self.device)
+            group["beta2_pow_device"] = torch.tensor(0.95**3, device=self.device)
+        for state in state_dict["state"].values():
+            state.pop("bias_correction1", None)
+            state.pop("bias_correction2", None)
+
+        model2, optimizer2 = self._make(graph_on=True)
+        optimizer2.load_state_dict(state_dict)
+        optimizer2._build_param_routing()
+        optimizer2._migrate_bias_corrections()
+        group = optimizer2.param_groups[0]
+        self.assertFalse(optimizer2._per_parameter_adam_clock)
+        self.assertAlmostEqual(group["beta1_pow_device"].item(), 0.9**3, places=6)
+        self.assertAlmostEqual(group["beta2_pow_device"].item(), 0.95**3, places=6)
+        for state in optimizer2.state.values():
+            if "exp_avg" in state:
+                self.assertNotIn("bias_correction1", state)
+                self.assertNotIn("bias_correction2", state)
+
+    def test_late_adam_owner_starts_at_its_first_update(self) -> None:
+        """A newly active task head starts at Adam step one."""
+        for use_foreach in (True, False):
+            first = torch.nn.Parameter(torch.zeros(4, device=self.device))
+            late = torch.nn.Parameter(torch.zeros(4, device=self.device))
+            optimizer = HybridMuonOptimizer(
+                [first, late],
+                lr=0.1,
+                weight_decay=0.0,
+                use_foreach=use_foreach,
+            )
+
+            for _ in range(3):
+                optimizer.zero_grad(set_to_none=True)
+                first.grad = torch.ones_like(first)
+                optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            late.grad = torch.ones_like(late)
+            optimizer.step()
+
+            with self.subTest(use_foreach=use_foreach):
+                torch.testing.assert_close(
+                    late, torch.full_like(late, -0.1), rtol=0.0, atol=1e-7
+                )
+                self.assertTrue(optimizer._per_parameter_adam_clock)
+                self.assertAlmostEqual(
+                    optimizer.state[first]["bias_correction1"].item(),
+                    1.0 - 0.9**3,
+                    places=6,
+                )
+                self.assertAlmostEqual(
+                    optimizer.state[late]["bias_correction1"].item(),
+                    0.1,
+                    places=6,
+                )
+
+    def test_dynamic_signatures_match_eager_trajectory(self) -> None:
+        """Alternating task heads use independent cached optimizer graphs."""
+        n_steps = 10
+        eager = self._run_alternating(
+            *self._make_alternating(graph_on=False), 0, n_steps
+        )
+        graph_model, graph_opt = self._make_alternating(graph_on=True)
+        graph = self._run_alternating(graph_model, graph_opt, 0, n_steps)
+
+        self.assertEqual(len(graph_opt._graphs), 2)
+        self.assertFalse(graph_opt._graph_warmups)
+        self.assertTrue(graph_opt._per_parameter_adam_clock)
+        self.assertEqual(
+            sum(buffer is not None for buffer in graph_opt._static_grad_buffers),
+            len(tuple(graph_model.parameters())),
+        )
+        for entry in graph_opt._graphs.values():
+            self.assertEqual(entry.graph.pool(), graph_opt._graph_pool)
+        for eager_param, graph_param in zip(eager, graph, strict=True):
+            torch.testing.assert_close(eager_param, graph_param, rtol=0.0, atol=0.0)
+
+        beta1 = graph_opt.param_groups[0]["adam_betas"][0]
+        self.assertAlmostEqual(
+            graph_opt.state[graph_model.shared.bias]["bias_correction1"].item(),
+            1.0 - beta1**n_steps,
+            places=6,
+        )
+        for head in graph_model.heads:
+            self.assertAlmostEqual(
+                graph_opt.state[head.bias]["bias_correction1"].item(),
+                1.0 - beta1 ** (n_steps // 2),
+                places=6,
+            )
+
+    def test_dynamic_state_dict_roundtrip_resumes_trajectory(self) -> None:
+        """Alternating-head Adam clocks survive a checkpoint roundtrip."""
+        n_steps = 10
+        reference = self._run_alternating(
+            *self._make_alternating(graph_on=True), 0, n_steps
+        )
+
+        model, optimizer = self._make_alternating(graph_on=True)
+        self._run_alternating(model, optimizer, 0, 5)
+        model_state = model.state_dict()
+        optimizer_state = optimizer.state_dict()
+
+        model2, optimizer2 = self._make_alternating(graph_on=True)
+        model2.load_state_dict(model_state)
+        optimizer2.load_state_dict(optimizer_state)
+        self._run_alternating(model2, optimizer2, 5, n_steps)
+        for reference_param, resumed_param in zip(
+            reference, model2.parameters(), strict=True
+        ):
+            torch.testing.assert_close(
+                reference_param, resumed_param.detach(), rtol=0.0, atol=0.0
+            )
+
+    def test_state_dict_roundtrip_resumes_trajectory(self) -> None:
+        """Save/load mid-trajectory reproduces the uninterrupted run."""
+        reference = self._run(*self._make(graph_on=True), self.N_STEPS)
+
+        model, optimizer = self._make(graph_on=True)
+        self._run(model, optimizer, 4)
+        payload = {
+            "model": model.state_dict(),
+            "opt": optimizer.state_dict(),
+        }
+
+        model2, optimizer2 = self._make(graph_on=True)
+        model2.load_state_dict(payload["model"])
+        optimizer2.load_state_dict(payload["opt"])
+        for step in range(4, self.N_STEPS):
+            for group in optimizer2.param_groups:
+                group["lr"] = 0.02 * (0.8**step)
+            optimizer2.zero_grad(set_to_none=True)
+            loss = ((model2(self.inputs) - self.targets) ** 2).mean()
+            loss.backward()
+            optimizer2.step()
+        torch.cuda.synchronize()
+        for pr, pg in zip(reference, model2.parameters(), strict=True):
+            torch.testing.assert_close(pr, pg.detach(), rtol=0.0, atol=0.0)
+
+    def test_eager_reference_path_stays_eager(self) -> None:
+        """The eager reference execution never captures a graph."""
+        model, optimizer = self._make(graph_on=False)
+        self._run(model, optimizer, 4)
+        self.assertFalse(optimizer._graphs)
+
+
 if __name__ == "__main__":
     unittest.main()

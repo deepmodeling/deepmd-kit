@@ -53,6 +53,7 @@ def serialize_from_file(model_file: str) -> dict:
         "pt_version": str(torch.__version__),
         "model": model_dict,
         "model_def_script": model_def_script,
+        "lower_input_kind": model.export_lower_input_kind(),
         "@variables": {},
     }
     if model.get_min_nbor_dist() is not None:

@@ -119,6 +119,7 @@ def test_fused_env_prologue_clamps_virtual_center_statistics() -> None:
         type_one_side=True,
         seed=GLOBAL_SEED,
     ).to(device)
+    descriptor.eval()
     descriptor.se_atten.mean[0, :, :] = 0.25
     descriptor.se_atten.mean[1, :, :] = -0.5
     coord = torch.tensor(
@@ -364,7 +365,16 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
         rd0, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
         # enable compression and forward again
         dd0.enable_compression(0.5)
-        rd1, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        dd0.train()
+        with (
+            patch(
+                "deepmd.pt_expt.descriptor.dpa1.triton_infer_level",
+                return_value=1,
+            ),
+            patch("deepmd.pt_expt.descriptor.dpa1._env_mat_triton") as env_mat_triton,
+        ):
+            rd1, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        env_mat_triton.assert_not_called()
 
         assert rd0.shape == rd1.shape
         np.testing.assert_allclose(

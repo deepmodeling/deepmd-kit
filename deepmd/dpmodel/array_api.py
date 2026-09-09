@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Utilities for the array API."""
 
+import math
 from typing import (
     Any,
 )
@@ -40,14 +41,22 @@ def xp_asarray_nodetach(
     required device-to-host copy when a CUDA-backed model constant is consumed
     by a NumPy statistics path.
 
-    The ``device`` argument only applies to the conversion path. Arrays already
-    in ``xp`` are assumed to live on the working device because model buffers
-    and inputs are moved together.
+    An array already in ``xp`` normally needs no move, since model buffers and
+    inputs travel together. Tracing breaks that: a CPU export of a
+    CUDA-resident model runs CPU inputs through a module whose buffers stayed
+    on the device, and the mismatch surfaces far downstream as a fake-tensor
+    device error. A requested ``device`` that differs is therefore honoured
+    here, which costs a comparison on the hot path and a copy only in the
+    tracing case.
     """
     if array_api_compat.is_array_api_obj(obj):
         if array_api_compat.array_namespace(obj) is xp:
             if dtype is not None and obj.dtype != dtype:
                 obj = xp.astype(obj, dtype)
+            if device is not None and array_api_compat.device(obj) != device:
+                # ``xp.asarray`` would detach, which is what this helper exists
+                # to avoid; ``to_device`` is the array-API move that does not.
+                obj = array_api_compat.to_device(obj, device)
             return obj
         obj = to_numpy_array(obj)
     if dtype is None:
@@ -109,6 +118,142 @@ def xp_take_along_axis(arr: Array, indices: Array, axis: int) -> Array:
     out = xp.take(arr, indices)
     out = xp.reshape(out, shape)
     return xp_swapaxes(out, axis, -1)
+
+
+def xp_einsum(subscripts: str, *operands: Array) -> Array:
+    """Contract *operands* according to the Einstein summation *subscripts*.
+
+    The array API standard has no ``einsum``, so an array-API-only module has
+    to express a contraction as a chain of ``permute_dims`` / ``reshape`` /
+    ``matmul``. That chain fixes one particular execution order, which is
+    rarely the best one and is opaque to a compiler: a batched contraction
+    written this way reaches PyTorch as ``bmm`` plus transposing copies, where
+    the same expression given to ``torch.einsum`` is free to become a single
+    ``mm`` on a reshaped operand or to fuse into a neighbouring kernel. On the
+    production DPA4 shapes the difference is measurable -- the array-API chain
+    put roughly 150 more contractions per training step on ``bmm`` instead of
+    ``mm``, for about 5% of the step and an extra gigabyte of peak memory.
+
+    Writing the chain by hand is also a correctness-adjacent hazard, because
+    the orders differ by more than a constant. The broadcast spelling
+    ``matmul(x[..., None, :], weight[None, ...])`` makes the node count the
+    matmul batch, so the weight is expanded across it and autograd reduces
+    that whole expansion back to the parameter shape: at production sizes a
+    165 K-element weight became 191 M elements, and its reduce was the single
+    costliest kernel of a training step (a 15x penalty on the affected
+    contraction). Stating the contraction leaves that choice to the backend.
+
+    Every backend this project targets (NumPy, PyTorch, JAX) ships an
+    ``einsum``, so it is dispatched directly where available. The array-API
+    fallback below serves the remaining namespaces (``array_api_strict``, used
+    by the conformance tests) and is restricted to what those need.
+
+    Parameters
+    ----------
+    subscripts : str
+        Subscript specification in explicit form, e.g. ``"bfi,ifo->bfo"``.
+        The implicit form (no ``->``) is rejected: it is ambiguous to the
+        fallback and unused here.
+    *operands : Array
+        Arrays to contract, all from one namespace.
+
+    Returns
+    -------
+    Array
+        The contraction result.
+
+    Raises
+    ------
+    ValueError
+        If *subscripts* is in implicit form, or if the fallback is reached
+        with a specification it does not implement.
+    """
+    if "->" not in subscripts:
+        raise ValueError(f"xp_einsum requires an explicit output: {subscripts!r}")
+    if array_api_compat.is_torch_array(operands[0]):
+        import torch
+
+        return torch.einsum(subscripts, *operands)
+    if array_api_compat.is_numpy_array(operands[0]):
+        return np.einsum(subscripts, *operands)
+    if array_api_compat.is_jax_array(operands[0]):
+        import jax.numpy as jnp
+
+        return jnp.einsum(subscripts, *operands)
+    return _xp_einsum_fallback(subscripts, *operands)
+
+
+def _xp_einsum_fallback(subscripts: str, *operands: Array) -> Array:
+    """Array-API-only ``einsum`` for a two-operand contraction.
+
+    Serves the namespaces without a native ``einsum``. The contraction is
+    reduced to the canonical batched matmul: labels shared by both operands
+    and the output are the batch, labels shared by the operands but absent
+    from the output are contracted, and the rest are free on one side each.
+    Each operand is permuted into ``(batch, free, contracted)`` order,
+    flattened to three axes, multiplied, and restored to the requested output
+    order.
+
+    Correctness rather than throughput is the aim here: the flattening
+    materializes a copy of each operand whenever the permutation is not a
+    view, which a native ``einsum`` would avoid. That trade is deliberate --
+    every backend used for production has an ``einsum``, and this path exists
+    for the conformance namespaces.
+
+    Only a diagonal (a label repeated within one operand) and an implicit
+    output are rejected; both are absent from this codebase.
+    """
+    xp = array_api_compat.array_namespace(*operands)
+    inputs, output = subscripts.split("->")
+    terms = inputs.split(",")
+    if len(terms) != 2:
+        raise ValueError(f"the array-API einsum fallback is binary: {subscripts!r}")
+    left, right = terms
+    lhs, rhs = operands
+    for term, operand in ((left, lhs), (right, rhs)):
+        if len(set(term)) != len(term):
+            raise ValueError(f"a repeated label needs a diagonal: {subscripts!r}")
+        if len(term) != operand.ndim:
+            raise ValueError(f"{subscripts!r} does not match the operand ranks")
+    if set(output) - (set(left) | set(right)):
+        raise ValueError(f"the output carries an unknown label: {subscripts!r}")
+
+    # Classify every label by where it appears. Order follows the output for
+    # the batch and free groups, so the final permutation is a short one.
+    batch = [label for label in output if label in left and label in right]
+    contracted = [label for label in left if label in right and label not in output]
+    left_free = [label for label in output if label in left and label not in right]
+    right_free = [label for label in output if label in right and label not in left]
+    if set(left) - set(batch) - set(contracted) - set(left_free):
+        raise ValueError(f"a label of the left operand vanishes: {subscripts!r}")
+    if set(right) - set(batch) - set(contracted) - set(right_free):
+        raise ValueError(f"a label of the right operand vanishes: {subscripts!r}")
+
+    def prepare(term: str, operand: Array, free: list[str], last: list[str]) -> Array:
+        """Permute to ``(batch, free, last)`` and flatten to three axes."""
+        order = batch + free + last
+        operand = xp.permute_dims(operand, tuple(term.index(l) for l in order))
+        shape = operand.shape
+        split = (len(batch), len(batch) + len(free))
+        return xp.reshape(
+            operand,
+            (
+                math.prod(shape[: split[0]]),
+                math.prod(shape[split[0] : split[1]]),
+                math.prod(shape[split[1] :]),
+            ),
+        )
+
+    sizes = dict(zip(left, lhs.shape, strict=True)) | dict(
+        zip(right, rhs.shape, strict=True)
+    )
+    out = xp.matmul(
+        prepare(left, lhs, left_free, contracted),
+        prepare(right, rhs, contracted, right_free),
+    )
+    order = batch + left_free + right_free
+    out = xp.reshape(out, tuple(sizes[label] for label in order))
+    return xp.permute_dims(out, tuple(order.index(label) for label in output))
 
 
 def xp_take_first_n(arr: Array, dim: int, n: int) -> Array:

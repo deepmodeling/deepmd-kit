@@ -2,16 +2,16 @@
 
 import torch
 
-from deepmd.kernels.triton.env_mat import (
-    TRITON_AVAILABLE,
-)
-from deepmd.kernels.triton.env_mat import env_mat as _env_mat_triton
-from deepmd.kernels.utils import (
-    triton_infer_level,
-)
 from deepmd.pt.utils.preprocess import (
     compute_exp_sw,
     compute_smooth_weight,
+)
+from deepmd.pt_expt.kernels.triton.env_mat import (
+    TRITON_AVAILABLE,
+)
+from deepmd.pt_expt.kernels.triton.env_mat import env_mat as _env_mat_triton
+from deepmd.pt_expt.kernels.utils import (
+    triton_infer_level,
 )
 
 
@@ -66,6 +66,7 @@ def prod_env_mat(
     radial_only: bool = False,
     protection: float = 0.0,
     use_exp_switch: bool = False,
+    training: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate smooth environment matrix from atom coordinates and other context.
 
@@ -79,6 +80,8 @@ def prod_env_mat(
     - radial_only: Whether to return a full description or a radial-only descriptor.
     - protection: Protection parameter to prevent division by zero errors during calculations.
     - use_exp_switch: Whether to use the exponential switch function.
+    - training: Whether the caller is in training mode. Training uses the eager
+      formulation because force losses require higher-order differentiation.
 
     Returns
     -------
@@ -86,12 +89,17 @@ def prod_env_mat(
     """
     # Opt-in inference (``DP_TRITON_INFER >= 1``, CUDA): the fused Triton kernel
     # forms the environment matrix in one node-parallel pass and carries a
-    # closed-form backward for the force path.  Training (level 0) and the CPU
-    # path keep the dense autograd chain below, which supports higher-order
+    # closed-form backward for the force path. Training and the CPU path keep
+    # the dense autograd chain below, which supports higher-order
     # differentiation.  The block is nested under ``torch.jit.is_scripting`` so
     # the whole (non-scriptable) branch is pruned under ``torch.jit.script``.
     if not torch.jit.is_scripting():
-        if TRITON_AVAILABLE and triton_infer_level() >= 1 and extended_coord.is_cuda:
+        if (
+            not training
+            and TRITON_AVAILABLE
+            and triton_infer_level() >= 1
+            and extended_coord.is_cuda
+        ):
             return _env_mat_triton(
                 extended_coord,
                 nlist,

@@ -74,10 +74,14 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """
         xp = array_api_compat.array_namespace(loss)
         dev = array_api_compat.device(loss)
+        # ``full_like`` passes NaN as a scalar kernel argument, where
+        # ``asarray(xp.nan, device=dev)`` would copy it from the host: a
+        # synchronizing transfer, once per reported quantity per step, on a
+        # value that never changes.
         return xp.where(
             xp.asarray(find_property, dtype=xp.bool, device=dev),
             loss,
-            xp.asarray(xp.nan, device=dev),
+            xp.full_like(loss, xp.nan),
         )
 
     @classmethod

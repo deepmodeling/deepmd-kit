@@ -102,9 +102,10 @@ __device__ __forceinline__ float sigmoid(float z) {
   return 0.5f * (1.f + tanhf(0.5f * z));
 }
 
-// Activation codes follow deepmd.kernels.triton.dpa1.activation.ACT_CODES
-// (0 = tanh, 1 = silu). Value and derivative are separate because the forward
-// needs only the former and the backward only the latter.
+// Activation codes follow
+// deepmd.pt_expt.kernels.triton.dpa1.activation.ACT_CODES (0 = tanh, 1 = silu).
+// Value and derivative are separate because the forward needs only the former
+// and the backward only the latter.
 template <int ACT>
 __device__ __forceinline__ float act_value(float z) {
   if constexpr (ACT == 0) {
@@ -273,15 +274,6 @@ void dispatch_activation(long act, Fn&& launch) {
 }
 
 }  // namespace
-
-FittingLayerPlan fitting_layer_plan(const std::vector<torch::Tensor>& ws) {
-  FittingLayerPlan plan{std::vector<long>(ws.size() + 1, 0), 0, (int)ws.size()};
-  for (size_t l = 0; l < ws.size(); ++l) {
-    plan.offset[l + 1] = plan.offset[l] + ws[l].size(1);
-    plan.width_max = std::max(plan.width_max, (long)ws[l].size(1));
-  }
-  return plan;
-}
 
 namespace {
 
@@ -580,20 +572,8 @@ torch::Tensor graph_fitting_energy_gradient(torch::Tensor x,
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
-  m.def(
-      "graph_fitting(Tensor x, Tensor atype, Tensor[] ws, Tensor[] bs, "
-      "int[] resnets, Tensor w_head, Tensor b_head, Tensor bias_atom_e, "
-      "int act) -> (Tensor e, Tensor saved)");
   m.impl("graph_fitting", torch::kCUDA, &graph_fitting);
-  m.def(
-      "graph_fitting_backward(Tensor d_e, Tensor saved, Tensor[] ws, "
-      "Tensor[] bs, int[] resnets, Tensor w_head, int act) -> Tensor");
   m.impl("graph_fitting_backward", torch::kCUDA, &graph_fitting_backward);
-  m.def(
-      "graph_fitting_energy_gradient(Tensor(a!) x, Tensor atype, "
-      "Tensor[] ws, Tensor[] bs, int[] resnets, Tensor w_head, "
-      "Tensor b_head, Tensor bias_atom_e, int act, Tensor seed, int tile) "
-      "-> Tensor");
   m.impl("graph_fitting_energy_gradient", torch::kCUDA,
          &graph_fitting_energy_gradient);
 }

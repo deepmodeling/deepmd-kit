@@ -199,6 +199,29 @@ def load_dp_model(filename: str) -> dict:
     return model_dict
 
 
+def serialize_from_file(filename: str) -> dict:
+    """Serialize a DPModel container for backend conversion.
+
+    DPModel files store model parameters rather than an executable lower ABI.
+    Concrete provenance written by an earlier conversion is retained; a native
+    file without provenance reports ``"auto"`` so the executable target selects
+    a compatible lower from the model capabilities.
+
+    Parameters
+    ----------
+    filename : str
+        The DPModel filename.
+
+    Returns
+    -------
+    dict
+        The serialized model data with declared lower-input semantics.
+    """
+    model_dict = load_dp_model(filename)
+    model_dict.setdefault("lower_input_kind", "auto")
+    return model_dict
+
+
 def format_big_number(x: int) -> str:
     """Format a big number with suffixes.
 

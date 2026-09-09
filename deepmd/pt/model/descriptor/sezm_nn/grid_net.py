@@ -36,6 +36,10 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.utils import (
     get_generator,
 )
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    triton_train_level,
+)
 
 from .activation import (
     SwiGLU,
@@ -84,6 +88,27 @@ def _build_frame_degree_index(
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 
+def _build_so3_scalar_product_weight(
+    projector: SO3GridProjector,
+) -> torch.Tensor:
+    """Build the Haar inner-product weight for every ``(l, m, k)`` slot.
+
+    Real Wigner-D coefficients obey
+    ``integral D_lmk D_l'm'k' dR = delta_ll' delta_mm' delta_kk' / (2*l+1)``.
+    Frame slots with ``abs(k) > l`` are structural zeros in the regular SeZM
+    layout and therefore receive zero weight.
+    """
+    degree_index = _build_frame_degree_index(
+        lmax=projector.lmax,
+        mmax=projector.mmax,
+        coefficient_layout=projector.coefficient_layout,
+    ).reshape(-1, 1)
+    frame_values = projector.frame_values.reshape(1, -1)
+    valid_frame = torch.abs(frame_values) <= degree_index
+    degree_weight = torch.reciprocal((2 * degree_index + 1).to(dtype=projector.dtype))
+    return valid_frame.to(dtype=projector.dtype) * degree_weight
+
+
 def _project_frames(
     coeff: torch.Tensor, proj: ChannelLinear, n_frames: int
 ) -> torch.Tensor:
@@ -116,6 +141,39 @@ def _project_frames(
     return projected.reshape(n_batch, coeff_dim, n_focus, -1)
 
 
+def _project_pair_in_one_transform(
+    left: torch.Tensor,
+    right: torch.Tensor,
+    *,
+    n_frames: int,
+    to_grid: Callable[[torch.Tensor], torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Project two equally shaped coefficient operands in one linear transform."""
+    n_batch, coeff_dim, n_focus, _ = left.shape
+    frame_shape = (n_batch, coeff_dim, n_focus, n_frames, -1)
+    pair = torch.cat(
+        [left.reshape(frame_shape), right.reshape(frame_shape)],
+        dim=-1,
+    ).reshape(n_batch, coeff_dim, n_focus, -1)
+    return torch.chunk(to_grid(pair), chunks=2, dim=-1)
+
+
+def _project_pair(
+    left: torch.Tensor,
+    right: torch.Tensor,
+    *,
+    to_grid: Callable[[torch.Tensor], torch.Tensor],
+    project_pair: Callable[
+        [torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]
+    ]
+    | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Project two operands through the selected projector composition."""
+    if project_pair is not None:
+        return project_pair(left, right)
+    return to_grid(left), to_grid(right)
+
+
 class GridProduct(nn.Module):
     """Parameter-free quadratic grid product ``u(g) * v(g)``."""
 
@@ -127,6 +185,14 @@ class GridProduct(nn.Module):
         *,
         to_grid: Callable[[torch.Tensor], torch.Tensor],
         from_grid: Callable[[torch.Tensor], torch.Tensor],
+        pair_grid: Callable[[torch.Tensor, torch.Tensor], torch.Tensor | None]
+        | None = None,
+        project_pair: Callable[
+            [torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]
+        ]
+        | None = None,
+        scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | None = None,
     ) -> torch.Tensor:
         """
         Combine two coefficient operands by a point-wise grid product.
@@ -139,13 +205,28 @@ class GridProduct(nn.Module):
             Invariant routing signal; unused on this path.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        pair_grid, project_pair, scalar_product : Callable, optional
+            Optional fused full composition, paired forward projection, and
+            direct scalar coefficient contraction.
 
         Returns
         -------
         torch.Tensor
-            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+            Coefficient result. A direct scalar contraction has shape
+            ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
-        return from_grid(to_grid(left) * to_grid(right))
+        if scalar_product is not None:
+            return scalar_product(left, right)
+        fused = pair_grid(left, right) if pair_grid is not None else None
+        if fused is not None:
+            return fused
+        left_grid, right_grid = _project_pair(
+            left,
+            right,
+            to_grid=to_grid,
+            project_pair=project_pair,
+        )
+        return from_grid(left_grid * right_grid)
 
 
 class GridMLP(nn.Module):
@@ -204,6 +285,14 @@ class GridMLP(nn.Module):
         *,
         to_grid: Callable[[torch.Tensor], torch.Tensor],
         from_grid: Callable[[torch.Tensor], torch.Tensor],
+        pair_grid: Callable[[torch.Tensor, torch.Tensor], torch.Tensor | None]
+        | None = None,
+        project_pair: Callable[
+            [torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]
+        ]
+        | None = None,
+        scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | None = None,
     ) -> torch.Tensor:
         """
         Apply the polynomial point-wise MLP on coefficient operands.
@@ -221,13 +310,42 @@ class GridMLP(nn.Module):
             Invariant routing signal; unused on this path.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        pair_grid, project_pair, scalar_product : Callable, optional
+            Optional fused full composition, paired forward projection, and
+            direct scalar coefficient contraction.
 
         Returns
         -------
         torch.Tensor
-            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+            Coefficient result. A direct scalar contraction has shape
+            ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
         # === Step 1. Channel projections at coefficient resolution ===
+        left, right = self._project_operands(left, right)
+
+        # === Step 2. Quadratic product on the grid, projected back ===
+        if scalar_product is not None:
+            coeff = scalar_product(left, right)
+        else:
+            coeff = pair_grid(left, right) if pair_grid is not None else None
+            if coeff is None:
+                left_grid, right_grid = _project_pair(
+                    left,
+                    right,
+                    to_grid=to_grid,
+                    project_pair=project_pair,
+                )
+                coeff = from_grid(left_grid * right_grid)
+        if scalar_product is not None:
+            return self.out_proj(coeff)
+        return _project_frames(coeff, self.out_proj, self.n_frames)
+
+    def _project_operands(
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Apply the two coefficient-space channel projections."""
         if self.mode == "self":
             shape = (*left.shape[:-1], self.n_frames, -1)
             fused = torch.cat(
@@ -238,10 +356,7 @@ class GridMLP(nn.Module):
         else:
             left = _project_frames(left, self.left_proj, self.n_frames)
             right = _project_frames(right, self.right_proj, self.n_frames)
-
-        # === Step 2. Quadratic product on the grid, projected back ===
-        coeff = from_grid(to_grid(left) * to_grid(right))
-        return _project_frames(coeff, self.out_proj, self.n_frames)
+        return left, right
 
 
 class GridBranch(nn.Module):
@@ -285,12 +400,18 @@ class GridBranch(nn.Module):
             trainable=trainable,
             seed=child_seed(seed, 1),
         )
+        # A single branch makes the routing softmax identically one, so the
+        # router carries no degree of freedom: its gradient is exactly zero on
+        # every path, and the fused grid product skips it altogether. Freezing
+        # it states that, and keeps DDP from waiting for a gradient that never
+        # arrives -- which aborts the step unless ``find_unused_parameters`` is
+        # paid for. The parameter itself stays, so checkpoints round-trip.
         self.router = ChannelLinear(
             in_channels=2 * self.channels,
             out_channels=self.n_branches,
             dtype=dtype,
             bias=False,
-            trainable=trainable,
+            trainable=trainable and self.n_branches > 1,
             seed=child_seed(seed, 2),
         )
         self.out_proj = ChannelLinear(
@@ -310,6 +431,14 @@ class GridBranch(nn.Module):
         *,
         to_grid: Callable[[torch.Tensor], torch.Tensor],
         from_grid: Callable[[torch.Tensor], torch.Tensor],
+        pair_grid: Callable[[torch.Tensor, torch.Tensor], torch.Tensor | None]
+        | None = None,
+        project_pair: Callable[
+            [torch.Tensor, torch.Tensor], tuple[torch.Tensor, torch.Tensor]
+        ]
+        | None = None,
+        scalar_product: Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | None = None,
     ) -> torch.Tensor:
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
@@ -322,39 +451,62 @@ class GridBranch(nn.Module):
             Invariant router source with shape ``(N, F, 2*C)``.
         to_grid, from_grid : Callable
             Coefficient/grid projectors supplied by the owning grid net.
+        pair_grid, project_pair, scalar_product : Callable, optional
+            Optional fused full composition, paired forward projection, and
+            direct scalar coefficient contraction.
 
         Returns
         -------
         torch.Tensor
-            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+            Coefficient result. A direct scalar contraction has shape
+            ``(N, 1, F, C)``; other paths retain ``n_frames * C`` channels.
         """
         # === Step 1. Branch channel projections at coefficient resolution ===
         left = _project_frames(left, self.left_proj, self.n_frames)
         right = _project_frames(right, self.right_proj, self.n_frames)
 
         # === Step 2. Quadratic branches on the grid, routed by scalars ===
-        value = to_grid(left) * to_grid(right)  # (N, G, F, N_branches * C)
-        n_batch, n_grid, n_focus, _ = value.shape
-        value = value.reshape(n_batch, n_grid, n_focus, self.n_branches, self.channels)
-        router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, N_branches)
-        out = torch.einsum("ngfhc,nfh->ngfc", value, router)  # (N, G, F, C)
+        # A single branch makes the router softmax identically one, which
+        # reduces the routed product to the plain grid product the fused
+        # operator evaluates.
+        if scalar_product is not None:
+            coeff = scalar_product(left, right)
+            n_batch, coeff_dim, n_focus, _ = coeff.shape
+            value = coeff.reshape(
+                n_batch,
+                coeff_dim,
+                n_focus,
+                self.n_branches,
+                self.channels,
+            )
+            router = torch.softmax(self.router(scalar_pair), dim=-1)
+            coeff = torch.einsum("ndfhc,nfh->ndfc", value, router)
+        else:
+            coeff = (
+                pair_grid(left, right)
+                if self.n_branches == 1 and pair_grid is not None
+                else None
+            )
+        if coeff is None:
+            left_grid, right_grid = _project_pair(
+                left,
+                right,
+                to_grid=to_grid,
+                project_pair=project_pair,
+            )
+            value = left_grid * right_grid  # (N, G, F, N_branches * C)
+            n_batch, n_grid, n_focus, _ = value.shape
+            value = value.reshape(
+                n_batch, n_grid, n_focus, self.n_branches, self.channels
+            )
+            router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, Nb)
+            out = torch.einsum("ngfhc,nfh->ngfc", value, router)  # (N, G, F, C)
+            coeff = from_grid(out)
 
         # === Step 3. Project back to coefficients and mix output channels ===
-        return _project_frames(from_grid(out), self.out_proj, self.n_frames)
-
-
-def _degree_batched_matmul(coeff: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-    """Contract ``einsum("ndfi,dio->ndfo", coeff, weight)``.
-
-    Batched over the ``(D, F)`` axes, not over ``N`` (and not by collapsing
-    ``N*F``, which would materialize a permuted copy of ``coeff``):
-    expanding ``weight`` across ``F`` costs ``D*F*i*o`` elements versus
-    ``N*D*F*i`` for the coefficient copy -- a factor ``N/o`` more. No
-    reshape is involved, so an empty ``N`` batch flows through naturally.
-    """
-    coeff_df = coeff.permute(1, 2, 0, 3)  # (D, F, N, i)
-    out = torch.matmul(coeff_df, weight.unsqueeze(1))  # (D, F, N, o)
-    return out.permute(2, 0, 1, 3)  # (N, D, F, o)
+        if scalar_product is not None:
+            return self.out_proj(coeff)
+        return _project_frames(coeff, self.out_proj, self.n_frames)
 
 
 class FrameContract(nn.Module):
@@ -401,7 +553,22 @@ class FrameContract(nn.Module):
     def forward(self, coeff: torch.Tensor) -> torch.Tensor:
         """Contract ``(N, D, F, K*C)`` frame coefficients to ``(N, D, F, C)``."""
         weight = self.weight.index_select(0, self.degree_index)
-        return _degree_batched_matmul(coeff, weight)
+        return torch.einsum("ndfi,dio->ndfo", coeff, weight)
+
+    def forward_scalar(self, coeff: torch.Tensor) -> torch.Tensor:
+        """Contract the single ``l=0`` coefficient with its frame weights.
+
+        Parameters
+        ----------
+        coeff : torch.Tensor
+            Scalar coefficient with shape ``(N, 1, F, K*C)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Contracted scalar with shape ``(N, 1, F, C)``.
+        """
+        return torch.einsum("ndfi,dio->ndfo", coeff, self.weight[0:1])
 
 
 class FrameExpand(nn.Module):
@@ -448,7 +615,7 @@ class FrameExpand(nn.Module):
     def forward(self, coeff: torch.Tensor) -> torch.Tensor:
         """Expand ``(N, D, F, C)`` coefficients to ``(N, D, F, K*C)``."""
         weight = self.weight.index_select(0, self.degree_index)
-        return _degree_batched_matmul(coeff, weight)
+        return torch.einsum("ndfi,dio->ndfo", coeff, weight)
 
 
 class BaseGridNet(nn.Module):
@@ -485,6 +652,11 @@ class BaseGridNet(nn.Module):
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.n_frames = int(projector.n_frames)
+        coefficient_rows = int(projector.coeff_dim) // self.n_frames
+        # One wider projection reduces launch overhead for at most 25 coefficient
+        # rows. Larger operands retain independent projections to bound the
+        # short-lived concatenated tensor in the compiled training graph.
+        self._combine_grid_projection = coefficient_rows <= 25
         self.mode = str(mode).lower()
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
@@ -519,6 +691,63 @@ class BaseGridNet(nn.Module):
             self.channels if self.frame_contract is not None else self.expanded_channels
         )
         self.frame_zero_index = int(getattr(projector, "frame_zero_index", 0))
+        scalar_product_weight = (
+            _build_so3_scalar_product_weight(projector)
+            if isinstance(projector, SO3GridProjector)
+            else None
+        )
+        self.register_buffer(
+            "_scalar_product_weight",
+            scalar_product_weight,
+            persistent=False,
+        )
+
+        # The fused grid pair product needs the grid-to-coefficient projector
+        # transposed so both matrices are read row-major by grid point.
+        # The operator is instantiated per coefficient-slot count, which this
+        # projector fixes, so the choice is made once here rather than per call.
+        self._grid_pair_fn = None
+        if (
+            cuda_infer_level() >= 1
+            and self.projector.to_grid_mat.dtype is torch.float32
+        ):
+            from deepmd.pt_expt.kernels.cuda.dpa4.grid_pair import (
+                SUPPORTED_SLOTS,
+                grid_pair,
+                op_available,
+            )
+
+            slots = int(self.projector.to_grid_mat.shape[1])
+            if op_available() and slots in SUPPORTED_SLOTS:
+                self._grid_pair_fn = grid_pair
+        # The training form differentiates the same expression inside the
+        # force graph: a Triton tensor-core sandwich (grid-axis blocks, one
+        # resident output tile) with analytic first and second order, one
+        # kernel each. The contractions are GEMMs, so the tensor-core form
+        # outruns both the dense einsum composition and a register-resident
+        # CUDA walk on the wide SO(3) shapes. The binding follows the
+        # measured crossover: below 108 slots (the degree-5 SO(3) grid) the
+        # dense section is small and the operator's dispatch chain costs
+        # more than its kernels save on the host-bound configurations, so
+        # the narrow grids stay with the compiler.
+        self._grid_pair_train_fn = None
+        if (
+            triton_train_level() >= 1
+            and self.projector.to_grid_mat.dtype is torch.float32
+            and int(self.projector.to_grid_mat.shape[1]) >= 75
+        ):
+            from deepmd.pt_expt.kernels.triton.sezm.grid_pair import (
+                GRID_PAIR_TRITON_AVAILABLE,
+                grid_pair_train,
+            )
+
+            if GRID_PAIR_TRITON_AVAILABLE:
+                self._grid_pair_train_fn = grid_pair_train
+        self.register_buffer(
+            "_from_grid_t",
+            self.projector.from_grid_mat.transpose(0, 1).contiguous(),
+            persistent=False,
+        )
 
         self.scalar_act = SwiGLU()
         self.scalar_gate = FocusLinear(
@@ -572,20 +801,86 @@ class BaseGridNet(nn.Module):
         context: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Apply the configured grid net and restore the input layout."""
+        return self._forward(query, context, scalar_only=False)
+
+    def forward_scalar(
+        self,
+        query: torch.Tensor,
+        context: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Apply the grid net and return only the scalar coefficient.
+
+        Parameters
+        ----------
+        query : torch.Tensor
+            Query coefficient tensor in the configured layout.
+        context : torch.Tensor, optional
+            Optional context coefficient tensor for cross mode.
+
+        Returns
+        -------
+        torch.Tensor
+            Grid-net output with the degree axis restricted to ``l=0``.
+
+        Notes
+        -----
+        The final SeZM readout consumes only ``l=0``. SO(3) Haar orthogonality
+        reduces its quadratic grid projection to a weighted coefficient inner
+        product. Other projectors restrict the inverse grid projection to the
+        scalar row. Accelerated inference keeps the full fused pair projection
+        because materializing a scalar-only fallback grid would be slower than
+        that fused operator.
+        """
+        if self._grid_pair_fn is not None and not self.training:
+            return self._slice_scalar_layout(self.forward(query, context))
+        return self._forward(query, context, scalar_only=True)
+
+    def _forward(
+        self,
+        query: torch.Tensor,
+        context: torch.Tensor | None,
+        *,
+        scalar_only: bool,
+    ) -> torch.Tensor:
+        """Run the shared full or scalar-only grid path."""
+        # === Step 1. Normalize the input layout and build product operands ===
         input_dtype = query.dtype
         query_ndfc, shape_info = self._to_ndfc(query)
         left, right, scalar_pair = self._prepare_pair(query_ndfc, context)
+
+        # === Step 2. Select the static projection plan and apply the grid op ===
+        direct_scalar = scalar_only and self._scalar_product_weight is not None
         coeff_out = self.grid_op(
             left.to(dtype=self.dtype),
             right.to(dtype=self.dtype),
             scalar_pair,
             to_grid=self._to_grid,
-            from_grid=self._from_grid,
+            project_pair=(
+                self._project_pair_in_one_transform
+                if not direct_scalar
+                and (scalar_only or (self.training and self._combine_grid_projection))
+                else None
+            ),
+            from_grid=self._from_grid_scalar if scalar_only else self._from_grid,
+            pair_grid=None if scalar_only else self._pair_grid,
+            scalar_product=self._scalar_so3_product if direct_scalar else None,
         )
-        coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
-        coeff_out = self._contract_frames(coeff_out)
+
+        # === Step 3. Apply scalar gating and contract Wigner-D frames ===
+        coeff_out = self._apply_scalar_path(
+            coeff_out,
+            scalar_pair,
+            compact_scalar=direct_scalar,
+        )
+        coeff_out = self._contract_frames(coeff_out, scalar_only=scalar_only)
         coeff_out = self._apply_residual_scale(coeff_out)
-        return self._restore_layout(coeff_out.to(dtype=input_dtype), shape_info)
+
+        # === Step 4. Restore the caller layout and dtype ===
+        return self._restore_layout(
+            coeff_out.to(dtype=input_dtype),
+            shape_info,
+            scalar_only=scalar_only,
+        )
 
     def _prepare_pair(
         self,
@@ -631,9 +926,16 @@ class BaseGridNet(nn.Module):
             scalar_pair,
         )
 
-    def _contract_frames(self, coeff: torch.Tensor) -> torch.Tensor:
+    def _contract_frames(
+        self,
+        coeff: torch.Tensor,
+        *,
+        scalar_only: bool,
+    ) -> torch.Tensor:
         if self.frame_contract is None:
             return coeff
+        if scalar_only:
+            return self.frame_contract.forward_scalar(coeff)
         return self.frame_contract(coeff)
 
     def _apply_residual_scale(self, coeff: torch.Tensor) -> torch.Tensor:
@@ -650,9 +952,15 @@ class BaseGridNet(nn.Module):
         self,
         coeff: torch.Tensor,
         scalar_pair: torch.Tensor,
+        *,
+        compact_scalar: bool,
     ) -> torch.Tensor:
         scalar_out = self.scalar_act(scalar_pair)
         scalar_gate = torch.sigmoid(self.scalar_gate(scalar_pair))
+        if compact_scalar:
+            scalar_coeff = coeff * scalar_gate[:, None, :, :]
+            scalar_coeff = scalar_coeff + scalar_out[:, None, :, :]
+            return self._pack_scalar_frame(scalar_coeff)
         n_batch, coeff_dim, n_focus, _ = coeff.shape
         coeff_view = coeff.reshape(
             n_batch,
@@ -664,6 +972,29 @@ class BaseGridNet(nn.Module):
         coeff_view = coeff_view * scalar_gate[:, None, :, None, :]
         coeff_view[:, 0, :, self.frame_zero_index, :].add_(scalar_out)
         return coeff_view.reshape(n_batch, coeff_dim, n_focus, self.expanded_channels)
+
+    def _pack_scalar_frame(self, scalar: torch.Tensor) -> torch.Tensor:
+        """Embed ``(N, 1, F, C)`` scalars in the ``k=0`` slot of ``K*C``."""
+        n_batch, _, n_focus, channels = scalar.shape
+        before = scalar.new_zeros(
+            n_batch,
+            1,
+            n_focus,
+            self.frame_zero_index,
+            channels,
+        )
+        after = scalar.new_zeros(
+            n_batch,
+            1,
+            n_focus,
+            self.n_frames - self.frame_zero_index - 1,
+            channels,
+        )
+        coeff = torch.cat(
+            [before, scalar[:, :, :, None, :], after],
+            dim=3,
+        )
+        return coeff.reshape(n_batch, 1, n_focus, self.expanded_channels)
 
     def _split_self_query(
         self, query: torch.Tensor
@@ -693,6 +1024,72 @@ class BaseGridNet(nn.Module):
         )
         return coeff_view[:, 0, :, self.frame_zero_index, :]
 
+    def _pair_grid(
+        self, left: torch.Tensor, right: torch.Tensor
+    ) -> torch.Tensor | None:
+        """
+        Evaluate ``from_grid(to_grid(left) * to_grid(right))`` in one operator.
+
+        The grid field is 39 times larger than its coefficient operand at the
+        production SO(3) shape, so keeping it off device memory is worth a
+        dedicated kernel. Returns ``None`` when the fused operator does not
+        serve this shape, and the caller keeps the projector composition.
+
+        Parameters
+        ----------
+        left, right : torch.Tensor
+            Coefficient operands with shape (N, D, F, n_frames * C).
+        right : torch.Tensor
+            Second coefficient operand, same shape as ``left``.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coefficient result with shape (N, D, F, n_frames * C).
+        """
+        c_wide = left.shape[3] // self.n_frames
+        if c_wide % 32 != 0 or left.shape != right.shape:
+            return None
+        if self.training:
+            # Training form: frame-packed operands ride through unreshaped,
+            # with analytic first and second order behind the call. The
+            # operator carries an autocast rule, so under AMP it runs the
+            # same bf16-with-fp32-accumulation regime as the dense einsum
+            # composition it replaces.
+            if self._grid_pair_train_fn is None:
+                return None
+            return self._grid_pair_train_fn(
+                left,
+                right,
+                self.projector.to_grid_mat,
+                self._from_grid_t,
+                self.n_frames,
+            )
+        if self._grid_pair_fn is None or left.shape[2] != 1:
+            return None
+        n_batch, coeff_dim = left.shape[0], left.shape[1]
+        flat_p = coeff_dim * self.n_frames
+        out = self._grid_pair_fn(
+            left.reshape(n_batch, flat_p, c_wide),
+            right.reshape(n_batch, flat_p, c_wide),
+            self.projector.to_grid_mat,
+            self._from_grid_t,
+        )
+        return out.reshape(n_batch, coeff_dim, 1, self.n_frames * c_wide)
+
+    def _project_pair_in_one_transform(
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Project scalar-output operands with one shared linear transform."""
+        return _project_pair_in_one_transform(
+            left,
+            right,
+            n_frames=self.n_frames,
+            to_grid=self._to_grid,
+        )
+
     def _to_grid(self, coeff: torch.Tensor) -> torch.Tensor:
         # The per-frame channel width is inferred so the projector also serves
         # widened operands (e.g. a branch hidden width ``n_branches * C``).
@@ -717,6 +1114,38 @@ class BaseGridNet(nn.Module):
         coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, grid)
         return coeff.reshape(n_batch, coeff_dim, n_focus, -1)
 
+    def _from_grid_scalar(self, grid: torch.Tensor) -> torch.Tensor:
+        """Project a grid field to the ``l=0`` coefficient only."""
+        n_batch, _, n_focus, _ = grid.shape
+        coeff_dim = self.projector.coeff_dim // self.n_frames
+        from_grid = self.projector.from_grid_mat.reshape(
+            coeff_dim,
+            self.n_frames,
+            self.projector.grid_size,
+        )[0:1]
+        coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, grid)
+        return coeff.reshape(n_batch, 1, n_focus, -1)
+
+    def _scalar_so3_product(
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+    ) -> torch.Tensor:
+        """Contract a quadratic SO(3) product directly to ``l=0, k=0``."""
+        weight = self._scalar_product_weight
+        if weight is None:
+            raise RuntimeError("SO(3) scalar product weights are unavailable")
+        n_batch, coeff_dim, n_focus, _ = left.shape
+        left_view = left.reshape(n_batch, coeff_dim, n_focus, self.n_frames, -1)
+        right_view = right.reshape_as(left_view)
+        scalar = torch.einsum(
+            "ndfkc,dk,ndfkc->nfc",
+            left_view,
+            weight,
+            right_view,
+        )
+        return scalar[:, None, :, :]
+
     def _to_ndfc(self, value: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
         # All grid operations run in the canonical ``(N, D, F, C)`` layout; the
         # ``fndc`` re-orientation folds the focus-major SO(2) mixing layout into the
@@ -738,6 +1167,8 @@ class BaseGridNet(nn.Module):
         self,
         value: torch.Tensor,
         shape_info: tuple[int, ...],
+        *,
+        scalar_only: bool = False,
     ) -> torch.Tensor:
         if self.layout == "ndfc":
             return value
@@ -745,8 +1176,17 @@ class BaseGridNet(nn.Module):
             return value.transpose(1, 2)
         if self.layout == "fndc":
             return value.permute(2, 0, 1, 3)
-        n_batch, coeff_dim, _ = shape_info
+        n_batch, input_coeff_dim, _ = shape_info
+        coeff_dim = 1 if scalar_only else input_coeff_dim
         return value.reshape(n_batch, coeff_dim, -1)
+
+    def _slice_scalar_layout(self, value: torch.Tensor) -> torch.Tensor:
+        """Select the degree axis from a restored full-layout tensor."""
+        if self.layout == "ndfc":
+            return value[:, 0:1, :, :]
+        if self.layout in {"nfdc", "fndc"}:
+            return value[:, :, 0:1, :]
+        return value[:, 0:1, :]
 
     def _check_last_dim(
         self,

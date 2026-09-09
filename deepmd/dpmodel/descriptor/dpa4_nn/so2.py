@@ -30,6 +30,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     xp_add_at,
     xp_asarray_nodetach,
+    xp_einsum,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -1577,27 +1578,22 @@ class SO2Convolution(NativeOP):
             or self.node_wise_grid_product is not None
         )
 
-        # === Step 12. Optional fused flash-attention aggregation seam ===
-        # The fused path folds the entire ``n_atten_head > 0`` value aggregation --
-        # block-diagonal rotate-back, inverse-rotation rescale, envelope-gated
-        # softmax weighting, and the destination scatter -- into a single
-        # destination-segmented kernel, removing the transient ``x_message`` and
-        # weighted-value edge tensors and the scatter-add round trip. The pure
-        # array-API reference has no such kernel, so it never runs the fused flash
-        # path: ``use_flash_atten`` is fixed to ``False`` and the kernel/row-ptr
-        # hooks stay ``None``. The ``pt_expt`` backend recomputes
-        # ``use_flash_atten`` (Triton availability AND the supported attention
-        # layout) and binds ``_flash_atten_fn`` / ``_build_row_ptr_fn`` plus a
-        # fused ``_flash_aggregate`` override.
-        self.use_flash_atten = False
-        self._flash_atten_fn = None
-        self._build_row_ptr_fn = None
-        # Layout-support half of pt's ``use_flash_atten`` predicate -- everything
-        # except the ``use_triton_infer`` gate. The fused kernel only engages for
-        # the ``mmax == 1`` attention layout without the optional focus-mix /
-        # value / output projections (the deployed DPA4 configuration). Stored so
-        # ``pt_expt`` can re-enable flash by ANDing this with its own
-        # Triton-availability check, without duplicating the long predicate.
+        # === Step 12. Optional fused flash-attention aggregation kernel ===
+        # Folds the entire ``n_atten_head > 0`` value aggregation -- block-diagonal
+        # rotate-back, inverse-rotation rescale, envelope-gated softmax weighting,
+        # and the destination scatter -- into a single destination-segmented
+        # kernel, removing the transient ``x_message`` and weighted-value edge
+        # tensors and the ``index_add`` round trip; the op itself dispatches to an
+        # eager reference off the CUDA fp32 path. The output-side head gate stays
+        # a cheap node-level elementwise applied after the kernel.
+        #
+        # Layout support is a property of the block, so it is expressed
+        # independently of the backend: the kernel only serves the ``mmax == 1``
+        # attention layout without the optional focus-mix / value / output
+        # projections (the deployed DPA4 configuration). Whichever of the
+        # mutually exclusive inference gates is active then supplies the
+        # implementation, and ``self._flash_atten_fn`` being bound is what marks
+        # the fused path as live. The array-API reference leaves the hook unbound.
         self._flash_atten_layout_ok = (
             self.n_atten_head > 0
             and self.mmax == 1
@@ -1608,16 +1604,32 @@ class SO2Convolution(NativeOP):
             and self.attn_o_proj is None
             and self.attn_focus_mix is None
         )
+        self._flash_atten_fn = None
+        self._cuda_conv_fn = None
+        self._cached_edge_csr_fn = None
 
         # === Step 13. Optional fused SO(2) value-path seam ===
         # The fused value path folds the rotate-to-local projection, radial
         # mixing, and the full SO(2) mixing stack into a single kernel, emitting
         # the pre-rotate-back per-focus local features directly. The pure
         # array-API reference has no such kernel, so it never runs the fused
-        # value path: ``_value_path`` stays ``None`` and ``so2_message`` takes the
-        # dense branch. The ``pt_expt`` backend binds ``make_triton_value_path`` /
-        # ``make_cute_value_path`` here.
-        self._value_path = None
+        # value path: every hook stays ``None`` and ``so2_message`` takes the
+        # dense branch. The ``pt_expt`` backend binds the selected implementation.
+        self._triton_value_path = None
+        self._cute_value_path = None
+        self._cutile_value_path = None
+
+        # === Step 14. Optional fused training seams ===
+        # Training differentiates the convolution twice under a force loss, so
+        # its accelerated forms carry analytic backward and second-order
+        # implementations of their own: one fused operator for the value stream
+        # up to the attention aggregation (``_cuda_value_train``), and the
+        # segmented attention softmax / flash aggregation pair for the
+        # attention span (``_flash_atten_trains`` marks the bound aggregation
+        # as training-capable). The array-API reference leaves every hook
+        # unbound and trains through the dense expression.
+        self._cuda_value_train = None
+        self._flash_atten_trains = False
         self.trainable = bool(trainable)
 
     def call(
@@ -1643,320 +1655,592 @@ class SO2Convolution(NativeOP):
         Array
             Message updates with shape (N, D, C).
         """
-        xp = array_api_compat.array_namespace(x)
-        device = array_api_compat.device(x)
-        src, dst = edge_cache.src, edge_cache.dst
-        n_node = x.shape[0]
-        n_edge = src.shape[0]
-
         # === Step 1. Pre-focus channel mixing on full width ===
         # (N, D, C_wide), C_wide = F * Cf
         x = self.pre_focus_mix(x[:, :, None, :])[:, :, 0, :]
 
-        # === Step 2. Edge message: Cartesian product, SO(2) mixing, or the
-        # rotation-free radial message when no local-frame operation is needed ===
-        # In the fused flash-attention path the SO(2) message returns the
-        # pre-rotate-back per-focus local features; the rotate-back is folded into
-        # the aggregation kernel (Step 4).
-        run_flash = self.use_flash_atten and not self.training
-        x_local_flash: Array | None = None
-        x_message: Array | None = None
+        # === Step 2. Node update from the edge messages ===
+        if self.n_atten_head == 0:
+            out = self.forward_envelope(x, edge_cache, radial_feat)
+        else:
+            out = self.forward_attention(x, edge_cache, radial_feat)
+        # (N, D, C_wide)
+
+        # === Step 3. Optional message-node grid product ===
+        if self.message_node_grid_product is not None:
+            out = out + self.message_node_grid_product(out, x)
+
+        # === Step 4. Optional per-node Cartesian tensor-product mixing ===
+        # Couples the aggregated message with the destination node feature ``x``,
+        # the Cartesian analog of the message-node grid product.
+        if self.node_cartesian_tp is not None:
+            out = self.node_cartesian_tp(out, x)
+
+        # === Step 5. Final channel mixing ===
+        out = self.post_focus_mix(out[:, :, None, :])[:, :, 0, :]
+        return out  # (N, D, C)
+
+    def forward_envelope(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> Array:
+        """
+        Reduce the edge messages with the scalar envelope weight.
+
+        The attention-free path: an envelope-weighted scatter add followed by the
+        degree normalization. Folding the Source Freeze Propagation Gate into the
+        envelope keeps the operation count unchanged; ``edge_src_gate`` is ``None``
+        outside bridging mode, where the branch disappears.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        Array
+            Node update with shape (N, D, C_wide).
+        """
+        xp = array_api_compat.array_namespace(x)
+
+        # === Step 1. Edge message in the global frame ===
+        x_message, _ = self.edge_message(x, edge_cache, radial_feat)
+        # (E, D, C_wide)
+
+        # === Step 2. Envelope weighting, with the source gate folded in ===
+        edge_weight = edge_cache.edge_env  # (E, 1)
+        edge_src_gate = edge_cache.edge_src_gate
+        if edge_src_gate is not None:
+            edge_weight = edge_weight * xp.astype(edge_src_gate, edge_weight.dtype)
+        x_message = x_message * edge_weight[..., None]  # (E, D, C_wide)
+
+        # === Step 3. Destination reduction and degree normalization ===
+        compute_dtype = get_xp_precision(xp, self.compute_precision)
+        out = xp.zeros(
+            x.shape,
+            dtype=compute_dtype,
+            device=array_api_compat.device(x),
+        )
+        out = xp_add_at(out, edge_cache.dst, xp.astype(x_message, compute_dtype))
+        out = out * xp.astype(edge_cache.inv_sqrt_deg, compute_dtype)
+        return xp.astype(out, get_xp_precision(xp, self.precision))
+
+    def forward_attention(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> Array:
+        """
+        Reduce the edge messages with head-wise attention weights.
+
+        Dispatches to one of three backends that share the same contract and
+        differ only in how much of the per-edge span their operator absorbs:
+        the fused CUDA convolution spans everything from the attention logits to
+        the gated aggregate, the fused flash aggregation spans the rotate-back
+        and the weighted reduction, and the dense reference materializes every
+        stage.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        Array
+            Node update with shape (N, D, C_wide).
+        """
+        # === Step 1. Scalar channels shared by every attention component ===
+        xp = array_api_compat.array_namespace(x)
+        x_l0_node = xp.reshape(
+            x[:, 0, :], (x.shape[0], self.attn_n_focus, self.attn_focus_dim)
+        )  # (N, Fa, Ca)
+
+        # === Step 2. Backend dispatch ===
+        # The fused CUDA operator computes the attention weights itself, so it
+        # does not serve the bridging mode, whose source gate reshapes the
+        # softmax normalization.
+        training = getattr(self, "training", False)
+        run_cuda = (
+            self._cuda_conv_fn is not None
+            and not training
+            and edge_cache.edge_src_gate is None
+        )
+        run_flash = (
+            self._flash_atten_fn is not None
+            and (not training or self._flash_atten_trains)
+            and not run_cuda
+        )
+        if run_cuda:
+            return self.forward_attention_cuda(x, edge_cache, radial_feat, x_l0_node)
         if run_flash:
-            x_local_flash, rad_feat = self.so2_message(
-                x, edge_cache, radial_feat, return_local=True
+            return self.forward_attention_flash(x, edge_cache, radial_feat, x_l0_node)
+        return self.forward_attention_dense(x, edge_cache, radial_feat, x_l0_node)
+
+    def forward_attention_cuda(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+        x_l0_node: Array,
+    ) -> Array:
+        """
+        Evaluate the whole per-edge span with the fused CUDA convolution.
+
+        One operator covers the attention logits and their envelope-gated
+        segment softmax, the rotation into the edge frame, the radial degree
+        mixer, the gated mixing stack, the inverse rotation, the attention
+        weighting, the destination reduction and the output-side head gate, so
+        neither a per-edge activation nor the ungated node aggregate reaches
+        device memory. Only the node-level projections are built here.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+        x_l0_node : Array
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        Array
+            Node update with shape (N, D, C_wide).
+        """
+        xp = array_api_compat.array_namespace(x)
+
+        # === Step 1. Projected radial features ===
+        rad_feat = self._cuda_conv_fn.radial_features(
+            radial_feat
+        )  # (E, lmax+1, C_wide)
+
+        # === Step 2. Attention query and key projections ===
+        q_node, k_node = self.attention_qk(x_l0_node)  # (N, Fa, Ca) each
+
+        # === Step 3. Output-side head gate ===
+        head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
+
+        # === Step 4. Fused convolution ===
+        out = self._cuda_conv_fn(x, edge_cache, rad_feat, q_node, k_node, head_gate)
+        return xp.astype(out, get_xp_precision(xp, self.precision))
+
+    def forward_attention_flash(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+        x_l0_node: Array,
+    ) -> Array:
+        """
+        Evaluate the attention path with the fused flash aggregation.
+
+        The SO(2) message stays in the local frame, and one destination-segmented
+        kernel folds the block-diagonal rotate-back, the inverse-rotation
+        rescale, the per-edge weighting and the destination reduction into a
+        single atomic-free pass, so the transient rotate-back message and
+        weighted value tensors are never materialized.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+        x_l0_node : Array
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        Array
+            Node update with shape (N, D, C_wide).
+        """
+        xp = array_api_compat.array_namespace(x)
+
+        # === Step 1. Local-frame edge message ===
+        x_local, rad_feat = self.so2_message(
+            x, edge_cache, radial_feat, return_local=True
+        )  # (E, F, D_m, Cf), (E, lmax+1, C_wide)
+
+        # === Step 2. Attention weights ===
+        attn_alpha = self.attention_weights(
+            x_l0_node, edge_cache, rad_feat
+        )  # (E, F, H)
+
+        # === Step 3. Output-side head gate ===
+        head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
+
+        # === Step 4. Fused rotate-back and weighted destination reduction ===
+        # The destination CSR view is built once per step and shared by every
+        # segment consumer of the graph.
+        if self._cached_edge_csr_fn is None:
+            raise RuntimeError("The fused attention path requires a CSR builder")
+        dst = edge_cache.dst
+        order, row_ptr = self._cached_edge_csr_fn(edge_cache, "dst", x.shape[0])
+        rotation = edge_cache.Dt_full
+        if rotation is None:
+            rotation = self._cuda_value_train.edge_runs(edge_cache)
+        pre_gate = self._flash_atten_fn(
+            x_local,
+            rotation,
+            self.rotate_inv_rescale_full,
+            attn_alpha,
+            order,
+            row_ptr,
+            dst,
+            self.lmax,
+            self.n_atten_head,
+        )  # (N, D, C_wide)
+
+        # === Step 5. Output-side head gate, node-level elementwise ===
+        gate_full = self.broadcast_head_gate(head_gate)  # (N, C_wide)
+        out = pre_gate * gate_full[:, None, :]
+        return xp.astype(out, get_xp_precision(xp, self.precision))
+
+    def forward_attention_dense(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+        x_l0_node: Array,
+    ) -> Array:
+        """
+        Evaluate the attention path with dense head-wise aggregation.
+
+        The reference backend: it materializes the per-head weighted value and
+        carries the optional value and output projections, which the fused
+        backends do not support.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+        x_l0_node : Array
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        Array
+            Node update with shape (N, D, C_wide).
+        """
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        dst = edge_cache.dst
+        n_node = x.shape[0]
+        compute_dtype = get_xp_precision(xp, self.compute_precision)
+
+        # === Step 1. Global-frame edge message ===
+        x_message, rad_feat = self.edge_message(
+            x, edge_cache, radial_feat
+        )  # (E, D, C_wide), (E, lmax+1, C_wide)
+        n_edge = x_message.shape[0]
+
+        # === Step 2. Attention weights ===
+        attn_alpha = self.attention_weights(
+            x_l0_node, edge_cache, rad_feat
+        )  # (E, F, H)
+
+        # === Step 3. Output-side head gate ===
+        head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
+
+        # === Step 4. Value projection ===
+        value_focus = xp.astype(
+            xp.reshape(
+                x_message,
+                (n_edge, self.ebed_dim_full, self.attn_n_focus, self.attn_focus_dim),
+            ),
+            compute_dtype,
+        )  # (E, D, Fa, Ca)
+        if self.attn_v_proj is not None:
+            value_focus = self.attn_v_proj(value_focus)
+
+        # === Step 5. Head-wise weighting and destination reduction ===
+        value_heads = xp.reshape(
+            value_focus,
+            (
+                n_edge,
+                self.ebed_dim_full,
+                self.attn_n_focus,
+                self.n_atten_head,
+                self.head_dim,
+            ),
+        )  # (E, D, Fa, H, Ch)
+        weighted_value = value_heads * xp.reshape(
+            attn_alpha, (n_edge, 1, self.attn_n_focus, self.n_atten_head, 1)
+        )  # (E, D, Fa, H, Ch)
+        out_heads = xp.zeros(
+            (
+                n_node,
+                self.ebed_dim_full,
+                self.attn_n_focus,
+                self.n_atten_head,
+                self.head_dim,
+            ),
+            dtype=compute_dtype,
+            device=device,
+        )  # (N, D, Fa, H, Ch)
+        out_heads = xp_add_at(out_heads, dst, weighted_value)
+
+        # === Step 6. Output-side head gate ===
+        out_heads = out_heads * xp.reshape(
+            head_gate,
+            (n_node, 1, self.attn_n_focus, self.n_atten_head, 1),
+        )  # (N, D, Fa, H, Ch)
+
+        # === Step 7. Output projection and head merge ===
+        out_focus = xp.reshape(
+            out_heads,
+            (n_node, self.ebed_dim_full, self.attn_n_focus, self.attn_focus_dim),
+        )  # (N, D, Fa, Ca)
+        if self.attn_o_proj is not None:
+            out_focus = self.attn_o_proj(out_focus)
+        out = xp.reshape(out_focus, (n_node, self.ebed_dim_full, self.hidden_channels))
+        return xp.astype(out, get_xp_precision(xp, self.precision))
+
+    def attention_qk(self, x_l0_node: Array) -> tuple[Array, Array]:
+        """
+        Project the normalized scalar channels into queries and keys.
+
+        Parameters
+        ----------
+        x_l0_node : Array
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            ``(q_node, k_node)``, each with shape (N, Fa, Ca).
+        """
+        xp = array_api_compat.array_namespace(x_l0_node)
+        qk_input = self.attn_qk_norm(
+            xp.astype(x_l0_node, get_xp_precision(xp, self.compute_precision))
+        )
+        return self.attn_q_proj(qk_input), self.attn_k_proj(qk_input)
+
+    def attention_weights(
+        self,
+        x_l0_node: Array,
+        edge_cache: EdgeCache,
+        rad_feat: Array,
+    ) -> Array:
+        """
+        Build envelope-gated attention weights from the scalar channels.
+
+        The softmax takes ``src_weight`` so that the Source Freeze Propagation
+        Gate enters both the numerator and the denominator. A muted source
+        (``eta_src = 0``) then drops out of the destination's normalization
+        entirely, which the frozen-zone invariance requires: post-multiplying the
+        weights alone would still leak the muted source through the shared
+        denominator.
+
+        Parameters
+        ----------
+        x_l0_node : Array
+            Node scalar channels with shape (N, Fa, Ca).
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        rad_feat : Array
+            Projected radial features with shape (E, lmax+1, C_wide).
+
+        Returns
+        -------
+        Array
+            Attention weights with shape (E, F, H).
+        """
+        xp = array_api_compat.array_namespace(x_l0_node)
+        device = array_api_compat.device(x_l0_node)
+        src, dst = edge_cache.src, edge_cache.dst
+        n_edge = src.shape[0]
+        compute_dtype = get_xp_precision(xp, self.compute_precision)
+
+        # === Step 1. Query-key logits on the edges ===
+        q_node, k_node = self.attention_qk(x_l0_node)  # (N, Fa, Ca) each
+        q_edge = xp.reshape(
+            xp.take(q_node, dst, axis=0),
+            (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
+        )  # (E, Fa, H, Ch), Ca = H * Ch
+        k_edge = xp.reshape(
+            xp.take(k_node, src, axis=0),
+            (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
+        )  # (E, Fa, H, Ch)
+        attn_logits = xp.sum(q_edge * k_edge, axis=-1) * (
+            self.head_dim**-0.5
+        )  # (E, F, H)
+
+        # === Step 2. Radial logit bias ===
+        radial_l0 = xp.reshape(
+            rad_feat[:, 0, :], (n_edge, self.attn_n_focus, self.attn_focus_dim)
+        )  # (E, Fa, Ca)
+        radial_bias = xp_einsum(
+            "efi,ifo->efo",
+            xp.astype(radial_l0, compute_dtype),
+            xp_asarray_nodetach(xp, self.adamw_attn_logit_w[...], device=device),
+        )  # (E, F, H)
+        attn_logits = attn_logits + radial_bias
+
+        # === Step 3. Envelope-gated segment softmax with a null mass ===
+        return self._attention_softmax(
+            attn_logits, edge_cache, x_l0_node.shape[0]
+        )  # (E, F, H)
+
+    def _attention_softmax(
+        self,
+        attn_logits: Array,
+        edge_cache: EdgeCache,
+        n_nodes: int,
+    ) -> Array:
+        """
+        Normalize the attention logits over each destination segment.
+
+        The dense reference below materializes the scatter/gather chain of
+        the envelope-gated softmax; accelerated backends override this seam
+        with a CSR-segmented operator whose backward and second order stay
+        in-kernel under a force loss.
+
+        Parameters
+        ----------
+        attn_logits : Array
+            Attention logits with shape (E, F, H).
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        n_nodes : int
+            Number of destination nodes.
+
+        Returns
+        -------
+        Array
+            Attention weights with shape (E, F, H).
+        """
+        xp = array_api_compat.array_namespace(attn_logits)
+        device = array_api_compat.device(attn_logits)
+        compute_dtype = get_xp_precision(xp, self.compute_precision)
+        edge_src_gate = edge_cache.edge_src_gate
+        return segment_envelope_gated_softmax(
+            logits=attn_logits,
+            edge_env=xp.astype(edge_cache.edge_env, compute_dtype),
+            dst=edge_cache.dst,
+            n_nodes=n_nodes,
+            z_bias_raw=xp_asarray_nodetach(
+                xp, self.adamw_attn_z_bias_raw[...], device=device
+            ),
+            eps=self.eps,
+            src_weight=(
+                None
+                if edge_src_gate is None
+                else xp.astype(edge_src_gate, compute_dtype)
+            ),
+            edge_mask=edge_cache.edge_mask,
+        )
+
+    def attention_head_gate(self, x_l0_node: Array) -> Array:
+        """
+        Build the output-side head gate from the scalar channels.
+
+        Parameters
+        ----------
+        x_l0_node : Array
+            Node scalar channels with shape (N, Fa, Ca).
+
+        Returns
+        -------
+        Array
+            One gate per node, focus stream and head, with shape (N, Fa, H).
+        """
+        xp = array_api_compat.array_namespace(x_l0_node)
+        device = array_api_compat.device(x_l0_node)
+        compute_dtype = get_xp_precision(xp, self.compute_precision)
+        normalized = self.attn_output_gate_norm(xp.astype(x_l0_node, compute_dtype))
+        return xp_sigmoid(
+            xp_einsum(
+                "nfi,ifo->nfo",
+                normalized,
+                xp_asarray_nodetach(xp, self.adamw_attn_gate_w[...], device=device),
             )
-        elif self.edge_cartesian:
+        )
+
+    def broadcast_head_gate(self, head_gate: Array) -> Array:
+        """
+        Spread a per-head gate over the channels of its head.
+
+        Parameters
+        ----------
+        head_gate : Array
+            Gate with shape (N, Fa, H).
+
+        Returns
+        -------
+        Array
+            Gate with shape (N, C_wide), laid out as the packed hidden width
+            ``c = f * Cf + h * head_dim + ch``.
+        """
+        xp = array_api_compat.array_namespace(head_gate)
+        n_node = head_gate.shape[0]
+        gate = xp.reshape(head_gate, (n_node, self.attn_n_focus, self.n_atten_head, 1))
+        gate = xp.broadcast_to(
+            gate,
+            (n_node, self.attn_n_focus, self.n_atten_head, self.head_dim),
+        )
+        return xp.reshape(gate, (n_node, self.hidden_channels))
+
+    def edge_message(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> tuple[Array, Array]:
+        """
+        Build the edge message in the global frame.
+
+        Dispatches to the Cartesian product, the SO(2) mixing stack, or the
+        rotation-free radial message when no local-frame operation is needed.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            ``(x_message, rad_feat)`` with shapes (E, D, C_wide) and
+            (E, lmax+1, C_wide).
+        """
+        # === Step 1. Message construction ===
+        if self.edge_cartesian:
             x_message, rad_feat = self.cartesian_message(x, edge_cache, radial_feat)
         elif self.needs_local_frame:
             x_message, rad_feat = self.so2_message(x, edge_cache, radial_feat)
         else:
             x_message, rad_feat = self.radial_message(x, edge_cache, radial_feat)
 
-        # === Step 3. Optional focus mixing for the attention stream ===
+        # === Step 2. Optional focus mixing for the attention stream ===
         if self.attn_focus_mix is not None:
             x_message = self.attn_focus_mix(x_message[:, :, None, :])[:, :, 0, :]
-
-        # === Step 4. Aggregate with optional head-wise gating ===
-        # Source Freeze Propagation Gate: broadcast the per-edge scalar
-        # eta[src] to the edge message before destination aggregation.
-        # ``edge_src_gate`` is ``None`` outside bridging mode, in which
-        # case this branch disappears and the baseline / attention paths
-        # run unchanged.
-        edge_src_gate = edge_cache.edge_src_gate
-        if self.n_atten_head == 0:
-            # Baseline path: fused envelope-weighted scatter add -> degree norm.
-            # Folding edge_src_gate into the scalar envelope keeps the
-            # op count unchanged.
-            edge_weight = edge_cache.edge_env  # (E, 1)
-            if edge_src_gate is not None:
-                edge_weight = edge_weight * xp.astype(edge_src_gate, edge_weight.dtype)
-            x_message = x_message * edge_weight[..., None]
-            out = xp.zeros(
-                x.shape,
-                dtype=get_xp_precision(xp, self.compute_precision),
-                device=device,
-            )
-            out = xp_add_at(
-                out,
-                dst,
-                xp.astype(x_message, get_xp_precision(xp, self.compute_precision)),
-            )
-            out = out * xp.astype(
-                edge_cache.inv_sqrt_deg, get_xp_precision(xp, self.compute_precision)
-            )
-            out = xp.astype(out, get_xp_precision(xp, self.precision))  # (N, D, C_wide)
-        else:
-            # === Step 4.1. Build attention logits from scalar channels ===
-            compute_dtype = get_xp_precision(xp, self.compute_precision)
-            x_l0_node = xp.reshape(
-                x[:, 0, :], (n_node, self.attn_n_focus, self.attn_focus_dim)
-            )  # (N, Fa, Ca)
-            qk_input = self.attn_qk_norm(xp.astype(x_l0_node, compute_dtype))
-            q_node = self.attn_q_proj(qk_input)  # (N, Fa, Ca)
-            k_node = self.attn_k_proj(qk_input)  # (N, Fa, Ca)
-            q_edge = xp.reshape(
-                xp.take(q_node, dst, axis=0),
-                (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
-            )  # (E, Fa, H, Ch), Ca = H * Ch
-            k_edge = xp.reshape(
-                xp.take(k_node, src, axis=0),
-                (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
-            )  # (E, Fa, H, Ch)
-            radial_l0 = xp.reshape(
-                rad_feat[:, 0, :], (n_edge, self.attn_n_focus, self.attn_focus_dim)
-            )  # (E, Fa, Ca)
-            # "efi,ifo->efo": per-focus contraction over the input channel,
-            # expressed as a batched matmul over the focus axis.
-            radial_bias = xp.permute_dims(
-                xp.matmul(
-                    xp.permute_dims(xp.astype(radial_l0, compute_dtype), (1, 0, 2)),
-                    xp.permute_dims(
-                        xp_asarray_nodetach(
-                            xp, self.adamw_attn_logit_w[...], device=device
-                        ),
-                        (1, 0, 2),
-                    ),
-                ),
-                (1, 0, 2),
-            )  # (E, F, H)
-            attn_logits: Array = xp.sum(q_edge * k_edge, axis=-1) * (
-                self.head_dim**-0.5
-            )
-            attn_logits = attn_logits + radial_bias
-
-            # === Step 4.2. Destination-wise stable envelope-gated softmax ===
-            # ``src_weight=edge_src_gate`` folds SFPG into both the
-            # numerator and the denominator of the softmax. A muted
-            # source (``eta_src = 0``) therefore drops out of the
-            # destination's attention normalization entirely, which
-            # is required for the attention path to honor the
-            # frozen-zone invariance: a post-multiplication on
-            # ``attn_alpha`` alone would still leave the muted
-            # source leaking through the shared denominator.
-            attn_alpha = segment_envelope_gated_softmax(
-                logits=attn_logits,
-                edge_env=xp.astype(edge_cache.edge_env, compute_dtype),
-                dst=dst,
-                n_nodes=n_node,
-                z_bias_raw=xp_asarray_nodetach(
-                    xp, self.adamw_attn_z_bias_raw[...], device=device
-                ),
-                eps=self.eps,
-                src_weight=(
-                    None
-                    if edge_src_gate is None
-                    else xp.astype(edge_src_gate, compute_dtype)
-                ),
-                edge_mask=edge_cache.edge_mask,
-            )  # (E, F, H)
-
-            if run_flash:
-                # === Step 4.3f. Fused rotate-back + envelope-softmax-weighted
-                # segment scatter. One destination-segmented kernel folds the
-                # block-diagonal rotate-back, the inverse-rotation rescale, the
-                # per-edge ``attn_alpha`` weighting, and the destination reduction
-                # into a single atomic-free pass, returning the ungated aggregate
-                # ``(N, D, C_wide)``. The transient rotate-back message and
-                # weighted value tensors are never materialized.
-                # === Step 4.4f. Output-side head gate (cheap node-level) ===
-                # The pure array-API reference has no fused kernel; dpmodel folds
-                # both Step 4.3f and Step 4.4f into the overridable
-                # ``_flash_aggregate`` seam (default raises ``NotImplementedError``;
-                # ``pt_expt`` overrides it with the fused Triton kernel). This
-                # branch is never entered here because ``use_flash_atten`` is
-                # always ``False`` in the dpmodel reference.
-                out = self._flash_aggregate(
-                    x_local_flash,
-                    edge_cache,
-                    attn_alpha,
-                    x_l0_node,
-                    n_node,
-                    compute_dtype,
-                )  # (N, D, C_wide)
-            else:
-                # === Step 4.3. Value projection and head-wise aggregation ===
-                value_focus = xp.astype(
-                    xp.reshape(
-                        x_message,
-                        (
-                            n_edge,
-                            self.ebed_dim_full,
-                            self.attn_n_focus,
-                            self.attn_focus_dim,
-                        ),
-                    ),
-                    compute_dtype,
-                )  # (E, D, Fa, Ca)
-                if self.attn_v_proj is not None:
-                    value_focus = self.attn_v_proj(value_focus)
-                value_heads = xp.reshape(
-                    value_focus,
-                    (
-                        n_edge,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.n_atten_head,
-                        self.head_dim,
-                    ),
-                )  # (E, D, Fa, H, Ch)
-                weighted_value = value_heads * xp.reshape(
-                    attn_alpha, (n_edge, 1, self.attn_n_focus, self.n_atten_head, 1)
-                )
-                out_heads = xp.zeros(
-                    (
-                        n_node,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.n_atten_head,
-                        self.head_dim,
-                    ),
-                    dtype=compute_dtype,
-                    device=device,
-                )  # (N, D, Fa, H, Ch)
-                out_heads = xp_add_at(out_heads, dst, weighted_value)
-
-                # === Step 4.4. Output-side head gate ===
-                # "nfi,ifo->nfo": per-focus contraction over the input channel,
-                # expressed as a batched matmul over the focus axis.
-                attn_output_gate = xp_sigmoid(
-                    xp.permute_dims(
-                        xp.matmul(
-                            xp.permute_dims(
-                                self.attn_output_gate_norm(
-                                    xp.astype(x_l0_node, compute_dtype)
-                                ),
-                                (1, 0, 2),
-                            ),
-                            xp.permute_dims(
-                                xp_asarray_nodetach(
-                                    xp, self.adamw_attn_gate_w[...], device=device
-                                ),
-                                (1, 0, 2),
-                            ),
-                        ),
-                        (1, 0, 2),
-                    )
-                )  # (N, F, H)
-                out_heads = out_heads * xp.reshape(
-                    attn_output_gate,
-                    (n_node, 1, self.attn_n_focus, self.n_atten_head, 1),
-                )  # (N, D, Fa, H, Ch)
-
-                # === Step 4.5. Output projection and merge heads ===
-                out_focus = xp.reshape(
-                    out_heads,
-                    (
-                        n_node,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.attn_focus_dim,
-                    ),
-                )  # (N, D, Fa, Ca)
-                if self.attn_o_proj is not None:
-                    out_focus = self.attn_o_proj(out_focus)
-                out = xp.astype(
-                    xp.reshape(
-                        out_focus, (n_node, self.ebed_dim_full, self.hidden_channels)
-                    ),
-                    get_xp_precision(xp, self.precision),
-                )  # (N, D, C_wide)
-
-        # === Step 5. Optional message-node grid product ===
-        if self.message_node_grid_product is not None:
-            out = out + self.message_node_grid_product(out, x)
-
-        # === Step 6. Optional per-node Cartesian tensor-product mixing ===
-        # Couples the aggregated message with the destination node feature ``x``,
-        # the Cartesian analog of the message-node grid product.
-        if self.node_cartesian_tp is not None:
-            out = self.node_cartesian_tp(out, x)
-
-        # === Step 7. Final channel mixing ===
-        out = self.post_focus_mix(out[:, :, None, :])[:, :, 0, :]
-        return out  # (N, D, C)
-
-    def _flash_aggregate(
-        self,
-        x_local_flash: Array,
-        edge_cache: EdgeCache,
-        attn_alpha: Array,
-        x_l0_node: Array,
-        n_node: int,
-        compute_dtype: Any,
-    ) -> Array:
-        """
-        Fused flash-attention value aggregation seam (overridable).
-
-        Folds Step 4.3f and Step 4.4f of ``call`` -- the block-diagonal
-        rotate-back, the inverse-rotation degree rescale, the per-edge
-        envelope-gated softmax weighting, the destination reduction, and the
-        output-side head gate -- into a single destination-segmented pass that
-        returns the fully gated aggregate ``(N, D, C_wide)``.
-
-        The pure array-API reference has no fused kernel, so it never enters this
-        path (``use_flash_atten`` is always ``False``) and this default
-        implementation raises. The ``pt_expt`` backend overrides this method with
-        the fused Triton flash-attention kernel, drawing on ``self._flash_atten_fn``
-        / ``self._build_row_ptr_fn`` (bound when it re-enables ``use_flash_atten``),
-        ``edge_cache.Dt_full`` for the rotate-back, ``self.rotate_inv_rescale_full``
-        for the degree rescale, and ``self.lmax`` / ``self.n_atten_head`` for the
-        block addressing.
-
-        Parameters
-        ----------
-        x_local_flash : Array
-            Pre-rotate-back per-focus local features with shape (E, F, D_m, Cf),
-            as returned by ``so2_message(..., return_local=True)``.
-        edge_cache : EdgeCache
-            Precomputed edge cache; supplies ``Dt_full`` (the block-diagonal
-            inverse rotation) and ``dst`` (the destination scatter index).
-        attn_alpha : Array
-            Envelope-gated softmax attention weights with shape (E, F, H).
-        x_l0_node : Array
-            Destination-node l=0 scalar features with shape (N, Fa, Ca), consumed
-            by the output-side head gate.
-        n_node : int
-            Number of nodes N.
-        compute_dtype
-            Compute-precision dtype for the aggregation.
-
-        Returns
-        -------
-        Array
-            The gated aggregate message with shape (N, D, C_wide).
-
-        Raises
-        ------
-        NotImplementedError
-            Always, in the dpmodel reference: the fused flash path is never taken
-            because ``use_flash_atten`` is ``False``. The ``pt_expt`` backend
-            provides the fused kernel implementation.
-        """
-        raise NotImplementedError(
-            "The fused flash-attention aggregation is not implemented in the "
-            "dpmodel (array-API) reference; the pt_expt backend overrides "
-            "`_flash_aggregate` with the fused Triton kernel."
-        )
+        return x_message, rad_feat
 
     def radial_message(
         self,
@@ -2064,53 +2348,50 @@ class SO2Convolution(NativeOP):
         src = edge_cache.src
         n_edge = src.shape[0]
 
-        # The fused value path (bound only by the ``pt_expt`` backend) folds
-        # the dense Steps 1-5 into a single kernel, returning the same
-        # pre-rotate-back ``(E, F, D_m, Cf)`` local features and reduced
-        # ``rad_feat`` that the dense exit produces, so the shared tail below
-        # is agnostic to which branch ran.
-        if self._value_path is not None and not self.training:
-            x_local, rad_feat = self._value_path(x, edge_cache, radial_feat)
+        training = getattr(self, "training", False)
+        if self._cutile_value_path is not None and not training:
+            # === Steps 1-5 (fused cuTile operators). ``rotate_mix`` folds the
+            # rotation and the radial degree mixing into one edge-parallel
+            # kernel writing the focus-major layout; ``mixing_stack`` runs the
+            # whole gated stack, keeping the inter-layer activations and the
+            # gated-layer pre-activations off the traced graph entirely. ===
+            x_local, rad_feat = self._cutile_value_path(x, edge_cache, radial_feat)
+        elif self._cuda_value_train is not None and training:
+            # === Steps 1-5 (one CUDA kernel, training). The whole value
+            # stream up to the attention aggregation runs in a single launch
+            # with analytic backward and second order; only the backward
+            # anchors reach device memory. ===
+            if self._cached_edge_csr_fn is not None:
+                self._cached_edge_csr_fn(edge_cache, "src", x.shape[0])
+            x_local, rad_feat = self._cuda_value_train(x, edge_cache, radial_feat)
+        elif self._triton_value_path is not None and not training:
+            # === Steps 1-5 (fused Triton operators). ``so2_rotate_mix`` folds
+            # the rotation and the radial degree mixing into one edge-parallel
+            # kernel writing the focus-major layout; ``so2_mixing_stack`` runs
+            # the whole gated stack with the competition weight fused into its
+            # final store, keeping the inter-layer activations off the traced
+            # graph. The rotate-mix backward reduces through the source CSR
+            # view, which is built once per step and kept on the edge cache. ===
+            if self._cached_edge_csr_fn is not None:
+                self._cached_edge_csr_fn(edge_cache, "src", x.shape[0])
+            x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
+        elif self._cute_value_path is not None and not training:
+            # === Steps 1-5 (fused CuTe operator). The operator folds
+            # rotate_to_local, radial degree mixing, the multi-layer gated SO(2)
+            # stack, and the focus competition into the bucketed kernels; the
+            # per-edge focus-major intermediates stay resident on chip. ===
+            x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
         else:
-            # === Step 1. Rotate to edge-aligned local frame ===
-            x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
+            # === Steps 1-3. Rotation, radial mixing and the focus-major cast ===
+            x_local, rad_feat = self._rotate_mix(x, edge_cache, radial_feat)
 
-            # === Step 2. Select radial/type features for reduced layout ===
-            rad_feat = xp.take(
-                radial_feat,
-                xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
-                axis=1,
-            )  # (E, D_m, C)
-            if self.radial_hidden_proj is not None:
-                rad_feat = self.radial_hidden_proj(rad_feat)
-            if self.radial_degree_mixer is None:
-                x_local = x_local * rad_feat
-            else:
-                x_local = self.radial_degree_mixer(x_local, rad_feat)
-            if self.node_wise_grid_product is not None:
-                x_local = x_local + self.node_wise_grid_product(
-                    x_local,
-                    x_dst_local,
-                )
+            # The scalar slices the mixing stack needs are shared by every
+            # rotate-mix implementation, so they are derived here rather than
+            # inside the seam.
             rad_feat_l0_focus = xp.reshape(
                 rad_feat[:, 0, :], (n_edge, self.n_focus, self.so2_focus_dim)
             )  # (E, F, Cf)
-
-            # === Step 3. Cast to the focus-major SO(2) mixing layout (F, E, D_m, Cf) ===
-            # The mixing stack runs with the focus stream on the batch axis, the native
-            # layout of the block-diagonal batched matmul: the per-focus linear consumes
-            # it with no edge-axis transpose and writes each ``|m|`` block with no
-            # reassembly cost. This is a strided view of the reduced global buffer,
-            # materialized by the first linear's reshape exactly as any reduced-layout
-            # view would be.
             focus_gate_src: Array | None = None
-            x_local = xp.permute_dims(
-                xp.reshape(
-                    x_local,
-                    (n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim),
-                ),
-                (2, 0, 1, 3),
-            )  # (F, E, D_m, Cf), strided view
             if self.focus_compete and self.n_focus > 1:
                 focus_gate_src = x_local[:, :, 0, :]  # (F, E, Cf)
 
@@ -2309,6 +2590,77 @@ class SO2Convolution(NativeOP):
             x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
         return x_local, x_dst_local
 
+    def _rotate_mix(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> tuple[Array, Array]:
+        """
+        Rotate the source features and apply the radial degree mixing.
+
+        This is the entry stage of the SO(2) message: the gathered source
+        features are rotated into the edge frame, multiplied (or mixed) by the
+        projected radial features, and cast to the focus-major layout the
+        mixing stack consumes. Accelerated backends override this seam with a
+        single edge-parallel kernel that writes the focus-major layout
+        directly, so the degree-expanded global intermediate and its relayout
+        never reach device memory.
+
+        The mixing stack runs with the focus stream on the batch axis, the
+        native layout of the block-diagonal batched matmul: the per-focus
+        linear consumes it with no edge-axis transpose and writes each ``|m|``
+        block with no reassembly cost. The returned array is a strided view of
+        the reduced global buffer, materialized by the first linear's reshape
+        exactly as any reduced-layout view would be.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            The mixing-stack input with shape (F, E, D_m, Cf) and the
+            projected radial features with shape (E, D_m, C_wide).
+        """
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        n_edge = edge_cache.src.shape[0]
+
+        # === Step 1. Rotate to edge-aligned local frame ===
+        x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
+
+        # === Step 2. Select radial/type features for reduced layout ===
+        rad_feat = xp.take(
+            radial_feat,
+            xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
+            axis=1,
+        )  # (E, D_m, C)
+        if self.radial_hidden_proj is not None:
+            rad_feat = self.radial_hidden_proj(rad_feat)
+        if self.radial_degree_mixer is None:
+            x_local = x_local * rad_feat
+        else:
+            x_local = self.radial_degree_mixer(x_local, rad_feat)
+        if self.node_wise_grid_product is not None:
+            x_local = x_local + self.node_wise_grid_product(x_local, x_dst_local)
+
+        # === Step 3. Cast to the focus-major SO(2) mixing layout ===
+        x_local = xp.permute_dims(
+            xp.reshape(
+                x_local,
+                (n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim),
+            ),
+            (2, 0, 1, 3),
+        )  # (F, E, D_m, Cf), strided view
+        return x_local, rad_feat
+
     def _rotate_back(self, x_local: Array, edge_cache: EdgeCache, n_edge: int) -> Array:
         """
         Rotate the SO(2) focus-layout features back to the global frame.
@@ -2486,7 +2838,7 @@ class SO2Convolution(NativeOP):
             lmax=self.lmax,
             mmax=self.mmax,
             degree_index=degree_index_full,
-        )
+        ).astype(PRECISION_DICT[self.compute_precision])
         self.coeff_index_m = coeff_index_m
         self.degree_index_m = degree_index_m
         # Packed (l, m) -> l index, used by the rotation-free radial message to
