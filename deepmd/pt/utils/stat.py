@@ -41,8 +41,10 @@ from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.stat_file import (
+    load_output_stat_full_scan,
     load_paired_items,
     replace_paired_items,
+    save_output_stat_full_scan,
 )
 
 log = logging.getLogger(__name__)
@@ -286,6 +288,11 @@ def scan_redu_stats(
     -------
     ReduScanResult
         The accumulators, the per-type atom counts and the frame count.
+
+    Notes
+    -----
+    Statistics initialization runs on the chief process only, so one scan of
+    the training set is performed per run, not per rank.
     """
     stats: dict[str, ReduStatAccumulator] = {}
     natoms_total = np.zeros(ntypes, dtype=np.int64)
@@ -574,8 +581,39 @@ def compute_output_stats(
     assert isinstance(keys, list)
     requested_keys = list(keys)
 
+    # a full scan cannot replace the sampled path for delta bias or type-blind
+    # statistics, so resolve it before the cache is consulted
+    redu_scanner = get_redu_stat_scanner(merged)
+    if redu_scanner is not None and (
+        model_forward is not None or not stats_distinguish_types
+    ):
+        log.warning(
+            "Falling back to sampled output statistics: a full scan supports "
+            "neither delta bias nor stats_distinguish_types=False."
+        )
+        redu_scanner = None
+
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    if (
+        bias_atom_e is not None
+        and redu_scanner is not None
+        and not load_output_stat_full_scan(stat_file_path)
+    ):
+        # the cache holds sampled values, which is what data_stat_full replaces
+        if getattr(stat_file_path, "mode", None) == "r":
+            log.warning(
+                "`data_stat_full` is set, but the read-only statistics cache "
+                "holds output statistics estimated from sampled batches; they "
+                "are used as they are."
+            )
+        else:
+            log.info(
+                "Recomputing output statistics: the cache holds values "
+                "estimated from sampled batches, which `data_stat_full` "
+                "replaces."
+            )
+            bias_atom_e, std_atom_e = None, None
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
@@ -673,7 +711,7 @@ def compute_output_stats(
             stats_distinguish_types,
             intensive,
             model_pred_g,
-            get_redu_stat_scanner(merged),
+            redu_scanner,
         )
         bias_atom_a, std_atom_a = _compute_output_stats_atomic(
             sampled,
@@ -709,6 +747,7 @@ def compute_output_stats(
                 bias_atom_e,
                 std_atom_e,
             )
+            save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
     bias_atom_e = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
     std_atom_e = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
@@ -731,7 +770,8 @@ def _compute_output_stats_global(
 
     When *redu_scanner* is given, the bias and std come from a scan of every
     training frame instead of the sampled batches, which keeps rare elements
-    from being under-represented in the regression.
+    from being under-represented in the regression. The caller decides whether
+    a scan is admissible; it is ignored for delta bias and type-blind statistics.
     """
     # return directly if no global samples
     if global_sampled_idx is None or all(
@@ -792,15 +832,13 @@ def _compute_output_stats_global(
             if kk in merged_output
         }
 
-    scan = None
-    if redu_scanner is not None:
-        if model_pred is not None or not stats_distinguish_types:
-            log.warning(
-                "Falling back to sampled output statistics: a full scan supports "
-                "neither delta bias nor stats_distinguish_types=False."
-            )
-        else:
-            scan = redu_scanner.scan(ntypes, keys, intensive)
+    scan = (
+        redu_scanner.scan(ntypes, keys, intensive)
+        if redu_scanner is not None and model_pred is None and stats_distinguish_types
+        else None
+    )
+    # one model-level source writes atom_exclude_types onto every sample, so
+    # the first one carries the mask the whole scan needs
     type_mask = (
         to_numpy_array(
             AtomExcludeMask(ntypes, sampled[0]["atom_exclude_types"]).get_type_mask()
