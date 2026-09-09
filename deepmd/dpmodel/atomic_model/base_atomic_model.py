@@ -41,6 +41,9 @@ from deepmd.utils.finetune import (
     map_atom_exclude_types,
     map_pair_exclude_types,
 )
+from deepmd.utils.out_stat import (
+    get_redu_stat_scanner,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -114,7 +117,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         else:
             observed = _restore_observed_type_from_file(stat_file_path)
             if observed is None:
-                scanner = getattr(sampled_func, "redu_stat_scanner", None)
+                scanner = get_redu_stat_scanner(sampled_func)
                 if scanner is not None:
                     observed = observed_types_from_counts(
                         scanner.natoms_total(len(self.type_map)), self.type_map
@@ -775,9 +778,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
         # the full-data scanner, when the trainer attached one, is part of the
         # sampler contract and must survive wrapping
-        wrapped_sampler.redu_stat_scanner = getattr(
-            sampled_func, "redu_stat_scanner", None
-        )
+        wrapped_sampler.redu_stat_scanner = get_redu_stat_scanner(sampled_func)
         return wrapped_sampler
 
     def change_out_bias(

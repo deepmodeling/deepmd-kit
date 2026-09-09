@@ -7,6 +7,7 @@ import numpy as np
 from deepmd.utils.out_stat import (
     ReduStatAccumulator,
     ReduStatScanner,
+    get_redu_stat_scanner,
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
@@ -317,3 +318,19 @@ class TestReduStatScanner(unittest.TestCase):
         )
         scanner.scan(3, ["energy"])
         np.testing.assert_array_equal(scanner.natoms_total(3), counts)
+
+
+class TestGetReduStatScanner(unittest.TestCase):
+    def test_returns_an_attached_scanner(self) -> None:
+        def sampler() -> list:
+            return []
+
+        scanner = ReduStatScanner(lambda ntypes, keys, intensive: None)
+        sampler.redu_stat_scanner = scanner
+        self.assertIs(get_redu_stat_scanner(sampler), scanner)
+
+    def test_ignores_a_non_scanner_attribute(self) -> None:
+        # a Mock sampler answers every attribute; only a real scanner counts
+        self.assertIsNone(get_redu_stat_scanner(unittest.mock.Mock()))
+        self.assertIsNone(get_redu_stat_scanner(lambda: []))
+        self.assertIsNone(get_redu_stat_scanner([{}]))

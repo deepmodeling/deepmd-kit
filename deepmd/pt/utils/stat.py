@@ -35,6 +35,7 @@ from deepmd.utils.out_stat import (
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
+    get_redu_stat_scanner,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -672,7 +673,7 @@ def compute_output_stats(
             stats_distinguish_types,
             intensive,
             model_pred_g,
-            getattr(merged, "redu_stat_scanner", None),
+            get_redu_stat_scanner(merged),
         )
         bias_atom_a, std_atom_a = _compute_output_stats_atomic(
             sampled,

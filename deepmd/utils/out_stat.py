@@ -407,3 +407,14 @@ class ReduStatScanner:
         if self._cache:
             return next(iter(self._cache.values())).natoms_total
         return self.scan(ntypes, ()).natoms_total
+
+
+def get_redu_stat_scanner(sampler: object) -> ReduStatScanner | None:
+    """Return the full-data scanner a statistics sampler carries, if any.
+
+    The scanner rides on the sampler as an attribute so that it reaches the
+    statistics consumers without a new argument on every atomic model. The type
+    check keeps that loose contract from picking up an unrelated attribute.
+    """
+    scanner = getattr(sampler, "redu_stat_scanner", None)
+    return scanner if isinstance(scanner, ReduStatScanner) else None
