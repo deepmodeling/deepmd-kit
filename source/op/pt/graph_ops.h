@@ -17,6 +17,8 @@
 #include <tuple>
 #include <vector>
 
+#include "fitting_plan.h"
+
 // DPA1 descriptor body (environment matrix, embedding MLP, moment, G^T G).
 // Returns (grrg, rot_mat, gr, edge_order, pair_table, pre2_saved, g_saved);
 // the last five are consumed by dpa1_graph_descriptor_backward.
@@ -117,18 +119,6 @@ torch::Tensor graph_fitting_backward(torch::Tensor d_e,
                                      std::vector<int64_t> resnets,
                                      torch::Tensor w_head,
                                      int64_t act);
-
-// Layer geometry of one fitting network, shared by the operators that
-// evaluate it over a run of nodes.
-struct FittingLayerPlan {
-  std::vector<long> offset;  //!< Prefix sum of the hidden widths.
-  long width_max;            //!< Widest hidden layer.
-  int n_layer;
-
-  long saved_width() const { return offset[n_layer]; }
-};
-
-FittingLayerPlan fitting_layer_plan(const std::vector<torch::Tensor>& ws);
 
 // Evaluate the fitting network over one contiguous run of nodes. Every
 // full-width pointer is already indexed from the run's first node, so the same

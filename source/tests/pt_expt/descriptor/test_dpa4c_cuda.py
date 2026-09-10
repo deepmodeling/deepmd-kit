@@ -15,9 +15,15 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     attach_edge_csr,
     graph_from_dense_quartet,
 )
-from deepmd.kernels.cuda.dpa4c.graph_compress import (
-    _cpu_descriptor,
-    _cpu_forward,
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
+from deepmd.pt_expt.descriptor.dpa4c import (
+    DescrptDPA4C,
+)
+from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    _reference_descriptor,
+    _reference_forward,
     _table_lookup,
     build_compression_artifacts,
     build_radial_table,
@@ -26,12 +32,6 @@ from deepmd.kernels.cuda.dpa4c.graph_compress import (
     ensure_registered,
     mega_eligible,
     op_available,
-)
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
-)
-from deepmd.pt_expt.descriptor.dpa4c import (
-    DescrptDPA4C,
 )
 
 _GPU = pytest.mark.skipif(
@@ -184,7 +184,7 @@ def test_forward_backward_parity(channels: int, canonical: bool) -> None:
     (gradient,) = torch.autograd.grad((output * cotangent).sum(), edge_vec)
 
     reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
-    reference = _cpu_descriptor(reference_edge, *_spin_free(arguments))
+    reference = _reference_descriptor(reference_edge, *_spin_free(arguments))
     (reference_gradient,) = torch.autograd.grad(
         (reference * cotangent).sum(),
         reference_edge,
@@ -223,7 +223,7 @@ def test_backward_tail_node_groups(channels: int) -> None:
     (gradient,) = torch.autograd.grad((output * cotangent).sum(), edge_vec)
 
     reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
-    reference = _cpu_descriptor(reference_edge, *_spin_free(arguments))
+    reference = _reference_descriptor(reference_edge, *_spin_free(arguments))
     (reference_gradient,) = torch.autograd.grad(
         (reference * cotangent).sum(),
         reference_edge,
@@ -588,7 +588,7 @@ def test_supported_surface_parity(
     ).reshape_as(output)
     (gradient,) = torch.autograd.grad((output * cotangent).sum(), edge_vec)
     reference_edge = graph.edge_vec.detach().clone().requires_grad_(True)
-    reference_value = _cpu_descriptor(reference_edge, *_spin_free(arguments))
+    reference_value = _reference_descriptor(reference_edge, *_spin_free(arguments))
     (reference_gradient,) = torch.autograd.grad(
         (reference_value * cotangent).sum(),
         reference_edge,
@@ -918,7 +918,7 @@ def test_compact_canonical_parity(
     channels: int,
     index_dtype: torch.dtype,
 ) -> None:
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
@@ -968,7 +968,7 @@ def test_compact_canonical_parity(
 @_GPU
 @pytest.mark.parametrize("channels", [8, 128])
 def test_compact_inplace_backward_reuses_state(channels: int) -> None:
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
@@ -1014,11 +1014,11 @@ def test_fused_energy_force_parity(
     fitting_width: int,
     fitting_depth: int,
 ) -> None:
-    from deepmd.kernels.cuda.edge_force_virial import (
-        edge_force_virial,
-    )
     from deepmd.pt_expt.fitting.ener_fitting import (
         EnergyFittingNet,
+    )
+    from deepmd.pt_expt.kernels.edge_force_virial import (
+        edge_force_virial,
     )
 
     descriptor = _build_descriptor(channels)
@@ -1163,11 +1163,11 @@ def test_compact_canonical_tiling_is_equivalent(
     Every node tile owns a contiguous span of the destination-sorted edge
     axis, so the runs partition the work rather than splitting any reduction.
     """
-    from deepmd.kernels.cuda.dpa4c.canonical import (
-        dpa4c_canonical_compress_energy_force,
-    )
     from deepmd.pt_expt.fitting.ener_fitting import (
         EnergyFittingNet,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
     )
     from deepmd.pt_expt.utils.canonical_graph import (
         canonical_graph_from_neighbor_graph,
@@ -1281,7 +1281,7 @@ def test_empty_native_spin_cpu_profile_preserves_spin_contract() -> None:
         graph.edge_vec,
     )
 
-    output, state = _cpu_forward(graph.edge_vec, *arguments)
+    output, state = _reference_forward(graph.edge_vec, *arguments)
 
     profile = descriptor_profile(8, 2, True)
     assert output.shape == (0, profile.output_width)

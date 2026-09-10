@@ -84,6 +84,9 @@ from deepmd.pt.utils.compile_compat import (
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
+    relax_views_to_reshapes,
+)
+from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
 from deepmd.pt.utils.compile_compat import trace_pad_dim as _trace_pad_dim
@@ -681,6 +684,10 @@ def _finalize_compiled_lower(
     # The training trace is fed already-detached, grad-enabled inputs, so
     # every detach is removed unconditionally to restore the gradient path.
     _strip_saved_tensor_detach(traced_lower, remove_all=True)
+    # Fake strides can make make_fx specialize a reshape to an aten.view that
+    # is invalid for a runtime transpose. Keep view-compatible cases free and
+    # permit a materializing reshape only when the runtime layout requires it.
+    relax_views_to_reshapes(traced_lower)
     # Rebuild into a fresh graph to eliminate stale C-level node pointers
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)
@@ -2228,6 +2235,7 @@ class Trainer(AbstractTrainer):
         opt_type = optimizer_params.get("type", "Adam")
         if opt_type not in ("Adam", "AdamW", "HybridMuon"):
             raise ValueError(f"Unsupported optimizer type: {opt_type}")
+        self.opt_type = opt_type
         # LambdaLR multiplies each param group's initial learning rate by the
         # lambda value.  Warmup schedules legitimately return zero at step 0,
         # so use the nonzero schedule base as the denominator and let the
@@ -3052,9 +3060,65 @@ class Trainer(AbstractTrainer):
             probabilities=self.model_prob,
         )
 
+    def _precompile_outside_collectives(self) -> None:
+        """Trigger every training-graph compilation before the first collective.
+
+        The first optimization step both compiles the model and joins the
+        first gradient all-reduce. Compilation of the larger configurations
+        runs for tens of minutes with unbounded variance across ranks (GEMM
+        autotuning benchmarks on each rank's own device), so a rank still
+        compiling while its peers sit in that all-reduce trips the NCCL
+        watchdog and aborts the job. One forward and backward per task on the
+        *inner* module therefore runs first: the compiled artifacts are keyed
+        by the module and its input shapes, so warming them there is what the
+        optimization step reuses. ``torch.autograd.grad`` compiles the same
+        backward without accumulating parameter gradients; the reducer hooks
+        attached to ``AccumulateGrad`` therefore remain dormant. A rendezvous
+        store barrier (which has no watchdog) then aligns the ranks before the
+        first real step.
+        """
+        if not self.enable_compile:
+            return
+        if not (dist.is_available() and dist.is_initialized()):
+            return
+        if not isinstance(self.wrapper, torch.nn.parallel.DistributedDataParallel):
+            return
+        if self.opt_type not in ("Adam", "AdamW", "HybridMuon"):
+            return
+        log.info("Compiling training graphs before the first collective.")
+        start = time.time()
+        inner = self._unwrapped
+        trainable_parameters = tuple(
+            parameter for parameter in inner.parameters() if parameter.requires_grad
+        )
+        for task in self.training_tasks:
+            input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
+            _, loss, _ = inner(
+                **input_dict,
+                cur_lr=self.scheduler.get_last_lr()[0],
+                label=label_dict,
+                task_key=task.key,
+            )
+            torch.autograd.grad(loss, trainable_parameters, allow_unused=True)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        log.info(
+            "Training graphs ready in %.1f s; waiting for the other ranks.",
+            time.time() - start,
+        )
+        store = dist.distributed_c10d._get_default_store()
+        key = "deepmd/precompile_ready"
+        world_size = dist.get_world_size()
+        ready = int(store.add(key, 1))
+        while ready < world_size:
+            time.sleep(2)
+            ready = int(store.add(key, 0))
+        log.info("All %d ranks compiled; entering the optimization loop.", world_size)
+
     def run(self) -> None:
         """Run pt_expt training through the backend-independent trainer loop."""
         log.info("Start to train %d steps.", self.num_steps)
+        self._precompile_outside_collectives()
         try:
             super().run(self.training_tasks)
             if self.change_bias_after_training and self.num_steps > self.start_step:

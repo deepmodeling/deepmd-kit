@@ -20,9 +20,12 @@ from deepmd.pt_expt.utils.serialization import (
     build_synthetic_graph_inputs,
 )
 
+#: The compact canonical ABI and the fused spin backward are CUDA-only routes,
+#: so they follow the configured backend device rather than the mere presence
+#: of CUDA hardware: a run pinned to the CPU takes the generic graph lower.
 _GPU = pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="CUDA is required for compact canonical graph export",
+    env.DEVICE.type != "cuda",
+    reason="the compact canonical and fused spin routes are CUDA only",
 )
 
 
@@ -442,6 +445,7 @@ def test_compact_canonical_graph_export(
     assert metadata["canonical_index_dtype"] == "uint32"
 
 
+@_GPU
 @pytest.mark.parametrize("channels", [8, 64, 128])
 def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model = get_model(_compressed_config(channels)).to("cpu").eval()
@@ -535,6 +539,7 @@ def test_an_uncompressed_export_keeps_the_charge_state_as_a_runtime_input() -> N
     assert placeholders[-1].startswith("charge_spin")
 
 
+@_GPU
 def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
     """Compression must remove the runtime condition, not just satisfy it.
 
@@ -562,7 +567,7 @@ def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
 
 
 def test_compact_canonical_eligibility_rejects_other_descriptors() -> None:
-    from deepmd.kernels.cuda.dpa4c.canonical import (
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
         canonical_model_eligible,
     )
 
@@ -629,9 +634,7 @@ def _spin_sample(model: torch.nn.Module) -> tuple:
     return graph, atype.reshape(-1), spin
 
 
-@pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="the fused spin path is CUDA only"
-)
+@_GPU
 @pytest.mark.parametrize("gate", [0.8, 0.0])
 def test_compressed_spin_lowers_match_autograd(
     monkeypatch: pytest.MonkeyPatch,
