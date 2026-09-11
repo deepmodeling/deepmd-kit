@@ -3234,7 +3234,6 @@ def _build_real_edge_caches(
         deg_norm_floor=deg_norm_floor,
         edge_envelope=pt_env,
         radial_basis=pt_rb,
-        n_radial=n_radial,
         random_gamma=random_gamma,
         wigner_calc=pt_wig,
     )

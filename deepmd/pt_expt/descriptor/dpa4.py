@@ -16,9 +16,6 @@ from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-    parse_basis_type,
-)
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
@@ -162,14 +159,13 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
 
 def _promote_trainable(module: torch.nn.Module, names: tuple[str, ...]) -> None:
     """Re-register the given float buffers of *module* as Parameters."""
-    if not getattr(module, "trainable", True):
-        return
+    trainable = bool(getattr(module, "trainable", True))
     for name in names:
         buf = module._buffers.get(name)
         if buf is None or not buf.is_floating_point():
             continue
         del module._buffers[name]
-        setattr(module, name, torch.nn.Parameter(buf, requires_grad=True))
+        setattr(module, name, torch.nn.Parameter(buf, requires_grad=trainable))
 
 
 def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
@@ -191,11 +187,6 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         if getattr(sub, "trainable", True) is False:
             for p in sub.parameters(recurse=True):
                 p.requires_grad_(False)
-    # A ``/fix`` radial basis keeps its frequencies or centres, as in the pt
-    # backend.
-    for sub in module.modules():
-        if type(sub).__name__ == "RadialBasis" and parse_basis_type(sub.basis_type)[1]:
-            sub.adam_freqs.requires_grad_(False)
     return module
 
 

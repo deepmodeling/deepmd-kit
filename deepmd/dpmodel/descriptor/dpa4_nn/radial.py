@@ -493,7 +493,7 @@ class RadialBasis(NativeOP):
         Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
         ``"bessel/fix"`` and ``"gaussian/fix"``; the ``/fix`` forms are
         evaluated like their family and differ only in training, where the
-        PT backend keeps their frequencies or centres fixed.
+        backends keep their frequencies or centres fixed.
     precision : str
         Floating-point precision for the radial basis frequencies and outputs.
     exponent : int, optional
@@ -516,9 +516,9 @@ class RadialBasis(NativeOP):
         if self.n_radial <= 0:
             raise ValueError("`n_radial` must be positive")
         self.basis_type = str(basis_type).lower()
-        # The ``/fix`` suffix governs training only: the PT backend freezes the
-        # basis parameters, the array-API basis evaluates either form alike.
-        self.basis_family, _ = parse_basis_type(self.basis_type)
+        # Parameter promotion in every backend consumes this trainability flag.
+        self.basis_family, fixed = parse_basis_type(self.basis_type)
+        self.trainable = not fixed
         self.precision = precision
         self.exponent = int(exponent)
         prec = PRECISION_DICT[self.precision.lower()]

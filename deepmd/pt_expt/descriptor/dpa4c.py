@@ -15,9 +15,6 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-    parse_basis_type,
-)
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
 from deepmd.pt_expt.common import (
     torch_module,
@@ -69,28 +66,18 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         The same module, for use as an expression.
     """
     for submodule in module.modules():
-        if not getattr(submodule, "trainable", True):
-            continue
+        trainable = bool(getattr(submodule, "trainable", True))
         for name in _TRAINABLE_ATTRS.get(type(submodule).__name__, ()):
             value = submodule._buffers.get(name)
             if value is None or not value.is_floating_point():
                 continue
             del submodule._buffers[name]
-            setattr(submodule, name, torch.nn.Parameter(value, requires_grad=True))
+            setattr(submodule, name, torch.nn.Parameter(value, requires_grad=trainable))
 
     for submodule in module.modules():
         if not getattr(submodule, "trainable", True):
             for parameter in submodule.parameters(recurse=True):
                 parameter.requires_grad_(False)
-    # A ``/fix`` radial basis keeps its frequencies or centres, as in the pt
-    # backend's DPA4.  The parameter keeps its name, so checkpoints of either
-    # form load under the other.
-    for submodule in module.modules():
-        if (
-            type(submodule).__name__ == "RadialBasis"
-            and parse_basis_type(submodule.basis_type)[1]
-        ):
-            submodule.adam_freqs.requires_grad_(False)
     return module
 
 

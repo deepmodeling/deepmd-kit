@@ -126,9 +126,11 @@ __global__ __launch_bounds__(kThreads) void edge_radial_fwd_kernel(
     const float scale = mask * e2;
     float* row = rbf + e * static_cast<long>(n_radial);
     if (basis == kBessel) {
-      const float inv_r = 1.f / r;
+      // The sinc limit at zero distance is phi(0) = f.
+      const float inv_r = r == 0.f ? 0.f : 1.f / r;
       for (int n = 0; n < n_radial; ++n) {
-        row[n] = scale * sinf(r * s_freq[n]) * inv_r;
+        const float phi = r == 0.f ? s_freq[n] : sinf(r * s_freq[n]) * inv_r;
+        row[n] = scale * phi;
       }
     } else {
       for (int n = 0; n < n_radial; ++n) {
@@ -183,7 +185,7 @@ __global__ __launch_bounds__(kThreads) void edge_radial_bwd_kernel(
     float d2 = 0.f;
     envelope_pair(r, inv_rcut, s_rbf, rbf_order, e2, d2);
     const float* row = grad_rbf + e * static_cast<long>(n_radial);
-    const float inv_r = 1.f / r;
+    const float inv_r = r == 0.f ? 0.f : 1.f / r;
     for (int n = 0; n < n_radial; ++n) {
       float phi = 0.f;
       float dphi = 0.f;
@@ -191,7 +193,8 @@ __global__ __launch_bounds__(kThreads) void edge_radial_bwd_kernel(
         float sine = 0.f;
         float cosine = 0.f;
         sincosf(r * s_freq[n], &sine, &cosine);
-        phi = sine * inv_r;
+        // With phi(0) = f and inv_r = 0, the derivative limit is zero.
+        phi = r == 0.f ? s_freq[n] : sine * inv_r;
         // d/dr [sin(r f) / r] = (f cos(r f) - sin(r f) / r) / r. The two terms
         // cancel to leading order at large ``r f``, so the difference is formed
         // with a fused multiply-add to keep the rounding to one step.
@@ -220,12 +223,8 @@ void check_inputs(const torch::Tensor& edge_len,
       env_series.numel() <= kMaxSeries && rbf_series.numel() <= kMaxSeries,
       "dpa4_edge_radial: envelope order beyond the staged limit");
   TORCH_CHECK(
-      env_series.numel() >= 2,
-      "dpa4_edge_radial: the edge envelope series needs at least two terms");
-  TORCH_CHECK(
-      rbf_series.numel() == 0 || rbf_series.numel() >= 2,
-      "dpa4_edge_radial: the basis envelope series must be empty or have "
-      "at least two terms");
+      env_series.numel() >= 1,
+      "dpa4_edge_radial: the edge envelope series needs at least one term");
   TORCH_CHECK(freqs.numel() > 0,
               "dpa4_edge_radial: the basis must be non-empty");
 }

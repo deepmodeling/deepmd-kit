@@ -346,10 +346,11 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             assert name not in param_names
         # wigner tables must never be trainable
         assert not any("wigner" in n.lower() for n in param_names)
-        # all promoted parameters are float and trainable
+        # Declared weights remain parameters when their owning module freezes them.
         for name, p in param_names.items():
             assert p.is_floating_point(), name
-            assert p.requires_grad, name
+            owner = dd0.get_submodule(name.rpartition(".")[0])
+            assert p.requires_grad == bool(getattr(owner, "trainable", True)), name
 
     @pytest.mark.parametrize(
         "via_deserialize", [False, True]

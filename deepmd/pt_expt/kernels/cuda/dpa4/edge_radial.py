@@ -68,9 +68,7 @@ def series_coefficients(exponent: int) -> tuple[float, ...]:
 
 def supported(exponent_env: int, exponent_rbf: int) -> bool:
     """Whether the envelope orders fit the staged limit, including a bare basis."""
-    return 2 <= exponent_env <= _MAX_SERIES and (
-        exponent_rbf == 0 or 2 <= exponent_rbf <= _MAX_SERIES
-    )
+    return 1 <= exponent_env <= _MAX_SERIES and 0 <= exponent_rbf <= _MAX_SERIES
 
 
 def _forward_fake(
@@ -203,9 +201,11 @@ class EdgeRadialCuda:
     """
 
     def __init__(self, envelope: Any, basis: Any) -> None:
+        ensure_registered()
         self._envelope = envelope
         self._basis = basis
         self._rcut = float(envelope.rcut)
+        self._gaussian_coeff = float(basis.gaussian_coeff)
         self._basis_type = BESSEL if basis.basis_family == "bessel" else GAUSSIAN
         self._env = series_coefficients(envelope.p)
         self._rbf = series_coefficients(basis.exponent)
@@ -245,14 +245,14 @@ class EdgeRadialCuda:
             ``C3CutoffEnvelope`` and ``RadialBasis`` scaled by ``keep``.
         """
         env_series, rbf_series = self.series(edge_len.device)
-        return edge_radial(
+        return torch.ops.deepmd.dpa4_edge_radial(
             edge_len,
             keep,
             self._basis.adam_freqs,
             env_series,
             rbf_series,
             self._rcut,
-            float(self._basis.gaussian_coeff),
+            self._gaussian_coeff,
             self._basis_type,
         )
 

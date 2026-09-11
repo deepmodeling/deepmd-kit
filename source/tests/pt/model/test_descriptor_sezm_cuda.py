@@ -875,6 +875,53 @@ class TestSeZMEdgeRadialCuda(unittest.TestCase):
         )
         self.assertIsNone(make_cuda_edge_radial(envelope, basis))
 
+    def test_warmed_series_cache_survives_compile(self) -> None:
+        """Dynamo lifts cached eager constants into the same-device compiled graph."""
+        _, _, fused = self._modules("gaussian")
+        r, keep = self._distances(32, self.RCUT)
+        expected = fused(r, keep)
+        cached = fused.series(r.device)
+        compiled = torch.compile(fused, fullgraph=True)
+        actual = compiled(r, keep)
+        for got, want in zip(actual, expected, strict=True):
+            torch.testing.assert_close(got, want)
+        self.assertIs(fused.series(r.device), cached)
+
+    def test_one_term_envelopes_match_the_reference(self) -> None:
+        """Every positive envelope order is eligible, including one-term series."""
+        for basis_type in ("bessel", "gaussian"):
+            for basis_exponent in (0, 1, 7):
+                with self.subTest(basis=basis_type, exponent=basis_exponent):
+                    envelope = C3CutoffEnvelope(
+                        rcut=self.RCUT, exponent=1, dtype=torch.float32
+                    ).cuda()
+                    basis = RadialBasis(
+                        rcut=self.RCUT,
+                        basis_type=basis_type,
+                        n_radial=8,
+                        exponent=basis_exponent,
+                        dtype=torch.float32,
+                    ).cuda()
+                    fused = make_cuda_edge_radial(envelope, basis)
+                    self.assertIsNotNone(fused)
+                    r, keep = self._distances(128, self.RCUT)
+                    r[0] = 0.0
+                    keep[0] = 1.0
+                    r.requires_grad_(True)
+                    expected = (envelope(r) * keep, basis(r) * keep)
+                    actual = fused(r, keep)
+                    for got, want in zip(actual, expected, strict=True):
+                        torch.testing.assert_close(got, want, rtol=5e-5, atol=5e-6)
+                    expected_grad = torch.autograd.grad(
+                        sum(value.sum() for value in expected), r
+                    )[0]
+                    actual_grad = torch.autograd.grad(
+                        sum(value.sum() for value in actual), r
+                    )[0]
+                    torch.testing.assert_close(
+                        actual_grad, expected_grad, rtol=5e-5, atol=5e-6
+                    )
+
 
 @unittest.skipUnless(_IMPORT_OK, "requires the pt_expt CUDA bindings")
 class TestSeZMConvCudaGate(unittest.TestCase):

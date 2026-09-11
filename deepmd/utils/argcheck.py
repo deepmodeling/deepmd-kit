@@ -6470,7 +6470,11 @@ def gen_json_schema(multi_task: bool = False) -> str:
         gen_args(multi_task=multi_task),
         doc=f"DeePMD-kit {__version__}",
     )
-    return json.dumps(with_model_presets(generate_json_schema(arg), multi_task))
+    return json.dumps(
+        with_model_presets(
+            generate_json_schema(arg), generate_json_schema(model_args()), multi_task
+        )
+    )
 
 
 def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:

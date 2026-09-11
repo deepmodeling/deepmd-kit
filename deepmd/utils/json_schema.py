@@ -7,7 +7,7 @@ from typing import (
     Any,
 )
 
-from deepmd.utils.model_preset import (
+from deepmd.utils.model_preset_data import (
     MODEL_PRESETS,
 )
 
@@ -140,13 +140,17 @@ def _model_selector(
     }
 
 
-def with_model_presets(schema: dict[str, Any], multi_task: bool) -> dict[str, Any]:
+def with_model_presets(
+    schema: dict[str, Any], model_schema: dict[str, Any], multi_task: bool
+) -> dict[str, Any]:
     """Add raw preset input forms to a generated training schema.
 
     Parameters
     ----------
     schema : dict
         Training schema generated from the argument definitions, updated in place.
+    model_schema : dict
+        Schema of one non-repeating model argument.
     multi_task : bool
         Whether model entries live in a multi-task ``model_dict``.
 
@@ -156,11 +160,17 @@ def with_model_presets(schema: dict[str, Any], multi_task: bool) -> dict[str, An
         Schema accepting presets and partial overrides alongside ordinary inputs.
     """
     model = schema["properties"]["model"]
+    base = {
+        key: value
+        for key, value in model_schema.items()
+        if key not in ("$schema", "$id", "title")
+    }
     if multi_task:
-        branches = model["properties"]["model_dict"]
-        base = branches.pop("items")
-    else:
-        base = model
+        branches = {
+            "type": "object",
+            "description": model["properties"]["model_dict"].get("description", ""),
+        }
+        model["properties"]["model_dict"] = branches
 
     names = sorted(MODEL_PRESETS)
     definitions = {
