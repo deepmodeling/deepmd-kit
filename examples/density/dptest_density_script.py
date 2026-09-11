@@ -25,7 +25,7 @@ from tqdm import (
 )
 
 from deepmd.infer import (
-    DeepPot,
+    DeepEval,
 )
 
 # Register custom dpdata types for grid density
@@ -98,7 +98,8 @@ def evaluate(
     model_path: str, data_dir: str, ratio: float
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run inference and return (predictions, labels)."""
-    dm = DeepPot(model_path)
+    # DeepEval dispatches density models to DeepDensity automatically.
+    dm = DeepEval(model_path)
     type_map = dm.get_type_map()
 
     pred_list, label_list = [], []
