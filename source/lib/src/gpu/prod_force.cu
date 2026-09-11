@@ -113,7 +113,14 @@ void prod_force_a_gpu(FPTYPE* force,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 4;
-  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  const size_t output_size =
+      sizeof(FPTYPE) * static_cast<size_t>(nframes) * nall * 3;
+  if (output_size > 0) {
+    DPErrcheck(gpuMemset(force, 0, output_size));
+  }
+  if (nframes == 0 || nloc == 0 || nnei == 0) {
+    return;
+  }
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
@@ -142,7 +149,14 @@ void prod_force_r_gpu(FPTYPE* force,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   const int ndescrpt = nnei * 1;
-  DPErrcheck(gpuMemset(force, 0, sizeof(FPTYPE) * nframes * nall * 3));
+  const size_t output_size =
+      sizeof(FPTYPE) * static_cast<size_t>(nframes) * nall * 3;
+  if (output_size > 0) {
+    DPErrcheck(gpuMemset(force, 0, output_size));
+  }
+  if (nframes == 0 || nloc == 0 || nnei == 0) {
+    return;
+  }
 
   force_deriv_wrt_center_atom<FPTYPE, TPB><<<nframes * nloc, TPB>>>(
       force, net_deriv, in_deriv, ndescrpt, nloc, nall);
