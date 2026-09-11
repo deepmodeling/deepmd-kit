@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import socket
+import tempfile
 import threading
 import time
 import warnings
@@ -17,11 +18,14 @@ from pathlib import (
     Path,
 )
 from typing import (
+    IO,
     Any,
-    Self,
 )
 
 import numpy as np
+from typing_extensions import (
+    Self,
+)
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
@@ -44,15 +48,13 @@ log = logging.getLogger(__name__)
 
 _DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
 _DPDATA_DEFAULT_OUT_FORMAT = "deepmd/lmdb"
-_DPDATA_CONVERSION_SCHEMA_VERSION = "2"
+_DPDATA_CONVERSION_SCHEMA_VERSION = "3"
 _DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str, str], list[str]] = {}
-_DPDATA_SOURCE_MTIME_CACHE: dict[tuple[str, str], tuple[float, float]] = {}
-# Neighbor-stat, trainer construction, and multi-task routing commonly query
-# the same directory within one startup. Reuse that O(file-count) scan while
-# still letting a long-lived process notice later source rewrites.
-_DPDATA_SOURCE_MTIME_CACHE_TTL = 60.0
+_DPDATA_SOURCE_HASH_LIMIT = 1024 * 1024
 _CONVERSION_LOCK_HEARTBEAT_SECONDS = 5.0
-_CONVERSION_LOCK_STALE_SECONDS = 30.0
+# Allow for shared-filesystem attribute caching before diagnosing a stalled
+# heartbeat. Remote owner liveness still cannot be inferred from elapsed time.
+_CONVERSION_LOCK_STALE_SECONDS = 300.0
 
 
 def validate_lmdb_systems(
@@ -941,13 +943,6 @@ class LmdbDataSystem:
         self.dirs = list(self._nloc_set_indices)
         self.pbc = any_pbc
 
-    def _detect_pbc(self) -> bool:
-        """Return True when LMDB frames contain a non-zero simulation box."""
-        if len(self._reader) == 0:
-            return False
-        frame = self._reader.peek_frame(0)
-        return bool(float(frame.get("find_box", 0.0)) > 0.5)
-
     def add_data_requirements(
         self, data_requirements: list[DataRequirementItem]
     ) -> None:
@@ -1362,8 +1357,15 @@ def validate_backend_data_config(
         )
 
 
-def validate_lmdb_sampling_options(data_config: dict[str, Any]) -> None:
-    """Reject sampling options that cannot be represented by one LMDB route."""
+def validate_lmdb_sampling_options(
+    data_config: dict[str, Any], *, modifier: Any | None = None
+) -> None:
+    """Reject options that cannot be represented by one LMDB route."""
+    if modifier is not None:
+        raise ValueError(
+            "LMDB data does not support data modifiers. "
+            "Choose out_format='deepmd/hdf5' for automatic conversion."
+        )
     if data_config.get("sys_probs") is not None:
         raise ValueError(
             "LMDB data does not support explicit sys_probs yet. Use auto_prob "
@@ -1404,18 +1406,20 @@ def close_data_systems(*values: Any) -> None:
 
 
 def _looks_like_extxyz(path: Path) -> bool:
+    """Probe the XYZ comment line without requiring a valid text input."""
     if not path.is_file():
         return False
     try:
-        with path.open() as fp:
+        with path.open(encoding="utf-8") as fp:
             fp.readline()
             comment = fp.readline()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False
     return "Properties=" in comment or "Lattice=" in comment
 
 
 def _normalize_dpdata_format(fmt: str, source: Path) -> str:
+    """Resolve aliases and infer common dpdata formats from the input path."""
     fmt = fmt.lower()
     if fmt == "ase":
         return "ase/structure"
@@ -1447,7 +1451,7 @@ def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
         dpdata_version = importlib.metadata.version("dpdata")
     except importlib.metadata.PackageNotFoundError:
         dpdata_version = "unknown"
-    digest = hashlib.sha1(
+    digest = hashlib.sha256(
         (
             f"{source_resolved}|{fmt}|{out_fmt}|"
             f"schema={_DPDATA_CONVERSION_SCHEMA_VERSION}|dpdata={dpdata_version}"
@@ -1459,45 +1463,86 @@ def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
     return Path.cwd() / _DPDATA_CACHE_DIR / f"{stem}-{safe_out_fmt}-{digest}{suffix}"
 
 
-def _source_mtime(source: Path, cache_file: Path, *, force: bool = False) -> float:
+def _source_signature(source: Path, output: Path) -> str:
+    """Fingerprint source metadata, including restored files and tree changes.
+
+    Compare nanosecond timestamps and sizes for equality, never ordering.
+    ctime also detects a same-size rewrite whose mtime was preserved on Unix.
+    Hash small files as well, including on Windows where ctime is creation time,
+    without rereading large trajectory files on every routing call. Scan on
+    each call: a time-based memo can hide edits to directory children.
+    Exclude our cache subtree so publication cannot invalidate its own input.
+    """
+    digest = hashlib.sha256()
+    cache_dir = output.parent.resolve()
+
+    def add_file(path: Path, name: str) -> None:
+        stat = path.stat()
+        digest.update(
+            json.dumps(
+                [name, stat.st_mode, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
+            ).encode()
+        )
+        if stat.st_size <= _DPDATA_SOURCE_HASH_LIMIT:
+            with path.open("rb") as fp:
+                # Bound the read even if a concurrent writer grows the input.
+                digest.update(
+                    hashlib.sha256(fp.read(_DPDATA_SOURCE_HASH_LIMIT + 1)).digest()
+                )
+
     if source.is_file():
-        return source.stat().st_mtime
-    if not source.is_dir():
-        return 0.0
-    cache_key = (
-        str(source.resolve(strict=False)),
-        str(cache_file.parent.resolve(strict=False)),
-    )
-    now = time.monotonic()
-    cached = _DPDATA_SOURCE_MTIME_CACHE.get(cache_key)
-    if (
-        not force
-        and cached is not None
-        and now - cached[0] < _DPDATA_SOURCE_MTIME_CACHE_TTL
-    ):
-        return cached[1]
-    cache_dir = cache_file.parent.resolve(strict=False)
-    latest = source.stat().st_mtime
-    for item in source.rglob("*"):
-        try:
-            item_resolved = item.resolve(strict=False)
-            if item_resolved == cache_file or cache_dir in item_resolved.parents:
-                continue
-            latest = max(latest, item.stat().st_mtime)
-        except OSError:
-            continue
-    _DPDATA_SOURCE_MTIME_CACHE[cache_key] = (now, latest)
-    return latest
+        add_file(source, source.name)
+    elif source.is_dir():
+
+        def raise_walk_error(error: OSError) -> None:
+            # An incomplete scan must never validate an old conversion.
+            raise error
+
+        for root, dirs, files in os.walk(source, onerror=raise_walk_error):
+            dirs[:] = sorted(
+                name for name in dirs if (Path(root) / name).resolve() != cache_dir
+            )
+            relative_root = Path(root).relative_to(source)
+            digest.update(json.dumps([str(relative_root), dirs]).encode())
+            for name in sorted(files):
+                add_file(Path(root) / name, str(relative_root / name))
+    else:
+        raise FileNotFoundError(f"dpdata input does not exist: {source}")
+    return digest.hexdigest()
 
 
-def _is_conversion_current(
-    source: Path, output: Path, *, force_source_scan: bool = False
-) -> bool:
+def _conversion_manifest_path(output: Path) -> Path:
+    """Return the sidecar recording the source used for a published output."""
+    return output.with_name(output.name + ".source.json")
+
+
+def _is_conversion_current(source: Path, output: Path) -> bool:
+    """Reuse only a complete conversion with exactly matching source metadata."""
     if not output.exists():
         return False
-    return output.stat().st_mtime >= _source_mtime(
-        source, output, force=force_source_scan
-    )
+    try:
+        manifest = json.loads(_conversion_manifest_path(output).read_text())
+        return manifest == {"source_signature": _source_signature(source, output)}
+    except (OSError, ValueError):
+        # Missing, damaged, or legacy manifests require a fresh conversion.
+        return False
+
+
+def _write_conversion_manifest(output: Path, signature: str) -> None:
+    """Atomically mark a successfully published conversion as reusable."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=output.parent, prefix=f".{output.name}.", delete=False
+        ) as fp:
+            temporary = Path(fp.name)
+            json.dump({"source_signature": signature}, fp)
+            fp.flush()
+            os.fsync(fp.fileno())
+        os.replace(temporary, _conversion_manifest_path(output))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _process_start_time(pid: int) -> str | None:
@@ -1520,30 +1565,31 @@ def _same_lock_file(lock_path: Path, expected: os.stat_result) -> bool:
 
 
 class _ConversionLock:
-    """Owned conversion lock with a heartbeat for cross-host stale recovery."""
+    """Owned conversion lock with a heartbeat for detecting stalled writers."""
 
-    def __init__(self, lock_path: Path, lock_fd: int) -> None:
+    def __init__(self, lock_path: Path, lock_file: IO[str]) -> None:
         self.path = lock_path
-        self._stat = os.fstat(lock_fd)
-        payload = {
-            "hostname": socket.gethostname(),
-            "pid": os.getpid(),
-            "process_start": _process_start_time(os.getpid()),
-            "created": time.time(),
-        }
-        with os.fdopen(lock_fd, "w") as fp:
-            json.dump(payload, fp)
-            fp.flush()
-            os.fsync(fp.fileno())
-        self._stop = threading.Event()
-        self._thread = threading.Thread(
-            target=self._heartbeat,
-            name="deepmd-dpdata-conversion-lock",
-            daemon=True,
-        )
+        self._stat = os.fstat(lock_file.fileno())
         try:
+            payload = {
+                "hostname": socket.gethostname(),
+                "pid": os.getpid(),
+                "process_start": _process_start_time(os.getpid()),
+                "created": time.time(),
+            }
+            # The caller owns the file context, including initialization failures.
+            json.dump(payload, lock_file)
+            lock_file.flush()
+            os.fsync(lock_file.fileno())
+            self._stop = threading.Event()
+            self._thread = threading.Thread(
+                target=self._heartbeat,
+                name="deepmd-dpdata-conversion-lock",
+                daemon=True,
+            )
             self._thread.start()
-        except Exception:
+        except BaseException:
+            lock_file.close()
             if _same_lock_file(self.path, self._stat):
                 self.path.unlink(missing_ok=True)
             raise
@@ -1565,6 +1611,7 @@ class _ConversionLock:
             try:
                 self.path.unlink()
             except FileNotFoundError:
+                # Another waiter may already have removed this lock.
                 pass
 
 
@@ -1575,6 +1622,8 @@ def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
     try:
         pid = int(payload["pid"])
     except (KeyError, TypeError, ValueError):
+        return None
+    if pid <= 0:
         return None
     expected_start = payload.get("process_start")
     current_start = _process_start_time(pid)
@@ -1590,7 +1639,12 @@ def _lock_owner_is_alive(payload: dict[str, Any]) -> bool | None:
 
 
 def _recover_stale_conversion_lock(lock_path: Path) -> bool:
-    """Remove a dead-owner or expired-lease lock without touching a successor."""
+    """Recover dead local owners and abandoned, uninitialized lock files.
+
+    A remote host's heartbeat may look stale because of NFS attribute caching
+    or clock skew. Never evict an identified remote writer on that evidence;
+    report the stalled lock for owner verification instead of racing it.
+    """
     try:
         lock_stat = lock_path.stat(follow_symlinks=False)
     except FileNotFoundError:
@@ -1599,11 +1653,23 @@ def _recover_stale_conversion_lock(lock_path: Path) -> bool:
         return False
     try:
         payload = json.loads(lock_path.read_text())
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
+        payload = {}
+    if not isinstance(payload, dict):
         payload = {}
 
     owner_alive = _lock_owner_is_alive(payload)
     lease_expired = time.time() - lock_stat.st_mtime > _CONVERSION_LOCK_STALE_SECONDS
+    if (
+        owner_alive is None
+        and lease_expired
+        and payload.get("hostname") not in (None, socket.gethostname())
+    ):
+        raise RuntimeError(
+            f"Cannot verify the remote owner of stalled dpdata conversion lock "
+            f"{lock_path} on {payload['hostname']}. Check that the owner has "
+            "stopped before removing the lock and retrying."
+        )
     stale = owner_alive is False or (owner_alive is None and lease_expired)
     if not stale or not _same_lock_file(lock_path, lock_stat):
         return False
@@ -1611,6 +1677,7 @@ def _recover_stale_conversion_lock(lock_path: Path) -> bool:
     try:
         lock_path.unlink()
     except FileNotFoundError:
+        # Recovery is complete if another waiter removed the same stale lock.
         pass
     return True
 
@@ -1622,7 +1689,7 @@ def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> bool:
             continue
         time.sleep(1.0)
     # Freshness is checked once after publication, not once per waiter-second.
-    return _is_conversion_current(source, output, force_source_scan=True)
+    return _is_conversion_current(source, output)
 
 
 def _remove_path(path: Path) -> None:
@@ -1744,17 +1811,16 @@ def _convert_system_by_dpdata(
     if not _is_conversion_current(source, output):
         while True:
             try:
-                lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                lock_file = lock_path.open("x")
             except FileExistsError:
                 if _wait_for_conversion(source, output, lock_path):
                     break
                 continue
             else:
-                conversion_lock = _ConversionLock(lock_path, lock_fd)
+                with lock_file:
+                    conversion_lock = _ConversionLock(lock_path, lock_file)
                 try:
-                    if not _is_conversion_current(
-                        source, output, force_source_scan=True
-                    ):
+                    if not _is_conversion_current(source, output):
                         log.info(
                             "Converting %s from dpdata format %s to %s at %s",
                             source,
@@ -1762,7 +1828,17 @@ def _convert_system_by_dpdata(
                             out_fmt,
                             output,
                         )
+                        signature = _source_signature(source, output)
+                        # Invalidate before replacing output: a crash must never
+                        # pair a new dataset with an older source manifest.
+                        _conversion_manifest_path(output).unlink(missing_ok=True)
                         _write_dpdata_conversion(source, fmt, out_fmt, output)
+                        if signature != _source_signature(source, output):
+                            raise RuntimeError(
+                                f"dpdata input changed during conversion: {source}. "
+                                "Retry with an unchanged input dataset."
+                            )
+                        _write_conversion_manifest(output, signature)
                 finally:
                     conversion_lock.release()
                 break
@@ -1896,7 +1972,7 @@ def get_data(
     data_format = jdata.get("format")
     out_format = jdata.get("out_format", jdata.get("output_format"))
     if conversion_will_write_lmdb(jdata):
-        validate_lmdb_sampling_options(jdata)
+        validate_lmdb_sampling_options(jdata, modifier=modifier)
     systems = process_systems(
         systems, patterns=rglob_patterns, fmt=data_format, out_fmt=out_format
     )
@@ -1908,7 +1984,7 @@ def get_data(
 
     lmdb_path = validate_lmdb_systems(systems, backend_name="legacy data loader")
     if lmdb_path is not None:
-        validate_lmdb_sampling_options(jdata)
+        validate_lmdb_sampling_options(jdata, modifier=modifier)
         if type_map is None:
             raise ValueError(
                 "LMDB training data requires model/type_map to be set. "
@@ -1920,6 +1996,9 @@ def get_data(
             type_map=type_map,
             batch_size=batch_size,
             auto_prob_style=auto_prob,
+            # Draw from the shared, rank-seeded data RNG so LMDB preserves
+            # training.seed reproducibility across all legacy entrypoints.
+            seed=int(dp_random.choice(2**32)),
         )
 
     data = DeepmdDataSystem(

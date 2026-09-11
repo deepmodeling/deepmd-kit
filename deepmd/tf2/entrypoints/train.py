@@ -166,34 +166,40 @@ class TF2TrainEntrypoint(AbstractTrainEntrypoint):
                 None,
             )
             valid_data = None
-            if task_config.validation_data_params is not None:
-                valid_data = get_data(
-                    dict(task_config.validation_data_params),
-                    None,
-                    train_data.type_map,
-                    None,
-                )
-            return train_data, valid_data, task_config.stat_file_spec
+            try:
+                if task_config.validation_data_params is not None:
+                    valid_data = get_data(
+                        dict(task_config.validation_data_params),
+                        None,
+                        train_data.type_map,
+                        None,
+                    )
+                return train_data, valid_data, task_config.stat_file_spec
+            except BaseException:
+                # The factory owns these objects until make_task_maps records
+                # them; validation setup or stat-file validation may fail.
+                close_data_systems(train_data, valid_data)
+                raise
 
         train_data_map, valid_data_map, stat_file_spec_map = make_task_maps(
             config,
             factory,
         )
-        print_data_summaries(train_data_map, valid_data_map)
-
-        trainer = DPTrainer(
-            config,
-            train_data_map,
-            stat_file_spec=stat_file_spec_map,
-            validation_data=valid_data_map,
-            init_model=options.init_model,
-            restart_model=options.restart,
-            finetune_model=options.finetune,
-            finetune_links=self.finetune_links,
-            shared_links=self.shared_links,
-            min_nbor_dist=neighbor_stat,
-        )
         try:
+            print_data_summaries(train_data_map, valid_data_map)
+
+            trainer = DPTrainer(
+                config,
+                train_data_map,
+                stat_file_spec=stat_file_spec_map,
+                validation_data=valid_data_map,
+                init_model=options.init_model,
+                restart_model=options.restart,
+                finetune_model=options.finetune,
+                finetune_links=self.finetune_links,
+                shared_links=self.shared_links,
+                min_nbor_dist=neighbor_stat,
+            )
             start_time = time.time()
             trainer.run()
             end_time = time.time()

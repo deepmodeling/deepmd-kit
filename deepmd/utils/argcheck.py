@@ -5375,9 +5375,12 @@ def training_data_args() -> list[
     )
     doc_out_format = (
         "The output data format passed to dpdata for automatic conversion. "
-        "When `format` requests conversion from a non-DeePMD format, this key "
-        "defaults to `deepmd/lmdb`. Use a DeePMD format supported by dpdata, "
-        "such as `deepmd/lmdb`, `deepmd/hdf5`, or `deepmd/npy`."
+        "Defaults to `deepmd/lmdb`; it is used only when `format` requests "
+        "conversion from a non-DeePMD format. LMDB requires exactly one input "
+        "path after `systems` and `rglob_patterns` expansion and an explicit "
+        "model/type_map. LMDB does not support Paddle, data modifiers, or "
+        "explicit sys_probs. Choose `deepmd/hdf5` for those capabilities or "
+        "for multiple input paths. Other supported outputs include `deepmd/npy`."
     )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
@@ -5500,9 +5503,12 @@ def validation_data_args() -> list[
     )
     doc_out_format = (
         "The output data format passed to dpdata for automatic conversion. "
-        "When `format` requests conversion from a non-DeePMD format, this key "
-        "defaults to `deepmd/lmdb`. Use a DeePMD format supported by dpdata, "
-        "such as `deepmd/lmdb`, `deepmd/hdf5`, or `deepmd/npy`."
+        "Defaults to `deepmd/lmdb`; it is used only when `format` requests "
+        "conversion from a non-DeePMD format. LMDB requires exactly one input "
+        "path after `systems` and `rglob_patterns` expansion and an explicit "
+        "model/type_map. LMDB does not support Paddle, data modifiers, or "
+        "explicit sys_probs. Choose `deepmd/hdf5` for those capabilities or "
+        "for multiple input paths. Other supported outputs include `deepmd/npy`."
     )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\

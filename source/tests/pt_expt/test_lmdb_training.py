@@ -20,6 +20,7 @@ from unittest.mock import (
 import lmdb
 import msgpack
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.batch import (
@@ -71,6 +72,7 @@ def _encode_array(arr: np.ndarray) -> dict:
     }
 
 
+@pytest.mark.timeout(60)
 class TestConvertedLmdbValidation(unittest.TestCase):
     """Reject format conversion that resolves to multiple LMDB databases."""
 

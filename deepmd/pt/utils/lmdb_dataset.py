@@ -10,6 +10,7 @@ from typing import (
     Any,
 )
 
+import numpy as np
 import torch
 from torch.utils.data import (
     DataLoader,
@@ -207,6 +208,8 @@ class LmdbDataset(Dataset):
           are padded with phantom atoms.
     auto_prob_style : str, optional
         ``auto_prob`` string used to reweight the original systems.
+    seed : int or list[int], optional
+        Seed for shuffled batches, including the worker rank when distributed.
     """
 
     def __init__(
@@ -215,6 +218,7 @@ class LmdbDataset(Dataset):
         type_map: list[str],
         batch_size: int | str = "auto",
         auto_prob_style: str | None = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
         self._collate = functools.partial(
@@ -237,9 +241,17 @@ class LmdbDataset(Dataset):
                     f"nsystems={self._reader.nsystems}"
                 )
 
+        # The common sampler advances integer seeds by epoch. Fold the
+        # rank/seed pair into one reproducible integer before handing it off.
+        sampler_seed = (
+            int(np.random.SeedSequence(seed).generate_state(1)[0])
+            if isinstance(seed, list)
+            else seed
+        )
         sampler = LmdbBatchSampler(
             self._reader,
             shuffle=True,
+            seed=sampler_seed,
             block_targets=self._block_targets,
         )
         self._batch_sampler = _LmdbBatchSamplerTorch(sampler)

@@ -182,7 +182,7 @@ def get_trainer(
         ) -> DpLoaderSet | LmdbDataset:
             """Create a dataset from systems with pattern expansion/conversion."""
             if conversion_will_write_lmdb(dataset_params):
-                validate_lmdb_sampling_options(dataset_params)
+                validate_lmdb_sampling_options(dataset_params, modifier=modifier)
             patterns = dataset_params.get("rglob_patterns")
             systems = process_systems(
                 systems,
@@ -194,12 +194,13 @@ def get_trainer(
             )
             lmdb_path = validate_lmdb_systems(systems, backend_name="PyTorch")
             if lmdb_path is not None:
-                validate_lmdb_sampling_options(dataset_params)
+                validate_lmdb_sampling_options(dataset_params, modifier=modifier)
                 return LmdbDataset(
                     lmdb_path,
                     model_params_single["type_map"],
                     dataset_params["batch_size"],
                     auto_prob_style=dataset_params.get("auto_prob"),
+                    seed=rank_seed,
                 )
             return DpLoaderSet(
                 systems,
@@ -215,13 +216,14 @@ def get_trainer(
             and isinstance(training_systems, str)
             and is_lmdb(training_systems)
         ):
-            validate_lmdb_sampling_options(training_dataset_params)
+            validate_lmdb_sampling_options(training_dataset_params, modifier=modifier)
             auto_prob = training_dataset_params.get("auto_prob", None)
             train_data_single = LmdbDataset(
                 training_systems,
                 model_params_single["type_map"],
                 training_dataset_params["batch_size"],
                 auto_prob_style=auto_prob,
+                seed=rank_seed,
             )
             if (
                 validation_systems is not None
@@ -229,11 +231,15 @@ def get_trainer(
                 and isinstance(validation_systems, str)
                 and is_lmdb(validation_systems)
             ):
-                validate_lmdb_sampling_options(validation_dataset_params)
+                validate_lmdb_sampling_options(
+                    validation_dataset_params, modifier=modifier
+                )
                 validation_data_single = LmdbDataset(
                     validation_systems,
                     model_params_single["type_map"],
                     validation_dataset_params["batch_size"],
+                    auto_prob_style=validation_dataset_params.get("auto_prob"),
+                    seed=rank_seed,
                 )
             elif validation_systems is not None:
                 validation_data_single = _make_dp_loader_set(

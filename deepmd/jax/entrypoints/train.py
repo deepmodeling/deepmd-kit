@@ -190,19 +190,25 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
                 None,
             )
             valid_data = None
-            if task_config.validation_data_params is not None:
-                valid_data = get_data(
-                    dict(task_config.validation_data_params),
-                    task_model.get_rcut(),
-                    train_data.type_map,
-                    None,
-                )
-            return train_data, valid_data, None
+            try:
+                if task_config.validation_data_params is not None:
+                    valid_data = get_data(
+                        dict(task_config.validation_data_params),
+                        task_model.get_rcut(),
+                        train_data.type_map,
+                        None,
+                    )
+                return train_data, valid_data, None
+            except BaseException:
+                # The factory owns these objects until make_task_maps records
+                # them; validation setup or stat-file validation may fail.
+                close_data_systems(train_data, valid_data)
+                raise
 
         train_data_map, valid_data_map, _ = make_task_maps(config, factory)
-        print_data_summaries(train_data_map, valid_data_map)
-
         try:
+            print_data_summaries(train_data_map, valid_data_map)
+
             start_time = time.time()
             model.train(train_data_map, valid_data_map)
             end_time = time.time()

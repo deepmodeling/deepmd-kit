@@ -2936,9 +2936,12 @@ def compute_block_targets(
         )
         blocks = nonempty
 
-    # Compute the same per-system probabilities as prob_sys_size_ext locally.
-    # Keeping this framework-agnostic LMDB module independent of data_system
-    # avoids an import cycle when the legacy adapter imports the LMDB reader.
+    # Keep this import local: data_system's legacy adapter also uses LMDB.
+    # Share the NPY probability calculation after filtering empty blocks.
+    from deepmd.utils.data_system import (
+        prob_sys_size_ext,
+    )
+
     block_weights = np.asarray([weight for _, _, weight in blocks], dtype=float)
     if not np.all(np.isfinite(block_weights)):
         raise ValueError("block weights must be finite")
@@ -2947,16 +2950,10 @@ def compute_block_targets(
     total_block_weight = np.sum(block_weights)
     if total_block_weight <= 0:
         raise ValueError("the sum of block weights should be greater than 0")
-    block_probs = block_weights / total_block_weight
-    sys_probs = np.zeros(nsystems, dtype=np.float64)
-    for block_idx, (stt, end, _weight) in enumerate(blocks):
-        block_frames = np.asarray(system_nframes[stt:end], dtype=float)
-        total_block_frames = np.sum(block_frames)
-        if total_block_frames <= 0:
-            raise ValueError(
-                f"block {stt}:{end} must contain at least one retained frame"
-            )
-        sys_probs[stt:end] = block_frames / total_block_frames * block_probs[block_idx]
+    keywords = "prob_sys_size;" + ";".join(
+        f"{stt}:{end}:{weight}" for stt, end, weight in blocks
+    )
+    sys_probs = prob_sys_size_ext(keywords, nsystems, system_nframes)
 
     # Group systems by block, compute block-level frames and prob
     block_info: list[tuple[list[int], int, float]] = []  # (sys_ids, frames, prob)
