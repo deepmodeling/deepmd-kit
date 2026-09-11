@@ -215,6 +215,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 3),
+                trainable=trainable,
             )
             # 100 is a conservative upper bound
             self.spin_embedding = TypeEmbedNet(
@@ -222,12 +223,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 4),
+                trainable=trainable,
             )
             self.mix_cs_mlp = MLPLayer(
                 2 * self.tebd_dim,
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 5),
+                trainable=trainable,
             )
         else:
             self.chg_embedding = None
@@ -255,10 +258,13 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
         )
 
-        # set trainable
-        for param in self.parameters():
-            param.requires_grad = trainable
+        self._apply_trainable()
         self.compress = False
+
+    def _apply_trainable(self) -> None:
+        """Apply the descriptor-level trainable setting to every parameter."""
+        for param in self.parameters():
+            param.stop_gradient = not self.trainable
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -354,6 +360,11 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         assert self.__class__ == base_class.__class__, (
             "Only descriptors of the same type can share params!"
         )
+        if self.trainable != base_class.trainable:
+            raise ValueError(
+                "DPA3 descriptors must use the same trainable setting before "
+                "sharing parameters."
+            )
         # For DPA3 descriptors, the user-defined share-level
         # shared_level: 0
         # share all parameters in type_embedding, repflow
@@ -384,6 +395,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         self.type_map = type_map
         self.type_embedding.change_type_map(type_map=type_map)
+        # Type remapping replaces the first embedding matrix with a newly
+        # created parameter, so restore the descriptor-level frozen state.
+        self._apply_trainable()
         self.exclude_types = map_pair_exclude_types(self.exclude_types, remap_index)
         self.ntypes = len(type_map)
         repflow = self.repflows
@@ -553,6 +567,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         obj.repflows.layers = paddle.nn.LayerList(
             [RepFlowLayer.deserialize(layer) for layer in repflow_layers]
         )
+        # Deserialization replaces several sublayers after construction, so apply
+        # the descriptor-level setting again to their newly registered parameters.
+        obj._apply_trainable()
         return obj
 
     def forward(
