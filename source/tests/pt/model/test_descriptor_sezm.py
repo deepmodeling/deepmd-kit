@@ -124,6 +124,22 @@ def _descriptor_kwargs(**overrides) -> dict:
     return kwargs
 
 
+def _perturb_parameters(model: torch.nn.Module, seed: int, scale: float = 0.1) -> None:
+    """Move every parameter off its initial value; fresh output projections are zero."""
+    generator = torch.Generator(device=env.DEVICE).manual_seed(seed)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.add_(
+                scale
+                * torch.randn(
+                    parameter.shape,
+                    dtype=parameter.dtype,
+                    device=parameter.device,
+                    generator=generator,
+                )
+            )
+
+
 def _attention_descriptor_kwargs(
     *,
     precision: str = "float32",
@@ -332,17 +348,15 @@ class TestDescrptSeZM(_SeZMTestCase):
                 torch.testing.assert_close(desc, desc_rot, atol=1e-10, rtol=1e-10)
 
     def test_so3_readout_empty_edge_shrinking_schedule(self) -> None:
-        """so3_readout glu/mlp must handle the empty-edge path.
+        """so3_readout glu/mlp must handle a frame without edges.
 
-        With a shrinking ``l_schedule`` and no edges (every atom isolated),
-        ``_forward_blocks`` is skipped so ``x`` keeps the *initial* node degree
-        ``node_ebed_dims[0]``; the readout must truncate it to the final degree
-        ``node_ebed_dims[-1]`` (what ``output_ffn`` is built for) before the FFN.
-        Regression for the readout shape mismatch on isolated atoms.
+        With a shrinking ``l_schedule`` and no edges (every atom isolated), the
+        blocks run on an empty edge set and the readout receives the final node
+        degree ``node_ebed_dims[-1]`` (what ``output_ffn`` is built for).
         """
         coord, atype, _ = _tiny_two_atom_system(self.device, dtype=torch.float32)
         extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
-        # all neighbors masked out -> edge_cache.src.numel() == 0 -> blocks skipped
+        # all neighbors masked out -> an empty edge set
         nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
         for readout in ("glu", "mlp"):
             with self.subTest(so3_readout=readout):
@@ -354,6 +368,33 @@ class TestDescrptSeZM(_SeZMTestCase):
                 )
                 self.assertEqual(desc.shape, (1, 2, 4))
                 self.assertTrue(torch.all(torch.isfinite(desc)))
+
+    def test_edge_free_frame_continues_the_cutoff_limit(self) -> None:
+        """A frame without edges is the limit of a frame whose last edge leaves the cutoff."""
+        model = DescrptSeZM(**_descriptor_kwargs(precision="float64", seed=5))
+        model = model.to(self.device).eval()
+        _perturb_parameters(model, seed=5)
+        atype = torch.tensor([[0, 1]], dtype=torch.int32, device=self.device)
+        empty_nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
+        pair_nlist = torch.tensor(
+            [[[1, -1], [0, -1]]], dtype=torch.int64, device=self.device
+        )
+
+        def descriptor(distance: float, nlist: torch.Tensor) -> torch.Tensor:
+            coord = torch.tensor(
+                [[0.0, 0.0, 0.0], [distance, 0.0, 0.0]],
+                dtype=torch.float64,
+                device=self.device,
+            ).reshape(1, -1)
+            return model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
+
+        isolated = descriptor(10.0, empty_nlist)
+        torch.testing.assert_close(
+            descriptor(model.rcut - 1e-6, pair_nlist), isolated, rtol=0.0, atol=1e-12
+        )
+        self.assertFalse(
+            torch.allclose(descriptor(model.rcut - 0.5, pair_nlist), isolated)
+        )
 
     def test_so3_readout_scalar_path_matches_full_output(self) -> None:
         """The scalar-specialized final FFN matches slicing its full output."""

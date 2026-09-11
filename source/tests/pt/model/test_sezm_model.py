@@ -690,7 +690,6 @@ class TestSeZMModelCompile(unittest.TestCase):
             deg_norm_floor=descriptor.deg_norm_floor,
             edge_envelope=descriptor.edge_envelope,
             radial_basis=descriptor.radial_basis,
-            n_radial=descriptor.radial_basis.n_radial,
             random_gamma=False,
             wigner_calc=descriptor.wigner_calc,
         )

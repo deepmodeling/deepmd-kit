@@ -1346,7 +1346,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 ),
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
-                n_radial=self.radial_basis.n_radial,
                 # Random local-Z roll is a training-only augmentation;
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
@@ -1360,21 +1359,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 5. Compute radial features once (fp32+) ===
         # Shape: (E, (node_init_lmax+1)*C) -> (E, node_init_lmax+1, C)
-        radial_feat = None
         with nvtx_range("radial_embedding"):
-            if edge_cache.src.numel() > 0:
-                radial_feat = rearrange(
-                    self.radial_embedding(edge_cache.edge_rbf),
-                    "E (L C) -> E L C",
-                    L=self.node_init_lmax + 1,
-                    C=self.channels,
-                )  # (E, node_init_lmax+1, C)
-                if self.version >= 1.1:
-                    radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
+            radial_feat = rearrange(
+                self.radial_embedding(edge_cache.edge_rbf),
+                "E (L C) -> E L C",
+                L=self.node_init_lmax + 1,
+                C=self.channels,
+            )  # (E, node_init_lmax+1, C)
+            if self.version >= 1.1:
+                radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
 
         # === Step 6. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
-            if self.use_env_seed and edge_cache.src.numel() > 0:
+            if self.use_env_seed:
                 atype_flat = atype_loc.reshape(-1)  # (N,)
                 spin_flat = (
                     spin.reshape(n_nodes, 3)
@@ -1403,7 +1400,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 8. Geometric Initial Embedding (+ neighbor spin l=1) ===
         with nvtx_range("gie"):
-            if self.use_gie and radial_feat is not None:
+            if self.use_gie:
                 # GIE only needs l>=1, slice radial_feat[:, 1:, :]
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
                 spin_l1_message = (
@@ -1431,26 +1428,25 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 10. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
-            if radial_feat is not None:
-                radial_feat = radial_feat + rearrange(
-                    edge_cache.edge_type_feat, "E C -> E 1 C"
-                )
-                radial_feat = radial_feat.to(dtype=self.dtype)
-                rad_feat_per_block = [
-                    radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
-                ]  # list of (E, lmax+1, C)
-            else:
-                rad_feat_per_block = []
+            radial_feat = radial_feat + rearrange(
+                edge_cache.edge_type_feat, "E C -> E 1 C"
+            )
+            radial_feat = radial_feat.to(dtype=self.dtype)
+            rad_feat_per_block = [
+                radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
+            ]  # list of (E, lmax+1, C)
 
         # === Step 11. Convert to self.dtype and run blocks ===
-        # The block stage is skipped entirely when there are no interaction
-        # blocks (zero-block descriptor) or no valid edges, sparing the working
-        # edge-cache dtype cast that only the blocks consume.
+        # The block stage is skipped entirely for the zero-block descriptor,
+        # sparing the working edge-cache dtype cast that only the blocks consume.
+        # A frame without valid edges takes the same path as any other, so an
+        # isolated atom is one function of its features whether or not the
+        # frame holds other edges.
         with nvtx_range("blocks"):
             x = x.to(dtype=self.dtype)  # (N, D, 1, C)
             if force_embedding is not None:
                 x = x + force_embedding.to(dtype=self.dtype)
-            if self.blocks and edge_cache.src.numel() > 0:
+            if self.blocks:
                 edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
                 with self._compute_mode_ctx(extended_coord.device):
                     x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
@@ -1858,8 +1854,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ----------
         x
             Node features with shape ``(n_rows, D, 1, channels)``. With the
-            blocks skipped (zero-block or empty-edge path) ``D`` is the initial
-            degree; otherwise the pyramid has shrunk it, so the read-out slice to
+            blocks skipped (zero-block descriptor) ``D`` is the initial degree;
+            otherwise the pyramid has shrunk it, so the read-out slice to
             ``node_readout_dim`` is a no-op there.
         n_rows
             Number of node rows fed to the read-out.

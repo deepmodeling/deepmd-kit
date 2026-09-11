@@ -1138,11 +1138,10 @@ class BaseGridNet(nn.Module):
         n_batch, coeff_dim, n_focus, _ = left.shape
         left_view = left.reshape(n_batch, coeff_dim, n_focus, self.n_frames, -1)
         right_view = right.reshape_as(left_view)
-        scalar = torch.einsum(
-            "ndfkc,dk,ndfkc->nfc",
-            left_view,
-            weight,
-            right_view,
+        # A weighted diagonal product-sum over (d, k); written out so that no
+        # contraction-path search runs on the symbolic node count under export.
+        scalar = (left_view * weight[None, :, None, :, None] * right_view).sum(
+            dim=(1, 3)
         )
         return scalar[:, None, :, :]
 

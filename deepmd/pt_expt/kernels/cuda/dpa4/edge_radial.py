@@ -32,6 +32,9 @@ from typing import (
 )
 
 import torch
+from torch._subclasses.fake_tensor import (
+    FakeTensor,
+)
 
 __all__ = [
     "BESSEL",
@@ -211,10 +214,15 @@ class EdgeRadialCuda:
     def series(self, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
         """The two Horner series on the compute device."""
         if self._series is None or self._series[0].device != device:
-            self._series = (
+            series = (
                 torch.tensor(self._env, dtype=torch.float32, device=device),
                 torch.tensor(self._rbf, dtype=torch.float32, device=device),
             )
+            # Series built under a tracing mode are fake tensors bound to that
+            # trace; only real series are kept for later calls.
+            if isinstance(series[0], FakeTensor):
+                return series
+            self._series = series
         return self._series
 
     def __call__(

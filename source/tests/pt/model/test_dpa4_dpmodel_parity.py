@@ -4016,6 +4016,16 @@ class TestDescriptorParity:
         pt_mod, dp_mod, _ = self._build_descr_pair(exclude_types=exclude_types)
         self._assert_descr_parity(pt_mod, dp_mod)
 
+    def test_descriptor_without_edges(self) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair()
+        inp = self._inputs()
+        nlist = np.full_like(inp["nlist"], -1)
+        out_dp = dp_mod.call(
+            inp["coord"].reshape(self.nf, -1), inp["atype_ext"], nlist, mapping=None
+        )
+        out_pt = pt_mod(to_pt(inp["coord"]), to_pt(inp["atype_ext"]), to_pt(nlist))
+        assert_parity(out_dp[0], out_pt[0], rtol=1e-10, atol=1e-12)
+
     def test_descriptor_no_mapping(self) -> None:
         # pt forward accepts mapping=None when neighbor indices are local;
         # mapping is NOT required by either backend
