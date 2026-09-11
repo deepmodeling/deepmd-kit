@@ -6460,13 +6460,17 @@ def gen_json_schema(multi_task: bool = False) -> str:
     str
         JSON schema.
     """
+    from deepmd.utils.json_schema import (
+        with_model_presets,
+    )
+
     arg = Argument(
         "DeePMD-kit",
         dict,
         gen_args(multi_task=multi_task),
         doc=f"DeePMD-kit {__version__}",
     )
-    return json.dumps(generate_json_schema(arg))
+    return json.dumps(with_model_presets(generate_json_schema(arg), multi_task))
 
 
 def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
