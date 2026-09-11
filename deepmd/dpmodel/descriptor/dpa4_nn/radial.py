@@ -81,8 +81,8 @@ class RadialMLP(NativeOP):
     compile and non-compile paths.
 
     The hidden RMSNorm normalizes each edge's radial features by their own RMS.
-    The input ``edge_rbf`` carries the C^3 cutoff envelope and therefore
-    vanishes at ``rcut``; the RMSNorm divides that envelope out, and its ``eps``
+    When the input ``edge_rbf`` includes the C^3 cutoff envelope, it vanishes
+    at ``rcut``. The RMSNorm divides that envelope out, and its ``eps``
     floor is crossed as the edge approaches ``rcut``. On a sparse neighborhood
     (e.g. a dimer) this floor-crossing produces a sharp kink in the potential
     energy surface just inside the cutoff. Setting ``radial_norm=False`` drops
@@ -424,9 +424,39 @@ class BridgingSwitch(NativeOP):
         return t4 * (35.0 + t * (-84.0 + t * (70.0 - 20.0 * t)))
 
 
+def parse_basis_type(basis_type: str) -> tuple[str, bool]:
+    """
+    Split a radial basis type into its family and its ``/fix`` flag.
+
+    Parameters
+    ----------
+    basis_type : str
+        One of ``"bessel"``, ``"gaussian"``, ``"bessel/fix"`` or
+        ``"gaussian/fix"`` (case-insensitive).
+
+    Returns
+    -------
+    tuple[str, bool]
+        The basis family (``"bessel"`` or ``"gaussian"``) and whether the
+        basis parameters are held fixed during training.
+
+    Raises
+    ------
+    ValueError
+        If the basis type is not one of the four supported values.
+    """
+    family, _, suffix = str(basis_type).lower().partition("/")
+    if family not in ("bessel", "gaussian") or suffix not in ("", "fix"):
+        raise ValueError(
+            "`basis_type` must be 'bessel', 'gaussian', 'bessel/fix' or "
+            f"'gaussian/fix', got '{basis_type}'"
+        )
+    return family, suffix == "fix"
+
+
 class RadialBasis(NativeOP):
     """
-    Radial basis with C^3 cutoff envelope.
+    Radial basis with an optional C^3 cutoff envelope.
 
     The trainable radial parameters are stored in ``adam_freqs`` so HybridMuon
     routes them to Adam without weight decay.
@@ -450,8 +480,8 @@ class RadialBasis(NativeOP):
 
         w_n = n * π / rcut, for n = 1..n_radial (in 1/Å)
 
-    The C^3 cutoff envelope is multiplied directly into the output to ensure
-    strict smoothness at ``rcut``.
+    A positive ``exponent`` multiplies the C^3 cutoff envelope directly into
+    the output. Zero selects the raw basis without constructing an envelope.
 
     Parameters
     ----------
@@ -460,16 +490,15 @@ class RadialBasis(NativeOP):
     n_radial : int
         Number of basis functions.
     basis_type : str, optional
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``; the ``/fix`` forms are
+        evaluated like their family and differ only in training, where the
+        PT backend keeps their frequencies or centres fixed.
     precision : str
         Floating-point precision for the radial basis frequencies and outputs.
     exponent : int, optional
-        Exponent for the C^3 cutoff envelope polynomial. Default is 7.
-    apply_envelope : bool, optional
-        Whether :meth:`call` multiplies the raw basis by the C³ envelope.
-        The default ``True`` preserves the DPA4 radial contract. Consumers that
-        apply one shared envelope after combining radial and type features may
-        request the raw basis with ``False``.
+        Exponent for the C^3 cutoff envelope polynomial. Zero disables the
+        envelope. Default is 7.
     """
 
     def __init__(
@@ -479,7 +508,6 @@ class RadialBasis(NativeOP):
         n_radial: int = 10,
         precision: str = DEFAULT_PRECISION,
         exponent: int = 7,
-        apply_envelope: bool = True,
     ) -> None:
         self.rcut = float(rcut)
         if self.rcut <= 0.0:
@@ -488,17 +516,17 @@ class RadialBasis(NativeOP):
         if self.n_radial <= 0:
             raise ValueError("`n_radial` must be positive")
         self.basis_type = str(basis_type).lower()
-        if self.basis_type not in ("bessel", "gaussian"):
-            raise ValueError("`basis_type` must be either 'bessel' or 'gaussian'")
+        # The ``/fix`` suffix governs training only: the PT backend freezes the
+        # basis parameters, the array-API basis evaluates either form alike.
+        self.basis_family, _ = parse_basis_type(self.basis_type)
         self.precision = precision
         self.exponent = int(exponent)
-        self.apply_envelope = bool(apply_envelope)
         prec = PRECISION_DICT[self.precision.lower()]
         self.pi_tensor = math.pi
 
         # Frequencies: n*π/rcut, n=1..n_radial
         # Shape: (1, n_radial), stored as a trainable array.
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             freqs = np.arange(1, self.n_radial + 1, dtype=prec) * (math.pi / self.rcut)
         else:
             freqs = np.linspace(0.0, self.rcut, self.n_radial, dtype=prec)
@@ -506,10 +534,14 @@ class RadialBasis(NativeOP):
         gaussian_width = self.rcut / max(self.n_radial - 1, 1)
         self.gaussian_coeff = -0.5 / (gaussian_width * gaussian_width)
 
-        self.envelope = C3CutoffEnvelope(
-            rcut=self.rcut,
-            exponent=self.exponent,
-            precision=self.precision,
+        self.envelope = (
+            C3CutoffEnvelope(
+                rcut=self.rcut,
+                exponent=self.exponent,
+                precision=self.precision,
+            )
+            if self.exponent != 0
+            else None
         )
 
     def call(self, r: Any) -> Any:
@@ -525,7 +557,7 @@ class RadialBasis(NativeOP):
         -------
         Array
             Radial basis with shape ``(N, n_radial)``. When
-            ``apply_envelope=True``, the output includes the C³ envelope and
+            ``exponent > 0``, the output includes the C³ envelope and
             vanishes smoothly at ``rcut``; otherwise it is the raw basis.
         """
         xp = array_api_compat.array_namespace(r)
@@ -534,7 +566,7 @@ class RadialBasis(NativeOP):
         )
         # === Step 1. Radial basis ===
         # Shape: (N, 1) * (1, n_radial) -> (N, n_radial)
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             # phi_n(r) = w_n * sinc(w_n * r / π)
             x = r * freqs  # (N, n_rbf)
             # torch.sinc(z) = sin(π z) / (π z) with sinc(0) = 1. The array API
@@ -551,7 +583,7 @@ class RadialBasis(NativeOP):
             raw = xp.exp(dr * dr * self.gaussian_coeff)  # (N, n_rbf)
 
         # === Step 2. Apply the optional C³ envelope ===
-        if self.apply_envelope:
+        if self.envelope is not None:
             return raw * self.envelope(r)
         return raw
 
@@ -565,7 +597,6 @@ class RadialBasis(NativeOP):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "exponent": self.exponent,
-                "apply_envelope": self.apply_envelope,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
             },
             "@variables": {"adam_freqs": to_numpy_array(self.adam_freqs)},
@@ -588,7 +619,6 @@ class RadialBasis(NativeOP):
             n_radial=int(config["n_radial"]),
             basis_type=str(config.get("basis_type", "bessel")),
             exponent=int(config.get("exponent", 7)),
-            apply_envelope=bool(config.get("apply_envelope", True)),
             precision=precision,
         )
         if variables is not None:

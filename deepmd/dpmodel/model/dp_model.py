@@ -20,6 +20,26 @@ class DPModelCommon:
     neighbor selection updates and fitting network access.
     """
 
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns of the parameters that take the AdamW path under HybridMuon.
+
+        Returns
+        -------
+        list[str]
+            Substrings of parameter names, composed from the tensors the
+            descriptor declares through its own ``adam_route_patterns``: rows
+            of these matrices that correspond to rarely visited inputs receive
+            almost no gradient, and Adam moves each row with its own gradient
+            history, whereas Muon's orthogonalized update moves every row of a
+            matrix at the same rate.
+        """
+        descriptor = getattr(getattr(self, "atomic_model", None), "descriptor", None)
+        declared = getattr(descriptor, "adam_route_patterns", None)
+        if declared is None:
+            return []
+        return [f"descriptor.{p}" for p in declared()]
+
     @classmethod
     def update_sel(
         cls,

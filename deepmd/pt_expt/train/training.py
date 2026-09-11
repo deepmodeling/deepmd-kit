@@ -76,6 +76,9 @@ from deepmd.loggers.training import (
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
 )
+from deepmd.pt.optimizer.hybrid_muon import (
+    adam_route_patterns,
+)
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
     build_inductor_compile_options,
@@ -2255,6 +2258,7 @@ class Trainer(AbstractTrainer):
                 weight_decay=weight_decay,
             )
         else:
+            adam_patterns = adam_route_patterns(self.models.values())
             self.optimizer = self._create_optimizer(
                 HybridMuonOptimizer,
                 lr=initial_lr,
@@ -2267,6 +2271,7 @@ class Trainer(AbstractTrainer):
                 enable_gram=bool(optimizer_params["enable_gram"]),
                 flash_muon=bool(optimizer_params["flash_muon"]),
                 magma_muon=bool(optimizer_params["magma_muon"]),
+                adam_patterns=adam_patterns,
                 # Sharded parameters are DTensors, and several torch._foreach_*
                 # ops lack sharding propagation, so the per-tensor path applies.
                 use_foreach=False if self.sharding.shards_parameters else None,

@@ -121,7 +121,9 @@ carry the accuracy–cost trade-off:
 - **Radial basis** —
   {ref}`basis_type <model[standard]/descriptor[dpa4c]/basis_type>` and
   {ref}`n_radial <model[standard]/descriptor[dpa4c]/n_radial>` select the
-  analytic basis that feeds the radial network.
+  analytic basis that feeds the radial network; the `bessel/fix` and
+  `gaussian/fix` forms keep the frequencies or centres at their initial
+  values instead of training them.
 
 > [!IMPORTANT]
 > The compressed CUDA path is compiled for `channels` in `{8, 16, 32, 64, 128}`,
@@ -135,8 +137,10 @@ carry the accuracy–cost trade-off:
 The released grades, Nano, Mini, Neo, Air and Plus in ascending cost, pair each
 descriptor width with a fitting width sized against it. They are good starting
 points; `Neo` is the general-purpose default. Each grade is available as a named
-model preset, `dpa4c-nano-v20260901`, `dpa4c-mini-v20260901`,
-`dpa4c-neo-v20260901`, `dpa4c-air-v20260901` and `dpa4c-plus-v20260901`:
+model preset: `dpa4c-nano-v20260911`, `dpa4c-mini-v20260911`,
+`dpa4c-neo-v20260911`, `dpa4c-air-v20260911` and `dpa4c-plus-v20260911` expand
+the radial basis on fixed Gaussian centres (`basis_type` `gaussian/fix`), and
+the `v20260901` presets of the same grades keep the trainable Bessel basis:
 setting `model.preset` fills in `type_map` (all 118 elements), `descriptor` and
 `fitting_net` from the release configuration, and entries written next to the
 preset take precedence, as a whole for `type_map` and key by key inside

@@ -203,6 +203,21 @@ class TestSeZMSpinModel(unittest.TestCase):
             "use_compile": use_compile,
         }
 
+    def test_adam_route_patterns_match_parameters(self) -> None:
+        """The native-spin SeZM model routes the same tensors as the plain model."""
+        model = get_model(self._build_model_params()).to(self.device)
+        patterns = sorted(model.adam_route_patterns())
+        self.assertEqual(
+            patterns,
+            [
+                "descriptor.env_seed_embedding.rbf_proj_layer1.",
+                "descriptor.radial_embedding.net.0.",
+            ],
+        )
+        names = [name for name, _ in model.named_parameters()]
+        for pattern in patterns:
+            self.assertTrue(any(pattern in name for name in names), pattern)
+
     def test_factory_shapes_and_masks(self) -> None:
         """Factory should build SeZMSpinModel with public real-type metadata."""
         model = get_model(self._build_model_params()).to(self.device)

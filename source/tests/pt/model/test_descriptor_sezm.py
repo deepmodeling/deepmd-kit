@@ -646,6 +646,49 @@ class TestDescrptSeZM(_SeZMTestCase):
             with self.subTest(mode=name):
                 self._assert_forward_backward_smoke(**model_kwargs)
 
+    def test_fixed_basis_types_freeze_the_basis(self) -> None:
+        """``/fix`` basis types keep the basis parameters out of training only."""
+        for family in ("bessel", "gaussian"):
+            with self.subTest(family=family):
+                torch.manual_seed(7)
+                free = self._assert_forward_backward_smoke(
+                    **_descriptor_kwargs(channels=4, basis_type=family)
+                )
+                torch.manual_seed(7)
+                fixed = self._assert_forward_backward_smoke(
+                    **_descriptor_kwargs(channels=4, basis_type=f"{family}/fix")
+                )
+                self.assertEqual(fixed.radial_basis.basis_type, f"{family}/fix")
+                self.assertEqual(fixed.radial_basis.basis_family, family)
+                self.assertFalse(fixed.radial_basis.adam_freqs.requires_grad)
+                self.assertTrue(free.radial_basis.adam_freqs.requires_grad)
+                torch.testing.assert_close(
+                    fixed.radial_basis.adam_freqs, free.radial_basis.adam_freqs
+                )
+                # Every other parameter is unaffected by the suffix.
+                frozen = [
+                    name for name, p in fixed.named_parameters() if not p.requires_grad
+                ]
+                self.assertEqual(frozen, ["radial_basis.adam_freqs"])
+                # The same weights give the same descriptor, and the suffix
+                # survives a serialization round trip.
+                fixed.load_state_dict(free.state_dict())
+                coord, atype, nlist = _tiny_two_atom_system(
+                    self.device, dtype=torch.float32
+                )
+                extended_coord = coord.reshape(1, -1)
+                torch.testing.assert_close(
+                    fixed(extended_coord, atype, nlist, mapping=None, comm_dict=None)[
+                        0
+                    ],
+                    free(extended_coord, atype, nlist, mapping=None, comm_dict=None)[0],
+                )
+                self.assertEqual(
+                    fixed.serialize()["config"]["basis_type"], f"{family}/fix"
+                )
+        with self.assertRaises(ValueError):
+            DescrptSeZM(**_descriptor_kwargs(channels=4, basis_type="gaussian-frozen"))
+
     def test_forward_with_attention_variants(self) -> None:
         """Test forward/backward smoke paths for attention-based variants."""
         cases = {

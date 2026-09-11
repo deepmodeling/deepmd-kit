@@ -210,6 +210,17 @@ _DPA4_VERSIONS: dict[str, dict[str, Any]] = {
         },
         "grades": ("nano", "mini", "neo", "air", "plus", "pro", "max", "ultra"),
     },
+    # One C^3 envelope on the messages with no envelope on the radial basis,
+    # and fixed Gaussian centres in place of trainable Bessel frequencies.
+    "v20260911": {
+        "descriptor": {
+            "edge_norm": [False, True, True],
+            "sandwich_norm": [True, False, True, False],
+            "env_exp": 5,
+            "basis_type": "gaussian/fix",
+        },
+        "grades": ("nano", "mini", "neo", "air", "plus", "pro", "max", "ultra"),
+    },
 }
 
 # === DPA4C ===
@@ -249,6 +260,11 @@ _DPA4C_GRADES: dict[str, dict[str, dict[str, Any]]] = {
 }
 _DPA4C_VERSIONS: dict[str, dict[str, Any]] = {
     "v20260901": {"grades": ("nano", "mini", "neo", "air", "plus")},
+    # Fixed Gaussian centres in place of trainable Bessel frequencies.
+    "v20260911": {
+        "descriptor": {"basis_type": "gaussian/fix"},
+        "grades": ("nano", "mini", "neo", "air", "plus"),
+    },
 }
 
 

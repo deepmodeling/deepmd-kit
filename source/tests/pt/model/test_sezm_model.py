@@ -3467,3 +3467,31 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
                 rtol=force_grad_rtol,
                 msg=f"force-grad-sq mismatch at {name}",
             )
+
+
+class TestSeZMModelAdamRouting(unittest.TestCase):
+    """The model composes the AdamW routing patterns its descriptor declares."""
+
+    def test_adam_route_patterns_match_parameters(self) -> None:
+        """Every declared AdamW pattern names existing matrices; the base declares none."""
+        model = get_model(_build_lora_sezm_model_params())
+        patterns = model.adam_route_patterns()
+        self.assertEqual(len(patterns), 2)
+        names = [name for name, _ in model.named_parameters()]
+        for pattern in patterns:
+            matched = [n for n in names if pattern in n]
+            self.assertTrue(matched, pattern)
+            self.assertTrue(
+                any(dict(model.named_parameters())[n].dim() >= 2 for n in matched),
+                pattern,
+            )
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt.model.model.model import (
+            BaseModel,
+        )
+
+        plain = SimpleNamespace(atomic_model=SimpleNamespace(descriptor=object()))
+        self.assertEqual(BaseModel.adam_route_patterns(plain), [])

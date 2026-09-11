@@ -135,6 +135,7 @@ if TYPE_CHECKING:
     from collections.abc import (
         Callable,
         Iterable,
+        Sequence,
     )
 
 # ============================================================================
@@ -706,6 +707,29 @@ def _compute_muon_nesterov_updates(
     ]
 
 
+def adam_route_patterns(models: Iterable[Any]) -> list[str]:
+    """
+    Collect the AdamW name patterns declared by the task models.
+
+    Parameters
+    ----------
+    models : Iterable[Any]
+        The task models; each may implement ``adam_route_patterns``.
+
+    Returns
+    -------
+    list[str]
+        Sorted union of the declared patterns.
+    """
+    return sorted(
+        {
+            pattern
+            for model in models
+            for pattern in getattr(model, "adam_route_patterns", list)()
+        }
+    )
+
+
 def get_adam_route(
     param_name: str | None,
 ) -> str:
@@ -829,6 +853,8 @@ class HybridMuonOptimizer(Optimizer):
       update.
     - Parameters with final effective name segment starting with ``adamw_``
       (case-insensitive): Adam with decoupled weight decay (AdamW-style).
+    - Matrix parameters whose full name contains one of ``adam_patterns``:
+      Adam with decoupled weight decay instead of Muon.
     - 1D parameters: standard Adam update.
     - Parameters are routed by effective shape (singleton dimensions removed).
     - ``muon_mode="2d"``:
@@ -881,6 +907,13 @@ class HybridMuonOptimizer(Optimizer):
         with AdamW-style decoupled decay. Not applied to 1D Adam parameters.
     adam_betas : tuple[float, float]
         Adam beta coefficients with default (0.9, 0.95).
+    adam_patterns : Sequence[str]
+        Case-insensitive substrings of full parameter names. Matrix parameters
+        whose name contains one of them take the AdamW path (decoupled weight
+        decay) instead of Muon; vector parameters are on Adam regardless.
+        The trainer fills this from the model's ``adam_route_patterns`` — the
+        tensors that only a small part of the data constrains, such as the
+        layers reading a descriptor's radial basis or the fitting network.
     lr_adjust : float
         Learning rate adjustment mode for Muon scaling and Adam learning rate.
         - If lr_adjust <= 0: use match-RMS scaling for Muon,
@@ -949,6 +982,7 @@ class HybridMuonOptimizer(Optimizer):
         flash_muon: bool = True,
         magma_muon: bool = True,
         use_foreach: bool | None = None,
+        adam_patterns: Sequence[str] = (),
     ) -> None:
         # === Step 1. Validate routing mode ===
         muon_mode = str(muon_mode).lower()
@@ -972,6 +1006,9 @@ class HybridMuonOptimizer(Optimizer):
         super().__init__(params, defaults)
 
         # === Step 3. Build parameter id -> name mapping ===
+        # Name patterns, like the names themselves, are routing configuration
+        # of this run and stay out of ``defaults`` and the optimizer state.
+        self._adam_patterns = tuple(str(p).lower() for p in adam_patterns)
         self._param_name_map: dict[int, str] = {}
         if named_parameters is not None:
             self.set_param_names(named_parameters)
@@ -1019,6 +1056,13 @@ class HybridMuonOptimizer(Optimizer):
         self._adam_signature: _GradientSignature | None = None
         self._per_parameter_adam_clock = False
         self._bias_corrections_migrated = False
+
+    def _matches_adam_pattern(self, param_name: str | None) -> bool:
+        """Return whether the full parameter name contains one of ``adam_patterns``."""
+        if param_name is None or not self._adam_patterns:
+            return False
+        lowered = param_name.lower()
+        return any(pattern in lowered for pattern in self._adam_patterns)
 
     def set_param_names(
         self, named_parameters: Iterable[tuple[str, torch.Tensor]]
@@ -1607,9 +1651,15 @@ class HybridMuonOptimizer(Optimizer):
                     adam_no_decay.append({"param": p, "name": param_name})
                     continue
 
-                # === Step 3. Non-matrix effective shape in current mode → AdamW-style ===
+                # === Step 3. Pattern-routed or non-matrix effective shape → AdamW-style ===
+                # A parameter whose full name contains one of ``adam_patterns``
+                # takes the Adam path with decoupled decay instead of Muon: the
+                # orthogonalized Muon step moves every row of a matrix at the
+                # same rate, including rows that only a small part of the data
+                # constrains, whereas Adam moves a row in proportion to its own
+                # gradient history.
                 matrix_shape = get_matrix_view_shape(effective_shape, muon_mode)
-                if matrix_shape is None:
+                if matrix_shape is None or self._matches_adam_pattern(param_name):
                     adam_decay.append({"param": p, "name": param_name})
                     continue
 

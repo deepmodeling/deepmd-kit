@@ -16,6 +16,9 @@ from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
     C3CutoffEnvelope as C3CutoffEnvelopeDP,
 )
 from deepmd.dpmodel.descriptor.dpa4_nn.radial import InnerClamp as InnerClampDP
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    parse_basis_type,
+)
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
@@ -188,6 +191,11 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         if getattr(sub, "trainable", True) is False:
             for p in sub.parameters(recurse=True):
                 p.requires_grad_(False)
+    # A ``/fix`` radial basis keeps its frequencies or centres, as in the pt
+    # backend.
+    for sub in module.modules():
+        if type(sub).__name__ == "RadialBasis" and parse_basis_type(sub.basis_type)[1]:
+            sub.adam_freqs.requires_grad_(False)
     return module
 
 
@@ -198,6 +206,19 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
 @torch_module
 class DescrptDPA4(DescrptDPA4DP):
     _update_sel_cls = UpdateSel
+
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding and
+        the radial projection of the environment seed, which read the radial
+        basis and whose rows for rarely visited separations receive almost no
+        gradient.
+        """
+        return [
+            "radial_embedding.net.0.",
+            "env_seed_embedding.rbf_proj_layer1.",
+        ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

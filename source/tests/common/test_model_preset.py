@@ -168,6 +168,28 @@ def test_dpa4_versions_differ_only_in_normalization_options() -> None:
         assert f"dpa4-{grade}-v20260901" in MODEL_PRESETS
 
 
+def test_v20260911_fixes_the_basis_and_uses_one_envelope() -> None:
+    for grade in ("nano", "mini", "neo", "air", "plus", "pro", "max", "ultra"):
+        old = get_model_preset(f"dpa4-{grade}-v20260901")
+        new = get_model_preset(f"dpa4-{grade}-v20260911")
+        assert old["type_map"] == new["type_map"]
+        assert old["fitting_net"] == new["fitting_net"]
+        assert {
+            key: new["descriptor"][key]
+            for key in set(old["descriptor"]) | set(new["descriptor"])
+            if old["descriptor"].get(key) != new["descriptor"].get(key)
+        } == {"env_exp": 5, "basis_type": "gaussian/fix"}
+    for grade in ("nano", "mini", "neo", "air", "plus"):
+        old = get_model_preset(f"dpa4c-{grade}-v20260901")
+        new = get_model_preset(f"dpa4c-{grade}-v20260911")
+        assert old["fitting_net"] == new["fitting_net"]
+        assert {
+            key: new["descriptor"][key]
+            for key in set(old["descriptor"]) | set(new["descriptor"])
+            if old["descriptor"].get(key) != new["descriptor"].get(key)
+        } == {"basis_type": "gaussian/fix"}
+
+
 def test_presets_carry_no_runtime_options() -> None:
     for name, preset in MODEL_PRESETS.items():
         for region in ("descriptor", "fitting_net"):

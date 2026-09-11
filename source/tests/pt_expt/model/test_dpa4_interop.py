@@ -109,6 +109,40 @@ def _forward_smoke(model: EnergyModel) -> dict:
 
 
 class TestDPA4Interop:
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    def test_single_envelope_normalization_and_roundtrip(self, basis_type: str) -> None:
+        """Preserve the integer envelope configuration and its energy/force function."""
+        config = copy.deepcopy(_DPA4_RAW_CONFIG)
+        config["descriptor"].update(env_exp=5, basis_type=basis_type)
+        model_params = _normalize_model(config)
+        assert model_params["descriptor"]["env_exp"] == 5
+        pt_model = pt_get_model(model_params).to(env.DEVICE).eval()
+        generator = torch.Generator(device=env.DEVICE).manual_seed(29)
+        with torch.no_grad():
+            for parameter in pt_model.parameters():
+                parameter.add_(
+                    0.01
+                    * torch.randn(
+                        parameter.shape,
+                        dtype=parameter.dtype,
+                        device=parameter.device,
+                        generator=generator,
+                    )
+                )
+        expt_model = BaseModel.deserialize(pt_model.serialize()).to(env.DEVICE).eval()
+        for model in (pt_model, expt_model):
+            descriptor = model.atomic_model.descriptor
+            assert descriptor.env_exp == 5
+            assert descriptor.radial_basis.exponent == 0
+            assert descriptor.radial_basis.envelope is None
+        expected = _forward_smoke(pt_model)
+        actual = _forward_smoke(expt_model)
+        assert expected["force"].abs().max().item() > 1e-10
+        for key in ("energy", "force", "virial"):
+            torch.testing.assert_close(
+                actual[key], expected[key], rtol=1e-9, atol=1e-10
+            )
+
     def test_serialize_layout(self, pt_dpa4_model) -> None:
         """The pt serialize layout matches the interop override's expectations."""
         ser = pt_dpa4_model.serialize()

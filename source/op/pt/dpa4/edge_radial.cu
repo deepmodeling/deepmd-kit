@@ -8,6 +8,8 @@
 //   env[e]     = keep[e] * E_p1(r)
 //   rbf[e, n]  = keep[e] * phi_n(r) * E_p2(r)
 //
+// An empty basis-envelope series selects the raw basis without E_p2.
+//
 // with the C3 cutoff envelope written in its cancellation-free factorization
 //
 //   u = clamp((rcut - r) / rcut, 0, 1),  x = 1 - u,  E_p(r) = u^4 * S_p(x)
@@ -45,8 +47,9 @@ constexpr int kMaxSeries = 16;
 /// Basis families with an implementation.
 enum BasisType : int { kBessel = 0, kGaussian = 1 };
 
-/// The C3 envelope and its derivative with respect to the distance.
+/// The optional C3 envelope and its derivative with respect to the distance.
 ///
+/// An empty series denotes the identity factor with zero derivative.
 /// ``u`` saturates outside the cutoff, where both the value and the derivative
 /// are identically zero, which is what makes the potential energy surface C3
 /// continuous at ``rcut``.
@@ -56,6 +59,11 @@ __device__ __forceinline__ void envelope_pair(float r,
                                               int order,
                                               float& value,
                                               float& derivative) {
+  if (order == 0) {
+    value = 1.f;
+    derivative = 0.f;
+    return;
+  }
   const float u = fminf(fmaxf((1.f - r * inv_rcut), 0.f), 1.f);
   const float x = 1.f - u;
   float s = series[order - 1];
@@ -211,8 +219,13 @@ void check_inputs(const torch::Tensor& edge_len,
   TORCH_CHECK(
       env_series.numel() <= kMaxSeries && rbf_series.numel() <= kMaxSeries,
       "dpa4_edge_radial: envelope order beyond the staged limit");
-  TORCH_CHECK(env_series.numel() >= 2 && rbf_series.numel() >= 2,
-              "dpa4_edge_radial: the envelope series needs at least two terms");
+  TORCH_CHECK(
+      env_series.numel() >= 2,
+      "dpa4_edge_radial: the edge envelope series needs at least two terms");
+  TORCH_CHECK(
+      rbf_series.numel() == 0 || rbf_series.numel() >= 2,
+      "dpa4_edge_radial: the basis envelope series must be empty or have "
+      "at least two terms");
   TORCH_CHECK(freqs.numel() > 0,
               "dpa4_edge_radial: the basis must be non-empty");
 }

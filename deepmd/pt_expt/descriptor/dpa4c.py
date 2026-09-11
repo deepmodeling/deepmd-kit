@@ -15,6 +15,9 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    parse_basis_type,
+)
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
 from deepmd.pt_expt.common import (
     torch_module,
@@ -79,6 +82,15 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         if not getattr(submodule, "trainable", True):
             for parameter in submodule.parameters(recurse=True):
                 parameter.requires_grad_(False)
+    # A ``/fix`` radial basis keeps its frequencies or centres, as in the pt
+    # backend's DPA4.  The parameter keeps its name, so checkpoints of either
+    # form load under the other.
+    for submodule in module.modules():
+        if (
+            type(submodule).__name__ == "RadialBasis"
+            and parse_basis_type(submodule.basis_type)[1]
+        ):
+            submodule.adam_freqs.requires_grad_(False)
     return module
 
 
@@ -102,6 +114,15 @@ class DescrptDPA4C(DescrptDPA4CDP):
     """
 
     _update_sel_cls = UpdateSel
+
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding,
+        which reads the radial basis and whose rows for rarely visited
+        separations receive almost no gradient.
+        """
+        return ["radial_embedding.layers.0."]
 
     #: Artifacts whose element type is not the ``float32`` the kernel consumes.
     _COMPRESSION_BUFFER_DTYPES: ClassVar[dict[str, torch.dtype]] = {

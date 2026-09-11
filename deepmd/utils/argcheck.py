@@ -608,13 +608,19 @@ def descrpt_se_zm_args() -> list[Argument]:
     - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
     doc_rcut = "The cut-off radius."
     doc_env_exp = (
-        "C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
-        "`rbf_env_exp` controls radial basis function envelope decay; "
-        "`edge_env_exp` controls message passing edge weight envelope decay. "
+        "C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]` "
+        "specifies the radial-basis and message-passing envelopes separately. "
+        "A zero radial-basis exponent disables that envelope. "
+        "An integer specifies only the message-passing envelope exponent and "
+        "disables the radial-basis envelope. "
         "Larger values give weaker suppression."
     )
     doc_channels = "Total channels per (l,m) coefficient."
-    doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
+    doc_basis_type = (
+        "Radial basis type. Supported values are `bessel`, `gaussian`, `bessel/fix` and `gaussian/fix`. "
+        "The `/fix` forms keep the Bessel frequencies or Gaussian centres at their initial values instead of training them, "
+        "so that separations no training frame constrains cannot move them."
+    )
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_edge_norm = "Channel RMSNorm on the cutoff-vanishing feature branches. A bool switches every site together: `false` removes the RMSNorm from the radial-network hidden layers, the environment-seed FiLM scale/shift logits and the cross-focus competition scalars, and uses unit-floor residual scaling for post-SO(2) messages. A list of three bools `[radial, film, focus]` switches the sites individually; the post-SO(2) treatment follows the first (radial) entry. Recommended: `[false, true, false]` — the radial-site norms amplify noise where the radial features vanish at the cutoff and produce a spurious long-range force step, while the FiLM and focus norms are safe to keep."
@@ -919,7 +925,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument(
             "env_exp",
-            list[int],
+            [int, list[int]],
             optional=True,
             default=[7, 5],
             doc=doc_env_exp,

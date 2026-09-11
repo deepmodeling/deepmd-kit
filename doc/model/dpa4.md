@@ -138,10 +138,16 @@ release a preset reproduces: a later release with different settings gets a new
 version, and existing presets are never changed. The available DPA4 presets
 are, in ascending cost:
 
-- `v20260901`, the current release grades: `dpa4-nano-v20260901`,
-  `dpa4-mini-v20260901`, `dpa4-neo-v20260901`, `dpa4-air-v20260901`,
-  `dpa4-plus-v20260901`, `dpa4-pro-v20260901`, `dpa4-max-v20260901` and
-  `dpa4-ultra-v20260901`.
+- `v20260911`, the current release grades: `dpa4-nano-v20260911`,
+  `dpa4-mini-v20260911`, `dpa4-neo-v20260911`, `dpa4-air-v20260911`,
+  `dpa4-plus-v20260911`, `dpa4-pro-v20260911`, `dpa4-max-v20260911` and
+  `dpa4-ultra-v20260911`. They expand the radial basis on fixed Gaussian
+  centres (`basis_type` `gaussian/fix`) and apply a single cutoff envelope to
+  the message-passing edge weights (`env_exp` 5).
+- `v20260901`, the previous release grades with trainable Bessel functions and
+  two envelopes: `dpa4-nano-v20260901`, `dpa4-mini-v20260901`,
+  `dpa4-neo-v20260901`, `dpa4-air-v20260901`, `dpa4-plus-v20260901`,
+  `dpa4-pro-v20260901`, `dpa4-max-v20260901` and `dpa4-ultra-v20260901`.
 - `v20260820`, the earlier baseline grades: `dpa4-nano-v20260820`,
   `dpa4-mini-v20260820`, `dpa4-neo-v20260820`, `dpa4-air-v20260820`,
   `dpa4-plus-v20260820` and `dpa4-pro-v20260820`.
@@ -912,12 +918,18 @@ only the `l = 0` scalar channels are read out and passed to the fitting network:
 
 ### Radial basis and smooth cutoff
 
-Every edge uses a radial basis (`basis_type`, with `n_radial` functions)
-multiplied by a smooth envelope whose value and first three derivatives vanish
-at `rcut`. This smoothness matters for MD because nonsmooth descriptor cutoffs
-would be inherited by the force derivatives. The two `env_exp` exponents control
-the radial-basis envelope and the message-passing edge weights respectively;
-larger values keep an envelope closer to one for more of the cutoff range.
+Every edge uses a radial basis (`basis_type`, with `n_radial` functions):
+Bessel functions (`bessel`) or Gaussians (`gaussian`), whose frequencies or
+centres are trained by default. The `bessel/fix` and `gaussian/fix` forms keep
+them at their initial values, so that separations no training frame constrains
+cannot move them. The message-passing edge weights carry a smooth envelope
+whose value and first three derivatives vanish at `rcut`. This smoothness
+matters for MD because nonsmooth descriptor cutoffs would be inherited by the
+force derivatives. `env_exp` written as one integer sets the exponent of that
+envelope and leaves the radial basis bare; written as a list
+`[rbf_env_exp, edge_env_exp]` it applies a second envelope to the radial basis
+itself. Larger values keep an envelope closer to one for more of the cutoff
+range.
 
 ### Attention and focus streams
 
