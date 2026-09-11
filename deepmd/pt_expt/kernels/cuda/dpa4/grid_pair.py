@@ -54,7 +54,8 @@ def _forward_fake(
     from_grid: torch.Tensor,
 ) -> torch.Tensor:
     del right, to_grid, from_grid
-    return torch.empty_like(left)
+    # The CUDA implementation allocates outputs from contiguous operands.
+    return left.new_empty(left.shape)
 
 
 def _backward_fake(
@@ -65,7 +66,7 @@ def _backward_fake(
     from_grid: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     del grad_out, to_grid, from_grid
-    return torch.empty_like(left), torch.empty_like(right)
+    return left.new_empty(left.shape), right.new_empty(right.shape)
 
 
 def _setup_context(ctx: Any, inputs: tuple[Any, ...], output: torch.Tensor) -> None:

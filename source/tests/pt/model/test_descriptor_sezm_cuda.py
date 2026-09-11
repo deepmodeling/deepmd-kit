@@ -556,6 +556,25 @@ class TestSeZMGridPairCuda(unittest.TestCase):
                     scale = ref.abs().max()
                     self.assertLess(((got - ref).abs().max() / scale).item(), 5e-6)
 
+    def test_fake_layout_matches_noncontiguous_inputs(self) -> None:
+        """Forward and backward fake layouts match the CUDA allocations for views."""
+        left, right, to_grid, from_grid_t = self._case(2, 12, 32, 24)
+        left = left.transpose(1, 2).contiguous().transpose(1, 2)
+        right = right.transpose(1, 2).contiguous().transpose(1, 2)
+        self.assertFalse(left.is_contiguous())
+        self.assertFalse(right.is_contiguous())
+        inputs = (left, right, to_grid, from_grid_t)
+        output = grid_pair(*inputs)
+        for op, args in (
+            (torch.ops.deepmd.dpa4_grid_pair.default, inputs),
+            (
+                torch.ops.deepmd.dpa4_grid_pair_backward.default,
+                (torch.ones_like(output), *inputs),
+            ),
+        ):
+            with self.subTest(operator=str(op)):
+                torch.library.opcheck(op, args, test_utils=("test_faketensor",))
+
 
 @unittest.skipUnless(CUDA_ZONAL, "requires the CUDA dpa4_zonal_scatter operator")
 class TestSeZMZonalScatterCuda(unittest.TestCase):
@@ -643,6 +662,26 @@ class TestSeZMZonalScatterCuda(unittest.TestCase):
             (fused_scale.grad - scale.grad).abs().max() / scale.grad.abs().max()
         ).item()
         self.assertLess(rel, 5e-6)
+
+    def test_fake_layout_matches_noncontiguous_inputs(self) -> None:
+        """Forward and backward fake layouts match the CUDA allocations for views."""
+        n_node = 2
+        zonal, radial, dst, order, row_ptr, scale, _ = self._case(2, n_node, 2, 32)
+        zonal = zonal.T.contiguous().T
+        radial = radial.transpose(1, 2).contiguous().transpose(1, 2)
+        self.assertFalse(zonal.is_contiguous())
+        self.assertFalse(radial.is_contiguous())
+        inputs = (zonal, radial, dst, order, row_ptr, scale, n_node)
+        output = zonal_scatter(*inputs)
+        for op, args in (
+            (torch.ops.deepmd.dpa4_zonal_scatter.default, inputs),
+            (
+                torch.ops.deepmd.dpa4_zonal_scatter_backward.default,
+                (torch.ones_like(output), zonal, radial, dst, scale),
+            ),
+        ):
+            with self.subTest(operator=str(op)):
+                torch.library.opcheck(op, args, test_utils=("test_faketensor",))
 
     def test_channel_widths_beyond_one_block(self) -> None:
         # A lane owns one channel of a 32-wide block, so wider features sweep
