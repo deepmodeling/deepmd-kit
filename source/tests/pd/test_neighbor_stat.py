@@ -4,9 +4,16 @@ import unittest
 
 import dpdata
 import numpy as np
+import paddle
 
 from deepmd.entrypoints.neighbor_stat import (
     neighbor_stat,
+)
+from deepmd.pd.utils.env import (
+    DEVICE,
+)
+from deepmd.pd.utils.neighbor_stat import (
+    NeighborStatOP,
 )
 
 from ..seed import (
@@ -67,3 +74,40 @@ class TestNeighborStat(unittest.TestCase):
                     if not mixed_type:
                         ret.append(0)
                     np.testing.assert_array_equal(max_nbor_size, ret)
+
+
+class TestNeighborStatOP(unittest.TestCase):
+    def test_virtual_atoms_do_not_affect_statistics(self) -> None:
+        """Ignore virtual atoms as both statistics centers and neighbors."""
+        # Atom 1 is virtual and overlaps atom 0. Without both masks, it either
+        # sets the minimum distance to zero or inflates the maximum type-0 count.
+        coord = paddle.to_tensor(
+            [
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0],
+                    [3.0, 0.0, 0.0],
+                ]
+            ],
+            dtype=paddle.float64,
+            place=DEVICE,
+        ).reshape([1, -1])
+        atype = paddle.to_tensor([[0, -1, 0, 1]], dtype=paddle.int64, place=DEVICE)
+        expected_min_rr2 = np.array([[1.0, np.inf, 1.0, 4.0]])
+
+        for cell in (
+            None,
+            10.0 * paddle.eye(3, dtype=paddle.float64).reshape([1, 9]).to(DEVICE),
+        ):
+            for mixed_types in (False, True):
+                with self.subTest(cell=cell is not None, mixed_types=mixed_types):
+                    min_rr2, max_nnei = NeighborStatOP(
+                        ntypes=2,
+                        rcut=1.1,
+                        mixed_types=mixed_types,
+                    )(coord, atype, cell)
+
+                    np.testing.assert_allclose(min_rr2.numpy(), expected_min_rr2)
+                    expected_max_nnei = [[1]] if mixed_types else [[1, 0]]
+                    np.testing.assert_array_equal(max_nnei.numpy(), expected_max_nnei)
