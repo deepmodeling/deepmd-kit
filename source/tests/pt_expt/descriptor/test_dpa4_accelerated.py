@@ -92,7 +92,7 @@ def _make_descriptor(
 )
 @pytest.mark.parametrize("env_exp", [5, [7, 5]])
 def test_fp32_only_cuda_bindings(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     precision: str,
     expected_bound: bool,
     env_exp: int | list[int],
@@ -107,6 +107,8 @@ def test_fp32_only_cuda_bindings(
         monkeypatch.setenv(name, "0")
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     monkeypatch.setattr(edge_radial, "op_available", lambda: True)
+    # Binding eligibility is independent of native operator registration.
+    monkeypatch.setattr(edge_radial, "ensure_registered", lambda: None)
     monkeypatch.setattr(grid_pair, "op_available", lambda: True)
     monkeypatch.setattr(zonal_scatter, "op_available", lambda: True)
 
