@@ -4534,6 +4534,10 @@ def optimizer_adam() -> list[Argument]:
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "AdamW epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = "Decoupled weight decay coefficient for the AdamW optimizer."
     return [
         Argument(
@@ -4549,6 +4553,13 @@ def optimizer_adamw() -> list[Argument]:
             optional=True,
             default=0.999,
             doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta2,
+        ),
+        Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
@@ -5547,7 +5558,11 @@ def loss_unimol() -> list[Argument]:
     )
     doc_noise = "Scale of the coordinate noise, in the units of the coordinates."
     doc_data_seed = (
-        "Seed of the corruption, combined with the epoch and the frame index."
+        "Seed of the corruption, combined with the frame index and a per-visit "
+        "draw so that a molecule is corrupted differently each time it comes "
+        "round. A run is reproducible from it only when one process decodes the "
+        "data (DP_LMDB_NUM_WORKERS=0); with decoder workers the draws follow how "
+        "frames were distributed."
     )
     return [
         Argument(
@@ -5604,7 +5619,11 @@ def loss_unimol() -> list[Argument]:
             doc=doc_random_token_prob,
         ),
         Argument(
-            "noise_type", str, optional=True, default="uniform", doc=doc_noise_type
+            "noise_type",
+            str,
+            optional=True,
+            default="uniform",
+            doc=doc_noise_type,
         ),
         Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
         Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),

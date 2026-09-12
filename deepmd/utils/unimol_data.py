@@ -50,6 +50,12 @@ def _encode_array(arr: np.ndarray) -> dict[str, Any]:
 def read_unimol_lmdb(path: str) -> Iterator[dict[str, Any]]:
     """Stream molecules out of a Uni-Mol LMDB file.
 
+    .. warning::
+       Upstream stores each record as a Python pickle, and unpickling runs
+       whatever the file says. Convert only files you obtained from a source you
+       trust; the conversion this module performs is one-off, and the deepmd
+       dataset it writes is msgpack, which carries no such risk.
+
     Parameters
     ----------
     path : str
@@ -70,8 +76,8 @@ def read_unimol_lmdb(path: str) -> Iterator[dict[str, Any]]:
         with env.begin() as txn:
             cursor = txn.cursor()
             for _, value in cursor:
-                # The upstream records are pickles written by the dataset
-                # authors; only convert files you trust.
+                # See the warning above: this executes whatever the file
+                # says, because that is the format upstream published.
                 yield pickle.loads(value)
     finally:
         env.close()
@@ -144,9 +150,14 @@ def convert_unimol_lmdb(
     names = list(type_map) if type_map is not None else list(UNIMOL_ELEMENTS)
     index_of = {sym: i for i, sym in enumerate(names)}
 
-    if os.path.exists(dst):
-        shutil.rmtree(dst)
-    env = lmdb.open(dst, map_size=map_size)
+    # Build beside the destination and move it into place at the end. A source
+    # error, a malformed record or an RDKit failure part way through would
+    # otherwise have destroyed a dataset that took hours to write and left
+    # nothing, or half of something, in its place.
+    staging = f"{dst}.partial"
+    if os.path.exists(staging):
+        shutil.rmtree(staging)
+    env = lmdb.open(staging, map_size=map_size)
     fmt = "012d"
     frame_idx = 0
     molecules = 0
@@ -212,8 +223,21 @@ def convert_unimol_lmdb(
                 "system_info": {"nframes": frame_idx},
             }
             txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
-    finally:
+    except BaseException:
         env.close()
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    env.close()
+    if frame_idx == 0:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise ValueError(
+            f"{src} produced no usable frame, so there is nothing to train on; "
+            f"{skipped} record(s) were skipped for holding one atom or an "
+            "element outside the type_map"
+        )
+    if os.path.exists(dst):
+        shutil.rmtree(dst)
+    os.rename(staging, dst)
     return {"molecules": molecules, "frames": frame_idx, "skipped": skipped}
 
 

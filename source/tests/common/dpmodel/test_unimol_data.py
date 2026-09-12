@@ -159,6 +159,27 @@ class TestUniMolDataConversion(unittest.TestCase):
         second = np.asarray(reader[0]["unimol_token_target"]).copy()
         self.assertFalse(np.array_equal(first, second))
 
+    def test_the_transform_survives_a_worker_process(self) -> None:
+        """LMDB decoding runs in spawned workers, which pickle the decoder config.
+
+        Each batch sends a fresh copy, so anything the transform carries is
+        reset over and over. A counter would therefore freeze the corruption,
+        and a closure would not have made it across at all.
+        """
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        transform = make_unimol_data_transform(type_map, seed=1)
+        frame = {
+            "coord": np.array(
+                [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]] * 4
+            ),
+            "atype": np.array([0, 1, 2, 3] * 4, dtype=np.int64),
+        }
+        drawn = set()
+        for _ in range(12):
+            revived = pickle.loads(pickle.dumps(transform))
+            drawn.add(revived(frame, 0)["unimol_token_target"].tobytes())
+        self.assertGreater(len(drawn), 1)
+
     def test_the_objective_supplies_its_own_transform(self) -> None:
         """A trainer installs whatever the loss declares, and nothing else.
 
@@ -195,7 +216,9 @@ class TestUniMolDataConversion(unittest.TestCase):
         """Rewriting it as [MASK] would quietly corrupt an ordinary atom.
 
         Uni-Mol knows 26 elements. A model whose type_map goes beyond them
-        tokenizes the extras as [UNK], and [UNK] has no type to come back to.
+        tokenizes the extras as [UNK], and [UNK] has no element to come back to,
+        so such an atom would return as [MASK] once it happened to be selected.
+        The frame is refused whatever the draw does.
         """
         wider = ["C", "N", "O", "H", "Mg", "[MASK]"]
         transform = make_unimol_data_transform(wider, seed=1)
@@ -206,8 +229,9 @@ class TestUniMolDataConversion(unittest.TestCase):
             # the third atom is magnesium, which Uni-Mol has no token for
             "atype": np.array([0, 1, 4, 3], dtype=np.int64),
         }
-        with self.assertRaisesRegex(ValueError, "cannot express"):
-            transform(frame, 0)
+        for _ in range(8):
+            with self.assertRaisesRegex(ValueError, "cannot express"):
+                transform(frame, 0)
 
         # Without it, the same frame goes through.
         ordinary = make_unimol_data_transform(["C", "N", "O", "H", "[MASK]"], seed=1)

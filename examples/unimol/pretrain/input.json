@@ -88,7 +88,8 @@
     },
     "validation_data": {
       "systems": "./unimol_valid",
-      "batch_size": 16
+      "batch_size": 16,
+      "_comment": "convert the released valid.lmdb the same way as train.lmdb"
     },
     "numb_steps": 1000000,
     "seed": 1,

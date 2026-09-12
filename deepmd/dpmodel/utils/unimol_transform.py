@@ -25,6 +25,7 @@ marked with ``# noqa: NPY002``.
 """
 
 import contextlib
+import os
 from collections.abc import (
     Callable,
     Iterator,
@@ -34,6 +35,7 @@ from collections.abc import (
 import numpy as np
 
 __all__ = [
+    "UniMolFrameTransform",
     "add_bos_eos",
     "center_coordinates",
     "crop_atoms",
@@ -197,10 +199,17 @@ def mask_points(
 
         def noise_f(n):  # noqa: ANN001, ANN202
             return np.random.uniform(low=-noise, high=noise, size=(n, 3))  # noqa: NPY002
-    else:
+    elif noise_type == "none":
 
         def noise_f(n):  # noqa: ANN001, ANN202
             return 0.0
+    else:
+        # Upstream's fall-through silently adds no noise at all, which turns a
+        # misspelt setting into a run that trains on clean coordinates.
+        raise ValueError(
+            f"unknown noise_type {noise_type!r}; it must be one of "
+            "'uniform', 'normal', 'trunc_normal' or 'none'"
+        )
 
     with numpy_seed(seed, epoch, index):
         sz = len(tokens)
@@ -289,14 +298,34 @@ def edge_type(tokens: np.ndarray, num_types: int) -> np.ndarray:
     return (tokens[:, None] * num_types + tokens[None, :]).astype(np.int64)
 
 
-def make_unimol_data_transform(
-    type_map: Sequence[str],
-    *,
-    seed: int = 1,
-    mask_token: str = "[MASK]",
-    **mask_kwargs: float | str,
-) -> Callable[[dict, int], dict]:
-    """Build the per-frame transform a deepmd data reader installs.
+_EPOCH_STREAMS: dict[tuple[int, int], np.random.Generator] = {}
+
+
+def _next_epoch(stream: int, seed: int | None) -> int:
+    """Draw the number that stands in for upstream's epoch.
+
+    Upstream seeds each sample with ``(seed, epoch, index)``, so a molecule is
+    corrupted differently in every epoch. There is no epoch to read here, and no
+    counter would do: decoding runs in worker processes that receive a fresh
+    copy of the transform for every batch, so anything the transform carries is
+    reset over and over and the corruption freezes. The generator therefore
+    lives in the process, keyed by the transform's stream, and each call draws
+    the next number from it.
+
+    A run is reproducible only when one process decodes it; with workers, the
+    draws depend on how frames were distributed. That is upstream's situation
+    too, whose stream also depends on its loader count.
+    """
+    key = (stream, os.getpid())
+    rng = _EPOCH_STREAMS.get(key)
+    if rng is None:
+        entropy = [stream, os.getpid()] if seed is None else [seed, stream, os.getpid()]
+        _EPOCH_STREAMS[key] = rng = np.random.default_rng(entropy)
+    return int(rng.integers(1 << 62))
+
+
+class UniMolFrameTransform:
+    """The per-frame corruption a deepmd data reader installs.
 
     The reader hands over one already-converted frame, so the conformer draw,
     the hydrogen policy and the size cap are behind us; what remains is centring
@@ -310,12 +339,8 @@ def make_unimol_data_transform(
     shorter frame would not match the batch it belongs to. The converter applies
     the size cap instead.
 
-    Upstream draws a fresh corruption for the same molecule in every epoch. The
-    transform reproduces that by counting how often it has been handed each
-    frame and using that count where upstream uses the epoch number, so a
-    molecule is corrupted differently each time it comes round. With more than
-    one loader process each keeps its own count, which changes the stream but
-    not its statistics.
+    This is a class rather than a closure because the reader may decode in
+    worker processes, which pickle whatever the decoder configuration carries.
 
     Parameters
     ----------
@@ -323,8 +348,142 @@ def make_unimol_data_transform(
         Element names of the model. It must contain ``mask_token``, since a
         masked atom has to be expressible as a type.
     seed : int
-        Together with the frame index and the visit count, this seeds the
+        Together with the frame index and the epoch draw, this seeds the
         corruption, the way upstream seeds it per sample and epoch.
+    mask_token : str
+        Name of the pseudo-element standing for ``[MASK]``.
+    **mask_kwargs
+        Passed to :func:`mask_points`.
+    """
+
+    def __init__(
+        self,
+        type_map: Sequence[str],
+        *,
+        seed: int = 1,
+        mask_token: str = "[MASK]",
+        **mask_kwargs: float | str,
+    ) -> None:
+        from deepmd.dpmodel.descriptor.unimol import (
+            unimol_vocabulary,
+        )
+
+        vocabulary = unimol_vocabulary()
+        token_of = {sym: i for i, sym in enumerate(vocabulary)}
+        type_map = list(type_map)
+        if mask_token not in type_map:
+            raise ValueError(
+                f"the model type_map must contain {mask_token!r} for Uni-Mol "
+                "pretraining, because masked atoms are carried as a pseudo-element"
+            )
+        if "epoch" in mask_kwargs:
+            raise TypeError(
+                "the epoch is not fixed at build time: the transform draws a new "
+                "one every time it sees a frame, so that a molecule is corrupted "
+                "differently each time it comes round"
+            )
+        type_index = {sym: i for i, sym in enumerate(type_map)}
+        self.vocabulary = vocabulary
+        self.seed = seed
+        self.mask_kwargs = mask_kwargs
+        self.pad = token_of["[PAD]"]
+        self.mask_idx = token_of[mask_token]
+        self.type_to_token = np.array(
+            [token_of.get(sym, token_of["[UNK]"]) for sym in type_map], dtype=np.int64
+        )
+        self.token_to_type = np.array(
+            [type_index.get(sym, 0) for sym in vocabulary], dtype=np.int64
+        )
+        # An element Uni-Mol has no token for tokenizes to [UNK], and [UNK] has
+        # no element to come back to: the atom would return as [MASK] if it were
+        # corrupted, and as whatever [UNK] mapped to if it were not. Refuse the
+        # frame instead of quietly changing an ordinary atom.
+        self.type_map = type_map
+        self.untokenizable = np.array(
+            [i for i, sym in enumerate(type_map) if sym not in token_of],
+            dtype=np.int64,
+        )
+        # Upstream draws a replacement over all 26 of its elements. A model
+        # whose type_map covers fewer of them could not express the others, and
+        # mapping them onto [MASK] would quietly turn a random-element atom into
+        # a masked one, so they are excluded from the draw instead. With the
+        # full element set, which is what the example configures, nothing is
+        # excluded and the distribution is upstream's.
+        specials = [
+            token_of[s] for s in ("[PAD]", "[CLS]", "[SEP]", "[UNK]", mask_token)
+        ]
+        self.excluded = [
+            *specials,
+            *(
+                i
+                for i, sym in enumerate(vocabulary)
+                if i not in specials and sym not in type_index
+            ),
+        ]
+        # Identifies this transform's draw sequence within a process, so that
+        # the training and the validation set do not share one.
+        self.stream = int(np.random.SeedSequence().generate_state(1)[0])
+
+    def __call__(self, frame: dict, index: int) -> dict:
+        """Corrupt one frame and attach the labels the objective reads."""
+        coord = np.asarray(frame["coord"], dtype=np.float64).reshape(-1, 3)
+        atype = np.asarray(frame["atype"], dtype=np.int64).reshape(-1)
+        if self.untokenizable.size and bool(np.any(np.isin(atype, self.untokenizable))):
+            unknown = sorted(
+                {self.type_map[t] for t in atype[np.isin(atype, self.untokenizable)]}
+            )
+            raise ValueError(
+                f"frame {index} holds element(s) {unknown} that Uni-Mol's "
+                "vocabulary cannot express; leave those molecules out, or train "
+                "on a type_map that Uni-Mol covers"
+            )
+        coord = center_coordinates(coord)
+        tokens = self.type_to_token[atype]
+
+        corrupted = mask_points(
+            tokens,
+            coord,
+            num_types=len(self.vocabulary),
+            special_indices=self.excluded,
+            pad_idx=self.pad,
+            mask_idx=self.mask_idx,
+            seed=self.seed,
+            epoch=_next_epoch(self.stream, self.seed),
+            index=index,
+            **self.mask_kwargs,
+        )
+        frame = dict(frame)
+        frame["coord"] = corrupted["coordinates"].astype(np.float64)
+        # Every token that can come out of the corruption is one the type_map
+        # expresses: the input was checked above, and the random replacement
+        # draws from the expressible elements only.
+        frame["atype"] = self.token_to_type[corrupted["tokens"]]
+        # Targets stay in Uni-Mol token space, which is what the element head
+        # predicts over; unselected atoms carry the padding id.
+        frame["unimol_token_target"] = corrupted["targets"].astype(np.int64)
+        frame["unimol_coord_target"] = coord.astype(np.float64)
+        frame["find_unimol_token_target"] = np.float32(1.0)
+        frame["find_unimol_coord_target"] = np.float32(1.0)
+        return frame
+
+
+def make_unimol_data_transform(
+    type_map: Sequence[str],
+    *,
+    seed: int = 1,
+    mask_token: str = "[MASK]",
+    **mask_kwargs: float | str,
+) -> Callable[[dict, int], dict]:
+    """Build the per-frame transform a deepmd data reader installs.
+
+    See :class:`UniMolFrameTransform`, which this returns.
+
+    Parameters
+    ----------
+    type_map : Sequence[str]
+        Element names of the model, including ``mask_token``.
+    seed : int
+        Seeds the corruption, together with the frame index and the epoch draw.
     mask_token : str
         Name of the pseudo-element standing for ``[MASK]``.
     **mask_kwargs
@@ -335,98 +494,9 @@ def make_unimol_data_transform(
     callable
         ``transform(frame, index) -> frame``, matching the reader's hook.
     """
-    from deepmd.dpmodel.descriptor.unimol import (
-        unimol_vocabulary,
+    return UniMolFrameTransform(
+        type_map, seed=seed, mask_token=mask_token, **mask_kwargs
     )
-
-    vocabulary = unimol_vocabulary()
-    token_of = {sym: i for i, sym in enumerate(vocabulary)}
-    type_map = list(type_map)
-    if mask_token not in type_map:
-        raise ValueError(
-            f"the model type_map must contain {mask_token!r} for Uni-Mol "
-            "pretraining, because masked atoms are carried as a pseudo-element"
-        )
-    type_index = {sym: i for i, sym in enumerate(type_map)}
-    unk = token_of["[UNK]"]
-    pad = token_of["[PAD]"]
-    type_to_token = np.array(
-        [token_of.get(sym, unk) for sym in type_map], dtype=np.int64
-    )
-    # A token the model cannot express must not be written back as [MASK],
-    # which would turn an ordinary atom into a corrupted one. Such tokens are
-    # marked here and refused if they ever appear.
-    token_to_type = np.array(
-        [type_index.get(sym, -1) for sym in vocabulary], dtype=np.int64
-    )
-    # Upstream draws a replacement over all 26 of its elements. A model whose
-    # type_map covers fewer of them could not express the others, and mapping
-    # them onto [MASK] would quietly turn a random-element atom into a masked
-    # one, so they are excluded from the draw instead. With the full element
-    # set, which is what the example configures, nothing is excluded and the
-    # distribution is upstream's.
-    if "epoch" in mask_kwargs:
-        raise TypeError(
-            "the epoch is not fixed at build time: the transform advances it "
-            "every time it sees a frame, so that a molecule is corrupted "
-            "differently each time it comes round"
-        )
-    specials = [token_of[s] for s in ("[PAD]", "[CLS]", "[SEP]", "[UNK]", mask_token)]
-    inexpressible = [
-        i
-        for i, sym in enumerate(vocabulary)
-        if i not in specials and sym not in type_index
-    ]
-    excluded = [*specials, *inexpressible]
-    # One counter for the whole transform rather than one entry per frame: a
-    # dataset of a hundred million frames would otherwise grow a dictionary
-    # entry for each. Advancing it on every call still gives a frame a fresh
-    # corruption every time it comes round, which is what the epoch number
-    # does upstream.
-    calls = [0]
-
-    def transform(frame: dict, index: int) -> dict:
-        calls[0] += 1
-        epoch = calls[0]
-        coord = np.asarray(frame["coord"], dtype=np.float64).reshape(-1, 3)
-        atype = np.asarray(frame["atype"], dtype=np.int64).reshape(-1)
-        coord = center_coordinates(coord)
-        tokens = type_to_token[atype]
-
-        corrupted = mask_points(
-            tokens,
-            coord,
-            num_types=len(vocabulary),
-            special_indices=excluded,
-            pad_idx=pad,
-            mask_idx=token_of[mask_token],
-            seed=seed,
-            epoch=epoch,
-            index=index,
-            **mask_kwargs,
-        )
-        frame = dict(frame)
-        frame["coord"] = corrupted["coordinates"].astype(np.float64)
-        new_types = token_to_type[corrupted["tokens"]]
-        if np.any(new_types < 0):
-            unknown = sorted(
-                {vocabulary[tok] for tok in corrupted["tokens"][new_types < 0]}
-            )
-            raise ValueError(
-                f"frame {index} holds element(s) {unknown} that the model's "
-                "type_map cannot express; convert the data with a type_map that "
-                "covers them, or leave those molecules out"
-            )
-        frame["atype"] = new_types
-        # Targets stay in Uni-Mol token space, which is what the element head
-        # predicts over; unselected atoms carry the padding id.
-        frame["unimol_token_target"] = corrupted["targets"].astype(np.int64)
-        frame["unimol_coord_target"] = coord.astype(np.float64)
-        frame["find_unimol_token_target"] = np.float32(1.0)
-        frame["find_unimol_coord_target"] = np.float32(1.0)
-        return frame
-
-    return transform
 
 
 def unimol_frame_transform(

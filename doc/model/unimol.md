@@ -98,9 +98,17 @@ transposes every weight, so there is no "just add a prefix" path.
 
 ## Converting the pretraining data
 
+The released archive holds `train.lmdb` and `valid.lmdb`; the example
+configuration expects both, converted separately:
+
 ```sh
-python -m deepmd.utils.unimol_data ligands.lmdb ./unimol_train --add-2d-conformer
+python -m deepmd.utils.unimol_data ligands/train.lmdb ./unimol_train --add-2d-conformer
+python -m deepmd.utils.unimol_data ligands/valid.lmdb ./unimol_valid --add-2d-conformer
 ```
+
+Upstream stores each molecule as a Python pickle, so the converter unpickles
+whatever the file contains; run it only on data from a source you trust. What it
+writes is msgpack, which carries no such risk, and the conversion happens once.
 
 One conformer becomes one frame, so ordinary frame sampling stands in for
 upstream's per-epoch conformer draw. The two-dimensional RDKit conformer that
