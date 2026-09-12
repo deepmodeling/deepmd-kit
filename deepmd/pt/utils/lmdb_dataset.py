@@ -407,9 +407,6 @@ class LmdbDataset(Dataset):
             for bl in block_lines:
                 log.info(f"  {bl}")
 
-    def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        self._reader.set_noise(noise_settings)
-
     @property
     def index(self) -> list[int]:
         """Number of batches per logical LMDB dataset."""

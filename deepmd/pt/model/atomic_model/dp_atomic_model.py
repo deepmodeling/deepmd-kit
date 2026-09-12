@@ -73,11 +73,7 @@ class DPAtomicModel(BaseAtomicModel):
     @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
-        return (
-            self.fitting_net.output_def()
-            if self.fitting_net is not None
-            else self.coord_denoise_net.output_def()
-        )
+        return self.fitting_net.output_def()
 
     @torch.jit.export
     def get_rcut(self) -> float:

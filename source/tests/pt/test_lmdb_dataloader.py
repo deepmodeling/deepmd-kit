@@ -335,10 +335,6 @@ class TestTrainerInterface:
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         ds.preload_and_modify_all_data_torch()
 
-    def test_set_noise_noop(self, lmdb_dir):
-        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
-        ds.set_noise({})
-
 
 # ============================================================
 # DataLoader iteration

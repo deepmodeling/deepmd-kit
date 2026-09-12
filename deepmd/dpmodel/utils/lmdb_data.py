@@ -2595,9 +2595,6 @@ class LmdbDataReader:
             row = ", ".join(items[i : i + per_row])
             log.info(f"  nloc groups: {row}")
 
-    def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        """No-op for now."""
-
     # --- Properties ---
 
     @property
