@@ -65,6 +65,7 @@ from deepmd.dpmodel.utils.exclude_mask import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
+    frame_id_from_n_node,
     graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.seed import (
@@ -1373,7 +1374,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x_scalar, _ = self._run_graph(
             graph,
             atype_flat,
-            nf=nf,
             n_out_nodes=nf * nloc,
             force_embedding=force_embedding,
             charge_spin=charge_spin,
@@ -1430,10 +1430,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ``default_chg_spin`` when configured, shape validation,
             broadcast to ``nf``); ``call_graph`` is the one owner of that
             step on the graph route. ``nf`` is recovered from
-            ``graph.n_node.shape[0]`` (a static shape, safe under
-            ``torch.export``); each frame's node block must therefore hold
-            exactly ``N // nf`` nodes, which single-rank carry-all graphs
-            built from a rectangular ``(nf, nloc)`` input always satisfy.
+            ``graph.n_node.shape[0]``; each node receives the condition of
+            its frame according to the actual counts in ``graph.n_node``,
+            including when those counts differ between frames.
 
         Returns
         -------
@@ -1455,7 +1454,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ref=graph.edge_vec,
         )
         x_scalar, _ = self._run_graph(
-            graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
+            graph, atype, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
         )
         # ``_run_graph`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
@@ -1469,7 +1468,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph: NeighborGraph,
         atype_flat: Array,
         *,
-        nf: int = 1,
         n_out_nodes: int | None = None,
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
@@ -1505,8 +1503,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             geometry/autograd leaf, ``edge_mask`` flags valid edges.
         atype_flat
             Flat node types with shape (N,).
-        nf
-            Frame count (only consumed by the charge/spin FiLM conditioning).
         n_out_nodes
             Leading node count kept for the read-out (owned atoms). ``None``
             keeps all nodes (``atype_flat.shape[0]``).
@@ -1557,8 +1553,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             type_ebed = self._apply_charge_spin_embedding(
                 type_ebed,
                 charge_spin,
-                nf=nf,
-                nloc=n_out_nodes // nf,
+                graph.n_node,
             )
         n_nodes = type_ebed.shape[0]
 
@@ -2012,9 +2007,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self,
         type_ebed: Array,
         charge_spin: Array,
-        *,
-        nf: int,
-        nloc: int,
+        n_node: Array,
     ) -> Array:
         """
         Add frame-level charge and spin conditions to scalar type features.
@@ -2022,23 +2015,21 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Parameters
         ----------
         type_ebed
-            Flattened type embeddings with shape (nf * nloc, channels).
+            Flattened type embeddings with shape (N, channels).
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
-        nf
-            Number of frames.
-        nloc
-            Number of local atoms.
+        n_node
+            Number of nodes in each frame, with shape (nf,).
 
         Returns
         -------
         Array
-            Conditioned type embeddings with shape (nf * nloc, channels).
+            Conditioned type embeddings with shape (N, channels).
         """
         xp = array_api_compat.array_namespace(type_ebed, charge_spin)
         condition = self.charge_spin_embedding(xp.astype(charge_spin, type_ebed.dtype))
-        condition = xp.broadcast_to(condition[:, None, :], (nf, nloc, self.channels))
-        return type_ebed + xp.reshape(condition, type_ebed.shape)
+        frame_index = frame_id_from_n_node(n_node, n_total=type_ebed.shape[0])
+        return type_ebed + xp.take(condition, frame_index, axis=0)
 
     def _apply_spin_embedding(
         self,
