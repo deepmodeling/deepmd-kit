@@ -10,6 +10,14 @@ a specific class or function.
 __version__ = "0.1.0"
 
 _LAZY = {
+    "Assembly": (".grouped", "Assembly"),
+    "ComponentSpec": (".grouped", "ComponentSpec"),
+    "GroupSpec": (".grouped", "GroupSpec"),
+    "PoolMask": (".grouped", "PoolMask"),
+    "SiteSelector": (".grouped", "SiteSelector"),
+    "SubstitutionSpec": (".grouped", "SubstitutionSpec"),
+    "GroupMarkerResult": (".grouped", "GroupMarkerResult"),
+    "mark_groups": (".grouped", "mark_groups"),
     "ConditionManager": (".conditions", "ConditionManager"),
     "DPAConditionError": (".conditions", "DPAConditionError"),
     "cross_validate": (".cv", "cross_validate"),
@@ -25,6 +33,8 @@ _LAZY = {
     "MFTFineTuner": (".mft", "MFTFineTuner"),
     "DPAPredictor": (".predictor", "DPAPredictor"),
     "DPATrainer": (".trainer", "DPATrainer"),
+    "Regularizer": (".regularizer", "Regularizer"),
+    "Calibrator": (".calibrator", "Calibrator"),
 }
 
 __all__ = list(_LAZY)

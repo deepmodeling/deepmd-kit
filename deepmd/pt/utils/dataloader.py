@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 import os
+from collections.abc import (
+    Iterator,
+)
 from multiprocessing.dummy import (
     Pool,
 )
@@ -16,6 +19,7 @@ import torch.multiprocessing
 from torch.utils.data import (
     DataLoader,
     Dataset,
+    Sampler,
     WeightedRandomSampler,
 )
 from torch.utils.data._utils.collate import (
@@ -34,6 +38,12 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
+)
+from deepmd.pt.utils.grouped import (
+    distributed_grouped_frame_batches,
+    grouped_frame_batches,
+    has_group_requirement,
+    load_group_ids_for_system,
 )
 from deepmd.pt.utils.utils import (
     mix_entropy,
@@ -162,23 +172,71 @@ class DpLoaderSet(Dataset):
         else:
             self.batch_sizes = batch_size * np.ones(len(systems), dtype=int)
         assert len(self.systems) == len(self.batch_sizes)
+        self._group_complete_batches = False
+        self._shuffle = shuffle
+        self._seed = seed
+        self._build_dataloaders()
+
+    def _build_dataloaders(self) -> None:
+        """Build per-system dataloaders."""
+        self.sampler_list = []
+        self.dataloaders = []
+        self.index = []
+        self.total_batch = 0
         for system, batch_size in zip(self.systems, self.batch_sizes):
-            if dist.is_available() and dist.is_initialized():
+            distributed = dist.is_available() and dist.is_initialized()
+            system_sampler = None
+            batch_sampler = None
+            if self._group_complete_batches:
+                group_ids = load_group_ids_for_system(system.data_system)
+                if group_ids is None:
+                    # GroupPropertyLoss falls back to one group per frame
+                    # (torch.arange(nframes)) when group_id is absent, i.e.
+                    # "no explicit grouping" means every frame stands alone.
+                    # Mirror that here: treating a whole system as a single
+                    # group instead would silently merge unrelated frames
+                    # into one oversized batch (ignoring batch_size) and can
+                    # break DDP by handing an implicit single group to more
+                    # ranks than it has frames for.
+                    group_ids = np.arange(len(system), dtype=np.int64)
+                if distributed:
+                    batch_sampler = GroupDistributedBatchSampler(
+                        group_ids,
+                        max_frames=int(batch_size),
+                        num_replicas=dist.get_world_size(),
+                        rank=dist.get_rank(),
+                        shuffle=self._shuffle,
+                        seed=self._seed,
+                    )
+                else:
+                    batch_sampler = GroupCompleteBatchSampler(
+                        group_ids,
+                        max_frames=int(batch_size),
+                        shuffle=self._shuffle,
+                        seed=self._seed,
+                    )
+            elif distributed:
                 system_sampler = DistributedSampler(system)
                 self.sampler_list.append(system_sampler)
+            if batch_sampler is None:
+                system_dataloader = DataLoader(
+                    dataset=system,
+                    batch_size=int(batch_size),
+                    num_workers=0,  # Should be 0 to avoid too many threads forked
+                    sampler=system_sampler,
+                    collate_fn=collate_batch,
+                    shuffle=(
+                        not (dist.is_available() and dist.is_initialized())
+                    )  # distributed sampler will do the shuffling by default
+                    and self._shuffle,
+                )
             else:
-                system_sampler = None
-            system_dataloader = DataLoader(
-                dataset=system,
-                batch_size=int(batch_size),
-                num_workers=0,  # Should be 0 to avoid too many threads forked
-                sampler=system_sampler,
-                collate_fn=collate_batch,
-                shuffle=(
-                    not (dist.is_available() and dist.is_initialized())
-                )  # distributed sampler will do the shuffling by default
-                and shuffle,
-            )
+                system_dataloader = DataLoader(
+                    dataset=system,
+                    batch_sampler=batch_sampler,
+                    num_workers=0,
+                    collate_fn=collate_batch,
+                )
             self.dataloaders.append(system_dataloader)
             self.index.append(len(system_dataloader))
             self.total_batch += len(system_dataloader)
@@ -216,6 +274,9 @@ class DpLoaderSet(Dataset):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
+        if has_group_requirement(data_requirement):
+            self._group_complete_batches = True
+            self._build_dataloaders()
 
     def print_summary(
         self,
@@ -261,6 +322,115 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                     [torch.as_tensor(d[key]) for d in batch]
                 )
     return result
+
+
+def _normalize_group_sampler_seed(
+    seed: int | list[int] | tuple[int, ...] | None,
+) -> int | None:
+    if seed is None:
+        return None
+    if isinstance(seed, (list, tuple)):
+        if not seed:
+            return None
+        # DDP group batching first builds a global group order, then slices it
+        # by rank.  Every rank must therefore use the same base seed.
+        return int(seed[0])
+    return int(seed)
+
+
+class GroupDistributedBatchSampler(Sampler[list[int]]):
+    """Yield group-complete frame batches for one distributed rank."""
+
+    def __init__(
+        self,
+        group_ids: np.ndarray,
+        max_frames: int,
+        num_replicas: int,
+        rank: int,
+        shuffle: bool = True,
+        seed: int | list[int] | tuple[int, ...] | None = None,
+    ) -> None:
+        self.group_ids = np.asarray(group_ids, dtype=np.int64)
+        self.max_frames = max(int(max_frames), 1)
+        self.num_replicas = int(num_replicas)
+        self.rank = int(rank)
+        self.shuffle = shuffle
+        self.seed = _normalize_group_sampler_seed(seed)
+        self._epoch = 0
+        self._batches = self._make_batches()
+
+    def _make_batches(self) -> list[list[int]]:
+        base_seed = 0 if self.seed is None else self.seed
+        # Partition groups across ranks with an epoch-INDEPENDENT seed so every
+        # rank always agrees on the split.  If the group shuffle depended on a
+        # per-rank ``_epoch`` (which drifts when ranks restart ``cycle_iterator``
+        # at different times), the ``group_items[rank::num_replicas]`` slices
+        # would come from different shuffles and duplicate/drop groups.
+        rng = np.random.default_rng(base_seed)
+        batches = distributed_grouped_frame_batches(
+            self.group_ids,
+            self.max_frames,
+            num_replicas=self.num_replicas,
+            rank=self.rank,
+            shuffle=self.shuffle,
+            rng=rng,
+        )
+        # Vary only THIS rank's own batch order per epoch.  Reordering a rank's
+        # batches never moves groups between ranks, so the split stays intact
+        # while training still sees a fresh batch order each epoch even if the
+        # per-rank epoch counters are not in lock-step.
+        if self.shuffle and self._epoch > 0:
+            local = np.random.default_rng(
+                base_seed + 1 + self.rank + self._epoch * (self.num_replicas + 1)
+            )
+            order = local.permutation(len(batches))
+            batches = [batches[int(ii)] for ii in order]
+        return batches
+
+    def __iter__(self) -> Iterator[list[int]]:
+        self._batches = self._make_batches()
+        self._epoch += 1
+        yield from self._batches
+
+    def __len__(self) -> int:
+        return len(self._batches)
+
+
+class GroupCompleteBatchSampler(Sampler[list[int]]):
+    """Yield frame batches that never split a group inside one system."""
+
+    def __init__(
+        self,
+        group_ids: np.ndarray,
+        max_frames: int,
+        shuffle: bool = True,
+        seed: int | list[int] | tuple[int, ...] | None = None,
+    ) -> None:
+        self.group_ids = np.asarray(group_ids, dtype=np.int64)
+        self.max_frames = max(int(max_frames), 1)
+        self.shuffle = shuffle
+        self.seed = _normalize_group_sampler_seed(seed)
+        self._epoch = 0
+        self._batches = self._make_batches()
+
+    def _make_batches(self) -> list[list[int]]:
+        rng = np.random.default_rng(
+            None if self.seed is None else self.seed + self._epoch
+        )
+        return grouped_frame_batches(
+            self.group_ids,
+            self.max_frames,
+            shuffle=self.shuffle,
+            rng=rng,
+        )
+
+    def __iter__(self) -> Iterator[list[int]]:
+        self._batches = self._make_batches()
+        self._epoch += 1
+        yield from self._batches
+
+    def __len__(self) -> int:
+        return len(self._batches)
 
 
 def get_weighted_sampler(

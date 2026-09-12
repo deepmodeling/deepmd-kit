@@ -646,3 +646,76 @@ class TestMultiPropertyFreezeRoundtrip:
         assert isinstance(metrics.mae, dict)
         assert set(metrics.mae.keys()) == {"homo", "lumo"}
         assert metrics.predictions.shape == (50, 2)
+
+
+class _AffineCalibrator:
+    """Stand-in for a fitted ridge Calibrator: y = slope * x + offset."""
+
+    def __init__(self, slope: float, offset: float) -> None:
+        self.slope = slope
+        self.offset = offset
+
+    def predict_from_arrays(self, predictions, *, data=None, fmt=None):
+        return np.asarray(predictions, dtype=float) * self.slope + self.offset
+
+
+def test_calibrated_uncertainty_is_rescaled_with_the_predictions():
+    """Calibrating only the mean would leave `uncertainty` on the raw model's
+    scale. For y = a*x + b the spread has to scale by |a|, and the raw spread
+    stays available alongside the raw predictions.
+    """
+    from dpa_adapt.predictor import (
+        _MEMBERS_KEY,
+        DPAPredictor,
+    )
+    from dpa_adapt.utils.dotdict import (
+        DotDict,
+    )
+
+    members = np.array([[[1.0], [2.0]], [[3.0], [6.0]], [[5.0], [10.0]]])
+    predictor = DPAPredictor.__new__(DPAPredictor)
+    predictor._calibrator = _AffineCalibrator(slope=3.0, offset=1.0)
+
+    result = predictor._apply_calibrator(
+        DotDict(
+            {
+                "predictions": np.mean(members, axis=0),
+                "uncertainty": np.std(members, axis=0),
+                _MEMBERS_KEY: members,
+            }
+        ),
+        calibrated=True,
+    )
+
+    assert _MEMBERS_KEY not in result
+    np.testing.assert_allclose(result.predictions, np.mean(members, axis=0) * 3.0 + 1.0)
+    np.testing.assert_allclose(result.uncertainty, np.std(members, axis=0) * 3.0)
+    np.testing.assert_allclose(result.raw_uncertainty, np.std(members, axis=0))
+    np.testing.assert_allclose(result.raw_predictions, np.mean(members, axis=0))
+
+
+def test_members_key_never_leaks_into_an_uncalibrated_result():
+    from dpa_adapt.predictor import (
+        _MEMBERS_KEY,
+        DPAPredictor,
+    )
+    from dpa_adapt.utils.dotdict import (
+        DotDict,
+    )
+
+    members = np.array([[[1.0]], [[3.0]]])
+    predictor = DPAPredictor.__new__(DPAPredictor)
+    predictor._calibrator = None
+
+    result = predictor._apply_calibrator(
+        DotDict(
+            {
+                "predictions": np.mean(members, axis=0),
+                "uncertainty": np.std(members, axis=0),
+                _MEMBERS_KEY: members,
+            }
+        ),
+        calibrated=True,
+    )
+    assert _MEMBERS_KEY not in result
+    np.testing.assert_allclose(result.uncertainty, np.std(members, axis=0))

@@ -58,6 +58,172 @@ _LOG = logging.getLogger("dpa_adapt")
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
+# Canonical order of the composable descriptor-pooling primitives.  Feature
+# columns are concatenated in this order, so the tuple must stay fixed --
+# reordering it would silently shift the meaning of every pooled feature.
+POOLING_PRIMITIVES: tuple[str, ...] = ("mean", "sum", "std", "max", "min")
+
+
+def parse_pooling(spec: Any) -> tuple[str, ...]:
+    """Parse a pooling spec into a canonical, de-duplicated primitive tuple.
+
+    Accepts a ``"+"``-joined string (e.g. ``"mean+std"``) or a sequence of
+    primitive names.  The output is de-duplicated and ordered by
+    :data:`POOLING_PRIMITIVES`, so ``"std+mean"`` and ``"mean+std"`` both yield
+    ``("mean", "std")`` and the concatenated feature layout is input-order
+    independent.
+    """
+    if isinstance(spec, str):
+        tokens = [tok for tok in spec.split("+") if tok]
+    else:
+        tokens = list(spec)
+    if not tokens:
+        raise ValueError("empty pooling spec")
+    seen: set[str] = set()
+    for tok in tokens:
+        if tok not in POOLING_PRIMITIVES:
+            raise ValueError(
+                f"unknown pooling primitive {tok!r}; "
+                f"valid primitives are {POOLING_PRIMITIVES}"
+            )
+        seen.add(tok)
+    return tuple(prim for prim in POOLING_PRIMITIVES if prim in seen)
+
+
+def _pool_descriptor(descrpt: Any, primitives: Any, mask: Any = None) -> Any:
+    """Pool a per-atom descriptor ``(nframes, natoms, ndim)`` over atoms.
+
+    Each primitive in ``primitives`` reduces the atom axis; results are
+    concatenated along the feature axis in the given order.  ``std`` uses
+    ``nan_to_num`` so a single-atom frame contributes zeros instead of NaN.
+    With ``mask`` ``None`` this matches the historical per-string pooling
+    byte-for-byte; a ``(nframes, natoms)`` ``mask`` (1 = real, 0 = virtual)
+    excludes padding/virtual atoms from every reduction.
+    """
+    import torch
+
+    if mask is not None:
+        m = mask.to(dtype=descrpt.dtype, device=descrpt.device).unsqueeze(-1)
+        count = m.sum(dim=1).clamp_min(1.0)
+        # Sanitize masked (virtual/padding) rows to a finite value before any
+        # reduction below.  Multiplying a non-finite descriptor by a zero
+        # mask keeps 0 * NaN == NaN, which would poison the whole frame's
+        # pooled feature instead of just dropping the masked atom.
+        descrpt = torch.where(m > 0, descrpt, torch.zeros_like(descrpt))
+
+    parts = []
+    for prim in primitives:
+        if prim == "mean":
+            if mask is None:
+                parts.append(descrpt.mean(dim=1))
+            else:
+                parts.append((descrpt * m).sum(dim=1) / count)
+        elif prim == "sum":
+            if mask is None:
+                parts.append(descrpt.sum(dim=1))
+            else:
+                parts.append((descrpt * m).sum(dim=1))
+        elif prim == "std":
+            if mask is None:
+                parts.append(torch.nan_to_num(descrpt.std(dim=1), nan=0.0))
+            else:
+                mean = (descrpt * m).sum(dim=1, keepdim=True) / count.unsqueeze(1)
+                # Sample divisor (N-1), matching torch.std in the unmasked
+                # branch: _pool_mask_for_system returns None for systems with
+                # no virtual atoms, so both branches can feed the same feature
+                # matrix and must agree. clamp_min(1) keeps a single-atom frame
+                # at 0 instead of dividing by zero (torch.std gives NaN there,
+                # which nan_to_num also maps to 0).
+                denom = (count - 1.0).clamp_min(1.0)
+                var = (((descrpt - mean) ** 2) * m).sum(dim=1) / denom
+                parts.append(torch.nan_to_num(torch.sqrt(var), nan=0.0))
+        elif prim == "max":
+            if mask is None:
+                parts.append(descrpt.max(dim=1).values)
+            else:
+                parts.append(
+                    descrpt.masked_fill(m == 0, float("-inf")).max(dim=1).values
+                )
+        elif prim == "min":
+            if mask is None:
+                parts.append(descrpt.min(dim=1).values)
+            else:
+                parts.append(
+                    descrpt.masked_fill(m == 0, float("inf")).min(dim=1).values
+                )
+        else:
+            raise ValueError(f"unknown pooling primitive {prim!r}")
+    if len(parts) == 1:
+        return parts[0]
+    return torch.cat(parts, dim=-1)
+
+
+def _pool_mask_for_system(system: Any, n_frames: int, n_atoms: int) -> Any:
+    """Per-frame ``(n_frames, n_atoms)`` pool mask for a grouped system.
+
+    Reads ``set.*/pool_mask.npy`` (or derives it from ``real_atom_types >= 0``)
+    in dpdata's set order so padded/virtual atoms can be excluded from offline
+    descriptor pooling.  Returns ``None`` for non-grouped systems or when a
+    complete, frame-aligned mask cannot be built, keeping the pooling
+    byte-identical to the unmasked path in that case.
+    """
+    source = _get_source(system)
+    if source is None:
+        return None
+    masks: list[np.ndarray] = []
+    for set_dir in sorted(Path(source).glob("set.*")):
+        pool_mask_path = set_dir / "pool_mask.npy"
+        real_types_path = set_dir / "real_atom_types.npy"
+        if pool_mask_path.is_file():
+            arr = np.asarray(np.load(pool_mask_path), dtype=np.float64)
+        elif real_types_path.is_file():
+            arr = (np.asarray(np.load(real_types_path)) >= 0).astype(np.float64)
+        else:
+            return None
+        arr = arr.reshape(arr.shape[0], -1)
+        if arr.shape[1] != n_atoms:
+            return None
+        masks.append(arr)
+    if not masks:
+        return None
+    mask = np.concatenate(masks, axis=0)
+    if mask.shape[0] != n_frames or bool(np.all(mask == 1.0)):
+        # frame-count mismatch, or no virtual atoms -> nothing to mask out.
+        return None
+    return mask
+
+
+def _real_atom_types_for_system(
+    system: Any, n_frames: int, n_atoms: int
+) -> np.ndarray | None:
+    """Per-frame ``(n_frames, n_atoms)`` local atom types for a grouped system.
+
+    Grouped systems write a uniform ``type.raw`` placeholder and store the
+    real, per-frame local atom-type indices (including ``-1`` for virtual
+    padding atoms) in ``set.*/real_atom_types.npy``. Returns ``None`` for
+    non-grouped systems or when a complete, frame-aligned array cannot be
+    built, so callers fall back to the constant-per-system ``atom_types``.
+    """
+    source = _get_source(system)
+    if source is None:
+        return None
+    chunks: list[np.ndarray] = []
+    for set_dir in sorted(Path(source).glob("set.*")):
+        real_types_path = set_dir / "real_atom_types.npy"
+        if not real_types_path.is_file():
+            return None
+        arr = np.asarray(np.load(real_types_path), dtype=np.int64)
+        arr = arr.reshape(arr.shape[0], -1)
+        if arr.shape[1] != n_atoms:
+            return None
+        chunks.append(arr)
+    if not chunks:
+        return None
+    real_types = np.concatenate(chunks, axis=0)
+    if real_types.shape[0] != n_frames:
+        return None
+    return real_types
+
 
 def _load_labels(
     systems: list[dpdata.System],
@@ -654,6 +820,19 @@ class _FrozenSklearnPipeline:
 
         return local_to_global[atom_types]
 
+    def remap_atom_types_preserving_padding(
+        self, atom_types: np.ndarray, system: dpdata.System
+    ) -> np.ndarray:
+        """Like :meth:`remap_atom_types`, but keeps ``-1`` (virtual/padding
+        atom) entries untouched instead of wrapping them to the last
+        checkpoint type via numpy's negative-index fancy indexing.
+        """
+        real = atom_types >= 0
+        remapped = np.full_like(atom_types, -1)
+        if real.any():
+            remapped[real] = self.remap_atom_types(atom_types[real], system)
+        return remapped
+
     # ------------------------------------------------------------------
     # Feature extraction  (extract_features_cached is on DPAFineTuner
     # so that patches on DPAFineTuner._extract_features are honoured)
@@ -692,8 +871,22 @@ class _FrozenSklearnPipeline:
             n_frames = coords.shape[0]
             n_atoms = len(atom_types)
 
-            # Remap local atom-type indices to checkpoint-global indices.
-            atom_types_global = self.remap_atom_types(atom_types, system)
+            # Grouped (heterogeneous) systems write a uniform type.raw
+            # placeholder and store the real, per-frame local atom types
+            # (with -1 padding) in real_atom_types.npy. Use those per-frame
+            # types when present instead of tiling the single, uniform
+            # atom_types array -- otherwise every atom in every frame would
+            # be described as if it had the placeholder's type.
+            real_atom_types = _real_atom_types_for_system(system, n_frames, n_atoms)
+            if real_atom_types is not None:
+                atom_types_global = self.remap_atom_types_preserving_padding(
+                    real_atom_types, system
+                )
+            else:
+                # Remap local atom-type indices to checkpoint-global indices.
+                atom_types_global = np.tile(
+                    self.remap_atom_types(atom_types, system), (n_frames, 1)
+                )
 
             # Non-periodic structures must NOT use all-zero box:
             # the descriptor produces NaN in that case.
@@ -709,7 +902,7 @@ class _FrozenSklearnPipeline:
                 device=self._device,
             ).requires_grad_(True)
             atype_t = torch.tensor(
-                np.tile(atom_types_global, (n_frames, 1)),
+                atom_types_global,
                 dtype=torch.long,
                 device=self._device,
             )
@@ -717,26 +910,13 @@ class _FrozenSklearnPipeline:
 
             # Shape: (n_frames, n_atoms, feat_dim)
             descrpt = extractor._run_forward(coord_t, atype_t, box_t)
-            if self.pooling == "mean":
-                feat = descrpt.mean(dim=1)
-            elif self.pooling == "sum":
-                feat = descrpt.sum(dim=1)
-            elif self.pooling == "mean+std":
-                mean = descrpt.mean(dim=1)
-                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat([mean, std], dim=-1)
-            elif self.pooling == "mean+std+max+min":
-                mean = descrpt.mean(dim=1)
-                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat(
-                    [
-                        mean,
-                        std,
-                        descrpt.max(dim=1).values,
-                        descrpt.min(dim=1).values,
-                    ],
-                    dim=-1,
-                )
+            mask_np = _pool_mask_for_system(system, n_frames, n_atoms)
+            mask_t = (
+                None
+                if mask_np is None
+                else torch.tensor(mask_np, dtype=torch.float64, device=self._device)
+            )
+            feat = _pool_descriptor(descrpt, parse_pooling(self.pooling), mask=mask_t)
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
             all_features.append(feat.detach().cpu().numpy())
 
@@ -826,6 +1006,9 @@ class DPAFineTuner:
         strategies.  For ``frozen_sklearn``, fparam columns are
         standardized and concatenated to the descriptor via
         ``ConditionManager``.  Default 0 (disabled).
+    regularizer : Regularizer, dict, or None
+        Training-time downstream-batch regularizer.  Does not accept
+        MFT-style aux_data; use ``strategy='mft'`` for external aux tasks.
     output_dir : str
         Directory for ``input.json``, checkpoints, and logs.
     save_freq, disp_freq : int
@@ -865,6 +1048,7 @@ class DPAFineTuner:
         # ---- training paradigms ----
         strategy: str = "frozen_sklearn",
         property_name: str = "property",
+        target: str | None = None,
         task_dim: int = 1,
         intensive: bool = True,
         init_branch: str = "SPICE2",
@@ -878,6 +1062,7 @@ class DPAFineTuner:
         loss_function: str = "mse",
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
+        regularizer: object | None = None,
         output_dir: str = "./dpa_output",
         save_freq: int = 10_000,
         disp_freq: int = 1_000,
@@ -889,16 +1074,28 @@ class DPAFineTuner:
         aux_batch_size: str | int | None = None,
         downstream_batch_size: str | int | None = None,
     ) -> None:
-        if pooling not in self._VALID_POOLING:
-            raise ValueError(
-                f"pooling must be one of {sorted(self._VALID_POOLING)}, got {pooling!r}"
-            )
+        if target is not None:
+            # ``target`` is a user-facing alias for ``property_name``.
+            property_name = target
         if strategy not in self._VALID_STRATEGIES:
             raise ValueError(
                 f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
                 f"got {strategy!r}"
             )
+        pooling_primitives = parse_pooling(pooling)
+        if strategy != "frozen_sklearn" and pooling_primitives != ("mean",):
+            raise ValueError(
+                f"pooling {pooling!r} is not size-intensive; strategy "
+                f"{strategy!r} trains a fitting head and requires intensive "
+                "pooling. Use pooling='mean', or strategy='frozen_sklearn' for "
+                "composite pooling."
+            )
         validate_fparam_dim(fparam_dim)
+        from dpa_adapt.regularizer import (
+            Regularizer,
+        )
+
+        self.regularizer = Regularizer.from_config(regularizer)
 
         self.strategy = strategy
 
@@ -960,6 +1157,7 @@ class DPAFineTuner:
         self._device = None  # set when model is first loaded
         self._checkpoint_type_map = []  # set by _load_descriptor_model
         self._condition_manager = None
+        self.calibrator = None
 
     # ------------------------------------------------------------------
     # Frozen-sklearn pipeline helpers (thin delegators)
@@ -1331,13 +1529,16 @@ class DPAFineTuner:
 
     def fit(
         self,
-        train_data: str | list[str],
+        train_data: str | list[str] | None = None,
         valid_data: str | list[str] | None = None,
         type_map: list[str] | None = None,
         target_key: str | list[str] | None = None,
         labels: np.ndarray | None = None,
         fmt: str | None = None,
         aux_data: str | list[str] | None = None,
+        *,
+        train: str | list[str] | None = None,
+        valid: str | list[str] | None = None,
     ) -> str | None:
         """Train the model.
 
@@ -1356,7 +1557,9 @@ class DPAFineTuner:
             Element symbols.  Auto-inferred from the checkpoint and data
             ``type_map.raw`` when not provided.
         target_key : str, optional
-            (frozen_sklearn) Label key, e.g. ``"energy"``.
+            Label key, e.g. ``"energy"``. For ``frozen_sklearn`` this selects
+            labels to load. For training strategies it is a fit-time alias for
+            ``property_name``.
         labels : np.ndarray, optional
             (frozen_sklearn) Pre-computed labels.
         fmt : str, optional
@@ -1365,8 +1568,34 @@ class DPAFineTuner:
             (mft only) Auxiliary training system directories.  Required when
             ``strategy='mft'``; must be absent otherwise.
         """
+        # ``train=`` / ``valid=`` are user-facing aliases for the positional
+        # ``train_data`` / ``valid_data`` arguments.
+        if train_data is None:
+            train_data = train
+        if valid_data is None:
+            valid_data = valid
+        if train_data is None:
+            raise ValueError("fit() requires train_data (or the train= alias).")
+
+        self.regularizer.require_supported_backend()
+
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
+
+        if labels is not None:
+            raise ValueError(
+                "labels is only valid when strategy='frozen_sklearn'; "
+                f"got strategy={self.strategy!r}."
+            )
+        if target_key is not None:
+            if not isinstance(target_key, str):
+                raise ValueError(
+                    "training strategies require a single string target_key; "
+                    f"got {target_key!r}."
+                )
+            self.property_name = target_key
+            if self._mft is not None:
+                self._mft.property_name = target_key
 
         if self.strategy == "mft":
             if aux_data is None:
@@ -1455,6 +1684,16 @@ class DPAFineTuner:
         Refactored: logic extracted to ``_FrozenSklearnPipeline``; this method
         now orchestrates the pipeline and mirrors its state for backward compat.
         """
+        from dpa_adapt.grouped._offline import (
+            has_grouped_markers,
+        )
+
+        if has_grouped_markers(data):
+            # Grouped input carries its own per-group labels (read from
+            # set.*/<target_key>.npy), so target_key/labels are optional here.
+            self._fit_sklearn_grouped(data, type_map, target_key, fmt)
+            return
+
         if target_key is not None and labels is not None:
             raise ValueError(
                 "target_key and labels are mutually exclusive; provide only one."
@@ -1521,7 +1760,75 @@ class DPAFineTuner:
         p._condition_manager = self._condition_manager
         p._fitted = True
 
-    def predict(self, data: str | list[str], fmt: str | None = None) -> DotDict:
+    def _fit_sklearn_grouped(
+        self,
+        data: str | list[str],
+        type_map: list[str] | None,
+        target_key: str | list[str] | None,
+        fmt: str | None,
+    ) -> None:
+        """Fit the frozen-sklearn head on one pooled row per assembly group.
+
+        Descriptors are extracted per frame, weighted-pooled into one embedding
+        per group id, and regressed against the group's shared label.
+        """
+        from sklearn.pipeline import (
+            make_pipeline,
+        )
+        from sklearn.preprocessing import (
+            StandardScaler,
+        )
+
+        from dpa_adapt.grouped._offline import (
+            GroupedDataset,
+        )
+        from dpa_adapt.utils.sklearn_heads import (
+            build_sklearn_head,
+        )
+
+        p = self._ensure_sklearn()
+        self.type_map = type_map or []
+        self._target_key = target_key if target_key is not None else "property"
+
+        dataset = GroupedDataset(
+            data,
+            pretrained=self.pretrained,
+            model_branch=self.model_branch,
+            type_map=type_map,
+            target_key=self._target_key,
+            fmt=fmt,
+        )
+        features = dataset.get_embeddings()
+        y = dataset.get_labels()
+        self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
+        y_flat = y.ravel() if self._task_dim == 1 else y
+
+        head = build_sklearn_head(
+            self._predictor_type,
+            seed=self.seed,
+            n_outputs=self._task_dim,
+        )
+        self.predictor = make_pipeline(StandardScaler(), head)
+        self.predictor.fit(features, y_flat)
+        self._fitted = True
+        self._grouped = True
+        self._condition_manager = None
+
+        # Mirror pipeline state for backward compat.
+        p.predictor = self.predictor
+        p.type_map = self.type_map
+        p._target_key = self._target_key
+        p._task_dim = self._task_dim
+        p._condition_manager = None
+        p._fitted = True
+
+    def predict(
+        self,
+        data: str | list[str],
+        fmt: str | None = None,
+        *,
+        calibrated: bool = True,
+    ) -> DotDict:
         """
         Predict with the adapted model.
 
@@ -1542,18 +1849,49 @@ class DPAFineTuner:
             ``predictions`` : np.ndarray, shape (n_frames, task_dim)
         """
         if self.strategy in {"frozen_head", "finetune"}:
-            return self._run_training_predict(data, fmt=fmt)
+            result = self._run_training_predict(data, fmt=fmt)
+            return self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
         if self.strategy == "mft":
             if fmt is not None:
                 raise ValueError(
                     "fmt is not supported for mft predict(); "
                     "provide deepmd/npy system directories."
                 )
-            return self._ensure_mft().predict(data)
+            result = self._ensure_mft().predict(data)
+            return self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
 
         if not self._fitted:
             raise RuntimeError(
                 "predict() was called before fit(). Train the model with fit() first."
+            )
+
+        if getattr(self, "_grouped", False):
+            from dpa_adapt.grouped._offline import (
+                GroupedDataset,
+            )
+
+            dataset = GroupedDataset(
+                data,
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                type_map=self.type_map or None,
+                target_key=self._target_key,
+                fmt=fmt,
+                # predict() consumes only the pooled embeddings, and prediction
+                # data routinely has no set.*/<target>.npy to read.
+                require_labels=False,
+            )
+            raw = self.predictor.predict(dataset.get_embeddings())
+            predictions = np.asarray(raw).reshape(-1, self._task_dim)
+            return self._apply_calibrator(
+                DotDict({"predictions": predictions}),
+                calibrated=calibrated,
+                data=data,
+                fmt=fmt,
             )
 
         systems = load_data(data, fmt=fmt)
@@ -1575,9 +1913,57 @@ class DPAFineTuner:
 
         raw = self.predictor.predict(features)
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
-        return DotDict({"predictions": predictions})
+        return self._apply_calibrator(
+            DotDict({"predictions": predictions}),
+            calibrated=calibrated,
+            data=data,
+            fmt=fmt,
+        )
 
-    def evaluate(self, data: str | list[str], fmt: str | None = None) -> DotDict:
+    def _apply_calibrator(
+        self,
+        result: DotDict,
+        *,
+        calibrated: bool,
+        data: str | list[str] | None = None,
+        fmt: str | None = None,
+    ) -> DotDict:
+        if calibrated and self.calibrator is not None:
+            raw_predictions = np.asarray(result.predictions)
+            result["raw_predictions"] = raw_predictions
+            result["predictions"] = self.calibrator.predict_from_arrays(
+                raw_predictions,
+                data=data,
+                fmt=fmt,
+            )
+        return result
+
+    def calibrate(
+        self,
+        data: str | list[str],
+        *,
+        method: str = "ridge",
+        alpha: float = 1.0,
+        features: list[str] | tuple[str, ...] = ("prediction",),
+        fmt: str | None = None,
+    ) -> object:
+        """Fit a post-training prediction calibrator and attach it to the model."""
+        from dpa_adapt.calibrator import (
+            Calibrator,
+        )
+
+        calibrator = Calibrator(method=method, alpha=alpha, features=features)
+        calibrator.fit(self, data=data, fmt=fmt)
+        self.calibrator = calibrator
+        return calibrator
+
+    def evaluate(
+        self,
+        data: str | list[str],
+        fmt: str | None = None,
+        *,
+        calibrated: bool = True,
+    ) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 
@@ -1597,9 +1983,14 @@ class DPAFineTuner:
         """
         if self.strategy in {"frozen_head", "finetune"}:
             result = self._run_training_predict(data, fmt=fmt)
+            result = self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
             labels = result.labels
             predictions = result.predictions
             err = predictions - labels
+            result["mae"] = float(np.mean(np.abs(err)))
+            result["rmse"] = float(np.sqrt(np.mean(err**2)))
             ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
             result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
@@ -1614,20 +2005,42 @@ class DPAFineTuner:
             if getattr(mft, "downstream_task_type", "property") == "ener":
                 return DotDict(mft.evaluate(data))
             result = mft.predict(data)
+            result = self._apply_calibrator(
+                result, calibrated=calibrated, data=data, fmt=fmt
+            )
             labels = result.labels
             predictions = result.predictions
             err = predictions - labels
+            result["mae"] = float(np.mean(np.abs(err)))
+            result["rmse"] = float(np.sqrt(np.mean(err**2)))
             ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
             result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
             return result
 
-        result = self.predict(data, fmt=fmt)
+        result = self.predict(data, fmt=fmt, calibrated=calibrated)
         predictions = result.predictions
 
-        systems = load_data(data, fmt=fmt)
-        labels = _load_labels(systems, self._target_key)
-        labels = labels.reshape(predictions.shape)
+        if getattr(self, "_grouped", False):
+            # predict() returns one row per group; use matching group-level
+            # labels instead of frame-level ones (which would not reshape).
+            from dpa_adapt.grouped._offline import (
+                GroupedDataset,
+            )
+
+            dataset = GroupedDataset(
+                data,
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                type_map=self.type_map or None,
+                target_key=self._target_key,
+                fmt=fmt,
+            )
+            labels = np.asarray(dataset.get_labels()).reshape(predictions.shape)
+        else:
+            systems = load_data(data, fmt=fmt)
+            labels = _load_labels(systems, self._target_key)
+            labels = labels.reshape(predictions.shape)
 
         if predictions.shape != labels.shape:
             raise DPADataError(
@@ -1718,6 +2131,7 @@ class DPAFineTuner:
             "pooling": self.pooling,
             "condition_manager": self._condition_manager,
             "fparam_dim": self.fparam_dim,
+            "calibrator": self.calibrator,
         }
 
         output_path = str(output_path)
