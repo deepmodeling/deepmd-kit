@@ -300,6 +300,19 @@ def _jittered_wrapper(seed: int = 11) -> NativeSpinEnergyModel:
 class TestNativeSpinEnergyModelPtExpt:
     """Public ``forward()`` contract of the pt_expt ``NativeSpinEnergyModel``."""
 
+    def test_adam_route_patterns_match_parameters(self) -> None:
+        """The DPA4 backbone and its native-spin model declare the same routed tensors."""
+        expected = [
+            "descriptor.env_seed_embedding.rbf_proj_layer1.",
+            "descriptor.radial_embedding.net.0.",
+        ]
+        for model in (_build_jittered_backbone(), _jittered_wrapper()):
+            patterns = sorted(model.adam_route_patterns())
+            assert patterns == expected
+            names = [name for name, _ in model.named_parameters()]
+            for pattern in patterns:
+                assert any(pattern in name for name in names), pattern
+
     def setup_method(self) -> None:
         self.device = _env.DEVICE
         self.model = _jittered_wrapper(seed=11)

@@ -31,6 +31,9 @@ from typing import (
 )
 
 import torch
+from torch._subclasses.fake_tensor import (
+    FakeTensor,
+)
 
 from .so2_conv import (
     _monomial_exponents,
@@ -133,7 +136,10 @@ def wigner_dense_tables(lmax: int) -> tuple[torch.Tensor, ...]:
         torch.tensor(coeffs, dtype=torch.float32, device="cpu"),
         torch.tensor(monos, dtype=torch.int32, device="cpu"),
     )
-    _DENSE_TABLE_CACHE[lmax] = tables
+    # Tables built under a tracing mode are fake tensors bound to that trace;
+    # only real tables are shared across calls.
+    if not any(isinstance(table, FakeTensor) for table in tables):
+        _DENSE_TABLE_CACHE[lmax] = tables
     return tables
 
 

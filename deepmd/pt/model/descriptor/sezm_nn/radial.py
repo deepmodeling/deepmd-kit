@@ -21,6 +21,9 @@ from einops import (
     rearrange,
 )
 
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    parse_basis_type,
+)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -83,8 +86,8 @@ class RadialMLP(nn.Module):
     compile and non-compile paths.
 
     The hidden RMSNorm normalizes each edge's radial features by their own RMS.
-    The input ``edge_rbf`` carries the C^3 cutoff envelope and therefore
-    vanishes at ``rcut``; the RMSNorm divides that envelope out, and its ``eps``
+    When the input ``edge_rbf`` includes the C^3 cutoff envelope, it vanishes
+    at ``rcut``. The RMSNorm divides that envelope out, and its ``eps``
     floor is crossed as the edge approaches ``rcut``. On a sparse neighborhood
     (e.g. a dimer) this floor-crossing produces a sharp kink in the potential
     energy surface just inside the cutoff. Setting ``radial_norm=False`` drops
@@ -422,7 +425,7 @@ class BridgingSwitch(nn.Module):
 
 class RadialBasis(nn.Module):
     """
-    Radial basis with C^3 cutoff envelope.
+    Radial basis with an optional C^3 cutoff envelope.
 
     The trainable radial parameters are stored in ``adam_freqs`` so HybridMuon
     routes them to Adam without weight decay.
@@ -446,8 +449,8 @@ class RadialBasis(nn.Module):
 
         w_n = n * π / rcut, for n = 1..n_radial (in 1/Å)
 
-    The C^3 cutoff envelope is multiplied directly into the output to ensure
-    strict smoothness at ``rcut``.
+    A positive ``exponent`` multiplies the C^3 cutoff envelope directly into
+    the output. Zero selects the raw basis without constructing an envelope.
 
     Parameters
     ----------
@@ -456,11 +459,16 @@ class RadialBasis(nn.Module):
     n_radial : int
         Number of basis functions.
     basis_type : str, optional
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``. The ``/fix`` forms keep the
+        frequencies or centres at their initial values: an isolated pair or a
+        compressed contact drives no data gradient into the basis, and a
+        trainable basis drifts there under the optimizer's momentum.
     dtype : torch.dtype
         Floating-point dtype for the radial basis frequencies and outputs.
     exponent : int, optional
-        Exponent for the C^3 cutoff envelope polynomial. Default is 7.
+        Exponent for the C^3 cutoff envelope polynomial. Zero disables the
+        envelope. Default is 7.
     trainable : bool, optional
         Whether the basis frequencies are trainable. Default is True.
     """
@@ -482,8 +490,7 @@ class RadialBasis(nn.Module):
         if self.n_radial <= 0:
             raise ValueError("`n_radial` must be positive")
         self.basis_type = str(basis_type).lower()
-        if self.basis_type not in ("bessel", "gaussian"):
-            raise ValueError("`basis_type` must be either 'bessel' or 'gaussian'")
+        self.basis_family, fixed = parse_basis_type(self.basis_type)
         self.dtype = dtype
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[self.dtype]
@@ -496,7 +503,7 @@ class RadialBasis(nn.Module):
 
         # Frequencies: n*π/rcut, n=1..n_radial
         # Shape: (1, n_radial), stored as trainable nn.Parameter.
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             freqs = torch.arange(
                 1,
                 self.n_radial + 1,
@@ -511,7 +518,7 @@ class RadialBasis(nn.Module):
                 device=self.device,
                 dtype=self.dtype,
             )
-        self.trainable = bool(trainable)
+        self.trainable = bool(trainable) and not fixed
         self.adam_freqs = nn.Parameter(
             rearrange(freqs, "n_radial -> 1 n_radial"),
             requires_grad=self.trainable,
@@ -527,10 +534,14 @@ class RadialBasis(nn.Module):
             persistent=False,
         )
 
-        self.envelope = C3CutoffEnvelope(
-            rcut=self.rcut,
-            exponent=self.exponent,
-            dtype=self.dtype,
+        self.envelope = (
+            C3CutoffEnvelope(
+                rcut=self.rcut,
+                exponent=self.exponent,
+                dtype=self.dtype,
+            )
+            if self.exponent != 0
+            else None
         )
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
@@ -545,12 +556,13 @@ class RadialBasis(nn.Module):
         Returns
         -------
         torch.Tensor
-            Radial basis multiplied by C^3 cutoff envelope with shape (N, n_rbf).
-            The output is smoothly truncated to zero at r = rcut.
+            Radial basis with shape (N, n_radial). When
+            ``exponent > 0``, the output includes the C^3 envelope and
+            vanishes smoothly at ``rcut``; otherwise it is the raw basis.
         """
         # === Step 1. Radial basis ===
         # Shape: (N, 1) * (1, n_radial) -> (N, n_radial)
-        if self.basis_type == "bessel":
+        if self.basis_family == "bessel":
             # phi_n(r) = w_n * sinc(w_n * r / π)
             x = r * self.adam_freqs  # (N, n_rbf)
             raw = self.adam_freqs * torch.sinc(x / self.pi_tensor)  # (N, n_rbf)
@@ -558,9 +570,10 @@ class RadialBasis(nn.Module):
             dr = r - self.adam_freqs  # (N, n_rbf)
             raw = torch.exp(dr * dr * self.gaussian_coeff)  # (N, n_rbf)
 
-        # === Step 2. Apply C^3 envelope for smooth cutoff ===
-        envelope = self.envelope(r)  # (N, 1)
-        return raw * envelope
+        # === Step 2. Apply the optional C^3 envelope ===
+        if self.envelope is not None:
+            return raw * self.envelope(r)
+        return raw
 
     def serialize(self) -> dict[str, Any]:
         """Serialize RadialBasis including trainable frequencies."""

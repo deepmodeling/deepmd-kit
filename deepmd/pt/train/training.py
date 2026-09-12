@@ -71,6 +71,9 @@ from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
     LKFOptimizer,
 )
+from deepmd.pt.optimizer.hybrid_muon import (
+    adam_route_patterns,
+)
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -1106,6 +1109,9 @@ class Trainer:
                     "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
+                    "adam_patterns": adam_route_patterns(
+                        self._get_inner_module().model.values()
+                    ),
                     # FSDP2 shards parameters as DTensor; several torch._foreach_*
                     # ops lack DTensor sharding propagation on older PyTorch, so
                     # fall back to the per-tensor path under zero_stage >= 2.

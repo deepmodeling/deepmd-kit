@@ -52,7 +52,7 @@ def test_every_preset_expands_to_a_valid_model(name: str) -> None:
 
 def test_explicit_entries_override_and_supplement(caplog) -> None:
     model = {
-        "preset": "dpa4-nano-v20260901",
+        "preset": "dpa4-nano-v20260911",
         "type_map": ["O", "H"],
         "descriptor": {"rcut": 5.0, "use_amp": True, "seed": 1},
         "fitting_net": {"seed": 1},
@@ -62,7 +62,7 @@ def test_explicit_entries_override_and_supplement(caplog) -> None:
     with caplog.at_level(logging.INFO, logger="deepmd.utils.model_preset"):
         expanded = expand_model_preset(model)
     assert model == original
-    preset = get_model_preset("dpa4-nano-v20260901")
+    preset = get_model_preset("dpa4-nano-v20260911")
 
     assert "preset" not in expanded
     assert expanded["type"] == "dpa4"
@@ -92,26 +92,26 @@ def test_expansion_is_idempotent_and_a_noop_without_preset() -> None:
     assert expand_model_preset(plain) is plain
     multi = {"shared_dict": {}, "model_dict": {"a": copy.deepcopy(plain)}}
     assert expand_model_preset(multi) is multi
-    expanded = expand_model_preset({"preset": "dpa4c-neo-v20260901"})
+    expanded = expand_model_preset({"preset": "dpa4c-neo-v20260911"})
     assert expand_model_preset(expanded) is expanded
 
 
 def test_preset_name_is_case_insensitive() -> None:
-    assert expand_model_preset({"preset": "DPA4-Neo-v20260901"}) == expand_model_preset(
-        {"preset": "dpa4-neo-v20260901"}
+    assert expand_model_preset({"preset": "DPA4-Neo-v20260911"}) == expand_model_preset(
+        {"preset": "dpa4-neo-v20260911"}
     )
 
 
 def test_unknown_or_malformed_preset_raises() -> None:
     with pytest.raises(ValueError, match="Unknown model preset"):
-        expand_model_preset({"preset": "dpa4-huge-v20260901"})
+        expand_model_preset({"preset": "dpa4-huge-v20260911"})
     with pytest.raises(ValueError, match="must be a string"):
         expand_model_preset({"preset": 3})
 
 
 def test_multi_task_branches_expand_with_shared_references() -> None:
     model = {
-        "preset": "dpa4-mini-v20260901",
+        "preset": "dpa4-mini-v20260911",
         "shared_dict": {
             "type_map": ["O", "H"],
             "descriptor": {"type": "dpa4", "rcut": 6.0},
@@ -123,7 +123,7 @@ def test_multi_task_branches_expand_with_shared_references() -> None:
                 "fitting_net": {"seed": 2},
             },
             "water_2": {
-                "preset": "dpa4-neo-v20260901",
+                "preset": "dpa4-neo-v20260911",
                 "type_map": "type_map",
             },
         },
@@ -131,7 +131,7 @@ def test_multi_task_branches_expand_with_shared_references() -> None:
     expanded = expand_model_preset(model)
     assert "preset" not in expanded
     # The shared descriptor is the mini descriptor with the explicit keys on top.
-    mini = get_model_preset("dpa4-mini-v20260901")
+    mini = get_model_preset("dpa4-mini-v20260911")
     assert expanded["shared_dict"]["descriptor"] == {**mini["descriptor"], "rcut": 6.0}
     assert expanded["shared_dict"]["type_map"] == ["O", "H"]
 
@@ -150,22 +150,56 @@ def test_multi_task_branches_expand_with_shared_references() -> None:
     assert water_2["descriptor"]["n_focus"] == 2
 
 
-def test_dpa4_versions_differ_only_in_normalization_options() -> None:
-    for grade in ("nano", "mini", "neo", "air", "plus", "pro"):
-        old = get_model_preset(f"dpa4-{grade}-v20260820")
-        new = get_model_preset(f"dpa4-{grade}-v20260901")
-        assert old["type"] == new["type"]
-        assert old["type_map"] == new["type_map"]
-        assert old["fitting_net"] == new["fitting_net"]
-        changed = {
-            key
-            for key in set(old["descriptor"]) | set(new["descriptor"])
-            if old["descriptor"].get(key) != new["descriptor"].get(key)
-        }
-        assert changed == {"edge_norm", "sandwich_norm"}
-    for grade in ("max", "ultra"):
-        assert f"dpa4-{grade}-v20260820" not in MODEL_PRESETS
-        assert f"dpa4-{grade}-v20260901" in MODEL_PRESETS
+def test_preset_catalog() -> None:
+    catalog = {
+        ("dpa4", "v20260820"): ("nano", "mini", "neo", "air", "plus", "pro"),
+        ("dpa4", "v20260911"): (
+            "nano",
+            "mini",
+            "neo",
+            "air",
+            "plus",
+            "pro",
+            "max",
+            "ultra",
+        ),
+        ("dpa4c", "v20260901"): ("nano", "mini", "neo", "air", "plus"),
+        ("dpa4c", "v20260911"): ("nano", "mini", "neo", "air", "plus"),
+    }
+    assert set(MODEL_PRESETS) == {
+        f"{family}-{grade}-{version}"
+        for (family, version), grades in catalog.items()
+        for grade in grades
+    }
+
+
+@pytest.mark.parametrize(
+    ("family", "version", "options"),
+    [
+        (
+            "dpa4",
+            "v20260820",
+            {"edge_norm": True, "sandwich_norm": [False, True, True, False]},
+        ),
+        (
+            "dpa4",
+            "v20260911",
+            {
+                "edge_norm": [False, True, True],
+                "sandwich_norm": [True, False, True, False],
+                "env_exp": 5,
+                "basis_type": "gaussian/fix",
+            },
+        ),
+        ("dpa4c", "v20260901", {"basis_type": "bessel"}),
+        ("dpa4c", "v20260911", {"basis_type": "gaussian/fix"}),
+    ],
+)
+def test_version_descriptor_options(family: str, version: str, options: dict) -> None:
+    for name in MODEL_PRESETS:
+        if name.startswith(f"{family}-") and name.endswith(f"-{version}"):
+            descriptor = _normalize_model(get_model_preset(name))["descriptor"]
+            assert {key: descriptor[key] for key in options} == options
 
 
 def test_presets_carry_no_runtime_options() -> None:
@@ -187,7 +221,7 @@ def test_periodic_table_matches_econf_type_map() -> None:
 
 def test_leftover_preset_fails_argument_check() -> None:
     config = {
-        "model": {"preset": "dpa4-nano-v20260901"},
+        "model": {"preset": "dpa4-nano-v20260911"},
         "training": copy.deepcopy(TRAINING),
     }
     with pytest.raises(ArgumentKeyError, match="preset"):
@@ -197,7 +231,7 @@ def test_leftover_preset_fails_argument_check() -> None:
 def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
     """The expansion runs before multi-task preprocessing and argument check."""
     model = {
-        "preset": "dpa4-nano-v20260901",
+        "preset": "dpa4-nano-v20260911",
         "shared_dict": {
             "type_map": ["O", "H"],
             "descriptor": {"type": "dpa4", "rcut": 6.0},
@@ -219,7 +253,7 @@ def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
         expand_model_preset(model), lambda item_key, params: dict
     )
     assert set(shared_links) == {"descriptor"}
-    nano = get_model_preset("dpa4-nano-v20260901")
+    nano = get_model_preset("dpa4-nano-v20260911")
     for branch in processed["model_dict"].values():
         assert branch["type"] == "dpa4"
         assert branch["type_map"] == ["O", "H"]
@@ -243,14 +277,14 @@ def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
 
 def test_multi_task_top_level_regions_are_branch_defaults() -> None:
     model = {
-        "preset": "dpa4-nano-v20260901",
+        "preset": "dpa4-nano-v20260911",
         "descriptor": {"rcut": 7.0},
         "fitting_net": {"seed": 3},
         "shared_dict": {"type_map": ["O", "H"]},
         "model_dict": {
             "water_1": {"type_map": "type_map"},
             "water_2": {
-                "preset": "dpa4-mini-v20260901",
+                "preset": "dpa4-mini-v20260911",
                 "type_map": "type_map",
                 "descriptor": {"rcut": 5.0},
             },
@@ -260,7 +294,7 @@ def test_multi_task_top_level_regions_are_branch_defaults() -> None:
     water_1 = expanded["model_dict"]["water_1"]
     assert water_1["descriptor"]["rcut"] == 7.0
     assert water_1["descriptor"]["lmax"] == 1
-    nano = get_model_preset("dpa4-nano-v20260901")
+    nano = get_model_preset("dpa4-nano-v20260911")
     assert water_1["fitting_net"] == {**nano["fitting_net"], "seed": 3}
     # A branch entry replaces the top-level default as a whole.
     water_2 = expanded["model_dict"]["water_2"]
@@ -280,7 +314,7 @@ def test_multi_task_top_level_regions_are_branch_defaults() -> None:
 
 def test_shared_dict_entries_take_the_top_level_preset_as_base() -> None:
     model = {
-        "preset": "dpa4-nano-v20260901",
+        "preset": "dpa4-nano-v20260911",
         "shared_dict": {
             "type_map": ["O", "H"],
             "descriptor": {"use_amp": True, "seed": 42},
@@ -294,14 +328,14 @@ def test_shared_dict_entries_take_the_top_level_preset_as_base() -> None:
                 "fitting_net": "shared_fit",
             },
             "water_2": {
-                "preset": "dpa4-mini-v20260901",
+                "preset": "dpa4-mini-v20260911",
                 "type_map": "type_map",
                 "descriptor": "descriptor",
             },
         },
     }
     expanded = expand_model_preset(model)
-    nano = get_model_preset("dpa4-nano-v20260901")
+    nano = get_model_preset("dpa4-nano-v20260911")
     shared = expanded["shared_dict"]
     # Referenced entries: preset region plus the run-specific keys; a shared
     # level suffix in the reference does not change the entry it names.
@@ -323,7 +357,7 @@ def test_shared_dict_entries_take_the_top_level_preset_as_base() -> None:
         "shared_dict": {"type_map": ["O"], "descriptor": {"rcut": 5.0}},
         "model_dict": {
             "a": {
-                "preset": "dpa4-nano-v20260901",
+                "preset": "dpa4-nano-v20260911",
                 "type_map": "type_map",
                 "descriptor": "descriptor",
             }
@@ -338,7 +372,7 @@ def test_explicit_alias_replaces_the_preset_canonical_key() -> None:
     """
     model = expand_model_preset(
         {
-            "preset": "dpa4-nano-v20260901",
+            "preset": "dpa4-nano-v20260911",
             "type_map": ["O", "H"],
             "descriptor": {"so2_layers": 5},
         }
@@ -353,7 +387,7 @@ def test_explicit_dict_for_a_whole_value_region_does_not_crash() -> None:
     dict there must not raise before the argument check reports it.
     """
     expanded = expand_model_preset(
-        {"preset": "dpa4-nano-v20260901", "type_map": {"O": 0, "H": 1}}
+        {"preset": "dpa4-nano-v20260911", "type_map": {"O": 0, "H": 1}}
     )
     assert expanded["type_map"] == {"O": 0, "H": 1}
     with pytest.raises(Exception):
@@ -364,9 +398,9 @@ def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
     """A `descriptor`/`fitting_net` reference inherited by a branch only
     through the top-level default must still be recognised as referenced.
     """
-    nano = get_model_preset("dpa4-nano-v20260901")
+    nano = get_model_preset("dpa4-nano-v20260911")
     model = {
-        "preset": "dpa4-nano-v20260901",
+        "preset": "dpa4-nano-v20260911",
         "descriptor": "desc",
         "shared_dict": {"type_map": ["O", "H"], "desc": {"seed": 42}},
         "model_dict": {"water_1": {"type_map": "type_map"}},
@@ -377,10 +411,10 @@ def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
 
 
 def test_malformed_multi_task_layout_is_left_to_argcheck() -> None:
-    malformed = {"preset": "dpa4-nano-v20260901", "model_dict": "water"}
+    malformed = {"preset": "dpa4-nano-v20260911", "model_dict": "water"}
     assert expand_model_preset(malformed) is malformed
     branch_not_mapping = {
-        "preset": "dpa4-nano-v20260901",
+        "preset": "dpa4-nano-v20260911",
         "model_dict": {"water": "not a mapping"},
     }
     assert expand_model_preset(branch_not_mapping)["model_dict"] == {
@@ -390,7 +424,7 @@ def test_malformed_multi_task_layout_is_left_to_argcheck() -> None:
 
 def test_update_deepmd_input_expands_presets() -> None:
     jdata = {
-        "model": {"preset": "dpa4c-mini-v20260901"},
+        "model": {"preset": "dpa4c-mini-v20260911"},
         "training": copy.deepcopy(TRAINING),
     }
     out = update_deepmd_input(jdata, warning=False)

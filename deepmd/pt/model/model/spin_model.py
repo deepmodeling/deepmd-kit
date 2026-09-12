@@ -375,6 +375,10 @@ class SpinModel(torch.nn.Module):
         return aparam
 
     @torch.jit.export
+    def adam_route_patterns(self) -> list[str]:
+        """Route the backbone's declared tensors; the wrapper adds no parameters of its own."""
+        return self.backbone_model.adam_route_patterns()
+
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()

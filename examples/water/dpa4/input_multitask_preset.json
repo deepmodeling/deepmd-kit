@@ -1,7 +1,7 @@
 {
   "_comment": "DPA4-Nano multitask example with a shared descriptor and case-conditioned shared fitting network, both taken from the named preset; only run-specific keys are written out.",
   "model": {
-    "preset": "dpa4-nano-v20260901",
+    "preset": "dpa4-nano-v20260911",
     "use_compile": false,
     "enable_tf32": true,
     "shared_dict": {

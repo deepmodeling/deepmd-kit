@@ -25,6 +25,9 @@ reference:
 import math
 import typing
 import unittest
+from unittest import (
+    mock,
+)
 
 import torch
 from torch.fx.experimental.proxy_tensor import (
@@ -659,7 +662,17 @@ class TestSeZMTritonValuePath(unittest.TestCase):
     N_NODE = 512
     N_EDGE = 20000
 
+    @mock.patch.dict(
+        "os.environ",
+        {
+            "DP_TRITON_INFER": "0",
+            "DP_CUDA_INFER": "0",
+            "DP_TRITON_TRAIN": "0",
+            "DP_CUDA_TRAIN": "0",
+        },
+    )
     def _build_conv(self, lmax, channels, n_focus, focus_dim, layers, mode, rank):
+        """Build the dense reference independently of ambient acceleration gates."""
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
             SO2Convolution,
         )
@@ -849,6 +862,30 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         )
         (grad_reference,) = torch.autograd.grad(reference, basis_reference, grad_out)
         torch.testing.assert_close(grad_fused, grad_reference, atol=1e-12, rtol=1e-12)
+
+    def test_float64_gated_activation_derivatives(self) -> None:
+        """The fp64 fallback preserves first and second finite-difference derivatives."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            fused_gated_activation,
+        )
+
+        generator = torch.Generator(device="cpu").manual_seed(41)
+        z = torch.randn(
+            1, 2, 14, dtype=torch.float64, device="cpu", generator=generator
+        ).requires_grad_(True)
+        weight = torch.randn(
+            1, 2, 4, dtype=torch.float64, device="cpu", generator=generator
+        ).requires_grad_(True)
+
+        def activate(z: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+            return fused_gated_activation(
+                z, weight, weight.transpose(1, 2).contiguous(), 2, 2
+            )
+
+        for check in (torch.autograd.gradcheck, torch.autograd.gradgradcheck):
+            self.assertTrue(
+                check(activate, (z, weight), atol=1e-8, rtol=1e-6, fast_mode=True)
+            )
 
     @_GPU_KERNELS
     def test_competition_gradient_preserves_small_positive_scale(self) -> None:

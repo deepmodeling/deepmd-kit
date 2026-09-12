@@ -155,7 +155,7 @@ def gated_activation_second_order_reference(
 
     def fold(value: Tensor) -> Tensor:
         """Sum the two signed-``m`` halves that share a gate group."""
-        return value.view(n_focus, n_edge, 2, -1).sum(2)
+        return value.view(n_focus, n_edge, 2, value.shape[-1] // 2).sum(2)
 
     scalar = z[:, :, :focus_dim]
     grad_scalar = grad[:, :, :focus_dim]
@@ -512,7 +512,7 @@ def gated_activation_second_order(
         sig = torch.sigmoid(torch.bmm(z[:, :, :focus_dim], gw))
         grad_sig = grad[:, :, focus_dim:m0] * z[:, :, focus_dim:m0] + (
             grad[:, :, m0:] * z[:, :, m0:]
-        ).view(n_focus, n_edge, 2, -1).sum(2)
+        ).view(n_focus, n_edge, 2, lmax * focus_dim).sum(2)
         grad_wrt_gw = grad_wrt_gw + torch.bmm(
             grad_grad_z[:, :, :focus_dim].transpose(1, 2),
             grad_sig * sig * (1.0 - sig),

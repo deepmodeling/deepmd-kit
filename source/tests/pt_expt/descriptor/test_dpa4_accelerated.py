@@ -48,6 +48,9 @@ from deepmd.pt_expt.utils import (
 from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
+from ...dpa4_fixtures import (
+    jitter_zero_arrays,
+)
 
 
 def _make_descriptor(
@@ -57,11 +60,13 @@ def _make_descriptor(
     precision: str = "float32",
     *,
     source_gated: bool = False,
+    env_exp: int | list[int] | None = None,
 ) -> DescrptDPA4:
     return DescrptDPA4(
         ntypes=ntypes,
         sel=sel,
         rcut=rcut,
+        env_exp=env_exp,
         channels=32,
         n_radial=8,
         lmax=2,
@@ -85,10 +90,12 @@ def _make_descriptor(
     ("precision", "expected_bound"),
     [("float32", True), ("float64", False)],
 )
+@pytest.mark.parametrize("env_exp", [5, [7, 5]])
 def test_fp32_only_cuda_bindings(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     precision: str,
     expected_bound: bool,
+    env_exp: int | list[int],
 ) -> None:
     """Bind the handwritten CUDA path only for its supported precision."""
     for name in (
@@ -100,10 +107,14 @@ def test_fp32_only_cuda_bindings(
         monkeypatch.setenv(name, "0")
     monkeypatch.setenv("DP_CUDA_INFER", "1")
     monkeypatch.setattr(edge_radial, "op_available", lambda: True)
+    # Binding eligibility is independent of native operator registration.
+    monkeypatch.setattr(edge_radial, "ensure_registered", lambda: None)
     monkeypatch.setattr(grid_pair, "op_available", lambda: True)
     monkeypatch.setattr(zonal_scatter, "op_available", lambda: True)
 
-    descriptor = _make_descriptor(2, [20], 4.0, precision=precision).eval()
+    descriptor = _make_descriptor(
+        2, [20], 4.0, precision=precision, env_exp=env_exp
+    ).eval()
     initial_embeddings = [
         module
         for module in descriptor.modules()
@@ -231,7 +242,10 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
 
     @pytest.mark.parametrize("backend", ["triton", "cuda", "cutile"])
-    def test_forward_and_coordinate_gradient(self, monkeypatch, backend) -> None:
+    @pytest.mark.parametrize("env_exp", [None, 5])
+    def test_forward_and_coordinate_gradient(
+        self, monkeypatch: pytest.MonkeyPatch, backend: str, env_exp: int | None
+    ) -> None:
         if backend == "triton" and not FORCE_ASSEMBLY_TRITON_AVAILABLE:
             pytest.skip("Triton is unavailable")
         if backend == "cutile" and not CUTILE_AVAILABLE:
@@ -244,7 +258,10 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
             "DP_CUTE_INFER",
         ):
             monkeypatch.setenv(name, "0")
-        data = _make_descriptor(self.nt, self.sel_mix, self.rcut).serialize()
+        data = _make_descriptor(
+            self.nt, self.sel_mix, self.rcut, env_exp=env_exp
+        ).serialize()
+        data = jitter_zero_arrays(data, np.random.default_rng(73))
         reference = DescrptDPA4.deserialize(data).to(self.device).eval()
 
         levels = {
@@ -284,6 +301,7 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         coord_ref, atype, nlist = self._inputs()
         output_ref = reference(coord_ref, atype, nlist)[0]
         grad_ref = torch.autograd.grad(output_ref.sum(), coord_ref)[0]
+        assert grad_ref.abs().max().item() > 1e-10
 
         coord, atype, nlist = self._inputs()
         output = accelerated(coord, atype, nlist)[0]
