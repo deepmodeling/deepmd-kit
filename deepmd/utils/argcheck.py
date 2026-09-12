@@ -3398,6 +3398,13 @@ def model_args(
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
+    doc_data_stat_full = (
+        "Scan every frame of the training data to compute the output statistics "
+        "(bias and standard deviation of the fitting target) exactly, instead of "
+        "estimating them from `data_stat_nbatch` batches per system. Recommended "
+        "for datasets containing rare elements, whose bias is otherwise fitted "
+        "from too few frames. Input statistics still use `data_stat_nbatch`."
+    )
     doc_data_bias_nsample = "The number of training samples in a system to compute and change the energy bias."
     doc_type_embedding = "The type embedding. In other backends, the type embedding is already included in the descriptor."
     doc_modifier = "The modifier of model output."
@@ -3437,6 +3444,13 @@ def model_args(
                 optional=True,
                 default=1e-2,
                 doc=doc_data_stat_protect,
+            ),
+            Argument(
+                "data_stat_full",
+                bool,
+                optional=True,
+                default=False,
+                doc=supported_backends("pt", "pd") + doc_data_stat_full,
             ),
             Argument(
                 "data_bias_nsample",

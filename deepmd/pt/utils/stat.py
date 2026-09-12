@@ -5,6 +5,7 @@ from collections import (
 )
 from collections.abc import (
     Callable,
+    Sequence,
 )
 from typing import (
     Any,
@@ -12,6 +13,9 @@ from typing import (
 
 import numpy as np
 import torch
+from torch.utils.data import (
+    DataLoader,
+)
 
 from deepmd.pt.utils import (
     AtomExcludeMask,
@@ -25,16 +29,22 @@ from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 from deepmd.utils.out_stat import (
+    ReduScanResult,
+    ReduStatAccumulator,
+    ReduStatScanner,
     compute_stats_do_not_distinguish_types,
     compute_stats_from_atomic,
     compute_stats_from_redu,
+    get_redu_stat_scanner,
 )
 from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.stat_file import (
+    load_output_stat_full_scan,
     load_paired_items,
     replace_paired_items,
+    save_output_stat_full_scan,
 )
 
 log = logging.getLogger(__name__)
@@ -44,6 +54,7 @@ from deepmd.dpmodel.utils.stat import (
     _restore_observed_type_from_file,
     _save_observed_type_to_file,
     collect_observed_types,
+    observed_types_from_counts,
 )
 
 __all__ = [
@@ -51,6 +62,8 @@ __all__ = [
     "_save_observed_type_to_file",
     "collect_observed_types",
     "min_pair_dist_frame_mask",
+    "observed_types_from_counts",
+    "scan_redu_stats",
     "select_batch_frames",
 ]
 
@@ -220,6 +233,108 @@ def make_stat_input(
         dict_to_device(sys_stat)
         lst.append(sys_stat)
     return lst
+
+
+def _full_pass_loader(dataloader: Any) -> Any:
+    """Return a loader that covers the dataset once, whatever sampler it uses.
+
+    Training loaders may carry a distributed or weighted sampler, which would
+    hide part of the data from a scan that is meant to be exhaustive.
+    """
+    if dataloader.batch_size is None:
+        # a custom batch sampler owns the batching; leave it alone
+        return dataloader
+    with torch.device("cpu"):
+        return DataLoader(
+            dataloader.dataset,
+            batch_size=dataloader.batch_size,
+            shuffle=False,
+            num_workers=0,
+            drop_last=False,
+            collate_fn=dataloader.collate_fn,
+        )
+
+
+def scan_redu_stats(
+    dataloaders: list[Any],
+    ntypes: int,
+    keys: Sequence[str],
+    intensive: bool = False,
+    min_pair_dist: float = 0.0,
+) -> ReduScanResult:
+    """Accumulate exact reduced-label statistics over every training frame.
+
+    Where :func:`make_stat_input` keeps a few batches per system, this scans the
+    whole training set but retains only per-type atom counts and reduced labels,
+    compressed into one :class:`ReduStatAccumulator` per key. Elements that are
+    too rare to survive batch sampling therefore still enter the regression, at
+    a memory cost that does not grow with the number of frames.
+
+    Parameters
+    ----------
+    dataloaders
+        One data loader for each system.
+    ntypes
+        The number of atom types.
+    keys
+        Output labels whose statistics are accumulated.
+    intensive
+        Whether the fitting target is intensive.
+    min_pair_dist
+        Minimum allowed pair distance in Angstrom. Frames below the threshold
+        are excluded.
+
+    Returns
+    -------
+    ReduScanResult
+        The accumulators, the per-type atom counts and the frame count.
+
+    Notes
+    -----
+    Statistics initialization runs on the chief process only, so one scan of
+    the training set is performed per run, not per rank.
+    """
+    stats: dict[str, ReduStatAccumulator] = {}
+    natoms_total = np.zeros(ntypes, dtype=np.int64)
+    nframes = 0
+    log.info(
+        "Scanning all frames of %d systems for output statistics", len(dataloaders)
+    )
+    with torch.device("cpu"):
+        for dataloader in dataloaders:
+            for batch in _full_pass_loader(dataloader):
+                frame_mask = min_pair_dist_frame_mask(batch, min_pair_dist)
+                if frame_mask is not None:
+                    if not torch.any(frame_mask):
+                        continue
+                    batch = select_batch_frames(batch, frame_mask)
+                natoms_key = (
+                    "real_natoms_vec" if "real_natoms_vec" in batch else "natoms"
+                )
+                # natoms is [nframes, 2 + ntypes]; the first two are nall/nloc
+                natoms = to_numpy_array(batch[natoms_key])[:, 2:]
+                natoms_total += natoms.sum(axis=0).astype(np.int64)
+                nframes += natoms.shape[0]
+                for key in keys:
+                    if key not in batch or float(batch.get(f"find_{key}", 0.0)) <= 0.0:
+                        continue
+                    label = to_numpy_array(batch[key])
+                    if key not in stats:
+                        var_shape = list(label.shape[1:])
+                        stats[key] = ReduStatAccumulator(
+                            ntypes,
+                            int(np.prod(var_shape)) if var_shape else 1,
+                            var_shape,
+                            intensive=intensive,
+                        )
+                    stats[key].add(label, natoms)
+    log.info(
+        "Scanned %d frames; %d of %d types observed",
+        nframes,
+        int(np.count_nonzero(natoms_total)),
+        ntypes,
+    )
+    return ReduScanResult(stats=stats, natoms_total=natoms_total, nframes=nframes)
 
 
 def _restore_from_file(
@@ -466,8 +581,39 @@ def compute_output_stats(
     assert isinstance(keys, list)
     requested_keys = list(keys)
 
+    # a full scan cannot replace the sampled path for delta bias or type-blind
+    # statistics, so resolve it before the cache is consulted
+    redu_scanner = get_redu_stat_scanner(merged)
+    if redu_scanner is not None and (
+        model_forward is not None or not stats_distinguish_types
+    ):
+        log.warning(
+            "Falling back to sampled output statistics: a full scan supports "
+            "neither delta bias nor stats_distinguish_types=False."
+        )
+        redu_scanner = None
+
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    if (
+        bias_atom_e is not None
+        and redu_scanner is not None
+        and not load_output_stat_full_scan(stat_file_path)
+    ):
+        # the cache holds sampled values, which is what data_stat_full replaces
+        if getattr(stat_file_path, "mode", None) == "r":
+            log.warning(
+                "`data_stat_full` is set, but the read-only statistics cache "
+                "holds output statistics estimated from sampled batches; they "
+                "are used as they are."
+            )
+        else:
+            log.info(
+                "Recomputing output statistics: the cache holds values "
+                "estimated from sampled batches, which `data_stat_full` "
+                "replaces."
+            )
+            bias_atom_e, std_atom_e = None, None
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
@@ -565,6 +711,7 @@ def compute_output_stats(
             stats_distinguish_types,
             intensive,
             model_pred_g,
+            redu_scanner,
         )
         bias_atom_a, std_atom_a = _compute_output_stats_atomic(
             sampled,
@@ -594,12 +741,16 @@ def compute_output_stats(
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
+            # withdraw any standing claim before the values it describes are
+            # replaced, so an interruption leaves the cache looking sampled
+            save_output_stat_full_scan(stat_file_path, False)
             _save_to_file(
                 stat_file_path,
                 requested_keys,
                 bias_atom_e,
                 std_atom_e,
             )
+            save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
     bias_atom_e = {kk: to_torch_tensor(vv) for kk, vv in bias_atom_e.items()}
     std_atom_e = {kk: to_torch_tensor(vv) for kk, vv in std_atom_e.items()}
@@ -616,8 +767,15 @@ def _compute_output_stats_global(
     stats_distinguish_types: bool = True,
     intensive: bool = False,
     model_pred: dict[str, np.ndarray] | None = None,
+    redu_scanner: ReduStatScanner | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-    """This function only handle stat computation from reduced global labels."""
+    """This function only handle stat computation from reduced global labels.
+
+    When *redu_scanner* is given, the bias and std come from a scan of every
+    training frame instead of the sampled batches, which keeps rare elements
+    from being under-represented in the regression. The caller decides whether
+    a scan is admissible; it is ignored for delta bias and type-blind statistics.
+    """
     # return directly if no global samples
     if global_sampled_idx is None or all(
         len(v) == 0 for v in global_sampled_idx.values()
@@ -677,10 +835,33 @@ def _compute_output_stats_global(
             if kk in merged_output
         }
 
+    scan = (
+        redu_scanner.scan(ntypes, keys, intensive)
+        if redu_scanner is not None and model_pred is None and stats_distinguish_types
+        else None
+    )
+    # one model-level source writes atom_exclude_types onto every sample, so
+    # the first one carries the mask the whole scan needs
+    type_mask = (
+        to_numpy_array(
+            AtomExcludeMask(ntypes, sampled[0]["atom_exclude_types"]).get_type_mask()
+        )
+        if scan is not None and "atom_exclude_types" in sampled[0]
+        else None
+    )
+
     bias_atom_e = {}
     std_atom_e = {}
+    scanned_keys = set()
     for kk in keys:
-        if kk in stats_input:
+        if scan is not None and kk in scan.stats:
+            bias_atom_e[kk], std_atom_e[kk] = scan.stats[kk].solve(
+                assigned_bias=assigned_atom_ener[kk],
+                rcond=rcond,
+                type_mask=type_mask,
+            )
+            scanned_keys.add(kk)
+        elif kk in stats_input:
             if not stats_distinguish_types:
                 bias_atom_e[kk], std_atom_e[kk] = (
                     compute_stats_do_not_distinguish_types(
@@ -707,6 +888,8 @@ def _compute_output_stats_global(
 
     unbias_e = {}
     for kk in bias_atom_e.keys():
+        if kk in scanned_keys or kk not in merged_natoms:
+            continue
         coeffs = merged_natoms[kk]
         if intensive:
             total_atoms = coeffs.sum(axis=1, keepdims=True)
@@ -719,7 +902,13 @@ def _compute_output_stats_global(
     def rmse(x: np.ndarray) -> float:
         return np.sqrt(np.mean(np.square(x)))
 
-    for kk in bias_atom_e.keys():
+    for kk in scanned_keys:
+        log.info(
+            f"Std of {kk} residual after linear regression over "
+            f"{scan.stats[kk].nframes} frames is: {std_atom_e[kk].reshape(-1)[0]} "
+            f"in the unit of {kk}."
+        )
+    for kk in unbias_e.keys():
         diff = unbias_e[kk].reshape(nf[kk], -1) - merged_output[kk].reshape(nf[kk], -1)
         if not intensive:
             diff /= merged_natoms[kk].sum(axis=-1, keepdims=True)
