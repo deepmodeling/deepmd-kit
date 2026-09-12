@@ -17,8 +17,10 @@ DFT-labelled data, and to give molecular property work a pretrained backbone.
 > Uni-Mol is **not** a potential energy surface model. It attends over every
 > atom pair with no cut-off and no smooth envelope, so it is not extensive, it
 > does not support periodic boundaries, and its forces are neither smooth nor
-> conserved. The descriptor refuses frames that carry periodic images, and it
-> is not available for molecular dynamics or frozen deployment.
+> conserved. The descriptor refuses any frame whose atoms are not all local,
+> which rules out periodic images and the ghost-atom layout that freezing and
+> parallel evaluation assume, so it is not available for molecular dynamics or
+> frozen deployment.
 
 ## Architecture
 

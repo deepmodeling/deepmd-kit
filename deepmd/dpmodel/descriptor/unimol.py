@@ -322,8 +322,10 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         nall = coord.shape[1]
         if nall != nloc:
             raise ValueError(
-                "the unimol descriptor is molecular and does not support periodic "
-                f"images: got {nall} extended atoms for {nloc} local atoms"
+                "the unimol descriptor needs every atom to be local: it attends "
+                "over all pairs, so it supports neither periodic images nor the "
+                "ghost-atom layout that freezing and parallel evaluation assume "
+                f"(got {nall} extended atoms for {nloc} local atoms)"
             )
 
         real_mask = xp.any(nlist >= 0, axis=-1)

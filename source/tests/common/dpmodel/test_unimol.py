@@ -359,7 +359,7 @@ class TestUniMolDescriptor(UniMolGoldenMixin, unittest.TestCase):
     def test_rejects_periodic_and_tiny_frames(self) -> None:
         desc = self.build_descriptor()
         coord, atype, nlist = self.deepmd_inputs()
-        with self.assertRaisesRegex(ValueError, "periodic"):
+        with self.assertRaisesRegex(ValueError, "every atom to be local"):
             desc.forward_tokens(np.concatenate([coord, coord], axis=1), atype, nlist)
         lonely = np.full_like(nlist[:, :1, :], -1)
         with self.assertRaisesRegex(ValueError, "two real atoms"):
