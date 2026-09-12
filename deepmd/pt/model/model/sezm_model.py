@@ -843,56 +843,52 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             noise_mask=noise_mask,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict: dict[str, torch.Tensor] = {}
+        model_predict: dict[str, torch.Tensor] = {}
 
-            # === Step 1. Energy ===
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
+        # === Step 1. Energy ===
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
 
-            # === Step 2. Force (independent branch) ===
-            if self.do_grad_r("energy"):
-                model_predict["force"] = rearrange(
-                    model_ret["energy_derv_r"],
-                    "nf nloc 1 three -> nf nloc three",
-                    three=3,
-                )
-            else:
-                model_predict["force"] = model_ret["dforce"]
-
-            if self.get_active_mode() == "dens":
-                if "energy_norm" in model_ret:
-                    model_predict["energy_norm"] = model_ret["energy_norm"]
-                if "atom_energy_norm" in model_ret:
-                    model_predict["atom_energy_norm"] = model_ret["atom_energy_norm"]
-                if "dforce_norm" in model_ret:
-                    model_predict["force_norm"] = model_ret["dforce_norm"]
-                if "clean_dforce_norm" in model_ret:
-                    model_predict["clean_force_norm"] = model_ret["clean_dforce_norm"]
-                if "denoising_dforce_norm" in model_ret:
-                    model_predict["denoising_force_norm"] = model_ret[
-                        "denoising_dforce_norm"
-                    ]
-
-            # === Step 3. Virial ===
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = rearrange(
-                    model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
-                )
-                if do_atomic_virial:
-                    model_predict["atom_virial"] = rearrange(
-                        model_ret["energy_derv_c"],
-                        "nf nloc 1 nine -> nf nloc nine",
-                        nine=9,
-                    )
-
-            # === Step 4. Mask ===
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-
+        # === Step 2. Force (independent branch) ===
+        if self.do_grad_r("energy"):
+            model_predict["force"] = rearrange(
+                model_ret["energy_derv_r"],
+                "nf nloc 1 three -> nf nloc three",
+                three=3,
+            )
         else:
-            model_predict = model_ret
-            model_predict["updated_coord"] += coord
+            model_predict["force"] = model_ret["dforce"]
+
+        if self.get_active_mode() == "dens":
+            if "energy_norm" in model_ret:
+                model_predict["energy_norm"] = model_ret["energy_norm"]
+            if "atom_energy_norm" in model_ret:
+                model_predict["atom_energy_norm"] = model_ret["atom_energy_norm"]
+            if "dforce_norm" in model_ret:
+                model_predict["force_norm"] = model_ret["dforce_norm"]
+            if "clean_dforce_norm" in model_ret:
+                model_predict["clean_force_norm"] = model_ret["clean_dforce_norm"]
+            if "denoising_dforce_norm" in model_ret:
+                model_predict["denoising_force_norm"] = model_ret[
+                    "denoising_dforce_norm"
+                ]
+
+        # === Step 3. Virial ===
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = rearrange(
+                model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
+            )
+            if do_atomic_virial:
+                model_predict["atom_virial"] = rearrange(
+                    model_ret["energy_derv_c"],
+                    "nf nloc 1 nine -> nf nloc nine",
+                    nine=9,
+                )
+
+        # === Step 4. Mask ===
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+
         return model_predict
 
     def forward_embedding(
@@ -1866,37 +1862,34 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             extended_atype=extended_atype,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict: dict[str, torch.Tensor] = {}
+        model_predict: dict[str, torch.Tensor] = {}
 
-            # === Step 1. Energy ===
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
+        # === Step 1. Energy ===
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
 
-            # === Step 2. Force (independent branch) ===
-            if self.do_grad_r("energy"):
-                model_predict["extended_force"] = rearrange(
-                    model_ret["energy_derv_r"],
-                    "nf nall 1 three -> nf nall three",
-                    three=3,
-                )
-            else:
-                assert model_ret["dforce"] is not None
-                model_predict["dforce"] = model_ret["dforce"]
-
-            # === Step 3. Virial ===
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = rearrange(
-                    model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
-                )
-                if do_atomic_virial:
-                    model_predict["extended_virial"] = rearrange(
-                        model_ret["energy_derv_c"],
-                        "nf nall 1 nine -> nf nall nine",
-                        nine=9,
-                    )
+        # === Step 2. Force (independent branch) ===
+        if self.do_grad_r("energy"):
+            model_predict["extended_force"] = rearrange(
+                model_ret["energy_derv_r"],
+                "nf nall 1 three -> nf nall three",
+                three=3,
+            )
         else:
-            model_predict = model_ret
+            assert model_ret["dforce"] is not None
+            model_predict["dforce"] = model_ret["dforce"]
+
+        # === Step 3. Virial ===
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = rearrange(
+                model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
+            )
+            if do_atomic_virial:
+                model_predict["extended_virial"] = rearrange(
+                    model_ret["energy_derv_c"],
+                    "nf nall 1 nine -> nf nall nine",
+                    nine=9,
+                )
         return model_predict
 
     # =========================================================================
