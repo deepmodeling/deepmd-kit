@@ -316,6 +316,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
             ``n_real``; the sequence is ``[CLS] atoms [SEP] pad...``.
         """
         xp = array_api_compat.array_namespace(coord_ext)
+        dev = array_api_compat.device(coord_ext)
         nf, nloc = nlist.shape[0], nlist.shape[1]
         coord = xp.reshape(coord_ext, (nf, -1, 3))
         nall = coord.shape[1]
@@ -344,13 +345,11 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
                 / xp.astype(n_real, coord.dtype)[:, None]
             )
         else:
-            centroid = xp.zeros((nf, 3), dtype=coord.dtype)
+            centroid = xp.zeros((nf, 3), dtype=coord.dtype, device=dev)
 
         # The lookup table is plain integer data rather than a parameter, so it
         # does not travel with the module and has to be placed explicitly.
-        token_table = xp.asarray(
-            self.type_to_token, device=array_api_compat.device(nlist)
-        )
+        token_table = xp.asarray(self.type_to_token, device=dev)
         atom_tokens = xp.take(token_table, xp.reshape(atype_ext, (-1,)), axis=0)
         atom_tokens = xp.reshape(atom_tokens, (nf, nloc))
         atom_tokens = xp.where(
@@ -358,10 +357,10 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         )
 
         nt = nloc + 2
-        positions = xp.arange(nt)[None, :]
+        positions = xp.arange(nt, device=dev)[None, :]
         eos_at = (n_real + 1)[:, None]
-        bos_row = xp.full((nf, 1), self.bos_idx, dtype=atom_tokens.dtype)
-        pad_row = xp.full((nf, 1), self.pad_idx, dtype=atom_tokens.dtype)
+        bos_row = xp.full((nf, 1), self.bos_idx, dtype=atom_tokens.dtype, device=dev)
+        pad_row = xp.full((nf, 1), self.pad_idx, dtype=atom_tokens.dtype, device=dev)
         tokens = xp.concat([bos_row, atom_tokens, pad_row], axis=1)
         tokens = xp.where(
             positions == eos_at, xp.full_like(tokens, self.eos_idx), tokens

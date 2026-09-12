@@ -216,7 +216,14 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
         out = {}
         for name in ("x_norm", "delta_pair_norm"):
             value = xp.astype(xp.reshape(backbone[name], (1, 1, 1)), node.dtype)
-            out[name] = xp.zeros((nf, nloc, 1), dtype=node.dtype) + value
+            out[name] = (
+                xp.zeros(
+                    (nf, nloc, 1),
+                    dtype=node.dtype,
+                    device=array_api_compat.device(node),
+                )
+                + value
+            )
         if self.lm_head is not None:
             logits = self.lm_head(node)
             out["token_logits"] = logits[:, 1 : nloc + 1, :]
@@ -232,7 +239,11 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
             dist = self.dist_head(backbone["pair_rep"])[:, 1 : nloc + 1, :]
             width = self.max_atoms + 2
             if dist.shape[-1] < width:
-                pad = xp.zeros((nf, nloc, width - dist.shape[-1]), dtype=dist.dtype)
+                pad = xp.zeros(
+                    (nf, nloc, width - dist.shape[-1]),
+                    dtype=dist.dtype,
+                    device=array_api_compat.device(dist),
+                )
                 dist = xp.concat([dist, pad], axis=-1)
             out["pair_dist"] = dist
         return out

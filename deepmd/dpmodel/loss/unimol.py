@@ -72,7 +72,7 @@ def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
     """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
     xp = array_api_compat.array_namespace(mask)
     n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
-    positions = xp.arange(ncol)[None, :]
+    positions = xp.arange(ncol, device=array_api_compat.device(mask))[None, :]
     return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
 
 
@@ -87,10 +87,13 @@ def _clean_distances(coord_target: Array, mask: Array, ncol: int) -> Array:
     nf = coord_target.shape[0]
     real = xp.astype(mask, coord_target.dtype)[..., None]
     atoms = coord_target * real
-    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype)
+    dev = array_api_compat.device(coord_target)
+    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
     tokens = xp.concat([zero, atoms, zero], axis=1)
     if tokens.shape[1] < ncol:
-        pad = xp.zeros((nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype)
+        pad = xp.zeros(
+            (nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype, device=dev
+        )
         tokens = xp.concat([tokens, pad], axis=1)
     diff = atoms[:, :, None, :] - tokens[:, None, :, :]
     return xp.sqrt(xp.sum(diff**2, axis=-1))
