@@ -42,6 +42,9 @@ from .native_spin_model import (
 from .polar_model import (
     PolarModel,
 )
+from .unimol_pretrain_model import (
+    UniMolPretrainModel,
+)
 from .property_model import (
     PropertyModel,
 )
@@ -61,5 +64,6 @@ __all__ = [
     "PolarModel",
     "PropertyModel",
     "SpinModel",
+    "UniMolPretrainModel",
     "make_model",
 ]

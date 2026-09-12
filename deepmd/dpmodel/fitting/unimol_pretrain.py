@@ -177,6 +177,19 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
                     c_differentiable=False,
                 )
             )
+        # The two regularisers are frame scalars, but only per-atom variables
+        # survive the atomic-output machinery, so each is broadcast over the
+        # local atoms and the loss averages it back with the real-atom mask.
+        for name in ("x_norm", "delta_pair_norm"):
+            variables.append(
+                OutputVariableDef(
+                    name,
+                    [1],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                )
+            )
         return FittingOutputDef(variables)
 
     def call_tokens(self, backbone: dict[str, Array]) -> dict[str, Array]:
@@ -200,10 +213,10 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
         node = backbone["node_ebd"]
         nf, nt = node.shape[0], node.shape[1]
         nloc = nt - 2
-        out = {
-            "x_norm": backbone["x_norm"],
-            "delta_pair_norm": backbone["delta_pair_norm"],
-        }
+        out = {}
+        for name in ("x_norm", "delta_pair_norm"):
+            value = xp.astype(backbone[name], node.dtype)
+            out[name] = xp.full((nf, nloc, 1), value, dtype=node.dtype)
         if self.lm_head is not None:
             logits = self.lm_head(node)
             out["token_logits"] = logits[:, 1 : nloc + 1, :]

@@ -51,6 +51,23 @@ def _smooth_l1(pred: Array, label: Array, beta: float = 1.0) -> Array:
     return xp.mean(elementwise)
 
 
+def _frame_scalar(value: Array, mask: Array | None) -> Array:
+    """Recover a frame scalar that was broadcast over the local atoms.
+
+    The two norm regularisers are frame quantities, but the model can only emit
+    per-atom variables, so each real atom carries the same value and padded ones
+    are zeroed. Averaging over the real atoms returns the original scalar.
+    """
+    xp = array_api_compat.array_namespace(value)
+    if value.ndim <= 1:
+        return xp.reshape(value, ())
+    per_atom = xp.reshape(value, value.shape[:2])
+    if mask is None:
+        return xp.mean(per_atom)
+    weights = xp.astype(mask, per_atom.dtype)
+    return xp.sum(per_atom * weights) / xp.sum(weights)
+
+
 def _masked_nll(logits: Array, target: Array, pad_idx: int) -> Array:
     """Negative log likelihood over the selected positions.
 
@@ -132,6 +149,7 @@ class UniMolLoss(Loss):
     ) -> tuple[Array, dict[str, Array]]:
         """Evaluate the five terms and their weighted sum."""
         del learning_rate, natoms, mae
+        mask = model_dict.get("mask")
         token_target = label_dict["unimol_token_target"]
         xp = array_api_compat.array_namespace(token_target)
         masked = token_target != self.pad_idx
@@ -146,7 +164,7 @@ class UniMolLoss(Loss):
         if self.masked_token_loss > 0:
             # The model emits one row per local atom; the objective covers only
             # the corrupted ones, so they are gathered here.
-            logits = model_dict["unimol_logits"]
+            logits = model_dict["token_logits"]
             if logits.ndim == 3:
                 logits = logits[masked]
             add(
@@ -155,7 +173,7 @@ class UniMolLoss(Loss):
                 "token_loss",
             )
         if self.masked_coord_loss > 0:
-            coord_pred = model_dict["unimol_coord"][masked]
+            coord_pred = model_dict["coord_update"][masked]
             coord_label = label_dict["unimol_coord_target"][masked]
             add(
                 _smooth_l1(
@@ -175,15 +193,15 @@ class UniMolLoss(Loss):
                 label_dict["unimol_dist_target"][pair_mask] - DIST_MEAN
             ) / DIST_STD
             add(
-                _smooth_l1(model_dict["unimol_dist"][pair_mask], dist_label, self.beta),
+                _smooth_l1(model_dict["pair_dist"][pair_mask], dist_label, self.beta),
                 self.masked_dist_loss,
                 "dist_loss",
             )
         if self.x_norm_loss > 0:
-            add(model_dict["unimol_x_norm"], self.x_norm_loss, "x_norm_loss")
+            add(_frame_scalar(model_dict["x_norm"], mask), self.x_norm_loss, "x_norm_loss")
         if self.delta_pair_repr_norm_loss > 0:
             add(
-                model_dict["unimol_delta_pair_norm"],
+                _frame_scalar(model_dict["delta_pair_norm"], mask),
                 self.delta_pair_repr_norm_loss,
                 "delta_pair_norm_loss",
             )
