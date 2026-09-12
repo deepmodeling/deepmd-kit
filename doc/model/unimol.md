@@ -50,7 +50,22 @@ each coordinate component. Five terms are minimized:
 
 Corruption happens in the data pipeline rather than inside the loss, which is
 both what upstream does and what the PyTorch-Exportable backend requires, since
-it runs the model before the loss sees a frame.
+it runs the model before the loss sees a frame. The objective owns the settings
+and hands the trainer the transform it needs, so a training run installs it
+automatically; the masking rate, the 90/5/5 split, the noise and the seed are
+all configurable under `loss`.
+
+A masked atom is carried as a `[MASK]` pseudo-element, so the model's
+`type_map` has to declare it alongside the elements.
+
+## Training
+
+```sh
+dp --pt-expt train examples/unimol/pretrain/input.json
+```
+
+The dataset has to be an LMDB one, because the corruption happens as frames are
+read; `deepmd.utils.unimol_data` below produces it.
 
 ## Using the released weights
 

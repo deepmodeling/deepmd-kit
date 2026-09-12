@@ -498,5 +498,39 @@ class TestUniMolLoss(UniMolGoldenMixin, unittest.TestCase):
         self.assertEqual(clone.beta, 0.5)
 
 
+class TestUniMolExample(unittest.TestCase):
+    """The shipped example must stay valid as the arguments evolve.
+
+    It is checked here rather than in the shared example test, because that one
+    also requires the referenced dataset to exist in the repository, and this
+    example points at data the user converts from upstream.
+    """
+
+    def test_example_configuration_is_valid(self) -> None:
+        import json
+        from pathlib import (
+            Path,
+        )
+
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+
+        path = (
+            Path(__file__).parents[4]
+            / "examples"
+            / "unimol"
+            / "pretrain"
+            / "input.json"
+        )
+        self.assertTrue(path.is_file(), f"missing example: {path}")
+        config = normalize(json.loads(path.read_text()))
+        self.assertEqual(config["model"]["descriptor"]["type"], "unimol")
+        self.assertEqual(config["model"]["fitting_net"]["type"], "unimol_pretrain")
+        self.assertEqual(config["loss"]["type"], "unimol")
+        # A corrupted atom is carried as this pseudo-element, so the map needs it.
+        self.assertIn("[MASK]", config["model"]["type_map"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,7 +27,8 @@
       "Se",
       "Gd",
       "Au",
-      "Li"
+      "Li",
+      "[MASK]"
     ],
     "descriptor": {
       "type": "unimol",
@@ -52,7 +53,8 @@
       "max_atoms": 256,
       "activation_function": "gelu_erf",
       "seed": 1
-    }
+    },
+    "_comment_type_map": "[MASK] is the pseudo-element a corrupted atom is carried as; the objective needs it"
   },
   "learning_rate": {
     "type": "wsd",
@@ -69,7 +71,14 @@
     "masked_coord_loss": 5.0,
     "masked_dist_loss": 10.0,
     "x_norm_loss": 0.01,
-    "delta_pair_repr_norm_loss": 0.01
+    "delta_pair_repr_norm_loss": 0.01,
+    "mask_prob": 0.15,
+    "leave_unmasked_prob": 0.05,
+    "random_token_prob": 0.05,
+    "noise_type": "uniform",
+    "noise": 1.0,
+    "max_atoms": 256,
+    "data_seed": 1
   },
   "training": {
     "training_data": {
