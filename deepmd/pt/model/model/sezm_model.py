@@ -1832,8 +1832,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Returns
         -------
         dict[str, torch.Tensor]
-            Lower-interface outputs.
-            When a fitting net is present, this always includes:
+            Lower-interface outputs. Always includes:
             - `atom_energy`: atomic energy on local atoms with shape (nf, nloc, 1)
             - `energy`: reduced energy with shape (nf, 1)
             It additionally includes:
@@ -1843,7 +1842,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             - `virial`: reduced virial with shape (nf, 9) when `self.do_grad_c("energy")` is true
             - `extended_virial`: per-extended-atom virial with shape (nf, nall, 9)
               only when both `self.do_grad_c("energy")` and `do_atomic_virial` are true
-            If no fitting net is present, the raw result of `forward_common_lower()` is returned.
         """
         if self.get_active_mode() == "dens":
             raise NotImplementedError(
