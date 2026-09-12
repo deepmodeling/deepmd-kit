@@ -438,6 +438,17 @@ class EnergySpinLoss(Loss):
         return loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured energy and real/magnetic force metrics."""
+        prefix = "rmse" if self.loss_func == "mse" else "mae"
+        names = ("rmse",)
+        return names + tuple(
+            f"{prefix}_{term}"
+            for term in ("e", "fr", "fm", "v", "ae")
+            if getattr(self, f"has_{term}")
+        )
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []

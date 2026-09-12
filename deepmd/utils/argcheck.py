@@ -5661,7 +5661,10 @@ def training_args(
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing during training."
     doc_disp_avg = (
-        "Display the average loss over the display interval for training sets."
+        "Display the arithmetic mean of per-step training metrics within each "
+        "display interval, separately for each task. Tasks with no training "
+        "steps in an interval display NaN. Validation metrics are evaluated "
+        "at the display step, not averaged over training steps."
     )
     doc_profiling = (
         "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
@@ -5862,7 +5865,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_disp_avg,
+            doc=supported_backends("pt", "pt_expt") + doc_disp_avg,
         ),
         Argument(
             "profiling",
