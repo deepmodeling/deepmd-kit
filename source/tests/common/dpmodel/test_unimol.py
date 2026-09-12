@@ -455,6 +455,42 @@ class TestUniMolLoss(UniMolGoldenMixin, unittest.TestCase):
             atol=1e-8,
         )
 
+    def test_derived_labels_match_explicit_ones(self) -> None:
+        """Storing the distance target would cost O(natoms^2) per frame.
+
+        The loss derives it, and the token column mask, from the clean
+        coordinates and the real-atom mask instead. Both routes must agree.
+        """
+        nf, nloc = len(self.n_real), int(self.n_real.max())
+        ncol = nloc + 2
+        rng = np.random.default_rng(0)
+        labels = self._labels(nloc, ncol)
+        mask = np.zeros((nf, nloc), dtype=np.int64)
+        for f in range(nf):
+            mask[f, : int(self.n_real[f])] = 1
+        pred = {
+            "token_logits": rng.normal(size=(nf, nloc, SMALL["vocab"])),
+            "coord_update": rng.normal(size=(nf, nloc, 3)),
+            "pair_dist": rng.normal(size=(nf, nloc, ncol)),
+            "x_norm": np.zeros((nf, nloc, 1)),
+            "delta_pair_norm": np.zeros((nf, nloc, 1)),
+            "mask": mask,
+        }
+        explicit, _ = UniMolLoss().call(1.0, 0, pred, labels)
+        derived, _ = UniMolLoss().call(
+            1.0,
+            0,
+            pred,
+            {
+                k: v
+                for k, v in labels.items()
+                if k not in ("unimol_dist_target", "unimol_token_mask")
+            },
+        )
+        # The explicit target is upstream's, stored in fp32; the derived one is
+        # computed in the working precision, so they part company there.
+        np.testing.assert_allclose(float(derived), float(explicit), rtol=1e-7)
+
     def test_serialize_round_trip(self) -> None:
         loss = UniMolLoss(masked_coord_loss=3.0, beta=0.5)
         clone = UniMolLoss.deserialize(loss.serialize())

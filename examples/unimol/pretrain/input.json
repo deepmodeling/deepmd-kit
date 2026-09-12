@@ -1,0 +1,93 @@
+{
+  "_comment": "Uni-Mol v1 self-supervised molecular pretraining. Convert the data first with: python -m deepmd.utils.unimol_data ligands.lmdb ./unimol_train --add-2d-conformer",
+  "model": {
+    "type_map": [
+      "C",
+      "N",
+      "O",
+      "S",
+      "H",
+      "Cl",
+      "F",
+      "Br",
+      "I",
+      "Si",
+      "P",
+      "B",
+      "Na",
+      "K",
+      "Al",
+      "Ca",
+      "Sn",
+      "As",
+      "Hg",
+      "Fe",
+      "Zn",
+      "Cr",
+      "Se",
+      "Gd",
+      "Au",
+      "Li"
+    ],
+    "descriptor": {
+      "type": "unimol",
+      "encoder_layers": 15,
+      "encoder_embed_dim": 512,
+      "encoder_ffn_embed_dim": 2048,
+      "encoder_attention_heads": 64,
+      "max_atoms": 256,
+      "activation_function": "gelu_erf",
+      "_comment": "dropout acts during training only; the two precision switches decide whether a run reproduces upstream's published numbers or takes the more accurate path",
+      "dropout": 0.1,
+      "emb_dropout": 0.1,
+      "attention_dropout": 0.1,
+      "single_precision_basis": true,
+      "single_precision_distance": false,
+      "seed": 1
+    },
+    "fitting_net": {
+      "type": "unimol_pretrain",
+      "n_token": 31,
+      "attention_heads": 64,
+      "max_atoms": 256,
+      "activation_function": "gelu_erf",
+      "seed": 1
+    }
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 0.0001,
+    "stop_lr": 1e-12,
+    "warmup_steps": 10000,
+    "decay_type": "linear",
+    "decay_phase_ratio": 1.0,
+    "_comment": "upstream warms up over 10k steps then decays linearly to zero over 1M; WSD requires a positive stop_lr, so it goes to 1e-12"
+  },
+  "loss": {
+    "type": "unimol",
+    "masked_token_loss": 1.0,
+    "masked_coord_loss": 5.0,
+    "masked_dist_loss": 10.0,
+    "x_norm_loss": 0.01,
+    "delta_pair_repr_norm_loss": 0.01
+  },
+  "training": {
+    "training_data": {
+      "systems": [
+        "./unimol_train"
+      ],
+      "batch_size": 16
+    },
+    "validation_data": {
+      "systems": [
+        "./unimol_valid"
+      ],
+      "batch_size": 16
+    },
+    "numb_steps": 1000000,
+    "seed": 1,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 10000
+  }
+}

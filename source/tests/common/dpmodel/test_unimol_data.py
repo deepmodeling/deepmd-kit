@@ -15,6 +15,9 @@ from deepmd.dpmodel.descriptor.unimol import (
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
 )
+from deepmd.dpmodel.utils.unimol_transform import (
+    make_unimol_data_transform,
+)
 from deepmd.utils.unimol_data import (
     convert_unimol_lmdb,
     read_unimol_lmdb,
@@ -95,6 +98,47 @@ class TestUniMolDataConversion(unittest.TestCase):
         self.assertEqual(symbols, self.molecules[0]["atoms"])
         # Molecules are not periodic; the cell is zero.
         np.testing.assert_array_equal(np.asarray(frame["box"]).reshape(-1), np.zeros(9))
+
+    def test_transform_corrupts_frames_in_the_data_path(self) -> None:
+        """The reader hook is what makes self-supervised training possible."""
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        dst = os.path.join(self.tmp, "for_training")
+        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
+        reader = LmdbDataReader(dst, type_map)
+        plain = reader[0]
+        reader.set_frame_transform(
+            make_unimol_data_transform(type_map, seed=1, epoch=1)
+        )
+        corrupted = reader[0]
+
+        self.assertEqual(
+            sorted(set(corrupted) - set(plain)),
+            [
+                "find_unimol_coord_target",
+                "find_unimol_token_target",
+                "unimol_coord_target",
+                "unimol_token_target",
+            ],
+        )
+        target = np.asarray(corrupted["unimol_token_target"])
+        clean = np.asarray(corrupted["unimol_coord_target"]).reshape(-1, 3)
+        noisy = np.asarray(corrupted["coord"]).reshape(-1, 3)
+        # Only selected atoms may move, and the clean target is centred.
+        moved = np.abs(noisy - clean).max(axis=-1) > 0
+        self.assertTrue(bool(np.all(~moved | (target != 0))))
+        # Centring is exact only to fp32, because the transform keeps upstream's
+        # fp32 coordinates.
+        np.testing.assert_allclose(clean.mean(axis=0), np.zeros(3), atol=1e-6)
+        # Masked atoms are carried as the pseudo-element. Of the selected
+        # atoms, 90% are masked and 5% take a random element; both are moved,
+        # so the masked ones are a subset of the moved ones.
+        is_mask = np.asarray(corrupted["atype"]) == type_map.index("[MASK]")
+        self.assertLessEqual(int(is_mask.sum()), int(moved.sum()))
+        self.assertTrue(bool(np.all(~is_mask | moved)))
+
+    def test_transform_requires_the_mask_pseudo_element(self) -> None:
+        with self.assertRaisesRegex(ValueError, r"\[MASK\]"):
+            make_unimol_data_transform(list(UNIMOL_ELEMENTS))
 
     def test_limits_are_respected(self) -> None:
         dst = os.path.join(self.tmp, "limited")

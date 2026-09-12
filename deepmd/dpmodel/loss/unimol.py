@@ -68,6 +68,34 @@ def _frame_scalar(value: Array, mask: Array | None) -> Array:
     return xp.sum(per_atom * weights) / xp.sum(weights)
 
 
+def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
+    """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
+    xp = array_api_compat.array_namespace(mask)
+    n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
+    positions = xp.arange(ncol)[None, :]
+    return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
+
+
+def _clean_distances(coord_target: Array, mask: Array, ncol: int) -> Array:
+    """Pairwise distances from the clean coordinates, virtual tokens included.
+
+    Storing this as a label would cost O(natoms^2) per frame, so it is derived
+    here instead. The two virtual tokens sit at the origin, which is the
+    centroid of the clean coordinates because the transform centres them.
+    """
+    xp = array_api_compat.array_namespace(coord_target)
+    nf = coord_target.shape[0]
+    real = xp.astype(mask, coord_target.dtype)[..., None]
+    atoms = coord_target * real
+    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype)
+    tokens = xp.concat([zero, atoms, zero], axis=1)
+    if tokens.shape[1] < ncol:
+        pad = xp.zeros((nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype)
+        tokens = xp.concat([tokens, pad], axis=1)
+    diff = atoms[:, :, None, :] - tokens[:, None, :, :]
+    return xp.sqrt(xp.sum(diff**2, axis=-1))
+
+
 def _masked_nll(logits: Array, target: Array, pad_idx: int) -> Array:
     """Negative log likelihood over the selected positions.
 
@@ -187,18 +215,28 @@ class UniMolLoss(Loss):
         if self.masked_dist_loss > 0:
             # Rows are the corrupted atoms; columns are every non-padding token,
             # BOS, EOS and the diagonal included (losses/unimol.py:159-180).
-            token_mask = label_dict["unimol_token_mask"]
+            ncol = model_dict["pair_dist"].shape[-1]
+            token_mask = label_dict.get("unimol_token_mask")
+            if token_mask is None:
+                token_mask = _token_mask_from_atoms(mask, ncol)
+            dist_target = label_dict.get("unimol_dist_target")
+            if dist_target is None:
+                dist_target = _clean_distances(
+                    label_dict["unimol_coord_target"], mask, ncol
+                )
             pair_mask = masked[..., None] & xp.astype(token_mask, xp.bool)[:, None, :]
-            dist_label = (
-                label_dict["unimol_dist_target"][pair_mask] - DIST_MEAN
-            ) / DIST_STD
+            dist_label = (dist_target[pair_mask] - DIST_MEAN) / DIST_STD
             add(
                 _smooth_l1(model_dict["pair_dist"][pair_mask], dist_label, self.beta),
                 self.masked_dist_loss,
                 "dist_loss",
             )
         if self.x_norm_loss > 0:
-            add(_frame_scalar(model_dict["x_norm"], mask), self.x_norm_loss, "x_norm_loss")
+            add(
+                _frame_scalar(model_dict["x_norm"], mask),
+                self.x_norm_loss,
+                "x_norm_loss",
+            )
         if self.delta_pair_repr_norm_loss > 0:
             add(
                 _frame_scalar(model_dict["delta_pair_norm"], mask),
@@ -212,9 +250,7 @@ class UniMolLoss(Loss):
         """Labels produced by the Uni-Mol data transform, not by a simulation."""
         return [
             DataRequirementItem("unimol_token_target", ndof=1, atomic=True, must=True),
-            DataRequirementItem("unimol_token_mask", ndof=1, atomic=True, must=True),
             DataRequirementItem("unimol_coord_target", ndof=3, atomic=True, must=True),
-            DataRequirementItem("unimol_dist_target", ndof=1, atomic=True, must=True),
         ]
 
     def serialize(self) -> dict:

@@ -26,6 +26,7 @@ marked with ``# noqa: NPY002``.
 
 import contextlib
 from collections.abc import (
+    Callable,
     Iterator,
     Sequence,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "center_coordinates",
     "crop_atoms",
     "edge_type",
+    "make_unimol_data_transform",
     "mask_points",
     "numpy_seed",
     "pair_distance",
@@ -183,7 +185,9 @@ def mask_points(
 
         def noise_f(n):  # noqa: ANN001, ANN202
             return np.clip(
-                np.random.randn(n, 3) * noise, a_min=-noise * 2.0, a_max=noise * 2.0  # noqa: NPY002
+                np.random.randn(n, 3) * noise,  # noqa: NPY002
+                a_min=-noise * 2.0,
+                a_max=noise * 2.0,
             )
     elif noise_type == "normal":
 
@@ -283,6 +287,105 @@ def edge_type(tokens: np.ndarray, num_types: int) -> np.ndarray:
     """
     tokens = np.asarray(tokens)
     return (tokens[:, None] * num_types + tokens[None, :]).astype(np.int64)
+
+
+def make_unimol_data_transform(
+    type_map: Sequence[str],
+    *,
+    seed: int = 1,
+    epoch: int = 1,
+    max_atoms: int = 256,
+    mask_token: str = "[MASK]",
+    **mask_kwargs: float | str,
+) -> Callable[[dict, int], dict]:
+    """Build the per-frame transform a deepmd data reader installs.
+
+    The reader hands over one already-converted frame, so the conformer draw and
+    the hydrogen policy are behind us; what remains is cropping, centring, and
+    the corruption itself. The frame comes back with corrupted coordinates and
+    element types, plus the two labels the objective needs. The distance target
+    is not stored, because it would cost O(natoms^2) per frame; the loss derives
+    it from the clean coordinates.
+
+    Parameters
+    ----------
+    type_map : Sequence[str]
+        Element names of the model. It must contain ``mask_token``, since a
+        masked atom has to be expressible as a type.
+    seed, epoch : int
+        Together with the frame index these seed the corruption, the way
+        upstream seeds it per sample.
+    max_atoms : int
+        Crop larger molecules down to this many atoms.
+    mask_token : str
+        Name of the pseudo-element standing for ``[MASK]``.
+    **mask_kwargs
+        Passed to :func:`mask_points`.
+
+    Returns
+    -------
+    callable
+        ``transform(frame, index) -> frame``, matching the reader's hook.
+    """
+    from deepmd.dpmodel.descriptor.unimol import (
+        unimol_vocabulary,
+    )
+
+    vocabulary = unimol_vocabulary()
+    token_of = {sym: i for i, sym in enumerate(vocabulary)}
+    type_map = list(type_map)
+    if mask_token not in type_map:
+        raise ValueError(
+            f"the model type_map must contain {mask_token!r} for Uni-Mol "
+            "pretraining, because masked atoms are carried as a pseudo-element"
+        )
+    type_index = {sym: i for i, sym in enumerate(type_map)}
+    unk = token_of["[UNK]"]
+    pad = token_of["[PAD]"]
+    type_to_token = np.array(
+        [token_of.get(sym, unk) for sym in type_map], dtype=np.int64
+    )
+    # Uni-Mol draws replacements over its own vocabulary, so a drawn token must
+    # map back onto a type the model knows.
+    token_to_type = np.array(
+        [type_index.get(sym, type_index[mask_token]) for sym in vocabulary],
+        dtype=np.int64,
+    )
+    specials = [token_of[s] for s in ("[PAD]", "[CLS]", "[SEP]", "[UNK]", mask_token)]
+
+    def transform(frame: dict, index: int) -> dict:
+        coord = np.asarray(frame["coord"], dtype=np.float64).reshape(-1, 3)
+        atype = np.asarray(frame["atype"], dtype=np.int64).reshape(-1)
+        atoms = np.arange(len(atype))
+        atoms, coord = crop_atoms(atoms, coord, seed, epoch, index, max_atoms)
+        atype = atype[np.asarray(atoms, dtype=np.int64)]
+        coord = center_coordinates(coord)
+        tokens = type_to_token[atype]
+
+        corrupted = mask_points(
+            tokens,
+            coord,
+            num_types=len(vocabulary),
+            special_indices=specials,
+            pad_idx=pad,
+            mask_idx=token_of[mask_token],
+            seed=seed,
+            epoch=epoch,
+            index=index,
+            **mask_kwargs,
+        )
+        frame = dict(frame)
+        frame["coord"] = corrupted["coordinates"].astype(np.float64)
+        frame["atype"] = token_to_type[corrupted["tokens"]]
+        # Targets stay in Uni-Mol token space, which is what the element head
+        # predicts over; unselected atoms carry the padding id.
+        frame["unimol_token_target"] = corrupted["targets"].astype(np.int64)
+        frame["unimol_coord_target"] = coord.astype(np.float64)
+        frame["find_unimol_token_target"] = np.float32(1.0)
+        frame["find_unimol_coord_target"] = np.float32(1.0)
+        return frame
+
+    return transform
 
 
 def unimol_frame_transform(
