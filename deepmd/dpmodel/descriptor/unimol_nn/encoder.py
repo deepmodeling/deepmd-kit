@@ -178,12 +178,17 @@ class GaussianLayer(NativeOP):
     def call(self, dist, edge_type):  # noqa: ANN001, ANN201
         """Expand ``dist`` (nf x nt x nt) into ``k`` Gaussians per atom pair."""
         xp = array_api_compat.array_namespace(dist)
+        dev = array_api_compat.device(dist)
         mul = xp.reshape(
-            xp.take(xp.asarray(self.mul), xp.reshape(edge_type, (-1,)), axis=0),
+            xp.take(
+                xp.asarray(self.mul, device=dev), xp.reshape(edge_type, (-1,)), axis=0
+            ),
             (*edge_type.shape, 1),
         )
         bias = xp.reshape(
-            xp.take(xp.asarray(self.bias), xp.reshape(edge_type, (-1,)), axis=0),
+            xp.take(
+                xp.asarray(self.bias, device=dev), xp.reshape(edge_type, (-1,)), axis=0
+            ),
             (*edge_type.shape, 1),
         )
         mul = xp.astype(mul, dist.dtype)
@@ -192,8 +197,13 @@ class GaussianLayer(NativeOP):
         x = xp.repeat(x, self.k, axis=-1)
         work = xp.float32 if self.single_precision_basis else x.dtype
         x = xp.astype(x, work)
-        mean = xp.astype(xp.reshape(xp.asarray(self.means), (-1,)), work)
-        std = xp.abs(xp.astype(xp.reshape(xp.asarray(self.stds), (-1,)), work)) + 1e-5
+        mean = xp.astype(xp.reshape(xp.asarray(self.means, device=dev), (-1,)), work)
+        std = (
+            xp.abs(
+                xp.astype(xp.reshape(xp.asarray(self.stds, device=dev), (-1,)), work)
+            )
+            + 1e-5
+        )
         a = (2 * UNIMOL_PI) ** 0.5
         out = xp.exp(-0.5 * (((x - mean) / std) ** 2)) / (a * std)
         return xp.astype(out, dist.dtype)

@@ -47,6 +47,10 @@ from .se_t_tebd import (
     DescrptSeTTebd,
 )
 
+from .unimol import (
+    DescrptUniMol,
+)
+
 __all__ = [
     "BaseDescriptor",
     "DescrptDPA1",
@@ -60,4 +64,5 @@ __all__ = [
     "DescrptSeR",
     "DescrptSeT",
     "DescrptSeTTebd",
+    "DescrptUniMol",
 ]

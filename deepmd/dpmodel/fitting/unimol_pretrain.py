@@ -215,8 +215,8 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
         nloc = nt - 2
         out = {}
         for name in ("x_norm", "delta_pair_norm"):
-            value = xp.astype(backbone[name], node.dtype)
-            out[name] = xp.full((nf, nloc, 1), value, dtype=node.dtype)
+            value = xp.astype(xp.reshape(backbone[name], (1, 1, 1)), node.dtype)
+            out[name] = xp.zeros((nf, nloc, 1), dtype=node.dtype) + value
         if self.lm_head is not None:
             logits = self.lm_head(node)
             out["token_logits"] = logits[:, 1 : nloc + 1, :]

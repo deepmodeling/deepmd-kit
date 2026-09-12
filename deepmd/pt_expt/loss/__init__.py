@@ -15,10 +15,15 @@ from deepmd.pt_expt.loss.tensor import (
     TensorLoss,
 )
 
+from deepmd.pt_expt.loss.unimol import (
+    UniMolLoss,
+)
+
 __all__ = [
     "DOSLoss",
     "EnergyLoss",
     "EnergySpinLoss",
     "PropertyLoss",
     "TensorLoss",
+    "UniMolLoss",
 ]

@@ -346,7 +346,11 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         else:
             centroid = xp.zeros((nf, 3), dtype=coord.dtype)
 
-        token_table = xp.asarray(self.type_to_token)
+        # The lookup table is plain integer data rather than a parameter, so it
+        # does not travel with the module and has to be placed explicitly.
+        token_table = xp.asarray(
+            self.type_to_token, device=array_api_compat.device(nlist)
+        )
         atom_tokens = xp.take(token_table, xp.reshape(atype_ext, (-1,)), axis=0)
         atom_tokens = xp.reshape(atom_tokens, (nf, nloc))
         atom_tokens = xp.where(
@@ -393,7 +397,8 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         tokens, coord, padding_mask = seq["tokens"], seq["coord"], seq["padding_mask"]
         nf, nt = tokens.shape
 
-        emb = xp.take(xp.asarray(self.embed_tokens), xp.reshape(tokens, (-1,)), axis=0)
+        embed = xp.asarray(self.embed_tokens, device=array_api_compat.device(coord_ext))
+        emb = xp.take(embed, xp.reshape(tokens, (-1,)), axis=0)
         emb = xp.reshape(emb, (nf, nt, self.encoder_embed_dim))
         emb = xp.astype(emb, coord.dtype)
 

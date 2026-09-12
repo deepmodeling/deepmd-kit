@@ -24,6 +24,10 @@ from .property_fitting import (
     PropertyFittingNet,
 )
 
+from .unimol_pretrain import (
+    UniMolPretrainFitting,
+)
+
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",
@@ -33,4 +37,5 @@ __all__ = [
     "PolarFitting",
     "PropertyFittingNet",
     "SeZMEnergyFittingNet",
+    "UniMolPretrainFitting",
 ]

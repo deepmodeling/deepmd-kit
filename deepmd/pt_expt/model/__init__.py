@@ -43,6 +43,10 @@ from .spin_ener_model import (
     SpinEnergyModel,
 )
 
+from .unimol_pretrain_model import (
+    UniMolPretrainModel,
+)
+
 __all__ = [
     "BaseModel",
     "DOSModel",
@@ -56,6 +60,7 @@ __all__ = [
     "PolarModel",
     "PropertyModel",
     "SpinEnergyModel",
+    "UniMolPretrainModel",
     "get_model",
     "make_hessian_model",
 ]
