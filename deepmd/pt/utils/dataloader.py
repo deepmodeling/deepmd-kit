@@ -188,16 +188,6 @@ class DpLoaderSet(Dataset):
             for item in self.dataloaders:
                 self.iters.append(iter(item))
 
-    def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        # noise_settings['noise_type'] # "trunc_normal", "normal", "uniform"
-        # noise_settings['noise'] # float, default 1.0
-        # noise_settings['noise_mode'] # "prob", "fix_num"
-        # noise_settings['mask_num'] # if "fix_num", int
-        # noise_settings['mask_prob'] # if "prob", float
-        # noise_settings['same_mask'] # coord and type same mask?
-        for system in self.systems:
-            system.set_noise(noise_settings)
-
     def __len__(self) -> int:
         return len(self.dataloaders)
 

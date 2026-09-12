@@ -43,7 +43,6 @@ from deepmd.loggers.training import (
     log_parameter_counts,
 )
 from deepmd.pt.loss import (
-    DenoiseLoss,
     DeNSLoss,
     DOSLoss,
     EnergySpinLoss,
@@ -1549,32 +1548,6 @@ class Trainer:
                         int(input_dict["atype"].shape[-1]),
                         learning_rate=pref_lr,
                     )
-                elif isinstance(self.loss, DenoiseLoss):
-                    KFOptWrapper = KFOptimizerWrapper(
-                        self.wrapper,
-                        self.optimizer,
-                        24,
-                        6,
-                        dist.is_available() and dist.is_initialized(),
-                    )
-                    module = (
-                        self.wrapper.module
-                        if dist.is_available() and dist.is_initialized()
-                        else self.wrapper
-                    )
-                    model_pred = KFOptWrapper.update_denoise_coord(
-                        input_dict,
-                        label_dict["clean_coord"],
-                        1,
-                        module.loss[task_key].mask_loss_coord,
-                        label_dict["coord_mask"],
-                    )
-                    loss, more_loss = module.loss[task_key](
-                        model_pred,
-                        label_dict,
-                        input_dict["natoms"],
-                        learning_rate=pref_lr,
-                    )
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
@@ -2583,9 +2556,6 @@ def get_loss(
     elif loss_type == "ener_spin":
         loss_params["starter_learning_rate"] = start_lr
         return EnergySpinLoss(**loss_params)
-    elif loss_type == "denoise":
-        loss_params["ntypes"] = _ntypes
-        return DenoiseLoss(**loss_params)
     elif loss_type == "tensor":
         model_output_type = _model.model_output_type()
         if "mask" in model_output_type:
