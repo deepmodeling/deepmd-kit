@@ -8,6 +8,8 @@ described in ``source/tests/common/dpmodel/test_unimol.py``.
 """
 
 import os
+import shutil
+import tempfile
 import unittest
 
 import numpy as np
@@ -401,6 +403,99 @@ class TestUniMolPtExpt(unittest.TestCase):
         ]
         self.assertGreater(len(grads), 0)
         self.assertTrue(any(bool(torch.any(g != 0)) for g in grads))
+
+
+class TestUniMolTraining(unittest.TestCase):
+    """A run from a configuration file, which is how the feature is used.
+
+    Everything between the configuration and the first step is exercised here:
+    the loss factory, the accessors the atomic model calls on any fitting, the
+    reader hook that produces the labels, and the absence of a cell on
+    molecular frames. Each of those was broken at some point and no unit test
+    would have shown it.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import pickle
+
+        import lmdb
+
+        from deepmd.utils.unimol_data import (
+            convert_unimol_lmdb,
+        )
+
+        cls.tmp = tempfile.mkdtemp()
+        cls.type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        rng = np.random.default_rng(0)
+        molecules = [
+            {
+                "atoms": ["C", "N", "O", "H", "C", "H"],
+                "coordinates": [rng.normal(size=(6, 3)).astype(np.float32) * 2.0],
+                "smi": "CNOC",
+            }
+            for _ in range(8)
+        ]
+        src = os.path.join(cls.tmp, "mol.lmdb")
+        env = lmdb.open(src, subdir=False, map_size=1 << 24)
+        with env.begin(write=True) as txn:
+            for i, mol in enumerate(molecules):
+                txn.put(f"{i}".encode(), pickle.dumps(mol))
+        env.close()
+        cls.data = os.path.join(cls.tmp, "converted")
+        convert_unimol_lmdb(src, cls.data, type_map=cls.type_map, map_size=1 << 24)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_a_configuration_trains(self) -> None:
+        from deepmd.pt_expt.entrypoints.main import (
+            get_trainer,
+        )
+
+        config = {
+            "model": {
+                "type_map": self.type_map,
+                "descriptor": {
+                    "type": "unimol",
+                    "encoder_layers": 1,
+                    "encoder_embed_dim": 16,
+                    "encoder_ffn_embed_dim": 32,
+                    "encoder_attention_heads": 2,
+                    "max_atoms": 16,
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "type": "unimol_pretrain",
+                    "attention_heads": 2,
+                    "max_atoms": 16,
+                    "seed": 1,
+                },
+            },
+            "learning_rate": {"type": "exp", "start_lr": 1e-3, "stop_lr": 1e-4},
+            "loss": {"type": "unimol"},
+            "training": {
+                # LMDB datasets are addressed with a string, not a list.
+                "training_data": {"systems": self.data, "batch_size": 2},
+                "numb_steps": 4,
+                "seed": 1,
+                "disp_freq": 10,
+                "save_freq": 100,
+                "disp_file": os.path.join(self.tmp, "lcurve.out"),
+                "save_ckpt": os.path.join(self.tmp, "model.ckpt"),
+            },
+        }
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        trainer = get_trainer(normalize(update_deepmd_input(config, warning=False)))
+        self.assertEqual(type(trainer.model).__name__, "UniMolPretrainModel")
+        # The objective installed its own corruption on the dataset.
+        frame = trainer.training_data._reader[0]
+        self.assertIn("unimol_token_target", frame)
+        trainer.run()
 
 
 if __name__ == "__main__":
