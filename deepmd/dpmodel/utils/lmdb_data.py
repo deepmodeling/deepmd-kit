@@ -690,6 +690,12 @@ class LmdbDecodeConfig:
         Registered data requirements keyed by field name.
     dataset
         Dataset identifier used in frame-level diagnostics.
+    frame_transform
+        Optional callable applied to every decoded frame, as
+        ``transform(frame, frame_index)``. Self-supervised objectives corrupt
+        their inputs and derive their labels here, before the model runs, which
+        is the only place that works for a backend whose loss never sees the
+        model. ``None``, the default, leaves decoding unchanged.
     """
 
     ntypes: int
@@ -697,6 +703,7 @@ class LmdbDecodeConfig:
     type_remap: np.ndarray | None
     data_requirements: dict[str, Any]
     dataset: str = "<unknown LMDB>"
+    frame_transform: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -967,6 +974,12 @@ def decode_lmdb_frame(
             "fid",
         }
     )
+    if config.frame_transform is not None:
+        # Ahead of the requirement checks below: a self-supervised transform is
+        # what produces the fields those checks look for, by corrupting the
+        # input it was handed.
+        frame = config.frame_transform(frame, original_key)
+
     for key in list(frame):
         if key.startswith("find_") or key in structural_keys or key in requirements:
             continue
@@ -2597,6 +2610,17 @@ class LmdbDataReader:
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
         """No-op for now."""
+
+    def set_frame_transform(
+        self, transform: Callable[[dict[str, Any], int], dict[str, Any]] | None
+    ) -> None:
+        """Install a per-frame transform, or remove it with ``None``.
+
+        The transform runs on every decoded frame, in whichever process decodes
+        it, and receives ``(frame, frame_index)``. Self-supervised training uses
+        it to corrupt inputs and derive labels before the model runs.
+        """
+        self._decode_config.frame_transform = transform
 
     # --- Properties ---
 

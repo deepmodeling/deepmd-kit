@@ -2753,6 +2753,144 @@ def descrpt_se_a_mask_args() -> list[Argument]:
     ]
 
 
+doc_descrpt_unimol = (
+    "The Uni-Mol v1 transformer backbone. Every atom attends to every other atom, so the "
+    "descriptor is neither local nor extensive and does not support periodic boundaries; it is "
+    "intended for molecular property and self-supervised pretraining work."
+)
+doc_fitting_unimol_pretrain = (
+    "The three self-supervised heads of Uni-Mol v1 pretraining: element prediction, coordinate "
+    "denoising and pairwise distance prediction."
+)
+
+
+@descrpt_args_plugin.register(
+    "unimol", doc=supported_backends("pt_expt") + doc_descrpt_unimol
+)
+def descrpt_unimol_args() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_encoder_layers = "Number of transformer blocks."
+    doc_encoder_embed_dim = "Width of the node representation."
+    doc_encoder_ffn_embed_dim = "Width of the feed-forward hidden layer."
+    doc_encoder_attention_heads = (
+        "Number of attention heads, which is also the width of the pair channel."
+    )
+    doc_max_atoms = "Largest molecule accepted, which fixes the neighbor count."
+    doc_max_seq_len = (
+        "Upstream's sequence-length guard, including the two virtual tokens."
+    )
+    doc_activation_function = (
+        f"The activation function. Uni-Mol uses the exact GELU, `gelu_erf`. "
+        f"Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    )
+    doc_dropout = "Dropout on the residual branches, applied during training."
+    doc_emb_dropout = "Dropout on the token embedding, applied during training."
+    doc_attention_dropout = (
+        "Dropout on the attention probabilities, applied during training."
+    )
+    doc_activation_dropout = "Dropout after the feed-forward activation."
+    doc_no_final_head_layer_norm = "Skip the layer norm on the pair delta. Upstream builds it unless its loss weight is negative."
+    doc_single_precision_basis = "Evaluate the Gaussian basis in fp32, as upstream does. Required to reproduce the released weights."
+    doc_single_precision_distance = (
+        "Round pairwise distances to fp32 before the basis, matching upstream's precomputed distance "
+        "matrix. The default computes them in the working precision, which is more accurate."
+    )
+    doc_virtual_token_position = (
+        "Where the two virtual tokens sit: `centroid` of the real atoms, which keeps the sequence "
+        "translation invariant, or `origin`, which reproduces upstream for pre-centred data."
+    )
+    doc_gaussian_kernels = "Number of Gaussian radial basis functions."
+    return [
+        Argument(
+            "encoder_layers", int, optional=True, default=15, doc=doc_encoder_layers
+        ),
+        Argument(
+            "encoder_embed_dim",
+            int,
+            optional=True,
+            default=512,
+            doc=doc_encoder_embed_dim,
+        ),
+        Argument(
+            "encoder_ffn_embed_dim",
+            int,
+            optional=True,
+            default=2048,
+            doc=doc_encoder_ffn_embed_dim,
+        ),
+        Argument(
+            "encoder_attention_heads",
+            int,
+            optional=True,
+            default=64,
+            doc=doc_encoder_attention_heads,
+        ),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument("max_seq_len", int, optional=True, default=512, doc=doc_max_seq_len),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument("dropout", float, optional=True, default=0.1, doc=doc_dropout),
+        Argument("emb_dropout", float, optional=True, default=0.1, doc=doc_emb_dropout),
+        Argument(
+            "attention_dropout",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_attention_dropout,
+        ),
+        Argument(
+            "activation_dropout",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_activation_dropout,
+        ),
+        Argument(
+            "no_final_head_layer_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_no_final_head_layer_norm,
+        ),
+        Argument(
+            "single_precision_basis",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_single_precision_basis,
+        ),
+        Argument(
+            "single_precision_distance",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_single_precision_distance,
+        ),
+        Argument(
+            "virtual_token_position",
+            str,
+            optional=True,
+            default="centroid",
+            doc=doc_virtual_token_position,
+        ),
+        Argument(
+            "gaussian_kernels",
+            int,
+            optional=True,
+            default=128,
+            doc=doc_gaussian_kernels,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     doc_descrpt_type = "The type of the descriptor."
 
@@ -3313,6 +3451,52 @@ def fitting_dipole() -> list[Argument]:
 
 
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
+@fitting_args_plugin.register(
+    "unimol_pretrain", doc=supported_backends("pt_expt") + doc_fitting_unimol_pretrain
+)
+def fitting_unimol_pretrain() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_n_token = (
+        "Size of the Uni-Mol vocabulary, which is the width of the element head."
+    )
+    doc_attention_heads = (
+        "Width of the pair channel, which the two pair-reading heads consume."
+    )
+    doc_max_atoms = (
+        "Largest molecule accepted, which fixes the distance head's column count."
+    )
+    doc_activation_function = f"The activation function of the heads. Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    doc_mask_token_head = "Build the element-prediction head."
+    doc_coord_head = "Build the coordinate-denoising head."
+    doc_dist_head = "Build the distance-prediction head."
+    return [
+        Argument("n_token", int, optional=True, default=31, doc=doc_n_token),
+        Argument(
+            "attention_heads", int, optional=True, default=64, doc=doc_attention_heads
+        ),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "mask_token_head",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_mask_token_head,
+        ),
+        Argument("coord_head", bool, optional=True, default=True, doc=doc_coord_head),
+        Argument("dist_head", bool, optional=True, default=True, doc=doc_dist_head),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
 def fitting_variant_type_args() -> Variant:
     doc_descrpt_type = "The type of the fitting."
 
@@ -4307,6 +4491,10 @@ opt_args_plugin = ArgsPlugin()
 def optimizer_adam() -> list[Argument]:
     doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
     doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "Adam epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = (
         "Weight decay coefficient for Adam, applied as an L2 penalty to gradients."
     )
@@ -4324,6 +4512,13 @@ def optimizer_adam() -> list[Argument]:
             optional=True,
             default=0.999,
             doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
+        ),
+        Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
@@ -5329,6 +5524,92 @@ def loss_tensor() -> list[Argument]:
             default=False,
             doc=doc_enable_atomic_weight,
         ),
+    ]
+
+
+@loss_args_plugin.register("unimol", doc=supported_backends("pt_expt"))
+def loss_unimol() -> list[Argument]:
+    doc_masked_token_loss = "Weight of the element-prediction term."
+    doc_masked_coord_loss = "Weight of the coordinate-denoising term."
+    doc_masked_dist_loss = "Weight of the distance-prediction term."
+    doc_x_norm_loss = "Weight of the node-norm regularizer."
+    doc_delta_pair_repr_norm_loss = "Weight of the pair-delta-norm regularizer."
+    doc_beta = (
+        "Transition point of the smooth L1 used by the coordinate and distance terms."
+    )
+    doc_mask_prob = "Expected fraction of atoms selected for corruption."
+    doc_leave_unmasked_prob = (
+        "Fraction of the selected atoms left with their true element, still predicted."
+    )
+    doc_random_token_prob = "Fraction of the selected atoms given a random element."
+    doc_noise_type = (
+        "Coordinate noise distribution: 'uniform', 'normal', 'trunc_normal' or 'none'."
+    )
+    doc_noise = "Scale of the coordinate noise, in the units of the coordinates."
+    doc_loss_max_atoms = "Crop molecules larger than this before corrupting them."
+    doc_data_seed = (
+        "Seed of the corruption, combined with the epoch and the frame index."
+    )
+    return [
+        Argument(
+            "masked_token_loss",
+            [float, int],
+            optional=True,
+            default=1.0,
+            doc=doc_masked_token_loss,
+        ),
+        Argument(
+            "masked_coord_loss",
+            [float, int],
+            optional=True,
+            default=5.0,
+            doc=doc_masked_coord_loss,
+        ),
+        Argument(
+            "masked_dist_loss",
+            [float, int],
+            optional=True,
+            default=10.0,
+            doc=doc_masked_dist_loss,
+        ),
+        Argument(
+            "x_norm_loss",
+            [float, int],
+            optional=True,
+            default=0.01,
+            doc=doc_x_norm_loss,
+        ),
+        Argument(
+            "delta_pair_repr_norm_loss",
+            [float, int],
+            optional=True,
+            default=0.01,
+            doc=doc_delta_pair_repr_norm_loss,
+        ),
+        Argument("beta", [float, int], optional=True, default=1.0, doc=doc_beta),
+        Argument(
+            "mask_prob", [float, int], optional=True, default=0.15, doc=doc_mask_prob
+        ),
+        Argument(
+            "leave_unmasked_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_leave_unmasked_prob,
+        ),
+        Argument(
+            "random_token_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_random_token_prob,
+        ),
+        Argument(
+            "noise_type", str, optional=True, default="uniform", doc=doc_noise_type
+        ),
+        Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_loss_max_atoms),
+        Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),
     ]
 
 

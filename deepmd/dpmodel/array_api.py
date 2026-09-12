@@ -516,6 +516,34 @@ def xp_sigmoid(x: Array) -> Array:
     return 1 / (1 + xp.exp(-x))
 
 
+def xp_erf(x: Array) -> Array:
+    """Compute the error function.
+
+    Used by the exact (non-approximated) GELU. The array API has no ``erf``, so
+    each backend's own implementation is used; NumPy goes through SciPy, which
+    is already a core dependency.
+    """
+    if array_api_compat.is_jax_array(x):
+        from deepmd.jax.env import (
+            jax,
+        )
+
+        return jax.scipy.special.erf(x)
+    elif array_api_compat.is_torch_array(x):
+        import torch
+
+        return torch.special.erf(x)
+    from scipy.special import (
+        erf,
+    )
+
+    if array_api_compat.is_numpy_array(x):
+        return erf(x)
+    # array-api-strict and friends: round-trip through NumPy.
+    xp = array_api_compat.array_namespace(x)
+    return xp.asarray(erf(np.asarray(x)), dtype=x.dtype)
+
+
 def xp_setitem_at(x: Array, mask: Array, values: Array) -> Array:
     """Set items at boolean mask indices.
 
