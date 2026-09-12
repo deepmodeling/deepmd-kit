@@ -240,19 +240,24 @@ class TestUniMolPtExpt(unittest.TestCase):
         self.load_weights(descriptor, fitting, torch_backend=False)
         reference = fitting.call_tokens(descriptor.forward_tokens(coord, atype, nlist))
 
-        for key in (
-            "token_logits",
-            "coord_update",
-            "pair_dist",
-            "x_norm",
-            "delta_pair_norm",
-        ):
+        for key in ("token_logits", "coord_update", "pair_dist"):
             with self.subTest(output=key):
                 np.testing.assert_allclose(
                     ret[key].detach().cpu().numpy(),
                     np.asarray(reference[key]),
                     rtol=1e-12,
                     atol=1e-12,
+                )
+        # The two regularisers are evaluated in fp32, because upstream
+        # evaluates them there, so the two backends round the last place
+        # differently.
+        for key in ("x_norm", "delta_pair_norm"):
+            with self.subTest(output=key):
+                np.testing.assert_allclose(
+                    ret[key].detach().cpu().numpy(),
+                    np.asarray(reference[key]),
+                    rtol=1e-6,
+                    atol=1e-8,
                 )
 
     def test_single_precision_basis_costs_one_fp32_place(self) -> None:

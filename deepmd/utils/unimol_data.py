@@ -101,6 +101,7 @@ def convert_unimol_lmdb(
     add_2d_conformer: bool = False,
     max_molecules: int | None = None,
     max_conformers: int | None = None,
+    max_atoms: int | None = 256,
     map_size: int = 1024**4,
 ) -> dict[str, int]:
     """Write a deepmd LMDB dataset from a Uni-Mol one.
@@ -120,6 +121,11 @@ def convert_unimol_lmdb(
         Stop after this many molecules, which is useful for a trial run.
     max_conformers : int, optional
         Keep at most this many conformers per molecule.
+    max_atoms : int, optional
+        Crop molecules larger than this to a random subset of that many atoms,
+        as upstream does. It happens here rather than while training, because a
+        frame's atom count and the batch layout are settled before any per-frame
+        transform runs.
     map_size : int
         Maximum size of the output database.
 
@@ -160,12 +166,23 @@ def convert_unimol_lmdb(
                     # [UNK]; skip both rather than write something misleading.
                     skipped += 1
                     continue
+                if max_atoms is not None and len(atoms) > max_atoms:
+                    keep = np.sort(
+                        np.random.default_rng(molecules).choice(
+                            len(atoms), max_atoms, replace=False
+                        )
+                    )
+                    atoms = [atoms[i] for i in keep]
+                else:
+                    keep = None
                 atom_types = np.array([index_of[a] for a in atoms], dtype=np.int64)
                 atom_numbs = [int((atom_types == i).sum()) for i in range(len(names))]
                 pool = _conformers(record, add_2d_conformer)
                 if max_conformers is not None:
                     pool = pool[:max_conformers]
                 for coords in pool:
+                    if keep is not None and coords.shape[0] >= int(keep[-1]) + 1:
+                        coords = coords[keep]
                     if coords.shape[0] != len(atoms):
                         skipped += 1
                         continue

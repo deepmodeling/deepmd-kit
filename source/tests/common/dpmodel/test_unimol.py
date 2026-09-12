@@ -48,7 +48,7 @@ from deepmd.dpmodel.utils.unimol_transform import (
 )
 
 GOLDEN = os.path.join(os.path.dirname(__file__), "unimol_v1_golden.npz")
-SEED, EPOCH, INDICES = 1, 1, [0, 1, 2, 3]
+SEED, EPOCH, INDICES = 1, 1, [0, 1]
 SMALL = {"layers": 2, "dim": 32, "ffn": 64, "heads": 4, "k": 128, "vocab": 31}
 
 

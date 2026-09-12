@@ -177,7 +177,7 @@ def mask_points(
 
     weights = None
     if random_token_prob > 0.0:
-        weights = np.ones(num_types)
+        weights = np.ones(num_types, dtype=np.float64)
         weights[list(special_indices)] = 0
         weights = weights / weights.sum()
 
@@ -209,10 +209,10 @@ def mask_points(
         # molecule can end up with no masked atom at all.
         num_mask = int(mask_prob * sz + np.random.rand())  # noqa: NPY002
         mask_idc = np.random.choice(sz, num_mask, replace=False)  # noqa: NPY002
-        mask = np.full(sz, False)
+        mask = np.full(sz, False, dtype=bool)
         mask[mask_idc] = True
 
-        targets = np.full(len(mask), pad_idx)
+        targets = np.full(len(mask), pad_idx, dtype=np.int64)
         targets[mask] = np.asarray(tokens)[mask]
 
         rand_or_unmask_prob = random_token_prob + leave_unmasked_prob
@@ -293,30 +293,38 @@ def make_unimol_data_transform(
     type_map: Sequence[str],
     *,
     seed: int = 1,
-    epoch: int = 1,
-    max_atoms: int = 256,
     mask_token: str = "[MASK]",
     **mask_kwargs: float | str,
 ) -> Callable[[dict, int], dict]:
     """Build the per-frame transform a deepmd data reader installs.
 
-    The reader hands over one already-converted frame, so the conformer draw and
-    the hydrogen policy are behind us; what remains is cropping, centring, and
-    the corruption itself. The frame comes back with corrupted coordinates and
-    element types, plus the two labels the objective needs. The distance target
-    is not stored, because it would cost O(natoms^2) per frame; the loss derives
-    it from the clean coordinates.
+    The reader hands over one already-converted frame, so the conformer draw,
+    the hydrogen policy and the size cap are behind us; what remains is centring
+    and the corruption itself. The frame comes back with corrupted coordinates
+    and element types, plus the two labels the objective needs. The distance
+    target is not stored, because it would cost O(natoms^2) per frame; the loss
+    derives it from the clean coordinates.
+
+    The atom count is left alone. Cropping here would not work: a frame's atom
+    count and the batch layout are settled before the transform runs, so a
+    shorter frame would not match the batch it belongs to. The converter applies
+    the size cap instead.
+
+    Upstream draws a fresh corruption for the same molecule in every epoch. The
+    transform reproduces that by counting how often it has been handed each
+    frame and using that count where upstream uses the epoch number, so a
+    molecule is corrupted differently each time it comes round. With more than
+    one loader process each keeps its own count, which changes the stream but
+    not its statistics.
 
     Parameters
     ----------
     type_map : Sequence[str]
         Element names of the model. It must contain ``mask_token``, since a
         masked atom has to be expressible as a type.
-    seed, epoch : int
-        Together with the frame index these seed the corruption, the way
-        upstream seeds it per sample.
-    max_atoms : int
-        Crop larger molecules down to this many atoms.
+    seed : int
+        Together with the frame index and the visit count, this seeds the
+        corruption, the way upstream seeds it per sample and epoch.
     mask_token : str
         Name of the pseudo-element standing for ``[MASK]``.
     **mask_kwargs
@@ -345,20 +353,36 @@ def make_unimol_data_transform(
     type_to_token = np.array(
         [token_of.get(sym, unk) for sym in type_map], dtype=np.int64
     )
-    # Uni-Mol draws replacements over its own vocabulary, so a drawn token must
-    # map back onto a type the model knows.
     token_to_type = np.array(
         [type_index.get(sym, type_index[mask_token]) for sym in vocabulary],
         dtype=np.int64,
     )
+    # Upstream draws a replacement over all 26 of its elements. A model whose
+    # type_map covers fewer of them could not express the others, and mapping
+    # them onto [MASK] would quietly turn a random-element atom into a masked
+    # one, so they are excluded from the draw instead. With the full element
+    # set, which is what the example configures, nothing is excluded and the
+    # distribution is upstream's.
+    if "epoch" in mask_kwargs:
+        raise TypeError(
+            "the epoch is not fixed at build time: the transform advances it "
+            "every time it sees a frame, so that a molecule is corrupted "
+            "differently each time it comes round"
+        )
     specials = [token_of[s] for s in ("[PAD]", "[CLS]", "[SEP]", "[UNK]", mask_token)]
+    inexpressible = [
+        i
+        for i, sym in enumerate(vocabulary)
+        if i not in specials and sym not in type_index
+    ]
+    excluded = [*specials, *inexpressible]
+    visits: dict[int, int] = {}
 
     def transform(frame: dict, index: int) -> dict:
+        epoch = visits.get(index, 0) + 1
+        visits[index] = epoch
         coord = np.asarray(frame["coord"], dtype=np.float64).reshape(-1, 3)
         atype = np.asarray(frame["atype"], dtype=np.int64).reshape(-1)
-        atoms = np.arange(len(atype))
-        atoms, coord = crop_atoms(atoms, coord, seed, epoch, index, max_atoms)
-        atype = atype[np.asarray(atoms, dtype=np.int64)]
         coord = center_coordinates(coord)
         tokens = type_to_token[atype]
 
@@ -366,7 +390,7 @@ def make_unimol_data_transform(
             tokens,
             coord,
             num_types=len(vocabulary),
-            special_indices=specials,
+            special_indices=excluded,
             pad_idx=pad,
             mask_idx=token_of[mask_token],
             seed=seed,

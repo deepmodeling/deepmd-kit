@@ -21,6 +21,7 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     NativeOP,
+    cast_precision,
 )
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -366,7 +367,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         )
 
         nt = nloc + 2
-        positions = xp.arange(nt, device=dev)[None, :]
+        positions = xp.arange(nt, dtype=xp.int64, device=dev)[None, :]
         eos_at = (n_real + 1)[:, None]
         bos_row = xp.full((nf, 1), self.bos_idx, dtype=atom_tokens.dtype, device=dev)
         pad_row = xp.full((nf, 1), self.pad_idx, dtype=atom_tokens.dtype, device=dev)
@@ -393,6 +394,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
             "n_real": n_real,
         }
 
+    @cast_precision
     def forward_tokens(self, coord_ext: Array, atype_ext: Array, nlist: Array) -> dict:
         """Run the backbone and return everything at token resolution.
 

@@ -208,7 +208,7 @@ def gelu_erf(x: tf.Tensor) -> tf.Tensor:
     Original paper
     https://arxiv.org/abs/1606.08415
     """
-    return 0.5 * x * (1.0 + tf.math.erf(x / tf.cast(tf.sqrt(2.0), x.dtype)))
+    return 0.5 * x * (1.0 + tf.math.erf(x / tf.sqrt(tf.cast(2.0, x.dtype))))
 
 
 ACTIVATION_FN_DICT = {

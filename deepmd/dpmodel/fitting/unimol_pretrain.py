@@ -288,6 +288,13 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
         if self.dist_head is not None:
             dist = self.dist_head(backbone["pair_rep"])[:, 1 : nloc + 1, :]
             width = self.max_atoms + 2
+            if dist.shape[-1] > width:
+                raise ValueError(
+                    f"a frame of {nloc} atoms exceeds max_atoms={self.max_atoms}; "
+                    "the distance head declares a fixed width, so larger frames "
+                    "cannot be expressed. Convert the data with a matching "
+                    "max_atoms, or raise it here"
+                )
             if dist.shape[-1] < width:
                 pad = xp.zeros(
                     (nf, nloc, width - dist.shape[-1]),

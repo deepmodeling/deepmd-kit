@@ -72,7 +72,9 @@ def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
     """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
     xp = array_api_compat.array_namespace(mask)
     n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
-    positions = xp.arange(ncol, device=array_api_compat.device(mask))[None, :]
+    positions = xp.arange(ncol, dtype=xp.int64, device=array_api_compat.device(mask))[
+        None, :
+    ]
     return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
 
 
@@ -273,7 +275,6 @@ class UniMolLoss(Loss):
         return make_unimol_data_transform(
             type_map,
             seed=self.data_seed,
-            max_atoms=self.max_atoms,
             mask_prob=self.mask_prob,
             leave_unmasked_prob=self.leave_unmasked_prob,
             random_token_prob=self.random_token_prob,

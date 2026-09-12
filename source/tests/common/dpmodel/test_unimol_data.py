@@ -111,9 +111,7 @@ class TestUniMolDataConversion(unittest.TestCase):
         convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
         reader = LmdbDataReader(dst, type_map)
         plain = reader[0]
-        reader.set_frame_transform(
-            make_unimol_data_transform(type_map, seed=1, epoch=1)
-        )
+        reader.set_frame_transform(make_unimol_data_transform(type_map, seed=1))
         corrupted = reader[0]
 
         self.assertEqual(
