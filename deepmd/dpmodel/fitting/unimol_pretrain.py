@@ -26,6 +26,7 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     NativeOP,
+    safe_cast_array,
 )
 from deepmd.dpmodel.descriptor.unimol_nn import (
     DistanceHead,
@@ -259,6 +260,15 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
             columns, padded out to ``max_atoms + 2``; the two norm regularisers
             are passed through for the loss.
         """
+        # The backbone hands its output back at the global precision, because
+        # its own forward is wrapped in ``cast_precision``. These heads may be
+        # configured at a different one, so the dictionary is cast here and the
+        # results cast back on the way out. ``cast_precision`` cannot do it: it
+        # casts arrays it is handed directly, and this argument is a dictionary.
+        backbone = {
+            kk: safe_cast_array(vv, "global", self.precision)
+            for kk, vv in backbone.items()
+        }
         xp = array_api_compat.array_namespace(backbone["node_ebd"])
         node = backbone["node_ebd"]
         nf, nt = node.shape[0], node.shape[1]
@@ -303,7 +313,9 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
                 )
                 dist = xp.concat([dist, pad], axis=-1)
             out["pair_dist"] = dist
-        return out
+        return {
+            kk: safe_cast_array(vv, self.precision, "global") for kk, vv in out.items()
+        }
 
     def call(self, descriptor: Array, atype: Array, **kwargs) -> dict[str, Array]:  # noqa: ANN003
         """Not reachable: the heads need token-resolution inputs.

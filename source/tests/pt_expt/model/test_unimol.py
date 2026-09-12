@@ -209,6 +209,35 @@ class TestUniMolPtExpt(unittest.TestCase):
             ],
         )
 
+    def test_a_non_default_precision_runs(self) -> None:
+        """Torch refuses to multiply a float64 activation by a float32 weight.
+
+        The backbone returns its output at the global precision, because its own
+        forward casts back, so heads configured at another precision are handed
+        the wrong dtype. Every other test here pins float64, which is the global
+        precision and hides it. NumPy hides it too, by upcasting silently.
+        """
+        import copy
+
+        coord, atype, nlist = self.inputs()
+        config = copy.deepcopy(self.config(coord.shape[1]))
+        for part in ("descriptor", "fitting_net"):
+            config["model"][part]["precision"] = "float32"
+        model = get_model(normalize(config)["model"])
+        model.eval()
+        # The other tests here overwrite every parameter with a CPU array while
+        # loading weights, which quietly moves the model; this one keeps the
+        # model where it was built, so the inputs go to it.
+        device = next(model.parameters()).device
+        out = model.forward_lower(
+            torch.as_tensor(coord, device=device),
+            torch.as_tensor(atype, device=device),
+            torch.as_tensor(nlist, device=device),
+        )
+        for name in ("token_logits", "coord_update", "pair_dist"):
+            with self.subTest(output=name):
+                self.assertTrue(torch.isfinite(out[name]).all())
+
     def test_matches_the_array_api_implementation(self) -> None:
         """Same weights, same numbers, once the fp32 basis is out of the way.
 
