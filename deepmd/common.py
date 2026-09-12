@@ -53,6 +53,7 @@ _ACTIVATION = Literal[
     "tanh",
     "gelu",
     "gelu_tf",
+    "gelu_erf",
     "silu",
     "silut",
     "none",
