@@ -706,9 +706,10 @@ class DeepmdData:
         for kk in data:
             if (
                 isinstance(data[kk], np.ndarray)
-                and len(data[kk].shape) == 2
                 and data[kk].shape[0] == nframes
                 and "find_" not in kk
+                # grid/density keep a frame-major 3D layout (nframes, ngrid, ...)
+                and (len(data[kk].shape) == 2 or kk in ("grid", "density"))
             ):
                 ret[kk] = data[kk][idx]
             else:
@@ -893,6 +894,19 @@ class DeepmdData:
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
         path = self._get_data_path(set_name, key)
+        if key in ["grid", "density"] and path.is_file():
+            data = path.load_numpy().astype(dtype)
+            if data.ndim < 2:
+                raise ValueError(
+                    f"The data {key} in {set_name} must have a leading frame "
+                    f"dimension, but got shape {data.shape}"
+                )
+            if data.shape[0] != nframes:
+                raise ValueError(
+                    f"The frame count of data {key} in {set_name} is "
+                    f"{data.shape[0]}, which doesn't match the set's nframes {nframes}"
+                )
+            return np.float32(1.0), data
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
@@ -1041,13 +1055,32 @@ class DeepmdData:
             # For filesystem paths, use memmap for better performance
             mmap_obj = self._get_memmap(path)
 
-        # corner case: single frame
-        if set_nframes == 1:
+        # Validate frame-major layout of grid/density before indexing,
+        # so that shuffling cannot pair a structure with another frame's
+        # grid or density label.
+        if key in ("grid", "density"):
+            if mmap_obj.ndim < 2:
+                raise ValueError(
+                    f"The data {key} in {set_dir} must have a leading frame "
+                    f"dimension, but got shape {mmap_obj.shape}"
+                )
+            if mmap_obj.shape[0] != set_nframes:
+                raise ValueError(
+                    f"The frame count of data {key} in {set_dir} is "
+                    f"{mmap_obj.shape[0]}, which doesn't match the set's "
+                    f"nframes {set_nframes}"
+                )
+
+        # corner case: single frame. grid/density always carry a leading
+        # frame dimension (validated above), so no expansion is needed.
+        if set_nframes == 1 and key not in ("grid", "density"):
             mmap_obj = mmap_obj[None, ...]
         # Slice the single frame and make an in-memory copy for modification
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
+            if key in ("grid", "density"):
+                return np.float32(1.0), data
             if is_hessian:
                 data = data.reshape(3 * natoms, 3 * natoms)
                 num_chunks, chunk_size = len(idx_map), 3

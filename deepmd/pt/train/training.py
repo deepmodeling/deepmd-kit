@@ -48,6 +48,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    GridDensityLoss,
     PopulationLoss,
     PropertyLoss,
     TaskLoss,
@@ -2323,6 +2324,7 @@ class Trainer:
             "coord",
             "atype",
             "spin",
+            "grid",
             "box",
             "fparam",
             "aparam",
@@ -2347,6 +2349,10 @@ class Trainer:
         if "fid" in batch_data:
             log_dict["fid"] = batch_data["fid"]
         log_dict["sid"] = batch_data["sid"]
+        # models without grid support do not accept a grid keyword in forward;
+        # drop it when the data does not provide grid
+        if input_dict.get("grid") is None:
+            input_dict.pop("grid", None)
         return input_dict, label_dict, log_dict
 
     def print_header(
@@ -2597,6 +2603,9 @@ def get_loss(
             tensor_name = "polar"
         loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
+    elif loss_type == "grid_density":
+        loss_params["starter_learning_rate"] = start_lr
+        return GridDensityLoss(**loss_params)
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
         var_name = _model.get_var_name()
