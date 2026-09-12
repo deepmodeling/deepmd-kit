@@ -458,6 +458,45 @@ class TestDPA4C:
             )
 
 
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("channels", [8, 32])
+@pytest.mark.parametrize("node_count", [0, 2])
+def test_native_spin_graph_without_edges(
+    precision: str, channels: int, node_count: int
+) -> None:
+    """The reference spin path supports zero nodes as well as isolated atoms."""
+    descriptor = TestDPA4C.build(
+        precision=precision, channels=channels, use_spin=[True, False]
+    ).eval()
+    with torch.no_grad():
+        descriptor.spin.spin_gate.fill_(1.0)
+    dtype = getattr(torch, precision)
+    graph = NeighborGraph(
+        n_node=torch.tensor([node_count], dtype=torch.int64, device=env.DEVICE),
+        n_local=torch.tensor([node_count], dtype=torch.int64, device=env.DEVICE),
+        edge_index=torch.empty((2, 0), dtype=torch.int64, device=env.DEVICE),
+        edge_vec=torch.empty((0, 3), dtype=dtype, device=env.DEVICE),
+        edge_mask=torch.empty((0,), dtype=torch.bool, device=env.DEVICE),
+    )
+    spin = torch.ones(
+        (node_count, 3), dtype=dtype, device=env.DEVICE, requires_grad=True
+    )
+    output, rot_mat = descriptor.call_graph(
+        graph,
+        torch.arange(node_count, dtype=torch.int64, device=env.DEVICE) % 2,
+        spin=spin,
+    )
+    assert output.shape == (node_count, descriptor.get_dim_out())
+    assert output.dtype == dtype
+    assert output.device == spin.device
+    assert torch.isfinite(output).all()
+    assert rot_mat is None
+    output.sum().backward()
+    assert spin.grad is not None
+    assert spin.grad.shape == spin.shape
+    assert torch.isfinite(spin.grad).all()
+
+
 class TestDPA4CSpinGate:
     """Torch-side contracts of the spin branch gate."""
 
