@@ -152,6 +152,7 @@ from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
     _flash_bwd_block_kernel,
     _flash_bwd_kernel,
     _flash_bwd_op,
+    _rotation_strides,
 )
 from deepmd.pt_expt.kernels.triton.sezm.so2_stack_fp16x3 import (
     _mixing_stack_fp16x3_bwd_op,
@@ -1056,6 +1057,11 @@ def sweep_flash_bwd(
     grad_pre_gate = torch.randn(n_nodes, dim, c_wide, device=device)
     x_local = torch.randn(n_edge, n_focus, reduced_dim, cf, device=device)
     wigner_dt = _block_diag_wigner(n_edge, lmax, device)
+    # The backward kernels take the rotation layout (``PACKED``) and the
+    # Wigner strides explicitly, exactly as ``_launch_backward`` passes them;
+    # the sweep always builds a dense ``(E, D, D)`` Wigner, so ``packed`` is
+    # False here and the strides are the plain contiguous ones.
+    packed, dt_se, dt_sr, dt_sk = _rotation_strides(wigner_dt)
     rescale = torch.rand(dim, device=device, dtype=torch.float32) + 0.5
     alpha = torch.rand(n_edge, n_focus, n_head, device=device, dtype=torch.float32)
     dst = torch.randint(0, n_nodes, (n_edge,), device=device)
@@ -1086,6 +1092,7 @@ def sweep_flash_bwd(
         gxl = torch.empty_like(x_local)
         gdt = torch.zeros_like(wigner_dt)
         gw = torch.empty_like(alpha)
+        _, gdt_se, gdt_sr, gdt_sk = _rotation_strides(gdt)
         wrap_triton(_flash_bwd_kernel.fn)[(n_edge,)](
             grad_pre_gate,
             x_local,
@@ -1105,9 +1112,9 @@ def sweep_flash_bwd(
             x_local.stride(1),
             x_local.stride(2),
             x_local.stride(3),
-            wigner_dt.stride(0),
-            wigner_dt.stride(1),
-            wigner_dt.stride(2),
+            dt_se,
+            dt_sr,
+            dt_sk,
             alpha.stride(0),
             alpha.stride(1),
             alpha.stride(2),
@@ -1115,9 +1122,9 @@ def sweep_flash_bwd(
             gxl.stride(1),
             gxl.stride(2),
             gxl.stride(3),
-            gdt.stride(0),
-            gdt.stride(1),
-            gdt.stride(2),
+            gdt_se,
+            gdt_sr,
+            gdt_sk,
             gw.stride(0),
             gw.stride(1),
             gw.stride(2),
@@ -1127,6 +1134,7 @@ def sweep_flash_bwd(
             NFOCUS=n_focus,
             NHEAD=n_head,
             BLOCK_C=triton.next_power_of_2(c_wide),
+            PACKED=packed,
             num_warps=warps,
             num_stages=stages,
         )
@@ -1163,6 +1171,7 @@ def sweep_flash_bwd(
         gxl = torch.empty_like(x_local)
         gdt = torch.zeros_like(wigner_dt)
         gw = torch.empty_like(alpha)
+        _, gdt_se, gdt_sr, gdt_sk = _rotation_strides(gdt)
         wrap_triton(_flash_bwd_block_kernel)[(triton.cdiv(n_edge, block_e),)](
             grad_pre_gate,
             x_local,
@@ -1180,10 +1189,16 @@ def sweep_flash_bwd(
             x_local.stride(1),
             x_local.stride(2),
             x_local.stride(3),
+            dt_se,
+            dt_sr,
+            dt_sk,
             gxl.stride(0),
             gxl.stride(1),
             gxl.stride(2),
             gxl.stride(3),
+            gdt_se,
+            gdt_sr,
+            gdt_sk,
             L=lmax,
             CF=cf,
             CW=c_wide,
