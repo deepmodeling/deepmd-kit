@@ -95,5 +95,13 @@
     "disp_file": "lcurve.out",
     "disp_freq": 100,
     "save_freq": 10000
+  },
+  "optimizer": {
+    "type": "Adam",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.99,
+    "adam_eps": 1e-06,
+    "weight_decay": 0.0001,
+    "_comment": "upstream's recipe; its own Adam places eps differently, so this matches the value but not the placement"
   }
 }

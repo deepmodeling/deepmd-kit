@@ -118,7 +118,10 @@ floor at about 1e-7 relative on the whole objective:
   reproduced.
 
 Training trajectories cannot be reproduced exactly in any case: upstream
-pretrained a pure fp16 model with fused kernels and its own Adam variant.
+pretrained a pure fp16 model with fused kernels and its own Adam variant, which
+places epsilon differently from PyTorch's. The example carries upstream's
+optimizer values, including `adam_eps`, so the recipe matches even though the
+trajectory cannot.
 
 Uni-Mol uses the exact error-function GELU, available here as `gelu_erf`.
 deepmd's `gelu` and `gelu_tf` are the tanh approximation, which differs by up

@@ -2271,12 +2271,14 @@ class Trainer(AbstractTrainer):
             float(optimizer_params["adam_beta2"]),
         )
         weight_decay = float(optimizer_params["weight_decay"])
+        adam_eps = float(optimizer_params.get("adam_eps", 1e-8))
 
         if opt_type in ("Adam", "AdamW"):
             self.optimizer = self._create_optimizer(
                 torch.optim.Adam if opt_type == "Adam" else torch.optim.AdamW,
                 lr=initial_lr,
                 betas=adam_betas,
+                eps=adam_eps,
                 weight_decay=weight_decay,
             )
         else:

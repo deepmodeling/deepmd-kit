@@ -4491,6 +4491,10 @@ opt_args_plugin = ArgsPlugin()
 def optimizer_adam() -> list[Argument]:
     doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
     doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "Adam epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = (
         "Weight decay coefficient for Adam, applied as an L2 penalty to gradients."
     )
@@ -4508,6 +4512,13 @@ def optimizer_adam() -> list[Argument]:
             optional=True,
             default=0.999,
             doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
+        ),
+        Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
