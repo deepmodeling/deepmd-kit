@@ -5380,6 +5380,22 @@ def training_data_args() -> list[
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
     )
+    doc_format = (
+        "The input data format passed to dpdata for automatic conversion. "
+        "If this key is not set, `systems` must already point to DeePMD data. "
+        "If this key is set to a non-DeePMD format, each selected input path is "
+        "loaded by dpdata and converted before training. Use dpdata format names "
+        "such as `extxyz`, `ase/structure`, `ase/traj`, or `auto`."
+    )
+    doc_out_format = (
+        "The output data format passed to dpdata for automatic conversion. "
+        "Defaults to `deepmd/lmdb`; it is used only when `format` requests "
+        "conversion from a non-DeePMD format. LMDB requires exactly one input "
+        "path after `systems` and `rglob_patterns` expansion and an explicit "
+        "model/type_map. LMDB does not support Paddle, data modifiers, or "
+        "explicit sys_probs. Choose `deepmd/hdf5` for those capabilities or "
+        "for multiple input paths. Other supported outputs include `deepmd/npy`."
+    )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -5418,6 +5434,20 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=None,
             doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
             + doc_patterns,
+        ),
+        Argument(
+            "format",
+            [str, None],
+            optional=True,
+            doc=doc_format,
+        ),
+        Argument(
+            "out_format",
+            [str, None],
+            optional=True,
+            default="deepmd/lmdb",
+            doc=doc_out_format,
+            alias=["output_format"],
         ),
         Argument(
             "batch_size",
@@ -5478,6 +5508,22 @@ def validation_data_args() -> list[
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
     )
+    doc_format = (
+        "The input data format passed to dpdata for automatic conversion. "
+        "If this key is not set, `systems` must already point to DeePMD data. "
+        "If this key is set to a non-DeePMD format, each selected input path is "
+        "loaded by dpdata and converted before validation. Use dpdata format names "
+        "such as `extxyz`, `ase/structure`, `ase/traj`, or `auto`."
+    )
+    doc_out_format = (
+        "The output data format passed to dpdata for automatic conversion. "
+        "Defaults to `deepmd/lmdb`; it is used only when `format` requests "
+        "conversion from a non-DeePMD format. LMDB requires exactly one input "
+        "path after `systems` and `rglob_patterns` expansion and an explicit "
+        "model/type_map. LMDB does not support Paddle, data modifiers, or "
+        "explicit sys_probs. Choose `deepmd/hdf5` for those capabilities or "
+        "for multiple input paths. Other supported outputs include `deepmd/npy`."
+    )
     doc_batch_size = f'This key can be \n\n\
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
@@ -5504,6 +5550,20 @@ def validation_data_args() -> list[
             default=None,
             doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
             + doc_patterns,
+        ),
+        Argument(
+            "format",
+            [str, None],
+            optional=True,
+            doc=doc_format,
+        ),
+        Argument(
+            "out_format",
+            [str, None],
+            optional=True,
+            default="deepmd/lmdb",
+            doc=doc_out_format,
+            alias=["output_format"],
         ),
         Argument(
             "batch_size",

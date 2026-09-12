@@ -16,6 +16,9 @@ from typing import (
     Any,
     ClassVar,
 )
+from unittest.mock import (
+    Mock,
+)
 
 import numpy as np
 import pytest
@@ -1235,3 +1238,45 @@ def test_train_entrypoint_builds_data_without_descriptor_rcut(
     ]
     assert trainer_calls[-1]["ran"] is True
     assert trainer_calls[-1]["kwargs"]["min_nbor_dist"] == 0.5
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("failure", ["validation", "summary", "trainer"])
+def test_training_entrypoint_closes_data_on_setup_failure(monkeypatch, failure):
+    """Partial task setup and summary failures release acquired data systems."""
+    from importlib import (
+        import_module,
+    )
+
+    module = import_module("deepmd.tf2.entrypoints.train")
+    trainer = Mock()
+    task_model = Mock()
+    task_model.get_type_map.return_value = ["H"]
+    task_model.get_rcut.return_value = 6.0
+    trainer.models = {"Default": task_model}
+    trainer_factory = Mock(return_value=trainer)
+    monkeypatch.setattr(module, "DPTrainer", trainer_factory)
+    training, validation = Mock(type_map=["H"]), Mock(type_map=["H"])
+    acquired = (
+        [training, ValueError("validation failed")]
+        if failure == "validation"
+        else [training, validation]
+    )
+    monkeypatch.setattr(module, "get_data", Mock(side_effect=acquired))
+    summary = Mock(
+        side_effect=ValueError("summary failed") if failure == "summary" else None
+    )
+    monkeypatch.setattr(module, "print_data_summaries", summary)
+    if failure == "trainer":
+        trainer_factory.side_effect = ValueError("trainer failed")
+    config = {
+        "model": {"type_map": ["H"]},
+        "training": {"training_data": {}, "validation_data": {}, "seed": 42},
+    }
+    with pytest.raises(ValueError, match=f"{failure} failed"):
+        TF2TrainEntrypoint().run_training(
+            config, TrainEntrypointOptions(input_file="input.json"), neighbor_stat=None
+        )
+    training.close.assert_called_once_with()
+    if failure != "validation":
+        validation.close.assert_called_once_with()

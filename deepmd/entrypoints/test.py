@@ -111,7 +111,12 @@ def test(
         else:
             systems = [str((root / Path(ss)).resolve()) for ss in systems]
         patterns = data_params.get("rglob_patterns", None)
-        all_sys = process_systems(systems, patterns=patterns)
+        all_sys = process_systems(
+            systems,
+            patterns=patterns,
+            fmt=data_params.get("format"),
+            out_fmt=data_params.get("out_format", data_params.get("output_format")),
+        )
     elif valid_json is not None:
         jdata = j_loader(valid_json)
         jdata = update_deepmd_input(jdata)
@@ -125,7 +130,12 @@ def test(
         else:
             systems = [str((root / Path(ss)).resolve()) for ss in systems]
         patterns = data_params.get("rglob_patterns", None)
-        all_sys = process_systems(systems, patterns=patterns)
+        all_sys = process_systems(
+            systems,
+            patterns=patterns,
+            fmt=data_params.get("format"),
+            out_fmt=data_params.get("out_format", data_params.get("output_format")),
+        )
     elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()
