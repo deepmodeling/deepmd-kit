@@ -160,6 +160,13 @@ class UniMolLoss(Loss):
         delta_pair_repr_norm_loss: float = 0.01,
         beta: float = 1.0,
         pad_idx: int = 0,
+        mask_prob: float = 0.15,
+        leave_unmasked_prob: float = 0.05,
+        random_token_prob: float = 0.05,
+        noise_type: str = "uniform",
+        noise: float = 1.0,
+        max_atoms: int = 256,
+        data_seed: int = 1,
         **kwargs: float,
     ) -> None:
         self.masked_token_loss = masked_token_loss
@@ -169,6 +176,15 @@ class UniMolLoss(Loss):
         self.delta_pair_repr_norm_loss = delta_pair_repr_norm_loss
         self.beta = beta
         self.pad_idx = pad_idx
+        # The corruption settings live here because the objective owns them:
+        # the labels are whatever the corruption produced.
+        self.mask_prob = mask_prob
+        self.leave_unmasked_prob = leave_unmasked_prob
+        self.random_token_prob = random_token_prob
+        self.noise_type = noise_type
+        self.noise = noise
+        self.max_atoms = max_atoms
+        self.data_seed = data_seed
 
     def call(
         self,
@@ -248,6 +264,23 @@ class UniMolLoss(Loss):
             )
         return loss, more_loss
 
+    def frame_transform(self, type_map: list[str]):  # noqa: ANN201
+        """Build Uni-Mol's corruption, which also produces the labels."""
+        from deepmd.dpmodel.utils.unimol_transform import (
+            make_unimol_data_transform,
+        )
+
+        return make_unimol_data_transform(
+            type_map,
+            seed=self.data_seed,
+            max_atoms=self.max_atoms,
+            mask_prob=self.mask_prob,
+            leave_unmasked_prob=self.leave_unmasked_prob,
+            random_token_prob=self.random_token_prob,
+            noise_type=self.noise_type,
+            noise=self.noise,
+        )
+
     @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Labels produced by the Uni-Mol data transform, not by a simulation."""
@@ -268,6 +301,13 @@ class UniMolLoss(Loss):
             "delta_pair_repr_norm_loss": self.delta_pair_repr_norm_loss,
             "beta": self.beta,
             "pad_idx": self.pad_idx,
+            "mask_prob": self.mask_prob,
+            "leave_unmasked_prob": self.leave_unmasked_prob,
+            "random_token_prob": self.random_token_prob,
+            "noise_type": self.noise_type,
+            "noise": self.noise,
+            "max_atoms": self.max_atoms,
+            "data_seed": self.data_seed,
         }
 
     @classmethod

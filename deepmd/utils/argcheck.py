@@ -5526,6 +5526,19 @@ def loss_unimol() -> list[Argument]:
     doc_beta = (
         "Transition point of the smooth L1 used by the coordinate and distance terms."
     )
+    doc_mask_prob = "Expected fraction of atoms selected for corruption."
+    doc_leave_unmasked_prob = (
+        "Fraction of the selected atoms left with their true element, still predicted."
+    )
+    doc_random_token_prob = "Fraction of the selected atoms given a random element."
+    doc_noise_type = (
+        "Coordinate noise distribution: 'uniform', 'normal', 'trunc_normal' or 'none'."
+    )
+    doc_noise = "Scale of the coordinate noise, in the units of the coordinates."
+    doc_loss_max_atoms = "Crop molecules larger than this before corrupting them."
+    doc_data_seed = (
+        "Seed of the corruption, combined with the epoch and the frame index."
+    )
     return [
         Argument(
             "masked_token_loss",
@@ -5563,6 +5576,29 @@ def loss_unimol() -> list[Argument]:
             doc=doc_delta_pair_repr_norm_loss,
         ),
         Argument("beta", [float, int], optional=True, default=1.0, doc=doc_beta),
+        Argument(
+            "mask_prob", [float, int], optional=True, default=0.15, doc=doc_mask_prob
+        ),
+        Argument(
+            "leave_unmasked_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_leave_unmasked_prob,
+        ),
+        Argument(
+            "random_token_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_random_token_prob,
+        ),
+        Argument(
+            "noise_type", str, optional=True, default="uniform", doc=doc_noise_type
+        ),
+        Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_loss_max_atoms),
+        Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),
     ]
 
 
