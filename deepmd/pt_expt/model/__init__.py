@@ -42,7 +42,6 @@ from .property_model import (
 from .spin_ener_model import (
     SpinEnergyModel,
 )
-
 from .unimol_pretrain_model import (
     UniMolPretrainModel,
 )

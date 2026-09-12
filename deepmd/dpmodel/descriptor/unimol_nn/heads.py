@@ -23,6 +23,9 @@ from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 
 __all__ = ["DistanceHead", "MaskLMHead", "coord_update"]
 
@@ -52,11 +55,17 @@ class MaskLMHead(NativeOP):
             embed_dim,
             activation_function=activation_function,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
-        self.layer_norm = LayerNorm(embed_dim, precision=precision, seed=seed)
+        self.layer_norm = LayerNorm(
+            embed_dim, precision=precision, seed=child_seed(seed, 1)
+        )
         self.out_proj = NativeLayer(
-            embed_dim, output_dim, bias=True, precision=precision, seed=seed
+            embed_dim,
+            output_dim,
+            bias=True,
+            precision=precision,
+            seed=child_seed(seed, 2),
         )
 
     def call(self, features, masked_tokens=None):  # noqa: ANN001, ANN201
@@ -124,10 +133,14 @@ class DistanceHead(NativeOP):
             heads,
             activation_function=activation_function,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
-        self.layer_norm = LayerNorm(heads, precision=precision, seed=seed)
-        self.out_proj = NativeLayer(heads, 1, bias=True, precision=precision, seed=seed)
+        self.layer_norm = LayerNorm(
+            heads, precision=precision, seed=child_seed(seed, 1)
+        )
+        self.out_proj = NativeLayer(
+            heads, 1, bias=True, precision=precision, seed=child_seed(seed, 2)
+        )
 
     def call(self, pair_rep):  # noqa: ANN001, ANN201
         """Map nf x nt x nt x heads onto a symmetric nf x nt x nt matrix."""

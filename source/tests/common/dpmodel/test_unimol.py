@@ -111,9 +111,9 @@ class UniMolGoldenMixin:
         kwargs.update(overrides)
         desc = DescrptUniMol(**kwargs)
         w = self.weights
-        desc.embed_tokens = w["embed_tokens.weight"].copy()
+        desc.embed_tokens.w = w["embed_tokens.weight"].copy()
         for key in ("means", "stds", "mul", "bias"):
-            setattr(desc.gbf, key, w[f"gbf.{key}.weight"].copy())
+            getattr(desc.gbf, key).w = w[f"gbf.{key}.weight"].copy()
         _set_linear(desc.gbf_proj.linear1, w, "gbf_proj.linear1")
         _set_linear(desc.gbf_proj.linear2, w, "gbf_proj.linear2")
         enc = self.build_encoder()
@@ -257,7 +257,7 @@ class TestUniMolEncoder(UniMolGoldenMixin, unittest.TestCase):
     def test_gaussian_basis_and_projection(self) -> None:
         gbf = GaussianLayer(SMALL["k"], SMALL["vocab"] ** 2)
         for key in ("means", "stds", "mul", "bias"):
-            setattr(gbf, key, self.weights[f"gbf.{key}.weight"].copy())
+            getattr(gbf, key).w = self.weights[f"gbf.{key}.weight"].copy()
         proj = NonLinearHead(SMALL["k"], SMALL["heads"], "gelu_erf", hidden=SMALL["k"])
         _set_linear(proj.linear1, self.weights, "gbf_proj.linear1")
         _set_linear(proj.linear2, self.weights, "gbf_proj.linear2")

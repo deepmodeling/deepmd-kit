@@ -39,6 +39,9 @@ from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 
 # Uni-Mol's Gaussian basis uses a truncated pi (unimol/models/unimol.py:393-397).
 # Keeping it is required for bitwise agreement with the released weights.
@@ -132,10 +135,14 @@ class NonLinearHead(NativeOP):
             hidden,
             activation_function=activation_function,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
         self.linear2 = NativeLayer(
-            hidden, out_dim, activation_function=None, precision=precision, seed=seed
+            hidden,
+            out_dim,
+            activation_function=None,
+            precision=precision,
+            seed=child_seed(seed, 1),
         )
 
     def call(self, x):  # noqa: ANN001, ANN201
@@ -178,8 +185,6 @@ class GaussianLayer(NativeOP):
         precision: str = "float64",
         seed: int | list[int] | None = None,
     ) -> None:
-        import numpy as np
-
         self.k = k
         self.edge_types = edge_types
         # Upstream evaluates the basis in fp32 because it pretrains an fp16
@@ -187,29 +192,35 @@ class GaussianLayer(NativeOP):
         # the released weights reproduce; set False to keep the working dtype.
         self.single_precision_basis = single_precision_basis
         self.precision = precision
-        rng = np.random.default_rng(seed if isinstance(seed, int) else None)
-        # Upstream initialises means/stds as U(0, 3) and mul/bias as 1/0, but
-        # init_bert_params then overwrites all four with N(0, 0.02); see
-        # unicore/modules/transformer_encoder.py:16 and the note in the spec.
-        self.means = rng.uniform(0.0, 3.0, size=(1, k))
-        self.stds = rng.uniform(0.0, 3.0, size=(1, k))
-        self.mul = np.ones((edge_types, 1))
-        self.bias = np.zeros((edge_types, 1))
+        # All four tables are trained. They are layers rather than bare arrays
+        # because a bare array becomes a buffer on the torch backends, and a
+        # buffer never receives a gradient: the whole geometry pathway would
+        # sit frozen at its initial values. Each gets its own seed, or they
+        # would draw identical numbers wherever their shapes agree.
+        self.means = NativeLayer(
+            1, k, bias=False, precision=precision, seed=child_seed(seed, 0)
+        )
+        self.stds = NativeLayer(
+            1, k, bias=False, precision=precision, seed=child_seed(seed, 1)
+        )
+        self.mul = NativeLayer(
+            edge_types, 1, bias=False, precision=precision, seed=child_seed(seed, 2)
+        )
+        self.bias = NativeLayer(
+            edge_types, 1, bias=False, precision=precision, seed=child_seed(seed, 3)
+        )
 
     def call(self, dist, edge_type):  # noqa: ANN001, ANN201
         """Expand ``dist`` (nf x nt x nt) into ``k`` Gaussians per atom pair."""
         xp = array_api_compat.array_namespace(dist)
         dev = array_api_compat.device(dist)
+        flat = xp.reshape(edge_type, (-1,))
         mul = xp.reshape(
-            xp.take(
-                xp.asarray(self.mul, device=dev), xp.reshape(edge_type, (-1,)), axis=0
-            ),
+            xp.take(xp.asarray(self.mul.w, device=dev), flat, axis=0),
             (*edge_type.shape, 1),
         )
         bias = xp.reshape(
-            xp.take(
-                xp.asarray(self.bias, device=dev), xp.reshape(edge_type, (-1,)), axis=0
-            ),
+            xp.take(xp.asarray(self.bias.w, device=dev), flat, axis=0),
             (*edge_type.shape, 1),
         )
         mul = xp.astype(mul, dist.dtype)
@@ -218,10 +229,10 @@ class GaussianLayer(NativeOP):
         x = xp.repeat(x, self.k, axis=-1)
         work = xp.float32 if self.single_precision_basis else x.dtype
         x = xp.astype(x, work)
-        mean = xp.astype(xp.reshape(xp.asarray(self.means, device=dev), (-1,)), work)
+        mean = xp.astype(xp.reshape(xp.asarray(self.means.w, device=dev), (-1,)), work)
         std = (
             xp.abs(
-                xp.astype(xp.reshape(xp.asarray(self.stds, device=dev), (-1,)), work)
+                xp.astype(xp.reshape(xp.asarray(self.stds.w, device=dev), (-1,)), work)
             )
             + 1e-5
         )
@@ -230,30 +241,26 @@ class GaussianLayer(NativeOP):
         return xp.astype(out, dist.dtype)
 
     def serialize(self) -> dict:
-        from deepmd.dpmodel.common import (
-            to_numpy_array,
-        )
-
+        """Serialize the basis."""
         return {
             "k": self.k,
             "edge_types": self.edge_types,
             "single_precision_basis": self.single_precision_basis,
             "precision": self.precision,
-            "@variables": {
-                "means": to_numpy_array(self.means),
-                "stds": to_numpy_array(self.stds),
-                "mul": to_numpy_array(self.mul),
-                "bias": to_numpy_array(self.bias),
-            },
+            "means": self.means.serialize(),
+            "stds": self.stds.serialize(),
+            "mul": self.mul.serialize(),
+            "bias": self.bias.serialize(),
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "GaussianLayer":
+        """Deserialize the basis."""
         data = data.copy()
-        variables = data.pop("@variables")
+        tables = {key: data.pop(key) for key in ("means", "stds", "mul", "bias")}
         obj = cls(**data)
-        for key, value in variables.items():
-            setattr(obj, key, value)
+        for key, value in tables.items():
+            setattr(obj, key, NativeLayer.deserialize(value))
         return obj
 
 
@@ -283,10 +290,18 @@ class SelfMultiheadAttention(NativeOP):
         self.scaling = (self.head_dim * scaling_factor) ** -0.5
         self.precision = precision
         self.in_proj = NativeLayer(
-            embed_dim, embed_dim * 3, bias=bias, precision=precision, seed=seed
+            embed_dim,
+            embed_dim * 3,
+            bias=bias,
+            precision=precision,
+            seed=child_seed(seed, 0),
         )
         self.out_proj = NativeLayer(
-            embed_dim, embed_dim, bias=bias, precision=precision, seed=seed
+            embed_dim,
+            embed_dim,
+            bias=bias,
+            precision=precision,
+            seed=child_seed(seed, 1),
         )
 
     def call(self, query, attn_bias, training: bool = False):  # noqa: ANN001, ANN201
@@ -385,24 +400,28 @@ class TransformerEncoderLayer(NativeOP):
             attention_heads,
             dropout=attention_dropout,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 0),
         )
-        self.self_attn_layer_norm = LayerNorm(embed_dim, precision=precision, seed=seed)
+        self.self_attn_layer_norm = LayerNorm(
+            embed_dim, precision=precision, seed=child_seed(seed, 1)
+        )
         self.fc1 = NativeLayer(
             embed_dim,
             ffn_embed_dim,
             activation_function=activation_function,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 2),
         )
         self.fc2 = NativeLayer(
             ffn_embed_dim,
             embed_dim,
             activation_function=None,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 3),
         )
-        self.final_layer_norm = LayerNorm(embed_dim, precision=precision, seed=seed)
+        self.final_layer_norm = LayerNorm(
+            embed_dim, precision=precision, seed=child_seed(seed, 4)
+        )
 
     def call(self, x, attn_bias, training: bool = False):  # noqa: ANN001, ANN201
         residual = x
@@ -496,12 +515,18 @@ class TransformerEncoderWithPair(NativeOP):
         self.activation_function = activation_function
         self.no_final_head_layer_norm = no_final_head_layer_norm
         self.precision = precision
-        self.emb_layer_norm = LayerNorm(embed_dim, precision=precision, seed=seed)
-        self.final_layer_norm = LayerNorm(embed_dim, precision=precision, seed=seed)
+        self.emb_layer_norm = LayerNorm(
+            embed_dim, precision=precision, seed=child_seed(seed, 0)
+        )
+        self.final_layer_norm = LayerNorm(
+            embed_dim, precision=precision, seed=child_seed(seed, 1)
+        )
         self.final_head_layer_norm = (
             None
             if no_final_head_layer_norm
-            else LayerNorm(attention_heads, precision=precision, seed=seed)
+            else LayerNorm(
+                attention_heads, precision=precision, seed=child_seed(seed, 2)
+            )
         )
         self.layers = [
             TransformerEncoderLayer(
@@ -513,9 +538,11 @@ class TransformerEncoderWithPair(NativeOP):
                 activation_dropout=activation_dropout,
                 activation_function=activation_function,
                 precision=precision,
-                seed=seed,
+                # Each block draws its own numbers; sharing one seed would make
+                # every layer start bitwise identical.
+                seed=child_seed(seed, 3 + index),
             )
-            for _ in range(encoder_layers)
+            for index in range(encoder_layers)
         ]
 
     def call(self, emb, attn_mask, padding_mask, training: bool = False):  # noqa: ANN001, ANN201

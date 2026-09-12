@@ -12,11 +12,11 @@ import numpy as np
 from deepmd.dpmodel.descriptor.unimol import (
     UNIMOL_ELEMENTS,
 )
-from deepmd.dpmodel.utils.lmdb_data import (
-    LmdbDataReader,
-)
 from deepmd.dpmodel.loss.unimol import (
     UniMolLoss,
+)
+from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbDataReader,
 )
 from deepmd.dpmodel.utils.unimol_transform import (
     make_unimol_data_transform,

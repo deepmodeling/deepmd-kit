@@ -95,6 +95,11 @@ def split_unimol_state_dict(
     return backbone, heads
 
 
+def _set_table(layer: Any, value: np.ndarray) -> None:
+    """Assign a lookup table, which is stored as a layer weight."""
+    layer.w = np.ascontiguousarray(value).astype(layer.w.dtype)
+
+
 def _set_linear(layer: Any, state: dict[str, np.ndarray], prefix: str) -> None:
     """Assign a torch Linear onto a deepmd layer, transposing the weight."""
     layer.w = np.ascontiguousarray(state[prefix + ".weight"].T).astype(layer.w.dtype)
@@ -113,12 +118,12 @@ def apply_unimol_backbone(
     descriptor: "DescrptUniMol", state_dict: dict[str, np.ndarray]
 ) -> None:
     """Load backbone parameters into a descriptor, in place."""
-    dtype = descriptor.embed_tokens.dtype
-    descriptor.embed_tokens = state_dict["embed_tokens.weight"].astype(dtype)
-    descriptor.gbf.means = state_dict["gbf.means.weight"].astype(dtype)
-    descriptor.gbf.stds = state_dict["gbf.stds.weight"].astype(dtype)
-    descriptor.gbf.mul = state_dict["gbf.mul.weight"].astype(dtype)
-    descriptor.gbf.bias = state_dict["gbf.bias.weight"].astype(dtype)
+    # The embedding and the four basis tables are layers, so their values live
+    # in ``w``; they carry no transpose because they are lookup tables rather
+    # than projections.
+    _set_table(descriptor.embed_tokens, state_dict["embed_tokens.weight"])
+    for name in ("means", "stds", "mul", "bias"):
+        _set_table(getattr(descriptor.gbf, name), state_dict[f"gbf.{name}.weight"])
     _set_linear(descriptor.gbf_proj.linear1, state_dict, "gbf_proj.linear1")
     _set_linear(descriptor.gbf_proj.linear2, state_dict, "gbf_proj.linear2")
 

@@ -40,6 +40,9 @@ from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -102,7 +105,13 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
         self.activation_function = activation_function
         self.precision = precision
         self.lm_head = (
-            MaskLMHead(dim_descrpt, n_token, activation_function, precision, seed)
+            MaskLMHead(
+                dim_descrpt,
+                n_token,
+                activation_function,
+                precision,
+                child_seed(seed, 0),
+            )
             if mask_token_head
             else None
         )
@@ -113,13 +122,15 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
                 activation_function,
                 hidden=attention_heads,
                 precision=precision,
-                seed=seed,
+                seed=child_seed(seed, 1),
             )
             if coord_head
             else None
         )
         self.dist_head = (
-            DistanceHead(attention_heads, activation_function, precision, seed)
+            DistanceHead(
+                attention_heads, activation_function, precision, child_seed(seed, 2)
+            )
             if dist_head
             else None
         )

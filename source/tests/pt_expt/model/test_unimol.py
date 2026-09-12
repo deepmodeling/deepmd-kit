@@ -17,7 +17,9 @@ import torch
 
 from deepmd.dpmodel.descriptor.unimol import (
     UNIMOL_ELEMENTS,
-    DescrptUniMol as DescrptUniMolDP,
+)
+from deepmd.dpmodel.descriptor.unimol import DescrptUniMol as DescrptUniMolDP
+from deepmd.dpmodel.descriptor.unimol import (
     unimol_vocabulary,
 )
 from deepmd.dpmodel.fitting.unimol_pretrain import (
@@ -127,9 +129,9 @@ class TestUniMolPtExpt(unittest.TestCase):
             put(layer, "w", w[prefix + ".weight"])
             put(layer, "b", w[prefix + ".bias"])
 
-        put(descriptor, "embed_tokens", w["embed_tokens.weight"])
+        put(descriptor.embed_tokens, "w", w["embed_tokens.weight"])
         for key in ("means", "stds", "mul", "bias"):
-            put(descriptor.gbf, key, w[f"gbf.{key}.weight"])
+            put(getattr(descriptor.gbf, key), "w", w[f"gbf.{key}.weight"])
         lin(
             descriptor.gbf_proj.linear1,
             "gbf_proj.linear1.weight",

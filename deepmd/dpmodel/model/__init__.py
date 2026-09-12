@@ -42,14 +42,14 @@ from .native_spin_model import (
 from .polar_model import (
     PolarModel,
 )
-from .unimol_pretrain_model import (
-    UniMolPretrainModel,
-)
 from .property_model import (
     PropertyModel,
 )
 from .spin_model import (
     SpinModel,
+)
+from .unimol_pretrain_model import (
+    UniMolPretrainModel,
 )
 
 __all__ = [

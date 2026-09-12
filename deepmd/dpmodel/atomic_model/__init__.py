@@ -23,9 +23,6 @@ from .dipole_atomic_model import (
 from .dos_atomic_model import (
     DPDOSAtomicModel,
 )
-from .unimol_atomic_model import (
-    DPUniMolAtomicModel,
-)
 from .dp_atomic_model import (
     DPAtomicModel,
 )
@@ -47,6 +44,9 @@ from .polar_atomic_model import (
 )
 from .property_atomic_model import (
     DPPropertyAtomicModel,
+)
+from .unimol_atomic_model import (
+    DPUniMolAtomicModel,
 )
 
 __all__ = [

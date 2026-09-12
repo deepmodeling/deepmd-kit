@@ -26,9 +26,6 @@ from .se_atten_v2 import (
 from .se_e2_a import (
     DescrptSeA,
 )
-from .unimol import (
-    DescrptUniMol,
-)
 from .se_r import (
     DescrptSeR,
 )
@@ -37,6 +34,9 @@ from .se_t import (
 )
 from .se_t_tebd import (
     DescrptSeTTebd,
+)
+from .unimol import (
+    DescrptUniMol,
 )
 
 __all__ = [

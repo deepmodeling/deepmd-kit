@@ -91,12 +91,12 @@ from deepmd.pt.utils.compile_compat import (
 )
 from deepmd.pt.utils.compile_compat import trace_pad_dim as _trace_pad_dim
 from deepmd.pt_expt.loss import (
-    UniMolLoss,
     DOSLoss,
     EnergyLoss,
     EnergySpinLoss,
     PropertyLoss,
     TensorLoss,
+    UniMolLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,

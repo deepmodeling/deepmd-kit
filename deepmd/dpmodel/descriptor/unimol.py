@@ -21,7 +21,6 @@ from deepmd.dpmodel.array_api import (
 )
 from deepmd.dpmodel.common import (
     NativeOP,
-    to_numpy_array,
 )
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -33,6 +32,9 @@ from deepmd.dpmodel.descriptor.unimol_nn import (
 )
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
+)
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -169,24 +171,29 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
             [token_of.get(sym, self.unk_idx) for sym in self.type_map], dtype=np.int64
         )
 
-        rng = np.random.default_rng(seed if isinstance(seed, int) else None)
-        self.embed_tokens = rng.normal(
-            0.0, 0.02, size=(self.ntokens, encoder_embed_dim)
+        # The token embedding is trained, so it is a layer rather than a bare
+        # array: a bare array becomes a buffer on the torch backends, and a
+        # buffer never receives a gradient.
+        self.embed_tokens = NativeLayer(
+            self.ntokens,
+            encoder_embed_dim,
+            bias=False,
+            precision=precision,
+            seed=child_seed(seed, 0),
         )
-        self.embed_tokens[self.pad_idx, :] = 0.0
         self.gbf = GaussianLayer(
             gaussian_kernels,
             self.ntokens**2,
             single_precision_basis=single_precision_basis,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 1),
         )
         self.gbf_proj = NonLinearHead(
             gaussian_kernels,
             encoder_attention_heads,
             activation_function,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 2),
         )
         self.encoder = TransformerEncoderWithPair(
             encoder_layers=encoder_layers,
@@ -201,7 +208,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
             activation_function=activation_function,
             no_final_head_layer_norm=no_final_head_layer_norm,
             precision=precision,
-            seed=seed,
+            seed=child_seed(seed, 3),
         )
 
     # ------------------------------------------------------------------
@@ -398,7 +405,9 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         tokens, coord, padding_mask = seq["tokens"], seq["coord"], seq["padding_mask"]
         nf, nt = tokens.shape
 
-        embed = xp.asarray(self.embed_tokens, device=array_api_compat.device(coord_ext))
+        embed = xp.asarray(
+            self.embed_tokens.w, device=array_api_compat.device(coord_ext)
+        )
         emb = xp.take(embed, xp.reshape(tokens, (-1,)), axis=0)
         emb = xp.reshape(emb, (nf, nt, self.encoder_embed_dim))
         emb = xp.astype(emb, coord.dtype)
@@ -480,7 +489,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
             "gaussian_kernels": self.gaussian_kernels,
             "precision": self.precision,
             "type_map_tokens": self.vocabulary,
-            "@variables": {"embed_tokens": to_numpy_array(self.embed_tokens)},
+            "embed_tokens": self.embed_tokens.serialize(),
             "gbf": self.gbf.serialize(),
             "gbf_proj": self.gbf_proj.serialize(),
             "encoder": self.encoder.serialize(),
@@ -493,17 +502,13 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         check_version_compatibility(data.pop("@version"), 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
-        variables = data.pop("@variables")
+        embed_tokens = data.pop("embed_tokens")
         gbf = data.pop("gbf")
         gbf_proj = data.pop("gbf_proj")
         encoder = data.pop("encoder")
         obj = cls(**data)
-        obj.embed_tokens = variables["embed_tokens"]
+        obj.embed_tokens = NativeLayer.deserialize(embed_tokens)
         obj.gbf = GaussianLayer.deserialize(gbf)
         obj.gbf_proj = NonLinearHead.deserialize(gbf_proj)
         obj.encoder = TransformerEncoderWithPair.deserialize(encoder)
         return obj
-
-
-# Keep a reference so linters see the import is used by type hints above.
-_ = NativeLayer

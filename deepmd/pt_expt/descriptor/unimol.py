@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from deepmd.dpmodel.descriptor.unimol import (
-    DescrptUniMol as DescrptUniMolDP,
-)
+from deepmd.dpmodel.descriptor.unimol import DescrptUniMol as DescrptUniMolDP
 from deepmd.pt_expt.common import (
     torch_module,
 )

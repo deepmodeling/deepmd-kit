@@ -42,13 +42,13 @@ become a random element and 5% are left alone; all three are predicted. The
 masked and randomly replaced atoms also have uniform noise of ±1 Å added to
 each coordinate component. Five terms are minimized:
 
-| Term | Weight | What it predicts |
-| --- | --- | --- |
-| element | 1 | the true element of every selected atom |
-| coordinate | 5 | the clean coordinates, through the pair channel |
-| distance | 10 | the clean pairwise distances |
-| node norm | 0.01 | keeps node norms near $\sqrt{512}$ |
-| pair-delta norm | 0.01 | keeps pair-delta norms near $\sqrt{64}$ |
+| Term            | Weight | What it predicts                                |
+| --------------- | ------ | ----------------------------------------------- |
+| element         | 1      | the true element of every selected atom         |
+| coordinate      | 5      | the clean coordinates, through the pair channel |
+| distance        | 10     | the clean pairwise distances                    |
+| node norm       | 0.01   | keeps node norms near $\sqrt{512}$              |
+| pair-delta norm | 0.01   | keeps pair-delta norms near $\sqrt{64}$         |
 
 Corruption happens in the data pipeline rather than inside the loss, which is
 both what upstream does and what the PyTorch-Exportable backend requires, since
