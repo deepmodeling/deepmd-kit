@@ -42,11 +42,16 @@ class TestUniMolDataConversion(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.mkdtemp()
         rng = np.random.default_rng(0)
+        # Large enough that the 15% selection actually selects something: with
+        # four atoms it usually selects none, and every assertion about the
+        # corruption would hold vacuously.
+        big = ["C", "N", "O", "H", "C", "C", "N", "O", "H", "H", "C", "F", "S", "C"]
         self.molecules = [
             {
-                "atoms": ["C", "N", "O", "H"],
+                "atoms": big,
                 "coordinates": [
-                    rng.normal(size=(4, 3)).astype(np.float32) for _ in range(3)
+                    rng.normal(size=(len(big), 3)).astype(np.float32) * 2.0
+                    for _ in range(3)
                 ],
                 "smi": "CNO",
             },
@@ -79,7 +84,7 @@ class TestUniMolDataConversion(unittest.TestCase):
     def test_reader_streams_the_upstream_layout(self) -> None:
         records = list(read_unimol_lmdb(self.src))
         self.assertEqual(len(records), len(self.molecules))
-        self.assertEqual(records[0]["atoms"], ["C", "N", "O", "H"])
+        self.assertEqual(records[0]["atoms"], self.molecules[0]["atoms"])
         self.assertEqual(len(records[0]["coordinates"]), 3)
 
     def test_conversion_round_trips_through_the_deepmd_reader(self) -> None:
@@ -98,7 +103,7 @@ class TestUniMolDataConversion(unittest.TestCase):
             coord, self.molecules[0]["coordinates"][0].astype(np.float64), atol=1e-6
         )
         symbols = [UNIMOL_ELEMENTS[i] for i in np.asarray(frame["atype"]).reshape(-1)]
-        self.assertEqual(symbols, self.molecules[0]["atoms"])
+        self.assertEqual(symbols, list(self.molecules[0]["atoms"]))
         # Molecules are not periodic, so no cell is written at all. A zero cell
         # would not do: the neighbour-list builder takes any cell at face value
         # and inverts it.
@@ -138,6 +143,21 @@ class TestUniMolDataConversion(unittest.TestCase):
         is_mask = np.asarray(corrupted["atype"]) == type_map.index("[MASK]")
         self.assertLessEqual(int(is_mask.sum()), int(moved.sum()))
         self.assertTrue(bool(np.all(~is_mask | moved)))
+        # The fixture is large enough that something is actually corrupted, so
+        # the assertions above are not vacuous.
+        self.assertGreater(int((target != 0).sum()), 0)
+        self.assertGreater(int(moved.sum()), 0)
+
+    def test_corruption_changes_between_visits(self) -> None:
+        """Upstream redraws every epoch; a frozen mask would be memorised."""
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        dst = os.path.join(self.tmp, "revisited")
+        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
+        reader = LmdbDataReader(dst, type_map)
+        reader.set_frame_transform(make_unimol_data_transform(type_map, seed=1))
+        first = np.asarray(reader[0]["unimol_token_target"]).copy()
+        second = np.asarray(reader[0]["unimol_token_target"]).copy()
+        self.assertFalse(np.array_equal(first, second))
 
     def test_the_objective_supplies_its_own_transform(self) -> None:
         """A trainer installs whatever the loss declares, and nothing else.

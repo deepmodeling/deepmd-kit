@@ -20,7 +20,17 @@ DFT-labelled data, and to give molecular property work a pretrained backbone.
 > conserved. The descriptor refuses any frame whose atoms are not all local,
 > which rules out periodic images and the ghost-atom layout that freezing and
 > parallel evaluation assume, so it is not available for molecular dynamics or
-> frozen deployment.
+> frozen deployment. Nothing prevents a configuration from pairing it with an
+> energy fitting; such a model would run, but it would not be a usable
+> potential energy surface.
+
+Two further limits are worth knowing before configuring a run. The two virtual
+tokens sit at the centroid of the real atoms by default, which keeps the
+sequence translation invariant; set `virtual_token_position` to `origin` to
+reproduce upstream exactly on data its own pipeline has centred. And the
+descriptor decides on the data it is given -- rejecting periodic frames and
+frames of fewer than two atoms -- so it cannot be traced or compiled, and
+`enable_compile` is not available for it.
 
 ## Architecture
 

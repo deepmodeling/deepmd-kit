@@ -363,6 +363,35 @@ class TestUniMolPtExpt(unittest.TestCase):
         self.assertFalse(bool(torch.allclose(a, b)))
         model.eval()
 
+        # The rates are what drive it: with every rate at zero, training mode
+        # is deterministic again. Without this, a single hard-coded dropout
+        # call would satisfy the test above.
+        quiet = self.build_torch_model(coord.shape[1])
+        for module in (
+            quiet.atomic_model.descriptor,
+            quiet.atomic_model.descriptor.encoder,
+        ):
+            for attr in (
+                "dropout",
+                "emb_dropout",
+                "attention_dropout",
+                "activation_dropout",
+            ):
+                if hasattr(module, attr):
+                    setattr(module, attr, 0.0)
+        for layer in quiet.atomic_model.descriptor.encoder.layers:
+            layer.dropout = 0.0
+            layer.attention_dropout = 0.0
+            layer.activation_dropout = 0.0
+            layer.self_attn.dropout = 0.0
+        quiet.train()
+        torch.manual_seed(0)
+        c = quiet.forward_lower(*args)["token_logits"].detach()
+        torch.manual_seed(1)
+        d = quiet.forward_lower(*args)["token_logits"].detach()
+        torch.testing.assert_close(c, d, rtol=0, atol=0)
+        quiet.eval()
+
     def test_upper_path_builds_its_own_neighbour_list(self) -> None:
         """What a user actually calls: coordinates and types, no neighbour list."""
         coord, atype, _ = self.inputs()
@@ -405,11 +434,79 @@ class TestUniMolPtExpt(unittest.TestCase):
             None,
         )
         ret["token_logits"].sum().backward()
-        grads = [
-            p.grad for p in model.parameters() if p.requires_grad and p.grad is not None
+        named = dict(model.named_parameters())
+        # The heads alone would satisfy "some parameter has a gradient", so the
+        # backbone is named explicitly: the embedding, the distance basis and
+        # the first block all have to be reached.
+        backbone = [
+            name
+            for name in named
+            if "embed_tokens" in name or ".gbf." in name or "layers.0." in name
         ]
-        self.assertGreater(len(grads), 0)
-        self.assertTrue(any(bool(torch.any(g != 0)) for g in grads))
+        self.assertGreater(len(backbone), 5)
+        for name in backbone:
+            with self.subTest(parameter=name):
+                grad = named[name].grad
+                self.assertIsNotNone(grad, f"{name} received no gradient")
+                self.assertTrue(
+                    bool(torch.any(grad != 0)), f"{name} got a zero gradient"
+                )
+
+
+class TestUniMolCheckpointImport(unittest.TestCase):
+    """The documented way to use the released weights.
+
+    The golden archive carries the small model's weights under upstream's own
+    names, so the importer can be driven with exactly the layout a released
+    checkpoint has, without shipping a 190 MB file.
+    """
+
+    def test_imports_upstream_named_weights(self) -> None:
+        from deepmd.dpmodel.descriptor.unimol import DescrptUniMol as DescrptUniMolDP
+        from deepmd.utils.unimol_checkpoint import (
+            apply_unimol_backbone,
+            split_unimol_state_dict,
+        )
+
+        golden = np.load(GOLDEN)
+        state = {
+            k[len("small_weights/") :]: v
+            for k, v in golden.items()
+            if k.startswith("small_weights/")
+        }
+        backbone, heads = split_unimol_state_dict(state)
+        self.assertTrue(all(not k.startswith("lm_head") for k in backbone))
+        self.assertTrue(any(k.startswith("lm_head") for k in heads))
+        with self.assertRaisesRegex(ValueError, "unexpected"):
+            split_unimol_state_dict({**state, "something.unexpected": np.zeros(1)})
+
+        descriptor = DescrptUniMolDP(
+            type_map=[*UNIMOL_ELEMENTS, "[MASK]"],
+            encoder_layers=SMALL["layers"],
+            encoder_embed_dim=SMALL["dim"],
+            encoder_ffn_embed_dim=SMALL["ffn"],
+            encoder_attention_heads=SMALL["heads"],
+            max_atoms=16,
+        )
+        apply_unimol_backbone(descriptor, backbone)
+        # Lookup tables arrive as they are; projections arrive transposed,
+        # because deepmd applies a linear weight the other way round.
+        np.testing.assert_allclose(
+            descriptor.embed_tokens.w, state["embed_tokens.weight"], atol=0
+        )
+        np.testing.assert_allclose(
+            descriptor.gbf.mul.w, state["gbf.mul.weight"], atol=0
+        )
+        np.testing.assert_allclose(
+            descriptor.encoder.layers[0].fc1.w,
+            state["encoder.layers.0.fc1.weight"].T,
+            atol=0,
+        )
+        np.testing.assert_allclose(
+            descriptor.encoder.layers[0].fc1.b,
+            state["encoder.layers.0.fc1.bias"],
+            atol=0,
+        )
 
 
 class TestUniMolTraining(unittest.TestCase):

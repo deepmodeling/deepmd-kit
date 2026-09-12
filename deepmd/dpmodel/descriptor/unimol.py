@@ -5,8 +5,13 @@ Wraps the ported Uni-Mol encoder (:mod:`deepmd.dpmodel.descriptor.unimol_nn`) in
 the descriptor interface. Unlike every other descriptor here, Uni-Mol is global
 rather than local: it attends over all atom pairs with no cut-off and no smooth
 envelope, so it is neither extensive nor periodic and its forces are not
-conserved. It is meant for molecular property and pretraining work, and the
-model layer refuses to pair it with an energy fitting.
+conserved. It is meant for molecular property and pretraining work.
+
+Nothing stops a configuration from pairing it with an energy fitting, and
+nothing could usefully: the descriptor does not see the fitting. Such a model
+would train and evaluate, but its forces would be neither smooth at any cutoff
+nor conserved, and its energy would not be extensive, so it should not be used
+as a potential energy surface.
 
 Uni-Mol's own vocabulary is kept, because the released weights are indexed by
 it: four special tokens, then 26 elements, then ``[MASK]``. A deepmd
@@ -407,10 +412,9 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         tokens, coord, padding_mask = seq["tokens"], seq["coord"], seq["padding_mask"]
         nf, nt = tokens.shape
 
-        embed = xp.asarray(
-            self.embed_tokens.w, device=array_api_compat.device(coord_ext)
-        )
-        emb = xp.take(embed, xp.reshape(tokens, (-1,)), axis=0)
+        # The embedding is a parameter, so it is indexed directly: wrapping it
+        # with asarray would detach it from the gradient.
+        emb = xp.take(self.embed_tokens.w, xp.reshape(tokens, (-1,)), axis=0)
         emb = xp.reshape(emb, (nf, nt, self.encoder_embed_dim))
         emb = xp.astype(emb, coord.dtype)
 

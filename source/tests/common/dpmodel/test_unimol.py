@@ -44,6 +44,7 @@ from deepmd.dpmodel.loss.unimol import (
     UniMolLoss,
 )
 from deepmd.dpmodel.utils.unimol_transform import (
+    mask_points,
     unimol_frame_transform,
 )
 
@@ -200,7 +201,43 @@ class TestUniMolTransform(UniMolGoldenMixin, unittest.TestCase):
                 )
 
     def test_masking_statistics(self) -> None:
-        """About 15% of atoms are selected, and only replaced ones are moved."""
+        """About 15% of atoms are selected, and only replaced ones are moved.
+
+        The ported corruption is run here rather than read off the fixture, so
+        a change in the port can fail this test.
+        """
+        vocab = {sym: i for i, sym in enumerate(unimol_vocabulary())}
+        specials = [vocab[s] for s in ("[PAD]", "[CLS]", "[SEP]", "[UNK]", "[MASK]")]
+        rng = np.random.default_rng(0)
+        selected_counts = []
+        for index in range(24):
+            size = 40
+            tokens = rng.integers(4, 30, size=size)
+            coords = rng.normal(size=(size, 3)).astype(np.float32)
+            out = mask_points(
+                tokens,
+                coords,
+                num_types=len(vocab),
+                special_indices=specials,
+                pad_idx=0,
+                mask_idx=vocab["[MASK]"],
+                seed=1,
+                epoch=1,
+                index=index,
+            )
+            picked = out["targets"] != 0
+            selected_counts.append(int(picked.sum()))
+            moved = np.abs(out["coordinates"] - coords).max(axis=-1) > 0
+            # Only selected atoms move, and an atom left with its own element
+            # is still predicted.
+            self.assertTrue(bool(np.all(~moved | picked)))
+            np.testing.assert_array_equal(
+                out["targets"][picked], np.asarray(tokens)[picked]
+            )
+        mean_fraction = float(np.mean(selected_counts)) / 40
+        self.assertGreater(mean_fraction, 0.10)
+        self.assertLess(mean_fraction, 0.20)
+
         for row, index in enumerate(INDICES):
             n = int(self.n_real[row])
             targets = self.golden["target/tokens_target"][row, 1 : n + 1]
@@ -271,6 +308,46 @@ class TestUniMolEncoder(UniMolGoldenMixin, unittest.TestCase):
         np.testing.assert_allclose(
             bias, self.golden["small_fp64/enc_in/attn_bias"], rtol=1e-6, atol=1e-6
         )
+
+
+class TestUniMolNormRegularisers(unittest.TestCase):
+    """The hinge itself, which the golden values cannot constrain.
+
+    On the small random model both regularisers sit at exactly zero, because
+    the node norms happen to fall inside the tolerance. Comparing against zero
+    says nothing about the formula, so it is checked directly here.
+    """
+
+    def test_hinge_is_zero_inside_the_tolerance_and_grows_outside(self) -> None:
+        from deepmd.dpmodel.descriptor.unimol_nn.encoder import (
+            norm_loss,
+        )
+
+        dim = 16
+        root = dim**0.5
+        unit = np.ones((1, 1, dim)) / root  # norm 1
+        # Upstream's tolerance is 1: a norm within 1 of sqrt(dim) costs nothing.
+        inside = unit * root
+        np.testing.assert_allclose(norm_loss(inside), 0.0, atol=1e-6)
+        np.testing.assert_allclose(norm_loss(unit * (root + 0.5)), 0.0, atol=1e-6)
+        # Beyond it the cost is the excess, either side.
+        np.testing.assert_allclose(norm_loss(unit * (root + 3.0)), 2.0, atol=1e-5)
+        np.testing.assert_allclose(norm_loss(unit * (root - 3.0)), 2.0, atol=1e-5)
+
+    def test_masked_mean_ignores_padding_and_survives_an_empty_row(self) -> None:
+        from deepmd.dpmodel.descriptor.unimol_nn.encoder import (
+            masked_mean,
+        )
+
+        value = np.array([[1.0, 2.0, 99.0], [4.0, 99.0, 99.0]])
+        mask = np.array([[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
+        # Per row: 1.5 and 4.0, then the mean over rows.
+        np.testing.assert_allclose(float(masked_mean(mask, value)), 2.75, atol=1e-12)
+        # An all-padding row returns zero rather than dividing by zero, which
+        # is what upstream's epsilon in the denominator is for.
+        empty = masked_mean(np.zeros((1, 3)), np.ones((1, 3)))
+        self.assertTrue(np.isfinite(float(empty)))
+        np.testing.assert_allclose(float(empty), 0.0, atol=1e-6)
 
 
 class TestUniMolHeads(UniMolGoldenMixin, unittest.TestCase):
@@ -351,6 +428,11 @@ class TestUniMolDescriptor(UniMolGoldenMixin, unittest.TestCase):
         coord, atype, nlist = self.deepmd_inputs()
         node, rot, g2, h2, sw = desc.call(coord, atype, nlist)
         self.assertEqual(node.shape, (coord.shape[0], coord.shape[1], SMALL["dim"]))
+        # The values must be the token-level ones with BOS and EOS removed,
+        # not merely an array of the right shape.
+        tokens = desc.forward_tokens(coord, atype, nlist)["node_ebd"]
+        np.testing.assert_allclose(node, tokens[:, 1 : coord.shape[1] + 1, :], atol=0)
+        self.assertGreater(float(np.abs(np.asarray(node)).max()), 0.0)
         self.assertIsNone(rot)
         self.assertIsNone(g2)
         self.assertIsNone(h2)

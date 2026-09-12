@@ -213,29 +213,19 @@ class GaussianLayer(NativeOP):
     def call(self, dist, edge_type):  # noqa: ANN001, ANN201
         """Expand ``dist`` (nf x nt x nt) into ``k`` Gaussians per atom pair."""
         xp = array_api_compat.array_namespace(dist)
-        dev = array_api_compat.device(dist)
         flat = xp.reshape(edge_type, (-1,))
-        mul = xp.reshape(
-            xp.take(xp.asarray(self.mul.w, device=dev), flat, axis=0),
-            (*edge_type.shape, 1),
-        )
-        bias = xp.reshape(
-            xp.take(xp.asarray(self.bias.w, device=dev), flat, axis=0),
-            (*edge_type.shape, 1),
-        )
+        # The tables are parameters: they already live on the right device, and
+        # re-wrapping them with asarray would cut them out of the gradient.
+        mul = xp.reshape(xp.take(self.mul.w, flat, axis=0), (*edge_type.shape, 1))
+        bias = xp.reshape(xp.take(self.bias.w, flat, axis=0), (*edge_type.shape, 1))
         mul = xp.astype(mul, dist.dtype)
         bias = xp.astype(bias, dist.dtype)
         x = mul * dist[..., None] + bias
         x = xp.repeat(x, self.k, axis=-1)
         work = xp.float32 if self.single_precision_basis else x.dtype
         x = xp.astype(x, work)
-        mean = xp.astype(xp.reshape(xp.asarray(self.means.w, device=dev), (-1,)), work)
-        std = (
-            xp.abs(
-                xp.astype(xp.reshape(xp.asarray(self.stds.w, device=dev), (-1,)), work)
-            )
-            + 1e-5
-        )
+        mean = xp.astype(xp.reshape(self.means.w, (-1,)), work)
+        std = xp.abs(xp.astype(xp.reshape(self.stds.w, (-1,)), work)) + 1e-5
         a = (2 * UNIMOL_PI) ** 0.5
         out = xp.exp(-0.5 * (((x - mean) / std) ** 2)) / (a * std)
         return xp.astype(out, dist.dtype)
