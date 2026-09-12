@@ -57,6 +57,27 @@ def softmax(x, axis: int = -1):  # noqa: ANN001, ANN201
     return e / xp.sum(e, axis=axis, keepdims=True)
 
 
+def dropout(x, p: float, training: bool):  # noqa: ANN001, ANN201
+    """Apply dropout, but only while training.
+
+    deepmd has no dropout anywhere else, and the array API has no random
+    numbers, so this dispatches to torch when a training step actually needs
+    it. Inference, which is what the array-API backends are for, is the
+    identity. Training on a non-torch backend is refused rather than silently
+    dropping the regularisation, which would be a quiet parity bug.
+    """
+    if not training or p <= 0.0:
+        return x
+    if array_api_compat.is_torch_array(x):
+        import torch
+
+        return torch.nn.functional.dropout(x, p=p, training=True)
+    raise NotImplementedError(
+        "dropout during training is only implemented for the PyTorch backends; "
+        "the array-API path is for inference"
+    )
+
+
 def norm_loss(x, eps: float = 1e-10, tolerance: float = 1.0):  # noqa: ANN001, ANN201
     """Hinge on the deviation of the row norm from ``sqrt(dim)``.
 
@@ -268,7 +289,7 @@ class SelfMultiheadAttention(NativeOP):
             embed_dim, embed_dim, bias=bias, precision=precision, seed=seed
         )
 
-    def call(self, query, attn_bias):  # noqa: ANN001, ANN201
+    def call(self, query, attn_bias, training: bool = False):  # noqa: ANN001, ANN201
         """Return the attended values and the biased pre-softmax logits.
 
         Parameters
@@ -304,7 +325,7 @@ class SelfMultiheadAttention(NativeOP):
         # Upstream adds the bias in place and returns the biased logits, which
         # become the next layer's bias (multihead_attention.py:100-103).
         attn_weights = attn_weights + attn_bias
-        attn = softmax(attn_weights, axis=-1)
+        attn = dropout(softmax(attn_weights, axis=-1), self.dropout, training)
         o = attn @ v
         o = xp.reshape(o, (nf, self.num_heads, nt, self.head_dim))
         o = xp.permute_dims(o, (0, 2, 1, 3))
@@ -383,15 +404,19 @@ class TransformerEncoderLayer(NativeOP):
         )
         self.final_layer_norm = LayerNorm(embed_dim, precision=precision, seed=seed)
 
-    def call(self, x, attn_bias):  # noqa: ANN001, ANN201
+    def call(self, x, attn_bias, training: bool = False):  # noqa: ANN001, ANN201
         residual = x
         x = self.self_attn_layer_norm(x)
-        x, attn_weights = self.self_attn(x, attn_bias=attn_bias)
+        x, attn_weights = self.self_attn(x, attn_bias=attn_bias, training=training)
+        x = dropout(x, self.dropout, training)
         x = residual + x
 
         residual = x
         x = self.final_layer_norm(x)
-        x = self.fc2(self.fc1(x))
+        # fc1 carries the activation, so the activation dropout sits between
+        # the two linears, as upstream has it.
+        x = dropout(self.fc1(x), self.activation_dropout, training)
+        x = dropout(self.fc2(x), self.dropout, training)
         x = residual + x
         return x, attn_weights
 
@@ -493,7 +518,7 @@ class TransformerEncoderWithPair(NativeOP):
             for _ in range(encoder_layers)
         ]
 
-    def call(self, emb, attn_mask, padding_mask):  # noqa: ANN001, ANN201
+    def call(self, emb, attn_mask, padding_mask, training: bool = False):  # noqa: ANN001, ANN201
         """Run the stack.
 
         Parameters
@@ -512,7 +537,7 @@ class TransformerEncoderWithPair(NativeOP):
         """
         xp = array_api_compat.array_namespace(emb)
         nf, nt = emb.shape[0], emb.shape[1]
-        x = self.emb_layer_norm(emb)
+        x = dropout(self.emb_layer_norm(emb), self.emb_dropout, training)
         pad = xp.astype(padding_mask, x.dtype)
         x = x * (1 - pad[..., None])
 
@@ -529,7 +554,7 @@ class TransformerEncoderWithPair(NativeOP):
         attn_mask = xp.reshape(attn_mask, (-1, nt, nt))
 
         for layer in self.layers:
-            x, attn_mask = layer(x, attn_bias=attn_mask)
+            x, attn_mask = layer(x, attn_bias=attn_mask, training=training)
 
         token_mask = 1.0 - pad
         x_norm = masked_mean(token_mask, norm_loss(x))

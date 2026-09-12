@@ -331,6 +331,29 @@ class TestUniMolPtExpt(unittest.TestCase):
             atol=1e-8,
         )
 
+    def test_dropout_is_active_only_in_training(self) -> None:
+        """Uni-Mol regularises with dropout at three sites; deepmd had none."""
+        coord, atype, nlist = self.inputs()
+        model = self.build_torch_model(coord.shape[1])
+        args = (
+            torch.as_tensor(coord.reshape(len(self.n_real), -1)),
+            torch.as_tensor(atype),
+            torch.as_tensor(nlist),
+            None,
+        )
+        model.eval()
+        first = model.forward_lower(*args)["token_logits"].detach().clone()
+        second = model.forward_lower(*args)["token_logits"].detach()
+        torch.testing.assert_close(first, second, rtol=0, atol=0)
+
+        model.train()
+        torch.manual_seed(0)
+        a = model.forward_lower(*args)["token_logits"].detach()
+        torch.manual_seed(1)
+        b = model.forward_lower(*args)["token_logits"].detach()
+        self.assertFalse(bool(torch.allclose(a, b)))
+        model.eval()
+
     def test_gradients_flow(self) -> None:
         coord, atype, nlist = self.inputs()
         model = self.build_torch_model(coord.shape[1])

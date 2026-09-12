@@ -413,8 +413,10 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         bias = self.gbf_proj(self.gbf(dist, edge_type))
         bias = xp.reshape(xp.permute_dims(bias, (0, 3, 1, 2)), (-1, nt, nt))
 
+        # ``training`` exists only once the PyTorch-Exportable wrapper has made
+        # this a torch module; on the array-API path it is always inference.
         x, pair_rep, delta_pair_rep, x_norm, delta_pair_norm = self.encoder(
-            emb, bias, padding_mask
+            emb, bias, padding_mask, training=bool(getattr(self, "training", False))
         )
         # Upstream clears the -inf that padding leaves on the pair channel
         # before any head reads it (unimol/models/unimol.py:221).
