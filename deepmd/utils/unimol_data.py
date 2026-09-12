@@ -174,9 +174,8 @@ def convert_unimol_lmdb(
                         "atom_names": names,
                         "atom_types": _encode_array(atom_types),
                         "orig": _encode_array(np.zeros(3, dtype=np.float64)),
-                        # A zero cell marks a molecule: the descriptor refuses
-                        # periodic images anyway.
-                        "cells": _encode_array(np.zeros((3, 3), dtype=np.float64)),
+                        # No cell at all: molecules are not periodic, and a zero
+                        # cell would be taken for a real one and inverted.
                         "coords": _encode_array(coords.astype(np.float64)),
                     }
                     txn.put(

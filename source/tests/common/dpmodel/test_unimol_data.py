@@ -99,8 +99,10 @@ class TestUniMolDataConversion(unittest.TestCase):
         )
         symbols = [UNIMOL_ELEMENTS[i] for i in np.asarray(frame["atype"]).reshape(-1)]
         self.assertEqual(symbols, self.molecules[0]["atoms"])
-        # Molecules are not periodic; the cell is zero.
-        np.testing.assert_array_equal(np.asarray(frame["box"]).reshape(-1), np.zeros(9))
+        # Molecules are not periodic, so no cell is written at all. A zero cell
+        # would not do: the neighbour-list builder takes any cell at face value
+        # and inverts it.
+        self.assertNotIn("box", frame)
 
     def test_transform_corrupts_frames_in_the_data_path(self) -> None:
         """The reader hook is what makes self-supervised training possible."""

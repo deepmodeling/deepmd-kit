@@ -82,15 +82,12 @@
   },
   "training": {
     "training_data": {
-      "systems": [
-        "./unimol_train"
-      ],
-      "batch_size": 16
+      "systems": "./unimol_train",
+      "batch_size": 16,
+      "_comment": "an LMDB dataset path, given as a string; build it with deepmd.utils.unimol_data"
     },
     "validation_data": {
-      "systems": [
-        "./unimol_valid"
-      ],
+      "systems": "./unimol_valid",
       "batch_size": 16
     },
     "numb_steps": 1000000,

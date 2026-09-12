@@ -974,6 +974,12 @@ def decode_lmdb_frame(
             "fid",
         }
     )
+    if config.frame_transform is not None:
+        # Ahead of the requirement checks below: a self-supervised transform is
+        # what produces the fields those checks look for, by corrupting the
+        # input it was handed.
+        frame = config.frame_transform(frame, original_key)
+
     for key in list(frame):
         if key.startswith("find_") or key in structural_keys or key in requirements:
             continue
@@ -1025,8 +1031,6 @@ def decode_lmdb_frame(
         )
 
     frame["fid"] = original_key
-    if config.frame_transform is not None:
-        frame = config.frame_transform(frame, original_key)
     return frame
 
 

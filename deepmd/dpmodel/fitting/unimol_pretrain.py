@@ -140,6 +140,45 @@ class UniMolPretrainFitting(NativeOP, BaseFitting):
         self.type_map = list(type_map)
         self.ntypes = len(type_map)
 
+    def compute_input_stats(self, merged, stat_file_path=None, **kwargs) -> None:  # noqa: ANN001, ANN003
+        """No input statistics: the heads read a learned representation.
+
+        Nothing here is normalized against the training set, so there is
+        nothing to accumulate.
+        """
+
+    def get_dim_fparam(self) -> int:
+        """No frame parameters: the objective reads structure only."""
+        return 0
+
+    def get_dim_aparam(self) -> int:
+        """No atomic parameters."""
+        return 0
+
+    def has_default_fparam(self) -> bool:
+        """There are no frame parameters, so there is no default either."""
+        return False
+
+    def get_default_fparam(self):  # noqa: ANN201
+        """There are no frame parameters."""
+        return None
+
+    def get_sel_type(self) -> list[int]:
+        """Every element takes part in the objective."""
+        return []
+
+    def reinit_exclude(self, exclude_types: list[int] | None = None) -> None:
+        """Type exclusion is meaningless here: every atom is predicted."""
+        if exclude_types:
+            raise NotImplementedError(
+                "unimol_pretrain predicts every atom and does not support "
+                "excluded types"
+            )
+
+    def set_case_embd(self, case_idx: int) -> None:
+        """Case embeddings are a multi-task feature this fitting does not use."""
+        raise NotImplementedError("unimol_pretrain does not support case embeddings")
+
     def output_def(self) -> FittingOutputDef:
         """Declare the three head outputs.
 

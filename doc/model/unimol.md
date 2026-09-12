@@ -65,7 +65,8 @@ dp --pt-expt train examples/unimol/pretrain/input.json
 ```
 
 The dataset has to be an LMDB one, because the corruption happens as frames are
-read; `deepmd.utils.unimol_data` below produces it.
+read; `deepmd.utils.unimol_data` below produces it. Give its path as a string
+under `systems`, not as a list, which is how LMDB datasets are addressed.
 
 ## Using the released weights
 

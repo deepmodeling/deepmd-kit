@@ -91,6 +91,7 @@ from deepmd.pt.utils.compile_compat import (
 )
 from deepmd.pt.utils.compile_compat import trace_pad_dim as _trace_pad_dim
 from deepmd.pt_expt.loss import (
+    UniMolLoss,
     DOSLoss,
     EnergyLoss,
     EnergySpinLoss,
@@ -343,6 +344,10 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "unimol":
+        # Self-supervised: it takes no learning rate and no model geometry,
+        # because its targets come from the corruption it defines itself.
+        return UniMolLoss(**loss_params)
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 
