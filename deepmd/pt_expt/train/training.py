@@ -1879,24 +1879,28 @@ class Trainer(AbstractTrainer):
                 )
             # A self-supervised objective builds its labels by corrupting the
             # input, which has to happen as the data is read.
-            frame_transform = self.losses[model_key].frame_transform(
-                self.model_params_by_task[model_key]["type_map"]
-            )
-            if frame_transform is not None:
-                for dataset in (
-                    self.training_data_by_task[model_key],
-                    self.validation_data_by_task[model_key],
-                ):
-                    if dataset is None:
-                        continue
-                    if not hasattr(dataset, "set_frame_transform"):
-                        raise ValueError(
-                            f"the {self.losses[model_key].__class__.__name__} "
-                            "objective corrupts its input as the data is read, "
-                            "which this dataset type does not support; convert "
-                            "the data to LMDB first"
-                        )
-                    dataset.set_frame_transform(frame_transform)
+            for dataset in (
+                self.training_data_by_task[model_key],
+                self.validation_data_by_task[model_key],
+            ):
+                if dataset is None:
+                    continue
+                # A fresh transform per dataset: it carries the counter that
+                # stands in for the epoch, so sharing one would let validation
+                # passes advance the training corruption.
+                frame_transform = self.losses[model_key].frame_transform(
+                    self.model_params_by_task[model_key]["type_map"]
+                )
+                if frame_transform is None:
+                    break
+                if not hasattr(dataset, "set_frame_transform"):
+                    raise ValueError(
+                        f"the {self.losses[model_key].__class__.__name__} "
+                        "objective corrupts its input as the data is read, "
+                        "which this dataset type does not support; convert "
+                        "the data to LMDB first"
+                    )
+                dataset.set_frame_transform(frame_transform)
             if self.multi_task:
                 valid_params = (
                     training_params["data_dict"][model_key].get("validation_data", {})

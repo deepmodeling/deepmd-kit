@@ -167,7 +167,6 @@ class UniMolLoss(Loss):
         random_token_prob: float = 0.05,
         noise_type: str = "uniform",
         noise: float = 1.0,
-        max_atoms: int = 256,
         data_seed: int = 1,
         **kwargs: float,
     ) -> None:
@@ -185,7 +184,6 @@ class UniMolLoss(Loss):
         self.random_token_prob = random_token_prob
         self.noise_type = noise_type
         self.noise = noise
-        self.max_atoms = max_atoms
         self.data_seed = data_seed
 
     def call(
@@ -267,7 +265,11 @@ class UniMolLoss(Loss):
         return loss, more_loss
 
     def frame_transform(self, type_map: list[str]):  # noqa: ANN201
-        """Build Uni-Mol's corruption, which also produces the labels."""
+        """Build Uni-Mol's corruption, which also produces the labels.
+
+        A fresh object each time: it carries the counter that stands in for the
+        epoch, and the training and validation sets must not share one.
+        """
         from deepmd.dpmodel.utils.unimol_transform import (
             make_unimol_data_transform,
         )
@@ -307,7 +309,6 @@ class UniMolLoss(Loss):
             "random_token_prob": self.random_token_prob,
             "noise_type": self.noise_type,
             "noise": self.noise,
-            "max_atoms": self.max_atoms,
             "data_seed": self.data_seed,
         }
 

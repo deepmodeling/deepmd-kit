@@ -58,8 +58,14 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         input, which has to happen while the data is read rather than inside
         the loss. A trainer installs whatever this returns on the datasets of
         the corresponding task. Supervised losses need nothing and return None.
+
+        Parameters
+        ----------
+        type_map : list[str]
+            Element names of the model, which a transform needs in order to map
+            elements onto types.
         """
-        del type_map
+        return None
 
     @property
     def supports_ragged_batches(self) -> bool:

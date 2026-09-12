@@ -191,6 +191,34 @@ class TestUniMolDataConversion(unittest.TestCase):
             len(np.asarray(after["unimol_token_target"])), len(after["atype"])
         )
 
+    def test_an_element_outside_unimol_vocabulary_is_refused(self) -> None:
+        """Rewriting it as [MASK] would quietly corrupt an ordinary atom.
+
+        Uni-Mol knows 26 elements. A model whose type_map goes beyond them
+        tokenizes the extras as [UNK], and [UNK] has no type to come back to.
+        """
+        wider = ["C", "N", "O", "H", "Mg", "[MASK]"]
+        transform = make_unimol_data_transform(wider, seed=1)
+        frame = {
+            "coord": np.array(
+                [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]]
+            ),
+            # the third atom is magnesium, which Uni-Mol has no token for
+            "atype": np.array([0, 1, 4, 3], dtype=np.int64),
+        }
+        with self.assertRaisesRegex(ValueError, "cannot express"):
+            transform(frame, 0)
+
+        # Without it, the same frame goes through.
+        ordinary = make_unimol_data_transform(["C", "N", "O", "H", "[MASK]"], seed=1)
+        ordinary(
+            {
+                "coord": frame["coord"],
+                "atype": np.array([0, 1, 2, 3], dtype=np.int64),
+            },
+            0,
+        )
+
     def test_transform_requires_the_mask_pseudo_element(self) -> None:
         with self.assertRaisesRegex(ValueError, r"\[MASK\]"):
             make_unimol_data_transform(list(UNIMOL_ELEMENTS))

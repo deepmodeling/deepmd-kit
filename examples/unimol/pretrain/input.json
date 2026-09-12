@@ -44,7 +44,8 @@
       "attention_dropout": 0.1,
       "single_precision_basis": true,
       "single_precision_distance": false,
-      "seed": 1
+      "seed": 1,
+      "_comment_max_atoms": "the size cap is applied by the converter, before batching; the descriptor and the distance head only declare the width they expect"
     },
     "fitting_net": {
       "type": "unimol_pretrain",
@@ -77,7 +78,6 @@
     "random_token_prob": 0.05,
     "noise_type": "uniform",
     "noise": 1.0,
-    "max_atoms": 256,
     "data_seed": 1
   },
   "training": {

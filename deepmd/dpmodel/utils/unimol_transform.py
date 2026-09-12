@@ -353,9 +353,11 @@ def make_unimol_data_transform(
     type_to_token = np.array(
         [token_of.get(sym, unk) for sym in type_map], dtype=np.int64
     )
+    # A token the model cannot express must not be written back as [MASK],
+    # which would turn an ordinary atom into a corrupted one. Such tokens are
+    # marked here and refused if they ever appear.
     token_to_type = np.array(
-        [type_index.get(sym, type_index[mask_token]) for sym in vocabulary],
-        dtype=np.int64,
+        [type_index.get(sym, -1) for sym in vocabulary], dtype=np.int64
     )
     # Upstream draws a replacement over all 26 of its elements. A model whose
     # type_map covers fewer of them could not express the others, and mapping
@@ -376,11 +378,16 @@ def make_unimol_data_transform(
         if i not in specials and sym not in type_index
     ]
     excluded = [*specials, *inexpressible]
-    visits: dict[int, int] = {}
+    # One counter for the whole transform rather than one entry per frame: a
+    # dataset of a hundred million frames would otherwise grow a dictionary
+    # entry for each. Advancing it on every call still gives a frame a fresh
+    # corruption every time it comes round, which is what the epoch number
+    # does upstream.
+    calls = [0]
 
     def transform(frame: dict, index: int) -> dict:
-        epoch = visits.get(index, 0) + 1
-        visits[index] = epoch
+        calls[0] += 1
+        epoch = calls[0]
         coord = np.asarray(frame["coord"], dtype=np.float64).reshape(-1, 3)
         atype = np.asarray(frame["atype"], dtype=np.int64).reshape(-1)
         coord = center_coordinates(coord)
@@ -400,7 +407,17 @@ def make_unimol_data_transform(
         )
         frame = dict(frame)
         frame["coord"] = corrupted["coordinates"].astype(np.float64)
-        frame["atype"] = token_to_type[corrupted["tokens"]]
+        new_types = token_to_type[corrupted["tokens"]]
+        if np.any(new_types < 0):
+            unknown = sorted(
+                {vocabulary[tok] for tok in corrupted["tokens"][new_types < 0]}
+            )
+            raise ValueError(
+                f"frame {index} holds element(s) {unknown} that the model's "
+                "type_map cannot express; convert the data with a type_map that "
+                "covers them, or leave those molecules out"
+            )
+        frame["atype"] = new_types
         # Targets stay in Uni-Mol token space, which is what the element head
         # predicts over; unselected atoms carry the padding id.
         frame["unimol_token_target"] = corrupted["targets"].astype(np.int64)

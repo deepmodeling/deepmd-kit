@@ -5546,7 +5546,6 @@ def loss_unimol() -> list[Argument]:
         "Coordinate noise distribution: 'uniform', 'normal', 'trunc_normal' or 'none'."
     )
     doc_noise = "Scale of the coordinate noise, in the units of the coordinates."
-    doc_loss_max_atoms = "Crop molecules larger than this before corrupting them."
     doc_data_seed = (
         "Seed of the corruption, combined with the epoch and the frame index."
     )
@@ -5608,7 +5607,6 @@ def loss_unimol() -> list[Argument]:
             "noise_type", str, optional=True, default="uniform", doc=doc_noise_type
         ),
         Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
-        Argument("max_atoms", int, optional=True, default=256, doc=doc_loss_max_atoms),
         Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),
     ]
 

@@ -114,10 +114,45 @@ def _set_layer_norm(layer: Any, state: dict[str, np.ndarray], prefix: str) -> No
     layer.b = state[prefix + ".bias"].astype(layer.b.dtype)
 
 
+def _check_architecture(
+    descriptor: "DescrptUniMol", state_dict: dict[str, np.ndarray]
+) -> None:
+    """Refuse a descriptor whose shape does not match the checkpoint.
+
+    Architecture overrides are easy to get wrong, and a mismatch would
+    otherwise pass silently: too few layers would ignore the rest of the
+    checkpoint, and a different width would be caught only as a dtype or shape
+    error somewhere deep in the first forward pass.
+    """
+    layers = len(
+        {k.split(".")[2] for k in state_dict if k.startswith("encoder.layers.")}
+    )
+    if layers != len(descriptor.encoder.layers):
+        raise ValueError(
+            f"the checkpoint holds {layers} encoder layers but the descriptor "
+            f"was built with {len(descriptor.encoder.layers)}"
+        )
+    expected = {
+        "embed_tokens.weight": descriptor.embed_tokens.w.shape,
+        "encoder.layers.0.fc1.weight": descriptor.encoder.layers[0].fc1.w.shape[::-1],
+        "gbf.mul.weight": descriptor.gbf.mul.w.shape,
+        "gbf.means.weight": descriptor.gbf.means.w.shape,
+    }
+    for key, shape in expected.items():
+        found = tuple(state_dict[key].shape)
+        if found != tuple(shape):
+            raise ValueError(
+                f"the checkpoint's {key} has shape {found}, but the descriptor "
+                f"expects {tuple(shape)}; check the architecture overrides and "
+                "the type_map against the checkpoint"
+            )
+
+
 def apply_unimol_backbone(
     descriptor: "DescrptUniMol", state_dict: dict[str, np.ndarray]
 ) -> None:
     """Load backbone parameters into a descriptor, in place."""
+    _check_architecture(descriptor, state_dict)
     # The embedding and the four basis tables are layers, so their values live
     # in ``w``; they carry no transpose because they are lookup tables rather
     # than projections.

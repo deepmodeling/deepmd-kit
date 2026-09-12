@@ -508,6 +508,43 @@ class TestUniMolCheckpointImport(unittest.TestCase):
             atol=0,
         )
 
+    def test_rejects_a_descriptor_the_checkpoint_does_not_fit(self) -> None:
+        """A wrong architecture override must not load silently."""
+        from deepmd.dpmodel.descriptor.unimol import DescrptUniMol as DescrptUniMolDP
+        from deepmd.utils.unimol_checkpoint import (
+            apply_unimol_backbone,
+            split_unimol_state_dict,
+        )
+
+        golden = np.load(GOLDEN)
+        state = {
+            k[len("small_weights/") :]: v
+            for k, v in golden.items()
+            if k.startswith("small_weights/")
+        }
+        backbone, _ = split_unimol_state_dict(state)
+        wrong_depth = DescrptUniMolDP(
+            type_map=[*UNIMOL_ELEMENTS, "[MASK]"],
+            encoder_layers=SMALL["layers"] + 1,
+            encoder_embed_dim=SMALL["dim"],
+            encoder_ffn_embed_dim=SMALL["ffn"],
+            encoder_attention_heads=SMALL["heads"],
+            max_atoms=16,
+        )
+        with self.assertRaisesRegex(ValueError, "encoder layers"):
+            apply_unimol_backbone(wrong_depth, backbone)
+
+        wrong_width = DescrptUniMolDP(
+            type_map=[*UNIMOL_ELEMENTS, "[MASK]"],
+            encoder_layers=SMALL["layers"],
+            encoder_embed_dim=SMALL["dim"] * 2,
+            encoder_ffn_embed_dim=SMALL["ffn"],
+            encoder_attention_heads=SMALL["heads"],
+            max_atoms=16,
+        )
+        with self.assertRaisesRegex(ValueError, "expects"):
+            apply_unimol_backbone(wrong_width, backbone)
+
 
 class TestUniMolTraining(unittest.TestCase):
     """A run from a configuration file, which is how the feature is used.
