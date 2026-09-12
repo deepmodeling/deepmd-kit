@@ -144,10 +144,13 @@ class UniMolLoss(Loss):
             loss = weight * term if loss is None else loss + weight * term
 
         if self.masked_token_loss > 0:
+            # The model emits one row per local atom; the objective covers only
+            # the corrupted ones, so they are gathered here.
+            logits = model_dict["unimol_logits"]
+            if logits.ndim == 3:
+                logits = logits[masked]
             add(
-                _masked_nll(
-                    model_dict["unimol_logits"], token_target[masked], self.pad_idx
-                ),
+                _masked_nll(logits, token_target[masked], self.pad_idx),
                 self.masked_token_loss,
                 "token_loss",
             )
