@@ -26,6 +26,9 @@ from .se_atten_v2 import (
 from .se_e2_a import (
     DescrptSeA,
 )
+from .unimol import (
+    DescrptUniMol,
+)
 from .se_r import (
     DescrptSeR,
 )
@@ -48,5 +51,6 @@ __all__ = [
     "DescrptSeR",
     "DescrptSeT",
     "DescrptSeTTebd",
+    "DescrptUniMol",
     "make_base_descriptor",
 ]
