@@ -34,6 +34,7 @@ from pathlib import (
     Path,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
     TextIO,
 )
@@ -52,6 +53,11 @@ from .timing import (
     DisplayInterval,
     TrainingTimer,
 )
+
+if TYPE_CHECKING:
+    from .metrics import (
+        TrainingMetricAccumulator,
+    )
 
 DEFAULT_TASK_KEY = "Default"
 
@@ -310,12 +316,16 @@ class TrainingTaskCollection:
 
 @dataclass
 class TrainStepResult:
-    """Backend payload returned from one optimizer step."""
+    """Backend payload returned from one optimizer step.
+
+    Averaged display consumes ``train_results`` as detached scalar metrics.
+    These may remain backend arrays until they are converted for display.
+    """
 
     task_key: str
     step: int
     payload: Any = None
-    train_results: LossResults | None = None
+    train_results: Mapping[str, Any] | None = None
 
 
 class LearningCurveWriter:
@@ -361,6 +371,7 @@ class LearningCurveWriter:
         learning_rate: float,
         train_results: DisplayResults,
         valid_results: DisplayResults | None,
+        unsampled_tasks: Sequence[str] = (),
     ) -> None:
         """Log per-task loss results."""
         if self._is_multitask(train_results):
@@ -379,6 +390,7 @@ class LearningCurveWriter:
                         task_name=f"{task_key}_trn",
                         rmse=task_train,
                         learning_rate=learning_rate,
+                        check_total_rmse_nan=task_key not in unsampled_tasks,
                     )
                 )
                 task_valid = valid_task_results.get(task_key)
@@ -399,6 +411,7 @@ class LearningCurveWriter:
                     task_name="trn",
                     rmse=train_results,
                     learning_rate=learning_rate,
+                    check_total_rmse_nan=not unsampled_tasks,
                 )
             )
             if valid_results:
@@ -513,7 +526,10 @@ class AbstractTrainer(ABC):
 
     Backend trainers implement one optimizer step, metric evaluation, learning
     rate lookup, and checkpoint persistence.  This base class handles the
-    common training loop around those hooks.
+    common training loop around those hooks. Backends opt into interval
+    averaging by supplying a ``metric_accumulator`` and detached
+    ``TrainStepResult.train_results``; display then uses those values instead
+    of calling ``evaluate_training``.
     """
 
     def __init__(
@@ -521,9 +537,11 @@ class AbstractTrainer(ABC):
         trainer_config: TrainerConfig,
         *,
         rank_context: RankContext | None = None,
+        metric_accumulator: TrainingMetricAccumulator | None = None,
     ) -> None:
         self.trainer_config = trainer_config
         self.rank_context = rank_context or RankContext()
+        self.metric_accumulator = metric_accumulator
         self.lcurve_writer = LearningCurveWriter()
 
     def run(self, tasks: TrainingTaskCollection) -> None:
@@ -533,6 +551,8 @@ class AbstractTrainer(ABC):
         num_steps = self.trainer_config.num_steps
         fout: TextIO | None = None
         try:
+            if self.metric_accumulator is not None:
+                self.metric_accumulator.reset()
             self.on_train_begin(tasks)
             fout = self._open_learning_curve()
             timer = TrainingTimer(
@@ -543,6 +563,12 @@ class AbstractTrainer(ABC):
             for step in range(start_step, num_steps):
                 task = self.select_task(tasks)
                 step_result = self.train_step(task, step)
+                if self.metric_accumulator is not None:
+                    if step_result.train_results is None:
+                        raise RuntimeError(
+                            "Averaged display requires train_step to return metrics."
+                        )
+                    self.metric_accumulator.add(task.key, step_result.train_results)
                 display_step = step + 1
 
                 if self._should_display(display_step):
@@ -559,6 +585,15 @@ class AbstractTrainer(ABC):
                             learning_rate=current_lr,
                             train_results=train_results,
                             valid_results=valid_results,
+                            unsampled_tasks=(
+                                [
+                                    key
+                                    for key in tasks.keys
+                                    if self.metric_accumulator.count(key) == 0
+                                ]
+                                if self.metric_accumulator is not None
+                                else ()
+                            ),
                         )
                         self._log_interval(timer.record(display_step))
                         if fout is not None:
@@ -575,6 +610,8 @@ class AbstractTrainer(ABC):
                                 train_results=train_results,
                                 valid_results=valid_results,
                             )
+                    if self.metric_accumulator is not None:
+                        self.metric_accumulator.reset()
 
                 self.run_full_validation(
                     step=step,
@@ -610,26 +647,22 @@ class AbstractTrainer(ABC):
         step_result: TrainStepResult,
     ) -> tuple[DisplayResults, DisplayResults | None]:
         """Collect training and validation results for display."""
-        if not tasks.is_multitask:
-            return (
-                self.evaluate_training(active_task, step, step_result),
-                self.evaluate_validation(active_task, step, step_result),
-            )
-
         train_results: TaskResults = {}
         valid_results: TaskResults = {}
         for task in tasks:
             task_step_result = step_result if task.key == active_task.key else None
-            train_results[task.key] = self.evaluate_training(
-                task,
-                step,
-                task_step_result,
+            train_results[task.key] = (
+                self.metric_accumulator.average(task.key)
+                if self.metric_accumulator is not None
+                else self.evaluate_training(task, step, task_step_result)
             )
             valid_results[task.key] = self.evaluate_validation(
                 task,
                 step,
                 task_step_result,
             )
+        if not tasks.is_multitask:
+            return train_results[active_task.key], valid_results[active_task.key]
         return train_results, valid_results
 
     def on_train_begin(self, tasks: TrainingTaskCollection) -> None:

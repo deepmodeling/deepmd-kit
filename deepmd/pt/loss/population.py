@@ -276,6 +276,19 @@ class PopulationLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return population diagnostics and the selected error metrics."""
+        return (
+            "spin_total",
+            "spin_loss",
+            "spin_total_loss",
+            "pop_loss",
+            "pop_alpha_total_loss",
+            "pop_beta_total_loss",
+            *(name for name in ("mae", "rmse") if name in self.metric),
+        )
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []

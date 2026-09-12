@@ -29,6 +29,7 @@ from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     CheckpointStore,
     ShardingPolicy,
+    TrainingMetricAccumulator,
     TrainingTimer,
     build_checkpoint_stores,
     change_model_out_bias,
@@ -223,6 +224,7 @@ class Trainer:
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
+        self.metric_accumulator: TrainingMetricAccumulator | None = None
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
         self.enable_ema = bool(training_params.get("enable_ema", False))
@@ -1393,6 +1395,18 @@ class Trainer:
         finally:
             self._close_lmdb_loaders()
 
+    def _training_results(
+        self, more_loss: dict[str, Any], task_key: str = "Default"
+    ) -> dict[str, Any]:
+        """Return interval averages or the current step's display metrics."""
+        if self.metric_accumulator is not None:
+            return self.metric_accumulator.average(task_key)
+        return {
+            name: value
+            for name, value in sorted(more_loss.items())
+            if "l2_" not in name
+        }
+
     def _run(self) -> None:
         """Execute the PyTorch optimization loop."""
         fout = (
@@ -1559,74 +1573,21 @@ class Trainer:
             if self.model_ema is not None:
                 self.model_ema.update(self.model)
 
-            if self.disp_avg:
-                # Accumulate loss for averaging over display interval
-                self.step_count_in_interval += 1
-                if not self.multi_task:
-                    # Accumulate loss for single task
-                    if not self.train_loss_accu:
-                        # Initialize accumulator with current loss structure
-                        for item in more_loss:
-                            if "l2_" not in item:
-                                self.train_loss_accu[item] = 0.0
-                    for item in more_loss:
-                        if "l2_" not in item:
-                            if item not in self.train_loss_accu:
-                                self.train_loss_accu[item] = 0.0
-                            self.train_loss_accu[item] += more_loss[item]
-                else:
-                    # Accumulate loss for multi-task
-                    if task_key not in self.train_loss_accu:
-                        self.train_loss_accu[task_key] = {}
-                    if task_key not in self.step_count_per_task:
-                        self.step_count_per_task[task_key] = 0
-                    self.step_count_per_task[task_key] += 1
-
-                    for item in more_loss:
-                        if "l2_" not in item:
-                            if item not in self.train_loss_accu[task_key]:
-                                self.train_loss_accu[task_key][item] = 0.0
-                            self.train_loss_accu[task_key][item] += more_loss[item]
+            if self.metric_accumulator is not None:
+                self.metric_accumulator.add(
+                    task_key,
+                    {
+                        name: value.detach() if torch.is_tensor(value) else value
+                        for name, value in more_loss.items()
+                        if "l2_" not in name
+                    },
+                )
 
             # Log and persist
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
                 self.wrapper.eval()  # Will set to train mode before fininshing validation
-
-                if self.disp_avg:
-
-                    def log_loss_train(
-                        _loss: Any, _more_loss: Any, _task_key: str = "Default"
-                    ) -> dict:
-                        if not self.multi_task:
-                            return {
-                                item: value / self.step_count_in_interval
-                                for item, value in self.train_loss_accu.items()
-                            }
-
-                        task_losses = self.train_loss_accu.get(_task_key, {})
-                        step_count = self.step_count_per_task.get(_task_key, 0)
-                        if step_count == 0:
-                            return dict.fromkeys(task_losses, float("nan"))
-                        return {
-                            item: value / step_count
-                            for item, value in task_losses.items()
-                        }
-                else:
-
-                    def log_loss_train(
-                        _loss: Any, _more_loss: Any, _task_key: str = "Default"
-                    ) -> dict:
-                        results = {}
-                        rmse_val = {
-                            item: _more_loss[item]
-                            for item in _more_loss
-                            if "l2_" not in item
-                        }
-                        for item in sorted(rmse_val.keys()):
-                            results[item] = rmse_val[item]
-                        return results
 
                 def log_loss_valid(_task_key: str = "Default") -> dict:
                     single_results = {}
@@ -1674,7 +1635,7 @@ class Trainer:
                     return results
 
                 if not self.multi_task:
-                    train_results = log_loss_train(loss, more_loss)
+                    train_results = self._training_results(more_loss)
                     valid_results = log_loss_valid()
                     if self.rank == 0:
                         log.info(
@@ -1697,39 +1658,14 @@ class Trainer:
                 else:
                     train_results = {_key: {} for _key in self.model_keys}
                     valid_results = {_key: {} for _key in self.model_keys}
-                    if self.disp_avg:
-                        # For multi-task, use accumulated average loss for all tasks
-                        def initialize_task_loss_accumulator(
-                            _task_key: str,
-                        ) -> None:
-                            if self.train_loss_accu[_task_key]:
-                                return
-                            self.optimizer.zero_grad(set_to_none=True)
-                            task_input, task_label, _ = self.get_data(
-                                is_train=True, task_key=_task_key
-                            )
-                            if not task_input:
-                                return
-                            _, _, task_more_loss = self.wrapper(
-                                **task_input,
-                                cur_lr=pref_lr,
-                                label=task_label,
-                                task_key=_task_key,
-                            )
-                            self.train_loss_accu[_task_key] = {
-                                item: 0.0
-                                for item in task_more_loss
-                                if "l2_" not in item
-                            }
-
+                    if self.metric_accumulator is not None:
                         for _key in self.model_keys:
-                            initialize_task_loss_accumulator(_key)
-                            train_results[_key] = log_loss_train(
-                                loss, more_loss, _task_key=_key
+                            train_results[_key] = self._training_results(
+                                more_loss, task_key=_key
                             )
                     else:
-                        train_results[task_key] = log_loss_train(
-                            loss, more_loss, _task_key=task_key
+                        train_results[task_key] = self._training_results(
+                            more_loss, task_key=task_key
                         )
                         for _key in self.model_keys:
                             if _key != task_key:
@@ -1747,8 +1683,8 @@ class Trainer:
                                         label=label_dict,
                                         task_key=_key,
                                     )
-                                    train_results[_key] = log_loss_train(
-                                        loss, more_loss, _task_key=_key
+                                    train_results[_key] = self._training_results(
+                                        more_loss, task_key=_key
                                     )
                     for _key in self.model_keys:
                         valid_results[_key] = log_loss_valid(_task_key=_key)
@@ -1765,8 +1701,8 @@ class Trainer:
                                     rmse=train_results[_key],
                                     learning_rate=cur_lr,
                                     check_total_rmse_nan=not (
-                                        self.disp_avg
-                                        and self.step_count_per_task.get(_key, 0) == 0
+                                        self.metric_accumulator is not None
+                                        and self.metric_accumulator.count(_key) == 0
                                     ),
                                 )
                             )
@@ -1781,20 +1717,8 @@ class Trainer:
                                 )
                 self.wrapper.train()
 
-                if self.disp_avg:
-                    # Reset loss accumulators after display
-                    if not self.multi_task:
-                        for item in self.train_loss_accu:
-                            self.train_loss_accu[item] = 0.0
-                    else:
-                        for task_key in self.model_keys:
-                            if task_key in self.train_loss_accu:
-                                for item in self.train_loss_accu[task_key]:
-                                    self.train_loss_accu[task_key][item] = 0.0
-                            if task_key in self.step_count_per_task:
-                                self.step_count_per_task[task_key] = 0
-                    self.step_count_in_interval = 0
-                    self.last_display_step = display_step_id
+                if self.metric_accumulator is not None:
+                    self.metric_accumulator.reset()
 
                 interval = self.step_timer.record(display_step_id)
                 if self.rank == 0 and self.timing_in_training:
@@ -1911,15 +1835,14 @@ class Trainer:
         )
         self._discarded_training_batches = 0
 
-        if self.disp_avg:
-            # Initialize loss accumulators
-            if not self.multi_task:
-                self.train_loss_accu = {}
-            else:
-                self.train_loss_accu = {key: {} for key in self.model_keys}
-                self.step_count_per_task = dict.fromkeys(self.model_keys, 0)
-            self.step_count_in_interval = 0
-            self.last_display_step = 0
+        losses = self.loss if self.multi_task else {"Default": self.loss}
+        self.metric_accumulator = (
+            TrainingMetricAccumulator(
+                {key: loss.training_metric_names for key, loss in losses.items()}
+            )
+            if self.disp_avg
+            else None
+        )
 
         for step_id in range(self.start_step, self.num_steps):
             step(step_id)

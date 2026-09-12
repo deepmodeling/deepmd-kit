@@ -13,6 +13,7 @@ from deepmd.dpmodel.train import (
     LearningCurveWriter,
     RankContext,
     TrainerConfig,
+    TrainingMetricAccumulator,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
@@ -43,15 +44,25 @@ class DummyTrainer(AbstractTrainer):
         trainer_config: TrainerConfig,
         *,
         rank_context: RankContext | None = None,
+        metric_accumulator: TrainingMetricAccumulator | None = None,
     ) -> None:
-        super().__init__(trainer_config, rank_context=rank_context)
+        super().__init__(
+            trainer_config,
+            rank_context=rank_context,
+            metric_accumulator=metric_accumulator,
+        )
         self.steps: list[tuple[str, int, float]] = []
         self.checkpoints: list[int] = []
 
     def train_step(self, task: TrainingTask, step: int) -> TrainStepResult:
         batch = task.training_data.get_batch()
         self.steps.append((task.key, step, batch["value"]))
-        return TrainStepResult(task_key=task.key, step=step, payload=batch)
+        return TrainStepResult(
+            task_key=task.key,
+            step=step,
+            payload=batch,
+            train_results={"rmse": batch["value"]},
+        )
 
     def evaluate_training(
         self,
@@ -141,6 +152,47 @@ def test_learning_curve_row_uses_training_metric_order() -> None:
     )
 
     assert row.split() == ["1", "nan", "1.00e+00", "3.00e+00", "2.00e+00", "1.0e-01"]
+
+
+def test_single_task_averages_only_training_steps(tmp_path: Path) -> None:
+    train_data = DummyData([1.0, 3.0, 9.0])
+    valid_data = DummyData([20.0, 30.0])
+    path = tmp_path / "averages.out"
+    trainer = DummyTrainer(
+        TrainerConfig(num_steps=3, disp_freq=3, disp_file=str(path)),
+        metric_accumulator=TrainingMetricAccumulator({"Default": ("rmse",)}),
+    )
+    trainer.run(TrainingTaskCollection.single(train_data, valid_data))
+    rows = [
+        line.split()
+        for line in path.read_text().splitlines()
+        if not line.startswith("#")
+    ]
+    assert [float(row[2]) for row in rows] == [1.0, 6.0]
+    assert [float(row[1]) for row in rows] == [20.0, 30.0]
+    assert train_data.index == 3
+    assert valid_data.index == 2
+
+
+def test_averaged_display_keeps_real_nan_guard(tmp_path: Path) -> None:
+    trainer = DummyTrainer(
+        TrainerConfig(num_steps=1, disp_file=str(tmp_path / "nan.out")),
+        metric_accumulator=TrainingMetricAccumulator({"Default": ("rmse",)}),
+    )
+    with pytest.raises(RuntimeError, match="NaN detected"):
+        trainer.run(TrainingTaskCollection.single(DummyData([float("nan")])))
+
+
+def test_nonchief_resets_metric_windows(tmp_path: Path) -> None:
+    accumulator = TrainingMetricAccumulator({"Default": ("rmse",)})
+    trainer = DummyTrainer(
+        TrainerConfig(num_steps=2, disp_freq=2, disp_file=str(tmp_path / "rank.out")),
+        rank_context=RankContext(rank=1, world_size=2),
+        metric_accumulator=accumulator,
+    )
+    trainer.run(TrainingTaskCollection.single(DummyData([1.0, 3.0])))
+    assert accumulator.count("Default") == 0
+    assert not (tmp_path / "rank.out").exists()
 
 
 def test_abstract_trainer_drives_single_task_loop(tmp_path: Path) -> None:

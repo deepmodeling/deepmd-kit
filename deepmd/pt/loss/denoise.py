@@ -42,6 +42,19 @@ class DenoiseLoss(TaskLoss):
         self.mask_loss_coord = mask_loss_coord
         self.mask_loss_token = mask_loss_token
 
+    @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return the enabled denoising metrics."""
+        return tuple(
+            name
+            for name, enabled in (
+                ("coord_l1_error", self.has_coord),
+                ("token_error", self.has_token),
+                ("norm_loss", self.has_norm),
+            )
+            if enabled
+        )
+
     def forward(
         self,
         model_pred: dict[str, torch.Tensor],

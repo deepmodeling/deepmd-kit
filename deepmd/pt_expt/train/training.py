@@ -52,6 +52,7 @@ from deepmd.dpmodel.train import (
     RankContext,
     ShardingPolicy,
     TrainerConfig,
+    TrainingMetricAccumulator,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
@@ -2323,6 +2324,16 @@ class Trainer(AbstractTrainer):
                 restart_training=self.restart_training,
             ),
             rank_context=RankContext(rank=self.rank, world_size=self.world_size),
+            metric_accumulator=(
+                TrainingMetricAccumulator(
+                    {
+                        key: loss.training_metric_names
+                        for key, loss in self.losses.items()
+                    }
+                )
+                if training_params.get("disp_avg", False)
+                else None
+            ),
         )
         self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
@@ -3250,6 +3261,15 @@ class Trainer(AbstractTrainer):
         return TrainStepResult(
             task_key=task_key,
             step=step,
+            train_results=(
+                {
+                    key: value.detach() if torch.is_tensor(value) else value
+                    for key, value in more_loss.items()
+                    if "l2_" not in key
+                }
+                if self.metric_accumulator is not None
+                else None
+            ),
             payload={
                 "loss": loss,
                 "more_loss": more_loss,
