@@ -91,6 +91,11 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         its weight is negative.
     single_precision_basis : bool
         Evaluate the Gaussian basis in fp32, which is what upstream does.
+    single_precision_distance : bool
+        Round the pairwise distances to fp32 before the Gaussian basis. Upstream
+        precomputes its distance matrix in fp32 in the data pipeline, so this
+        reproduces its numbers; the default computes them in the working
+        precision, which is more accurate and is what gradients flow through.
     virtual_token_position : str
         Where the two virtual tokens sit. ``"centroid"`` places them at the
         centroid of the real atoms, which keeps the sequence translation
@@ -118,6 +123,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         activation_dropout: float = 0.0,
         no_final_head_layer_norm: bool = False,
         single_precision_basis: bool = True,
+        single_precision_distance: bool = False,
         virtual_token_position: str = "centroid",
         gaussian_kernels: int = 128,
         precision: str = "float64",
@@ -140,6 +146,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         self.activation_dropout = activation_dropout
         self.no_final_head_layer_norm = no_final_head_layer_norm
         self.single_precision_basis = single_precision_basis
+        self.single_precision_distance = single_precision_distance
         if virtual_token_position not in ("centroid", "origin"):
             raise ValueError(
                 f"virtual_token_position must be centroid or origin, got {virtual_token_position}"
@@ -271,8 +278,8 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
-    ) -> None:  # noqa: ANN001
+        self, type_map: list[str], model_with_new_type_stat: object = None
+    ) -> None:
         """Remap the element names onto Uni-Mol tokens.
 
         The token embedding itself is indexed by Uni-Mol token, not by deepmd
@@ -392,6 +399,10 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
 
         diff = coord[:, :, None, :] - coord[:, None, :, :]
         dist = xp.sqrt(xp.sum(diff**2, axis=-1))
+        if self.single_precision_distance:
+            # Upstream's data pipeline stores the distance matrix in fp32, and
+            # the Gaussian basis is narrow enough for that rounding to matter.
+            dist = xp.astype(xp.astype(dist, xp.float32), dist.dtype)
         edge_type = tokens[:, :, None] * self.ntokens + tokens[:, None, :]
 
         bias = self.gbf_proj(self.gbf(dist, edge_type))
@@ -456,6 +467,7 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
             "activation_dropout": self.activation_dropout,
             "no_final_head_layer_norm": self.no_final_head_layer_norm,
             "single_precision_basis": self.single_precision_basis,
+            "single_precision_distance": self.single_precision_distance,
             "virtual_token_position": self.virtual_token_position,
             "gaussian_kernels": self.gaussian_kernels,
             "precision": self.precision,
