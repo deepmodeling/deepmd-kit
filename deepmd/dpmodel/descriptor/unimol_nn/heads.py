@@ -86,7 +86,8 @@ class MaskLMHead(NativeOP):
         """
         xp = array_api_compat.array_namespace(features)
         if masked_tokens is not None:
-            features = features[xp.astype(masked_tokens, xp.bool), :]
+            # sole index: the array API allows a boolean mask only on its own
+            features = features[xp.astype(masked_tokens, xp.bool)]
         return self.out_proj(self.layer_norm(self.dense(features)))
 
     def serialize(self) -> dict:

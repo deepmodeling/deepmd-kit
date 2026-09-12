@@ -48,6 +48,15 @@ def _smooth_l1(pred: Array, label: Array, beta: float = 1.0) -> Array:
     xp = array_api_compat.array_namespace(pred)
     diff = xp.abs(pred - label)
     elementwise = xp.where(diff < beta, 0.5 * diff**2 / beta, diff - 0.5 * beta)
+    if 0 in elementwise.shape:
+        # The number of corrupted atoms is rounded stochastically, so a frame
+        # can draw none at all, and a batch of one such frame leaves nothing to
+        # average. Upstream returns NaN there, which would go on to poison every
+        # weight; zero is the only finite answer. Non-empty batches, which is
+        # every batch upstream ever trained on, are untouched.
+        return xp.zeros(
+            (), dtype=elementwise.dtype, device=array_api_compat.device(elementwise)
+        )
     return xp.mean(elementwise)
 
 
@@ -117,9 +126,9 @@ def _masked_nll(logits: Array, target: Array, pad_idx: int) -> Array:
     picked = xp.take_along_axis(log_probs, xp.reshape(target, (-1, 1)), axis=1)
     picked = xp.reshape(picked, (-1,))
     picked = xp.where(keep, picked, xp.zeros_like(picked))
-    return -xp.sum(picked) / xp.astype(
-        xp.sum(xp.astype(keep, logits.dtype)), logits.dtype
-    )
+    count = xp.astype(xp.sum(xp.astype(keep, logits.dtype)), logits.dtype)
+    # An empty selection would divide zero by zero; see :func:`_smooth_l1`.
+    return -xp.sum(picked) / xp.where(count > 0, count, xp.ones_like(count))
 
 
 @Loss.register("unimol")

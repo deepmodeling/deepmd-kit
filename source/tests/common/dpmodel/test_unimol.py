@@ -537,6 +537,34 @@ class TestUniMolLoss(UniMolGoldenMixin, unittest.TestCase):
             atol=1e-8,
         )
 
+    def test_an_empty_selection_stays_finite(self) -> None:
+        """A frame can draw no corrupted atom, and then there is nothing to average.
+
+        The count is rounded stochastically, so a small molecule in a batch of
+        one reaches this. Every term would be a mean over an empty set; NaN
+        there would spread to every weight at the next backward pass.
+        """
+        nf, nloc, ncol = 1, 4, 8
+        rng = np.random.default_rng(0)
+        pred = {
+            "token_logits": rng.normal(size=(nf, nloc, SMALL["vocab"])),
+            "coord_update": rng.normal(size=(nf, nloc, 3)),
+            "pair_dist": rng.normal(size=(nf, nloc, ncol)),
+            "x_norm": np.zeros((nf, nloc, 1)),
+            "delta_pair_norm": np.zeros((nf, nloc, 1)),
+            "mask": np.ones((nf, nloc), dtype=np.int64),
+        }
+        labels = {
+            # every position is padding, which is what "nothing selected" means
+            "unimol_token_target": np.zeros((nf, nloc), dtype=np.int64),
+            "unimol_coord_target": rng.normal(size=(nf, nloc, 3)),
+        }
+        total, more = UniMolLoss().call(1.0, 0, pred, labels)
+        self.assertTrue(np.isfinite(float(total)))
+        for name, term in more.items():
+            with self.subTest(term=name):
+                self.assertTrue(np.isfinite(float(term)))
+
     def test_derived_labels_match_explicit_ones(self) -> None:
         """Storing the distance target would cost O(natoms^2) per frame.
 
