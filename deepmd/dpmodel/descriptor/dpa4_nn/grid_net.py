@@ -874,8 +874,8 @@ class BaseGridNet(NativeOP):
         # training hook differentiates the same expression inside the force
         # graph on the frame-packed operands, with analytic first and second
         # order.
-        self._grid_pair_fn = None
-        self._grid_pair_train_fn = None
+        self.cuda_infer_l_1_grid_pair = None
+        self.triton_train_l_1_grid_pair = None
         self._from_grid_t = np.ascontiguousarray(projector.from_grid_mat.T)
 
         self.scalar_act = SwiGLU()
@@ -947,7 +947,9 @@ class BaseGridNet(NativeOP):
         because materializing a scalar-only fallback grid would be slower than
         that fused operator.
         """
-        if self._grid_pair_fn is not None and not getattr(self, "training", False):
+        if self.cuda_infer_l_1_grid_pair is not None and not getattr(
+            self, "training", False
+        ):
             return self._slice_scalar_layout(self.call(query, context))
         return self._forward(query, context, scalar_only=True)
 
@@ -1213,32 +1215,55 @@ class BaseGridNet(NativeOP):
         c_wide = left.shape[3] // self.n_frames
         if c_wide % 32 != 0 or left.shape != right.shape:
             return None
-        if getattr(self, "training", False):
+        training = getattr(self, "training", False)
+        if not training:
+            candidate = self.run_cute_infer_grid_pair(left, right)
+            if candidate is not None:
+                return candidate
+        if training:
             # Training form: frame-packed operands ride through unreshaped,
             # with analytic first and second order behind the call; under
             # autocast it runs the same reduced-precision regime as the dense
             # einsum composition it replaces.
-            if self._grid_pair_train_fn is None:
+            if self.triton_train_l_1_grid_pair is None:
                 return None
-            return self._grid_pair_train_fn(
+            return self.triton_train_l_1_grid_pair(
                 left,
                 right,
                 self.projector.to_grid_mat,
                 self._from_grid_t,
                 self.n_frames,
             )
-        if self._grid_pair_fn is None or left.shape[2] != 1:
+        if self.cuda_infer_l_1_grid_pair is None or left.shape[2] != 1:
             return None
         n_batch, coeff_dim = left.shape[0], left.shape[1]
         flat_p = coeff_dim * self.n_frames
         xp = array_api_compat.array_namespace(left, right)
-        out = self._grid_pair_fn(
+        out = self.cuda_infer_l_1_grid_pair(
             xp.reshape(left, (n_batch, flat_p, c_wide)),
             xp.reshape(right, (n_batch, flat_p, c_wide)),
             self.projector.to_grid_mat,
             self._from_grid_t,
         )
         return xp.reshape(out, (n_batch, coeff_dim, 1, self.n_frames * c_wide))
+
+    def run_cute_infer_grid_pair(self, left: Any, right: Any) -> Any | None:
+        """Run a backend CuTe grid product when its contract matches.
+
+        Parameters
+        ----------
+        left : Any
+            Left coefficient operand with shape ``(N, D, F, n_frames * C)``.
+        right : Any
+            Right coefficient operand with the same shape as ``left``.
+
+        Returns
+        -------
+        Any or None
+            Coefficient result with the same shape as ``left``, or ``None``
+            when the backend has no eligible CuTe implementation.
+        """
+        return None
 
     def _project_pair_in_one_transform(
         self,

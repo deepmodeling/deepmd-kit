@@ -782,18 +782,19 @@ class DeepEval(DeepEvalBackend):
                 list(inner.get_sel()),
                 return_mode="edges",
             )
-            predict = inner.forward_common_lower(
-                edge_schema.coord,
-                edge_schema.atype,
-                edge_schema.edge_index,
-                edge_schema.edge_vec,
-                edge_schema.edge_scatter_index,
-                edge_schema.edge_mask,
-                fparam=fparam,
-                aparam=aparam,
-                charge_spin=charge_spin,
-                input_prec=coord.dtype,
-            )
+            with self.dp._frozen_parameter_context():
+                predict = inner.forward_common_lower(
+                    edge_schema.coord,
+                    edge_schema.atype,
+                    edge_schema.edge_index,
+                    edge_schema.edge_vec,
+                    edge_schema.edge_scatter_index,
+                    edge_schema.edge_mask,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                    input_prec=coord.dtype,
+                )
         else:
             ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
                 coord,
@@ -802,16 +803,17 @@ class DeepEval(DeepEvalBackend):
                 self.rcut,
                 list(inner.get_sel()),
             )
-            model_lower = inner.forward_common_lower(
-                ext_coord,
-                ext_atype,
-                nlist,
-                mapping,
-                fparam=fparam,
-                aparam=aparam,
-                do_atomic_virial=do_atomic_virial,
-                charge_spin=charge_spin,
-            )
+            with self.dp._frozen_parameter_context():
+                model_lower = inner.forward_common_lower(
+                    ext_coord,
+                    ext_atype,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=do_atomic_virial,
+                    charge_spin=charge_spin,
+                )
             predict = communicate_extended_output(
                 model_lower,
                 self.output_def,

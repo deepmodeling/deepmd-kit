@@ -65,6 +65,10 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.pt_expt.kernels.cute.sezm import runtime_policy as cute_runtime_policy
+from deepmd.pt_expt.kernels.cute.sezm.so2.metadata import (
+    build_sorted_edge_index_metadata,
+)
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
     use_amp_infer,
@@ -1061,19 +1065,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # The fused convolution paths consume only the three structural rows of
         # each Wigner degree block. Source-gated attention bypasses that fused
         # convolution, so its dense per-edge rotations remain available.
-        self._wigner_free_conv = (
+        self.cuda_infer_l_2_covers_all_blocks = (
             self.bridging_switch is None
             and bool(self.blocks)
             and all(
-                getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
-                and not block.so2_conv._cuda_conv_fn._compete
+                getattr(block.so2_conv, "cuda_infer_l_2_conv", None) is not None
+                and not block.so2_conv.cuda_infer_l_2_conv.focus_compete
                 for block in self.blocks
             )
         )
-        self._packed_wigner_train = bool(self.blocks) and all(
-            getattr(block.so2_conv, "_cuda_value_train", None) is not None
-            and block.so2_conv._flash_atten_fn is not None
-            and block.so2_conv._flash_atten_trains
+        self.cuda_train_covers_all_blocks = bool(self.blocks) and all(
+            getattr(block.so2_conv, "cuda_train_value", None) is not None
+            and block.so2_conv.flash_attention is not None
+            and block.so2_conv.flash_attention_supports_training
             for block in self.blocks
         )
 
@@ -1081,8 +1085,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # distance and are cheap enough that the compiler inlines them into
         # every consumer and re-evaluates them there. Behind an operator
         # boundary the chain runs once per step.
-        self._cuda_radial_fn = None
-        self._cuda_wigner_fn = None
+        self.cuda_infer_l_1_radial = None
+        self.cuda_infer_l_1_wigner = None
         if cuda_infer_level() >= 1:
             from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
                 make_cuda_edge_radial,
@@ -1091,13 +1095,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 make_cuda_wigner_dense,
             )
 
-            self._cuda_radial_fn = make_cuda_edge_radial(
+            self.cuda_infer_l_1_radial = make_cuda_edge_radial(
                 self.edge_envelope, self.radial_basis
             )
             # The dense Wigner pair otherwise costs five full-size passes
             # over the (E, D, D) tensors; the fused build pays only the
             # output writes.
-            self._cuda_wigner_fn = make_cuda_wigner_dense(
+            self.cuda_infer_l_1_wigner = make_cuda_wigner_dense(
                 self.mp_init_lmax, self.compute_dtype
             )
 
@@ -1188,6 +1192,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
         spin: torch.Tensor | None = None,
+        edge_index_sorted_by_dst: bool = False,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1229,6 +1234,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
+        spin
+            Optional per-atom spin vectors.
+        edge_index_sorted_by_dst
+            Host-side provenance that ``edge_index[1]`` is nondecreasing.
 
         Returns
         -------
@@ -1264,6 +1273,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_index=edge_index,
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
+                edge_index_sorted_by_dst=edge_index_sorted_by_dst,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
                 spin=spin,
@@ -1324,6 +1334,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # sparse-edge path, so ``forward`` keeps the original
         # bridging-free aggregation semantics.
         with nvtx_range("build_edge_cache"):
+            packed_wigner_candidate = self.is_cute_infer_packed_wigner_candidate(
+                type_ebed.device,
+                type_ebed.dtype,
+                extended_coord.dtype,
+            )
             edge_cache = build_edge_cache(
                 type_ebed=type_ebed,
                 extended_coord=extended_coord,
@@ -1341,7 +1356,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                build_wigner=self._build_full_wigner(),
+                packed_wigner_candidate=packed_wigner_candidate,
+                build_wigner=(self._build_full_wigner() or packed_wigner_candidate),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1421,29 +1437,43 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 10. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
+            block_dtype = (
+                torch.float32 if edge_cache.D_packed is not None else self.dtype
+            )
             if radial_feat is not None:
                 radial_feat = radial_feat + rearrange(
                     edge_cache.edge_type_feat, "E C -> E 1 C"
                 )
-                radial_feat = radial_feat.to(dtype=self.dtype)
+                radial_feat = radial_feat.to(dtype=block_dtype)
                 rad_feat_per_block = [
                     radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
                 ]  # list of (E, lmax+1, C)
             else:
                 rad_feat_per_block = []
 
-        # === Step 11. Convert to self.dtype and run blocks ===
+        # === Step 11. Convert to the block runtime dtype and run blocks ===
         # The block stage is skipped entirely when there are no interaction
         # blocks (zero-block descriptor) or no valid edges, sparing the working
         # edge-cache dtype cast that only the blocks consume.
         with nvtx_range("blocks"):
-            x = x.to(dtype=self.dtype)  # (N, D, 1, C)
+            x = x.to(dtype=block_dtype)  # (N, D, 1, C)
             if force_embedding is not None:
-                x = x + force_embedding.to(dtype=self.dtype)
+                x = x + force_embedding.to(dtype=block_dtype)
             if self.blocks and edge_cache.src.numel() > 0:
-                edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
+                edge_cache = edge_cache_to_dtype(edge_cache, block_dtype)
+                edge_cache = edge_cache._replace(
+                    cute_infer_so2_metadata=self.prepare_cute_infer_so2_metadata(
+                        edge_cache,
+                        n_nodes,
+                    )
+                )
                 with self._compute_mode_ctx(extended_coord.device):
-                    x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
+                    x = self._forward_blocks(
+                        x,
+                        edge_cache,
+                        rad_feat_per_block,
+                        comm_dict=comm_dict,
+                    )
 
         # === Step 12. Final l=0 output mixing ===
         with nvtx_range("output_ffn"):
@@ -1469,6 +1499,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
+        edge_index_sorted_by_dst: bool = False,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
         spin: torch.Tensor | None = None,
@@ -1502,6 +1533,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             Edge vectors with shape (E, 3) in Å.
         edge_mask
             Edge mask with shape (E,).
+        edge_index_sorted_by_dst
+            Host-side provenance that ``edge_index[1]`` is nondecreasing.
         force_embedding
             Optional precomputed equivariant force embedding with shape
             ``(nf * nloc, D, 1, channels)``, where
@@ -1579,6 +1612,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         # === Step 3. Build edge cache once (sparse edges) ===
         with nvtx_range("build_edge_cache"):
+            packed_wigner_candidate = self.is_cute_infer_packed_wigner_candidate(
+                type_ebed.device,
+                type_ebed.dtype,
+                extended_coord.dtype,
+            )
             edge_cache = build_edge_cache_from_edges(
                 type_ebed=type_ebed,
                 atype_flat=atype_flat,
@@ -1594,15 +1632,17 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 bridging_switch=self.bridging_switch,
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
-                fused_radial=(None if self.training else self._cuda_radial_fn),
-                fused_wigner=(None if self.training else self._cuda_wigner_fn),
+                fused_radial=(None if self.training else self.cuda_infer_l_1_radial),
+                fused_wigner=(None if self.training else self.cuda_infer_l_1_wigner),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                build_wigner=self._build_full_wigner(),
+                packed_wigner_candidate=packed_wigner_candidate,
+                destinations_sorted=edge_index_sorted_by_dst,
+                build_wigner=(self._build_full_wigner() or packed_wigner_candidate),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -1676,26 +1716,38 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 9. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
-            radial_feat = radial_feat.to(dtype=self.dtype)
+            block_dtype = (
+                torch.float32 if edge_cache.D_packed is not None else self.dtype
+            )
+            radial_feat = radial_feat.to(dtype=block_dtype)
             radial_feat = radial_feat + rearrange(
-                edge_cache.edge_type_feat.to(dtype=self.dtype), "E C -> E 1 C"
+                edge_cache.edge_type_feat.to(dtype=block_dtype), "E C -> E 1 C"
             )
             rad_feat_per_block = [
                 radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
             ]
 
-        # === Step 10. Convert to self.dtype and run blocks ===
+        # === Step 10. Convert to the block runtime dtype and run blocks ===
         # The block stage is skipped entirely for the zero-block descriptor,
         # sparing the working edge-cache dtype cast that only the blocks consume.
         with nvtx_range("blocks"):
-            x = x.to(dtype=self.dtype)  # (N, D, 1, C)
+            x = x.to(dtype=block_dtype)  # (N, D, 1, C)
             if force_embedding is not None:
-                x = x + force_embedding.to(dtype=self.dtype)
+                x = x + force_embedding.to(dtype=block_dtype)
             if self.blocks:
-                edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
+                edge_cache = edge_cache_to_dtype(edge_cache, block_dtype)
+                edge_cache = edge_cache._replace(
+                    cute_infer_so2_metadata=self.prepare_cute_infer_so2_metadata(
+                        edge_cache,
+                        n_nodes,
+                    )
+                )
                 with self._compute_mode_ctx(extended_coord.device):
                     x = self._forward_blocks(
-                        x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
+                        x,
+                        edge_cache,
+                        rad_feat_per_block,
+                        comm_dict=comm_dict,
                     )
 
         # === Step 11. Keep the owned-atom rows for the read-out ===
@@ -1714,6 +1766,73 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === Step 13. Reshape to (nf, nloc, channels) and return ===
         descriptor = x_scalar.reshape(nf, out_nloc, self.channels)  # (nf, nloc, C)
         return descriptor.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), x.contiguous()
+
+    @torch.jit.unused
+    def run_cute_infer_readout(
+        self,
+        ffn_in: torch.Tensor,
+    ) -> torch.Tensor | None:
+        """Run the CuTe readout when its exact inference contract matches.
+
+        Parameters
+        ----------
+        ffn_in : torch.Tensor
+            Equivariant readout input with shape ``(N, D, 1, C)``.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Residual-inclusive scalar output with shape ``(N, C)``, or ``None``
+            when the exact CuTe contract is not satisfied.
+        """
+        if self.training or not cute_runtime_policy.is_cute_infer_enabled():
+            return None
+        from deepmd.pt_expt.kernels.cute.sezm.output_grid.readout_l0 import (
+            maybe_run_neo_readout_l0,
+        )
+
+        return maybe_run_neo_readout_l0(
+            self.output_ffn,
+            ffn_in,
+        )
+
+    def prepare_cute_infer_so2_metadata(
+        self,
+        edge_cache: EdgeFeatureCache,
+        n_nodes: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None:
+        """Build the edge metadata consumed by the CuTe SO2 implementation.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            Per-forward cache carrying the destination-major edge payload.
+        n_nodes : int
+            Number of nodes addressed by the edge payload.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor] or None
+            Destination row pointers, source order, and source row pointers, or
+            ``None`` when the exact CuTe contract is not satisfied.
+        """
+        if torch.jit.is_scripting():
+            return None
+        if (
+            self.training
+            or not edge_cache.destinations_sorted
+            or edge_cache.D_packed is None
+            or edge_cache.edge_src_gate is not None
+        ):
+            return None
+        if not cute_runtime_policy.is_cute_infer_enabled():
+            return None
+        return build_sorted_edge_index_metadata(
+            edge_cache.src,
+            edge_cache.dst,
+            n_nodes,
+            validate_sorted=cute_runtime_policy.is_cute_strict_enabled(),
+        )
 
     def _forward_blocks(
         self,
@@ -1831,6 +1950,49 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ).to(dtype=self.dtype)
         return x
 
+    def is_cute_infer_packed_wigner_candidate(
+        self,
+        device: torch.device,
+        dtype: torch.dtype,
+        geometry_dtype: torch.dtype,
+    ) -> bool:
+        """Return whether all blocks satisfy the packed CuTe SO2 contract.
+
+        Parameters
+        ----------
+        device : torch.device
+            Device that executes the descriptor blocks.
+        dtype : torch.dtype
+            Descriptor block dtype.
+        geometry_dtype : torch.dtype
+            Edge-geometry compute dtype.
+
+        Returns
+        -------
+        bool
+            Whether packed Wigner storage can replace dense storage for every
+            interaction block.
+        """
+        from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+            is_packed_wigner_candidate,
+        )
+
+        return is_packed_wigner_candidate(
+            blocks=self.blocks,
+            training=self.training,
+            device=device,
+            dtype=dtype,
+            producer_modules=(
+                self.radial_basis,
+                self.radial_embedding,
+                self.edge_envelope,
+                *((self.inner_clamp,) if self.inner_clamp is not None else ()),
+                *((self.bridging_switch,) if self.bridging_switch is not None else ()),
+            ),
+            producer_dtypes=(dtype, geometry_dtype),
+            has_edge_src_gate=self.bridging_switch is not None,
+        )
+
     def _apply_readout(self, x: torch.Tensor, n_rows: int) -> torch.Tensor:
         """Fold the node tensor into the scalar (``l=0``) descriptor.
 
@@ -1869,6 +2031,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             x_ro = x[:, : self.node_readout_dim, :, :].to(dtype=self.compute_dtype)
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
+        if (
+            not self.readout_pre_layers
+            and self.so3_readout != "none"
+            and not torch.jit.is_scripting()
+        ):
+            accelerated = self.run_cute_infer_readout(x_ro)
+            if accelerated is not None:
+                return accelerated.reshape(n_rows, 1, 1, self.channels)
         if self.so3_readout == "none":
             return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
         return x_ro[:, 0:1, :, :] + self.output_ffn.forward_scalar(x_ro)
@@ -1903,8 +2073,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if not self._need_full_wigner:
             return False
         if self.training:
-            return not self._packed_wigner_train
-        return not self._wigner_free_conv
+            return not self.cuda_train_covers_all_blocks
+        return not self.cuda_infer_l_2_covers_all_blocks
 
     def _shared_wigner_runs(
         self,
@@ -1938,13 +2108,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if edge_cache.csr_cache is None:
             return None
         if self.training:
-            if not self._packed_wigner_train:
+            if not self.cuda_train_covers_all_blocks:
                 return None
-            fused = self.blocks[0].so2_conv._cuda_value_train
+            fused = self.blocks[0].so2_conv.cuda_train_value
         else:
-            if not self._wigner_free_conv:
+            if not self.cuda_infer_l_2_covers_all_blocks:
                 return None
-            fused = self.blocks[0].so2_conv._cuda_conv_fn
+            fused = self.blocks[0].so2_conv.cuda_infer_l_2_conv
         if fused is None or lmax > self.lmax:
             return None
         return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
@@ -1965,6 +2135,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             the blocks are skipped (all-Cartesian model) the full coupling is
             reconstructed from the edge quaternion via the m=0-only path.
         """
+        if edge_cache.D_packed is not None:
+            return self.build_cute_infer_zonal_coupling(edge_cache)
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
             shared = self._shared_wigner_runs(edge_cache, calc.lmax)
@@ -1981,6 +2153,39 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             mp_row_index,
             mp_m0_col_index,
         ]
+        extra_coupling = self.gie_zonal_wigner_calc.forward_zonal(
+            self._edge_quaternion(edge_cache),
+            lmin=self.lmax + 1,
+        )
+        return torch.cat([mp_coupling, extra_coupling], dim=1)
+
+    def build_cute_infer_zonal_coupling(
+        self,
+        edge_cache: EdgeFeatureCache,
+    ) -> torch.Tensor:
+        """Extract the GIE zonal coupling from packed Wigner storage.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            Per-forward cache carrying CuTe packed Wigner storage.
+
+        Returns
+        -------
+        torch.Tensor
+            Zonal coupling with shape ``(E, D_node - 1)``.
+
+        Raises
+        ------
+        ValueError
+            If the edge cache does not carry packed Wigner storage.
+        """
+        D_packed = edge_cache.D_packed
+        if D_packed is None:
+            raise ValueError("CuTe zonal coupling requires packed Wigner storage")
+        mp_coupling = D_packed.index_select(1, self.gie.packed_zonal_offsets)
+        if self.gie_zonal_wigner_calc is None:
+            return mp_coupling
         extra_coupling = self.gie_zonal_wigner_calc.forward_zonal(
             self._edge_quaternion(edge_cache),
             lmin=self.lmax + 1,

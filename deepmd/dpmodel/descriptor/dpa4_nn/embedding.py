@@ -315,17 +315,28 @@ class GeometricInitialEmbedding(NativeOP):
                 axis=1,
             )  # (E, D-1)
 
-        # === Step 3. Broadcast radial features per row ===
+        # === Step 3. Optional backend message construction and reduction ===
+        accelerated = self.run_cute_infer_gie(
+            n_nodes=n_nodes,
+            edge_cache=edge_cache,
+            radial_feat=radial_feat,
+            zonal_coupling=zonal_coupling,
+            spin_l1_message=spin_l1_message,
+        )
+        if accelerated is not None:
+            return accelerated
+
+        # === Step 4. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
         # The fused operator spans this broadcast and the scatter of Step 5, so
         # it takes over whenever nothing else joins the message in between.
         if (
-            self._can_fuse_scatter(zonal_coupling)
+            self.can_run_cuda_infer_l_1_scatter(zonal_coupling)
             and spin_l1_message is None
             and edge_cache.edge_src_gate is None
             and edge_cache.csr_cache is not None
         ):
-            return self.forward_fused_scatter(
+            return self.run_cuda_infer_l_1_scatter(
                 n_nodes, edge_cache, radial_feat, zonal_coupling
             )
 
@@ -339,7 +350,7 @@ class GeometricInitialEmbedding(NativeOP):
             zonal_coupling[:, :, None] * radial_value_for_row
         )  # (E, D-1, C)
 
-        # === Step 3b. Fold in the neighbor-spin l=1 message (native spin) ===
+        # === Step 4b. Fold in the neighbor-spin l=1 message (native spin) ===
         # The l=1 coefficients occupy the first three packed non-scalar rows, so
         # the neighbor-spin message joins the geometric message there and then
         # shares the source gate, scatter and degree normalization below.
@@ -352,7 +363,7 @@ class GeometricInitialEmbedding(NativeOP):
                 non_scalar_message, 1, scatter_index, spin_l1_message
             )
 
-        # === Step 4. Source Freeze Propagation Gate (optional) ===
+        # === Step 5. Source Freeze Propagation Gate (optional) ===
         # Mute messages emitted by nodes whose local neighborhood enters
         # the frozen zone. ``edge_src_gate`` is ``None`` outside bridging
         # mode so this is a no-op in normal training.
@@ -362,7 +373,7 @@ class GeometricInitialEmbedding(NativeOP):
                 xp.reshape(src_gate, (n_edge, 1, 1)), non_scalar_message.dtype
             )
 
-        # === Step 5. Scatter to nodes and normalize ===
+        # === Step 6. Scatter to nodes and normalize ===
         # Destination scatter-add over ``edge_cache.dst`` (pt ``index_add_``),
         # applied after the validity masking below. This reduction is
         # layout-agnostic: it is correct both for the padded ``call`` (row-major
@@ -399,18 +410,83 @@ class GeometricInitialEmbedding(NativeOP):
         out = out * xp.astype(edge_cache.inv_sqrt_deg, out.dtype)
         return xp.astype(out, dtype)
 
-    def _can_fuse_scatter(self, zonal_coupling: Any) -> bool:
-        """Return whether a backend can run the fused scatter for this input."""
+    def run_cute_infer_gie(
+        self,
+        *,
+        n_nodes: int,
+        edge_cache: EdgeCache,
+        radial_feat: Any,
+        zonal_coupling: Any,
+        spin_l1_message: Any = None,
+    ) -> Any | None:
+        """Run a backend CuTe GIE implementation when its contract matches.
+
+        Parameters
+        ----------
+        n_nodes : int
+            Number of nodes addressed by the edge cache.
+        edge_cache : EdgeCache
+            Per-forward geometric edge cache.
+        radial_feat : Any
+            Radial features with shape ``(E, lmax, C)``.
+        zonal_coupling : Any
+            Zonal coupling with shape ``(E, D - 1)``.
+        spin_l1_message : Any, optional
+            Native-spin message with shape ``(E, 3, C)``.
+
+        Returns
+        -------
+        Any or None
+            Initial embedding with shape ``(N, D, C)``, or ``None`` when no
+            backend CuTe implementation serves the input.
+        """
+        return None
+
+    def can_run_cuda_infer_l_1_scatter(self, zonal_coupling: Any) -> bool:
+        """Return whether a backend can run the fused scatter for this input.
+
+        Parameters
+        ----------
+        zonal_coupling : Any
+            Zonal coupling with shape ``(E, D - 1)``.
+
+        Returns
+        -------
+        bool
+            Whether the CUDA inference level-one scatter is eligible.
+        """
         return False
 
-    def forward_fused_scatter(
+    def run_cuda_infer_l_1_scatter(
         self,
         n_nodes: int,
         edge_cache: EdgeCache,
         radial_feat: Any,
         zonal_coupling: Any,
     ) -> Any:
-        """Build and reduce the geometric message with a backend operator."""
+        """Build and reduce the geometric message with a backend operator.
+
+        Parameters
+        ----------
+        n_nodes : int
+            Number of nodes addressed by the edge cache.
+        edge_cache : EdgeCache
+            Per-forward geometric edge cache.
+        radial_feat : Any
+            Radial features with shape ``(E, lmax, C)``.
+        zonal_coupling : Any
+            Zonal coupling with shape ``(E, D - 1)``.
+
+        Returns
+        -------
+        Any
+            Initial embedding with shape ``(N, D, C)``.
+
+        Raises
+        ------
+        NotImplementedError
+            If the backend has no fused CUDA scatter implementation.
+        """
         raise NotImplementedError(
             "The fused GIE scatter is unavailable in the dpmodel reference"
         )

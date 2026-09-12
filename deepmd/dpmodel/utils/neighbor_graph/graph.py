@@ -266,6 +266,191 @@ def node_ownership_mask(n_node: Array, n_local: Array, n_total: int) -> Array:
     return index_in_frame < local_count
 
 
+def _compact_csr(
+    order: Array,
+    row_ptr: Array,
+    edge_mask: Array,
+    new_position: Array,
+) -> tuple[Array, Array]:
+    """Project an endpoint CSR view onto a compact edge axis.
+
+    Parameters
+    ----------
+    order
+        Edge permutation grouped by one endpoint with shape (E,).
+    row_ptr
+        CSR row pointers with shape (N + 1,).
+    edge_mask
+        Boolean survivor mask on the original edge axis with shape (E,).
+    new_position
+        Mapping from original edge indices to compact edge indices with shape
+        (E,). Removed edges map to -1.
+
+    Returns
+    -------
+    tuple[Array, Array]
+        The filtered edge permutation and rebuilt row pointers.
+    """
+    xp = array_api_compat.array_namespace(order, row_ptr, edge_mask, new_position)
+    ordered_keep = xp.take(edge_mask, order, axis=0)
+    (ordered_keep_position,) = xp.nonzero(ordered_keep)
+    kept_edge = xp.take(order, ordered_keep_position, axis=0)
+    compact_order = xp.take(new_position, kept_edge, axis=0)
+    compact_row_ptr = _compact_csr_row_ptr(ordered_keep, row_ptr)
+    return compact_order, compact_row_ptr
+
+
+def _compact_csr_row_ptr(
+    ordered_keep: Array,
+    row_ptr: Array,
+) -> Array:
+    """Rebuild CSR row pointers after filtering the ordered edge axis."""
+    xp = array_api_compat.array_namespace(ordered_keep, row_ptr)
+    prefix = xp.concat(
+        [
+            xp.zeros(
+                (1,),
+                dtype=row_ptr.dtype,
+                device=array_api_compat.device(row_ptr),
+            ),
+            xp.cumulative_sum(xp.astype(ordered_keep, row_ptr.dtype), axis=0),
+        ],
+        axis=0,
+    )
+    return xp.take(prefix, row_ptr, axis=0)
+
+
+def compact_edges(graph: NeighborGraph) -> NeighborGraph:
+    """Drop masked edges and remap derived indices onto the compact edge axis.
+
+    Complete destination and source CSR views are filtered in their own edge
+    order, remapped to the compact payload, and retained without sorting. This
+    preserves arbitrary mask placement inside CSR rows rather than assuming a
+    masked suffix.
+
+    Parameters
+    ----------
+    graph : NeighborGraph
+        Graph whose ``edge_mask`` selects the retained edge payload. Angle
+        fields must either both be present or both be absent.
+
+    Returns
+    -------
+    NeighborGraph
+        A graph containing only valid edges and angles. Complete CSR views are
+        retained; incomplete views are cleared.
+
+    Raises
+    ------
+    ValueError
+        If the angle fields are incomplete or have inconsistent shapes.
+    """
+    import dataclasses
+
+    xp = array_api_compat.array_namespace(graph.edge_mask)
+    has_angle_index = graph.angle_index is not None
+    has_angle_mask = graph.angle_mask is not None
+    if has_angle_index != has_angle_mask:
+        raise ValueError(
+            "compact_edges requires angle_index and angle_mask to both be set "
+            "or both be None"
+        )
+    if has_angle_index:
+        if graph.angle_index.ndim != 2 or graph.angle_index.shape[0] != 2:
+            raise ValueError(
+                "compact_edges requires angle_index with shape (2, A); got "
+                f"{tuple(graph.angle_index.shape)}"
+            )
+        if graph.angle_index.shape[1] != graph.angle_mask.shape[0]:
+            raise ValueError(
+                "compact_edges: angle_index and angle_mask disagree on A; got "
+                f"{graph.angle_index.shape[1]} and "
+                f"{graph.angle_mask.shape[0]}"
+            )
+
+    (keep_index,) = xp.nonzero(graph.edge_mask)
+    preserve_csr = all(
+        value is not None
+        for value in (
+            graph.destination_order,
+            graph.destination_row_ptr,
+            graph.source_order,
+            graph.source_row_ptr,
+        )
+    )
+    if preserve_csr or has_angle_index:
+        survivor = xp.astype(graph.edge_mask, graph.edge_index.dtype)
+        rank = xp.cumulative_sum(survivor, axis=0) - survivor
+        new_position = xp.where(
+            graph.edge_mask,
+            rank,
+            xp.full_like(rank, -1),
+        )
+    if preserve_csr:
+        if graph.destination_sorted:
+            destination_order = xp.arange(
+                keep_index.shape[0],
+                dtype=graph.destination_order.dtype,
+                device=array_api_compat.device(graph.destination_order),
+            )
+            destination_row_ptr = _compact_csr_row_ptr(
+                graph.edge_mask,
+                graph.destination_row_ptr,
+            )
+        else:
+            destination_order, destination_row_ptr = _compact_csr(
+                graph.destination_order,
+                graph.destination_row_ptr,
+                graph.edge_mask,
+                new_position,
+            )
+        source_order, source_row_ptr = _compact_csr(
+            graph.source_order,
+            graph.source_row_ptr,
+            graph.edge_mask,
+            new_position,
+        )
+    else:
+        destination_order = None
+        destination_row_ptr = None
+        source_order = None
+        source_row_ptr = None
+    fields = {
+        "edge_index": xp.take(graph.edge_index, keep_index, axis=1),
+        "edge_vec": xp.take(graph.edge_vec, keep_index, axis=0),
+        "edge_mask": xp.take(graph.edge_mask, keep_index, axis=0),
+        "destination_order": destination_order,
+        "destination_row_ptr": destination_row_ptr,
+        "source_order": source_order,
+        "source_row_ptr": source_row_ptr,
+        "destination_sorted": graph.destination_sorted and preserve_csr,
+    }
+    if has_angle_index:
+        # Angles address the original edge axis. An exclusive survivor count
+        # maps each retained edge to its compact position; angles touching a
+        # removed edge are discarded.
+        first = xp.take(new_position, graph.angle_index[0, :], axis=0)
+        second = xp.take(new_position, graph.angle_index[1, :], axis=0)
+        angle_keep = xp.logical_and(
+            xp.astype(graph.angle_mask, xp.bool),
+            xp.logical_and(first >= 0, second >= 0),
+        )
+        (angle_keep_index,) = xp.nonzero(angle_keep)
+        fields["angle_index"] = xp.stack(
+            [
+                xp.take(first, angle_keep_index, axis=0),
+                xp.take(second, angle_keep_index, axis=0),
+            ],
+            axis=0,
+        )
+        fields["angle_mask"] = xp.take(
+            graph.angle_mask,
+            angle_keep_index,
+            axis=0,
+        )
+    return dataclasses.replace(graph, **fields)
+
+
 def apply_pair_exclusion(
     graph: NeighborGraph,
     atype: Array,
@@ -338,61 +523,7 @@ def apply_pair_exclusion(
         destination_sorted=False,
     )
     if compact:
-        # Angle fields are a coupled pair (produced together by the angle
-        # builder): both present or both None. Fail fast on any inconsistent
-        # state — a partial or shape-mismatched pair is a caller bug that would
-        # otherwise remap silently wrong.
-        has_ai = out.angle_index is not None
-        has_am = out.angle_mask is not None
-        if has_ai != has_am:
-            raise ValueError(
-                "apply_pair_exclusion(compact=True): angle_index and angle_mask "
-                "must both be set or both be None; got "
-                f"angle_index={'set' if has_ai else 'None'}, "
-                f"angle_mask={'set' if has_am else 'None'}."
-            )
-        if has_ai:
-            if out.angle_index.ndim != 2 or out.angle_index.shape[0] != 2:
-                raise ValueError(
-                    "apply_pair_exclusion(compact=True): angle_index must have "
-                    f"shape (2, A); got {tuple(out.angle_index.shape)}."
-                )
-            if out.angle_index.shape[1] != out.angle_mask.shape[0]:
-                raise ValueError(
-                    "apply_pair_exclusion(compact=True): angle_index (2, A) and "
-                    f"angle_mask (A,) disagree on A: {out.angle_index.shape[1]} "
-                    f"vs {out.angle_mask.shape[0]}."
-                )
-        (keep_idx,) = xp.nonzero(out.edge_mask)
-        fields = {
-            "edge_index": out.edge_index[:, keep_idx],
-            "edge_vec": xp.take(out.edge_vec, keep_idx, axis=0),
-            "edge_mask": xp.take(out.edge_mask, keep_idx, axis=0),
-        }
-        if has_ai:
-            # Angles reference PRE-compaction edge positions; remap them to the
-            # compacted axis and drop any angle whose constituent edges were
-            # excluded. ``new_pos`` maps old edge position -> new position via an
-            # exclusive prefix sum over the survivors (-1 for dropped edges).
-            surv = xp.astype(out.edge_mask, out.edge_index.dtype)  # (E,) 0/1
-            rank = xp.cumulative_sum(surv, axis=0) - surv  # survivors before me
-            new_pos = xp.where(out.edge_mask, rank, xp.full_like(rank, -1))
-            a_new = xp.take(new_pos, out.angle_index[0, :], axis=0)
-            b_new = xp.take(new_pos, out.angle_index[1, :], axis=0)
-            both_survive = xp.logical_and(a_new >= 0, b_new >= 0)
-            angle_keep = xp.logical_and(
-                xp.astype(out.angle_mask, xp.bool), both_survive
-            )
-            (angle_keep_idx,) = xp.nonzero(angle_keep)
-            fields["angle_index"] = xp.stack(
-                [
-                    xp.take(a_new, angle_keep_idx, axis=0),
-                    xp.take(b_new, angle_keep_idx, axis=0),
-                ],
-                axis=0,
-            )
-            fields["angle_mask"] = xp.take(out.angle_mask, angle_keep_idx, axis=0)
-        out = dataclasses.replace(out, **fields)
+        out = compact_edges(out)
     return out
 
 

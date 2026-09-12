@@ -563,7 +563,7 @@ class SO2ConvCuda:
         self._conv = conv
         mixer = conv.radial_degree_mixer
         self._rank = 0 if mixer is None else int(mixer.rank)
-        self._compete = bool(conv.focus_compete and conv.n_focus > 1)
+        self.focus_compete = bool(conv.focus_compete and conv.n_focus > 1)
         # Packed-run polynomial tables, fitted once per degree and materialized
         # on the compute device at the first call.
         self._tables_cpu = wigner_run_tables(conv.lmax)
@@ -743,7 +743,7 @@ class SO2ConvCuda:
         conv = self._conv
         n_node = x.shape[0]
         kc, cb = self._degree_kernel(rad_feat)
-        if self._compete:
+        if self.focus_compete:
             fscale = self._focus_scale(x, edge_cache, rad_feat, kc, cb)  # (E, F)
         else:
             fscale = x.new_empty(0)

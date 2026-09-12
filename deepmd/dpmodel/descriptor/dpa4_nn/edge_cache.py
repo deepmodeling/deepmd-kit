@@ -44,6 +44,7 @@ from .wignerd import (
 )
 
 WignerCalculatorFn = Callable[[Any], "tuple[Any, Any]"]
+PackedWignerFn = Callable[[Any, WignerCalculatorFn], Any | None]
 # Distance and keep weight to the keep-weighted envelope and radial basis, the
 # fused replacement of applying the two modules separately.
 FusedRadialFn = Callable[[Any, Any], "tuple[Any, Any]"]
@@ -94,7 +95,11 @@ class EdgeCache:
     csr_cache
         Lazy cache for endpoint CSR views used by segmented accelerated
         operators, keyed by endpoint role (``"dst"`` or ``"src"``). Built once
-        per step and shared by every consumer.
+        per step and shared by every consumer. Permutations and row pointers
+        use int64 regardless of the input graph index dtype.
+    cute_infer_so2_metadata
+        Optional ``(destination_row_ptr, source_order, source_row_ptr)`` tuple
+        prepared once for a backend CuTe SO2 implementation.
     edge_src_gate
         Optional per-edge Source Freeze Propagation Gate (SFPG) weight with
         shape (E, 1). Equals ``eta[src]`` where
@@ -112,6 +117,12 @@ class EdgeCache:
         all slots are valid (e.g. the sparse
         :func:`_edge_cache_from_arrays` path, where masking is folded into
         the per-edge weights). This field has no pt counterpart.
+    destinations_sorted
+        Whether the edge payload is destination-major with masked entries
+        confined to the suffix.
+    D_packed
+        Optional backend-specific packed Wigner panel. Dense consumers observe
+        ``D_full`` and ``Dt_full`` as ``None`` when this storage is active.
     """
 
     src: Any
@@ -126,10 +137,13 @@ class EdgeCache:
     Dt_full: Any = None
     D_to_m_cache: dict[str, Any] = field(default_factory=dict)
     Dt_from_m_cache: dict[str, Any] = field(default_factory=dict)
-    csr_cache: dict[str, Any] | None = field(default_factory=dict)
+    csr_cache: dict[str, tuple[Any, Any]] | None = field(default_factory=dict)
     edge_src_gate: Any = None
     edge_quat: Any = None
     edge_mask: Any = None
+    cute_infer_so2_metadata: tuple[Any, Any, Any] | None = None
+    destinations_sorted: bool = False
+    D_packed: Any = None
 
 
 def compute_edge_src_gate(
@@ -279,6 +293,10 @@ def _edge_cache_from_arrays(
     node_partial_exchange: Callable[[Any], Any] | None = None,
     fused_radial: FusedRadialFn | None = None,
     fused_wigner: WignerCalculatorFn | None = None,
+    packed_wigner: bool = False,
+    destinations_sorted: bool = False,
+    packed_wigner_fn: PackedWignerFn | None = None,
+    csr_cache: dict[str, tuple[Any, Any]] | None = None,
 ) -> EdgeCache:
     """
     Build the global edge cache from a sparse edge list.
@@ -331,6 +349,17 @@ def _edge_cache_from_arrays(
     fused_wigner
         Optional fused replacement of ``wigner_calc`` that builds the packed
         pair in one kernel pass.
+    packed_wigner
+        Whether the backend-specific packed Wigner contract is satisfied.
+    destinations_sorted
+        Whether the edge payload is destination-major with masked entries in
+        a suffix.
+    packed_wigner_fn
+        Optional backend implementation that builds a packed Wigner panel.
+    csr_cache
+        Optional endpoint CSR views inherited from the input graph. The cache
+        owns the same edge axis as ``edge_index``. Permutations and row pointers
+        are normalized to int64 at this graph-to-cache boundary.
     gamma
         Optional per-edge roll angles with shape (E,), used only when
         ``random_gamma`` is True. When None, drawn with the backend's RNG
@@ -351,6 +380,18 @@ def _edge_cache_from_arrays(
     n_nodes = type_ebed.shape[0]
     src = xp.astype(edge_index[0, ...], xp.int64)
     dst = xp.astype(edge_index[1, ...], xp.int64)
+    if csr_cache is not None:
+        csr_cache = {
+            endpoint: (
+                order if order.dtype == xp.int64 else xp.astype(order, xp.int64),
+                (
+                    row_ptr
+                    if row_ptr.dtype == xp.int64
+                    else xp.astype(row_ptr, xp.int64)
+                ),
+            )
+            for endpoint, (order, row_ptr) in csr_cache.items()
+        }
 
     # === Step 1. Normalize mask ===
     edge_keep = xp.astype(edge_mask, xp.bool)
@@ -379,7 +420,7 @@ def _edge_cache_from_arrays(
         edge_rbf = radial_basis(edge_len) * edge_keep_f  # (E, n_radial)
 
     # === Step 4. Edge quaternion -> Wigner-D blocks ===
-    D_full, Dt_full, edge_quat = _build_edge_wigner(
+    D_full, Dt_full, D_packed, edge_quat = _build_edge_wigner(
         edge_vec=edge_vec,
         edge_len=edge_len,
         eps=eps,
@@ -387,7 +428,9 @@ def _edge_cache_from_arrays(
         wigner_calc=fused_wigner if fused_wigner is not None else wigner_calc,
         gamma=gamma,
         build_full=build_wigner,
-    )  # (E, D, D), (E, D, D), (E, 4)
+        packed_wigner=packed_wigner,
+        packed_wigner_fn=packed_wigner_fn,
+    )
 
     # === Step 5. Edge type features ===
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)
@@ -419,9 +462,12 @@ def _edge_cache_from_arrays(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
         edge_src_gate=edge_src_gate,
+        destinations_sorted=destinations_sorted,
+        csr_cache=csr_cache,
     )
 
 
@@ -434,7 +480,9 @@ def _build_edge_wigner(
     wigner_calc: WignerCalculatorFn,
     gamma: Any = None,
     build_full: bool = True,
-) -> tuple[Any, Any, Any]:
+    packed_wigner: bool = False,
+    packed_wigner_fn: PackedWignerFn | None = None,
+) -> tuple[Any, Any, Any, Any]:
     """
     Build packed Wigner-D blocks from edge vectors.
 
@@ -461,13 +509,16 @@ def _build_edge_wigner(
         False (all message-passing blocks take the Cartesian path), only the
         quaternion is returned and the blocks are ``None``; the geometric
         initial embedding reconstructs the zonal coupling from the quaternion.
+    packed_wigner
+        Whether the backend-specific packed Wigner contract is satisfied.
+    packed_wigner_fn
+        Optional backend implementation that builds a packed Wigner panel.
 
     Returns
     -------
-    tuple[Array, Array, Array]
-        Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``
-        (or ``None`` when ``build_full`` is False) and the quaternion used to
-        build them with shape ``(E, 4)``.
+    tuple[Array, Array, Array, Array]
+        Dense Wigner-D matrices ``(D_full, Dt_full)``, an optional packed panel,
+        and the quaternion used to build them.
     """
     xp = array_api_compat.array_namespace(edge_vec)
     device = array_api_compat.device(edge_vec)
@@ -491,9 +542,13 @@ def _build_edge_wigner(
 
     # === Step 3. Convert quaternions to packed Wigner-D blocks ===
     if not build_full:
-        return None, None, edge_quat
+        return None, None, None, edge_quat
+    if packed_wigner and packed_wigner_fn is not None:
+        D_packed = packed_wigner_fn(edge_quat, wigner_calc)
+        if D_packed is not None:
+            return None, None, D_packed, edge_quat
     D_full, Dt_full = wigner_calc(edge_quat)
-    return D_full, Dt_full, edge_quat
+    return D_full, Dt_full, None, edge_quat
 
 
 def _finalize_edge_cache(
@@ -507,9 +562,12 @@ def _finalize_edge_cache(
     edge_env: Any,
     D_full: Any,
     Dt_full: Any,
+    D_packed: Any,
     edge_quat: Any,
     deg_norm_floor: float,
     edge_src_gate: Any = None,
+    destinations_sorted: bool = False,
+    csr_cache: dict[str, tuple[Any, Any]] | None = None,
 ) -> EdgeCache:
     """
     Assemble the shared `EdgeCache` layout.
@@ -536,6 +594,8 @@ def _finalize_edge_cache(
     Dt_full
         Transposed packed Wigner-D matrices with shape (E, D, D), or None
         when the full Wigner-D construction is skipped.
+    D_packed
+        Optional backend-specific packed Wigner panel.
     edge_quat
         Global-to-local quaternions used to build the Wigner-D matrices with
         shape (E, 4).
@@ -547,6 +607,10 @@ def _finalize_edge_cache(
     edge_src_gate
         Optional per-edge SFPG weight with shape (E, 1). ``None`` in
         non-bridging mode.
+    destinations_sorted
+        Whether ``dst`` is nondecreasing with masked entries in a suffix.
+    csr_cache
+        Optional endpoint CSR views aligned with the cache edge axis.
 
     Returns
     -------
@@ -574,11 +638,13 @@ def _finalize_edge_cache(
         inv_sqrt_deg=inv_sqrt_deg,
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         D_to_m_cache={},
         Dt_from_m_cache={},
-        csr_cache={},
+        csr_cache={} if csr_cache is None else csr_cache,
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        destinations_sorted=destinations_sorted,
     )
 
 
@@ -639,16 +705,20 @@ def edge_cache_to_dtype(cache: EdgeCache, dtype: Any) -> EdgeCache:
     # Use local variables with explicit None check and assignment.
     _D_full = cache.D_full
     _Dt_full = cache.Dt_full
+    cached_D_packed = cache.D_packed
     _edge_src_gate = cache.edge_src_gate
     _edge_quat = cache.edge_quat
     D_full: Any = None
     Dt_full: Any = None
+    D_packed: Any = None
     edge_src_gate: Any = None
     edge_quat: Any = None
     if _D_full is not None:
         D_full = xp.astype(_D_full, dtype)
     if _Dt_full is not None:
         Dt_full = xp.astype(_Dt_full, dtype)
+    if cached_D_packed is not None:
+        D_packed = xp.astype(cached_D_packed, dtype)
     if _edge_src_gate is not None:
         edge_src_gate = xp.astype(_edge_src_gate, dtype)
     if _edge_quat is not None:
@@ -667,10 +737,13 @@ def edge_cache_to_dtype(cache: EdgeCache, dtype: Any) -> EdgeCache:
         inv_sqrt_deg=xp.astype(cache.inv_sqrt_deg, dtype),
         D_full=D_full,
         Dt_full=Dt_full,
+        D_packed=D_packed,
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
         csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
         edge_mask=cache.edge_mask,
+        cute_infer_so2_metadata=cache.cute_infer_so2_metadata,
+        destinations_sorted=cache.destinations_sorted,
     )

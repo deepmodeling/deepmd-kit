@@ -145,6 +145,11 @@ cu12 = [
     "nvidia-cudnn-cu12",
     "nvidia-cuda-nvcc-cu12",
 ]
+cute = [
+    'nvidia-cutlass-dsl[cu13]>=4.6.1,<5; python_version >= "3.11" and platform_system == "Linux"',
+    'apache-tvm-ffi; python_version >= "3.11" and platform_system == "Linux"',
+    'nvalchemi-toolkit-ops>=0.3.1; python_version >= "3.11" and platform_system == "Linux"',
+]
 jax = [
     # below is a funny workaround for
     # https://github.com/astral-sh/uv/issues/8601

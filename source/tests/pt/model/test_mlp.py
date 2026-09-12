@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+import os
 import unittest
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import torch
@@ -11,6 +15,7 @@ from deepmd.dpmodel.utils import (
     NativeLayer,
     NativeNet,
 )
+from deepmd.pt.model.network import mlp as mlp_module
 from deepmd.pt.model.network.mlp import (
     MLP,
     EmbeddingNet,
@@ -83,6 +88,99 @@ class TestMLPLayer(unittest.TestCase):
             model = torch.jit.script(ml)
             ml1 = MLPLayer.deserialize(ml.serialize())
             model = torch.jit.script(ml1)
+
+    def test_thin_so2_eval_linear_traces_without_addmm(self) -> None:
+        from torch.fx.experimental.proxy_tensor import (
+            make_fx,
+        )
+
+        layer = MLPLayer(
+            5,
+            8,
+            bias=True,
+            activation_function="none",
+            precision="float32",
+            trainable=False,
+        ).to(env.DEVICE)
+        layer.eval()
+        mlp_module.enable_neo_cute_compile_visible_linears(layer)
+        value = torch.randn(7, 5, device=env.DEVICE, dtype=torch.float32)
+        environment = {
+            "DP_CUTE_INFER": "1",
+            "DP_CUTE_SO2_THIN_WRAPPER": "1",
+        }
+
+        with mock.patch.dict(os.environ, environment, clear=False):
+            graph = make_fx(layer)(value)
+            with mock.patch.object(
+                mlp_module.F,
+                "linear",
+                side_effect=AssertionError("thin eval path reached aten::linear"),
+            ):
+                actual = layer(value)
+
+        expected = mlp_module.F.linear(value, layer.matrix.t(), layer.bias)
+        torch.testing.assert_close(actual, expected)
+        targets = {
+            node.target for node in graph.graph.nodes if node.op == "call_function"
+        }
+        self.assertIn(torch.ops.aten.mm.default, targets)
+        self.assertNotIn(torch.ops.aten.addmm.default, targets)
+
+    def test_thin_so2_eval_linear_is_scoped_to_marked_model(self) -> None:
+        layer = MLPLayer(
+            5,
+            8,
+            bias=True,
+            activation_function="none",
+            precision="float32",
+            trainable=False,
+        ).to(env.DEVICE)
+        layer.eval()
+        value = torch.randn(7, 5, device=env.DEVICE, dtype=torch.float32)
+        environment = {
+            "DP_CUTE_INFER": "1",
+            "DP_CUTE_SO2_THIN_WRAPPER": "1",
+        }
+
+        with (
+            mock.patch.dict(os.environ, environment, clear=False),
+            mock.patch.object(
+                mlp_module,
+                "_matmul_bias",
+                side_effect=AssertionError("unmarked MLP reached Neo-only topology"),
+            ),
+        ):
+            actual = layer(value)
+
+        expected = mlp_module.F.linear(value, layer.matrix.t(), layer.bias)
+        torch.testing.assert_close(actual, expected)
+
+    def test_thin_so2_linear_defaults_on_only_for_sm80(self) -> None:
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"DP_CUTE_INFER": "1"},
+                clear=True,
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "get_device_capability", return_value=(8, 0)),
+        ):
+            self.assertTrue(mlp_module._use_so2_compile_visible_linear())
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "DP_CUTE_INFER": "1",
+                    "DP_CUTE_SO2_THIN_WRAPPER": "0",
+                },
+                clear=True,
+            ),
+            mock.patch.object(torch.cuda, "is_available", return_value=True),
+            mock.patch.object(torch.cuda, "get_device_capability", return_value=(8, 0)),
+        ):
+            self.assertFalse(mlp_module._use_so2_compile_visible_linear())
 
 
 class TestMLP(unittest.TestCase):

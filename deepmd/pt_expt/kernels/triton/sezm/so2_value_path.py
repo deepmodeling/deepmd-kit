@@ -5373,7 +5373,7 @@ class _TritonSO2ValuePath:
 def prepare_triton_value_path_weights(model: torch.nn.Module) -> None:
     """Prepare fixed SO(2) weight layouts for every bound Triton value path."""
     for module in model.modules():
-        value_path = getattr(module, "_triton_value_path", None)
+        value_path = getattr(module, "triton_infer_l_2_value", None)
         if isinstance(value_path, _TritonSO2ValuePath):
             value_path.prepare_inference_weights()
 

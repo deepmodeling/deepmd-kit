@@ -150,6 +150,38 @@ class SeZMInteractionBlock(SeZMInteractionBlockDP):
             )
         return self._run_so2_unit_impl(x, edge_cache, radial_feat)
 
+    def _run_so2_unit_impl(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeCache,
+        radial_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run the SO(2) unit implementation."""
+        if edge_cache.D_packed is not None:
+            from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+                maybe_run_cute_so2,
+            )
+
+            metadata = edge_cache.cute_infer_so2_metadata
+            destination_row_ptr, source_order, source_row_ptr = (
+                (None, None, None) if metadata is None else metadata
+            )
+            accelerated = maybe_run_cute_so2(
+                self,
+                x,
+                edge_cache,
+                radial_feat,
+                dst_ptr=destination_row_ptr,
+                source_order=source_order,
+                source_ptr=source_row_ptr,
+            )
+            if accelerated is not None:
+                return accelerated
+            raise RuntimeError(
+                "packed Wigner cache reached an ineligible Neo SO2 dispatch"
+            )
+        return super()._run_so2_unit_impl(x, edge_cache, radial_feat)
+
     def _run_ffn_unit(self, x: torch.Tensor, unit_idx: int) -> torch.Tensor:
         if self._use_infer_activation_checkpoint(x):
             return checkpoint(

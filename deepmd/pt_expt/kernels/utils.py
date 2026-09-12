@@ -329,12 +329,12 @@ def operator_available(name: str) -> bool:
 
 
 def use_cute_infer() -> bool:
-    """Return whether the opt-in CuTe inference operator is enabled.
+    """Return whether the opt-in SeZM CuTe inference path is enabled.
 
     The flag is controlled by the ``DP_CUTE_INFER`` environment variable and is
-    read at module construction time. It selects the fused CuTe SO(2) value-path
-    operator (an independent path from ``DP_TRITON_INFER``) and only takes effect
-    during inference; training always uses the dense reference path.
+    read before accelerated state is prepared. CuTe replaces eligible SeZM spans
+    and leaves unsupported shapes to the selected Triton, CUDA, or reference
+    path. It only takes effect during inference.
 
     Returns
     -------
@@ -352,11 +352,10 @@ def use_cutile_infer() -> bool:
     written in the ``cuda.tile`` DSL and only takes effect during inference;
     training always uses the dense reference path.
 
-    The path is mutually exclusive with ``DP_TRITON_INFER`` and
-    ``DP_CUTE_INFER``: when it is enabled no Triton kernel executes, and a
-    convolution whose layout it does not support falls back to the dense
-    reference rather than to another accelerated backend. Enabling more than one
-    of the three is rejected at construction.
+    The path is mutually exclusive with ``DP_TRITON_INFER``: when it is enabled
+    no Triton kernel executes, and a convolution whose layout it does not support
+    falls back to the dense reference. ``DP_CUTE_INFER`` remains an independent
+    exact-shape overlay around the enclosing SeZM block.
 
     Returns
     -------

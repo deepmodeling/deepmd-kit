@@ -178,6 +178,27 @@ class NvNeighborList(NeighborList):
             ``return_mode='edges'`` does not support ``pair_excl``; a
             :class:`NotImplementedError` is raised in that combination.
         """
+        return self._build_impl(
+            coord,
+            atype,
+            box,
+            rcut,
+            sel,
+            return_mode=return_mode,
+            pair_excl=pair_excl,
+        )
+
+    def _build_impl(
+        self,
+        coord: Any,
+        atype: Any,
+        box: Any,
+        rcut: float,
+        sel: list[int],
+        return_mode: str = "extended",
+        pair_excl: PairExcludeMask | None = None,
+    ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
+        """Implement the complete Toolkit-Ops build behind the dispatch guard."""
         if return_mode == "edges" and pair_excl is not None:
             raise NotImplementedError(
                 "pair_excl is not supported with return_mode='edges'; "

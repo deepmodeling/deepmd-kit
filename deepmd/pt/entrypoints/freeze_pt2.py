@@ -379,7 +379,7 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     # tables, and must reflect the target device and any fresh registrations.
     for module in model.modules():
         if isinstance(module, SO2Convolution) and module.triton_infer_level >= 2:
-            module._triton_value_path = make_triton_value_path(module)
+            module.triton_infer_l_2_value = make_triton_value_path(module)
 
 
 # The trace-time sendlist for the with-comm artifact embeds the address of a
@@ -995,16 +995,16 @@ def _freeze_sezm_to_pt2(
     force_fused_scatter = target_device.type == "cuda"
     for module in model.modules():
         if isinstance(module, SO2Linear):
-            module._force_block_diag_matmul = force_block_diag
+            module.force_block_diag_matmul = force_block_diag
         if isinstance(module, GeometricInitialEmbedding):
-            module._force_fused_scatter = force_fused_scatter
+            module.force_cuda_infer_l_1_scatter = force_fused_scatter
 
     # Sweep any Triton launch-table keys this checkpoint needs that are not
     # covered for the local GPU, so the traced graph bakes tuned launches.
     _tune_triton_configs(model, target_device)
 
     has_triton_value_path = any(
-        getattr(module, "_triton_value_path", None) is not None
+        getattr(module, "triton_infer_l_2_value", None) is not None
         for module in model.modules()
     )
     if has_triton_value_path:
