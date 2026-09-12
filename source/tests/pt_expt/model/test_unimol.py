@@ -354,6 +354,38 @@ class TestUniMolPtExpt(unittest.TestCase):
         self.assertFalse(bool(torch.allclose(a, b)))
         model.eval()
 
+    def test_upper_path_builds_its_own_neighbour_list(self) -> None:
+        """What a user actually calls: coordinates and types, no neighbour list."""
+        coord, atype, _ = self.inputs()
+        model = self.build_torch_model(coord.shape[1])
+        small = 12
+        ret = model.forward(
+            torch.as_tensor(coord[:1, :small].reshape(1, -1)),
+            torch.as_tensor(atype[:1, :small]),
+            None,
+        )
+        self.assertEqual(tuple(ret["token_logits"].shape), (1, small, SMALL["vocab"]))
+        self.assertEqual(tuple(ret["coord_update"].shape), (1, small, 3))
+        self.assertEqual(tuple(ret["mask"].shape), (1, small))
+
+    def test_periodic_cell_is_refused(self) -> None:
+        """A cell has to be caught here, before the neighbour list is built.
+
+        The descriptor has no cut-off, so a cell would send the neighbour-list
+        builder looking for an astronomical number of periodic images and the
+        run would die on allocation rather than on a readable error.
+        """
+        coord, atype, _ = self.inputs()
+        model = self.build_torch_model(coord.shape[1])
+        small = 8
+        box = torch.eye(3, dtype=torch.float64).reshape(1, 9) * 20.0
+        with self.assertRaisesRegex(ValueError, "periodic"):
+            model.forward(
+                torch.as_tensor(coord[:1, :small].reshape(1, -1)),
+                torch.as_tensor(atype[:1, :small]),
+                box.to(next(model.parameters()).device),
+            )
+
     def test_gradients_flow(self) -> None:
         coord, atype, nlist = self.inputs()
         model = self.build_torch_model(coord.shape[1])

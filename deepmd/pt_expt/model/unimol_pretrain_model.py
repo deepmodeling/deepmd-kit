@@ -43,7 +43,18 @@ class UniMolPretrainModel(DPModelCommon, DPUniMolPretrainModel_):
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Evaluate the pretraining heads on a frame."""
+        """Evaluate the pretraining heads on a frame.
+
+        Raises
+        ------
+        ValueError
+            If a periodic cell is supplied; Uni-Mol is molecular.
+        """
+        if box is not None and bool(torch.any(box != 0)):
+            raise ValueError(
+                "the unimol descriptor is molecular and does not support periodic "
+                "boundaries; pass box=None"
+            )
         model_ret = self.forward_common(
             coord,
             atype,

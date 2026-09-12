@@ -5,6 +5,8 @@ from typing import (
     Any,
 )
 
+import array_api_compat
+
 from deepmd.dpmodel.array_api import (
     Array,
 )
@@ -27,6 +29,19 @@ from .dp_model import (
 from .make_model import (
     make_model,
 )
+
+
+def _reject_periodic(box) -> None:  # noqa: ANN001
+    """Refuse a periodic cell, with an explanation rather than an allocation."""
+    if box is None:
+        return
+    xp = array_api_compat.array_namespace(box)
+    if bool(xp.any(box != 0)):
+        raise ValueError(
+            "the unimol descriptor is molecular and does not support periodic "
+            "boundaries; pass box=None"
+        )
+
 
 DPUniMolPretrainModel_ = make_model(DPUniMolAtomicModel, T_Bases=(NativeOP, BaseModel))
 
@@ -56,7 +71,16 @@ class UniMolPretrainModel(DPModelCommon, DPUniMolPretrainModel_):
         do_atomic_virial: bool = False,
         charge_spin: Array | None = None,
     ) -> dict[str, Array]:
-        """Evaluate the pretraining heads on a frame."""
+        """Evaluate the pretraining heads on a frame.
+
+        Raises
+        ------
+        ValueError
+            If a periodic cell is supplied. Uni-Mol is molecular: it has no
+            cut-off, so a cell would ask the neighbour-list builder for an
+            astronomical number of images before any other check could fire.
+        """
+        _reject_periodic(box)
         model_ret = self.call_common(
             coord,
             atype,
