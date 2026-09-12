@@ -134,7 +134,7 @@ _DPA4_GRADES: dict[str, dict[str, dict[str, Any]]] = {
         },
     },
 }
-# Options that changed with each version, and the grades the version ships.
+# Descriptor options and available grades for each version.
 _DPA4_VERSIONS: dict[str, dict[str, Any]] = {
     # Channel RMSNorm on every cutoff-vanishing branch; post-norm after the
     # SO(2) branch and pre-norm before the FFN branch.
@@ -145,17 +145,10 @@ _DPA4_VERSIONS: dict[str, dict[str, Any]] = {
         },
         "grades": ("nano", "mini", "neo", "air", "plus", "pro"),
     },
-    # Radial-site RMSNorm removed; pre-norm before both the SO(2) and the FFN
-    # branch.
-    "v20260901": {
-        "descriptor": {
-            "edge_norm": [False, True, True],
-            "sandwich_norm": [True, False, True, False],
-        },
-        "grades": ("nano", "mini", "neo", "air", "plus", "pro", "max", "ultra"),
-    },
+    # Channel RMSNorm on FiLM and focus features, with no radial-site RMSNorm.
+    # Pre-norm before SO(2) and FFN branches, without post-norm.
     # One C^3 envelope on the messages with no envelope on the radial basis,
-    # and fixed Gaussian centres in place of trainable Bessel frequencies.
+    # and fixed Gaussian centres.
     "v20260911": {
         "descriptor": {
             "edge_norm": [False, True, True],
@@ -227,8 +220,8 @@ def _build_family(
     the family (the model ``type`` for DPA4, nothing for DPA4C). ``descriptor``
     and ``fitting_net`` hold the options shared by every grade and version.
     Each grade in ``grades`` adds its own ``descriptor`` and ``fitting_net``
-    options, and each version in ``versions`` adds the ``descriptor`` options
-    it changed and names the grades it ships.
+    options, and each version in ``versions`` defines its ``descriptor``
+    options and available grades.
     """
     presets: dict[str, dict[str, Any]] = {}
     for version, spec in versions.items():

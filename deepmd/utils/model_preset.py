@@ -11,11 +11,10 @@ fitting width can be overridden, and options that are not part of an
 architecture (``use_amp``, ``seed``, ``sel``, charge and spin conditioning,
 ...) are supplied alongside the preset.
 
-The tables below are organised per family. Shared descriptor and fitting
-options are written once, every grade lists only its scaling knobs, and every
-version lists the options it changed together with the grades it ships. A new
-version therefore adds one entry to the family's version table, and a new
-grade adds one entry to its grade table. Existing versions are never edited.
+Preset tables in :mod:`deepmd.utils.model_preset_data` are organised per
+family. Shared descriptor and fitting options are written once, every grade
+lists its scaling knobs, and every version defines its descriptor options
+and available grades.
 
 In the multi-task layout a preset next to ``model_dict`` is the base of every
 branch and of the ``shared_dict`` entries the branches reference as
