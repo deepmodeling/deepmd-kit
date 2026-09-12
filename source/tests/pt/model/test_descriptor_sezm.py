@@ -371,9 +371,6 @@ class TestDescrptSeZM(_SeZMTestCase):
 
     def test_edge_free_frame_continues_the_cutoff_limit(self) -> None:
         """A frame without edges is the limit of a frame whose last edge leaves the cutoff."""
-        model = DescrptSeZM(**_descriptor_kwargs(precision="float64", seed=5))
-        model = model.to(self.device).eval()
-        _perturb_parameters(model, seed=5)
         atype = torch.tensor([[0, 1]], dtype=torch.int32, device=self.device)
         empty_nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
         pair_nlist = torch.tensor(
@@ -388,13 +385,28 @@ class TestDescrptSeZM(_SeZMTestCase):
             ).reshape(1, -1)
             return model(coord, atype, nlist, mapping=None, comm_dict=None)[0]
 
-        isolated = descriptor(10.0, empty_nlist)
-        torch.testing.assert_close(
-            descriptor(model.rcut - 1e-6, pair_nlist), isolated, rtol=0.0, atol=1e-12
-        )
-        self.assertFalse(
-            torch.allclose(descriptor(model.rcut - 0.5, pair_nlist), isolated)
-        )
+        for options in (
+            {},
+            {"node_wise_s2": True},
+            {"node_wise_so3": True},
+            {"s2_activation": [True, False]},
+        ):
+            with self.subTest(options=options):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(precision="float64", seed=5, **options)
+                )
+                model = model.to(self.device).eval()
+                _perturb_parameters(model, seed=5)
+                isolated = descriptor(10.0, empty_nlist)
+                torch.testing.assert_close(
+                    descriptor(model.rcut - 1e-6, pair_nlist),
+                    isolated,
+                    rtol=0.0,
+                    atol=1e-12,
+                )
+                self.assertFalse(
+                    torch.allclose(descriptor(model.rcut - 0.5, pair_nlist), isolated)
+                )
 
     def test_so3_readout_scalar_path_matches_full_output(self) -> None:
         """The scalar-specialized final FFN matches slicing its full output."""

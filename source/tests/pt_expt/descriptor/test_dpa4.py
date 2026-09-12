@@ -16,6 +16,9 @@ from torch.fx.experimental.proxy_tensor import (
 )
 
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DPDescrptDPA4
+from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
+)
 from deepmd.pt_expt.descriptor.dpa4 import (
     DescrptDPA4,
 )
@@ -55,6 +58,56 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
     def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.device = env.DEVICE
+
+    @pytest.mark.parametrize(
+        "options",
+        [
+            {"node_wise_s2": True},
+            {"node_wise_so3": True},
+            {"s2_activation": [True, False]},
+        ],
+    )
+    @pytest.mark.parametrize("training", [False, True])
+    def test_empty_edge_grid_paths(self, options: dict, training: bool) -> None:
+        """Empty graph edges and fully masked neighbors give the same descriptors."""
+        descriptor = make_descriptor(2, 2, 3.0, channels=4, **options).to(self.device)
+        descriptor.train(training)
+        graph_data = {
+            "n_node": np.array([2], dtype=np.int64),
+            "edge_index": np.empty((2, 0), dtype=np.int64),
+            "edge_vec": np.empty((0, 3), dtype=np.float64),
+            "edge_mask": np.empty((0,), dtype=bool),
+        }
+        graph = NeighborGraph(
+            **{
+                key: torch.as_tensor(value, device=self.device)
+                for key, value in graph_data.items()
+            }
+        )
+        graph.edge_vec.requires_grad_(True)
+        atype = torch.tensor([0, 1], dtype=torch.int64, device=self.device)
+        actual = descriptor.call_graph(graph, atype)[0]
+        reference = DPDescrptDPA4.deserialize(descriptor.serialize()).call_graph(
+            NeighborGraph(**graph_data), atype.cpu().numpy()
+        )[0]
+        np.testing.assert_allclose(
+            actual.detach().cpu().numpy(), reference, rtol=1e-10, atol=1e-12
+        )
+        coord = torch.zeros((1, 2, 3), dtype=torch.float64, device=self.device)
+        nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
+        padded = descriptor(coord, atype[None, :], nlist)[0]
+        torch.testing.assert_close(actual, padded[0], rtol=1e-10, atol=1e-12)
+        edge_grad = torch.autograd.grad(
+            actual.sum(), graph.edge_vec, create_graph=training
+        )[0]
+        assert edge_grad.shape == (0, 3)
+        if training:
+            (actual.square().sum() + edge_grad.square().sum()).backward()
+            assert all(
+                torch.isfinite(parameter.grad).all()
+                for parameter in descriptor.parameters()
+                if parameter.grad is not None
+            )
 
     @pytest.mark.parametrize("use_env_seed", [True, False])  # env seed feature
     @pytest.mark.parametrize("use_mapping", [True, False])  # pass mapping vs None

@@ -194,7 +194,7 @@ def _radial_mix_backward_reference(
         gk = torch.einsum("eoc,eic,rc->eoir", g_block, x_block, channel_basis)
         grad_compact[:, comp0 : comp0 + num_l * num_l, :] += gk.permute(
             0, 2, 1, 3
-        ).reshape(n_edge, num_l * num_l, -1)
+        ).reshape(n_edge, num_l * num_l, compact.shape[-1])
     return grad_compact, grad_x_local
 
 
