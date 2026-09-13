@@ -18,6 +18,13 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.dpa4_nn.so3 import (
     SO3Linear,
 )
+from deepmd.dpmodel.utils.network import (
+    LayerNorm,
+    NativeLayer,
+)
+from deepmd.dpmodel.utils.seed import (
+    child_seed,
+)
 
 
 def l1_to_cartesian(l1: Array) -> Array:
@@ -136,3 +143,159 @@ class EquivariantCoordHead(NativeOP):
         obj = cls(**data)
         obj.proj = SO3Linear.deserialize(proj)
         return obj
+
+
+class PairDistanceHead(NativeOP):
+    r"""Predict clean pairwise distances without a pair representation.
+
+    Uni-Mol reads this from its pair channel, which carries a vector per ordered
+    atom pair. DPA4 has no such channel, so the pair is described by its two
+    endpoints instead -- representations that have already exchanged information
+    through the backbone's message passing. The combination is symmetric in the
+    two endpoints, because a distance is:
+
+    .. math::
+
+        p_{ij} = \big[\, h_i + h_j \;\|\; h_i \odot h_j \,\big]
+
+    Which pairs are covered is a choice, and it is the one place this objective
+    departs from Uni-Mol by construction:
+
+    ``neighbour``
+        Only pairs inside the backbone's neighbour list. Cheap, and it reuses
+        the structure the backbone already built, which is how the rest of
+        deepmd trains. On drug-like molecules a 6 Angstrom cut-off holds about
+        half of all pairs, so the objective sees less than Uni-Mol's.
+    ``all_pairs``
+        Every ordered pair, which is Uni-Mol's own coverage and what to use to
+        reproduce its training. Costs O(nloc^2) and ignores the neighbour list,
+        so it does not share the backbone's locality.
+
+    Parameters
+    ----------
+    dim_descrpt : int
+        Width of the per-atom representation.
+    hidden : int
+        Width of the head's hidden layer.
+    coverage : str
+        ``neighbour`` or ``all_pairs``.
+    activation_function : str
+        Activation of the head.
+    precision : str
+        Floating-point precision of the parameters.
+    seed : int, optional
+        Random seed for initialization.
+    """
+
+    COVERAGES = ("neighbour", "all_pairs")
+
+    def __init__(
+        self,
+        dim_descrpt: int,
+        hidden: int = 64,
+        coverage: str = "neighbour",
+        activation_function: str = "gelu_erf",
+        precision: str = "float64",
+        seed: int | list[int] | None = None,
+    ) -> None:
+        if coverage not in self.COVERAGES:
+            raise ValueError(
+                f"unknown coverage {coverage!r}; it must be one of "
+                f"{', '.join(map(repr, self.COVERAGES))}"
+            )
+        self.dim_descrpt = int(dim_descrpt)
+        self.hidden = int(hidden)
+        self.coverage = coverage
+        self.activation_function = activation_function
+        self.precision = precision
+        self.dense = NativeLayer(
+            2 * self.dim_descrpt,
+            self.hidden,
+            activation_function=activation_function,
+            precision=precision,
+            seed=child_seed(seed, 0),
+        )
+        self.layer_norm = LayerNorm(
+            self.hidden, precision=precision, seed=child_seed(seed, 1)
+        )
+        self.out_proj = NativeLayer(
+            self.hidden, 1, bias=True, precision=precision, seed=child_seed(seed, 2)
+        )
+
+    def call(self, node_ebd: Array, nlist: Array) -> tuple[Array, Array]:
+        """Predict a distance per covered pair.
+
+        Parameters
+        ----------
+        node_ebd : Array
+            Per-atom representation, shape ``(nf, nloc, dim_descrpt)``.
+        nlist : Array
+            Neighbour list, shape ``(nf, nloc, nnei)``. Negative entries are
+            padding. Read only when the coverage is ``neighbour``.
+
+        Returns
+        -------
+        pair_dist : Array
+            Predicted distances, shape ``(nf, nloc, nloc)``.
+        pair_mask : Array
+            1 where the pair is covered and is not the diagonal, else 0, same
+            shape. The objective averages over these entries only.
+        """
+        xp = array_api_compat.array_namespace(node_ebd)
+        nf, nloc = node_ebd.shape[0], node_ebd.shape[1]
+        dev = array_api_compat.device(node_ebd)
+
+        summed = node_ebd[:, :, None, :] + node_ebd[:, None, :, :]
+        product = node_ebd[:, :, None, :] * node_ebd[:, None, :, :]
+        pair = xp.concat([summed, product], axis=-1)
+        predicted = self.out_proj(self.layer_norm(self.dense(pair)))
+        predicted = xp.reshape(predicted, (nf, nloc, nloc))
+
+        eye = xp.eye(nloc, dtype=node_ebd.dtype, device=dev)[None, :, :]
+        mask = xp.ones((nf, nloc, nloc), dtype=node_ebd.dtype, device=dev) - eye
+        if self.coverage == "neighbour":
+            mask = mask * _neighbour_mask(nlist, nloc, node_ebd.dtype)
+        return predicted, mask
+
+    def serialize(self) -> dict:
+        """Serialize the head."""
+        return {
+            "@class": "PairDistanceHead",
+            "@version": 1,
+            "dim_descrpt": self.dim_descrpt,
+            "hidden": self.hidden,
+            "coverage": self.coverage,
+            "activation_function": self.activation_function,
+            "precision": self.precision,
+            "dense": self.dense.serialize(),
+            "layer_norm": self.layer_norm.serialize(),
+            "out_proj": self.out_proj.serialize(),
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "PairDistanceHead":
+        """Deserialize the head."""
+        data = data.copy()
+        data.pop("@class", None)
+        data.pop("@version", None)
+        parts = {k: data.pop(k) for k in ("dense", "layer_norm", "out_proj")}
+        obj = cls(**data)
+        obj.dense = NativeLayer.deserialize(parts["dense"])
+        obj.layer_norm = LayerNorm.deserialize(parts["layer_norm"])
+        obj.out_proj = NativeLayer.deserialize(parts["out_proj"])
+        return obj
+
+
+def _neighbour_mask(nlist: Array, nloc: int, dtype) -> Array:  # noqa: ANN001
+    """Scatter a padded neighbour list into a dense ``(nf, nloc, nloc)`` mask."""
+    xp = array_api_compat.array_namespace(nlist)
+    dev = array_api_compat.device(nlist)
+    # Padding is negative and would wrap when used as an index, so it is sent
+    # to a scratch column that is dropped again below.
+    safe = xp.where(nlist >= 0, nlist, xp.zeros_like(nlist) + nloc)
+    onehot = xp.astype(
+        xp.arange(nloc + 1, dtype=nlist.dtype, device=dev)[None, None, None, :]
+        == safe[..., None],
+        dtype,
+    )
+    return xp.astype(xp.sum(onehot, axis=2)[:, :, :nloc] > 0, dtype)

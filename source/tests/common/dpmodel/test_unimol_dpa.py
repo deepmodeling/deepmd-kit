@@ -10,6 +10,7 @@ from deepmd.dpmodel.descriptor.dpa4 import (
 )
 from deepmd.dpmodel.fitting.unimol_dpa_heads import (
     EquivariantCoordHead,
+    PairDistanceHead,
     l1_to_cartesian,
 )
 
@@ -115,3 +116,80 @@ class TestEquivariantCoordHead(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPairDistanceHead(unittest.TestCase):
+    """The head that replaces Uni-Mol's pair-channel distance prediction."""
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(0)
+        self.nf, self.nloc, self.nnei, self.dim = 2, 5, 3, 8
+        self.node = rng.normal(size=(self.nf, self.nloc, self.dim))
+        self.nlist = np.full((self.nf, self.nloc, self.nnei), -1, dtype=np.int64)
+        for f in range(self.nf):
+            for i in range(self.nloc):
+                others = [j for j in range(self.nloc) if j != i][:2]
+                self.nlist[f, i, : len(others)] = others
+
+    def _head(self, coverage):
+        return PairDistanceHead(
+            dim_descrpt=self.dim, hidden=6, coverage=coverage, seed=0
+        )
+
+    def test_a_distance_is_symmetric(self) -> None:
+        """Not approximately: the pair feature is symmetric in the endpoints."""
+        for coverage in PairDistanceHead.COVERAGES:
+            with self.subTest(coverage=coverage):
+                dist, _ = self._head(coverage)(self.node, self.nlist)
+                np.testing.assert_array_equal(dist, np.transpose(dist, (0, 2, 1)))
+
+    def test_the_diagonal_is_never_covered(self) -> None:
+        for coverage in PairDistanceHead.COVERAGES:
+            with self.subTest(coverage=coverage):
+                _, mask = self._head(coverage)(self.node, self.nlist)
+                np.testing.assert_array_equal(
+                    np.einsum("fii->fi", mask), np.zeros((self.nf, self.nloc))
+                )
+
+    def test_coverage_selects_pairs_and_nothing_else(self) -> None:
+        """The option changes which pairs the objective sees, not the model.
+
+        Uni-Mol's distance term covers every pair; a neighbour list covers a
+        subset. Both heads predict the same numbers from the same weights, so
+        the choice is purely one of coverage.
+        """
+        near, whole = self._head("neighbour"), self._head("all_pairs")
+        d_near, m_near = near(self.node, self.nlist)
+        d_whole, m_whole = whole(self.node, self.nlist)
+
+        np.testing.assert_allclose(d_near, d_whole)
+        self.assertTrue(bool(np.all(m_near <= m_whole)))
+        # all_pairs is every off-diagonal pair; neighbour is strictly fewer here
+        self.assertEqual(int(m_whole.sum()), self.nf * self.nloc * (self.nloc - 1))
+        self.assertLess(int(m_near.sum()), int(m_whole.sum()))
+        # and it is exactly the neighbour list, padding excluded
+        expected = np.zeros_like(m_near)
+        for f in range(self.nf):
+            for i in range(self.nloc):
+                for j in self.nlist[f, i]:
+                    if j >= 0:
+                        expected[f, i, j] = 1.0
+        np.testing.assert_array_equal(m_near, expected)
+
+    def test_padding_in_the_neighbour_list_covers_nothing(self) -> None:
+        """A padded entry is negative and would wrap if used as an index."""
+        empty = np.full_like(self.nlist, -1)
+        _, mask = self._head("neighbour")(self.node, empty)
+        np.testing.assert_array_equal(mask, np.zeros_like(mask))
+
+    def test_an_unknown_coverage_is_refused(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown coverage"):
+            PairDistanceHead(dim_descrpt=self.dim, coverage="everything")
+
+    def test_serialize_round_trip(self) -> None:
+        head = self._head("neighbour")
+        revived = PairDistanceHead.deserialize(head.serialize())
+        a, ma = head(self.node, self.nlist)
+        b, mb = revived(self.node, self.nlist)
+        np.testing.assert_allclose(a, b)
+        np.testing.assert_array_equal(ma, mb)
