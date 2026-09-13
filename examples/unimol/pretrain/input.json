@@ -45,7 +45,9 @@
       "single_precision_basis": true,
       "single_precision_distance": false,
       "seed": 1,
-      "_comment_max_atoms": "the size cap is applied by the converter, before batching; the descriptor and the distance head only declare the width they expect"
+      "_comment_max_atoms": "the size cap is applied by the converter, before batching; the descriptor and the distance head only declare the width they expect",
+      "precision": "float32",
+      "_comment_precision": "single precision, which is what DPA models train in by default; the backbone is a transformer, not a potential energy surface, so float64 buys nothing here and costs several times the training time"
     },
     "fitting_net": {
       "type": "unimol_pretrain",
@@ -53,7 +55,8 @@
       "attention_heads": 64,
       "max_atoms": 256,
       "activation_function": "gelu_erf",
-      "seed": 1
+      "seed": 1,
+      "precision": "float32"
     },
     "_comment_type_map": "[MASK] is the pseudo-element a corrupted atom is carried as; the objective needs it"
   },

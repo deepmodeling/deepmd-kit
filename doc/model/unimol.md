@@ -110,6 +110,13 @@ Upstream stores each molecule as a Python pickle, so the converter unpickles
 whatever the file contains; run it only on data from a source you trust. What it
 writes is msgpack, which carries no such risk, and the conversion happens once.
 
+The result is an LMDB dataset in the same layout as the other datasets
+published in this format: zero-padded twelve-digit keys, one msgpack frame each,
+and a `__metadata__` entry. Coordinates are stored as `float32` and types as
+`int32`, which is both what that format uses and what the source holds, since
+upstream generated these conformers in single precision; the reader casts to
+whatever precision the model asks for. Molecules carry no cell at all.
+
 One conformer becomes one frame, so ordinary frame sampling stands in for
 upstream's per-epoch conformer draw. The two-dimensional RDKit conformer that
 upstream appends while loading is added at conversion time, behind that flag,
@@ -134,6 +141,10 @@ floor at about 1e-7 relative on the whole objective:
   reproduces upstream's numbers instead;
 - `log_softmax` and both norm regularisers are evaluated in fp32, which is
   reproduced.
+
+The example trains in single precision, which is the default DPA models train
+in. This backbone is a transformer rather than a potential energy surface, so
+double precision buys nothing and costs several times the training time.
 
 Training trajectories cannot be reproduced exactly in any case: upstream
 pretrained a pure fp16 model with fused kernels and its own Adam variant, which

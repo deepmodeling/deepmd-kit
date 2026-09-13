@@ -37,11 +37,13 @@ log = logging.getLogger(__name__)
 
 
 def _encode_array(arr: np.ndarray) -> dict[str, Any]:
-    """Encode an array the way a deepmd LMDB frame stores it."""
+    """Encode an array the way a deepmd LMDB frame stores it.
+
+    Three keys, matching the datasets already published in this format; the
+    reader takes the dtype and shape from here and casts on the way out.
+    """
     return {
-        "nd": None,
         "type": str(arr.dtype),
-        "kind": "",
         "shape": list(arr.shape),
         "data": arr.tobytes(),
     }
@@ -199,12 +201,16 @@ def convert_unimol_lmdb(
                         continue
                     frame = {
                         "atom_numbs": atom_numbs,
-                        "atom_names": names,
-                        "atom_types": _encode_array(atom_types),
-                        "orig": _encode_array(np.zeros(3, dtype=np.float64)),
+                        # int32 types and float32 coordinates, which is what the
+                        # datasets already published in this format use, and
+                        # what the source holds: upstream generated these
+                        # conformers in single precision, so widening them here
+                        # would store zeros. The reader casts to the precision
+                        # the model asks for.
+                        "atom_types": _encode_array(atom_types.astype(np.int32)),
                         # No cell at all: molecules are not periodic, and a zero
                         # cell would be taken for a real one and inverted.
-                        "coords": _encode_array(coords.astype(np.float64)),
+                        "coords": _encode_array(coords.astype(np.float32)),
                     }
                     txn.put(
                         format(frame_idx, fmt).encode(),
