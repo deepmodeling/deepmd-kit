@@ -5,6 +5,9 @@ import unittest
 
 import numpy as np
 
+from deepmd.dpmodel.atomic_model import (
+    DPUniMolDPAAtomicModel,
+)
 from deepmd.dpmodel.descriptor.dpa4 import (
     DescrptDPA4,
 )
@@ -15,6 +18,9 @@ from deepmd.dpmodel.fitting.unimol_dpa_heads import (
 )
 from deepmd.dpmodel.fitting.unimol_dpa_pretrain import (
     UniMolDPAPretrainFitting,
+)
+from deepmd.dpmodel.loss.unimol import (
+    UniMolLoss,
 )
 
 SMALL = {"nloc": 6, "nnei": 5, "ntypes": 2}
@@ -308,3 +314,92 @@ class TestUniMolDPAPretrainFitting(unittest.TestCase):
         for key in a:
             with self.subTest(output=key):
                 np.testing.assert_allclose(a[key], b[key])
+
+
+class TestUniMolDPAAtomicModel(unittest.TestCase):
+    """The objective wired onto a DPA backbone, through the model machinery."""
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(0)
+        self.nloc, nnei, ntypes = 6, 5, 3
+        self.type_map = ["C", "N", "[MASK]"]
+        self.desc = DescrptDPA4(
+            rcut=6.0,
+            rcut_smth=5.0,
+            sel=nnei,
+            ntypes=ntypes,
+            seed=0,
+            precision="float64",
+        )
+        self.fitting = UniMolDPAPretrainFitting(
+            ntypes=ntypes,
+            dim_descrpt=self.desc.channels,
+            node_readout_lmax=self.desc.node_readout_lmax,
+            max_atoms=self.nloc,
+            dist_hidden=16,
+            precision="float64",
+            seed=1,
+            type_map=self.type_map,
+        )
+        self.model = DPUniMolDPAAtomicModel(self.desc, self.fitting, self.type_map)
+        self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
+        self.atype = rng.integers(0, ntypes, size=(1, self.nloc))
+        self.nlist = np.stack(
+            [
+                np.stack(
+                    [
+                        np.array([j for j in range(self.nloc) if j != i][:nnei])
+                        for i in range(self.nloc)
+                    ]
+                )
+            ]
+        )
+        self.mapping = np.tile(np.arange(self.nloc), (1, 1))
+
+    def _predict(self):
+        return self.model.forward_common_atomic(
+            self.coord, self.atype, self.nlist, mapping=self.mapping
+        )
+
+    def test_the_heads_reach_the_model_output(self) -> None:
+        out = self._predict()
+        for name in ("token_logits", "coord_update", "pair_dist", "pair_mask"):
+            with self.subTest(output=name):
+                self.assertIn(name, out)
+        # the base class supplies the real-atom mask the objective needs
+        self.assertIn("mask", out)
+
+    def test_a_backbone_without_the_equivariant_seam_is_refused(self) -> None:
+        """The coordinate head reads a state most descriptors do not expose."""
+        from deepmd.dpmodel.descriptor.se_e2_a import (
+            DescrptSeA,
+        )
+
+        plain = DescrptSeA(rcut=6.0, rcut_smth=5.0, sel=[10, 10, 10])
+        with self.assertRaisesRegex(TypeError, "call_with_latent"):
+            DPUniMolDPAAtomicModel(plain, self.fitting, self.type_map)
+
+    def test_the_objective_scores_it(self) -> None:
+        """The point of the whole branch: this output feeds Uni-Mol's loss.
+
+        The backbone has no virtual tokens, and Uni-Mol's two norm regularisers
+        constrain quantities belonging to its own transformer, so they carry no
+        weight here.
+        """
+        rng = np.random.default_rng(1)
+        pred = self._predict()
+        token_target = np.zeros((1, self.nloc), dtype=np.int64)
+        token_target[0, [1, 3]] = [5, 6]
+        labels = {
+            "unimol_token_target": token_target,
+            "unimol_coord_target": rng.normal(size=(1, self.nloc, 3)),
+        }
+        loss = UniMolLoss(
+            x_norm_loss=0.0, delta_pair_repr_norm_loss=0.0, virtual_tokens=False
+        )
+        total, terms = loss.call(1.0, 0, pred, labels)
+        self.assertEqual(sorted(terms), ["coord_loss", "dist_loss", "token_loss"])
+        for name, value in terms.items():
+            with self.subTest(term=name):
+                self.assertTrue(bool(np.isfinite(float(value))))
+        self.assertTrue(bool(np.isfinite(float(total))))
