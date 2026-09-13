@@ -80,30 +80,42 @@ def _frame_scalar(value: Array, mask: Array | None) -> Array:
     return xp.sum(per_atom * weights) / xp.where(total > 0, total, xp.ones_like(total))
 
 
-def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
-    """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
+def _token_mask_from_atoms(mask: Array, ncol: int, virtual: bool = True) -> Array:
+    """Mark the non-padding token columns.
+
+    For Uni-Mol those are BOS, the real atoms, then EOS. A DPA backbone wraps
+    the molecule in no virtual tokens at all, so there the columns are just the
+    real atoms.
+    """
     xp = array_api_compat.array_namespace(mask)
     n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
     positions = xp.arange(ncol, dtype=xp.int64, device=array_api_compat.device(mask))[
         None, :
     ]
-    return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
+    return xp.astype(positions < (n_real + (2 if virtual else 0))[:, None], xp.int64)
 
 
-def _clean_distances(coord_target: Array, mask: Array, ncol: int) -> Array:
-    """Pairwise distances from the clean coordinates, virtual tokens included.
+def _clean_distances(
+    coord_target: Array, mask: Array, ncol: int, virtual: bool = True
+) -> Array:
+    """Pairwise distances from the clean coordinates.
 
     Storing this as a label would cost O(natoms^2) per frame, so it is derived
-    here instead. The two virtual tokens sit at the origin, which is the
-    centroid of the clean coordinates because the transform centres them.
+    here instead. With ``virtual``, the two virtual tokens are included and sit
+    at the origin, which is the centroid of the clean coordinates because the
+    transform centres them. A DPA backbone has no virtual tokens and passes
+    ``virtual=False``.
     """
     xp = array_api_compat.array_namespace(coord_target)
     nf = coord_target.shape[0]
     real = xp.astype(mask, coord_target.dtype)[..., None]
     atoms = coord_target * real
     dev = array_api_compat.device(coord_target)
-    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
-    tokens = xp.concat([zero, atoms, zero], axis=1)
+    if virtual:
+        zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
+        tokens = xp.concat([zero, atoms, zero], axis=1)
+    else:
+        tokens = atoms
     if tokens.shape[1] < ncol:
         pad = xp.zeros(
             (nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype, device=dev
@@ -180,6 +192,7 @@ class UniMolLoss(Loss):
         noise_type: str = "uniform",
         noise: float = 1.0,
         data_seed: int = 1,
+        virtual_tokens: bool = True,
         **kwargs: float,
     ) -> None:
         self.masked_token_loss = masked_token_loss
@@ -197,6 +210,9 @@ class UniMolLoss(Loss):
         self.noise_type = noise_type
         self.noise = noise
         self.data_seed = data_seed
+        # Uni-Mol wraps each molecule in BOS and EOS and counts them among the
+        # distance columns. A DPA backbone wraps it in nothing.
+        self.virtual_tokens = virtual_tokens
 
     def call(
         self,
@@ -249,13 +265,18 @@ class UniMolLoss(Loss):
             ncol = model_dict["pair_dist"].shape[-1]
             token_mask = label_dict.get("unimol_token_mask")
             if token_mask is None:
-                token_mask = _token_mask_from_atoms(mask, ncol)
+                token_mask = _token_mask_from_atoms(mask, ncol, self.virtual_tokens)
             dist_target = label_dict.get("unimol_dist_target")
             if dist_target is None:
                 dist_target = _clean_distances(
-                    label_dict["unimol_coord_target"], mask, ncol
+                    label_dict["unimol_coord_target"], mask, ncol, self.virtual_tokens
                 )
             pair_mask = masked[..., None] & xp.astype(token_mask, xp.bool)[:, None, :]
+            # A head that covers only part of the pair axis says so; Uni-Mol's
+            # covers all of it and emits nothing here.
+            covered = model_dict.get("pair_mask")
+            if covered is not None:
+                pair_mask = pair_mask & xp.astype(covered, xp.bool)
             dist_label = (dist_target[pair_mask] - DIST_MEAN) / DIST_STD
             add(
                 _smooth_l1(model_dict["pair_dist"][pair_mask], dist_label, self.beta),
@@ -322,6 +343,7 @@ class UniMolLoss(Loss):
             "noise_type": self.noise_type,
             "noise": self.noise,
             "data_seed": self.data_seed,
+            "virtual_tokens": self.virtual_tokens,
         }
 
     @classmethod
