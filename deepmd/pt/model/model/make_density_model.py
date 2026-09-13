@@ -39,6 +39,9 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
 )
+from deepmd.pt.utils.region import (
+    normalize_coord,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -169,6 +172,12 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             )
             del coord, grid, box, fparam, aparam
             gg = gg.view(gg.shape[0], -1, 3)
+            if bb is not None:
+                # wrap grid points into the primary cell: the atomic
+                # coordinates are normalized and extended with ghosts, so
+                # periodically equivalent grids outside the cell would
+                # otherwise lose their neighbors
+                gg = normalize_coord(gg, bb.view(bb.shape[0], 3, 3))
             (
                 extended_coord,
                 extended_atype,

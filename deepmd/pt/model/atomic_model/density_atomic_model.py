@@ -22,6 +22,9 @@ from deepmd.pt.utils.nlist import (
     build_directional_neighbor_list,
     extend_input_and_build_neighbor_list,
 )
+from deepmd.pt.utils.region import (
+    normalize_coord,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -45,9 +48,12 @@ class DPDensityAtomicModel(DPAtomicModel):
         super().__init__(descriptor, fitting, type_map, **kwargs)
         self.rcut = self.descriptor.get_rcut()
         self.rcut_smth = self.descriptor.get_rcut_smth()
-        self.env_protection = self.descriptor.get_env_protection()
-        if self.env_protection == 0.0:
-            self.env_protection = 1e-6
+        if self.descriptor.get_env_protection() == 0.0:
+            log.warning(
+                "The descriptor env_protection is 0.0; grid points coincident "
+                "with atoms would produce NaN densities. Set a positive "
+                "env_protection in the descriptor configuration."
+            )
         self.sel = self.descriptor.get_sel()
         self.nnei = self.descriptor.get_nsel()
 
@@ -298,6 +304,10 @@ class DPDensityAtomicModel(DPAtomicModel):
                     box=box,
                 )
                 assert grid is not None
+                if box is not None:
+                    # same wrapping convention as forward_common: grid points
+                    # outside the primary cell are periodically equivalent
+                    grid = normalize_coord(grid, box.reshape(box.shape[0], 3, 3))
                 grid_type = torch.zeros(
                     grid.shape[:-1], device=grid.device, dtype=atype.dtype
                 )

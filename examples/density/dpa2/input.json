@@ -60,7 +60,8 @@
         "g1_out_mlp": true
       },
       "precision": "float32",
-      "add_tebd_to_repinit_out": false
+      "add_tebd_to_repinit_out": false,
+      "env_protection": 0.1
     },
     "fitting_net": {
       "type": "density",

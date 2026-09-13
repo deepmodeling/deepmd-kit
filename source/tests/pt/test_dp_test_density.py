@@ -36,6 +36,9 @@ model_density = {
         "neuron": [8, 16],
         "resnet_dt": False,
         "axis_neuron": 4,
+        # grid points may coincide with atoms; without protection the
+        # env matrix would divide by zero and produce NaN densities
+        "env_protection": 1e-6,
         "seed": 1,
     },
     "fitting_net": {
@@ -105,6 +108,9 @@ class TestDPTestDensity(unittest.TestCase):
         # the density model takes grid instead of spin as the extra input
         input_dict.pop("spin", None)
         trainer.model(**input_dict)
+        # keep the live torch model and a data sample for the gradient check
+        cls.torch_model = trainer.model
+        cls.input_dict = input_dict
         model = torch.jit.script(trainer.model)
         tmp_fd, cls.model_path = tempfile.mkstemp(suffix=".pth")
         os.close(tmp_fd)
@@ -128,6 +134,66 @@ class TestDPTestDensity(unittest.TestCase):
         atype = np.loadtxt(self.system / "type.raw", dtype=int)
         out = dp.eval(coord, box, atype, grid=grid)
         self.assertEqual(out.shape, (2, self.ngrid))
+
+    def test_eval_no_auto_batch(self) -> None:
+        # auto_batch_size=False bypasses execute_all's single-tuple unwrapping;
+        # the density result must still be normalized to a bare ndarray
+        dp = DeepDensity(self.model_path, auto_batch_size=False)
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:2]
+        box = np.load(set_dir / "box.npy")[:2]
+        grid = np.load(set_dir / "grid.npy")[:2]
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        out = dp.eval(coord, box, atype, grid=grid)
+        self.assertEqual(out.shape, (2, self.ngrid))
+        # and match the default-batching result numerically
+        out_default = DeepDensity(self.model_path).eval(coord, box, atype, grid=grid)
+        np.testing.assert_allclose(out, out_default)
+
+    def test_grid_at_atoms_finite(self) -> None:
+        # grid points coincident with atoms are legitimate inputs; with
+        # env_protection > 0 (set in the test config) the predictions and
+        # gradients must stay finite instead of turning NaN via 1/r terms
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:2]
+        box = np.load(set_dir / "box.npy")[:2]
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        grid_at_atoms = coord.reshape(coord.shape[0], -1, 3)
+        out = DeepDensity(self.model_path).eval(coord, box, atype, grid=grid_at_atoms)
+        self.assertTrue(np.isfinite(out).all())
+
+        # gradients wrt the grid input and all parameters stay finite
+        input_dict = {
+            kk: vv.clone() if isinstance(vv, torch.Tensor) else vv
+            for kk, vv in self.input_dict.items()
+        }
+        coord_t = input_dict["coord"]
+        grid_t = (
+            coord_t.reshape(coord_t.shape[0], -1, 3).detach().clone().requires_grad_()
+        )
+        input_dict["grid"] = grid_t
+        model_out = self.torch_model(**input_dict)
+        self.assertTrue(torch.isfinite(model_out["density"]).all())
+        model_out["density"].sum().backward()
+        self.assertIsNotNone(grid_t.grad)
+        self.assertTrue(torch.isfinite(grid_t.grad).all())
+        for param in self.torch_model.parameters():
+            if param.grad is not None:
+                self.assertTrue(torch.isfinite(param.grad).all())
+
+    def test_grid_periodic_translation(self) -> None:
+        # grids shifted by integer cell vectors are periodically equivalent
+        # and must produce the same density as the wrapped originals
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:2]
+        box = np.load(set_dir / "box.npy")[:2]
+        grid = np.load(set_dir / "grid.npy")[:2]
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        dp = DeepDensity(self.model_path)
+        out = dp.eval(coord, box, atype, grid=grid)
+        cell_vec = box.reshape(box.shape[0], 3, 3)[:, 0]
+        out_shift = dp.eval(coord, box, atype, grid=grid + 2.0 * cell_vec[:, None, :])
+        np.testing.assert_allclose(out_shift, out, rtol=1e-5, atol=1e-5)
 
     def test_dp_test(self) -> None:
         detail_file = os.path.join(self.tmpdir.name, "detail")

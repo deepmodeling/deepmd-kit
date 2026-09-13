@@ -567,6 +567,11 @@ class DeepEval(DeepEvalBackend):
                 aparam,
                 request_defs,
             )
+            # _eval_model_density returns a 1-element tuple; execute_all unwraps
+            # it when auto batching is enabled, but with auto_batch_size=False
+            # the inner function is called directly and the tuple survives.
+            if isinstance(out, tuple):
+                (out,) = out
             return {"density": out}
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
