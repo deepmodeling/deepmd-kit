@@ -104,6 +104,28 @@ class TestExamples(unittest.TestCase):
                     jdata["model"], _ = preprocess_shared_params(jdata["model"])
                 normalize(jdata, multi_task=multi_task)
 
+    def test_arguments_pt_expt(self) -> None:
+        """The same configurations, through the PyTorch-Exportable path.
+
+        That backend does not cascade top-level ``model`` options into the
+        branches, which the pt one does, so a multi-task example can be valid
+        for pt and rejected here. ``test_arguments`` uses pt's preprocessing and
+        cannot see it.
+        """
+        from deepmd.pt_expt.utils.multi_task import (
+            preprocess_shared_params as preprocess_shared_params_pt_expt,
+        )
+
+        for fn in input_files + input_files_multi:
+            multi_task = fn in input_files_multi
+            fn = str(fn)
+            with self.subTest(fn=fn):
+                jdata = j_loader(fn)
+                jdata["model"] = expand_model_preset(jdata["model"])
+                if multi_task:
+                    jdata["model"], _ = preprocess_shared_params_pt_expt(jdata["model"])
+                normalize(jdata, multi_task=multi_task)
+
     def test_data_paths_exist(self) -> None:
         """Each example's data ``systems`` must resolve relative to the example's
         own directory, so the example is runnable from that directory.
