@@ -13,6 +13,9 @@ from deepmd.dpmodel.fitting.unimol_dpa_heads import (
     PairDistanceHead,
     l1_to_cartesian,
 )
+from deepmd.dpmodel.fitting.unimol_dpa_pretrain import (
+    UniMolDPAPretrainFitting,
+)
 
 SMALL = {"nloc": 6, "nnei": 5, "ntypes": 2}
 
@@ -193,3 +196,115 @@ class TestPairDistanceHead(unittest.TestCase):
         b, mb = revived(self.node, self.nlist)
         np.testing.assert_allclose(a, b)
         np.testing.assert_array_equal(ma, mb)
+
+
+class TestUniMolDPAPretrainFitting(unittest.TestCase):
+    """The three heads assembled on a real DPA4 backbone."""
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(0)
+        self.nloc, nnei, ntypes = 6, 5, 3
+        self.max_atoms = 10
+        self.desc = DescrptDPA4(
+            rcut=6.0,
+            rcut_smth=5.0,
+            sel=nnei,
+            ntypes=ntypes,
+            seed=0,
+            precision="float64",
+        )
+        self.fitting = UniMolDPAPretrainFitting(
+            ntypes=ntypes,
+            dim_descrpt=self.desc.channels,
+            node_readout_lmax=self.desc.node_readout_lmax,
+            max_atoms=self.max_atoms,
+            dist_hidden=16,
+            precision="float64",
+            seed=1,
+        )
+        self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
+        self.atype = rng.integers(0, ntypes, size=(1, self.nloc))
+        self.nlist = np.stack(
+            [
+                np.stack(
+                    [
+                        np.array([j for j in range(self.nloc) if j != i][:nnei])
+                        for i in range(self.nloc)
+                    ]
+                )
+            ]
+        )
+
+    def _run(self):
+        node, latent = self.desc.call_with_latent(
+            self.coord,
+            self.atype,
+            self.nlist,
+            mapping=np.tile(np.arange(self.nloc), (1, 1)),
+        )
+        return self.fitting.call_atoms(node, latent, self.nlist)
+
+    def test_every_output_is_declared(self) -> None:
+        """The output machinery indexes the definition for every key returned.
+
+        A key the definition does not declare raises KeyError on the way out of
+        the model, so returning one is not a harmless extra.
+        """
+        out = self._run()
+        self.assertEqual(set(out), set(self.fitting.output_def().var_defs))
+
+    def test_shapes(self) -> None:
+        out = self._run()
+        self.assertEqual(out["token_logits"].shape, (1, self.nloc, 31))
+        self.assertEqual(out["coord_update"].shape, (1, self.nloc, 3))
+        self.assertEqual(out["pair_dist"].shape, (1, self.nloc, self.max_atoms))
+        self.assertEqual(out["pair_mask"].shape, (1, self.nloc, self.max_atoms))
+        for name, value in out.items():
+            with self.subTest(output=name):
+                self.assertTrue(bool(np.all(np.isfinite(value))))
+
+    def test_columns_past_the_frame_are_not_covered(self) -> None:
+        """The declared width is fixed; a shorter frame pads the rest."""
+        out = self._run()
+        np.testing.assert_array_equal(
+            out["pair_mask"][:, :, self.nloc :],
+            np.zeros((1, self.nloc, self.max_atoms - self.nloc)),
+        )
+
+    def test_a_frame_wider_than_max_atoms_is_refused(self) -> None:
+        narrow = UniMolDPAPretrainFitting(
+            ntypes=3,
+            dim_descrpt=self.desc.channels,
+            node_readout_lmax=self.desc.node_readout_lmax,
+            max_atoms=self.nloc - 1,
+            dist_hidden=16,
+            precision="float64",
+            seed=1,
+        )
+        node, latent = self.desc.call_with_latent(
+            self.coord,
+            self.atype,
+            self.nlist,
+            mapping=np.tile(np.arange(self.nloc), (1, 1)),
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds max_atoms"):
+            narrow.call_atoms(node, latent, self.nlist)
+
+    def test_the_five_tuple_path_is_refused(self) -> None:
+        """These heads need the equivariant state and the neighbour list."""
+        with self.assertRaisesRegex(NotImplementedError, "call_atoms"):
+            self.fitting.call(np.zeros((1, 1, 1)), np.zeros((1, 1), dtype=np.int64))
+
+    def test_serialize_round_trip(self) -> None:
+        revived = UniMolDPAPretrainFitting.deserialize(self.fitting.serialize())
+        node, latent = self.desc.call_with_latent(
+            self.coord,
+            self.atype,
+            self.nlist,
+            mapping=np.tile(np.arange(self.nloc), (1, 1)),
+        )
+        a = self.fitting.call_atoms(node, latent, self.nlist)
+        b = revived.call_atoms(node, latent, self.nlist)
+        for key in a:
+            with self.subTest(output=key):
+                np.testing.assert_allclose(a[key], b[key])
