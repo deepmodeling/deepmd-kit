@@ -307,7 +307,9 @@ class DPDensityAtomicModel(DPAtomicModel):
                 if box is not None:
                     # same wrapping convention as forward_common: grid points
                     # outside the primary cell are periodically equivalent
-                    grid = normalize_coord(grid, box.reshape(box.shape[0], 3, 3))
+                    grid = normalize_coord(
+                        grid, box.to(grid.device).reshape(box.shape[0], 3, 3)
+                    )
                 grid_type = torch.zeros(
                     grid.shape[:-1], device=grid.device, dtype=atype.dtype
                 )

@@ -213,7 +213,27 @@ class TestDPTestDensity(unittest.TestCase):
             self.assertEqual(detail.shape, (self.ngrid, 2))
 
     def test_dp_test_shuffle(self) -> None:
-        # grid/density must be shuffled together with the frames
+        # grid/density must be shuffled together with the frames: every
+        # (label, pred) row written by the shuffled run must match a row
+        # from the unshuffled reference run
+        detail_ref = os.path.join(self.tmpdir.name, "detail_ref")
+        dp_test(
+            model=self.model_path,
+            system=str(self.system),
+            datafile=None,
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_ref,
+            atomic=False,
+        )
+        ref_rows = set()
+        for frame in range(self.nframes):
+            detail = np.loadtxt(f"{detail_ref}.density.out.{frame}", skiprows=1)
+            for row in detail:
+                ref_rows.add(tuple(np.round(row, decimals=5)))
+
+        detail_shuf = os.path.join(self.tmpdir.name, "detail_shuf")
         dp_test(
             model=self.model_path,
             system=str(self.system),
@@ -221,9 +241,16 @@ class TestDPTestDensity(unittest.TestCase):
             numb_test=2,
             rand_seed=42,
             shuffle_test=True,
-            detail_file=None,
+            detail_file=detail_shuf,
             atomic=False,
         )
+        shuf_rows = []
+        for frame in range(2):
+            detail = np.loadtxt(f"{detail_shuf}.density.out.{frame}", skiprows=1)
+            shuf_rows.extend(tuple(np.round(row, decimals=5)) for row in detail)
+        self.assertEqual(len(shuf_rows), 2 * self.ngrid)
+        for row in shuf_rows:
+            self.assertIn(row, ref_rows)
 
 
 if __name__ == "__main__":
