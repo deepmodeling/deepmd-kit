@@ -403,3 +403,42 @@ class TestUniMolDPAAtomicModel(unittest.TestCase):
             with self.subTest(term=name):
                 self.assertTrue(bool(np.isfinite(float(value))))
         self.assertTrue(bool(np.isfinite(float(total))))
+
+
+class TestUniMolDPAExample(unittest.TestCase):
+    """The shipped example must stay valid as the arguments evolve.
+
+    Checked here rather than in the shared example test, because that one also
+    requires the referenced dataset to exist in the repository, and this example
+    points at data the user converts from upstream.
+    """
+
+    def test_example_configuration_is_valid(self) -> None:
+        import json
+        from pathlib import (
+            Path,
+        )
+
+        from deepmd.utils.argcheck import (
+            normalize,
+        )
+
+        path = (
+            Path(__file__).parents[4]
+            / "examples"
+            / "unimol"
+            / "dpa_pretrain"
+            / "input.json"
+        )
+        self.assertTrue(path.is_file(), path)
+        config = normalize(json.loads(path.read_text()), multi_task=False)
+
+        fitting = config["model"]["fitting_net"]
+        self.assertEqual(fitting["type"], "unimol_dpa_pretrain")
+        self.assertEqual(fitting["dist_coverage"], "neighbour")
+        self.assertIn("[MASK]", config["model"]["type_map"])
+        # a DPA backbone wraps nothing around a molecule, and Uni-Mol's two norm
+        # regularisers constrain its own transformer rather than this one
+        self.assertFalse(config["loss"]["virtual_tokens"])
+        self.assertEqual(config["loss"]["x_norm_loss"], 0.0)
+        self.assertEqual(config["loss"]["delta_pair_repr_norm_loss"], 0.0)
