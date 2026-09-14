@@ -1433,6 +1433,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             :func:`deepmd.dpmodel.fitting.unimol_dpa_heads.l1_to_cartesian` for
             the mapping that rotates with the input, which was established by
             measurement rather than by assuming a convention.
+
+            Note that on the torch backend this state is not bit-reproducible
+            between identical calls when ``use_env_seed`` is on and the
+            precision is single: measured at 7e-09, against exactly zero for the
+            scalar read-out, and gone in double precision or with
+            ``use_env_seed`` off. The scalar output :meth:`call` returns is
+            unaffected, so this surfaces only through this accessor.
         """
         return self.call(
             coord_ext,

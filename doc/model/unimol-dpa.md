@@ -79,6 +79,18 @@ against labels that are wrong by several Angstrom -- some of them longer than
 the cut-off -- rather than fail. The refusal is at the atomic model, so it holds
 on the evaluation path too, not only when a box is passed to the model.
 
+## Reproducibility of the coordinate head
+
+On the torch backend the equivariant state the coordinate head reads is not
+bit-reproducible between identical calls when the backbone runs in single
+precision with `use_env_seed` on, which is the shipped default. The difference
+measures around 7e-09 — one part in a hundred million, far below anything the
+objective resolves — and the element and distance heads are unaffected, since
+the scalar read-out is exact. It disappears in double precision or with
+`use_env_seed` off. This is a property of the backbone rather than of the heads;
+it is mentioned because comparing `coord_update` across two runs will otherwise
+look like a bug.
+
 ## Multi-task training
 
 Not yet. Training one shared backbone from both a DFT branch and this objective
