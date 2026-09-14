@@ -47,6 +47,12 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    check_preset_out_bias,
+    normalize_preset_out_bias,
+    preset_out_bias_shift,
+    remap_preset_out_bias,
+)
 
 from .make_base_atomic_model import (
     make_base_atomic_model,
@@ -71,7 +77,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: float | None = None,
-        preset_out_bias: dict[str, Array] | None = None,
+        preset_out_bias: dict | None = None,
         data_stat_protect: float = 1e-2,
     ) -> None:
         super().__init__()
@@ -79,7 +85,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
-        self.preset_out_bias = preset_out_bias
+        self.preset_out_bias = normalize_preset_out_bias(preset_out_bias, type_map)
         self.data_stat_protect = data_stat_protect
         self._observed_type: list[str] | None = None
 
@@ -131,6 +137,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
+        check_preset_out_bias(self.preset_out_bias, self.bias_keys)
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -313,6 +320,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_pair_exclude(
             map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
+        self.preset_out_bias = remap_preset_out_bias(self.preset_out_bias, remap_index)
         if has_new_type:
             xp = array_api_compat.array_namespace(self.out_bias)
             extend_shape = [
@@ -803,6 +811,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+            In both modes a type assigned in `preset_out_bias` ends at exactly the preset value.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         """
@@ -810,33 +819,39 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             compute_output_stats,
         )
 
+        distinguish_types = self.get_compute_stats_distinguish_types()
+        check_preset_out_bias(self.preset_out_bias, self.bias_keys, distinguish_types)
+        # The fitted statistics are absolute biases in 'set-by-statistic' mode and
+        # shifts of the stored bias in 'change-by-statistic' mode. The preset values
+        # enter the fit expressed in the same frame, so the assigned types end at the
+        # preset value in both modes while the other types are fitted around them.
         if bias_adjust_mode == "change-by-statistic":
-            delta_bias, out_std = compute_output_stats(
-                sample_merged,
-                self.get_ntypes(),
-                keys=self.bias_keys,
-                stat_file_path=stat_file_path,
-                model_forward=self._get_forward_wrapper_func(),
-                rcond=self.rcond,
-                preset_bias=self.preset_out_bias,
-                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
-                intensive=self.get_intensive(),
+            forward = self._get_forward_wrapper_func()
+            preset_bias = preset_out_bias_shift(
+                self.preset_out_bias,
+                to_numpy_array(self.out_bias),
+                self.bias_keys,
+                [self.atomic_output_def()[kk].size for kk in self.bias_keys],
             )
-            self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
-            bias_out, std_out = compute_output_stats(
-                sample_merged,
-                self.get_ntypes(),
-                keys=self.bias_keys,
-                stat_file_path=stat_file_path,
-                rcond=self.rcond,
-                preset_bias=self.preset_out_bias,
-                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
-                intensive=self.get_intensive(),
-            )
-            self._store_out_stat(bias_out, std_out)
+            forward = None
+            preset_bias = self.preset_out_bias
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+        out_bias, out_std = compute_output_stats(
+            sample_merged,
+            self.get_ntypes(),
+            keys=self.bias_keys,
+            stat_file_path=stat_file_path,
+            model_forward=forward,
+            rcond=self.rcond,
+            preset_bias=preset_bias,
+            stats_distinguish_types=distinguish_types,
+            intensive=self.get_intensive(),
+        )
+        self._store_out_stat(
+            out_bias, out_std, add=bias_adjust_mode == "change-by-statistic"
+        )
 
     def _store_out_stat(
         self,

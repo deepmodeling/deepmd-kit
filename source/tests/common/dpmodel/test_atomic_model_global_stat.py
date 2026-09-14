@@ -343,17 +343,29 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret3 = md0.forward_common_atomic(*args)
         ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
         ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
-        ## fit bias is [-7, 2] (2 is assigned. -7 is fit to [-8.6, -17.8])
-        ## old bias[1.8,2] + fit bias[-7, 2] = [-5.2, 4]
-        ## new model output is [[-4.2, -3.2, 7], [-1.2, 9, 10]]
+        ## the preset bias 2 of type 1 is kept, so its shift is 0 and
+        ## the shift of type 0 is fit to [-6.6, -13.8] with natoms [2, 1]: -5.4
+        ## old bias [1.8, 2] + shift [-5.4, 0] = [-3.6, 2]
+        ## new model output is [[-2.6, -1.6, 5], [0.4, 7, 8]]
         expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[-4.2, -3.2, 7.0], [-1.2, 9.0, 10.0]]).reshape(
+        expected_ret3["foo"] = np.array([[-2.6, -1.6, 5.0], [0.4, 7.0, 8.0]]).reshape(
             2, 3, 1
         )
         expected_ret3["pix"] = ret0["pix"]
         for kk in ["foo", "pix"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
-        # bar is too complicated to be manually computed.
+        # the preset entries are enforced, not accumulated onto the old bias
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(out_bias["foo"][1], preset_out_bias["foo"][1])
+        np.testing.assert_almost_equal(out_bias["bar"], bar_bias)
+
+        # 5. a repeated change leaves the bias in place
+        md0.change_out_bias(
+            self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        ret4 = md0.forward_common_atomic(*args)
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(ret4[kk], ret3[kk])
 
     def test_preset_bias_all_none(self) -> None:
         nf, nloc, nnei = self.nlist.shape
@@ -543,6 +555,36 @@ class TestChangeByStatMixedLabels(unittest.TestCase, TestCaseSingleFrameWithNlis
         for kk in ["foo", "pix"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk], decimal=4)
         # bar is too complicated to be manually computed.
+
+    def test_preset_with_atomic_labels(self) -> None:
+        """The preset overrides the per-type mean of atomic labels in both modes."""
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        )
+        md0 = DPDPAtomicModel(
+            ds,
+            FooFitting(),
+            type_map=["foo", "bar"],
+            preset_out_bias={"foo": {"bar": 2.0}},
+        )
+        # atom_foo labels [[5, 5, 5], [5, 6, 7]] with atype [[0, 0, 1], [0, 1, 1]]:
+        # type 0 averages to 5 while type 1 is pinned to the preset 2
+        md0.compute_or_load_out_stat(
+            self.merged_output_stat, stat_file_path=self.stat_file_path
+        )
+        out_bias, _ = md0._fetch_out_stat(["foo"])
+        np.testing.assert_almost_equal(out_bias["foo"], np.array([[5.0], [2.0]]))
+        # model output with bias [5, 2]: [[6, 7, 5], [9, 7, 8]], per-atom residual
+        # of type 0: [-1, -2, -4] with mean -7/3; type 1 keeps the preset
+        md0.change_out_bias(
+            self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        out_bias, _ = md0._fetch_out_stat(["foo"])
+        np.testing.assert_almost_equal(
+            out_bias["foo"], np.array([[5.0 - 7.0 / 3.0], [2.0]])
+        )
 
 
 class TestEnergyModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):

@@ -379,17 +379,32 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret3 = cvt_ret(ret3)
         ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
         ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
-        ## fit bias is [-7, 2] (2 is assigned. -7 is fit to [-8.6, -17.8])
-        ## old bias[1.8,2] + fit bias[-7, 2] = [-5.2, 4]
-        ## new model output is [[-4.2, -3.2, 7], [-1.2, 9, 10]]
+        ## the preset bias 2 of type 1 is kept, so its shift is 0 and
+        ## the shift of type 0 is fit to [-6.6, -13.8] with natoms [2, 1]: -5.4
+        ## old bias [1.8, 2] + shift [-5.4, 0] = [-3.6, 2]
+        ## new model output is [[-2.6, -1.6, 5], [0.4, 7, 8]]
         expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[-4.2, -3.2, 7.0], [-1.2, 9.0, 10.0]]).reshape(
+        expected_ret3["foo"] = np.array([[-2.6, -1.6, 5.0], [0.4, 7.0, 8.0]]).reshape(
             2, 3, 1
         )
         expected_ret3["pix"] = ret0["pix"]
         for kk in ["foo", "pix"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
-        # bar is too complicated to be manually computed.
+        # the preset entries are enforced, not accumulated onto the old bias
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(
+            to_numpy_array(out_bias["foo"])[1], preset_out_bias["foo"][1]
+        )
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
+
+        # 5. a repeated change leaves the bias in place
+        BaseAtomicModel.change_out_bias(
+            md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        ret4 = md0.forward_common_atomic(*args)
+        ret4 = cvt_ret(ret4)
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(ret4[kk], ret3[kk])
 
     def test_preset_bias_all_none(self):
         nf, nloc, nnei = self.nlist.shape

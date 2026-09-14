@@ -86,6 +86,7 @@ def get_standard_model(
         type_map=data["type_map"],
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=data.get("pair_exclude_types", []),
+        preset_out_bias=data.get("preset_out_bias"),
     )
 
 
@@ -124,6 +125,7 @@ def get_zbl_model(
         smin_alpha=data.get("smin_alpha", 0.1),
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=data.get("pair_exclude_types", []),
+        preset_out_bias=data.get("preset_out_bias"),
     )
 
 
@@ -336,6 +338,8 @@ def get_linear_atomic_model(
         # graph, so "excluded" must cover the analytical term too.
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=data.get("pair_exclude_types", []),
+        # The composition computes the output bias, so the preset belongs to it.
+        preset_out_bias=data.get("preset_out_bias"),
     )
 
 

@@ -55,8 +55,8 @@ class TestGetModel(unittest.TestCase):
             {
                 "energy": [
                     None,
-                    np.array([1.0]),
-                    np.array([3.0]),
+                    [1.0],
+                    [3.0],
                 ]
             },
         )
@@ -79,14 +79,37 @@ class TestGetModel(unittest.TestCase):
             atomic_model.preset_out_bias,
             {
                 "energy": [
-                    np.array([1.0]),
-                    np.array([3.0]),
+                    [1.0],
+                    [3.0],
                     None,
                 ]
             },
         )
         self.assertEqual(atomic_model.atom_exclude_types, [1])
         self.assertEqual(atomic_model.pair_exclude_types, [[1, 2]])
+
+    def test_model_attr_energy_element_dict(self) -> None:
+        model_params = copy.deepcopy(model_se_e2_a)
+        model_params["preset_out_bias"] = {"energy": {"B": 3.0, "H": [1.0]}}
+        self.model = get_model(model_params).to(env.DEVICE)
+        atomic_model = self.model.atomic_model
+        self.assertEqual(atomic_model.type_map, ["O", "H", "B"])
+        self.assertEqual(
+            atomic_model.preset_out_bias,
+            {
+                "energy": [
+                    None,
+                    [1.0],
+                    [3.0],
+                ]
+            },
+        )
+
+    def test_model_attr_energy_unknown_element(self) -> None:
+        model_params = copy.deepcopy(model_se_e2_a)
+        model_params["preset_out_bias"] = {"energy": {"C": 3.0}}
+        with self.assertRaises(ValueError):
+            self.model = get_model(model_params).to(env.DEVICE)
 
     def test_model_attr_energy_unsupported_type(self) -> None:
         model_params = copy.deepcopy(model_se_e2_a)

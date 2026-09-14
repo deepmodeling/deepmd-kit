@@ -13,9 +13,14 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.atomic_model import DPAtomicModel as DPDPAtomicModel
+from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
+)
+from deepmd.dpmodel.utils.serialization import (
+    load_dp_model,
+    save_dp_model,
 )
 from deepmd.pt.model.atomic_model import (
     BaseAtomicModel,
@@ -24,6 +29,10 @@ from deepmd.pt.model.atomic_model import (
 from deepmd.pt.model.descriptor import (
     DescrptDPA1,
     DescrptSeA,
+)
+from deepmd.pt.model.model import (
+    EnergyModel,
+    get_model,
 )
 from deepmd.pt.model.task.base_fitting import (
     BaseFitting,
@@ -382,17 +391,32 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret3 = cvt_ret(ret3)
         ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
         ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
-        ## fit bias is [-7, 2] (2 is assigned. -7 is fit to [-8.6, -17.8])
-        ## old bias[1.8,2] + fit bias[-7, 2] = [-5.2, 4]
-        ## new model output is [[-4.2, -3.2, 7], [-1.2, 9, 10]]
+        ## the preset bias 2 of type 1 is kept, so its shift is 0 and
+        ## the shift of type 0 is fit to [-6.6, -13.8] with natoms [2, 1]: -5.4
+        ## old bias [1.8, 2] + shift [-5.4, 0] = [-3.6, 2]
+        ## new model output is [[-2.6, -1.6, 5], [0.4, 7, 8]]
         expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[-4.2, -3.2, 7.0], [-1.2, 9.0, 10.0]]).reshape(
+        expected_ret3["foo"] = np.array([[-2.6, -1.6, 5.0], [0.4, 7.0, 8.0]]).reshape(
             2, 3, 1
         )
         expected_ret3["pix"] = ret0["pix"]
         for kk in ["foo", "pix"]:
             np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
-        # bar is too complicated to be manually computed.
+        # the preset entries are enforced, not accumulated onto the old bias
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(
+            to_numpy_array(out_bias["foo"])[1], preset_out_bias["foo"][1]
+        )
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
+
+        # 5. a repeated change leaves the bias in place
+        BaseAtomicModel.change_out_bias(
+            md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        ret4 = md0.forward_common_atomic(*args)
+        ret4 = cvt_ret(ret4)
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(ret4[kk], ret3[kk])
 
     def test_preset_bias_all_none(self) -> None:
         nf, nloc, nnei = self.nlist.shape
@@ -510,3 +534,131 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret2 = md2.forward_common_atomic(*args)
         for kk in ["foo"]:
             np.testing.assert_almost_equal(ret0[kk], ret2[kk])
+
+
+class TestModelPresetBias(unittest.TestCase):
+    """Preset bias through the model-level bias change used by fine-tuning."""
+
+    def setUp(self) -> None:
+        # a mixed-types descriptor supports change_type_map
+        self.model = get_model(
+            {
+                "type_map": ["O", "H", "B"],
+                "descriptor": {
+                    "type": "dpa1",
+                    "sel": 20,
+                    "rcut_smth": 0.5,
+                    "rcut": 4.0,
+                    "neuron": [4, 8],
+                    "axis_neuron": 2,
+                    "attn_layer": 0,
+                    "seed": 1,
+                },
+                "fitting_net": {"neuron": [8, 8], "seed": 1},
+                "preset_out_bias": {"energy": {"H": -13.6, "B": 3.0}},
+            }
+        ).to(env.DEVICE)
+        rng = np.random.default_rng(20260913)
+        # B is assigned a preset but does not occur in the data
+        self.sampled = [
+            {
+                "coord": to_torch_tensor(rng.uniform(-1.5, 1.5, size=(2, 3, 3))),
+                "atype": to_torch_tensor(
+                    np.array([[0, 0, 1], [0, 1, 1]], dtype=np.int32)
+                ),
+                "natoms": to_torch_tensor(
+                    np.array([[3, 3, 2, 1, 0], [3, 3, 1, 2, 0]], dtype=np.int32)
+                ),
+                "energy": to_torch_tensor(np.array([-30.0, -20.0]).reshape(2, 1)),
+                "find_energy": np.float32(1.0),
+            }
+        ]
+
+    def out_bias(self) -> np.ndarray:
+        return to_numpy_array(self.model.get_out_bias()).reshape(-1)
+
+    def test_preset_pinned_in_both_modes(self) -> None:
+        preset = np.array([-13.6, 3.0])
+        self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
+        np.testing.assert_allclose(self.out_bias()[1:], preset)
+        self.model.change_out_bias(self.sampled, bias_adjust_mode="change-by-statistic")
+        bias_changed = self.out_bias()
+        np.testing.assert_allclose(bias_changed[1:], preset)
+        # a repeated change fits a vanishing residual and leaves every type in place
+        self.model.change_out_bias(self.sampled, bias_adjust_mode="change-by-statistic")
+        np.testing.assert_allclose(self.out_bias(), bias_changed, atol=1e-10)
+
+    def test_dp_file_round_trip(self) -> None:
+        self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
+        with tempfile.TemporaryDirectory() as tmp:
+            filename = str(Path(tmp) / "model.dp")
+            save_dp_model(filename, {"model": self.model.serialize()})
+            data = load_dp_model(filename)["model"]
+        # the file is read back by the pt backend and by the dpmodel backend
+        for loaded in (EnergyModel.deserialize(data), DPEnergyModel.deserialize(data)):
+            np.testing.assert_allclose(
+                to_numpy_array(loaded.get_out_bias()),
+                to_numpy_array(self.model.get_out_bias()),
+            )
+            self.assertEqual(
+                loaded.atomic_model.preset_out_bias,
+                {"energy": [None, [-13.6], [3.0]]},
+            )
+
+    def test_change_type_map_remaps_preset(self) -> None:
+        self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
+        # H is dropped, B keeps its preset, C is new
+        self.model.change_type_map(["B", "O", "C"])
+        self.assertEqual(
+            self.model.atomic_model.preset_out_bias, {"energy": [[3.0], None, None]}
+        )
+        sampled = [
+            {
+                **self.sampled[0],
+                "atype": to_torch_tensor(
+                    np.array([[1, 1, 2], [1, 2, 2]], dtype=np.int32)
+                ),
+                "natoms": to_torch_tensor(
+                    np.array([[3, 3, 0, 2, 1], [3, 3, 0, 1, 2]], dtype=np.int32)
+                ),
+            }
+        ]
+        self.model.change_out_bias(sampled, bias_adjust_mode="change-by-statistic")
+        np.testing.assert_allclose(self.out_bias()[0], 3.0)
+
+    def test_unknown_output_rejected(self) -> None:
+        params = {
+            "type_map": ["O", "H", "B"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [8, 8, 8],
+                "rcut_smth": 0.5,
+                "rcut": 4.0,
+            },
+            "fitting_net": {"neuron": [8]},
+            "preset_out_bias": {"enrgy": {"H": -13.6}},
+        }
+        with self.assertRaisesRegex(ValueError, "enrgy"):
+            get_model(params)
+
+    def test_no_distinguish_rejected(self) -> None:
+        params = {
+            "type_map": ["O", "H", "B"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [8, 8, 8],
+                "rcut_smth": 0.5,
+                "rcut": 4.0,
+            },
+            "fitting_net": {
+                "type": "property",
+                "property_name": "band_prop",
+                "task_dim": 1,
+                "neuron": [8],
+                "distinguish_types": False,
+            },
+            "preset_out_bias": {"band_prop": {"H": 1.0}},
+        }
+        model = get_model(params).to(env.DEVICE)
+        with self.assertRaisesRegex(ValueError, "distinguish"):
+            model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
