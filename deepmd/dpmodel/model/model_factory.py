@@ -54,6 +54,10 @@ def get_model_components(
     fitting_data["mixed_types"] = descriptor.mixed_types()
     if fitting_type in {"dipole", "polar"}:
         fitting_data["embedding_width"] = descriptor.get_dim_emb()
+    if fitting_type == "unimol_dpa_pretrain":
+        # The coordinate head projects the backbone's equivariant state, whose
+        # shape follows the degree that backbone reads out.
+        fitting_data["node_readout_lmax"] = descriptor.node_readout_lmax
     fitting_data["dim_descrpt"] = descriptor.get_dim_out()
     if "direct" in fitting_type:
         fitting_data["out_dim"] = descriptor.get_dim_emb()
