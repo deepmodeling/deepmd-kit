@@ -335,6 +335,12 @@ class TestTrainerInterface:
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         ds.preload_and_modify_all_data_torch()
 
+    def test_set_noise_deprecated_noop(self, lmdb_dir):
+        ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
+        for obj in (ds, ds._reader):
+            with pytest.warns(DeprecationWarning, match="set_noise"):
+                assert obj.set_noise({}) is None
+
 
 # ============================================================
 # DataLoader iteration
