@@ -2770,7 +2770,8 @@ fitting_args_plugin = ArgsPlugin()
 @fitting_args_plugin.register("density", doc=supported_backends("pt"))
 def fitting_density() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
-    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
+    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -2778,12 +2779,28 @@ def fitting_density() -> list[Argument]:
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
 - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
-    doc_rcond = "The condition number used to determine the inital density shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
 
+    # numb_aparam is deliberately not advertised: the fitting consumes
+    # grid-point descriptor rows, which have no per-atom parameters.
+    # rcond is deliberately not advertised: the per-type output shift it
+    # would control is disabled for density models.
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
-        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_default_fparam,
+        ),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_dim_case_embd,
+        ),
         Argument(
             "neuron",
             list[int],
@@ -2807,9 +2824,6 @@ def fitting_density() -> list[Argument]:
             optional=True,
             default=True,
             doc=doc_trainable,
-        ),
-        Argument(
-            "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
