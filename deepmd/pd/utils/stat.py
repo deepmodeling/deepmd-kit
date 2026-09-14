@@ -647,7 +647,6 @@ def _compute_output_stats_global(
                     compute_stats_do_not_distinguish_types(
                         stats_input[kk],
                         merged_natoms[kk],
-                        assigned_bias=assigned_bias[kk],
                         intensive=intensive,
                     )
                 )
