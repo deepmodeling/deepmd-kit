@@ -1288,6 +1288,33 @@ class DeepPot : public DeepBaseModel {
   }
 
   /**
+   * @brief Get the current default charge/spin state, including frozen states.
+   * An empty vector identifies an unconditioned model. Throws for an unknown
+   * state or unsupported backend. The length need not equal dim_chg_spin().
+   */
+  std::vector<double> get_default_chg_spin() const {
+    assert(dp);
+    const int size = DP_DeepPotGetDefaultChgSpin(dp, nullptr, 0);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    std::vector<double> state(size);
+    if (size > 0) {
+      DP_DeepPotGetDefaultChgSpin(dp, state.data(), size);
+      DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    }
+    return state;
+  }
+
+  /**
+   * @brief Whether the model provides atomic virials; throws if unsupported.
+   */
+  bool has_atomic_virial() const {
+    assert(dp);
+    const bool result = DP_DeepPotHasAtomicVirial(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
    * @brief Fix the charge/spin condition served for the rest of the run.
    * It becomes the condition of every later evaluation that is not given one
    * explicitly. Intended to be called once, before the first evaluation.

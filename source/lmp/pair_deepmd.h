@@ -55,21 +55,19 @@ class PairDeepMD : public PairDeepBaseModel {
  protected:
   deepmd_compat::DeepPot deep_pot;
   deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
-  // Return whether the legacy ensemble was initialized, so settings only
-  // forwards conditions to a live ensemble. Device styles may own models
-  // separately while retaining deep_pot as their driving model.
+  /** Load models and return whether the legacy ensemble accepts settings. */
   virtual bool initialize_models(const std::vector<std::string>& models);
   // Assemble the send/recv swap metadata (a comm-only neighbor list; its
   // geometry fields are unused) for the device-resident message-passing path,
   // where ghost features are exchanged across ranks inside the forward pass.
   deepmd_compat::InputNlist make_comm_nlist();
+  /** Whether this timestep requires sampling, including setup at step zero. */
   bool model_deviation_step() const;
-  // Report native-unit model outputs after the caller folds ghost forces.
-  // This only reads all_force and never changes the MD driving forces.
+  /** Compute native-unit deviations after ghost forces have been folded. */
   void write_model_deviation(
       const std::vector<std::vector<double> >& all_virial);
-  // Final native-unit statistics, in file-column order. Optional atomic
-  // deviations are in local atom order; this helper only converts and writes.
+  /** Convert and write summary statistics and optional local-order atom data.
+   */
   void write_model_deviation_output(const std::array<double, 6>& deviation,
                                     const std::vector<double>& std_f);
 

@@ -183,6 +183,7 @@ bool PairDeepMDKokkos<DeviceType>::initialize_models(
   deep_pot.init(models[0], gpu_rank, get_file_content(models[0]));
   std::string driver_types;
   deep_pot.get_type_map(driver_types);
+  std::vector<double> driver_charge_spin;
   reference_models.reserve(models.size() - 1);
   for (std::size_t i = 0; i < models.size(); ++i) {
     deepmd_compat::DeepPot* model = &deep_pot;
@@ -197,10 +198,19 @@ bool PairDeepMDKokkos<DeviceType>::initialize_models(
                  "pair style deepmd/kk model deviation requires compatible "
                  "float32 compact canonical .pt2 models.");
     }
-    // A canonical lower has no runtime charge/spin input. A compressed
-    // archive may nevertheless report a nonzero dim_chg_spin(): this is the
-    // width its optional fold can set, not a required forward input. Keep the
-    // archive's frozen default; explicit conditions are rejected in init_style.
+    if (!model->has_atomic_virial()) {
+      error->all(FLERR,
+                 "pair style deepmd/kk model deviation requires atomic virial "
+                 "output from every model.");
+    }
+    const auto model_charge_spin = model->get_default_chg_spin();
+    if (i == 0) {
+      driver_charge_spin = model_charge_spin;
+    } else if (model_charge_spin != driver_charge_spin) {
+      error->all(FLERR,
+                 "pair style deepmd/kk model deviation requires identical "
+                 "frozen charge/spin defaults for all models.");
+    }
     if (model->dim_fparam() != 0 || model->dim_aparam() != 0 ||
         model->numb_types_spin() != 0) {
       error->all(FLERR,
@@ -219,8 +229,6 @@ bool PairDeepMDKokkos<DeviceType>::initialize_models(
           "model cutoffs and type maps, and matching charge/spin widths.");
     }
   }
-  // No legacy ensemble: every model is loaded once, and the driver is never
-  // re-evaluated by the sampling path.
   return false;
 }
 

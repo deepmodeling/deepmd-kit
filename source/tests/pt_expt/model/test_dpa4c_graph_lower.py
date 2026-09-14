@@ -20,6 +20,12 @@ from deepmd.pt_expt.utils.serialization import (
     build_synthetic_graph_inputs,
 )
 
+from ...dpa4_fixtures import compressed_dpa4c_config as _compressed_config
+from ...dpa4_fixtures import (
+    conditioned_dpa4c_config,
+)
+from ...dpa4_fixtures import dpa4c_config as _config
+
 #: The compact canonical ABI and the fused spin backward are CUDA-only routes,
 #: so they follow the configured backend device rather than the mere presence
 #: of CUDA hardware: a run pinned to the CPU takes the generic graph lower.
@@ -27,45 +33,6 @@ _GPU = pytest.mark.skipif(
     env.DEVICE.type != "cuda",
     reason="the compact canonical and fused spin routes are CUDA only",
 )
-
-
-def _config() -> dict:
-    return {
-        "type_map": ["A", "B"],
-        "descriptor": {
-            "type": "dpa4c",
-            "rcut": 3.0,
-            "channels": 16,
-            "lmax": 4,
-            "n_radial": 4,
-            "precision": "float64",
-            "seed": 17,
-        },
-        "fitting_net": {
-            "type": "ener",
-            "neuron": [16, 16],
-            "precision": "float64",
-            "seed": 19,
-        },
-    }
-
-
-def _compressed_config(channels: int = 8) -> dict:
-    config = _config()
-    descriptor = config["descriptor"]
-    descriptor["channels"] = channels
-    descriptor["lmax"] = 2
-    descriptor["n_radial"] = 8
-    descriptor["precision"] = "float32"
-    fitting = config["fitting_net"]
-    fitting["neuron"] = [32, 32]
-    fitting["activation_function"] = "silu"
-    fitting["precision"] = "float32"
-    # The fused fitting operator has no per-layer timestep, and the shipped
-    # DPA4C grades do not use one either, so the compact canonical path is
-    # only reachable without it.
-    fitting["resnet_dt"] = False
-    return config
 
 
 def _run_graph(
@@ -520,9 +487,7 @@ def test_an_uncompressed_export_keeps_the_charge_state_as_a_runtime_input() -> N
     conditioning slot with a dynamic frame axis, and only the fold of the
     compact canonical path removes it.
     """
-    config = _compressed_config()
-    config["descriptor"]["add_chg_spin_ebd"] = True
-    config["descriptor"]["default_chg_spin"] = [2.0, 3.0]
+    config = conditioned_dpa4c_config()
     model = get_model(config).to("cpu").eval()
     exported, metadata, _model_json, _output_keys = _trace_and_export(
         {"model": model.serialize()},
@@ -549,9 +514,7 @@ def test_a_baked_charge_state_reaches_the_compact_canonical_lower() -> None:
     charge state into the frozen tables and the snapshot then reports a zero
     runtime condition width.
     """
-    config = _compressed_config()
-    config["descriptor"]["add_chg_spin_ebd"] = True
-    config["descriptor"]["default_chg_spin"] = [2.0, 3.0]
+    config = conditioned_dpa4c_config()
     model = get_model(config).to("cpu").eval()
     assert model.get_dim_chg_spin() == 2
     assert _resolve_lower_kind("model.pt2", {"model": model.serialize()}, "auto") == (

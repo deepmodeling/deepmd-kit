@@ -2790,6 +2790,42 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp) {
 
 int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp) { return dp->dp.dim_chg_spin(); }
 
+int DP_DeepPotGetDefaultChgSpin(DP_DeepPot* dp, double* values, int capacity) {
+  try {
+    if (capacity < 0 || (values == nullptr && capacity != 0)) {
+      throw deepmd::deepmd_exception(
+          "default charge/spin output requires a nonnegative capacity and "
+          "a buffer, or NULL with capacity zero for a length query");
+    }
+    const auto state = dp->dp.get_default_chg_spin();
+    if (state.size() >
+        static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+      throw deepmd::deepmd_exception("default charge/spin state is too large");
+    }
+    const int size = static_cast<int>(state.size());
+    if (values != nullptr) {
+      if (capacity < size) {
+        throw deepmd::deepmd_exception(
+            "default charge/spin output buffer is too small");
+      }
+      std::copy(state.begin(), state.end(), values);
+    }
+    return size;
+  } catch (const deepmd::deepmd_exception& ex) {
+    dp->exception = ex.what();
+    return -1;
+  }
+}
+
+bool DP_DeepPotHasAtomicVirial(DP_DeepPot* dp) {
+  try {
+    return dp->dp.has_atomic_virial();
+  } catch (const deepmd::deepmd_exception& ex) {
+    dp->exception = ex.what();
+    return false;
+  }
+}
+
 void DP_DeepPotSetChargeSpin(DP_DeepPot* dp,
                              const double* charge_spin,
                              const int numb_chg_spin) {

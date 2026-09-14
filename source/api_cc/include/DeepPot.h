@@ -209,6 +209,19 @@ class DeepPotBackend : public DeepBaseModelBackend {
   virtual int dim_chg_spin() const { return 0; }
 
   /**
+   * @brief Get the current default charge/spin state, including frozen states.
+   * An empty vector identifies an unconditioned model. Throws if the backend
+   * cannot establish the state. Its length need not equal dim_chg_spin().
+   */
+  virtual std::vector<double> get_default_chg_spin() const;
+
+  /**
+   * @brief Whether the loaded model provides atomic virials.
+   * Throws if the backend cannot query this capability.
+   */
+  virtual bool has_atomic_virial() const;
+
+  /**
    * @brief Reject a charge/spin condition no embedding table can address.
    *
    * A descriptor embeds the condition by gathering one row of a charge table
@@ -908,6 +921,12 @@ class DeepPot : public DeepBaseModel {
                                    const std::int64_t edge_storage);
 
   int dim_chg_spin() const;
+
+  /** @copydoc DeepPotBackend::get_default_chg_spin */
+  std::vector<double> get_default_chg_spin() const;
+
+  /** @copydoc DeepPotBackend::has_atomic_virial */
+  bool has_atomic_virial() const;
 
   /**
    * @brief Fix the charge/spin condition served for the rest of the run.

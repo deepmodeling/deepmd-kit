@@ -86,11 +86,13 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // neighbor list, returning the edge count. Public because it launches
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
-  // Called after all driving outputs have been consumed. Public for CUDA
-  // extended lambdas, as for build_edges_device().
+  /** Sample reference models after driving outputs have been consumed.
+   * Public because CUDA extended lambdas require a public enclosing member.
+   */
   void compute_model_deviation_device();
 
  protected:
+  /** Load and validate the canonical ensemble without a legacy observer. */
   bool initialize_models(const std::vector<std::string>& models) override;
   // Each reference owns its C/C++ API object. In particular, never copy the
   // C API wrapper's owning raw handle when growing this vector.

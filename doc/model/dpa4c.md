@@ -298,7 +298,12 @@ parameter dimensions and no spin types. A compressed archive's fixed default
 charge/spin state is supported: its API may report a nonzero charge/spin
 width because an optional fold can reset that state, even though the compiled
 canonical forward has no runtime charge/spin input. Reference models must
-have matching charge/spin widths and compatible frozen default states.
+have matching charge/spin widths and identical frozen default states, including
+older compressed archives without a charge-state fold. Every model must export
+atomic virials, even when the `atomic` output option is disabled, because the
+device path uses them to compute the total virial. Missing or incompatible
+default states and missing atomic-virial outputs are rejected during model
+initialization.
 Explicit `charge_spin` settings and runtime parameters from `compute`, `fix`,
 or `ttm` are unsupported in this mode. Incompatible models are rejected;
 there is no fallback to host sampling. The single-rank periodic

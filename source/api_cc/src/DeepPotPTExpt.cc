@@ -407,6 +407,15 @@ void DeepPotPTExpt::init(const std::string& model,
     check_charge_spin_domain(default_chg_spin_, chg_spin_table_ranges_);
   }
 
+  // A legacy compressed archive can carry a frozen default without shipping
+  // a fold. Retain that state without changing either conditioning width.
+  try {
+    default_chg_spin_ =
+        deepmd::ptexpt::read_default_chg_spin_for_query(metadata, dchgspin);
+  } catch (const deepmd::deepmd_exception& ex) {
+    default_chg_spin_query_error_ = ex.what();
+  }
+
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   if (num_inter_nthreads) {
@@ -451,6 +460,7 @@ void DeepPotPTExpt::set_charge_spin(const std::vector<double>& charge_spin) {
                               *loader);
   }
   default_chg_spin_.swap(next_charge_spin);
+  default_chg_spin_query_error_.clear();
 }
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model(
@@ -2549,6 +2559,11 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a compact canonical artifact.");
   }
+  if (!has_atomic_virial()) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu requires atomic virials, but the model "
+        "was exported without them or does not declare atom_virial output.");
+  }
   if (!gpu_enabled) {
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a CUDA device.");
@@ -2698,6 +2713,20 @@ bool DeepPotPTExpt::supports_device_edge_inference() const {
 
 bool DeepPotPTExpt::uses_canonical_graph_inference() const {
   return lower_input_is_canonical_;
+}
+
+std::vector<double> DeepPotPTExpt::get_default_chg_spin() const {
+  assert(inited);
+  if (!default_chg_spin_query_error_.empty()) {
+    throw deepmd::deepmd_exception(default_chg_spin_query_error_);
+  }
+  return default_chg_spin_;
+}
+
+bool DeepPotPTExpt::has_atomic_virial() const {
+  assert(inited);
+  return do_atomic_virial && std::find(output_keys.begin(), output_keys.end(),
+                                       "atom_virial") != output_keys.end();
 }
 
 #endif
