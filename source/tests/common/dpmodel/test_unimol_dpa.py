@@ -123,10 +123,6 @@ class TestEquivariantCoordHead(unittest.TestCase):
         np.testing.assert_allclose(revived(latent), self.head(latent))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestPairDistanceHead(unittest.TestCase):
     """The head that replaces Uni-Mol's pair-channel distance prediction."""
 
@@ -152,13 +148,22 @@ class TestPairDistanceHead(unittest.TestCase):
                 dist, _ = self._head(coverage)(self.node, self.nlist)
                 np.testing.assert_array_equal(dist, np.transpose(dist, (0, 2, 1)))
 
-    def test_the_diagonal_is_never_covered(self) -> None:
-        for coverage in PairDistanceHead.COVERAGES:
-            with self.subTest(coverage=coverage):
-                _, mask = self._head(coverage)(self.node, self.nlist)
-                np.testing.assert_array_equal(
-                    np.einsum("fii->fi", mask), np.zeros((self.nf, self.nloc))
-                )
+    def test_the_diagonal_follows_the_coverage(self) -> None:
+        """Upstream scores the zero self-distance; a neighbour list cannot.
+
+        An atom never lists itself as a neighbour, so ``neighbour`` excludes the
+        diagonal by construction. ``all_pairs`` claims to reproduce Uni-Mol's
+        coverage, and Uni-Mol takes every non-padding column, diagonal included
+        -- those entries carry the most extreme normalised label in the set.
+        """
+        _, near = self._head("neighbour")(self.node, self.nlist)
+        np.testing.assert_array_equal(
+            np.einsum("fii->fi", near), np.zeros((self.nf, self.nloc))
+        )
+        _, whole = self._head("all_pairs")(self.node, self.nlist)
+        np.testing.assert_array_equal(
+            np.einsum("fii->fi", whole), np.ones((self.nf, self.nloc))
+        )
 
     def test_coverage_selects_pairs_and_nothing_else(self) -> None:
         """The option changes which pairs the objective sees, not the model.
@@ -173,8 +178,8 @@ class TestPairDistanceHead(unittest.TestCase):
 
         np.testing.assert_allclose(d_near, d_whole)
         self.assertTrue(bool(np.all(m_near <= m_whole)))
-        # all_pairs is every off-diagonal pair; neighbour is strictly fewer here
-        self.assertEqual(int(m_whole.sum()), self.nf * self.nloc * (self.nloc - 1))
+        # all_pairs is every pair including the diagonal, as upstream scores it
+        self.assertEqual(int(m_whole.sum()), self.nf * self.nloc * self.nloc)
         self.assertLess(int(m_near.sum()), int(m_whole.sum()))
         # and it is exactly the neighbour list, padding excluded
         expected = np.zeros_like(m_near)
@@ -442,3 +447,7 @@ class TestUniMolDPAExample(unittest.TestCase):
         self.assertFalse(config["loss"]["virtual_tokens"])
         self.assertEqual(config["loss"]["x_norm_loss"], 0.0)
         self.assertEqual(config["loss"]["delta_pair_repr_norm_loss"], 0.0)
+
+
+if __name__ == "__main__":
+    unittest.main()

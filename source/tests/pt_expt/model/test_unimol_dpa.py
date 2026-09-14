@@ -127,23 +127,124 @@ class TestUniMolDPAConfigured(unittest.TestCase):
         self.assertLess(covered["neighbour"], covered["all_pairs"])
         self.assertEqual(covered["neighbour"], 2 * self.nloc)
 
-    def test_a_complete_neighbour_list_covers_what_all_pairs_does(self) -> None:
-        """The two settings differ only by what the neighbour list leaves out.
+    def test_a_complete_neighbour_list_differs_only_by_the_diagonal(self) -> None:
+        """The two settings differ only by what a neighbour list cannot hold.
 
-        Given a neighbour list that already holds every pair, they agree --
-        which is what makes the option purely one of coverage.
+        Given a list that already holds every other atom, the only pairs left
+        over are the self-pairs -- which upstream scores and a neighbour list
+        can never contain. That is the whole of the difference, which is what
+        makes the option one of coverage rather than of model.
         """
         covered = {}
         for coverage in ("neighbour", "all_pairs"):
             with self.subTest(coverage=coverage):
                 out = self._run(self._build(coverage))
                 covered[coverage] = float(out["pair_mask"].sum().item())
-        self.assertEqual(covered["neighbour"], covered["all_pairs"])
+        self.assertEqual(covered["all_pairs"] - covered["neighbour"], float(self.nloc))
 
     def test_the_default_is_the_neighbour_list(self) -> None:
         self.assertEqual(
             normalize(_config())["model"]["fitting_net"]["dist_coverage"], "neighbour"
         )
+
+    def test_the_coordinate_head_is_trainable(self) -> None:
+        """It projects with SO3Linear, whose weights are plain arrays.
+
+        On this backend a plain array is registered as a buffer, and the
+        optimizer is built from the model's parameters, so without promotion
+        the head would train as a frozen random projection -- silently, because
+        the coordinate term still falls: gradients reach the backbone through
+        the frozen projection either way.
+        """
+        model = self._build()
+        head = model.atomic_model.fitting_net.coord_head
+        names = [n for n, _ in head.named_parameters()]
+        self.assertIn("proj.weight", names)
+        self.assertIsInstance(head.proj.weight, torch.nn.Parameter)
+        self.assertTrue(head.proj.weight.requires_grad)
+        # and the optimizer would actually see it
+        self.assertTrue(any("coord_head" in n for n, _ in model.named_parameters()))
+
+    def test_the_coordinate_head_actually_moves(self) -> None:
+        """Owning a parameter is not the same as learning one."""
+        model = self._build()
+        head = model.atomic_model.fitting_net.coord_head
+        before = head.proj.weight.detach().clone()
+
+        rng = np.random.default_rng(1)
+        device = next(model.parameters()).device
+        token_target = torch.zeros((1, self.nloc), dtype=torch.int64, device=device)
+        token_target[0, 1] = 5
+        labels = {
+            "unimol_token_target": token_target,
+            "unimol_coord_target": torch.as_tensor(
+                rng.normal(size=(1, self.nloc, 3)), device=device
+            ),
+        }
+        params = copy.deepcopy(normalize(_config())["loss"])
+        params.pop("type")
+        loss = UniMolLoss(**params)
+        opt = torch.optim.Adam(model.parameters(), lr=1e-2)
+        for _ in range(5):
+            opt.zero_grad()
+            total, _ = loss.call(1.0, 0, self._run(model), labels)
+            total.backward()
+            opt.step()
+        self.assertGreater(float((head.proj.weight.detach() - before).abs().max()), 0.0)
+
+    def test_scoring_a_dpa_backbone_with_virtual_tokens_is_refused(self) -> None:
+        """Getting this wrong shifts every distance label by one column.
+
+        The two conventions differ in which columns of the pair axis are real.
+        Scoring a backbone that wraps nothing as though it wrapped BOS and EOS
+        selects the same number of entries, so it neither crashes nor changes
+        shape -- every corrupted row simply trains against another atom's
+        distances.
+        """
+        out = self._run(self._build())
+        rng = np.random.default_rng(1)
+        device = next(self._build().parameters()).device
+        token_target = torch.zeros((1, self.nloc), dtype=torch.int64, device=device)
+        token_target[0, 1] = 5
+        labels = {
+            "unimol_token_target": token_target,
+            "unimol_coord_target": torch.as_tensor(
+                rng.normal(size=(1, self.nloc, 3)), device=device
+            ),
+        }
+        wrong = UniMolLoss(
+            x_norm_loss=0.0, delta_pair_repr_norm_loss=0.0, virtual_tokens=True
+        )
+        with self.assertRaisesRegex(ValueError, "wraps no virtual tokens"):
+            wrong.call(1.0, 0, out, labels)
+
+    def test_a_periodic_frame_is_refused_on_the_path_evaluation_uses(self) -> None:
+        """The guard has to be where every path passes, not only at the top.
+
+        A box handed to ``forward`` is the easy case. Evaluation and export go
+        through the lower path, where a cell has already become ghost atoms --
+        which the coverage mask drops and the distance target has no
+        minimum-image convention for. Guarding only the upper path would leave
+        the case that matters unguarded.
+        """
+        model = self._build()
+        device = next(model.parameters()).device
+        nall = self.nloc + 2
+        coord = np.concatenate([self.coord, self.coord[:, :2] + 12.0], axis=1)
+        atype = np.concatenate([self.atype, self.atype[:, :2]], axis=1)
+        with self.assertRaisesRegex(ValueError, "ghost atom"):
+            model.forward_lower(
+                torch.as_tensor(coord, device=device),
+                torch.as_tensor(atype, device=device),
+                torch.as_tensor(self.nlist, device=device),
+            )
+        self.assertEqual(nall, atype.shape[1])
+
+    def test_the_graph_path_is_refused_rather_than_half_advertised(self) -> None:
+        """The base class advertises a graph entry these heads do not have."""
+        model = self._build()
+        self.assertFalse(model.atomic_model.supports_graph_export())
+        self.assertFalse(model.atomic_model.uses_graph_lower())
 
     def test_the_objective_scores_the_configured_model(self) -> None:
         model = self._build()

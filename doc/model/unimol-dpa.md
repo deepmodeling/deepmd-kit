@@ -53,8 +53,10 @@ training. It costs `O(nloc^2)` and does not share the backbone's neighbour
 structure.
 
 The setting selects which pairs are scored and nothing else: the head predicts
-the same numbers either way. Given a neighbour list that already holds every
-pair, the two agree exactly.
+the same numbers either way. `all_pairs` includes the diagonal, because upstream
+scores the zero self-distance too; a neighbour list never lists an atom as its
+own neighbour, so given a list that already holds every other atom the two
+differ by exactly those self-pairs and nothing more.
 
 ## The `[MASK]` pseudo-element
 
@@ -64,9 +66,18 @@ consequences are worth knowing before pairing this with an existing model:
 
 - A DPA4 model pretrained without `[MASK]` has a different `type_map`, and DPA4
   does not implement `change_type_map`, so it cannot be adapted to this one.
-- Electronic-configuration type embedding (`use_econf_tebd`) rejects any
-  `type_map` entry that is not a real element, so it cannot be combined with
-  this objective. It is off by default and DPA4 does not use it.
+- Electronic-configuration type embedding would reject `[MASK]`, since it is
+  not a real element. DPA4 has no such option, so the two cannot meet today;
+  worth knowing if this objective is ever put on a backbone that does.
+
+## Periodic frames
+
+Refused. The backbone handles a cell; this objective does not. Its distance
+target is a plain coordinate difference with no minimum-image convention, and
+its coverage keeps only local neighbours, so a periodic frame would train
+against labels that are wrong by several Angstrom -- some of them longer than
+the cut-off -- rather than fail. The refusal is at the atomic model, so it holds
+on the evaluation path too, not only when a box is passed to the model.
 
 ## Multi-task training
 

@@ -40,10 +40,11 @@ def l1_to_cartesian(l1: Array) -> Array:
 
     It was established by rotating the input by a random :math:`R \in SO(3)` and
     asking which of the 48 signed permutations of the three rows satisfies
-    :math:`v(Rx) = R\,v(x)`. Exactly one does, to 1.7e-14 in float64; the next
-    best is wrong by 0.64, so there is no ambiguity. An overall sign is not
-    determined by that test and does not matter, because the projection feeding
-    this is learned and absorbs it.
+    :math:`v(Rx) = R\,v(x)`. Two do, to 1.7e-14 in float64 -- this one and its
+    negation, as must be the case, since negating a map that commutes with the
+    rotation leaves it commuting. The next best is wrong by 0.2, so the pair is
+    unambiguous, and which of the two is used does not matter: the projection
+    feeding this is learned and absorbs an overall sign.
 
     Parameters
     ----------
@@ -167,9 +168,10 @@ class PairDistanceHead(NativeOP):
         deepmd trains. On drug-like molecules a 6 Angstrom cut-off holds about
         half of all pairs, so the objective sees less than Uni-Mol's.
     ``all_pairs``
-        Every ordered pair, which is Uni-Mol's own coverage and what to use to
-        reproduce its training. Costs O(nloc^2) and ignores the neighbour list,
-        so it does not share the backbone's locality.
+        Every ordered pair, the diagonal included, which is Uni-Mol's own
+        coverage and what to use to reproduce its training. Costs O(nloc^2) and
+        ignores the neighbour list, so it does not share the backbone's
+        locality.
 
     Parameters
     ----------
@@ -251,10 +253,17 @@ class PairDistanceHead(NativeOP):
         predicted = self.out_proj(self.layer_norm(self.dense(pair)))
         predicted = xp.reshape(predicted, (nf, nloc, nloc))
 
-        eye = xp.eye(nloc, dtype=node_ebd.dtype, device=dev)[None, :, :]
-        mask = xp.ones((nf, nloc, nloc), dtype=node_ebd.dtype, device=dev) - eye
         if self.coverage == "neighbour":
-            mask = mask * _neighbour_mask(nlist, nloc, node_ebd.dtype)
+            # A neighbour list never lists an atom as its own neighbour, so the
+            # diagonal is excluded by construction rather than by subtracting it.
+            mask = _neighbour_mask(nlist, nloc, node_ebd.dtype)
+        else:
+            # Every pair, the diagonal included: upstream scores the zero
+            # self-distance too (losses/unimol.py:159-184 takes every
+            # non-padding column), and those entries carry the most extreme
+            # normalised label in the set. Dropping them would make this
+            # setting something other than the coverage it claims to reproduce.
+            mask = xp.ones((nf, nloc, nloc), dtype=node_ebd.dtype, device=dev)
         return predicted, mask
 
     def serialize(self) -> dict:
@@ -287,15 +296,20 @@ class PairDistanceHead(NativeOP):
 
 
 def _neighbour_mask(nlist: Array, nloc: int, dtype) -> Array:  # noqa: ANN001
-    """Scatter a padded neighbour list into a dense ``(nf, nloc, nloc)`` mask."""
+    """Scatter a padded neighbour list into a dense ``(nf, nloc, nloc)`` mask.
+
+    One neighbour slot at a time, rather than one comparison across all of them:
+    the latter reads better but allocates ``nf * nloc * nnei * nloc`` values,
+    which at a realistic ``sel`` and batch size is gigabytes per step for a
+    result of a few megabytes. The loop is over a static dimension.
+    """
     xp = array_api_compat.array_namespace(nlist)
     dev = array_api_compat.device(nlist)
-    # Padding is negative and would wrap when used as an index, so it is sent
-    # to a scratch column that is dropped again below.
-    safe = xp.where(nlist >= 0, nlist, xp.zeros_like(nlist) + nloc)
-    onehot = xp.astype(
-        xp.arange(nloc + 1, dtype=nlist.dtype, device=dev)[None, None, None, :]
-        == safe[..., None],
-        dtype,
-    )
-    return xp.astype(xp.sum(onehot, axis=2)[:, :, :nloc] > 0, dtype)
+    columns = xp.arange(nloc, dtype=nlist.dtype, device=dev)[None, None, :]
+    mask = xp.zeros((nlist.shape[0], nlist.shape[1], nloc), dtype=dtype, device=dev)
+    for k in range(nlist.shape[2]):
+        # Padding is negative and a neighbour beyond the local atoms is a ghost;
+        # neither names a pair this objective can score, and neither matches any
+        # column, so both contribute nothing.
+        mask = xp.maximum(mask, xp.astype(nlist[:, :, k : k + 1] == columns, dtype))
+    return mask

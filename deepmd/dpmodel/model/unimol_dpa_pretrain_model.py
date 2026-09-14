@@ -5,6 +5,11 @@ from typing import (
     Any,
 )
 
+import array_api_compat
+
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.atomic_model import (
     DPUniMolDPAAtomicModel,
 )
@@ -22,6 +27,22 @@ from .make_model import (
     make_model,
 )
 
+
+def _reject_periodic(box) -> None:  # noqa: ANN001
+    """Refuse a cell, with an explanation rather than a quiet mistraining."""
+    if box is None:
+        return
+    xp = array_api_compat.array_namespace(box)
+    if bool(xp.any(box != 0)):
+        raise ValueError(
+            "the unimol objective does not support periodic boundaries: its "
+            "distance target is built from plain coordinate differences with no "
+            "minimum-image convention, and its coverage keeps only local "
+            "neighbours, so a cell would train against wrong labels rather than "
+            "fail. Pass box=None"
+        )
+
+
 DPUniMolDPAPretrainModel_ = make_model(
     DPUniMolDPAAtomicModel, T_Bases=(NativeOP, BaseModel)
 )
@@ -37,11 +58,42 @@ class UniMolDPAPretrainModel(DPModelCommon, DPUniMolDPAPretrainModel_):
     nothing is differentiated with respect to the coordinates: this is
     representation learning, not a potential energy surface.
 
-    Unlike the Uni-Mol backbone's own model, this one is periodic-capable in
-    principle, because the backbone it reads is. Whether a periodic frame makes
-    sense for this objective is a question about the data, not about the model.
+    Periodic frames are refused. The backbone handles them, but this objective
+    does not: the distance target is built from plain coordinate differences
+    with no minimum-image convention, and the coverage mask keeps only local
+    neighbours, so under a cell the labels are wrong by up to several Angstrom
+    and some exceed the cut-off entirely. It would run and quietly mistrain.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         DPModelCommon.__init__(self)
         DPUniMolDPAPretrainModel_.__init__(self, *args, **kwargs)
+
+    def call(
+        self,
+        coord: Array,
+        atype: Array,
+        box: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Evaluate the heads on a frame.
+
+        Raises
+        ------
+        ValueError
+            If a periodic cell is supplied; see the class docstring.
+        """
+        _reject_periodic(box)
+        model_ret = self.call_common(
+            coord,
+            atype,
+            box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+        )
+        return {k: v for k, v in model_ret.items() if v is not None}

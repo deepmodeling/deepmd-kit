@@ -1428,8 +1428,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             The final equivariant state, with shape
             ``(nf * nloc, node_readout_dim, 1, channels)`` where
             ``node_readout_dim = (node_readout_lmax + 1) ** 2``. Rows ``1:4`` of
-            the second axis are the l=1 block, in SeZM's packed ``(-y, z, -x)``
-            basis rather than Cartesian order.
+            the second axis are the l=1 block, in a packed real-harmonic basis
+            rather than Cartesian order; see
+            :func:`deepmd.dpmodel.fitting.unimol_dpa_heads.l1_to_cartesian` for
+            the mapping that rotates with the input, which was established by
+            measurement rather than by assuming a convention.
         """
         return self.call(
             coord_ext,

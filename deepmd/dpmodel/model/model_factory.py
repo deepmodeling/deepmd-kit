@@ -56,7 +56,15 @@ def get_model_components(
         fitting_data["embedding_width"] = descriptor.get_dim_emb()
     if fitting_type == "unimol_dpa_pretrain":
         # The coordinate head projects the backbone's equivariant state, whose
-        # shape follows the degree that backbone reads out.
+        # shape follows the degree that backbone reads out. Reading it here is
+        # what would otherwise raise first, with an AttributeError naming an
+        # attribute the reader has no reason to know about.
+        if not hasattr(descriptor, "node_readout_lmax"):
+            raise TypeError(
+                "the unimol DPA objective needs a backbone that reads out an "
+                "equivariant state, which is what its coordinate head projects; "
+                f"{type(descriptor).__name__} does not"
+            )
         fitting_data["node_readout_lmax"] = descriptor.node_readout_lmax
     fitting_data["dim_descrpt"] = descriptor.get_dim_out()
     if "direct" in fitting_type:

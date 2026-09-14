@@ -271,10 +271,28 @@ class UniMolLoss(Loss):
                 dist_target = _clean_distances(
                     label_dict["unimol_coord_target"], mask, ncol, self.virtual_tokens
                 )
-            pair_mask = masked[..., None] & xp.astype(token_mask, xp.bool)[:, None, :]
             # A head that covers only part of the pair axis says so; Uni-Mol's
-            # covers all of it and emits nothing here.
+            # covers all of it and emits nothing here. Which head is on the other
+            # end also settles whether there are virtual tokens to count, and
+            # getting that wrong is silent: every label shifts one column, so
+            # every corrupted row trains against another atom's distances. The
+            # two are cross-checked here rather than left to the configuration.
             covered = model_dict.get("pair_mask")
+            if covered is None and not self.virtual_tokens:
+                raise ValueError(
+                    "virtual_tokens=False, but this backbone emits no pair "
+                    "coverage, which means it is the Uni-Mol one -- and that "
+                    "wraps every molecule in BOS and EOS. Scoring it without "
+                    "them shifts every distance label by one column"
+                )
+            if covered is not None and self.virtual_tokens:
+                raise ValueError(
+                    "virtual_tokens=True, but this backbone wraps no virtual "
+                    "tokens around a molecule (it emits pair coverage, so it is "
+                    "a DPA one). Scoring it as though it did shifts every "
+                    "distance label by one column; set virtual_tokens=False"
+                )
+            pair_mask = masked[..., None] & xp.astype(token_mask, xp.bool)[:, None, :]
             if covered is not None:
                 pair_mask = pair_mask & xp.astype(covered, xp.bool)
             dist_label = (dist_target[pair_mask] - DIST_MEAN) / DIST_STD

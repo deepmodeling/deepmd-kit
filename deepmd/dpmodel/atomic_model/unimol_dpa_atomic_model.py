@@ -76,10 +76,39 @@ class DPUniMolDPAAtomicModel(DPAtomicModel):
             The head outputs, plus the mask saying which pairs are covered.
         """
         del fparam, aparam, comm_dict, charge_spin
+        # Every path reaches the objective here, including the lower one that
+        # evaluation and export drive, so this is where a periodic frame has to
+        # be refused: ghosts are the shape a cell takes by the time it arrives.
+        # The coverage mask keeps only local neighbours and the distance target
+        # is a plain coordinate difference with no minimum image, so a cell
+        # would train against wrong labels rather than fail.
+        nall = extended_atype.shape[1]
+        nloc = nlist.shape[1]
+        if nall > nloc:
+            raise ValueError(
+                f"the unimol objective needs every atom to be local, but this "
+                f"frame carries {nall - nloc} ghost atom(s), which is what a "
+                "periodic cell becomes here. Its distance target has no "
+                "minimum-image convention and its coverage keeps only local "
+                "neighbours, so a cell would quietly mistrain rather than fail"
+            )
         node_ebd, latent = self.descriptor.call_with_latent(
             extended_coord, extended_atype, nlist, mapping=mapping
         )
         return self.fitting_net.call_atoms(node_ebd, latent, nlist)
+
+    def supports_graph_export(self) -> bool:
+        """No graph entry: these heads read the neighbour list directly.
+
+        The base class advertises one, and the export path believes it, so
+        without this a graph export would reach the fitting and fail on a
+        missing ``call_graph`` rather than be refused up front.
+        """
+        return False
+
+    def uses_graph_lower(self) -> bool:
+        """See :meth:`supports_graph_export`."""
+        return False
 
     def apply_out_stat(self, ret: dict[str, Array], atype: Array) -> dict[str, Array]:
         """Return the head outputs untouched.
