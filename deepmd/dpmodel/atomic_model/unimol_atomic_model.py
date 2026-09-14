@@ -40,6 +40,24 @@ class DPUniMolAtomicModel(DPAtomicModel):
             )
         if not isinstance(fitting, UniMolPretrainFitting):
             raise TypeError("DPUniMolAtomicModel needs the unimol_pretrain fitting")
+        # The objective compares against distances whose virtual tokens sit at
+        # the origin, which is where upstream puts them and, once the transform
+        # has centred a frame, where the clean centroid is. Under "centroid" the
+        # descriptor instead places them at the centroid of the coordinates it
+        # is handed -- the corrupted ones -- so the two virtual columns of every
+        # corrupted row would be regressed against a label for a different
+        # position, by about the size of the noise. Centring costs nothing here
+        # because the transform always centres, so the only effect would be that
+        # silent mismatch.
+        if getattr(descriptor, "virtual_token_position", "origin") != "origin":
+            raise ValueError(
+                "unimol pretraining needs virtual_token_position='origin': the "
+                "distance target places the virtual tokens at the origin, and "
+                f"this descriptor places them at the "
+                f"{descriptor.virtual_token_position}, so the two virtual "
+                "columns would train against the wrong label. The corruption "
+                "centres every frame, so 'origin' is the centroid anyway"
+            )
         super().__init__(descriptor, fitting, type_map, **kwargs)
 
     def forward_atomic(

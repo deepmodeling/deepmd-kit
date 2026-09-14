@@ -47,7 +47,9 @@
       "seed": 1,
       "_comment_max_atoms": "the size cap is applied by the converter, before batching; the descriptor and the distance head only declare the width they expect",
       "precision": "float32",
-      "_comment_precision": "single precision, which is what DPA models train in by default; the backbone is a transformer, not a potential energy surface, so float64 buys nothing here and costs several times the training time"
+      "_comment_precision": "single precision, which is what DPA models train in by default; the backbone is a transformer, not a potential energy surface, so float64 buys nothing here and costs several times the training time",
+      "virtual_token_position": "origin",
+      "_comment_virtual_token_position": "the objective's distance target puts the virtual tokens at the origin, which is where the centred frame's centroid is; the pretraining path requires it"
     },
     "fitting_net": {
       "type": "unimol_pretrain",

@@ -25,6 +25,7 @@ marked with ``# noqa: NPY002``.
 """
 
 import contextlib
+import hashlib
 import os
 from collections.abc import (
     Callable,
@@ -301,6 +302,20 @@ def edge_type(tokens: np.ndarray, num_types: int) -> np.ndarray:
 _EPOCH_STREAMS: dict[tuple[int, int], np.random.Generator] = {}
 
 
+def _stream_entropy(value: int | str | None) -> int:
+    """A stable non-negative integer for a seed or a stream label.
+
+    ``hash`` will not do: it is randomized per process for strings, which is
+    the very thing that would make a run irreproducible.
+    """
+    if value is None:
+        return 0
+    if isinstance(value, int):
+        return abs(int(value))
+    digest = hashlib.blake2b(str(value).encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "big")
+
+
 def _next_epoch(stream: int, seed: int | None) -> int:
     """Draw the number that stands in for upstream's epoch.
 
@@ -312,14 +327,18 @@ def _next_epoch(stream: int, seed: int | None) -> int:
     lives in the process, keyed by the transform's stream, and each call draws
     the next number from it.
 
-    A run is reproducible only when one process decodes it; with workers, the
-    draws depend on how frames were distributed. That is upstream's situation
-    too, whose stream also depends on its loader count.
+    The generator is seeded from the configured seed and the stream alone, so
+    one process decoding a run twice draws the same sequence both times. With
+    workers the draws still depend on how frames were distributed between them.
     """
+    # The process id keys the cache so a forked child builds its own generator
+    # rather than inheriting a half-consumed one. It deliberately does not enter
+    # the seed: it changes from run to run, and mixing it in would break the
+    # reproducibility this seed is supposed to provide.
     key = (stream, os.getpid())
     rng = _EPOCH_STREAMS.get(key)
     if rng is None:
-        entropy = [stream, os.getpid()] if seed is None else [seed, stream, os.getpid()]
+        entropy = [stream] if seed is None else [seed, stream]
         _EPOCH_STREAMS[key] = rng = np.random.default_rng(entropy)
     return int(rng.integers(1 << 62))
 
@@ -362,6 +381,7 @@ class UniMolFrameTransform:
         *,
         seed: int = 1,
         mask_token: str = "[MASK]",
+        stream: str = "default",
         **mask_kwargs: float | str,
     ) -> None:
         from deepmd.dpmodel.descriptor.unimol import (
@@ -421,8 +441,14 @@ class UniMolFrameTransform:
             ),
         ]
         # Identifies this transform's draw sequence within a process, so that
-        # the training and the validation set do not share one.
-        self.stream = int(np.random.SeedSequence().generate_state(1)[0])
+        # the training and the validation set do not share one. Derived from the
+        # configured seed and the caller's label rather than drawn from entropy:
+        # the same configuration has to corrupt the same way twice.
+        self.stream = int(
+            np.random.SeedSequence(
+                [_stream_entropy(seed), _stream_entropy(stream)]
+            ).generate_state(1)[0]
+        )
 
     def __call__(self, frame: dict, index: int) -> dict:
         """Corrupt one frame and attach the labels the objective reads."""
@@ -472,6 +498,7 @@ def make_unimol_data_transform(
     *,
     seed: int = 1,
     mask_token: str = "[MASK]",
+    stream: str = "default",
     **mask_kwargs: float | str,
 ) -> Callable[[dict, int], dict]:
     """Build the per-frame transform a deepmd data reader installs.
@@ -495,7 +522,7 @@ def make_unimol_data_transform(
         ``transform(frame, index) -> frame``, matching the reader's hook.
     """
     return UniMolFrameTransform(
-        type_map, seed=seed, mask_token=mask_token, **mask_kwargs
+        type_map, seed=seed, mask_token=mask_token, stream=stream, **mask_kwargs
     )
 
 

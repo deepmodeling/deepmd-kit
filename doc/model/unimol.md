@@ -70,6 +70,11 @@ all configurable under `loss`.
 A masked atom is carried as a `[MASK]` pseudo-element, so the model's
 `type_map` has to declare it alongside the elements.
 
+Each dataset gets its own corruption, and the validation set is corrupted afresh
+on every pass, as upstream does. The validation loss therefore measures the model
+against a different set of masked atoms each time and is not comparable
+step-to-step the way a fixed validation set would be; read it as a trend.
+
 ## Training
 
 ```sh

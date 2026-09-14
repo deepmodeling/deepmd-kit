@@ -243,6 +243,57 @@ class TestUniMolDataConversion(unittest.TestCase):
             0,
         )
 
+    def test_the_same_seed_corrupts_the_same_way_twice(self) -> None:
+        """Two runs of one configuration have to agree.
+
+        The number standing in for the epoch used to come from OS entropy, so
+        the documented guarantee -- reproducible when a single process decodes
+        -- did not actually hold. It is derived from the seed now.
+
+        The generator lives in a module-level table so that it survives the
+        transform being re-created for every batch in a worker. Clearing that
+        table is what a fresh process looks like.
+        """
+        from deepmd.dpmodel.utils import unimol_transform as transform_module
+
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        frame = {
+            "coord": np.arange(48, dtype=np.float64).reshape(16, 3),
+            "atype": np.zeros(16, dtype=np.int64),
+        }
+
+        def one_run():
+            transform_module._EPOCH_STREAMS.clear()
+            transform = make_unimol_data_transform(type_map, seed=1, stream="training")
+            return [
+                transform(dict(frame), 0)["unimol_token_target"].tolist()
+                for _ in range(3)
+            ]
+
+        first, second = one_run(), one_run()
+        self.assertEqual(first, second)
+        # and it is not reproducible by being frozen: the visits differ
+        self.assertGreater(len({tuple(v) for v in first}), 1)
+        # a different seed gives a different stream
+        transform_module._EPOCH_STREAMS.clear()
+        other = make_unimol_data_transform(type_map, seed=2, stream="training")
+        self.assertNotEqual(
+            first[0], other(dict(frame), 0)["unimol_token_target"].tolist()
+        )
+
+    def test_training_and_validation_do_not_share_a_stream(self) -> None:
+        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
+        frame = {
+            "coord": np.arange(48, dtype=np.float64).reshape(16, 3),
+            "atype": np.zeros(16, dtype=np.int64),
+        }
+        train = make_unimol_data_transform(type_map, seed=1, stream="training")
+        valid = make_unimol_data_transform(type_map, seed=1, stream="validation")
+        self.assertNotEqual(
+            train(dict(frame), 0)["unimol_token_target"].tolist(),
+            valid(dict(frame), 0)["unimol_token_target"].tolist(),
+        )
+
     def test_transform_requires_the_mask_pseudo_element(self) -> None:
         with self.assertRaisesRegex(ValueError, r"\[MASK\]"):
             make_unimol_data_transform(list(UNIMOL_ELEMENTS))

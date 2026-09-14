@@ -238,6 +238,23 @@ class TestUniMolPtExpt(unittest.TestCase):
             with self.subTest(output=name):
                 self.assertTrue(torch.isfinite(out[name]).all())
 
+    def test_the_default_virtual_token_position_is_refused(self) -> None:
+        """The default configuration, which no test used to cover.
+
+        Under "centroid" the descriptor puts the virtual tokens at the centroid
+        of the coordinates it is handed, which during pretraining are the
+        corrupted ones, while the distance target puts them at the origin. The
+        two virtual columns of every corrupted row would then train against a
+        label for a different position, off by about the size of the noise.
+        """
+        import copy
+
+        config = copy.deepcopy(self.config(8))
+        # what argcheck fills in when the key is absent
+        config["model"]["descriptor"]["virtual_token_position"] = "centroid"
+        with self.assertRaisesRegex(ValueError, "virtual_token_position='origin'"):
+            get_model(normalize(config)["model"])
+
     def test_matches_the_array_api_implementation(self) -> None:
         """Same weights, same numbers, once the fp32 basis is out of the way.
 
@@ -634,6 +651,7 @@ class TestUniMolTraining(unittest.TestCase):
                     "encoder_ffn_embed_dim": 32,
                     "encoder_attention_heads": 2,
                     "max_atoms": 16,
+                    "virtual_token_position": "origin",
                     "seed": 1,
                 },
                 "fitting_net": {

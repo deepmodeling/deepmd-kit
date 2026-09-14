@@ -241,9 +241,24 @@ def convert_unimol_lmdb(
             f"{skipped} record(s) were skipped for holding one atom or an "
             "element outside the type_map"
         )
-    if os.path.exists(dst):
-        shutil.rmtree(dst)
-    os.rename(staging, dst)
+    # Move the old dataset aside rather than deleting it first: between a
+    # delete and a rename there is a moment with nothing at `dst`, which is the
+    # loss this staging directory exists to prevent. A rename is atomic, so
+    # every instant has either the old dataset or the new one in place.
+    previous = f"{dst}.replaced"
+    if os.path.exists(previous):
+        shutil.rmtree(previous)
+    had_previous = os.path.exists(dst)
+    if had_previous:
+        os.rename(dst, previous)
+    try:
+        os.rename(staging, dst)
+    except BaseException:
+        if had_previous:
+            os.rename(previous, dst)
+        raise
+    if had_previous:
+        shutil.rmtree(previous, ignore_errors=True)
     return {"molecules": molecules, "frames": frame_idx, "skipped": skipped}
 
 

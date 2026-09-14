@@ -88,7 +88,8 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
     max_atoms : int
         Largest molecule accepted, which fixes ``sel``.
     max_seq_len : int
-        Upstream's sequence guard, kept for configuration compatibility.
+        Upstream's sequence guard. Nothing in the forward pass consults it, but
+        :meth:`get_rcut` reports a radius derived from it, so it is not inert.
     activation_function : str
         Activation of the blocks and heads. Uni-Mol uses the exact GELU.
     dropout, emb_dropout, attention_dropout, activation_dropout : float
@@ -221,7 +222,12 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
     # capability queries
     # ------------------------------------------------------------------
     def get_rcut(self) -> float:
-        """All pairs are neighbours, so the radius is effectively unbounded."""
+        """All pairs are neighbours, so the radius is effectively unbounded.
+
+        The number is derived from ``max_seq_len`` only to scale with the
+        largest sequence configured; nothing compares against it as a real
+        cut-off, because this descriptor has none.
+        """
         return float(self.max_seq_len) * 1e3
 
     def get_rcut_smth(self) -> float:

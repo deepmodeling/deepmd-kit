@@ -74,7 +74,10 @@ def _frame_scalar(value: Array, mask: Array | None) -> Array:
     if mask is None:
         return xp.mean(per_atom)
     weights = xp.astype(mask, per_atom.dtype)
-    return xp.sum(per_atom * weights) / xp.sum(weights)
+    total = xp.sum(weights)
+    # A frame of nothing but padding would divide zero by zero; the other two
+    # reductions in this file already refuse to, so this one does too.
+    return xp.sum(per_atom * weights) / xp.where(total > 0, total, xp.ones_like(total))
 
 
 def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
