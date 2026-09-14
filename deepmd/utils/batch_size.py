@@ -10,10 +10,10 @@ from collections.abc import (
 )
 from typing import (
     Any,
+    Protocol,
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.utils.errors import (
     OutOfMemoryError,
@@ -24,6 +24,18 @@ log = logging.getLogger(__name__)
 
 class RetrySignal(Exception):
     """Signal to retry execution after OOM error."""
+
+
+class BatchSizeBudget(Protocol):
+    """Limit atom budgets and observe completed batch attempts."""
+
+    def limit(self, batch_size: int) -> int:
+        """Return an admissible atom budget no larger than the proposal."""
+        ...
+
+    def observe(self, nframes: int) -> None:
+        """Record an attempt; zero frames denotes an unsuccessful call."""
+        ...
 
 
 class AutoBatchSize(ABC):
@@ -69,6 +81,8 @@ class AutoBatchSize(ABC):
         self.silent = silent
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
+        self._fixed_batch_size = DP_INFER_BATCH_SIZE > 0
+        self._budget: BatchSizeBudget | None = None
         if DP_INFER_BATCH_SIZE > 0:
             self.current_batch_size = DP_INFER_BATCH_SIZE
             self.maximum_working_batch_size = DP_INFER_BATCH_SIZE
@@ -92,9 +106,14 @@ class AutoBatchSize(ABC):
         self.oom_retry_mode = False
 
     def execute(
-        self, callable: Callable, start_index: int, natoms: int
-    ) -> tuple[int, tuple]:
-        """Excuate a method with given batch size.
+        self,
+        callable: Callable[[int, int], tuple[int, Any]],
+        start_index: int,
+        natoms: int,
+        *,
+        max_nframes: int | None = None,
+    ) -> tuple[int, Any]:
+        """Execute one batch within the search and backend resource budgets.
 
         Parameters
         ----------
@@ -104,63 +123,86 @@ class AutoBatchSize(ABC):
         start_index : int
             start index
         natoms : int
-            natoms
+            Number of atoms per frame; non-positive values use frame units.
+        max_nframes : int or None, optional
+            Number of frames remaining in the input, when known.
 
         Returns
         -------
         int
-            executed batch size * number of atoms
-        tuple
-            result from callable, None if failing to execute
+            Number of frames evaluated, or zero after a recoverable OOM.
+        Any
+            Result from callable, or None after a recoverable OOM.
 
         Raises
         ------
         OutOfMemoryError
             OOM when batch size is 1
         """
-        if natoms > 0:
-            batch_nframes = self.current_batch_size // natoms
-        else:
-            batch_nframes = self.current_batch_size
+        if max_nframes is not None and max_nframes <= 0:
+            raise ValueError("max_nframes must be positive")
+        units_per_frame = max(natoms, 1)
+        budget = self._get_batch_budget(natoms, max_nframes)
+        if budget is not None:
+            if budget is not self._budget:
+                self._budget = budget
+                self.maximum_working_batch_size = 0
+                self.minimal_not_working_batch_size = 2**31
+            self._set_batch_size(budget.limit(self.current_batch_size))
+        batch_nframes = max(self.current_batch_size // units_per_frame, 1)
+        if max_nframes is not None:
+            batch_nframes = min(batch_nframes, max_nframes)
+        n_batch = 0
         try:
-            n_batch, result = callable(max(batch_nframes, 1), start_index)
+            n_batch, result = callable(batch_nframes, start_index)
         except Exception as e:
             if not self.is_oom_error(e):
-                raise e
+                raise
+            attempted_size = batch_nframes * units_per_frame
             self.minimal_not_working_batch_size = min(
-                self.minimal_not_working_batch_size, self.current_batch_size
+                self.minimal_not_working_batch_size, attempted_size
             )
             if self.maximum_working_batch_size >= self.minimal_not_working_batch_size:
                 self.maximum_working_batch_size = int(
                     self.minimal_not_working_batch_size / self.factor
                 )
-            if self.minimal_not_working_batch_size <= natoms:
+            if batch_nframes == 1:
                 raise OutOfMemoryError(
                     "The callable still throws an out-of-memory (OOM) error even when batch size is 1!"
                 ) from e
-            # adjust the next batch size
-            self._adjust_batch_size(1.0 / self.factor)
+            self._set_batch_size(
+                max(units_per_frame, int(attempted_size / self.factor))
+            )
             if self.oom_retry_mode:
                 raise RetrySignal from e
             return 0, None
-        else:
-            n_tot = n_batch * natoms
-            self.maximum_working_batch_size = max(
-                self.maximum_working_batch_size, n_tot
-            )
-            # adjust the next batch size
-            if (
-                n_tot + natoms > self.current_batch_size
-                and self.current_batch_size * self.factor
-                < self.minimal_not_working_batch_size
-            ):
-                self._adjust_batch_size(self.factor)
-            return n_batch, result
+        finally:
+            if budget is not None:
+                budget.observe(n_batch)
 
-    def _adjust_batch_size(self, factor: float) -> None:
+        n_tot = n_batch * units_per_frame
+        self.maximum_working_batch_size = max(self.maximum_working_batch_size, n_tot)
+        if (
+            n_tot + units_per_frame > self.current_batch_size
+            and self.current_batch_size * self.factor
+            < self.minimal_not_working_batch_size
+        ):
+            proposed_size = int(self.current_batch_size * self.factor)
+            self._set_batch_size(
+                proposed_size if budget is None else budget.limit(proposed_size)
+            )
+        return n_batch, result
+
+    def _get_batch_budget(
+        self, natoms: int, max_nframes: int | None
+    ) -> BatchSizeBudget | None:
+        """Return a backend resource budget, or None for OOM-driven sizing."""
+        return None
+
+    def _set_batch_size(self, batch_size: int) -> None:
         old_batch_size = self.current_batch_size
-        self.current_batch_size = int(self.current_batch_size * factor)
-        if not self.silent:
+        self.current_batch_size = batch_size
+        if not self.silent and self.current_batch_size != old_batch_size:
             log.info(
                 f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
             )
@@ -172,8 +214,8 @@ class AutoBatchSize(ABC):
         natoms: int,
         *args: Any,
         **kwargs: Any,
-    ) -> tuple[np.ndarray]:
-        """Excuate a method with all given data.
+    ) -> Any:
+        """Execute a method with all given data.
 
         This method is compatible with Array API.
 
@@ -193,9 +235,8 @@ class AutoBatchSize(ABC):
 
         def execute_with_batch_size(
             batch_size: int, start_index: int
-        ) -> tuple[int, tuple[np.ndarray]]:
+        ) -> tuple[int, Any]:
             end_index = start_index + batch_size
-            end_index = min(end_index, total_size)
             return (end_index - start_index), callable(
                 *[
                     (
@@ -225,7 +266,12 @@ class AutoBatchSize(ABC):
         results = None
         returned_dict = None
         while index < total_size:
-            n_batch, result = self.execute(execute_with_batch_size, index, natoms)
+            n_batch, result = self.execute(
+                execute_with_batch_size,
+                index,
+                natoms,
+                max_nframes=total_size - index,
+            )
             if n_batch == 0:
                 continue
             returned_dict = (
