@@ -118,6 +118,7 @@
     "weight_decay": 0.001
   },
   "training": {
+    "enable_tf32": true,
     "model_prob": {
       "water_1": 0.5,
       "water_2": 0.5
