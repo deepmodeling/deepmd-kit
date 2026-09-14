@@ -478,8 +478,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
               scale[1][1] * dvatom[9 * ii + 5] * ener_unit_cvt_factor;  // zy
         }
       }
-      if (out_freq > 0 && update->ntimestep % out_freq == 0) {
-        int rank = comm->me;
+      if (model_deviation_step()) {
         // std force
         if (newton_pair) {
 #if LAMMPS_VERSION_NUMBER >= 20220324
@@ -488,102 +487,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           comm->reverse_comm_pair(this);
 #endif
         }
-        vector<double> std_f;
-        vector<double> tmp_avg_f;
-        deep_pot_model_devi.compute_avg(tmp_avg_f, all_force);
-        deep_pot_model_devi.compute_std_f(std_f, tmp_avg_f, all_force);
-        if (out_rel == 1) {
-          deep_pot_model_devi.compute_relative_std_f(std_f, tmp_avg_f, eps);
-        }
-        double min = numeric_limits<double>::max(), max = 0, avg = 0;
-        ana_st(max, min, avg, std_f, nlocal);
-        double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
-        MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
-        MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
-        MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
-        all_f_avg /= double(atom->natoms);
-        // std v
-        std::vector<double> send_v(9 * numb_models);
-        std::vector<double> recv_v(9 * numb_models);
-        for (int kk = 0; kk < numb_models; ++kk) {
-          for (int ii = 0; ii < 9; ++ii) {
-            send_v[kk * 9 + ii] = all_virial[kk][ii] / double(atom->natoms);
-          }
-        }
-        MPI_Reduce(&send_v[0], &recv_v[0], 9 * numb_models, MPI_DOUBLE, MPI_SUM,
-                   0, world);
-        std::vector<std::vector<double>> all_virial_1(numb_models);
-        std::vector<double> avg_virial, std_virial;
-        for (int kk = 0; kk < numb_models; ++kk) {
-          all_virial_1[kk].resize(9);
-          for (int ii = 0; ii < 9; ++ii) {
-            all_virial_1[kk][ii] = recv_v[kk * 9 + ii];
-          }
-        }
-        double all_v_min = numeric_limits<double>::max(), all_v_max = 0,
-               all_v_avg = 0;
-        if (rank == 0) {
-          deep_pot_model_devi.compute_avg(avg_virial, all_virial_1);
-          deep_pot_model_devi.compute_std(std_virial, avg_virial, all_virial_1,
-                                          1);
-          if (out_rel_v == 1) {
-            deep_pot_model_devi.compute_relative_std(std_virial, avg_virial,
-                                                     eps_v, 1);
-          }
-          for (int ii = 0; ii < 9; ++ii) {
-            if (std_virial[ii] > all_v_max) {
-              all_v_max = std_virial[ii];
-            }
-            if (std_virial[ii] < all_v_min) {
-              all_v_min = std_virial[ii];
-            }
-            all_v_avg += std_virial[ii] * std_virial[ii];
-          }
-          all_v_avg = sqrt(all_v_avg / 9);
-        }
-        if (rank == 0) {
-          all_v_max *= ener_unit_cvt_factor;
-          all_v_min *= ener_unit_cvt_factor;
-          all_v_avg *= ener_unit_cvt_factor;
-          all_f_max *= force_unit_cvt_factor;
-          all_f_min *= force_unit_cvt_factor;
-          all_f_avg *= force_unit_cvt_factor;
-          fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max
-             << " " << setw(18) << all_v_min << " " << setw(18) << all_v_avg
-             << " " << setw(18) << all_f_max << " " << setw(18) << all_f_min
-             << " " << setw(18) << all_f_avg;
-        }
-        if (out_each == 1) {
-          vector<double> std_f_all(atom->natoms);
-          // Gather std_f and tags
-          tagint* tag = atom->tag;
-          int nprocs = comm->nprocs;
-          ensure_model_deviation_buffers();
-          for (int ii = 0; ii < nlocal; ii++) {
-            tagsend[ii] = tag[ii];
-            stdfsend[ii] = std_f[ii];
-          }
-          MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
-          displacements[0] = 0;
-          for (int ii = 0; ii < nprocs - 1; ii++) {
-            displacements[ii + 1] = displacements[ii] + counts[ii];
-          }
-          MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT, tagrecv, counts,
-                      displacements, MPI_LMP_TAGINT, 0, world);
-          MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts,
-                      displacements, MPI_DOUBLE, 0, world);
-          if (rank == 0) {
-            for (int dd = 0; dd < atom->natoms; ++dd) {
-              std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
-            }
-            for (int dd = 0; dd < atom->natoms; ++dd) {
-              fp << " " << setw(18) << std_f_all[dd];
-            }
-          }
-        }
-        if (rank == 0) {
-          fp << endl;
-        }
+        write_model_deviation(all_virial);
       }
     } else {
       error->all(FLERR, "unknown computational branch");
@@ -621,6 +525,124 @@ void PairDeepMD::compute(int eflag, int vflag) {
   }
 }
 
+bool PairDeepMD::model_deviation_step() const {
+  return numb_models > 1 && out_freq > 0 && update->ntimestep % out_freq == 0;
+}
+
+void PairDeepMD::write_model_deviation(
+    const std::vector<std::vector<double>>& all_virial) {
+  int nlocal = atom->nlocal;
+  const int rank = comm->me;
+  vector<double> std_f;
+  vector<double> tmp_avg_f;
+  deep_pot_model_devi.compute_avg(tmp_avg_f, all_force);
+  deep_pot_model_devi.compute_std_f(std_f, tmp_avg_f, all_force);
+  if (out_rel == 1) {
+    deep_pot_model_devi.compute_relative_std_f(std_f, tmp_avg_f, eps);
+  }
+  double min = numeric_limits<double>::max(), max = 0, avg = 0;
+  ana_st(max, min, avg, std_f, nlocal);
+  double all_f_min = 0, all_f_max = 0, all_f_avg = 0;
+  MPI_Reduce(&min, &all_f_min, 1, MPI_DOUBLE, MPI_MIN, 0, world);
+  MPI_Reduce(&max, &all_f_max, 1, MPI_DOUBLE, MPI_MAX, 0, world);
+  MPI_Reduce(&avg, &all_f_avg, 1, MPI_DOUBLE, MPI_SUM, 0, world);
+  all_f_avg /= double(atom->natoms);
+  // std v
+  std::vector<double> send_v(9 * numb_models);
+  std::vector<double> recv_v(9 * numb_models);
+  for (int kk = 0; kk < numb_models; ++kk) {
+    for (int ii = 0; ii < 9; ++ii) {
+      send_v[kk * 9 + ii] = all_virial[kk][ii] / double(atom->natoms);
+    }
+  }
+  MPI_Reduce(&send_v[0], &recv_v[0], 9 * numb_models, MPI_DOUBLE, MPI_SUM, 0,
+             world);
+  std::vector<std::vector<double>> all_virial_1(numb_models);
+  std::vector<double> avg_virial, std_virial;
+  for (int kk = 0; kk < numb_models; ++kk) {
+    all_virial_1[kk].resize(9);
+    for (int ii = 0; ii < 9; ++ii) {
+      all_virial_1[kk][ii] = recv_v[kk * 9 + ii];
+    }
+  }
+  double all_v_min = numeric_limits<double>::max(), all_v_max = 0,
+         all_v_avg = 0;
+  if (rank == 0) {
+    deep_pot_model_devi.compute_avg(avg_virial, all_virial_1);
+    deep_pot_model_devi.compute_std(std_virial, avg_virial, all_virial_1, 1);
+    if (out_rel_v == 1) {
+      deep_pot_model_devi.compute_relative_std(std_virial, avg_virial, eps_v,
+                                               1);
+    }
+    for (int ii = 0; ii < 9; ++ii) {
+      if (std_virial[ii] > all_v_max) {
+        all_v_max = std_virial[ii];
+      }
+      if (std_virial[ii] < all_v_min) {
+        all_v_min = std_virial[ii];
+      }
+      all_v_avg += std_virial[ii] * std_virial[ii];
+    }
+    all_v_avg = sqrt(all_v_avg / 9);
+  }
+  write_model_deviation_output(
+      {all_v_max, all_v_min, all_v_avg, all_f_max, all_f_min, all_f_avg},
+      std_f);
+}
+
+void PairDeepMD::write_model_deviation_output(
+    const std::array<double, 6>& deviation, const std::vector<double>& std_f) {
+  const int rank = comm->me;
+  const int nlocal = atom->nlocal;
+  double all_v_max = deviation[0], all_v_min = deviation[1],
+         all_v_avg = deviation[2];
+  double all_f_max = deviation[3], all_f_min = deviation[4],
+         all_f_avg = deviation[5];
+  if (rank == 0) {
+    all_v_max *= ener_unit_cvt_factor;
+    all_v_min *= ener_unit_cvt_factor;
+    all_v_avg *= ener_unit_cvt_factor;
+    all_f_max *= force_unit_cvt_factor;
+    all_f_min *= force_unit_cvt_factor;
+    all_f_avg *= force_unit_cvt_factor;
+    fp << setw(12) << update->ntimestep << " " << setw(18) << all_v_max << " "
+       << setw(18) << all_v_min << " " << setw(18) << all_v_avg << " "
+       << setw(18) << all_f_max << " " << setw(18) << all_f_min << " "
+       << setw(18) << all_f_avg;
+  }
+  if (out_each == 1) {
+    vector<double> std_f_all(atom->natoms);
+    // Gather std_f and tags
+    tagint* tag = atom->tag;
+    int nprocs = comm->nprocs;
+    ensure_model_deviation_buffers();
+    for (int ii = 0; ii < nlocal; ii++) {
+      tagsend[ii] = tag[ii];
+      stdfsend[ii] = std_f[ii];
+    }
+    MPI_Gather(&nlocal, 1, MPI_INT, counts, 1, MPI_INT, 0, world);
+    displacements[0] = 0;
+    for (int ii = 0; ii < nprocs - 1; ii++) {
+      displacements[ii + 1] = displacements[ii] + counts[ii];
+    }
+    MPI_Gatherv(tagsend, nlocal, MPI_LMP_TAGINT, tagrecv, counts, displacements,
+                MPI_LMP_TAGINT, 0, world);
+    MPI_Gatherv(stdfsend, nlocal, MPI_DOUBLE, stdfrecv, counts, displacements,
+                MPI_DOUBLE, 0, world);
+    if (rank == 0) {
+      for (int dd = 0; dd < atom->natoms; ++dd) {
+        std_f_all[tagrecv[dd] - 1] = stdfrecv[dd] * force_unit_cvt_factor;
+      }
+      for (int dd = 0; dd < atom->natoms; ++dd) {
+        fp << " " << setw(18) << std_f_all[dd];
+      }
+    }
+  }
+  if (rank == 0) {
+    fp << endl;
+  }
+}
+
 static bool is_key(const string& input) {
   vector<string> keys;
   keys.push_back("out_freq");
@@ -646,6 +668,15 @@ static bool is_key(const string& input) {
   return false;
 }
 
+bool PairDeepMD::initialize_models(const std::vector<std::string>& models) {
+  deep_pot.init(models[0], get_node_rank(), get_file_content(models[0]));
+  if (models.size() > 1) {
+    deep_pot_model_devi.init(models, get_node_rank(), get_file_content(models));
+    return true;
+  }
+  return false;
+}
+
 void PairDeepMD::settings(int narg, char** arg) {
   if (narg <= 0) {
     error->all(FLERR, "Illegal pair_style command");
@@ -663,39 +694,23 @@ void PairDeepMD::settings(int narg, char** arg) {
     models.push_back(arg[ii]);
   }
   numb_models = models.size();
-  if (numb_models == 1) {
-    try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-    } catch (deepmd_compat::deepmd_exception& e) {
-      error->one(FLERR, e.what());
-    }
-    cutoff = deep_pot.cutoff() * dist_unit_cvt_factor;
-    numb_types = deep_pot.numb_types();
-    numb_types_spin = deep_pot.numb_types_spin();
-    dim_fparam = deep_pot.dim_fparam();
-    dim_aparam = deep_pot.dim_aparam();
-    dim_chg_spin = deep_pot.dim_chg_spin();
-  } else {
-    try {
-      deep_pot.init(arg[0], get_node_rank(), get_file_content(arg[0]));
-      deep_pot_model_devi.init(models, get_node_rank(),
-                               get_file_content(models));
-    } catch (deepmd_compat::deepmd_exception& e) {
-      error->one(FLERR, e.what());
-    }
-    cutoff = deep_pot_model_devi.cutoff() * dist_unit_cvt_factor;
-    numb_types = deep_pot_model_devi.numb_types();
-    numb_types_spin = deep_pot_model_devi.numb_types_spin();
-    dim_fparam = deep_pot_model_devi.dim_fparam();
-    dim_aparam = deep_pot_model_devi.dim_aparam();
-    dim_chg_spin = deep_pot_model_devi.dim_chg_spin();
-    assert(cutoff == deep_pot.cutoff() * dist_unit_cvt_factor);
-    assert(numb_types == deep_pot.numb_types());
-    assert(numb_types_spin == deep_pot.numb_types_spin());
-    assert(dim_fparam == deep_pot.dim_fparam());
-    assert(dim_aparam == deep_pot.dim_aparam());
-    assert(dim_chg_spin == deep_pot.dim_chg_spin());
+  if (numb_models == 0) {
+    error->all(FLERR, "No model specified for pair style deepmd.");
   }
+  bool ensemble_initialized = false;
+  try {
+    ensemble_initialized = initialize_models(models);
+  } catch (deepmd_compat::deepmd_exception& e) {
+    error->one(FLERR, e.what());
+  }
+  // Ensemble metadata have always been taken from model 0. Device styles can
+  // therefore use the same parser without constructing a host ensemble.
+  cutoff = deep_pot.cutoff() * dist_unit_cvt_factor;
+  numb_types = deep_pot.numb_types();
+  numb_types_spin = deep_pot.numb_types_spin();
+  dim_fparam = deep_pot.dim_fparam();
+  dim_aparam = deep_pot.dim_aparam();
+  dim_chg_spin = deep_pot.dim_chg_spin();
 
   out_freq = 100;
   out_file = "model_devi.out";
@@ -881,7 +896,7 @@ void PairDeepMD::settings(int narg, char** arg) {
   if (!charge_spin.empty()) {
     try {
       deep_pot.set_charge_spin(charge_spin);
-      if (numb_models > 1) {
+      if (ensemble_initialized) {
         deep_pot_model_devi.set_charge_spin(charge_spin);
       }
     } catch (deepmd_compat::deepmd_exception& e) {
