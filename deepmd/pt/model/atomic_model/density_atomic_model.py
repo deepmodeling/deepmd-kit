@@ -132,13 +132,10 @@ class DPDensityAtomicModel(DPAtomicModel):
         # nb x (ngrid+nall)
         merged_nlist = torch.cat([shifted_grid_nlist, shifted_nlist], dim=1)
 
-        grid_mapping = torch.cat(
-            [
-                torch.ones([nframes, 1], device=mapping.device, dtype=mapping.dtype) * i
-                for i in range(ngrid)
-            ],
-            dim=1,
-        )
+        # nb x ngrid, row i is the grid index i
+        grid_mapping = torch.arange(
+            ngrid, device=mapping.device, dtype=mapping.dtype
+        ).expand(nframes, -1)
         # nb x (ngrid+nall)
         merged_mapping = torch.cat([grid_mapping, mapping + ngrid], dim=1)
 
@@ -151,11 +148,14 @@ class DPDensityAtomicModel(DPAtomicModel):
         )
         assert descriptor is not None
 
+        # the fitting net must see the same grid type as the descriptor:
+        # the reserved last entry of the type map
+        grid_ftype = torch.ones(
+            [nframes, ngrid], device=grid_type.device, dtype=grid_type.dtype
+        ) * (self.descriptor.get_ntypes() - 1)
         ret = self.fitting_net(
             descriptor[:, :ngrid, :],
-            torch.zeros(
-                [nframes, ngrid], device=grid_type.device, dtype=grid_type.dtype
-            ),
+            grid_ftype,
             gr=rot_mat,
             g2=g2,
             h2=h2,
@@ -310,8 +310,11 @@ class DPDensityAtomicModel(DPAtomicModel):
                     grid = normalize_coord(
                         grid, box.to(grid.device).reshape(box.shape[0], 3, 3)
                     )
-                grid_type = torch.zeros(
-                    grid.shape[:-1], device=grid.device, dtype=atype.dtype
+                grid_type = torch.full(
+                    grid.shape[:-1],
+                    self.descriptor.get_ntypes() - 1,
+                    device=grid.device,
+                    dtype=atype.dtype,
                 )
                 grid_nlist = build_directional_neighbor_list(
                     grid,
@@ -352,6 +355,119 @@ class DPDensityAtomicModel(DPAtomicModel):
         gradient descent during training.
         """
         log.warning("change_out_bias is not supported for density models; skipping.")
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
+    ) -> None:
+        """Compute or load statistics, with real statistics for the grid type.
+
+        The reserved grid type (``ntypes - 1``) has no real atoms in any
+        training system, so the standard pass yields zero samples for it
+        and falls back to placeholder statistics (mean 0, stddev 0.1),
+        which are then applied to exactly the rows that produce the
+        density output. When the sampled data provides grids, a second
+        pass is run with the grid points injected as pseudo-atoms of the
+        grid type, and only the grid-type row of the statistics is taken
+        from it; the real types keep their clean statistics from the
+        standard pass.
+        """
+        sampled = sampled_func() if callable(sampled_func) else sampled_func
+        grid_davg = None
+        grid_dstd = None
+        if any("grid" in sample for sample in sampled):
+            try:
+                self.descriptor.compute_input_stats(self._inject_grid_samples(sampled))
+                davg, dstd = self._descriptor_stat_tensors()
+                grid_davg = davg[-1].detach().clone()
+                grid_dstd = dstd[-1].detach().clone()
+            except (TypeError, KeyError) as err:
+                log.warning(
+                    "Cannot compute input statistics for the grid type (%s); "
+                    "falling back to the descriptor defaults.",
+                    err,
+                )
+        else:
+            log.warning(
+                "No grid data in the sampled frames; the grid type gets the "
+                "descriptor's default input statistics."
+            )
+        super().compute_or_load_stat(
+            lambda: sampled,
+            stat_file_path,
+            compute_or_load_out_stat=compute_or_load_out_stat,
+            preset_observed_type=preset_observed_type,
+        )
+        if grid_davg is not None:
+            davg, dstd = self._descriptor_stat_tensors()
+            davg[-1] = grid_davg.to(device=davg.device, dtype=davg.dtype)
+            dstd[-1] = grid_dstd.to(device=dstd.device, dtype=dstd.dtype)
+
+    def _descriptor_stat_tensors(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Access the (davg, dstd) statistics tensors of the descriptor block."""
+        try:
+            return self.descriptor["davg"], self.descriptor["dstd"]
+        except (TypeError, KeyError):
+            pass
+        for attr in (
+            "sea",
+            "ser",
+            "seat",
+            "se_atten",
+            "se_ttebd",
+            "repinit",
+            "repformers",
+            "repflow",
+            "repflows",
+        ):
+            block = getattr(self.descriptor, attr, None)
+            if block is None:
+                continue
+            try:
+                return block["davg"], block["dstd"]
+            except (TypeError, KeyError):
+                continue
+        raise KeyError("davg/dstd not accessible on this descriptor")
+
+    def _inject_grid_samples(self, sampled: list[dict]) -> list[dict]:
+        """Append the grid points of each sample as pseudo-atoms of the
+        reserved grid type, so the descriptor input statistics get real
+        samples for it. Neighbor lists are rebuilt by the stat machinery,
+        so only ``coord`` and ``atype`` need to be extended.
+        """
+        ntypes = self.descriptor.get_ntypes()
+        injected = []
+        for sample in sampled:
+            grid = sample.get("grid")
+            if grid is None:
+                injected.append(sample)
+                continue
+            sample = dict(sample)
+            coord = sample["coord"]
+            atype = sample["atype"]
+            nframes = atype.shape[0]
+            gg = grid.reshape(nframes, -1, 3).to(coord.dtype)
+            ngrid = gg.shape[1]
+            sample["coord"] = torch.cat(
+                [coord.reshape(nframes, -1, 3), gg], dim=1
+            ).reshape(nframes, -1)
+            sample["atype"] = torch.cat(
+                [
+                    atype,
+                    torch.full(
+                        (nframes, ngrid),
+                        ntypes - 1,
+                        dtype=atype.dtype,
+                        device=atype.device,
+                    ),
+                ],
+                dim=1,
+            )
+            injected.append(sample)
+        return injected
 
     def compute_or_load_out_stat(
         self,

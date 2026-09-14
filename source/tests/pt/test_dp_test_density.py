@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+import shutil
 import tempfile
 import unittest
 from copy import (
@@ -27,10 +28,12 @@ from deepmd.utils.argcheck import (
 )
 
 model_density = {
-    "type_map": ["O", "H"],
+    # the last entry is the reserved grid point type; its sel is 0 because
+    # grid points are never neighbors, only centers
+    "type_map": ["O", "H", "X"],
     "descriptor": {
         "type": "se_e2_a",
-        "sel": [8, 8],
+        "sel": [8, 8, 0],
         "rcut_smth": 0.50,
         "rcut": 4.00,
         "neuron": [8, 16],
@@ -69,7 +72,7 @@ class TestDPTestDensity(unittest.TestCase):
         np.save(set_dir / "grid.npy", rng.random((cls.nframes, cls.ngrid, 3)) * 8.0)
         np.save(set_dir / "density.npy", rng.random((cls.nframes, cls.ngrid, 1)))
         np.savetxt(cls.system / "type.raw", [0, 0, 1, 1, 1], fmt="%d")
-        np.savetxt(cls.system / "type_map.raw", ["O", "H"], fmt="%s")
+        np.savetxt(cls.system / "type_map.raw", ["O", "H", "X"], fmt="%s")
 
         cls.config = {
             "model": deepcopy(model_density),
@@ -121,9 +124,93 @@ class TestDPTestDensity(unittest.TestCase):
         os.unlink(cls.model_path)
         cls.tmpdir.cleanup()
 
+    def test_change_out_bias_noop(self) -> None:
+        # fine-tuning calls the model-level change_out_bias, whose default
+        # change-by-statistic mode would run the grid-less stat wrapper;
+        # for density models it must be a no-op instead
+        model = self.torch_model
+        bias_before = model.atomic_model.out_bias.detach().clone()
+        model.change_out_bias(self.input_dict)
+        model.change_out_bias(self.input_dict, bias_adjust_mode="set-by-statistic")
+        torch.testing.assert_close(model.atomic_model.out_bias, bias_before)
+
+    def test_atom_excl_does_not_mask_grid(self) -> None:
+        # grid points carry the reserved type X; excluding a real atom type
+        # must not zero the density predictions (it would if grid_type were 0)
+        model = self.torch_model
+        model.atomic_model.reinit_atom_exclude([0])
+        try:
+            input_dict = {
+                kk: vv.clone() if isinstance(vv, torch.Tensor) else vv
+                for kk, vv in self.input_dict.items()
+            }
+            out = model(**input_dict)
+            self.assertFalse(bool((out["density"] == 0).all()))
+        finally:
+            model.atomic_model.reinit_atom_exclude([])
+
     def test_model_type_dispatch(self) -> None:
         dp = DeepEval(self.model_path)
         self.assertIsInstance(dp, DeepDensity)
+
+    def _run_training(self, config: dict, workdir: str) -> None:
+        """Run a few real training steps (checkpoints land in workdir)."""
+        cwd = os.getcwd()
+        os.chdir(workdir)
+        try:
+            trainer = get_trainer(normalize(deepcopy(config)))
+            trainer.run()
+        finally:
+            os.chdir(cwd)
+        self.assertTrue(os.path.exists(os.path.join(workdir, "model.ckpt.pt")))
+
+    def _training_config(
+        self, system: Path, start: float = 1.0, limit: float = 1.0
+    ) -> dict:
+        config = deepcopy(self.config)
+        config["training"]["training_data"]["systems"] = [str(system)]
+        config["training"]["validation_data"]["systems"] = [str(system)]
+        config["training"]["training_data"]["batch_size"] = 2
+        config["training"]["validation_data"]["batch_size"] = 2
+        config["training"]["numb_steps"] = 3
+        config["loss"]["start_pref_d"] = start
+        config["loss"]["limit_pref_d"] = limit
+        return config
+
+    def test_training_steps(self) -> None:
+        # exercises GridDensityLoss.forward on the main path
+        workdir = tempfile.mkdtemp(dir=self.tmpdir.name)
+        self._run_training(self._training_config(self.system), workdir)
+
+    def test_training_without_density_label(self) -> None:
+        # density.npy absent with must=False: the find_density == 0 branch
+        # must skip the residual but keep the graph connected
+        system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "system"
+        shutil.copytree(self.system, system)
+        (system / "set.000" / "density.npy").unlink()
+        workdir = tempfile.mkdtemp(dir=self.tmpdir.name)
+        self._run_training(self._training_config(system), workdir)
+
+    def test_training_zero_prefactor(self) -> None:
+        # start_pref_d = limit_pref_d = 0 disables the density term;
+        # backward() must still work on the graph-connected zero loss
+        workdir = tempfile.mkdtemp(dir=self.tmpdir.name)
+        self._run_training(
+            self._training_config(self.system, start=0.0, limit=0.0), workdir
+        )
+
+    def test_grid_type_statistics(self) -> None:
+        # the reserved grid type X gets real input statistics from the
+        # injected grid samples, not the descriptor's placeholder defaults
+        descriptor = self.torch_model.atomic_model.descriptor
+        dstd = descriptor.sea["dstd"].detach().cpu().numpy()
+        self.assertEqual(dstd.shape[0], 3)
+        self.assertTrue(np.isfinite(dstd).all())
+        # placeholder default is 0.1; real statistics differ from it
+        self.assertFalse(
+            np.allclose(dstd[-1], 0.1, atol=1e-3),
+            f"grid type still has placeholder statistics: {dstd[-1]}",
+        )
 
     def test_eval_shape(self) -> None:
         dp = DeepDensity(self.model_path)
@@ -134,6 +221,17 @@ class TestDPTestDensity(unittest.TestCase):
         atype = np.loadtxt(self.system / "type.raw", dtype=int)
         out = dp.eval(coord, box, atype, grid=grid)
         self.assertEqual(out.shape, (2, self.ngrid))
+
+    def test_eval_requires_grid(self) -> None:
+        # evaluating a density model without grid must fail with a clear
+        # error instead of a bare KeyError on the output name table
+        dp = DeepDensity(self.model_path)
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:2]
+        box = np.load(set_dir / "box.npy")[:2]
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        with self.assertRaisesRegex(ValueError, "grid is required"):
+            dp.deep_eval.eval(coord, box, atype)
 
     def test_eval_no_auto_batch(self) -> None:
         # auto_batch_size=False bypasses execute_all's single-tuple unwrapping;

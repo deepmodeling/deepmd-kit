@@ -1,4 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
+from typing import (
+    Any,
+)
+
 import torch
 
 from deepmd.pt.model.atomic_model.base_atomic_model import (
@@ -21,6 +26,8 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.region import (
     normalize_coord,
 )
+
+log = logging.getLogger(__name__)
 
 
 def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
@@ -54,14 +61,18 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            grid: torch.Tensor,
             box: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
+            grid: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
+
+            Same positional order as the base ``forward_common``; the
+            density-specific ``grid`` is appended at the end and is
+            required for this model.
 
             Parameters
             ----------
@@ -70,9 +81,6 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 shape: nf x (nloc x 3)
             atype
                 The type of atoms. shape: nf x nloc
-            grid
-                The coordinates of the grids.
-                shape: nf x (ngrid x 3)
             box
                 The simulation box. shape: nf x 9
             fparam
@@ -81,6 +89,9 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            grid
+                The coordinates of the grids.
+                shape: nf x (ngrid x 3)
 
             Returns
             -------
@@ -91,7 +102,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             """
             assert grid is not None
             cc, gg, bb, fp, ap, input_prec = self._input_type_cast(
-                coord, grid, box=box, fparam=fparam, aparam=aparam
+                coord, box=box, fparam=fparam, aparam=aparam, grid=grid
             )
             del coord, grid, box, fparam, aparam
             gg = gg.view(gg.shape[0], -1, 3)
@@ -114,8 +125,11 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 mixed_types=self.mixed_types(),
                 box=bb,
             )
-            grid_type = torch.zeros(
-                gg.shape[0], gg.shape[1], device=gg.device, dtype=atype.dtype
+            grid_type = torch.full(
+                (gg.shape[0], gg.shape[1]),
+                self.atomic_model.descriptor.get_ntypes() - 1,
+                device=gg.device,
+                dtype=atype.dtype,
             )
             grid_nlist = build_directional_neighbor_list(
                 gg,
@@ -153,9 +167,6 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             extended_coord: torch.Tensor,
             extended_atype: torch.Tensor,
             nlist: torch.Tensor,
-            grid: torch.Tensor,
-            grid_type: torch.Tensor,
-            grid_nlist: torch.Tensor,
             mapping: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
@@ -163,11 +174,18 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             do_atomic_virial: bool = False,
             comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
+            grid: torch.Tensor | None = None,
+            grid_type: torch.Tensor | None = None,
+            grid_nlist: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, mapping, and the
             grid inputs as input, and returns the predictions on the grid
             points. The predictions are not reduced.
+
+            Same positional order as the base ``forward_common_lower``; the
+            density-specific grid parameters are appended at the end and
+            are required for this model.
 
             Parameters
             ----------
@@ -209,8 +227,10 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
             )
             assert grid is not None
+            assert grid_type is not None
+            assert grid_nlist is not None
             cc_ext, gg, _, fp, ap, input_prec = self._input_type_cast(
-                extended_coord, grid, fparam=fparam, aparam=aparam
+                extended_coord, grid=grid, fparam=fparam, aparam=aparam
             )
             del extended_coord, grid, fparam, aparam
             atomic_ret = self.atomic_model.forward_common_atomic(
@@ -239,10 +259,10 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
         def _input_type_cast(
             self,
             coord: torch.Tensor,
-            grid: torch.Tensor,
             box: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
+            grid: torch.Tensor | None = None,
         ) -> tuple[
             torch.Tensor,
             torch.Tensor,
@@ -281,23 +301,24 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            grid: torch.Tensor,
             box: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             charge_spin: torch.Tensor | None = None,
+            grid: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             # directly call the forward_common method when no specific transform rule
+            assert grid is not None
             return self.forward_common(
                 coord,
                 atype,
-                grid,
-                box,
+                box=box,
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
                 charge_spin=charge_spin,
+                grid=grid,
             )
 
         @torch.jit.export
@@ -314,6 +335,24 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             # a grid; density models do not support embedding extraction
             raise NotImplementedError(
                 "forward_embedding is not supported for density models."
+            )
+
+        def change_out_bias(
+            self,
+            merged: Any,
+            bias_adjust_mode: str = "change-by-statistic",
+        ) -> None:
+            """Change the output bias according to the input data.
+
+            Not supported for density models: the output is defined on grid
+            points rather than atoms, so the standard bias adjustment (which
+            would run a grid-less forward through the stat wrapper) does not
+            apply. Overridden at the model level because the default
+            ``change-by-statistic`` mode never reaches the atomic-level
+            no-op.
+            """
+            log.warning(
+                "change_out_bias is not supported for density models; skipping."
             )
 
     return CM

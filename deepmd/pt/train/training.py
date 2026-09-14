@@ -2475,6 +2475,22 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         ]
         additional_data_requirement += spin_requirement_items
+    has_grid = getattr(_model, "has_grid", False)
+    if callable(has_grid):
+        has_grid = has_grid()
+    if has_grid:
+        # the grid is a model input (like fparam/aparam), not a label; it is
+        # frame-major (nframes, ngrid, 3) and not per-atom
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "grid",
+                ndof=3,
+                atomic=False,
+                must=True,
+                high_prec=True,
+                special_shape="frame_major",
+            )
+        )
     if _model.has_chg_spin_ebd():
         has_default_cs = _model.has_default_chg_spin()
         cs_default = (

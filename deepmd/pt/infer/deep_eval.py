@@ -556,16 +556,22 @@ class DeepEval(DeepEvalBackend):
         natoms, numb_test = self._get_natoms_and_nframes(
             coords, atom_types, len(atom_types.shape) > 1
         )
-        request_defs = self._get_request_defs(atomic)
         if "grid" in kwargs and kwargs["grid"] is not None:
-            out = self._eval_func(self._eval_model_density, numb_test, natoms)(
+            grid_input = np.array(kwargs["grid"])
+            # the directional neighbor list is dense in ngrid x nall, so the
+            # batching size proxy must account for the grid extent, not just
+            # the atom count
+            ngrid = grid_input.size // (numb_test * 3)
+            out = self._eval_func(
+                self._eval_model_density, numb_test, max(natoms, ngrid)
+            )(
                 coords,
                 cells,
                 atom_types,
-                np.array(kwargs["grid"]),
+                grid_input,
                 fparam,
                 aparam,
-                request_defs,
+                self._get_request_defs(atomic),
             )
             # _eval_model_density returns a 1-element tuple; execute_all unwraps
             # it when auto batching is enabled, but with auto_batch_size=False
@@ -573,6 +579,12 @@ class DeepEval(DeepEvalBackend):
             if isinstance(out, tuple):
                 (out,) = out
             return {"density": out}
+        if "density" in self.output_def.var_defs:
+            raise ValueError(
+                "grid is required to evaluate a density model; "
+                "pass grid=... with shape (nframes, ngrid, 3)"
+            )
+        request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
                 coords, cells, atom_types, fparam, aparam, request_defs, charge_spin

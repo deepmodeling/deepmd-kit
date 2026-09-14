@@ -30,11 +30,24 @@ class DensityTester(ModelTester):
         dp = self.dp
         # The grid and the density are defined on grid points rather than on
         # atoms, and their extent (ngrid) is not known until the data is
-        # loaded. They are declared "atomic" so the loader keeps the
-        # frame-major layout without reshaping to natoms; see the grid/density
-        # early return in DeepmdData._load_data.
-        data.add("grid", 3, atomic=True, must=True, high_prec=True)
-        data.add("density", 1, atomic=True, must=True, high_prec=True)
+        # loaded. They are declared frame-major so the loader keeps the
+        # (nframes, ngrid, ndof) layout without reshaping to natoms.
+        data.add(
+            "grid",
+            3,
+            atomic=False,
+            must=True,
+            high_prec=True,
+            special_shape="frame_major",
+        )
+        data.add(
+            "density",
+            1,
+            atomic=False,
+            must=True,
+            high_prec=True,
+            special_shape="frame_major",
+        )
         if dp.get_dim_fparam() > 0:
             data.add(
                 "fparam", dp.get_dim_fparam(), atomic=False, must=True, high_prec=False

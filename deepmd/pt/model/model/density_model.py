@@ -65,11 +65,11 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         model_ret = self.forward_common(
             coord,
             atype,
-            grid,
-            box,
+            box=box,
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            grid=grid,
         )
         model_predict = {}
         model_predict["density"] = model_ret["density"]
@@ -90,4 +90,4 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         comm_dict: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
     ) -> None:
-        raise NotImplementedError
+        raise NotImplementedError("forward_lower is not supported for density models.")

@@ -39,7 +39,7 @@ The training/validation data follows the standard **`deepmd/npy`** format, with 
 > **Notes:**
 >
 > - `grid.npy` and `density.npy` are required for the density model. The number of grid points (`ngrid`) must match between `grid.npy` and `density.npy`, and is allowed to differ from `natoms`.
-> - The **last entry of `type_map` is reserved as a virtual "grid point type"** (e.g. `X` in the example): internally, grid points are assigned this type when building the grid-to-atom neighbor list. Make sure your `type_map` contains one more entry than the real element types.
+> - The **last entry of `type_map` is reserved as a virtual "grid point type"** (e.g. `X` in the example): internally, grid points are assigned this type when building the grid-to-atom neighbor list. Make sure your `type_map` contains one more entry than the real element types. For descriptors with a per-type `sel` list (e.g. `se_e2_a`), set its **last entry to 0** (grid points are only centers, never neighbors); scalar `sel` descriptors such as DPA-2/DPA-3 need no change. The descriptor input statistics for the grid type are computed from the actual `grid.npy` data during training initialization.
 > - **Always set a positive `env_protection`** in the descriptor configuration (e.g. `"env_protection": 0.1`, as in `dpa3/input.json`). Grid points may legitimately coincide with atoms, and the default `env_protection = 0.0` would let the `1/r` terms in the environment matrix produce `NaN` densities and poison the training gradients at such points.
 
 ______________________________________________________________________

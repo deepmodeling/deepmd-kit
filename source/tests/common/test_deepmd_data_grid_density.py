@@ -62,8 +62,22 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         data.add("coord", 3, atomic=True, must=True)
         data.add("box", 9, atomic=False, must=True)
         data.add("type", 1, atomic=True, must=True)
-        data.add("grid", 3, atomic=True, must=must, high_prec=True)
-        data.add("density", 1, atomic=True, must=must, high_prec=True)
+        data.add(
+            "grid",
+            3,
+            atomic=False,
+            must=must,
+            high_prec=True,
+            special_shape="frame_major",
+        )
+        data.add(
+            "density",
+            1,
+            atomic=False,
+            must=must,
+            high_prec=True,
+            special_shape="frame_major",
+        )
         return data
 
     def test_load_set_frame_major(self) -> None:
@@ -113,6 +127,19 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         self.assertEqual(loaded["find_density"], 0.0)
         frame = data.get_single_frame(0, 0)
         self.assertEqual(frame["find_density"], 0.0)
+
+    def test_property_named_density_not_hijacked(self) -> None:
+        # a user property named "density" without a special_shape declaration
+        # must load through the ordinary path, not the frame-major branch
+        self.set_data("density", np.zeros((NFRAMES, 2), dtype=np.float32))
+        data = DeepmdData(str(self.root))
+        data.add("coord", 3, atomic=True, must=True)
+        data.add("box", 9, atomic=False, must=True)
+        data.add("type", 1, atomic=True, must=True)
+        data.add("density", 2, atomic=False, must=True)
+        loaded = data._load_set(self.set_dir)
+        self.assertEqual(loaded["find_density"], 1.0)
+        self.assertEqual(loaded["density"].shape, (NFRAMES, 2))
 
 
 if __name__ == "__main__":

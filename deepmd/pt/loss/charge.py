@@ -114,32 +114,36 @@ class GridDensityLoss(TaskLoss):
             l1_density_loss = torch.abs(
                 density_label_reshape - density_pred_reshape
             ).mean()
-            loss += (pref_d * l1_density_loss).to(GLOBAL_PT_FLOAT_PRECISION)
             mae_d = l1_density_loss
+            # minimise the squared error, consistent with every other loss
+            # in the package; the absolute error is only for display
+            loss += (pref_d * l2_density_loss).to(GLOBAL_PT_FLOAT_PRECISION)
             more_loss["mae_d"] = self.display_if_exist(mae_d.detach(), find_density)
+        elif not self.inference and "density" in model_pred:
+            # the density term is disabled (zero prefactors), but the graph
+            # must stay connected so that backward() does not fail
+            loss = loss + (model_pred["density"].sum() * 0.0).to(
+                GLOBAL_PT_FLOAT_PRECISION
+            )
         return model_pred, loss, more_loss
 
     @property
     def label_requirement(self) -> list[DataRequirementItem]:
-        """Return data label requirements needed for this loss calculation."""
+        """Return data label requirements needed for this loss calculation.
+
+        Only the density label is declared here; the grid is a model input
+        and is declared via ``get_additional_data_requirement``.
+        """
         label_requirement = []
-        label_requirement.append(
-            DataRequirementItem(
-                "grid",
-                ndof=3,
-                atomic=True,  # the grid is defined for each atom, so it is atomic
-                must=True,
-                high_prec=True,
-            )
-        )
         if self.has_d:
             label_requirement.append(
                 DataRequirementItem(
                     "density",
                     ndof=1,
-                    atomic=True,
+                    atomic=False,
                     must=False,
                     high_prec=True,
+                    special_shape="frame_major",
                 )
             )
         return label_requirement
