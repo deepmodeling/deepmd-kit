@@ -50,7 +50,9 @@ jobs:
         if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
       # PT2 fixtures and TorchInductor caches contain native code. PyTorch
       # documents AOTInductor packages as non-portable, so scope cache reuse
-      # to the CPU ISA, libc, and compiler of the current runner.
+      # to the CPU ISA, libc, and compiler of the current runner. Do not key
+      # on CPU model name: hosted runners may expose the same ISA on different
+      # processor models, which would otherwise prevent safe warm-cache reuse.
       - name: Compute native cache fingerprint
         id: native-cache
         if: matrix.enable_pytorch
@@ -58,7 +60,7 @@ jobs:
         run: |
           {
             echo "arch=$(uname -m)"
-            lscpu | sed -n -e 's/^Model name:[[:space:]]*/model=/p' -e 's/^Flags:[[:space:]]*/flags=/p' -e 's/^Features:[[:space:]]*/features=/p'
+            lscpu | sed -n -e 's/^Flags:[[:space:]]*/flags=/p' -e 's/^Features:[[:space:]]*/features=/p'
             echo "glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null || ldd --version | head -n1)"
             if command -v c++ >/dev/null 2>&1; then
               echo "cxx=$(c++ -dumpfullversion -dumpversion 2>/dev/null || c++ --version | head -n1)"
@@ -82,13 +84,13 @@ jobs:
             source/tests/infer/*.pte
             source/tests/infer/*.expected
             source/tests/infer/.pt-fixture-cache-manifest
-          key: pt-cxx-fixtures-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
+          key: pt-cxx-fixtures-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
       - name: Cache TorchInductor
         if: matrix.enable_pytorch
         uses: actions/cache@v6
         with:
           path: .cache/torchinductor
-          key: torchinductor-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
+          key: torchinductor-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
