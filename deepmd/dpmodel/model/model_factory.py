@@ -201,6 +201,7 @@ def get_linear_atomic_model(
     data = copy.deepcopy(data)
     type_map = data["type_map"]
     children = data["models"]
+    preset_out_bias = data.get("preset_out_bias")
     inner_indices = [
         i for i, sub in enumerate(children) if sub.get("type") == "inner_potential"
     ]
@@ -281,6 +282,7 @@ def get_linear_atomic_model(
         learned_descriptor["inner_clamp_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
         learned_descriptor["inner_clamp_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
         route_canonical_learned_options(data, children[learned_indices[0]])
+        preset_out_bias = children[learned_indices[0]].get("preset_out_bias")
 
     built: dict[int, Any] = {}
     for i, sub in enumerate(children):
@@ -339,7 +341,7 @@ def get_linear_atomic_model(
         atom_exclude_types=data.get("atom_exclude_types", []),
         pair_exclude_types=data.get("pair_exclude_types", []),
         # The composition computes the output bias, so the preset belongs to it.
-        preset_out_bias=data.get("preset_out_bias"),
+        preset_out_bias=preset_out_bias,
     )
 
 

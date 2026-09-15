@@ -50,7 +50,7 @@ def normalize_preset_out_bias(
     ValueError
         If a value is neither a sequence with one entry per type nor a dict,
         if a dict names an element outside ``type_map``, or if an entry is not
-        entirely numeric.
+        entirely finite and numeric.
     """
     if preset_out_bias is None:
         return None
@@ -84,10 +84,11 @@ def normalize_preset_out_bias(
                     f"unsupported value {entry!r} in preset_out_bias['{key}']: "
                     "expected a number or a nested list of numbers"
                 ) from err
-            if np.isnan(value).any():
+            if not np.isfinite(value).all():
                 raise ValueError(
                     f"preset_out_bias['{key}'] entry {entry!r} must be assigned "
-                    "completely; a type is either preset or left to the statistics"
+                    "completely with finite values; a type is either preset "
+                    "or left to the statistics"
                 )
             values.append(value.tolist())
         normalized[key] = values
@@ -205,6 +206,42 @@ def make_preset_out_bias(
         for ii in ibias
     ]
     return np.array(nbias)
+
+
+def apply_preset_out_bias(
+    preset_out_bias: dict[str, list[list | None]],
+    out_bias: np.ndarray,
+    keys: list[str],
+    sizes: list[int],
+) -> np.ndarray:
+    """Set assigned bias rows before evaluating a residual-statistics model.
+
+    Parameters
+    ----------
+    preset_out_bias
+        Normalized preset bias.
+    out_bias
+        Stored bias with shape (n_out, ntypes, max_size).
+    keys
+        Output names in the order of the first bias axis.
+    sizes
+        Flattened size of every output.
+
+    Returns
+    -------
+    np.ndarray
+        A copy with assigned rows replaced by their finite presets. Unassigned
+        rows are unchanged. Pinning before prediction also handles non-finite
+        stored values, for which an additive shift cannot enforce a preset.
+    """
+    result = np.array(out_bias, copy=True)
+    for idx, (key, size) in enumerate(zip(keys, sizes, strict=True)):
+        if key in preset_out_bias:
+            result[idx, :, :size] = override_assigned_bias(
+                result[idx, :, :size],
+                make_preset_out_bias(result.shape[1], preset_out_bias[key]),
+            )
+    return result
 
 
 def preset_out_bias_shift(

@@ -575,6 +575,11 @@ def compute_output_stats(
         )
         redu_scanner = None
 
+    # Presets and model residuals depend on state not recorded in the cache.
+    # Neither reuse nor persist these values as ordinary label statistics.
+    if preset_bias is not None or model_forward is not None:
+        stat_file_path = None
+
     # try to restore the bias from stat file
     bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
     if (

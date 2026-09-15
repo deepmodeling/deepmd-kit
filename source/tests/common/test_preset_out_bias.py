@@ -8,6 +8,7 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
 )
 from deepmd.utils.preset_out_bias import (
+    apply_preset_out_bias,
     normalize_preset_out_bias,
     override_assigned_bias,
     remap_preset_out_bias,
@@ -64,10 +65,23 @@ class TestNormalizePresetOutBias(unittest.TestCase):
             {"energy": 1.0},
             {"energy": [None, 1.0 + 2.0j, None]},
             {"energy": [None, "1.0 + 2.0j", None]},
+            {"energy": [None, np.inf, None]},
+            {"energy": [None, -np.inf, None]},
             {"dipole": [None, [0.0, None, 2.0], None]},
         ):
             with self.assertRaises(ValueError):
                 normalize_preset_out_bias(bad, self.type_map)
+
+
+class TestApplyPresetOutBias(unittest.TestCase):
+    def test_only_assigned_rows_are_replaced(self) -> None:
+        bias = np.array([[[1.0, 9.0], [np.nan, 8.0], [np.nan, 7.0]]])
+        preset = normalize_preset_out_bias({"energy": {"H": 5.0}}, ["O", "H", "B"])
+        result = apply_preset_out_bias(preset, bias, ["energy"], [1])
+        np.testing.assert_array_equal(
+            result, np.array([[[1.0, 9.0], [5.0, 8.0], [np.nan, 7.0]]])
+        )
+        self.assertTrue(np.isnan(bias[0, 1, 0]))
 
 
 class TestRemapPresetOutBias(unittest.TestCase):

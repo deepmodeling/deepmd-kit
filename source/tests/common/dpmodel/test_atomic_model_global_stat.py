@@ -7,6 +7,9 @@ from pathlib import (
 from typing import (
     NoReturn,
 )
+from unittest.mock import (
+    Mock,
+)
 
 import h5py
 import numpy as np
@@ -321,11 +324,10 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
-        # 3. test bias load from file
-        def raise_error() -> NoReturn:
-            raise RuntimeError
-
-        md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
+        # Preset-dependent statistics are recomputed rather than cached.
+        sample_again = Mock(return_value=self.merged_output_stat)
+        md0.compute_or_load_out_stat(sample_again, stat_file_path=self.stat_file_path)
+        sample_again.assert_called_once_with()
         ret2 = md0.forward_common_atomic(*args)
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], ret2[kk])

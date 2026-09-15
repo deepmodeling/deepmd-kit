@@ -7,6 +7,9 @@ from pathlib import (
 from typing import (
     NoReturn,
 )
+from unittest.mock import (
+    Mock,
+)
 
 import h5py
 import numpy as np
@@ -14,6 +17,7 @@ import torch
 
 from deepmd.dpmodel.atomic_model import DPAtomicModel as DPDPAtomicModel
 from deepmd.dpmodel.model.ener_model import EnergyModel as DPEnergyModel
+from deepmd.dpmodel.model.model import get_model as get_dp_model
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
@@ -365,11 +369,10 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
-        # 3. test bias load from file
-        def raise_error() -> NoReturn:
-            raise RuntimeError
-
-        md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
+        # Preset-dependent statistics are recomputed rather than cached.
+        sample_again = Mock(return_value=self.merged_output_stat)
+        md0.compute_or_load_out_stat(sample_again, stat_file_path=self.stat_file_path)
+        sample_again.assert_called_once_with()
         ret2 = md0.forward_common_atomic(*args)
         ret2 = cvt_ret(ret2)
         for kk in ["foo", "pix", "bar"]:
@@ -605,6 +608,24 @@ class TestModelPresetBias(unittest.TestCase):
                 {"energy": [None, [-13.6], [3.0]]},
             )
 
+    def test_nonfinite_assigned_bias_from_checkpoint(self) -> None:
+        for value in (np.nan, np.inf, -np.inf):
+            with self.subTest(value=value):
+                self.model.atomic_model.out_bias[0, 1:, 0] = value
+                loaded = EnergyModel.deserialize(self.model.serialize())
+                loaded.change_out_bias(
+                    self.sampled, bias_adjust_mode="change-by-statistic"
+                )
+                bias = to_numpy_array(loaded.get_out_bias()).reshape(-1)
+                self.assertTrue(np.isfinite(bias).all())
+                np.testing.assert_allclose(bias[1:], [-13.6, 3.0])
+                loaded.change_out_bias(
+                    self.sampled, bias_adjust_mode="change-by-statistic"
+                )
+                np.testing.assert_allclose(
+                    to_numpy_array(loaded.get_out_bias()).reshape(-1), bias, atol=1e-10
+                )
+
     def test_change_type_map_remaps_preset(self) -> None:
         self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
         # H is dropped, B keeps its preset, C is new
@@ -625,6 +646,25 @@ class TestModelPresetBias(unittest.TestCase):
         ]
         self.model.change_out_bias(sampled, bias_adjust_mode="change-by-statistic")
         np.testing.assert_allclose(self.out_bias()[0], 3.0)
+
+    def test_dipole_preset_rejected(self) -> None:
+        params = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "sel": [4, 4],
+                "neuron": [4, 8],
+                "axis_neuron": 2,
+                "rcut": 3.0,
+                "rcut_smth": 2.5,
+            },
+            "fitting_net": {"type": "dipole", "neuron": [8]},
+            "preset_out_bias": {"dipole": {"H": [0.0, 1.0, 2.0]}},
+        }
+        for builder in (get_model, get_dp_model):
+            with self.subTest(builder=builder.__module__):
+                with self.assertRaisesRegex(ValueError, "do not apply an output bias"):
+                    builder(params)
 
     def test_unknown_output_rejected(self) -> None:
         params = {

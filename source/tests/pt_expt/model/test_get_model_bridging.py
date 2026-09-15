@@ -88,6 +88,13 @@ def test_sezm_builder_rejects_bridging() -> None:
         get_sezm_model(data)
 
 
+def test_bridged_dpa4_preserves_preset_rejection() -> None:
+    data = _bridged(_dpa4_standard_config())
+    data["preset_out_bias"] = {"energy": {"Ni": 2.0}}
+    with pytest.raises(NotImplementedError, match="preset_out_bias"):
+        get_model(data)
+
+
 def test_standard_builder_without_bridging_is_unaffected() -> None:
     """The rejection keys on the flag, not on the DPA4 components: a plain
     DPA4 standard model still builds and carries no bridging switch.

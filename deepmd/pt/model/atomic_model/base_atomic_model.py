@@ -46,6 +46,7 @@ from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.preset_out_bias import (
+    apply_preset_out_bias,
     check_preset_out_bias,
     normalize_preset_out_bias,
     preset_out_bias_shift,
@@ -655,6 +656,14 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         # enter the fit expressed in the same frame, so the assigned types end at the
         # preset value in both modes while the other types are fitted around them.
         if bias_adjust_mode == "change-by-statistic":
+            if self.preset_out_bias is not None:
+                pinned_bias = apply_preset_out_bias(
+                    self.preset_out_bias,
+                    to_numpy_array(self.out_bias),
+                    self.bias_keys,
+                    [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+                )
+                self.out_bias.copy_(to_torch_tensor(pinned_bias))
             forward = (
                 self._get_forward_wrapper_func()
                 if model_forward is None
