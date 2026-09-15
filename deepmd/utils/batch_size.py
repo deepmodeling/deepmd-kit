@@ -31,11 +31,9 @@ class BatchSizeBudget(Protocol):
 
     def limit(self, batch_size: int) -> int:
         """Return an admissible atom budget no larger than the proposal."""
-        ...
 
     def observe(self, nframes: int) -> None:
         """Record an attempt; zero frames denotes an unsuccessful call."""
-        ...
 
 
 class AutoBatchSize(ABC):
@@ -142,6 +140,7 @@ class AutoBatchSize(ABC):
         if max_nframes is not None and max_nframes <= 0:
             raise ValueError("max_nframes must be positive")
         units_per_frame = max(natoms, 1)
+        proposed_size = self.current_batch_size
         budget = self._get_batch_budget(natoms, max_nframes)
         if budget is not None:
             if budget is not self._budget:
@@ -187,7 +186,11 @@ class AutoBatchSize(ABC):
             and self.current_batch_size * self.factor
             < self.minimal_not_working_batch_size
         ):
-            proposed_size = int(self.current_batch_size * self.factor)
+            # Calibration limits this attempt without discarding the requested
+            # atom budget for subsequent batches.
+            proposed_size = max(
+                proposed_size, int(self.current_batch_size * self.factor)
+            )
             self._set_batch_size(
                 proposed_size if budget is None else budget.limit(proposed_size)
             )

@@ -185,6 +185,15 @@ class TestCudaMemoryBatching(unittest.TestCase):
                 self.assertEqual(self.allocator.ooms, 0)
                 self.assertEqual(max(self.allocator.batches), 3)
 
+    def test_calibration_preserves_the_requested_atom_budget(self) -> None:
+        data = np.arange(16).reshape(8, 2)
+        result = AutoBatchSize(16).execute_all(
+            self.allocator.evaluate, len(data), 2, data
+        )
+        np.testing.assert_array_equal(result, data)
+        self.assertEqual(self.allocator.batches, [1, 7])
+        self.assertEqual(self.allocator.ooms, 0)
+
     def test_calibration_survives_a_stale_global_peak(self) -> None:
         self.allocator.peak = self.allocator.total
         self._evaluate(AutoBatchSize(128))
@@ -251,8 +260,8 @@ class TestCudaMemoryBatching(unittest.TestCase):
         data = np.arange(128).reshape(64, 2)
 
         def evaluate(batch: np.ndarray) -> np.ndarray:
-            if batch[0, 0] >= 6:
-                self.allocator.frame_bytes = 350
+            if batch[0, 0] >= 2:
+                self.allocator.frame_bytes = 200
             return self.allocator.evaluate(batch)
 
         result = auto.execute_all(evaluate, len(data), 2, data)
@@ -266,7 +275,7 @@ class TestCudaMemoryBatching(unittest.TestCase):
         self.set_fraction.assert_not_called()
 
     def test_retry_signal_preserves_backoff(self) -> None:
-        auto = AutoBatchSize(128)
+        auto = AutoBatchSize(8)
         auto.set_oom_retry_mode(True)
         data = np.arange(128).reshape(64, 2)
 
