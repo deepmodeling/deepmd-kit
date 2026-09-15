@@ -43,6 +43,25 @@ jobs:
             enable_paddle: true
     steps:
       - uses: actions/checkout@v7
+      - name: Cache generated PyTorch C++ fixtures
+        id: pt-fixture-cache
+        if: matrix.enable_pytorch
+        uses: actions/cache@v6
+        with:
+          path: |
+            source/tests/infer/*.pt2
+            source/tests/infer/*.pte
+            source/tests/infer/*.expected
+            source/tests/infer/.pt-fixture-cache-manifest
+          key: pt-cxx-fixtures-v1-${{ runner.os }}-${{ runner.arch }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'source/tests/infer/**', 'deepmd/**', 'source/op/pt/**') }}
+      - name: Cache TorchInductor
+        if: matrix.enable_pytorch
+        uses: actions/cache@v6
+        with:
+          path: .cache/torchinductor
+          key: torchinductor-v1-${{ runner.os }}-${{ runner.arch }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}-${{ hashFiles('source/tests/infer/**', 'deepmd/**', 'source/op/pt/**') }}
+          restore-keys: |
+            torchinductor-v1-${{ runner.os }}-${{ runner.arch }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}-
       - name: Install GCC
         run: |
           sudo apt-get update
@@ -80,6 +99,10 @@ jobs:
           ENABLE_TENSORFLOW: ${{ matrix.enable_tensorflow && 'TRUE' || 'FALSE' }}
           ENABLE_PYTORCH: ${{ matrix.enable_pytorch && 'TRUE' || 'FALSE' }}
           ENABLE_PADDLE: ${{ matrix.enable_paddle && 'TRUE' || 'FALSE' }}
+          DP_REUSE_GENERATED_PT_MODELS: ${{ steps.pt-fixture-cache.outputs.cache-hit == 'true' && '1' || '0' }}
+          TORCHINDUCTOR_CACHE_DIR: ${{ github.workspace }}/.cache/torchinductor
+          TORCHINDUCTOR_FX_GRAPH_CACHE: 1
+          TORCHINDUCTOR_AUTOGRAD_CACHE: 1
       # test lammps
       - run: |
           cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
