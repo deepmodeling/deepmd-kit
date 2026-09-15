@@ -16,8 +16,11 @@ jobs:
     name: Build C++
     runs-on: ubuntu-22.04
     env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 1G
+      CCACHE_COMPRESS: "true"
     strategy:
       matrix:
         include:
@@ -52,11 +55,28 @@ jobs:
           && sudo apt-get update \
           && sudo apt-get install -y rocm-dev hipcub-dev
         if: matrix.variant == 'rocm'
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
+      - name: Install ccache
+        shell: bash
+        run: |
+          CCACHE_VERSION=4.14
+          CCACHE_ARCHIVE="ccache-${CCACHE_VERSION}-linux-x86_64-musl-static.tar.xz"
+          curl -L --fail --retry 3 \
+            "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_ARCHIVE}" \
+            -o "$RUNNER_TEMP/$CCACHE_ARCHIVE"
+          echo "888eaf9697919d6eba77be797e9d9c9e40e734d11d67d25a79b075c3f79f6c77  $RUNNER_TEMP/$CCACHE_ARCHIVE" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/$CCACHE_ARCHIVE" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/ccache-${CCACHE_VERSION}-linux-x86_64-musl-static" >> "$GITHUB_PATH"
+      - name: Restore ccache
+        uses: actions/cache@v4
         with:
-          key: build-cc-${{ matrix.variant }}
-          max-size: 1G
+          path: ${{ github.workspace }}/.ccache
+          key: ccache-build-cc-${{ matrix.variant }}-v4.14-${{ github.run_id }}
+          restore-keys: |
+            ccache-build-cc-${{ matrix.variant }}-
+      - name: Reset ccache statistics
+        run: |
+          ccache --version
+          ccache --zero-stats
       - run: |
           source/install/build_cc.sh
         env:
