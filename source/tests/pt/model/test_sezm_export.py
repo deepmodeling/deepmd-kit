@@ -1216,7 +1216,6 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         still emit a complete, loadable ``.pt2`` instead of aborting and
         leaving behind a partial archive without ``metadata.json``.
         """
-
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             params = _tiny_sezm_model_params()
