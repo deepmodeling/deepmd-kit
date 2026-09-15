@@ -2189,7 +2189,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 self.atomic_model.descriptor.blocks,
                 training=self.training,
                 device=coord.device,
-                dtype=coord.dtype,
+                dtype=self.atomic_model.descriptor.dtype,
             )
         if prepared_cute_so2 and cute_runtime_policy.is_so2_thin_wrapper_enabled(
             compute_capability

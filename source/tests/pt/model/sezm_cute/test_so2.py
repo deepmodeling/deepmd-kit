@@ -9,6 +9,7 @@ from __future__ import (
 import importlib
 from dataclasses import (
     fields,
+    replace,
 )
 from types import (
     SimpleNamespace,
@@ -38,6 +39,7 @@ NeoFullCuteBackward = _SO2_RUNNER.NeoFullCuteBackward
 StackCache = _SO2_RUNNER.StackCache
 _validate_runtime_config = _SO2_RUNNER._validate_runtime_config
 _uses_packed_message_grid = _SO2_RUNNER._uses_packed_message_grid
+_destination_degrees_fit_limit = _SO2._destination_degrees_fit_limit
 
 
 class _Identity:
@@ -201,6 +203,32 @@ def test_sm90_uses_native_split_complex_path() -> None:
     assert config.native_sm90_path
     assert not config.per_focus_so2_fwd_pair
     assert not config.combined_so2_gate
+
+
+def test_sm90_portable_fallback_is_a_validated_config() -> None:
+    config = replace(
+        _SO2._architecture_default_config((9, 0)),
+        native_sm90_path=False,
+    )
+
+    assert _validate_runtime_config(config, compute_capability=(9, 0)) is None
+
+
+@pytest.mark.parametrize(
+    ("row_ptr", "expected"),
+    [
+        ([0, 256, 512], True),
+        ([0, 257, 512], False),
+        ([0, 4, 3], False),
+    ],
+)
+def test_destination_degree_limit(
+    row_ptr: list[int],
+    expected: bool,
+) -> None:
+    destination_row_ptr = torch.tensor(row_ptr, dtype=torch.int32, device="cpu")
+
+    assert _destination_degrees_fit_limit(destination_row_ptr, 256) is expected
 
 
 def test_sm100_uses_shared_default_profile() -> None:

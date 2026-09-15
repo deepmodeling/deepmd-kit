@@ -36,7 +36,7 @@ def _validate_runtime_config(
 ) -> None:
     if compute_capability not in SUPPORTED_SO2_CAPABILITIES:
         raise RuntimeError("Neo SO2 requires a supported compute capability")
-    if runtime_config.native_sm90_path != (compute_capability == SM90_CAPABILITY):
+    if runtime_config.native_sm90_path and compute_capability != SM90_CAPABILITY:
         raise RuntimeError("the native SM90 SO2 path must be selected only on sm_90")
     if runtime_config.per_focus_so2_fwd_pair != (
         compute_capability in SM80_PROFILE_CAPABILITIES

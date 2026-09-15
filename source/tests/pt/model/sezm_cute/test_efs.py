@@ -73,7 +73,7 @@ def _strict_fp32() -> Iterator[None]:
         torch.set_float32_matmul_precision(prior_precision)
 
 
-def _neo_model(*, use_compile: bool) -> torch.nn.Module:
+def _neo_model(*, use_compile: bool, sel: int = 32) -> torch.nn.Module:
     from deepmd.pt.model.model import (
         get_sezm_model,
     )
@@ -84,7 +84,7 @@ def _neo_model(*, use_compile: bool) -> torch.nn.Module:
             "type_map": ["O", "H"],
             "descriptor": {
                 "type": "SeZM",
-                "sel": 32,
+                "sel": sel,
                 "rcut": 3.0,
                 "channels": 32,
                 "n_radial": 16,
@@ -124,7 +124,7 @@ def _neo_model(*, use_compile: bool) -> torch.nn.Module:
     return model
 
 
-def _water_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _water_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     coord = torch.tensor(
         [
             [
@@ -137,7 +137,7 @@ def _water_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
             ]
         ],
         device="cuda",
-        dtype=torch.float32,
+        dtype=torch.float64,
     )
     atype = torch.tensor(
         [[0, 1, 1, 0, 1, 1]],
@@ -147,12 +147,12 @@ def _water_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     box = torch.tensor(
         [[5.4, 0.0, 0.0, 0.0, 5.2, 0.0, 0.0, 0.0, 5.0]],
         device="cuda",
-        dtype=torch.float32,
+        dtype=torch.float64,
     )
     return coord, atype, box
 
 
-def _triclinic_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _triclinic_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     box_matrix = torch.tensor(
         [
             [5.2, 0.0, 0.0],
@@ -185,6 +185,24 @@ def _triclinic_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return coord, atype, box_matrix.reshape(1, 9)
 
 
+def _high_degree_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    node_count = 258
+    coord = torch.zeros(
+        (1, node_count, 3),
+        device="cuda",
+        dtype=torch.float32,
+    )
+    coord[0, :, 0] = torch.arange(
+        node_count,
+        device="cuda",
+        dtype=torch.float32,
+    ) * 0.01
+    atype = (torch.arange(node_count, device="cuda") % 2).to(
+        dtype=torch.int32
+    )[None, :]
+    return coord, atype, None
+
+
 def _detached_outputs(outputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     return {name: outputs[name].detach().cpu().clone() for name in OUTPUT_KEYS}
 
@@ -192,7 +210,9 @@ def _detached_outputs(outputs: dict[str, torch.Tensor]) -> dict[str, torch.Tenso
 _FRAME_FACTORIES = {
     "water": _water_frame,
     "triclinic": _triclinic_frame,
+    "high_degree": _high_degree_frame,
 }
+_STANDARD_FRAME_NAMES = ("water", "triclinic")
 
 
 def _assert_runtime_profile() -> dict[str, bool]:
@@ -273,17 +293,28 @@ def _run_efs_child(
     torch.manual_seed(20260726)
     torch.cuda.manual_seed_all(20260726)
     runner_calls = 0
+    runner_types: set[str] = set()
+    max_destination_degree = 0
     original_build_runner = so2._build_runner
 
     def counted_build_runner(*args: Any, **kwargs: Any) -> Any:
-        nonlocal runner_calls
+        nonlocal runner_calls, max_destination_degree
+        runner = original_build_runner(*args, **kwargs)
         runner_calls += 1
-        return original_build_runner(*args, **kwargs)
+        runner_types.add(f"{type(runner).__module__}.{type(runner).__qualname__}")
+        if runner_calls == 1:
+            destination_row_ptr = args[8]
+            degrees = destination_row_ptr[1:] - destination_row_ptr[:-1]
+            max_destination_degree = int(degrees.max().item())
+        return runner
 
     if use_compile:
         so2._build_runner = counted_build_runner
     try:
-        model = _neo_model(use_compile=use_compile)
+        model = _neo_model(
+            use_compile=use_compile,
+            sel=288 if frame_name == "high_degree" else 32,
+        )
         state_keys_before = tuple(model.state_dict())
         coord, atype, box = _FRAME_FACTORIES[frame_name]()
         with _strict_fp32():
@@ -308,6 +339,8 @@ def _run_efs_child(
             "outputs": runs,
             "profile": profile,
             "runner_calls": runner_calls,
+            "runner_types": sorted(runner_types),
+            "max_destination_degree": max_destination_degree,
             "use_compile": use_compile,
         },
         output_path,
@@ -394,7 +427,7 @@ def _run_child_process(
     _CUTE_SKIP_REASON is not None,
     reason=_CUTE_SKIP_REASON or "CuTe runtime unavailable",
 )
-@pytest.mark.parametrize("frame_name", tuple(_FRAME_FACTORIES))
+@pytest.mark.parametrize("frame_name", _STANDARD_FRAME_NAMES)
 def test_neo_cute_compiled_profile_matches_eager_at_shared_5e5(
     tmp_path: Path,
     frame_name: str,
@@ -427,6 +460,46 @@ def test_neo_cute_compiled_profile_matches_eager_at_shared_5e5(
                     f"compiled Neo CuTe {frame_name} run {run_index} {name} "
                     "differs from eager PyTorch"
                 ),
+            )
+
+
+@pytest.mark.skipif(
+    _CUTE_SKIP_REASON is not None,
+    reason=_CUTE_SKIP_REASON or "CuTe runtime unavailable",
+)
+def test_sm90_high_degree_force_uses_portable_cute_fallback(
+    tmp_path: Path,
+) -> None:
+    if tuple(torch.cuda.get_device_capability()) != (9, 0):
+        pytest.skip("the bounded native SO2 runner exists only on SM90")
+    from deepmd.pt_expt.kernels.cute.sezm.so2.sm90.phase_c_attention_backward import (
+        MAX_EDGES_PER_NODE,
+    )
+
+    eager = _run_child_process(
+        frame_name="high_degree",
+        use_compile=False,
+        output_path=tmp_path / "high-degree-eager.pt",
+    )
+    compiled = _run_child_process(
+        frame_name="high_degree",
+        use_compile=True,
+        output_path=tmp_path / "high-degree-compiled.pt",
+    )
+
+    assert compiled["runner_calls"] > 0
+    assert compiled["max_destination_degree"] > MAX_EDGES_PER_NODE
+    assert any("NeoFullCuteBackward" in name for name in compiled["runner_types"])
+    assert all("NeoSm90SO2Runner" not in name for name in compiled["runner_types"])
+    expected = eager["outputs"][0]
+    for actual in compiled["outputs"]:
+        for name in OUTPUT_KEYS:
+            torch.testing.assert_close(
+                actual[name],
+                expected[name],
+                atol=TOL,
+                rtol=TOL,
+                msg=f"high-degree SM90 portable CuTe {name} differs from eager",
             )
 
 

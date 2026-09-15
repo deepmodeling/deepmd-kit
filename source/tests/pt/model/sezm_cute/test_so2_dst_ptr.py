@@ -9,6 +9,9 @@ from __future__ import (
 import ast
 import importlib
 import unittest
+from itertools import (
+    count,
+)
 from types import (
     SimpleNamespace,
 )
@@ -67,7 +70,18 @@ def _load_extracted_sorted_metadata_function():
     function = _function(tree, "build_sorted_edge_index_metadata")
     module = ast.Module(body=[function], type_ignores=[])
     ast.fix_missing_locations(module)
-    namespace = {"torch": torch}
+    def destination_row_ptr(dst, n_nodes):
+        boundaries = torch.arange(
+            n_nodes + 1,
+            device=dst.device,
+            dtype=dst.dtype,
+        )
+        return torch.searchsorted(dst, boundaries, out_int32=True).contiguous()
+
+    namespace = {
+        "torch": torch,
+        "_destination_row_ptr_op": destination_row_ptr,
+    }
     exec(compile(module, str(SO2_METADATA_PATH), "exec"), namespace)
     return namespace["build_sorted_edge_index_metadata"]
 
@@ -271,14 +285,15 @@ class TestSO2DstPtrTorch(unittest.TestCase):
         assert torch is not None
         so2 = importlib.import_module("deepmd.pt_expt.kernels.cute.sezm.so2.operation")
         prior_registry = dict(so2._REGISTRY)
-        prior_next_handle = so2._NEXT_HANDLE
+        prior_next_handle = next(so2._HANDLE_COUNTER)
+        so2._HANDLE_COUNTER = count(prior_next_handle)
 
         def cleanup():
             torch._dynamo.reset()
             so2._PACKED_RUNNER_CACHE.clear()
             so2._REGISTRY.clear()
             so2._REGISTRY.update(prior_registry)
-            so2._NEXT_HANDLE = prior_next_handle
+            so2._HANDLE_COUNTER = count(prior_next_handle)
 
         self.addCleanup(cleanup)
         so2._REGISTRY.clear()
@@ -502,6 +517,53 @@ class TestSortedEdgeIndexMetadata(unittest.TestCase):
         torch.testing.assert_close(
             actual,
             torch.tensor([0, 1, 2, 3, 3], dtype=torch.int32, device="cpu"),
+            rtol=0.0,
+            atol=0.0,
+        )
+
+    @unittest.skipUnless(
+        torch is not None and torch.cuda.is_available(),
+        "offset destination compile regression requires CUDA",
+    )
+    def test_inductor_handles_offset_destination_view(self):
+        assert torch is not None
+        builder = _load_sorted_metadata_function()
+
+        def build_metadata(edge_index):
+            return builder(edge_index[0], edge_index[1], 4)
+
+        compiled = torch.compile(
+            build_metadata,
+            backend="inductor",
+            dynamic=True,
+            fullgraph=True,
+        )
+        edge_index = torch.tensor(
+            [
+                [2, 0, 3, 0, 1, 2],
+                [0, 0, 1, 2, 2, 3],
+            ],
+            dtype=torch.int64,
+            device="cuda",
+        )
+        self.assertGreater(edge_index[1].storage_offset(), 0)
+
+        dst_ptr, source_order, source_ptr = compiled(edge_index)
+        torch.testing.assert_close(
+            dst_ptr,
+            torch.tensor([0, 2, 3, 5, 6], dtype=torch.int32, device="cuda"),
+            rtol=0.0,
+            atol=0.0,
+        )
+        torch.testing.assert_close(
+            edge_index[0].index_select(0, source_order.to(torch.int64)),
+            torch.tensor([0, 0, 1, 2, 2, 3], device="cuda"),
+            rtol=0.0,
+            atol=0.0,
+        )
+        torch.testing.assert_close(
+            source_ptr,
+            torch.tensor([0, 2, 3, 5, 6], dtype=torch.int32, device="cuda"),
             rtol=0.0,
             atol=0.0,
         )

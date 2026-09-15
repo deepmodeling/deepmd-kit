@@ -11,6 +11,7 @@ import weakref
 from dataclasses import (
     dataclass,
     field,
+    replace,
 )
 from functools import (
     lru_cache,
@@ -1358,6 +1359,20 @@ def _make_edge_cache(
     )
 
 
+def _destination_degrees_fit_limit(
+    destination_row_ptr: Tensor,
+    max_edges_per_node: int,
+) -> bool:
+    """Return whether every destination row fits a bounded native kernel."""
+    destination_degrees = destination_row_ptr[1:] - destination_row_ptr[:-1]
+    return bool(
+        torch.all(
+            (destination_degrees >= 0)
+            & (destination_degrees <= max_edges_per_node)
+        ).item()
+    )
+
+
 def _build_runner(
     handle: int,
     x: Tensor,
@@ -1383,7 +1398,20 @@ def _build_runner(
         entry = _REGISTRY[int(handle)]
     config = entry.config
     if config.native_sm90_path:
-        from .sm90.runner import NeoSm90SO2Runner as Runner
+        from .sm90.phase_c_attention_backward import (
+            MAX_EDGES_PER_NODE,
+        )
+
+        native_degree_eligible = _destination_degrees_fit_limit(
+            dst_ptr,
+            MAX_EDGES_PER_NODE,
+        )
+        if native_degree_eligible:
+            from .sm90.runner import NeoSm90SO2Runner as Runner
+        else:
+            from .runner import NeoFullCuteBackward as Runner
+
+            config = replace(config, native_sm90_path=False)
     else:
         from .runner import NeoFullCuteBackward as Runner
 

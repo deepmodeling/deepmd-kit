@@ -9,6 +9,41 @@ from __future__ import (
 import torch
 
 
+def _destination_row_ptr_impl(
+    dst: torch.Tensor,
+    n_nodes: int,
+) -> torch.Tensor:
+    """Build destination CSR where real storage offsets remain visible."""
+    boundaries = torch.arange(
+        n_nodes + 1,
+        device=dst.device,
+        dtype=dst.dtype,
+    )
+    return torch.searchsorted(
+        dst.contiguous(),
+        boundaries,
+        out_int32=True,
+    ).contiguous()
+
+
+_destination_row_ptr_op = torch.library.custom_op(
+    "sezm_cute::destination_row_ptr",
+    mutates_args=(),
+)(_destination_row_ptr_impl)
+
+
+@_destination_row_ptr_op.register_fake
+def _(
+    dst: torch.Tensor,
+    n_nodes: int,
+) -> torch.Tensor:
+    return torch.empty(
+        (n_nodes + 1,),
+        device=dst.device,
+        dtype=torch.int32,
+    )
+
+
 def build_sorted_edge_index_metadata(
     src: torch.Tensor,
     dst: torch.Tensor,
@@ -66,16 +101,7 @@ def build_sorted_edge_index_metadata(
             "Neo SO2 destinations_sorted=True requires monotonically "
             "nondecreasing destination indices",
         )
-    destination_boundaries = torch.arange(
-        n_nodes + 1,
-        device=dst.device,
-        dtype=dst.dtype,
-    )
-    destination_row_ptr = torch.searchsorted(
-        dst,
-        destination_boundaries,
-        out_int32=True,
-    ).contiguous()
+    destination_row_ptr = _destination_row_ptr_op(dst, n_nodes)
 
     source_order_i64 = torch.argsort(src, stable=True)
     sorted_src = src.index_select(0, source_order_i64)
