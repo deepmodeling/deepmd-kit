@@ -98,7 +98,7 @@ jobs:
           DP_VARIANT: ${{ matrix.dp_variant }}
           DOWNLOAD_TENSORFLOW: "FALSE"
           CMAKE_GENERATOR: Ninja
-          CMAKE_ARGS: -DFETCHCONTENT_SOURCE_DIR_LAMMPS_DOWNLOAD=${{ env.LAMMPS_SOURCE_DIR }}
+          LAMMPS_SOURCE_ROOT: ${{ env.LAMMPS_SOURCE_DIR }}
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
           CMAKE_CUDA_COMPILER_LAUNCHER: ccache
@@ -112,7 +112,7 @@ jobs:
           CC: clang
           CXX: clang++
           CMAKE_GENERATOR: Ninja
-          CMAKE_ARGS: -DFETCHCONTENT_SOURCE_DIR_LAMMPS_DOWNLOAD=${{ env.LAMMPS_SOURCE_DIR }}
+          LAMMPS_SOURCE_ROOT: ${{ env.LAMMPS_SOURCE_DIR }}
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
         if: matrix.variant == 'clang'
