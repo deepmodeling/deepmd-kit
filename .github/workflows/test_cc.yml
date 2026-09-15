@@ -43,30 +43,52 @@ jobs:
             enable_paddle: true
     steps:
       - uses: actions/checkout@v7
+      - name: Install GCC
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential
+        if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
+      # PT2 fixtures and TorchInductor caches contain native code. PyTorch
+      # documents AOTInductor packages as non-portable, so scope cache reuse
+      # to the CPU ISA, libc, and compiler of the current runner.
+      - name: Compute native cache fingerprint
+        id: native-cache
+        if: matrix.enable_pytorch
+        shell: bash
+        run: |
+          {
+            echo "arch=$(uname -m)"
+            lscpu | sed -n -e 's/^Model name:[[:space:]]*/model=/p' -e 's/^Flags:[[:space:]]*/flags=/p' -e 's/^Features:[[:space:]]*/features=/p'
+            echo "glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null || ldd --version | head -n1)"
+            if command -v c++ >/dev/null 2>&1; then
+              echo "cxx=$(c++ -dumpfullversion -dumpversion 2>/dev/null || c++ --version | head -n1)"
+            else
+              echo "cxx=missing"
+            fi
+          } > "${RUNNER_TEMP}/native-cache-env.txt"
+          cat "${RUNNER_TEMP}/native-cache-env.txt"
+          fingerprint=$(sha256sum "${RUNNER_TEMP}/native-cache-env.txt" | cut -c1-16)
+          source_fingerprint=$(git ls-files -s -- uv.lock pyproject.toml source deepmd | sha256sum | cut -c1-16)
+          echo "fingerprint=${fingerprint}" >> "${GITHUB_OUTPUT}"
+          echo "source_fingerprint=${source_fingerprint}" >> "${GITHUB_OUTPUT}"
       - name: Cache generated PyTorch C++ fixtures
         id: pt-fixture-cache
         if: matrix.enable_pytorch
         uses: actions/cache@v6
         with:
           path: |
+            source/tests/infer/*.pth
             source/tests/infer/*.pt2
             source/tests/infer/*.pte
             source/tests/infer/*.expected
             source/tests/infer/.pt-fixture-cache-manifest
-          key: pt-cxx-fixtures-v1-${{ runner.os }}-${{ runner.arch }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'source/tests/infer/**', 'deepmd/**', 'source/op/pt/**') }}
+          key: pt-cxx-fixtures-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
       - name: Cache TorchInductor
         if: matrix.enable_pytorch
         uses: actions/cache@v6
         with:
           path: .cache/torchinductor
-          key: torchinductor-v1-${{ runner.os }}-${{ runner.arch }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}-${{ hashFiles('source/tests/infer/**', 'deepmd/**', 'source/op/pt/**') }}
-          restore-keys: |
-            torchinductor-v1-${{ runner.os }}-${{ runner.arch }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}-
-      - name: Install GCC
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes build-essential
-        if: ${{ matrix.check_memleak == false && github.repository_owner == 'deepmodeling' }}
+          key: torchinductor-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
@@ -103,6 +125,19 @@ jobs:
           TORCHINDUCTOR_CACHE_DIR: ${{ github.workspace }}/.cache/torchinductor
           TORCHINDUCTOR_FX_GRAPH_CACHE: 1
           TORCHINDUCTOR_AUTOGRAD_CACHE: 1
+      # test_cc_local.sh creates the base manifest after generation. Add the
+      # TorchScript files too before actions/cache saves the cold-run cache;
+      # otherwise a cache hit skips gen_spin.py with deeppot_dpa_spin.pth absent.
+      - name: Complete PyTorch fixture cache manifest
+        if: ${{ matrix.enable_pytorch && steps.pt-fixture-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          manifest=source/tests/infer/.pt-fixture-cache-manifest
+          for fixture in source/tests/infer/*.pth; do
+            [ -f "${fixture}" ] && basename "${fixture}"
+          done >> "${manifest}"
+          LC_ALL=C sort -u -o "${manifest}" "${manifest}"
+          echo "Cached fixture manifest now contains $(wc -l < "${manifest}") files"
       # test lammps
       - run: |
           cp ${{ github.workspace }}/source/build_tests/paddle_inference_install_dir/paddle/lib/*.so ${{ github.workspace }}/dp_test/lib/
