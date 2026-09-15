@@ -1367,8 +1367,7 @@ def _destination_degrees_fit_limit(
     destination_degrees = destination_row_ptr[1:] - destination_row_ptr[:-1]
     return bool(
         torch.all(
-            (destination_degrees >= 0)
-            & (destination_degrees <= max_edges_per_node)
+            (destination_degrees >= 0) & (destination_degrees <= max_edges_per_node)
         ).item()
     )
 

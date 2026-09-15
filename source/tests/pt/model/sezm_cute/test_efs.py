@@ -192,14 +192,15 @@ def _high_degree_frame() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | Non
         device="cuda",
         dtype=torch.float32,
     )
-    coord[0, :, 0] = torch.arange(
-        node_count,
-        device="cuda",
-        dtype=torch.float32,
-    ) * 0.01
-    atype = (torch.arange(node_count, device="cuda") % 2).to(
-        dtype=torch.int32
-    )[None, :]
+    coord[0, :, 0] = (
+        torch.arange(
+            node_count,
+            device="cuda",
+            dtype=torch.float32,
+        )
+        * 0.01
+    )
+    atype = (torch.arange(node_count, device="cuda") % 2).to(dtype=torch.int32)[None, :]
     return coord, atype, None
 
 

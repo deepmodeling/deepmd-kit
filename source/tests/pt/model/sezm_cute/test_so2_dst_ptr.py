@@ -70,6 +70,7 @@ def _load_extracted_sorted_metadata_function():
     function = _function(tree, "build_sorted_edge_index_metadata")
     module = ast.Module(body=[function], type_ignores=[])
     ast.fix_missing_locations(module)
+
     def destination_row_ptr(dst, n_nodes):
         boundaries = torch.arange(
             n_nodes + 1,
