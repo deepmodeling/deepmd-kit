@@ -970,7 +970,7 @@ def make_model(
             atype_flat = atype_flat[node_index]
             # graph-lower ABI: aparam/spin are FLAT on the node axis, (N, nda)/(N, 3).
             ap_flat = (
-                ap.reshape(n_padded, ap.shape[-1])[node_index]
+                ap.reshape(n_padded, self.get_dim_aparam())[node_index]
                 if ap is not None
                 else None
             )
