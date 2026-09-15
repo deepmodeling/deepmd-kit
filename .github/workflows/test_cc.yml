@@ -83,14 +83,28 @@ jobs:
             source/tests/infer/*.pt2
             source/tests/infer/*.pte
             source/tests/infer/*.expected
+            source/tests/infer/*.savedmodel
             source/tests/infer/.pt-fixture-cache-manifest
-          key: pt-cxx-fixtures-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
+          key: pt-cxx-fixtures-v4-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
       - name: Cache TorchInductor
         if: matrix.enable_pytorch
         uses: actions/cache@v6
         with:
           path: .cache/torchinductor
           key: torchinductor-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.fingerprint }}-py311-${{ matrix.check_memleak && 'lsan' || 'regular' }}-${{ steps.native-cache.outputs.source_fingerprint }}
+      - name: Validate cached multi-backend fixtures
+        if: ${{ matrix.enable_pytorch && steps.pt-fixture-cache.outputs.cache-hit == 'true' }}
+        shell: bash
+        run: |
+          for fixture in \
+            source/tests/infer/fparam_aparam.savedmodel \
+            source/tests/infer/fparam_aparam_default.savedmodel \
+            source/tests/infer/chg_spin.savedmodel; do
+            if [ ! -d "${fixture}" ]; then
+              echo "ERROR: cached generated fixture is missing: ${fixture}" >&2
+              exit 1
+            fi
+          done
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
