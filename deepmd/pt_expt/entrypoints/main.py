@@ -33,6 +33,7 @@ from deepmd.pt_expt.utils.lmdb_dataset import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+    close_data_systems,
     conversion_will_write_lmdb,
     get_data,
     process_systems,
@@ -238,6 +239,7 @@ def get_trainer(
     def factory(
         task_config: TrainingTaskConfig,
     ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, StatFileSpec]:
+        """Own partial datasets until all resources for this task are ready."""
         type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
             dict(task_config.training_data_params),
@@ -247,42 +249,51 @@ def get_trainer(
             world_size=world_size,
         )
         validation_data = None
-        if task_config.validation_data_params is not None:
-            validation_data = _build_data_system(
-                dict(task_config.validation_data_params), type_map, seed=data_seed
+        try:
+            if task_config.validation_data_params is not None:
+                validation_data = _build_data_system(
+                    dict(task_config.validation_data_params), type_map, seed=data_seed
+                )
+            return (
+                train_data,
+                validation_data,
+                task_config.stat_file_spec,
             )
-        return (
-            train_data,
-            validation_data,
-            task_config.stat_file_spec,
-        )
+        except BaseException:
+            close_data_systems(train_data, validation_data)
+            raise
 
     train_data_map, validation_data_map, stat_file_spec_map = make_task_maps(
         config, factory
     )
-    print_data_summaries(train_data_map, validation_data_map)
-    if multi_task:
-        train_data = train_data_map
-        validation_data = validation_data_map
-        stat_file_spec = stat_file_spec_map
-    else:
-        task_key = next(iter(train_data_map))
-        train_data = train_data_map[task_key]
-        validation_data = validation_data_map[task_key]
-        stat_file_spec = stat_file_spec_map[task_key]
+    try:
+        print_data_summaries(train_data_map, validation_data_map)
+        if multi_task:
+            train_data = train_data_map
+            validation_data = validation_data_map
+            stat_file_spec = stat_file_spec_map
+        else:
+            task_key = next(iter(train_data_map))
+            train_data = train_data_map[task_key]
+            validation_data = validation_data_map[task_key]
+            stat_file_spec = stat_file_spec_map[task_key]
 
-    trainer = training.Trainer(
-        config,
-        train_data,
-        stat_file_spec=stat_file_spec,
-        validation_data=validation_data,
-        init_model=init_model,
-        restart_model=restart_model,
-        finetune_model=finetune_model,
-        finetune_links=finetune_links,
-        shared_links=shared_links,
-    )
-    return trainer
+        return training.Trainer(
+            config,
+            train_data,
+            stat_file_spec=stat_file_spec,
+            validation_data=validation_data,
+            init_model=init_model,
+            restart_model=restart_model,
+            finetune_model=finetune_model,
+            finetune_links=finetune_links,
+            shared_links=shared_links,
+        )
+    except BaseException:
+        # Successful construction transfers ownership to the trainer. Until
+        # then, summary and trainer-setup failures must release every task.
+        close_data_systems(train_data_map, validation_data_map)
+        raise
 
 
 class SummaryPrinter(BaseSummaryPrinter):

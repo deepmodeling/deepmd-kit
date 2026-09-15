@@ -54,6 +54,9 @@ from deepmd.utils.data import (
     DataRequirementItem,
     DataRequirementSourcePolicy,
 )
+from deepmd.utils.probability import (
+    prob_sys_size_ext,
+)
 
 log = logging.getLogger(__name__)
 
@@ -2935,12 +2938,6 @@ def compute_block_targets(
             "weights will be renormalised to sum to 1.0."
         )
         blocks = nonempty
-
-    # Keep this import local: data_system's legacy adapter also uses LMDB.
-    # Share the NPY probability calculation after filtering empty blocks.
-    from deepmd.utils.data_system import (
-        prob_sys_size_ext,
-    )
 
     block_weights = np.asarray([weight for _, _, weight in blocks], dtype=float)
     if not np.all(np.isfinite(block_weights)):

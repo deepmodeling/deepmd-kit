@@ -704,6 +704,57 @@ class TestDpdataFormatConversion(unittest.TestCase):
         child.unlink()
         self.assertEqual(first, data_system._source_signature(self.root, output))
 
+    def test_directory_conversion_tracks_dangling_symlinks(self) -> None:
+        """Unrelated broken links do not block conversion or hide later changes."""
+        source = self.root / "source-tree"
+        source.mkdir()
+        (source / "frame.extxyz").write_text(self.source.read_text())
+        link = source / "optional.extxyz"
+        link.symlink_to(self.root / "missing.extxyz")
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            systems = process_systems(str(source), fmt="extxyz")
+            self.assertEqual(process_systems(str(source), fmt="extxyz"), systems)
+            self.assertEqual(_FakeMultiSystems.write_count, 1)
+
+            # Changing a broken link's destination is a source-tree change.
+            link.unlink()
+            target = self.root / "target.extxyz"
+            link.symlink_to(target)
+            process_systems(str(source), fmt="extxyz")
+            self.assertEqual(_FakeMultiSystems.write_count, 2)
+
+            # Resolving a formerly broken link must also invalidate the cache.
+            target.write_text(self.source.read_text())
+            process_systems(str(source), fmt="extxyz")
+            self.assertEqual(_FakeMultiSystems.write_count, 3)
+
+    def test_valid_symlink_target_edits_invalidate_conversion(self) -> None:
+        """Follow valid links even when target size and mtime are unchanged."""
+        source = self.root / "source-tree"
+        source.mkdir()
+        (source / "frame.extxyz").symlink_to(self.source)
+        with patch.dict(sys.modules, {"dpdata": self.fake_dpdata}):
+            process_systems(str(source), fmt="extxyz")
+            before = self.source.stat()
+            self.source.write_text(self.source.read_text().replace("H 0", "H 1"))
+            os.utime(self.source, ns=(before.st_atime_ns, before.st_mtime_ns))
+            process_systems(str(source), fmt="extxyz")
+            self.assertEqual(_FakeMultiSystems.write_count, 2)
+
+    def test_source_signature_rejects_disappearing_regular_file(self) -> None:
+        """Only dangling links may be fingerprinted after followed stat fails."""
+        output = self.root / data_system._DPDATA_CACHE_DIR / "output.lmdb"
+        original_stat = Path.stat
+
+        def stat_after_removal(path: Path, **kwargs: object) -> os.stat_result:
+            if path == self.source:
+                raise FileNotFoundError("source disappeared")
+            return original_stat(path, **kwargs)
+
+        with patch.object(Path, "stat", stat_after_removal):
+            with self.assertRaisesRegex(FileNotFoundError, "source disappeared"):
+                data_system._source_signature(self.root, output)
+
     def test_source_change_during_conversion_does_not_publish_manifest(self) -> None:
         """A concurrent edit cannot mark a possibly mixed snapshot fresh."""
 
@@ -785,13 +836,10 @@ class TestDpdataFormatConversion(unittest.TestCase):
 
         def order(seed: list[int]) -> list[list[int]]:
             data_system.dp_random.seed(seed)
-            data = get_data(
+            with get_data(
                 {"systems": str(lmdb_path), "batch_size": 2}, 0.0, ["H"], None
-            )
-            try:
+            ) as data:
                 return [list(batch) for batch in data._sampler]
-            finally:
-                data.close()
 
         self.assertEqual(order([0, 42]), order([0, 42]))
         self.assertNotEqual(order([0, 42]), order([0, 43]))
@@ -864,8 +912,8 @@ class TestDpdataFormatConversion(unittest.TestCase):
         self.assertTrue(path.exists())
 
     def test_lock_initialization_failure_closes_file_and_removes_lock(self) -> None:
-        """A payload-write or heartbeat-start failure cannot strand a live lock."""
-        for target in ("json.dump", "threading.Thread.start"):
+        """Metadata, payload or heartbeat failures cannot strand a fresh lock."""
+        for target in ("os.fstat", "json.dump", "threading.Thread.start"):
             path = self.root / "init.lock"
             with patch(
                 f"deepmd.utils.data_system.{target}", side_effect=OSError("init failed")

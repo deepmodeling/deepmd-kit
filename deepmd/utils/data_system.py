@@ -43,6 +43,7 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+from deepmd.utils.probability import prob_sys_size_ext as prob_sys_size_ext
 
 log = logging.getLogger(__name__)
 
@@ -1285,29 +1286,6 @@ def process_sys_probs(sys_probs: list[float], nbatch: int) -> np.ndarray:
     return ret_prob
 
 
-def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
-    block_str = keywords.split(";")[1:]
-    block_stt = []
-    block_end = []
-    block_weights = []
-    for ii in block_str:
-        stt = int(ii.split(":")[0])
-        end = int(ii.split(":")[1])
-        weight = float(ii.split(":")[2])
-        assert weight >= 0, "the weight of a block should be no less than 0"
-        block_stt.append(stt)
-        block_end.append(end)
-        block_weights.append(weight)
-    nblocks = len(block_str)
-    block_probs = np.array(block_weights) / np.sum(block_weights)
-    sys_probs = np.zeros([nsystems], dtype=np.float64)
-    for ii in range(nblocks):
-        nbatch_block = nbatch[block_stt[ii] : block_end[ii]]
-        tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
-        sys_probs[block_stt[ii] : block_end[ii]] = tmp_prob * block_probs[ii]
-    return sys_probs
-
-
 def _is_deepmd_data_format(fmt: str) -> bool:
     return fmt in {
         "deepmd",
@@ -1477,7 +1455,30 @@ def _source_signature(source: Path, output: Path) -> str:
     cache_dir = output.parent.resolve()
 
     def add_file(path: Path, name: str) -> None:
-        stat = path.stat()
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            if not path.is_symlink():
+                # A disappearing regular file is an incomplete source scan.
+                raise
+            # Broken links may be unrelated to the files dpdata reads. Track
+            # the link itself, but keep following valid links so target edits
+            # still invalidate the converted dataset.
+            stat = path.lstat()
+            digest.update(
+                json.dumps(
+                    [
+                        "dangling_symlink",
+                        name,
+                        str(path.readlink()),
+                        stat.st_mode,
+                        stat.st_size,
+                        stat.st_mtime_ns,
+                        stat.st_ctime_ns,
+                    ]
+                ).encode()
+            )
+            return
         digest.update(
             json.dumps(
                 [name, stat.st_mode, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]
@@ -1569,8 +1570,9 @@ class _ConversionLock:
 
     def __init__(self, lock_path: Path, lock_file: IO[str]) -> None:
         self.path = lock_path
-        self._stat = os.fstat(lock_file.fileno())
+        self._stat = None
         try:
+            self._stat = os.fstat(lock_file.fileno())
             payload = {
                 "hostname": socket.gethostname(),
                 "pid": os.getpid(),
@@ -1590,7 +1592,9 @@ class _ConversionLock:
             self._thread.start()
         except BaseException:
             lock_file.close()
-            if _same_lock_file(self.path, self._stat):
+            # Before fstat succeeds this is the fresh, exclusively created
+            # empty lock; its lease has not expired and no owner is published.
+            if self._stat is None or _same_lock_file(self.path, self._stat):
                 self.path.unlink(missing_ok=True)
             raise
 
@@ -1798,8 +1802,9 @@ def _convert_system_by_dpdata(
         str(output),
     )
     cached_systems = _DPDATA_CONVERSION_CACHE.get(cache_key)
+    conversion_current = _is_conversion_current(source, output)
     if cached_systems is not None:
-        if _is_conversion_current(source, output):
+        if conversion_current:
             return cached_systems
         # A long-lived training/validation process may observe source files
         # rewritten in place. Drop the fast-path entry so the normal locked
@@ -1808,7 +1813,9 @@ def _convert_system_by_dpdata(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     lock_path = output.with_suffix(output.suffix + ".lock")
-    if not _is_conversion_current(source, output):
+    # Reuse only this pre-lock check. Waiting, acquiring the lock and writing
+    # each require fresh scans because the source can change between phases.
+    if not conversion_current:
         while True:
             try:
                 lock_file = lock_path.open("x")
