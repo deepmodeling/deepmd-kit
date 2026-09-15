@@ -27,6 +27,7 @@ cmake -D ENABLE_TENSORFLOW=ON \
 	-D USE_PT_PYTHON_LIBS=TRUE \
 	${CUDA_ARGS} \
 	-D LAMMPS_VERSION=stable_22Jul2025_update2 \
+	${CMAKE_ARGS:-} \
 	..
 cmake --build . -j${NPROC}
 cmake --install .

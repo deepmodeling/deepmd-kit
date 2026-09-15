@@ -21,6 +21,9 @@ jobs:
       CCACHE_COMPILERCHECK: content
       CCACHE_MAXSIZE: 1G
       CCACHE_COMPRESS: "true"
+      CCACHE_VERSION: "4.14"
+      LAMMPS_VERSION: stable_22Jul2025_update2
+      LAMMPS_SOURCE_DIR: ${{ github.workspace }}/.cache/lammps/stable_22Jul2025_update2
     strategy:
       matrix:
         include:
@@ -55,10 +58,22 @@ jobs:
           && sudo apt-get update \
           && sudo apt-get install -y rocm-dev hipcub-dev
         if: matrix.variant == 'rocm'
+      - name: Restore LAMMPS source
+        id: lammps-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LAMMPS_SOURCE_DIR }}
+          key: lammps-source-${{ env.LAMMPS_VERSION }}-v1
+      - name: Fetch LAMMPS source
+        if: steps.lammps-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          rm -rf "$LAMMPS_SOURCE_DIR"
+          git clone --depth 1 --branch "$LAMMPS_VERSION" \
+            https://github.com/lammps/lammps "$LAMMPS_SOURCE_DIR"
       - name: Install ccache
         shell: bash
         run: |
-          CCACHE_VERSION=4.14
           CCACHE_ARCHIVE="ccache-${CCACHE_VERSION}-linux-x86_64-musl-static.tar.xz"
           curl -L --fail --retry 3 \
             "https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_ARCHIVE}" \
@@ -69,10 +84,10 @@ jobs:
       - name: Restore ccache
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/.ccache
-          key: ccache-build-cc-${{ matrix.variant }}-v4.14-${{ github.run_id }}
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-build-cc-${{ matrix.variant }}-v${{ env.CCACHE_VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ccache-build-cc-${{ matrix.variant }}-
+            ccache-build-cc-${{ matrix.variant }}-v${{ env.CCACHE_VERSION }}-
       - name: Reset ccache statistics
         run: |
           ccache --version
@@ -83,6 +98,7 @@ jobs:
           DP_VARIANT: ${{ matrix.dp_variant }}
           DOWNLOAD_TENSORFLOW: "FALSE"
           CMAKE_GENERATOR: Ninja
+          CMAKE_ARGS: -DFETCHCONTENT_SOURCE_DIR_LAMMPS_DOWNLOAD=${{ env.LAMMPS_SOURCE_DIR }}
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
           CMAKE_CUDA_COMPILER_LAUNCHER: ccache
@@ -96,6 +112,7 @@ jobs:
           CC: clang
           CXX: clang++
           CMAKE_GENERATOR: Ninja
+          CMAKE_ARGS: -DFETCHCONTENT_SOURCE_DIR_LAMMPS_DOWNLOAD=${{ env.LAMMPS_SOURCE_DIR }}
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
         if: matrix.variant == 'clang'
