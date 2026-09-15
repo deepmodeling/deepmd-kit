@@ -219,6 +219,15 @@ class PropertyLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return the selected property metrics."""
+        return tuple(
+            name
+            for name in ("smooth_mae", "mae", "mse", "rmse", "mape")
+            if name in self.metric
+        )
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []
