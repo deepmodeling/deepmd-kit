@@ -2,10 +2,14 @@
 """Preset output bias of atomic models.
 
 The ``preset_out_bias`` model option assigns the output bias of selected atom
-types, typically their energy in vacuum, while the remaining types are fitted
-from the data. The helpers of this module turn the configured form into the
-canonical per-type form stored on the atomic model, carry it through type-map
-changes, and express it in the frame of the output statistics that consume it.
+types, typically their energy in vacuum. An assigned output is fixed by the
+preset alone: every type that occurs in the training data must be assigned,
+the assigned types take the preset value, and no statistics are computed for
+the output. A string entry names a bundled table of isolated-atom energies or
+the JSON file holding a table. The helpers of this module turn the configured
+form into the canonical per-type form stored on the atomic model, carry it
+through type-map changes, and expand it into the per-type rows written to the
+model.
 
 The canonical form holds nested Python lists rather than arrays: it is written
 to the serialized model as it is, and no array data lives on the atomic model
@@ -13,11 +17,109 @@ outside its registered variables, which the module wrappers of some backends
 require.
 """
 
+import json
+from collections.abc import (
+    Iterable,
+)
+from pathlib import (
+    Path,
+)
 from typing import (
     Any,
 )
 
 import numpy as np
+
+BUNDLED_TABLES_FILE = Path(__file__).with_name("preset_out_bias_tables.json")
+
+
+def bundled_preset_out_bias_tables() -> dict[str, dict[str, Any]]:
+    """Preset tables shipped with the package, keyed by table name.
+
+    The database file holds one entry per table name with the ``source`` of
+    the table and its ``values`` keyed by element symbol; the bundled entries
+    are tables of isolated-atom energies in eV.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        For every table name, its values keyed by element symbol.
+    """
+    with open(BUNDLED_TABLES_FILE) as stream:
+        database = json.load(stream)
+    return {name: entry["values"] for name, entry in database.items()}
+
+
+def load_preset_out_bias_table(spec: str) -> dict[str, Any]:
+    """Look up a preset table by its bundled name or read it from a JSON file.
+
+    Parameters
+    ----------
+    spec
+        The name of a bundled table, or the path of a JSON file keyed by
+        element name, relative to the working directory or absolute. A
+        bundled name takes precedence.
+
+    Returns
+    -------
+    dict[str, Any]
+        The table, mapping element names to preset values.
+
+    Raises
+    ------
+    ValueError
+        If ``spec`` is neither a bundled table nor an existing file, or if the
+        file does not hold a JSON object.
+    """
+    tables = bundled_preset_out_bias_tables()
+    if spec in tables:
+        return tables[spec]
+    if not Path(spec).is_file():
+        raise ValueError(
+            f"the preset_out_bias table {spec!r} is neither one of the bundled "
+            f"tables {sorted(tables)} nor an existing JSON file"
+        )
+    with open(spec) as stream:
+        table = json.load(stream)
+    if not isinstance(table, dict):
+        raise ValueError(
+            f"the preset_out_bias table {spec!r} must be a JSON object keyed by "
+            f"element name, got {type(table).__name__}"
+        )
+    return table
+
+
+def resolve_preset_out_bias_tables(model_config: dict[str, Any]) -> dict[str, Any]:
+    """Replace the string entries of ``preset_out_bias`` by their tables.
+
+    Parameters
+    ----------
+    model_config
+        A model configuration, or a multi-task configuration whose branches
+        live under ``model_dict``; a preset next to ``model_dict`` is resolved
+        as well.
+
+    Returns
+    -------
+    dict[str, Any]
+        The configuration with every string entry of ``preset_out_bias``
+        replaced by its bundled table or the content of its JSON file, so that
+        the configuration is self-contained.
+    """
+    preset = model_config.get("preset_out_bias")
+    if preset and any(isinstance(spec, str) for spec in preset.values()):
+        resolved = {
+            key: load_preset_out_bias_table(spec) if isinstance(spec, str) else spec
+            for key, spec in preset.items()
+        }
+        model_config = {**model_config, "preset_out_bias": resolved}
+    if "model_dict" in model_config:
+        branches = {
+            name: resolve_preset_out_bias_tables(branch)
+            for name, branch in model_config["model_dict"].items()
+        }
+        model_config = {**model_config, "model_dict": branches}
+    return model_config
 
 
 def normalize_preset_out_bias(
@@ -30,11 +132,12 @@ def normalize_preset_out_bias(
     ----------
     preset_out_bias
         The preset bias of the atomic outputs, keyed by output name. Every value
-        is either a sequence with one entry per type of ``type_map``, where None
-        leaves the type to the statistics, or a dict keyed by element name that
-        assigns the listed elements only. An entry is a number, or a nested
-        list or array of the output shape. The normalized form is accepted as
-        well, so the function is idempotent.
+        is a sequence with one entry per type of ``type_map``, where None
+        leaves the type unassigned; a dict keyed by element name, whose
+        elements outside ``type_map`` are ignored; or a string naming a bundled
+        table or the path of a JSON file holding such a dict. An entry is a
+        number, or a nested list or array of the output shape. The normalized
+        form is accepted as well, so the function is idempotent.
     type_map
         Element names of the model, indexed by type.
 
@@ -48,29 +151,25 @@ def normalize_preset_out_bias(
     Raises
     ------
     ValueError
-        If a value is neither a sequence with one entry per type nor a dict,
-        if a dict names an element outside ``type_map``, or if an entry is not
-        entirely finite and numeric.
+        If a value is neither a sequence with one entry per type, a dict, a
+        bundled table name nor a file path, or if an entry is not entirely
+        finite and numeric.
     """
     if preset_out_bias is None:
         return None
     normalized = {}
     for key, spec in preset_out_bias.items():
+        if isinstance(spec, str):
+            spec = load_preset_out_bias_table(spec)
         if isinstance(spec, dict):
-            unknown = [name for name in spec if name not in type_map]
-            if unknown:
-                raise ValueError(
-                    f"preset_out_bias['{key}'] assigns elements {unknown} "
-                    f"that are not in the type_map {type_map}"
-                )
             entries = [spec.get(name) for name in type_map]
         elif isinstance(spec, (list, tuple, np.ndarray)) and len(spec) == len(type_map):
             entries = list(spec)
         else:
             raise ValueError(
                 f"preset_out_bias['{key}'] must be a list with one entry per type "
-                f"of the type_map ({len(type_map)}) or a dict keyed by element name, "
-                f"got {spec!r}"
+                f"of the type_map ({len(type_map)}), a dict keyed by element name, "
+                f"a bundled table name or the path of a JSON file, got {spec!r}"
             )
         values = []
         for entry in entries:
@@ -88,7 +187,7 @@ def normalize_preset_out_bias(
                 raise ValueError(
                     f"preset_out_bias['{key}'] entry {entry!r} must be assigned "
                     "completely with finite values; a type is either preset "
-                    "or left to the statistics"
+                    "or left unassigned"
                 )
             values.append(value.tolist())
         normalized[key] = values
@@ -113,8 +212,7 @@ def remap_preset_out_bias(
     Returns
     -------
     dict[str, list[list | None]] or None
-        The preset bias on the new type map; a new type is left to the
-        statistics.
+        The preset bias on the new type map; a new type is unassigned.
     """
     if preset_out_bias is None:
         return None
@@ -208,84 +306,78 @@ def make_preset_out_bias(
     return np.array(nbias)
 
 
-def apply_preset_out_bias(
+def preset_out_bias_rows(
     preset_out_bias: dict[str, list[list | None]],
-    out_bias: np.ndarray,
+    type_map: list[str],
+    observed_types: list[str],
+    stored_bias: np.ndarray,
     keys: list[str],
     sizes: list[int],
-) -> np.ndarray:
-    """Set assigned bias rows before evaluating a residual-statistics model.
+    keep_unassigned: bool,
+    excluded_types: Iterable[int] = (),
+) -> dict[str, np.ndarray]:
+    """Expand the preset into the per-type bias rows of every assigned output.
 
     Parameters
     ----------
     preset_out_bias
         Normalized preset bias.
-    out_bias
-        Stored bias with shape (n_out, ntypes, max_size).
-    keys
-        Output names in the order of the first bias axis.
-    sizes
-        Flattened size of every output.
-
-    Returns
-    -------
-    np.ndarray
-        A copy with assigned rows replaced by their finite presets. Unassigned
-        rows are unchanged. Pinning before prediction also handles non-finite
-        stored values, for which an additive shift cannot enforce a preset.
-    """
-    result = np.array(out_bias, copy=True)
-    for idx, (key, size) in enumerate(zip(keys, sizes, strict=True)):
-        if key in preset_out_bias:
-            result[idx, :, :size] = override_assigned_bias(
-                result[idx, :, :size],
-                make_preset_out_bias(result.shape[1], preset_out_bias[key]),
-            )
-    return result
-
-
-def preset_out_bias_shift(
-    preset_out_bias: dict[str, list[list | None]] | None,
-    out_bias: np.ndarray,
-    keys: list[str],
-    sizes: list[int],
-) -> dict[str, np.ndarray] | None:
-    """Express a preset bias as shifts of the stored output bias.
-
-    The statistics fitted in ``change-by-statistic`` mode are added to the
-    stored bias, so an assigned type enters the fit as ``preset - stored`` and
-    its stored bias ends at exactly the preset value.
-
-    Parameters
-    ----------
-    preset_out_bias
-        Normalized preset bias, or None.
-    out_bias
+    type_map
+        Element names of the model, indexed by type.
+    observed_types
+        Element names that occur in the data whose bias is being set; names
+        outside ``type_map`` are ignored.
+    stored_bias
         Stored output bias with shape (n_out, ntypes, max_size); the output
-        ``keys[i]`` occupies ``out_bias[i, :, :sizes[i]]``.
+        ``keys[i]`` occupies ``stored_bias[i, :, :sizes[i]]``.
     keys
-        Output names in the order of the first axis of ``out_bias``.
+        Output names in the order of the first axis of ``stored_bias``.
     sizes
         Flattened size of every output.
+    keep_unassigned
+        Whether a type without preset keeps its stored bias; otherwise its
+        bias is zero.
+    excluded_types
+        Types whose atomic contribution is excluded from the outputs, such as
+        the virtual types of a spin model; they need no preset.
 
     Returns
     -------
-    dict[str, np.ndarray] or None
-        For every output with at least one assigned type, the shifts with
-        shape (ntypes, size) where unassigned types hold NaN. None if no
-        preset is configured.
+    dict[str, np.ndarray]
+        For every output with at least one assigned type, the rows with shape
+        (ntypes, size).
+
+    Raises
+    ------
+    ValueError
+        If a type that occurs in the data has no preset for an assigned
+        output.
     """
-    if preset_out_bias is None:
-        return None
-    ntypes = out_bias.shape[1]
-    shift = {}
+    ntypes = len(type_map)
+    index = {name: ii for ii, name in enumerate(type_map)}
+    excluded = set(excluded_types)
+    required = [
+        index[name]
+        for name in observed_types
+        if name in index and index[name] not in excluded
+    ]
+    rows = {}
     for idx, (key, size) in enumerate(zip(keys, sizes, strict=True)):
-        if key not in preset_out_bias:
+        preset = make_preset_out_bias(ntypes, preset_out_bias.get(key, [None] * ntypes))
+        if preset is None:
             continue
-        preset = make_preset_out_bias(ntypes, preset_out_bias[key])
-        if preset is not None:
-            shift[key] = preset.reshape(ntypes, size) - out_bias[idx, :, :size]
-    return shift
+        preset = preset.reshape(ntypes, size)
+        unassigned = np.isnan(preset).any(axis=1)
+        missing = [type_map[ii] for ii in required if unassigned[ii]]
+        if missing:
+            raise ValueError(
+                f"preset_out_bias['{key}'] does not assign the elements {missing} "
+                "that occur in the data; an assigned output needs a preset for "
+                "every element in the data"
+            )
+        fill = stored_bias[idx, :, :size] if keep_unassigned else np.zeros_like(preset)
+        rows[key] = np.where(unassigned[:, None], fill, preset)
+    return rows
 
 
 def override_assigned_bias(

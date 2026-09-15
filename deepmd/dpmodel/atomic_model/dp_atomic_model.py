@@ -12,6 +12,8 @@ if TYPE_CHECKING:
         NeighborGraph,
     )
 
+import array_api_compat
+
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_first_n,
@@ -27,6 +29,10 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.vacuum_reference import (
+    reference_charge_spin,
+    reference_spin,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -107,6 +113,8 @@ class DPAtomicModel(BaseAtomicModel):
 
     """
 
+    CONFIG_DERIVED_ARRAYS = ("vacuum_charge_spin", "vacuum_spin")
+
     def __init__(
         self,
         descriptor: BaseDescriptor,
@@ -136,7 +144,46 @@ class DPAtomicModel(BaseAtomicModel):
         # declares it; other descriptors' ``call_graph`` would ``TypeError``
         # on an unconditional ``charge_spin=`` kwarg.
         self.supports_charge_spin: bool = self.descriptor.supports_charge_spin()
+        self.add_spin_ebd: bool = (
+            self._supports_native_spin and self.descriptor.use_spin is not None
+        )
         super().init_out_stat()
+        # === Reference conditions of the isolated neutral atoms ===
+        self.init_vacuum_conditions()
+
+    def init_vacuum_conditions(self) -> None:
+        """Build the conditioning inputs of the reference atoms for the type map.
+
+        A table exists for every condition the descriptor takes when the
+        fitting references the isolated atoms; the type names must then be
+        element symbols.
+        """
+        vacuum_ref = self.fitting_net.vacuum_ref
+        self.vacuum_charge_spin = (
+            reference_charge_spin(self.type_map)
+            if vacuum_ref and self.add_chg_spin_ebd
+            else None
+        )
+        self.vacuum_spin = (
+            reference_spin(self.type_map) if vacuum_ref and self.add_spin_ebd else None
+        )
+
+    def vacuum_conditions(self) -> dict[str, Array]:
+        """Conditioning inputs of one isolated neutral ground-state atom per type.
+
+        Returns
+        -------
+        dict[str, Array]
+            The charge/spin conditions with shape (ntypes, 2) under
+            ``charge_spin`` and the spin vectors with shape (ntypes, 3) under
+            ``spin``, for the conditions the descriptor takes.
+        """
+        conditions = {}
+        if self.vacuum_charge_spin is not None:
+            conditions["charge_spin"] = self.vacuum_charge_spin
+        if self.vacuum_spin is not None:
+            conditions["spin"] = self.vacuum_spin
+        return conditions
 
     def has_chg_spin_ebd(self) -> bool:
         """Check if the model has charge spin embedding."""
@@ -306,10 +353,6 @@ class DPAtomicModel(BaseAtomicModel):
         if self.add_chg_spin_ebd and charge_spin is None:
             default_cs = self.descriptor.get_default_chg_spin()
             if default_cs is not None:
-                from deepmd.dpmodel.array_api import (
-                    array_api_compat,
-                )
-
                 xp = array_api_compat.array_namespace(extended_coord)
                 cs_array = xp.asarray(
                     default_cs,
@@ -326,6 +369,11 @@ class DPAtomicModel(BaseAtomicModel):
             comm_dict=comm_dict,
             charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
+        # The vacuum descriptor of every type is handed to a fitting that
+        # references its atoms; other fittings do not take the keyword.
+        vacuum_kwargs = {}
+        if self.fitting_net.needs_vacuum_descriptor():
+            vacuum_kwargs["vacuum_descriptor"] = self.vacuum_descriptor()
         ret = self.fitting_net(
             descriptor,
             atype,
@@ -334,8 +382,140 @@ class DPAtomicModel(BaseAtomicModel):
             h2=h2,
             fparam=fparam,
             aparam=aparam,
+            **vacuum_kwargs,
         )
         return ret
+
+    def vacuum_descriptor(self) -> Array:
+        """Descriptor of an isolated atom of every type.
+
+        Every type is evaluated as a single-atom frame without neighbors,
+        conditioned as the neutral ground-state atom: zero charge with the
+        ground-state multiplicity when the descriptor takes the charge/spin
+        condition, and a spin vector of one Bohr magneton per unpaired
+        electron when it takes the native spin.
+
+        Returns
+        -------
+        Array
+            The vacuum descriptor with shape (ntypes, dim_descrpt), in the
+            array namespace, precision and device of the fitting bias.
+        """
+        bias = self.fitting_net.bias_atom_e
+        xp = array_api_compat.array_namespace(bias)
+        device = array_api_compat.device(bias)
+        ntypes = self.get_ntypes()
+        coord = xp.zeros((ntypes, 1, 3), dtype=bias.dtype, device=device)
+        atype = xp.reshape(
+            xp.arange(ntypes, dtype=xp.int64, device=device), (ntypes, 1)
+        )
+        nlist = xp.full(
+            (ntypes, 1, self.descriptor.get_nnei()),
+            -1,
+            dtype=xp.int64,
+            device=device,
+        )
+        mapping = xp.zeros((ntypes, 1), dtype=xp.int64, device=device)
+        conditions = {
+            name: xp.asarray(table, dtype=bias.dtype, device=device)
+            for name, table in self.vacuum_conditions().items()
+        }
+        if "spin" in conditions:
+            conditions["spin"] = conditions["spin"][:, None, :]
+        descriptor = self.descriptor(
+            coord, atype, nlist, mapping=mapping, **conditions
+        )[0]
+        return xp.reshape(descriptor, (ntypes, -1))
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the fitting so the forward carries no reference atoms.
+
+        The vacuum descriptor of every type is evaluated once with the current
+        parameters and handed to the fitting, which folds the reference into
+        its bias or stores the table (see its ``fold_vacuum_reference``).
+        """
+        fitting = self.fitting_net
+        if fitting.needs_vacuum_descriptor():
+            fitting.fold_vacuum_reference(self.vacuum_descriptor())
+
+    def append_vacuum_frames(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        charge_spin: Array | None,
+        spin: Array | None,
+    ) -> tuple["NeighborGraph", Array, Array | None, Array | None]:
+        """Append one isolated atom of every type as a single-node frame.
+
+        The reference nodes follow the node axis of the real frames, padding
+        included, as single-node frames: one node of every type without
+        neighbors, conditioned as the neutral ground-state atom (zero charge
+        and the ground-state multiplicity for the charge/spin conditioning, a
+        spin vector of as many Bohr magnetons as unpaired electrons for the
+        native spin). Node-wise operations of the descriptor leave the real
+        nodes unaffected, so the descriptor rows of the reference nodes are the
+        vacuum descriptor of every type.
+
+        Parameters
+        ----------
+        graph : NeighborGraph
+            Neighbor graph of the real frames.
+        atype : Array
+            Flat node types with shape (N,).
+        charge_spin : Array, optional
+            Charge/spin condition of the real frames with shape (nf, 2) or
+            (1, 2); None takes the descriptor default.
+        spin : Array, optional
+            Per-node spin vectors with shape (N, 3), or None.
+
+        Returns
+        -------
+        tuple
+            The extended graph, node types, charge/spin conditions and spin
+            vectors, each with the reference entries appended.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            append_isolated_frames,
+        )
+
+        xp = array_api_compat.array_namespace(atype, graph.edge_vec)
+        device = array_api_compat.device(atype)
+        dtype = graph.edge_vec.dtype
+        ntypes = self.get_ntypes()
+        nf = graph.n_node.shape[0]
+        conditions = self.vacuum_conditions()
+        graph = append_isolated_frames(graph, atype.shape[0], ntypes)
+        atype = xp.concat(
+            [atype, xp.arange(ntypes, dtype=atype.dtype, device=device)], axis=0
+        )
+        if self.add_chg_spin_ebd:
+            if charge_spin is None:
+                default_cs = self.descriptor.get_default_chg_spin()
+                if default_cs is None:
+                    raise ValueError("`charge_spin` is required for this descriptor.")
+                charge_spin = xp.reshape(
+                    xp.asarray(default_cs, dtype=dtype, device=device), (1, 2)
+                )
+            # one row per real frame, one for the padding frame, one per type
+            charge_spin = xp.concat(
+                [
+                    xp.broadcast_to(
+                        xp.astype(xp.reshape(charge_spin, (-1, 2)), dtype), (nf, 2)
+                    ),
+                    xp.zeros((1, 2), dtype=dtype, device=device),
+                    xp.asarray(conditions["charge_spin"], dtype=dtype, device=device),
+                ],
+                axis=0,
+            )
+        if spin is not None:
+            spin = xp.concat(
+                [
+                    xp.reshape(spin, (-1, 3)),
+                    xp.asarray(conditions["spin"], dtype=spin.dtype, device=device),
+                ],
+                axis=0,
+            )
+        return graph, atype, charge_spin, spin
 
     def forward_atomic_graph(
         self,
@@ -385,13 +565,39 @@ class DPAtomicModel(BaseAtomicModel):
             the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
-        import array_api_compat
-
         from deepmd.dpmodel.utils.neighbor_graph import (
             frame_id_from_n_node,
         )
 
         xp = array_api_compat.array_namespace(graph.edge_vec)
+        n_real = atype.shape[0]
+        # === Step 1. Conditioning of the real nodes ===
+        fparam_node = None
+        if fparam is not None:
+            # Pass the STATIC flat node count (``atype.shape[0] == N``) so the
+            # helper does not fall back to ``int(sum(n_node))``: that int() on a
+            # traced tensor breaks make_fx / torch.export
+            # (``GuardOnDataDependentSymNode``) for the graph .pt2 export and
+            # compiled-training paths when ``numb_fparam > 0``.
+            frame_id = frame_id_from_n_node(graph.n_node, n_total=atype.shape[0])
+            fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
+        aparam_node = aparam
+        if aparam is not None and graph.n_local is not None and aparam.ndim == 3:
+            aparam_node = _extend_graph_aparam(
+                aparam,
+                graph.n_node,
+                graph.n_local,
+                atype.shape[0],
+            )
+        # === Step 2. Vacuum reference nodes ===
+        # The reference atoms are appended as single-node frames, so the same
+        # descriptor call yields the vacuum descriptor of every type.
+        vacuum_ref = self.fitting_net.needs_vacuum_descriptor()
+        if vacuum_ref:
+            graph, atype, charge_spin, spin = self.append_vacuum_frames(
+                graph, atype, charge_spin, spin
+            )
+        # === Step 3. Descriptor ===
         # Descriptor-owned: dpa1/dpa2 hand out their full tebd table; DPA4
         # embeds types internally from ``atype`` and returns None.
         type_embedding = self.descriptor.graph_type_embedding_table()
@@ -411,23 +617,13 @@ class DPAtomicModel(BaseAtomicModel):
             **spin_kwargs,
             **charge_spin_kwargs,
         )
-        fparam_node = None
-        if fparam is not None:
-            # Pass the STATIC flat node count (``atype.shape[0] == N``) so the
-            # helper does not fall back to ``int(sum(n_node))``: that int() on a
-            # traced tensor breaks make_fx / torch.export
-            # (``GuardOnDataDependentSymNode``) for the graph .pt2 export and
-            # compiled-training paths when ``numb_fparam > 0``.
-            frame_id = frame_id_from_n_node(graph.n_node, n_total=atype.shape[0])
-            fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
-        aparam_node = aparam
-        if aparam is not None and graph.n_local is not None and aparam.ndim == 3:
-            aparam_node = _extend_graph_aparam(
-                aparam,
-                graph.n_node,
-                graph.n_local,
-                atype.shape[0],
-            )
+        vacuum_kwargs = {}
+        if vacuum_ref:
+            vacuum_kwargs["vacuum_descriptor"] = gg[n_real:]
+            gg = gg[:n_real]
+            atype = atype[:n_real]
+            rot_mat = None if rot_mat is None else rot_mat[:n_real]
+        # === Step 4. Fitting ===
         return self.fitting_net.call_graph(
             gg,
             atype,
@@ -436,6 +632,7 @@ class DPAtomicModel(BaseAtomicModel):
             h2=None,
             fparam=fparam_node,
             aparam=aparam_node,
+            **vacuum_kwargs,
         )
 
     def compute_or_load_stat(
@@ -467,12 +664,11 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net.compute_input_stats(
             wrapped_sampler, stat_file_path=stat_file_path
         )
-        if compute_or_load_out_stat:
-            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
-
         self._collect_and_set_observed_type(
             wrapped_sampler, stat_file_path, preset_observed_type
         )
+        if compute_or_load_out_stat:
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None
@@ -491,6 +687,7 @@ class DPAtomicModel(BaseAtomicModel):
             else None,
         )
         self.fitting_net.change_type_map(type_map=type_map)
+        self.init_vacuum_conditions()
 
     def compute_fitting_input_stat(
         self,

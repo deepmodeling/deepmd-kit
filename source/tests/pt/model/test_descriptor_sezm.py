@@ -543,7 +543,7 @@ class TestDescrptSeZM(_SeZMTestCase):
                 )
                 edge_vec = flat[edge_index[0]] - flat[edge_index[1]]
                 edge_mask = torch.ones(2, dtype=torch.bool, device=self.device)
-                desc_e, latent = model.forward_with_edges(
+                desc_e, latent, _ = model.forward_with_edges(
                     extended_coord=coord.reshape(1, -1),
                     extended_atype=atype,
                     edge_index=edge_index,
@@ -978,7 +978,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             nlist,
             charge_spin=torch.tensor([[0.0, 1.0]], device=self.device),
         )
-        desc_ref, _ = model.forward_with_edges(
+        desc_ref, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -986,7 +986,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             edge_mask=edge_mask,
             charge_spin=torch.tensor([[0.0, 1.0]], device=self.device),
         )
-        desc_shifted, _ = model.forward_with_edges(
+        desc_shifted, _, _ = model.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -995,7 +995,7 @@ class TestDescrptSeZM(_SeZMTestCase):
             charge_spin=torch.tensor([[1.0, 1.0]], device=self.device),
         )
         restored = DescrptSeZM.deserialize(model.serialize())
-        desc_restored, _ = restored.forward_with_edges(
+        desc_restored, _, _ = restored.forward_with_edges(
             extended_coord=coord,
             extended_atype=atype,
             edge_index=edge_index,
@@ -1195,7 +1195,7 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
                         p.copy_(torch.randn_like(p) * 0.1)
                 model.eval()
 
-                desc, _ = model.forward_with_edges(
+                desc, _, _ = model.forward_with_edges(
                     extended_coord=coord,
                     extended_atype=atype,
                     edge_index=edge_index,
@@ -1203,7 +1203,7 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
                     edge_mask=edge_mask,
                     spin=spin,
                 )
-                desc_rot, _ = model.forward_with_edges(
+                desc_rot, _, _ = model.forward_with_edges(
                     extended_coord=coord,
                     extended_atype=atype,
                     edge_index=edge_index,
@@ -1214,7 +1214,7 @@ class TestSeZMSpinEmbedding(_SeZMTestCase):
                 torch.testing.assert_close(desc, desc_rot, atol=1e-9, rtol=1e-9)
 
                 # Spin actually changes the descriptor (injection is not a no-op).
-                desc_zero, _ = model.forward_with_edges(
+                desc_zero, _, _ = model.forward_with_edges(
                     extended_coord=coord,
                     extended_atype=atype,
                     edge_index=edge_index,
@@ -1287,7 +1287,7 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
         """
         model = self._descriptor()
         kwargs, spin = self._inputs()
-        desc, _ = model.forward_with_edges(**kwargs, spin=spin)
+        desc, _, _ = model.forward_with_edges(**kwargs, spin=spin)
         desc.sum().backward()
         gate_grad = model.env_seed_embedding.spin_scale.grad
         self.assertIsNotNone(gate_grad)
@@ -1306,10 +1306,10 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
         amplitude = 2.0
         with torch.no_grad():
             model.env_seed_embedding.spin_scale.fill_(amplitude**2)
-        migrated, _ = model.forward_with_edges(**kwargs, spin=spin)
+        migrated, _, _ = model.forward_with_edges(**kwargs, spin=spin)
         with torch.no_grad():
             model.env_seed_embedding.spin_scale.fill_(1.0)
-        legacy, _ = model.forward_with_edges(**kwargs, spin=amplitude * spin)
+        legacy, _, _ = model.forward_with_edges(**kwargs, spin=amplitude * spin)
         torch.testing.assert_close(migrated, legacy, atol=1e-12, rtol=1e-12)
 
     def test_loading_a_legacy_state_squares_the_gate(self) -> None:

@@ -986,6 +986,11 @@ def _freeze_sezm_to_pt2(
     is_spin = _model_has_spin(model)
     ModelWrapper(model).load_state_dict(state_dict)
     model.eval()
+    # The vacuum reference is resolved on the target device, folded into the
+    # fitting bias or stored as a per-type table, so the exported graph
+    # carries no reference atoms.
+    model.to(target_device)
+    model.fold_vacuum_reference()
     model.to("cpu")
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so

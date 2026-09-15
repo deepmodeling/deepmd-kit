@@ -102,10 +102,14 @@ class GeneralFitting(NativeOP, BaseFitting):
             different fitting nets for different atom types.
     exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
-    remove_vaccum_contribution: list[bool], optional
-        Remove vacuum contribution before the bias is added. The list assigned each
-        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
-        length as `ntypes` signaling if or not removing the vacuum contribution for the atom types in the list.
+    vacuum_ref: bool
+        Reference the network output of every atom to the output of the same
+        network for an isolated atom of the same type under the same frame
+        parameters, atomic parameters and case embedding. The output of an atom
+        without neighbors is then exactly ``bias_atom_e`` of its type. The
+        call takes the vacuum descriptor of every type until
+        :meth:`fold_vacuum_reference` has folded the reference into the bias
+        or stored the table.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     seed: Optional[Union[int, list[int]]]
@@ -114,6 +118,11 @@ class GeneralFitting(NativeOP, BaseFitting):
         The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
         this value will be used as the default value for the frame parameter in the fitting net.
     """
+
+    # A deployment constant kept out of checkpoints; see
+    # :meth:`fold_vacuum_reference`. A subclass extends this tuple rather than
+    # replacing it.
+    CONFIG_DERIVED_ARRAYS = ("vacuum_table",)
 
     def __init__(
         self,
@@ -136,7 +145,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
-        remove_vaccum_contribution: list[bool] | None = None,
+        vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
         default_fparam: list[float] | None = None,
@@ -173,7 +182,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.reinit_exclude(exclude_types)
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
-        self.remove_vaccum_contribution = remove_vaccum_contribution
+        self.vacuum_ref = vacuum_ref
         self.eval_return_middle_output = False
 
         net_dim_out = self._net_out_dim()
@@ -199,6 +208,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.case_embd = np.zeros(self.dim_case_embd, dtype=self.prec)
         else:
             self.case_embd = None
+        self.vacuum_table = None
 
         if self.default_fparam is not None:
             if self.numb_fparam > 0:
@@ -510,6 +520,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
             self.bias_atom_e = xp.concat([self.bias_atom_e, extend_bias_atom_e], axis=0)
         self.bias_atom_e = self.bias_atom_e[remap_index]
+        # the stored references belong to the old type map
+        self.vacuum_table = None
 
     def __setitem__(self, key: str, value: Any) -> None:
         if key in ["bias_atom_e"]:
@@ -577,6 +589,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "precision": self.precision,
             "mixed_types": self.mixed_types,
             "exclude_types": self.exclude_types,
+            "vacuum_ref": self.vacuum_ref,
             "nets": self.nets.serialize(),
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
@@ -608,6 +621,295 @@ class GeneralFitting(NativeOP, BaseFitting):
         obj.nets = NetworkCollection.deserialize(nets)
         return obj
 
+    def needs_vacuum_descriptor(self) -> bool:
+        """Whether the call takes the vacuum descriptor of every type from the descriptor.
+
+        A referencing fitting takes it until :meth:`fold_vacuum_reference` has
+        folded the reference into the bias or stored the table.
+        """
+        return self.vacuum_ref and self.vacuum_table is None
+
+    def uniform_conditioning(self) -> bool:
+        """Whether every atom receives the same conditioning columns.
+
+        Frame parameters vary between frames and atomic parameters between
+        atoms, while the case embedding is shared by all atoms of a call.
+        """
+        return self.numb_fparam == 0 and (
+            self.numb_aparam == 0 or self.use_aparam_as_mask
+        )
+
+    def conditioning_columns(
+        self,
+        descriptor: Array,
+        fparam: Array | None,
+        aparam: Array | None,
+    ) -> Array | None:
+        """Normalized conditioning columns appended to the descriptor of every atom.
+
+        Parameters
+        ----------
+        descriptor : Array
+            Descriptor with shape (nf, nloc, nd); it supplies the frame and
+            atom counts, the dtype and the device of the columns.
+        fparam : Array, optional
+            Frame parameters with shape (nf, numb_fparam). The default frame
+            parameter is used when omitted.
+        aparam : Array, optional
+            Atomic parameters with shape (nf, nloc, numb_aparam).
+
+        Returns
+        -------
+        Array or None
+            The frame parameters, atomic parameters and case embedding of every
+            atom, normalized and concatenated, with shape (nf, nloc, ncond);
+            None when the descriptor alone is the fitting input.
+        """
+        xp = array_api_compat.array_namespace(descriptor)
+        nf, nloc, _ = descriptor.shape
+        device = array_api_compat.device(descriptor)
+        # Fitting statistics remain NumPy for portable serialization; the
+        # constants are materialized next to the runtime descriptor instead of
+        # asking a backend namespace to reshape a foreign array directly.
+        columns = []
+        if self.numb_fparam > 0:
+            if fparam is None:
+                assert self.default_fparam_tensor is not None
+                default_fparam = xp.asarray(
+                    self.default_fparam_tensor, dtype=descriptor.dtype, device=device
+                )
+                fparam = xp.tile(
+                    xp.reshape(default_fparam, (1, self.numb_fparam)), (nf, 1)
+                )
+            try:
+                fparam = xp.reshape(fparam, (nf, 1, self.numb_fparam))
+            except (ValueError, RuntimeError) as e:
+                raise ValueError(
+                    f"input fparam: cannot reshape {fparam.shape} "
+                    f"into ({nf}, {self.numb_fparam})."
+                ) from e
+            fparam_device = array_api_compat.device(fparam)
+            fparam_avg = xp.asarray(
+                self.fparam_avg, dtype=fparam.dtype, device=fparam_device
+            )
+            fparam_inv_std = xp.asarray(
+                self.fparam_inv_std, dtype=fparam.dtype, device=fparam_device
+            )
+            fparam = (fparam - fparam_avg) * fparam_inv_std
+            columns.append(xp.broadcast_to(fparam, (nf, nloc, self.numb_fparam)))
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+            assert aparam is not None, "aparam should not be None"
+            try:
+                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+            except (ValueError, RuntimeError) as e:
+                raise ValueError(
+                    f"input aparam: cannot reshape {aparam.shape} "
+                    f"into ({nf}, {nloc}, {self.numb_aparam})."
+                ) from e
+            aparam_device = array_api_compat.device(aparam)
+            aparam_avg = xp.asarray(
+                self.aparam_avg, dtype=aparam.dtype, device=aparam_device
+            )
+            aparam_inv_std = xp.asarray(
+                self.aparam_inv_std, dtype=aparam.dtype, device=aparam_device
+            )
+            columns.append((aparam - aparam_avg) * aparam_inv_std)
+        if self.dim_case_embd > 0:
+            assert self.case_embd is not None
+            case_embd = xp.asarray(
+                self.case_embd, dtype=descriptor.dtype, device=device
+            )
+            columns.append(
+                xp.broadcast_to(
+                    xp.reshape(case_embd, (1, 1, -1)), (nf, nloc, self.dim_case_embd)
+                )
+            )
+        if len(columns) == 0:
+            return None
+        return xp.concat(columns, axis=-1)
+
+    def vacuum_input(
+        self,
+        vacuum_descriptor: Array | None,
+        atype: Array,
+        cond: Array | None,
+    ) -> Array | None:
+        """Fitting input rows of the vacuum references.
+
+        The vacuum reference of an atom is an isolated atom of its type under
+        the conditioning of the atom itself. With frame or atomic parameters
+        the conditioning differs between atoms and the rows follow the atoms,
+        with shape (nf, nloc, in_dim). Otherwise one row per type suffices,
+        with shape (ntypes, in_dim), and :meth:`vacuum_output` gathers the
+        network output by type.
+
+        Parameters
+        ----------
+        vacuum_descriptor : Array, optional
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt); None takes the table stored by
+            :meth:`fold_vacuum_reference`.
+        atype : Array
+            Atom types with shape (nf, nloc).
+        cond : Array, optional
+            Conditioning columns of the atoms with shape (nf, nloc, ncond).
+
+        Returns
+        -------
+        Array or None
+            The reference rows, or None when ``vacuum_ref`` is off.
+
+        Raises
+        ------
+        ValueError
+            If ``vacuum_ref`` is on and the vacuum descriptor is missing or
+            has the wrong shape.
+        """
+        if not self.vacuum_ref:
+            return None
+        xp = array_api_compat.array_namespace(atype)
+        if vacuum_descriptor is None:
+            if self.vacuum_table is None:
+                raise ValueError(
+                    "vacuum_ref requires the vacuum descriptor of every atom type"
+                )
+            vacuum_descriptor = xp.asarray(
+                self.vacuum_table,
+                dtype=get_xp_precision(xp, self.precision),
+                device=array_api_compat.device(atype),
+            )
+        if tuple(vacuum_descriptor.shape) != (self.ntypes, self.dim_descrpt):
+            raise ValueError(
+                f"vacuum descriptor of shape {tuple(vacuum_descriptor.shape)} "
+                f"does not match ({self.ntypes}, {self.dim_descrpt})"
+            )
+        if not self.uniform_conditioning():
+            assert cond is not None
+            nf, nloc = atype.shape
+            x_vac = xp.reshape(
+                xp.take(vacuum_descriptor, xp.reshape(atype, (-1,)), axis=0),
+                (nf, nloc, self.dim_descrpt),
+            )
+            return xp.concat([x_vac, cond], axis=-1)
+        if self.dim_case_embd == 0:
+            return vacuum_descriptor
+        assert self.case_embd is not None
+        case_embd = xp.asarray(
+            self.case_embd,
+            dtype=vacuum_descriptor.dtype,
+            device=array_api_compat.device(vacuum_descriptor),
+        )
+        return xp.concat(
+            [
+                vacuum_descriptor,
+                xp.broadcast_to(
+                    xp.reshape(case_embd, (1, -1)), (self.ntypes, self.dim_case_embd)
+                ),
+            ],
+            axis=-1,
+        )
+
+    def vacuum_output(self, vacuum_property: Array, atype: Array) -> Array:
+        """Network output of the vacuum reference of every atom.
+
+        Parameters
+        ----------
+        vacuum_property : Array
+            Network output on the rows of :meth:`vacuum_input`.
+        atype : Array
+            Atom types with shape (nf, nloc).
+
+        Returns
+        -------
+        Array
+            The reference output of every atom with shape (nf, nloc, dim_out).
+        """
+        if not self.uniform_conditioning():
+            return vacuum_property
+        xp = array_api_compat.array_namespace(vacuum_property, atype)
+        nf, nloc = atype.shape
+        return xp.reshape(
+            xp.take(vacuum_property, xp.reshape(atype, (-1,)), axis=0),
+            (nf, nloc, vacuum_property.shape[-1]),
+        )
+
+    def vacuum_property(self, vacuum_descriptor: Array | None) -> Array:
+        """Network output on the vacuum descriptor of every type.
+
+        Defined under uniform conditioning, where the output of a reference
+        depends on its type alone.
+
+        Parameters
+        ----------
+        vacuum_descriptor : Array
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt).
+
+        Returns
+        -------
+        Array
+            The reference output of every type with shape (ntypes, dim_out),
+            in the precision of ``vacuum_descriptor``.
+        """
+        if vacuum_descriptor is None:
+            vacuum_descriptor = self.vacuum_table
+        if vacuum_descriptor is None:
+            raise ValueError(
+                "vacuum_ref requires the vacuum descriptor of every atom type"
+            )
+        xp = array_api_compat.array_namespace(vacuum_descriptor)
+        atype = xp.arange(
+            self.ntypes,
+            dtype=xp.int64,
+            device=array_api_compat.device(vacuum_descriptor),
+        )
+        xx_vac = self.vacuum_input(
+            xp.astype(vacuum_descriptor, get_xp_precision(xp, self.precision)),
+            atype,
+            None,
+        )
+        if self.mixed_types:
+            out = self.nets[()](xx_vac)
+        else:
+            out = xp.concat(
+                [
+                    self.nets[(type_i,)](xx_vac[type_i : type_i + 1, :])
+                    for type_i in range(self.ntypes)
+                ],
+                axis=0,
+            )
+        return xp.astype(out, vacuum_descriptor.dtype)
+
+    def fold_vacuum_reference(self, vacuum_descriptor: Array) -> None:
+        """Fold the vacuum reference into the fitting so the call needs no reference atoms.
+
+        Under uniform conditioning the reference output of an atom is a
+        constant of its type, so subtracting it from ``bias_atom_e`` yields
+        the same outputs as the referenced call and the option is switched
+        off. With frame or atomic parameters the reference output varies
+        between atoms, so the vacuum descriptor is stored instead and the call
+        evaluates the references from the stored table. The table is a
+        deployment constant: an exported model bakes it, checkpoints leave it
+        out, and a fitting loaded from a checkpoint takes the reference from
+        the descriptor again.
+
+        Parameters
+        ----------
+        vacuum_descriptor : Array
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt).
+        """
+        if not self.vacuum_ref:
+            return
+        if not self.uniform_conditioning():
+            self.vacuum_table = to_numpy_array(vacuum_descriptor)
+            return
+        reference = to_numpy_array(self.vacuum_property(vacuum_descriptor))
+        self["bias_atom_e"] = to_numpy_array(self.bias_atom_e) - reference.astype(
+            GLOBAL_NP_FLOAT_PRECISION
+        )
+        self.vacuum_ref = False
+
     def _call_common(
         self,
         descriptor: Array,
@@ -617,6 +919,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         h2: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        vacuum_descriptor: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -639,6 +942,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             The frame parameter. shape: nf x nfp. nfp being `numb_fparam`
         aparam
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
+        vacuum_descriptor
+            The descriptor of an isolated atom of every type, required by
+            ``vacuum_ref``. shape: ntypes x nd
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
@@ -650,117 +956,18 @@ class GeneralFitting(NativeOP, BaseFitting):
                 "get an input descriptor of dim {nd},"
                 "which is not consistent with {self.dim_descrpt}."
             )
+
+        # === Step 1. Assemble the fitting input ===
+        # The conditioning columns are shared by the atoms and by their vacuum
+        # references, so that the reference of an atom differs from the atom
+        # in its descriptor only.
         xx = descriptor
-        if self.remove_vaccum_contribution is not None:
-            # TODO: comput the input for vacuum when setting remove_vaccum_contribution
-            # Ideally, the input for vacuum should be computed;
-            # we consider it as always zero for convenience.
-            # Needs a compute_input_stats for vacuum passed from the
-            # descriptor.
-            xx_zeros = xp.zeros_like(xx)
-        else:
-            xx_zeros = None
+        cond = self.conditioning_columns(descriptor, fparam, aparam)
+        if cond is not None:
+            xx = xp.concat([xx, cond], axis=-1)
+        xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond)
 
-        if self.numb_fparam > 0 and fparam is None:
-            # use default fparam
-            assert self.default_fparam_tensor is not None
-            # Fitting statistics remain NumPy for portable serialization.
-            # Materialize constants next to the runtime descriptor instead of
-            # asking a backend namespace to reshape a foreign array directly.
-            default_fparam_tensor = xp.asarray(
-                self.default_fparam_tensor,
-                dtype=descriptor.dtype,
-                device=array_api_compat.device(descriptor),
-            )
-            fparam = xp.tile(
-                xp.reshape(default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
-            )
-
-        # check fparam dim, concate to input descriptor
-        if self.numb_fparam > 0:
-            assert fparam is not None, "fparam should not be None"
-            try:
-                fparam = xp.reshape(fparam, (nf, self.numb_fparam))
-            except (ValueError, RuntimeError) as e:
-                raise ValueError(
-                    f"input fparam: cannot reshape {fparam.shape} "
-                    f"into ({nf}, {self.numb_fparam})."
-                ) from e
-            fparam_device = array_api_compat.device(fparam)
-            fparam_avg = xp.asarray(
-                self.fparam_avg,
-                dtype=fparam.dtype,
-                device=fparam_device,
-            )
-            fparam_inv_std = xp.asarray(
-                self.fparam_inv_std,
-                dtype=fparam.dtype,
-                device=fparam_device,
-            )
-            fparam = (fparam - fparam_avg) * fparam_inv_std
-            fparam = xp.tile(
-                xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
-            )
-            xx = xp.concat(
-                [xx, fparam],
-                axis=-1,
-            )
-            if xx_zeros is not None:
-                xx_zeros = xp.concat(
-                    [xx_zeros, fparam],
-                    axis=-1,
-                )
-        # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
-            assert aparam is not None, "aparam should not be None"
-            try:
-                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
-            except (ValueError, RuntimeError) as e:
-                raise ValueError(
-                    f"input aparam: cannot reshape {aparam.shape} "
-                    f"into ({nf}, {nloc}, {self.numb_aparam})."
-                ) from e
-            aparam_device = array_api_compat.device(aparam)
-            aparam_avg = xp.asarray(
-                self.aparam_avg,
-                dtype=aparam.dtype,
-                device=aparam_device,
-            )
-            aparam_inv_std = xp.asarray(
-                self.aparam_inv_std,
-                dtype=aparam.dtype,
-                device=aparam_device,
-            )
-            aparam = (aparam - aparam_avg) * aparam_inv_std
-            xx = xp.concat(
-                [xx, aparam],
-                axis=-1,
-            )
-            if xx_zeros is not None:
-                xx_zeros = xp.concat(
-                    [xx_zeros, aparam],
-                    axis=-1,
-                )
-
-        if self.dim_case_embd > 0:
-            assert self.case_embd is not None
-            case_embd_buffer = xp.asarray(
-                self.case_embd,
-                dtype=descriptor.dtype,
-                device=array_api_compat.device(descriptor),
-            )
-            case_embd = xp.tile(xp.reshape(case_embd_buffer, (1, 1, -1)), (nf, nloc, 1))
-            xx = xp.concat(
-                [xx, case_embd],
-                axis=-1,
-            )
-            if xx_zeros is not None:
-                xx_zeros = xp.concat(
-                    [xx_zeros, case_embd],
-                    axis=-1,
-                )
-
-        # calculate the prediction
+        # === Step 2. Evaluate the fitting networks ===
         results: dict[str, Array] = {}
         if not self.mixed_types:
             outs = xp.zeros(
@@ -780,12 +987,17 @@ class GeneralFitting(NativeOP, BaseFitting):
                     (1, 1, net_dim_out),
                 )
                 atom_property = self.nets[(type_i,)](xx)
-                if self.remove_vaccum_contribution is not None and not (
-                    len(self.remove_vaccum_contribution) > type_i
-                    and not self.remove_vaccum_contribution[type_i]
-                ):
-                    assert xx_zeros is not None
-                    atom_property -= self.nets[(type_i,)](xx_zeros)
+                if xx_vac is not None:
+                    # The mask below keeps the atoms of type ``type_i`` alone, so
+                    # the network of the type runs on its own reference row when
+                    # the references are per type, and on the per-atom rows
+                    # otherwise.
+                    reference = (
+                        xx_vac[type_i : type_i + 1]
+                        if self.uniform_conditioning()
+                        else xx_vac
+                    )
+                    atom_property = atom_property - self.nets[(type_i,)](reference)
                 atom_property = xp.where(
                     mask, atom_property, xp.zeros_like(atom_property)
                 )
@@ -800,8 +1012,8 @@ class GeneralFitting(NativeOP, BaseFitting):
                     middle_outs = middle_outs + mid
         else:
             outs = self.nets[()](xx)
-            if xx_zeros is not None:
-                outs -= self.nets[()](xx_zeros)
+            if xx_vac is not None:
+                outs = outs - self.vacuum_output(self.nets[()](xx_vac), atype)
             if self.eval_return_middle_output and len(self.neuron) > 0:
                 middle_outs = self.nets[()].call_until_last(xx)
         bias_atom_e = xp.asarray(
@@ -836,6 +1048,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         h2: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        vacuum_descriptor: Array | None = None,
     ) -> dict[str, Array]:
         """Graph-native (flat node axis) fitting forward.
 
@@ -861,6 +1074,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             NODE-level frame parameter (already gathered by frame_id). N x nfp
         aparam
             atomic parameter. N x nap
+        vacuum_descriptor
+            the descriptor of an isolated atom of every type, required by
+            ``vacuum_ref``. ntypes x nd
 
         Returns
         -------
@@ -887,5 +1103,14 @@ class GeneralFitting(NativeOP, BaseFitting):
         ap1 = None if aparam is None else xp.reshape(aparam, (n, 1, aparam.shape[-1]))
         # fparam: dense API expects (nf, nfp); here nf'=N single-atom frames, so the
         # node-level (N, nfp) IS the per-(pseudo)frame param -- tiled over nloc'=1.
-        ret = self.__call__(d1, a1, gr=g1, g2=g2, h2=h2, fparam=fparam, aparam=ap1)
+        ret = self.__call__(
+            d1,
+            a1,
+            gr=g1,
+            g2=g2,
+            h2=h2,
+            fparam=fparam,
+            aparam=ap1,
+            vacuum_descriptor=vacuum_descriptor,
+        )
         return {kk: xp.reshape(vv, (n, *vv.shape[2:])) for kk, vv in ret.items()}

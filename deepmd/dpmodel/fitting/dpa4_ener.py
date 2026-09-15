@@ -469,6 +469,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         data.pop("type", None)
         data.pop("var_name")
         data.pop("dim_out")
+        data.pop("atom_ener", None)
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = variables[kk]

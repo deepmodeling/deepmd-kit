@@ -1554,8 +1554,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # either way. ``comm_dict`` (possibly ``None``) and ``nloc`` are
         # forwarded unconditionally -- ``forward_with_edges`` ignores ``nloc``
         # without ``comm_dict``, and ``extended_coord`` only supplies the device.
+        fitting_net = self.atomic_model.fitting_net
         with nvtx_range("SeZM/descriptor"):
-            descriptor, _ = descriptor_model.forward_with_edges(
+            descriptor, _, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=coord,
                 extended_atype=descriptor_atype,
                 edge_index=edge_index,
@@ -1565,17 +1566,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 spin=spin,
                 comm_dict=comm_dict,
                 nloc=nloc,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if fitting_net.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 3. Fitting net ===
         # The same fitting forward serves both modes; ``embedding_only`` only asks
         # it to also return the last hidden activation.
         with nvtx_range("SeZM/fitting_net"):
-            fit_ret = self.atomic_model.fitting_net(
+            fit_ret = fitting_net(
                 descriptor,
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_atomic_feature=embedding_only,
             )
 
@@ -1755,7 +1760,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         # === Step 3. Descriptor forward with force embedding ===
         with nvtx_range("SeZM/descriptor_dens"):
-            descriptor, latent = descriptor_model.forward_with_edges(
+            descriptor, latent, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=extended_coord[:, :nloc, :],
                 extended_atype=atype,
                 edge_index=edge_index,
@@ -1763,6 +1768,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_mask=edge_mask,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if dens_fitting.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 4. Dens fitting net ===
@@ -1774,6 +1782,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 noise_mask=noise_mask,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_components=True,
             )
         return torch.cat(

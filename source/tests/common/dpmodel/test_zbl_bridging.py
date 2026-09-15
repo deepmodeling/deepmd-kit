@@ -78,10 +78,10 @@ def test_builder_composes_linear_model():
 
 def test_bridged_preset_belongs_to_output_statistics() -> None:
     cfg = copy.deepcopy(ZBL_CONFIG)
-    cfg["preset_out_bias"] = {"energy": {"Ni": 2.0}}
+    cfg["preset_out_bias"] = {"energy": {"Ni": 2.0, "O": 1.0}}
     model = get_model(cfg)
     am = model.atomic_model
-    assert am.preset_out_bias == {"energy": [[2.0], None]}
+    assert am.preset_out_bias == {"energy": [[2.0], [1.0]]}
     coord, atype, box = _close_pair_inputs()
     before = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
         "energy_redu"

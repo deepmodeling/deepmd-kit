@@ -88,11 +88,12 @@ def test_sezm_builder_rejects_bridging() -> None:
         get_sezm_model(data)
 
 
-def test_bridged_dpa4_preserves_preset_rejection() -> None:
+def test_bridged_dpa4_forwards_preset() -> None:
+    """The composition built from a bridged DPA4 config carries the preset."""
     data = _bridged(_dpa4_standard_config())
     data["preset_out_bias"] = {"energy": {"Ni": 2.0}}
-    with pytest.raises(NotImplementedError, match="preset_out_bias"):
-        get_model(data)
+    model = get_model(data)
+    assert model.atomic_model.preset_out_bias == {"energy": [[2.0], None]}
 
 
 def test_standard_builder_without_bridging_is_unaffected() -> None:

@@ -722,6 +722,10 @@ class PolarFittingSeA(Fitting):
         check_version_compatibility(
             data.pop("@version", 1), 5, 1
         )  # to allow PT version.
+        if data.pop("vacuum_ref", False):
+            raise NotImplementedError(
+                "vacuum_ref is not supported by the TensorFlow backend"
+            )
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],

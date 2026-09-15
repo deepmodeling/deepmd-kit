@@ -496,6 +496,10 @@ class DipoleFittingSeA(Fitting):
         """
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 4, 1)
+        if data.pop("vacuum_ref", False):
+            raise NotImplementedError(
+                "vacuum_ref is not supported by the TensorFlow backend"
+            )
         exclude_types = data.pop("exclude_types", [])
         if len(exclude_types) > 0:
             data["sel_type"] = [

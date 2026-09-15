@@ -752,6 +752,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
 
+        def fold_vacuum_reference(self) -> None:
+            """Fold the vacuum reference of the atomic model into its fitting bias."""
+            self.atomic_model.fold_vacuum_reference()
+
         def compute_or_load_stat(
             self,
             sampled_func: Callable[[], Any],

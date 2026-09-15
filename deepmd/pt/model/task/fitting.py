@@ -396,10 +396,14 @@ class GeneralFitting(Fitting):
         If the parameters in the fitting net are trainable.
         Now this only supports setting all the parameters in the fitting net at one state.
         When in list[bool], the trainable will be True only if all the boolean parameters are True.
-    remove_vaccum_contribution: list[bool], optional
-        Remove vacuum contribution before the bias is added. The list assigned each
-        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
-        length as `ntypes` signaling if or not removing the vacuum contribution for the atom types in the list.
+    vacuum_ref : bool
+        Reference the network output of every atom to the output of the same
+        network for an isolated atom of the same type under the same frame
+        parameters, atomic parameters and case embedding. The output of an atom
+        without neighbors is then exactly ``bias_atom_e`` of its type. The
+        forward takes the vacuum descriptor of every type until
+        :meth:`fold_vacuum_reference` has folded the reference into the bias
+        or stored the table.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
@@ -427,7 +431,7 @@ class GeneralFitting(Fitting):
         seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
         trainable: bool | list[bool] = True,
-        remove_vaccum_contribution: list[bool] | None = None,
+        vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         default_fparam: list[float] | None = None,
@@ -458,7 +462,7 @@ class GeneralFitting(Fitting):
         self.trainable = (
             all(self.trainable) if isinstance(self.trainable, list) else self.trainable
         )
-        self.remove_vaccum_contribution = remove_vaccum_contribution
+        self.vacuum_ref = vacuum_ref
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -471,6 +475,8 @@ class GeneralFitting(Fitting):
         if not self.mixed_types:
             assert self.ntypes == bias_atom_e.shape[0], "Element count mismatches!"
         self.register_buffer("bias_atom_e", bias_atom_e)
+        # A deployment constant; see :meth:`fold_vacuum_reference`.
+        self.register_buffer("vacuum_table", None, persistent=False)
 
         if self.numb_fparam > 0:
             self.register_buffer(
@@ -580,6 +586,8 @@ class GeneralFitting(Fitting):
             )
             self.bias_atom_e = torch.cat([self.bias_atom_e, extend_bias_atom_e], dim=0)
         self.bias_atom_e = self.bias_atom_e[remap_index]
+        # the stored references belong to the old type map
+        self.vacuum_table = None
 
     def serialize(self) -> dict:
         """Serialize the fitting to dict."""
@@ -601,6 +609,7 @@ class GeneralFitting(Fitting):
             "nets": self.filter_layers.serialize(),
             "rcond": self.rcond,
             "exclude_types": self.exclude_types,
+            "vacuum_ref": self.vacuum_ref,
             "@variables": {
                 "bias_atom_e": to_numpy_array(self.bias_atom_e),
                 "case_embd": to_numpy_array(self.case_embd),
@@ -612,7 +621,6 @@ class GeneralFitting(Fitting):
             "type_map": self.type_map,
             # "tot_ener_zero": self.tot_ener_zero ,
             # "trainable": self.trainable ,
-            # "atom_ener": self.atom_ener ,
             # "layer_name": self.layer_name ,
             # "spin": self.spin ,
             ## NOTICE:  not supported by far
@@ -725,11 +733,234 @@ class GeneralFitting(Fitting):
         """Set the FittingNet output dim."""
         pass
 
-    def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
-        return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
+    def needs_vacuum_descriptor(self) -> bool:
+        """Whether the forward takes the vacuum descriptor of every type from the descriptor.
 
-    def _extend_a_avg_std(self, xx: torch.Tensor, nb: int, nloc: int) -> torch.Tensor:
-        return torch.tile(xx.view([1, 1, self.numb_aparam]), [nb, nloc, 1])
+        A referencing fitting takes it until :meth:`fold_vacuum_reference` has
+        folded the reference into the bias or stored the table.
+        """
+        return self.vacuum_ref and self.vacuum_table is None
+
+    def uniform_conditioning(self) -> bool:
+        """Whether every atom receives the same conditioning columns.
+
+        Frame parameters vary between frames and atomic parameters between
+        atoms, while the case embedding is shared by all atoms of a forward.
+        """
+        return self.numb_fparam == 0 and (
+            self.numb_aparam == 0 or self.use_aparam_as_mask
+        )
+
+    def conditioning_columns(
+        self,
+        nf: int,
+        nloc: int,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        case_embd: torch.Tensor | None,
+    ) -> torch.Tensor | None:
+        """Normalized conditioning columns appended to the descriptor of every atom.
+
+        Parameters
+        ----------
+        nf : int
+            Number of frames.
+        nloc : int
+            Number of local atoms per frame.
+        fparam : torch.Tensor, optional
+            Frame parameters with shape (nf, numb_fparam). The default frame
+            parameter is used when omitted.
+        aparam : torch.Tensor, optional
+            Atomic parameters with shape (nf, nloc, numb_aparam).
+        case_embd : torch.Tensor, optional
+            Case embedding with shape (dim_case_embd,) appended to every atom,
+            or None when the case embedding is not concatenated.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The frame parameters, atomic parameters and case embedding of every
+            atom, normalized and concatenated, with shape (nf, nloc, ncond);
+            None when the descriptor alone is the fitting input.
+        """
+        columns: list[torch.Tensor] = []
+        if self.numb_fparam > 0:
+            if fparam is None:
+                assert self.default_fparam_tensor is not None
+                fparam = self.default_fparam_tensor.unsqueeze(0).expand(nf, -1)
+            if fparam.numel() != nf * self.numb_fparam:
+                raise ValueError(
+                    f"input fparam: cannot reshape {list(fparam.shape)} "
+                    f"into ({nf}, {self.numb_fparam})."
+                )
+            assert self.fparam_avg is not None
+            assert self.fparam_inv_std is not None
+            fparam = fparam.to(self.prec).view([nf, 1, self.numb_fparam])
+            fparam = (fparam - self.fparam_avg) * self.fparam_inv_std
+            columns.append(fparam.expand(nf, nloc, self.numb_fparam))
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+            assert aparam is not None, "aparam should not be None"
+            if aparam.numel() != nf * nloc * self.numb_aparam:
+                raise ValueError(
+                    f"input aparam: cannot reshape {list(aparam.shape)} "
+                    f"into ({nf}, {nloc}, {self.numb_aparam})."
+                )
+            assert self.aparam_avg is not None
+            assert self.aparam_inv_std is not None
+            aparam = aparam.to(self.prec).view([nf, nloc, self.numb_aparam])
+            columns.append((aparam - self.aparam_avg) * self.aparam_inv_std)
+        if case_embd is not None:
+            columns.append(case_embd.view([1, 1, -1]).expand(nf, nloc, -1))
+        if len(columns) == 0:
+            return None
+        return torch.cat(columns, dim=-1)
+
+    def vacuum_input(
+        self,
+        vacuum_descriptor: torch.Tensor | None,
+        atype: torch.Tensor,
+        cond: torch.Tensor | None,
+        case_embd: torch.Tensor | None,
+    ) -> torch.Tensor | None:
+        """Fitting input rows of the vacuum references.
+
+        The vacuum reference of an atom is an isolated atom of its type under
+        the conditioning of the atom itself. With frame or atomic parameters
+        the conditioning differs between atoms and the rows follow the atoms,
+        with shape (nf, nloc, in_dim). Otherwise one row per type suffices,
+        with shape (ntypes, in_dim), and :meth:`vacuum_output` gathers the
+        network output by type.
+
+        Parameters
+        ----------
+        vacuum_descriptor : torch.Tensor, optional
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt); None takes the table stored by
+            :meth:`fold_vacuum_reference`.
+        atype : torch.Tensor
+            Atom types with shape (nf, nloc).
+        cond : torch.Tensor, optional
+            Conditioning columns of the atoms with shape (nf, nloc, ncond).
+        case_embd : torch.Tensor, optional
+            Case embedding with shape (dim_case_embd,) appended to every row,
+            or None when the case embedding is not concatenated.
+
+        Returns
+        -------
+        torch.Tensor or None
+            The reference rows, or None when ``vacuum_ref`` is off.
+
+        Raises
+        ------
+        ValueError
+            If ``vacuum_ref`` is on and the vacuum descriptor is missing or
+            has the wrong shape.
+        """
+        if not self.vacuum_ref:
+            return None
+        if vacuum_descriptor is None:
+            vacuum_descriptor = self.vacuum_table
+        if vacuum_descriptor is None:
+            raise ValueError(
+                "vacuum_ref requires the vacuum descriptor of every atom type"
+            )
+        if list(vacuum_descriptor.shape) != [self.ntypes, self.dim_descrpt]:
+            raise ValueError(
+                f"vacuum descriptor of shape {list(vacuum_descriptor.shape)} "
+                f"does not match ({self.ntypes}, {self.dim_descrpt})"
+            )
+        x_vac = vacuum_descriptor.to(device=atype.device, dtype=self.prec)
+        if not self.uniform_conditioning():
+            assert cond is not None
+            return torch.cat([x_vac[atype], cond], dim=-1)
+        if case_embd is None:
+            return x_vac
+        return torch.cat(
+            [x_vac, case_embd.view([1, -1]).expand(self.ntypes, -1)], dim=-1
+        )
+
+    def vacuum_output(
+        self, vacuum_property: torch.Tensor, atype: torch.Tensor
+    ) -> torch.Tensor:
+        """Network output of the vacuum reference of every atom.
+
+        Parameters
+        ----------
+        vacuum_property : torch.Tensor
+            Network output on the rows of :meth:`vacuum_input`.
+        atype : torch.Tensor
+            Atom types with shape (nf, nloc).
+
+        Returns
+        -------
+        torch.Tensor
+            The reference output of every atom with shape (nf, nloc, dim_out).
+        """
+        if self.uniform_conditioning():
+            return vacuum_property[atype]
+        return vacuum_property
+
+    def vacuum_property(self, vacuum_descriptor: torch.Tensor) -> torch.Tensor:
+        """Network output on the vacuum descriptor of every type.
+
+        Defined under uniform conditioning, where the output of a reference
+        depends on its type alone.
+
+        Parameters
+        ----------
+        vacuum_descriptor : torch.Tensor
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt).
+
+        Returns
+        -------
+        torch.Tensor
+            The reference output of every type with shape (ntypes, dim_out).
+        """
+        atype = torch.arange(
+            self.ntypes, dtype=torch.long, device=vacuum_descriptor.device
+        )
+        xx_vac = self.vacuum_input(vacuum_descriptor, atype, None, self.case_embd)
+        if self.mixed_types:
+            return self.filter_layers.networks[0](xx_vac)
+        return torch.cat(
+            [
+                ll(xx_vac[type_i : type_i + 1])
+                for type_i, ll in enumerate(self.filter_layers.networks)
+            ],
+            dim=0,
+        )
+
+    def fold_vacuum_reference(self, vacuum_descriptor: torch.Tensor) -> None:
+        """Fold the vacuum reference into the fitting so the forward needs no reference atoms.
+
+        Under uniform conditioning the reference output of an atom is a
+        constant of its type, so subtracting it from ``bias_atom_e`` yields
+        the same outputs as the referenced forward and the option is switched
+        off. With frame or atomic parameters the reference output varies
+        between atoms, so the vacuum descriptor is stored instead and the
+        forward evaluates the references from the stored table. The table is
+        a deployment constant: an exported model bakes it, checkpoints leave
+        it out, and a fitting loaded from a checkpoint takes the reference
+        from the descriptor again.
+
+        Parameters
+        ----------
+        vacuum_descriptor : torch.Tensor
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt).
+        """
+        if not self.vacuum_ref:
+            return
+        with torch.no_grad():
+            if self.uniform_conditioning():
+                reference = self.vacuum_property(vacuum_descriptor)
+                self.bias_atom_e = self.bias_atom_e - reference.to(
+                    self.bias_atom_e.dtype
+                )
+                self.vacuum_ref = False
+            else:
+                self.vacuum_table = vacuum_descriptor.detach().to(self.prec).clone()
 
     def _forward_common(
         self,
@@ -740,99 +971,29 @@ class GeneralFitting(Fitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
-        # cast the input to internal precsion
+        # cast the input to internal precision
         xx = descriptor.to(self.prec)
         nf, nloc, nd = xx.shape
-
-        if self.numb_fparam > 0 and fparam is None:
-            # use default fparam
-            assert self.default_fparam_tensor is not None
-            fparam = torch.tile(self.default_fparam_tensor.unsqueeze(0), [nf, 1])
-
-        fparam = fparam.to(self.prec) if fparam is not None else None
-        aparam = aparam.to(self.prec) if aparam is not None else None
-
-        if self.remove_vaccum_contribution is not None:
-            # TODO: compute the input for vaccm when remove_vaccum_contribution is set
-            # Ideally, the input for vacuum should be computed;
-            # we consider it as always zero for convenience.
-            # Needs a compute_input_stats for vacuum passed from the
-            # descriptor.
-            xx_zeros = torch.zeros_like(xx)
-        else:
-            xx_zeros = None
-        net_dim_out = self._net_out_dim()
-
         if nd != self.dim_descrpt:
             raise ValueError(
                 f"get an input descriptor of dim {nd},"
                 f"which is not consistent with {self.dim_descrpt}."
             )
-        # check fparam dim, concate to input descriptor
-        if self.numb_fparam > 0:
-            assert fparam is not None, "fparam should not be None"
-            assert self.fparam_avg is not None
-            assert self.fparam_inv_std is not None
-            if fparam.numel() != nf * self.numb_fparam:
-                raise ValueError(
-                    f"input fparam: cannot reshape {list(fparam.shape)} "
-                    f"into ({nf}, {self.numb_fparam})."
-                )
-            fparam = fparam.view([nf, self.numb_fparam])
-            nb, _ = fparam.shape
-            t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
-            t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
-            fparam = (fparam - t_fparam_avg) * t_fparam_inv_std
-            fparam = torch.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
-            xx = torch.cat(
-                [xx, fparam],
-                dim=-1,
-            )
-            if xx_zeros is not None:
-                xx_zeros = torch.cat(
-                    [xx_zeros, fparam],
-                    dim=-1,
-                )
-        # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
-            assert aparam is not None, "aparam should not be None"
-            assert self.aparam_avg is not None
-            assert self.aparam_inv_std is not None
-            if aparam.numel() % (nf * self.numb_aparam) != 0:
-                raise ValueError(
-                    f"input aparam: cannot reshape {list(aparam.shape)} "
-                    f"into ({nf}, nloc, {self.numb_aparam})."
-                )
-            aparam = aparam.view([nf, -1, self.numb_aparam])
-            nb, nloc, _ = aparam.shape
-            t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
-            t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
-            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
-            xx = torch.cat(
-                [xx, aparam],
-                dim=-1,
-            )
-            if xx_zeros is not None:
-                xx_zeros = torch.cat(
-                    [xx_zeros, aparam],
-                    dim=-1,
-                )
+        net_dim_out = self._net_out_dim()
 
-        if self.dim_case_embd > 0:
-            assert self.case_embd is not None
-            case_embd = torch.tile(self.case_embd.reshape([1, 1, -1]), [nf, nloc, 1])
-            xx = torch.cat(
-                [xx, case_embd],
-                dim=-1,
-            )
-            if xx_zeros is not None:
-                xx_zeros = torch.cat(
-                    [xx_zeros, case_embd],
-                    dim=-1,
-                )
+        # === Step 1. Assemble the fitting input ===
+        # The conditioning columns are shared by the atoms and by their vacuum
+        # references, so that the reference of an atom differs from the atom
+        # in its descriptor only.
+        cond = self.conditioning_columns(nf, nloc, fparam, aparam, self.case_embd)
+        if cond is not None:
+            xx = torch.cat([xx, cond], dim=-1)
+        xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond, self.case_embd)
 
+        # === Step 2. Evaluate the fitting networks ===
         outs = torch.zeros(
             (nf, nloc, net_dim_out),
             dtype=self.prec,
@@ -846,8 +1007,10 @@ class GeneralFitting(Fitting):
                 results["atomic_feature"] = self.filter_layers.networks[
                     0
                 ].call_until_last(xx)
-            if xx_zeros is not None:
-                atom_property -= self.filter_layers.networks[0](xx_zeros)
+            if xx_vac is not None:
+                atom_property = atom_property - self.vacuum_output(
+                    self.filter_layers.networks[0](xx_vac), atype
+                )
             outs = (
                 outs + atom_property + self.bias_atom_e[atype].to(self.prec)
             )  # Shape is [nframes, natoms[0], net_dim_out]
@@ -878,14 +1041,15 @@ class GeneralFitting(Fitting):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, net_dim_out))
                 atom_property = ll(xx)
-                if xx_zeros is not None:
-                    # must assert, otherwise jit is not happy
-                    assert self.remove_vaccum_contribution is not None
-                    if not (
-                        len(self.remove_vaccum_contribution) > type_i
-                        and not self.remove_vaccum_contribution[type_i]
-                    ):
-                        atom_property -= ll(xx_zeros)
+                if xx_vac is not None:
+                    # The mask below keeps the atoms of type ``type_i`` alone, so
+                    # the network of the type runs on its own reference row when
+                    # the references are per type, and on the per-atom rows
+                    # otherwise.
+                    if self.uniform_conditioning():
+                        atom_property = atom_property - ll(xx_vac[type_i : type_i + 1])
+                    else:
+                        atom_property = atom_property - ll(xx_vac)
                 atom_property = atom_property + self.bias_atom_e[type_i].to(self.prec)
                 atom_property = torch.where(mask, atom_property, 0.0)
                 outs = (

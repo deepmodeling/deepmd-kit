@@ -1827,8 +1827,13 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
-    model.to("cpu")
     model.eval()
+    # The vacuum reference is resolved on the export object, folded into the
+    # fitting bias or stored as a per-type table, so the exported graph
+    # carries no reference atoms; the move to the tracing device follows, so
+    # the table lands there with the rest of the model.
+    model.fold_vacuum_reference()
+    model.to("cpu")
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)

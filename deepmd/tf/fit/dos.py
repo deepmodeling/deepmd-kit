@@ -700,6 +700,10 @@ class DOSFitting(Fitting):
         """
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 4, 1)
+        if data.pop("vacuum_ref", False):
+            raise NotImplementedError(
+                "vacuum_ref is not supported by the TensorFlow backend"
+            )
         data["numb_dos"] = data.pop("dim_out")
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(

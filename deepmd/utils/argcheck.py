@@ -105,6 +105,12 @@ doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative c
 doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
 doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
 doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor."
+doc_vacuum_ref = (
+    "Reference the fitting network output of every atom to the output the same network gives "
+    "an isolated atom of the same type under the same frame parameters, atomic parameters and "
+    "case embedding, so that the energy of an atom without neighbors is exactly its output bias. "
+    "Together with `preset_out_bias`, this fixes the isolated-atom energy of every element to the preset value."
+)
 doc_se_atten = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor."
 doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor."
 doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms."
@@ -2851,8 +2857,14 @@ def fitting_ener() -> list[Argument]:
             "atom_ener",
             list[float | None],
             optional=True,
-            default=[],
-            doc=doc_atom_ener,
+            doc=supported_backends("tf", "pd") + doc_atom_ener,
+        ),
+        Argument(
+            "vacuum_ref",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt") + doc_vacuum_ref,
         ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
@@ -2884,7 +2896,6 @@ def fitting_sezm_ener() -> list[Argument]:
 - list of bool {supported_backends('pt', 'pt_expt').strip()}: The DPA4/SeZM fitting net is trainable only when all values in the list are True."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_atom_ener = "Specify the atomic energy in vacuum for each type"
     doc_layer_name = (
         "The name of the each layer. The length of this list should be equal to n_neuron + 1. "
         "If two layers, either in the same fitting or different fittings, "
@@ -2944,11 +2955,11 @@ def fitting_sezm_ener() -> list[Argument]:
         ),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
         Argument(
-            "atom_ener",
-            list[float | None],
+            "vacuum_ref",
+            bool,
             optional=True,
-            default=[],
-            doc=doc_atom_ener,
+            default=False,
+            doc=doc_vacuum_ref,
         ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
@@ -3417,7 +3428,21 @@ def model_args(
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
-    doc_preset_out_bias = "The preset bias of the atomic output, provided as a dict keyed by the output name. Each value is either a list with one entry per type of the `type_map`, where `null` leaves the type to the data statistics, or a dict keyed by element name that assigns the listed elements only, which is the convenient form for a model with many types. For a spin model with virtual atom types, the list counts the virtual types as well, while the dict names real elements only. Taking an energy model with the `type_map` `['C', 'H', 'O']` for example, `{ 'energy': [null, 0., 1.] }` sets the energy bias of H and O to 0. and 1. and fits the bias of C from the data; the same setting reads `{ 'energy': { 'H': 0., 'O': 1. } }`. An output of higher rank takes a nested list of its shape. Dipole models do not apply an output bias and cannot take assigned presets. The preset is enforced whenever the bias is computed, from frame-level as well as from per-atom labels: both when the model is initialized from the data and when the bias of a pretrained model is changed during fine-tuning or by `dp change-bias`, the bias of an assigned type is set to the preset value and only the remaining types are fitted. A fitting whose statistics do not distinguish atom types cannot take a preset. Preset-dependent statistics and model-dependent bias corrections are recomputed without reading or writing the output-statistics cache. Set `set_davg_zero` to true on descriptors that expose it (`se_e2_a`, `se_e2_r`, `se_e3`, `se_a_tpe`, `se_a_ebd_v2`, `se_atten_v2`; it already defaults to true for `se_atten`, `se_e3_tebd` and the `repinit` and `repformer` blocks of DPA-2) so that an isolated atom yields a zero descriptor input; descriptors without this option, such as DPA-3 and DPA4, need no further setting."
+    doc_preset_out_bias = (
+        "Fix the atomic output bias of chosen elements instead of fitting it from the data, keyed by output name. "
+        "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
+        "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
+        "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
+        "`{'energy': 'omat24'}`, one of `omat24`, `omol25`, `omc25`, `odac25` and `oc20`, which takes precedence "
+        "over a file of the same name; "
+        "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
+        "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
+        "for tensor outputs, e.g. `{'dipole': [null, [0., 1., 2.]]}`. "
+        "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
+        "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
+        "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
+        "changed by fine-tuning or `dp change-bias`. Dipole models apply no output bias and take no preset."
+    )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -3491,7 +3516,7 @@ def model_args(
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[float | list | None] | dict[str, float | list]],
+                dict[str, list[float | list | None] | dict[str, float | list] | str],
                 optional=True,
                 default=None,
                 doc=supported_backends("pt", "pd", "pt_expt", "jax")

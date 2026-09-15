@@ -442,6 +442,10 @@ class GeneralFitting(Fitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
+        if data.pop("vacuum_ref", False):
+            raise NotImplementedError(
+                "vacuum_ref is not supported by the Paddle backend"
+            )
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)

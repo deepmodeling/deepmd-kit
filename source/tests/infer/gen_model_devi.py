@@ -59,7 +59,6 @@ def main():
             "default_fparam": [0.25852028],
             "precision": "default",
             "seed": 1,
-            "atom_ener": [],
             "rcond": 0.001,
             "trainable": True,
             "use_aparam_as_mask": False,

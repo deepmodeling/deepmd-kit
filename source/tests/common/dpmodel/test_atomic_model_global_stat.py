@@ -7,9 +7,6 @@ from pathlib import (
 from typing import (
     NoReturn,
 )
-from unittest.mock import (
-    Mock,
-)
 
 import h5py
 import numpy as np
@@ -268,8 +265,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ft = FooFitting()
         type_map = ["foo", "bar"]
+        # both types occur in the data, so an assigned output assigns both
         preset_out_bias = {
-            "foo": [None, 2],
+            "foo": [3, 2],
             "bar": np.array([7.0, 5.0, 13.0, 11.0]).reshape(2, 1, 2),
         }
         md0 = DPDPAtomicModel(
@@ -307,15 +305,12 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret0[kk], expected_ret0[kk])
 
-        # 2. test bias is applied
+        # 2. the preset fixes foo and bar; pix has no label and keeps a zero bias
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
         ret1 = md0.forward_common_atomic(*args)
-        # foo sums: [5, 7],
-        # given bias of type 1 being 2, the bias left for type 0 is [5-2*1, 7-2*2] = [3,3]
-        # the solution of type 0 is 1.8
-        foo_bias = np.array([1.8, preset_out_bias["foo"][1]]).reshape(2, 1)
+        foo_bias = np.array(preset_out_bias["foo"], dtype=np.float64).reshape(2, 1)
         bar_bias = preset_out_bias["bar"]
         expected_ret1 = {}
         expected_ret1["foo"] = ret0["foo"] + foo_bias[at]
@@ -324,50 +319,26 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
-        # Preset-dependent statistics are recomputed rather than cached.
-        sample_again = Mock(return_value=self.merged_output_stat)
-        md0.compute_or_load_out_stat(sample_again, stat_file_path=self.stat_file_path)
-        sample_again.assert_called_once_with()
-        ret2 = md0.forward_common_atomic(*args)
-        for kk in ["foo", "pix", "bar"]:
-            np.testing.assert_almost_equal(ret1[kk], ret2[kk])
-
-        # 4. test change bias
+        # 3. change-by-statistic keeps every assigned type at its preset
         md0.change_out_bias(
             self.merged_output_stat, bias_adjust_mode="change-by-statistic"
         )
-        # use atype_ext from merged_output_stat for inference
-        args = [
-            self.coord_ext,
-            np.array(self.merged_output_stat[0]["atype_ext"], dtype=np.int64),
-            self.nlist,
-        ]
         ret3 = md0.forward_common_atomic(*args)
-        ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
-        ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
-        ## the preset bias 2 of type 1 is kept, so its shift is 0 and
-        ## the shift of type 0 is fit to [-6.6, -13.8] with natoms [2, 1]: -5.4
-        ## old bias [1.8, 2] + shift [-5.4, 0] = [-3.6, 2]
-        ## new model output is [[-2.6, -1.6, 5], [0.4, 7, 8]]
-        expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[-2.6, -1.6, 5.0], [0.4, 7.0, 8.0]]).reshape(
-            2, 3, 1
-        )
-        expected_ret3["pix"] = ret0["pix"]
-        for kk in ["foo", "pix"]:
-            np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
-        # the preset entries are enforced, not accumulated onto the old bias
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(ret3[kk], ret1[kk])
         out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
-        np.testing.assert_almost_equal(out_bias["foo"][1], preset_out_bias["foo"][1])
+        np.testing.assert_almost_equal(out_bias["foo"], foo_bias)
         np.testing.assert_almost_equal(out_bias["bar"], bar_bias)
 
-        # 5. a repeated change leaves the bias in place
-        md0.change_out_bias(
-            self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        # 4. a preset that leaves an observed type unassigned is rejected
+        md1 = DPDPAtomicModel(
+            ds,
+            FooFitting(),
+            type_map=type_map,
+            preset_out_bias={"foo": [None, 2]},
         )
-        ret4 = md0.forward_common_atomic(*args)
-        for kk in ["foo", "pix", "bar"]:
-            np.testing.assert_almost_equal(ret4[kk], ret3[kk])
+        with self.assertRaisesRegex(ValueError, "foo"):
+            md1.compute_or_load_out_stat(self.merged_output_stat)
 
     def test_preset_bias_all_none(self) -> None:
         nf, nloc, nnei = self.nlist.shape
@@ -559,7 +530,7 @@ class TestChangeByStatMixedLabels(unittest.TestCase, TestCaseSingleFrameWithNlis
         # bar is too complicated to be manually computed.
 
     def test_preset_with_atomic_labels(self) -> None:
-        """The preset overrides the per-type mean of atomic labels in both modes."""
+        """An assigned output ignores the atomic labels in both modes."""
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -569,24 +540,29 @@ class TestChangeByStatMixedLabels(unittest.TestCase, TestCaseSingleFrameWithNlis
             ds,
             FooFitting(),
             type_map=["foo", "bar"],
-            preset_out_bias={"foo": {"bar": 2.0}},
+            preset_out_bias={"foo": {"foo": 5.0, "bar": 2.0}},
         )
-        # atom_foo labels [[5, 5, 5], [5, 6, 7]] with atype [[0, 0, 1], [0, 1, 1]]:
-        # type 0 averages to 5 while type 1 is pinned to the preset 2
+        # atom_foo labels [[5, 5, 5], [5, 6, 7]] with atype [[0, 0, 1], [0, 1, 1]]
+        # are never fitted: both types take their preset
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
         out_bias, _ = md0._fetch_out_stat(["foo"])
         np.testing.assert_almost_equal(out_bias["foo"], np.array([[5.0], [2.0]]))
-        # model output with bias [5, 2]: [[6, 7, 5], [9, 7, 8]], per-atom residual
-        # of type 0: [-1, -2, -4] with mean -7/3; type 1 keeps the preset
         md0.change_out_bias(
             self.merged_output_stat, bias_adjust_mode="change-by-statistic"
         )
         out_bias, _ = md0._fetch_out_stat(["foo"])
-        np.testing.assert_almost_equal(
-            out_bias["foo"], np.array([[5.0 - 7.0 / 3.0], [2.0]])
+        np.testing.assert_almost_equal(out_bias["foo"], np.array([[5.0], [2.0]]))
+        # a preset that leaves the observed type foo unassigned is rejected
+        md1 = DPDPAtomicModel(
+            ds,
+            FooFitting(),
+            type_map=["foo", "bar"],
+            preset_out_bias={"foo": {"bar": 2.0}},
         )
+        with self.assertRaisesRegex(ValueError, "foo"):
+            md1.compute_or_load_out_stat(self.merged_output_stat)
 
 
 class TestEnergyModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):

@@ -7,9 +7,6 @@ from pathlib import (
 from typing import (
     NoReturn,
 )
-from unittest.mock import (
-    Mock,
-)
 
 import h5py
 import numpy as np
@@ -305,9 +302,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         ft = FooFitting().to(env.DEVICE)
         type_map = ["foo", "bar"]
+        # both types occur in the data, so an assigned output assigns both
         preset_out_bias = {
-            # "foo": np.array(3.0, 2.0]).reshape(2, 1),
-            "foo": [None, 2],
+            "foo": [3, 2],
             "bar": np.array([7.0, 5.0, 13.0, 11.0]).reshape(2, 1, 2),
         }
         md0 = DPAtomicModel(
@@ -350,17 +347,13 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).reshape([nf, nloc] + md0.fitting_output_def()["bar"].shape)  # noqa: RUF005
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret0[kk], expected_ret0[kk])
-
-        # 2. test bias is applied
+        # 2. the preset fixes foo and bar; pix has no label and keeps a zero bias
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        # foo sums: [5, 7],
-        # given bias of type 1 being 2, the bias left for type 0 is [5-2*1, 7-2*2] = [3,3]
-        # the solution of type 0 is 1.8
-        foo_bias = np.array([1.8, preset_out_bias["foo"][1]]).reshape(2, 1)
+        foo_bias = np.array(preset_out_bias["foo"], dtype=np.float64).reshape(2, 1)
         bar_bias = preset_out_bias["bar"]
         expected_ret1 = {}
         expected_ret1["foo"] = ret0["foo"] + foo_bias[at]
@@ -368,58 +361,26 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
-
-        # Preset-dependent statistics are recomputed rather than cached.
-        sample_again = Mock(return_value=self.merged_output_stat)
-        md0.compute_or_load_out_stat(sample_again, stat_file_path=self.stat_file_path)
-        sample_again.assert_called_once_with()
-        ret2 = md0.forward_common_atomic(*args)
-        ret2 = cvt_ret(ret2)
-        for kk in ["foo", "pix", "bar"]:
-            np.testing.assert_almost_equal(ret1[kk], ret2[kk])
-
-        # 4. test change bias
+        # 3. change-by-statistic keeps every assigned type at its preset
         BaseAtomicModel.change_out_bias(
             md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
         )
-        args = [
-            to_torch_tensor(ii)
-            for ii in [
-                self.coord_ext,
-                to_numpy_array(self.merged_output_stat[0]["atype_ext"]),
-                self.nlist,
-            ]
-        ]
         ret3 = md0.forward_common_atomic(*args)
         ret3 = cvt_ret(ret3)
-        ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
-        ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
-        ## the preset bias 2 of type 1 is kept, so its shift is 0 and
-        ## the shift of type 0 is fit to [-6.6, -13.8] with natoms [2, 1]: -5.4
-        ## old bias [1.8, 2] + shift [-5.4, 0] = [-3.6, 2]
-        ## new model output is [[-2.6, -1.6, 5], [0.4, 7, 8]]
-        expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[-2.6, -1.6, 5.0], [0.4, 7.0, 8.0]]).reshape(
-            2, 3, 1
-        )
-        expected_ret3["pix"] = ret0["pix"]
-        for kk in ["foo", "pix"]:
-            np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
-        # the preset entries are enforced, not accumulated onto the old bias
-        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
-        np.testing.assert_almost_equal(
-            to_numpy_array(out_bias["foo"])[1], preset_out_bias["foo"][1]
-        )
-        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
-
-        # 5. a repeated change leaves the bias in place
-        BaseAtomicModel.change_out_bias(
-            md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
-        )
-        ret4 = md0.forward_common_atomic(*args)
-        ret4 = cvt_ret(ret4)
         for kk in ["foo", "pix", "bar"]:
-            np.testing.assert_almost_equal(ret4[kk], ret3[kk])
+            np.testing.assert_almost_equal(ret3[kk], ret1[kk])
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["foo"]), foo_bias)
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
+        # 4. a preset that leaves an observed type unassigned is rejected
+        md1 = DPAtomicModel(
+            ds,
+            FooFitting().to(env.DEVICE),
+            type_map=type_map,
+            preset_out_bias={"foo": [None, 2]},
+        ).to(env.DEVICE)
+        with self.assertRaisesRegex(ValueError, "foo"):
+            md1.compute_or_load_out_stat(self.merged_output_stat)
 
     def test_preset_bias_all_none(self) -> None:
         nf, nloc, nnei = self.nlist.shape
@@ -558,11 +519,11 @@ class TestModelPresetBias(unittest.TestCase):
                     "seed": 1,
                 },
                 "fitting_net": {"neuron": [8, 8], "seed": 1},
-                "preset_out_bias": {"energy": {"H": -13.6, "B": 3.0}},
+                "preset_out_bias": {"energy": {"O": -10.0, "H": -13.6}},
             }
         ).to(env.DEVICE)
         rng = np.random.default_rng(20260913)
-        # B is assigned a preset but does not occur in the data
+        # O and H occur in the data and are assigned; B is neither
         self.sampled = [
             {
                 "coord": to_torch_tensor(rng.uniform(-1.5, 1.5, size=(2, 3, 3))),
@@ -581,15 +542,73 @@ class TestModelPresetBias(unittest.TestCase):
         return to_numpy_array(self.model.get_out_bias()).reshape(-1)
 
     def test_preset_pinned_in_both_modes(self) -> None:
-        preset = np.array([-13.6, 3.0])
+        preset = np.array([-10.0, -13.6, 0.0])
         self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
-        np.testing.assert_allclose(self.out_bias()[1:], preset)
+        np.testing.assert_allclose(self.out_bias(), preset)
+        # the output std of a fully preset output keeps its stored value
+        out_std = to_numpy_array(self.model.atomic_model.out_std).reshape(-1)
+        np.testing.assert_allclose(out_std, 1.0)
         self.model.change_out_bias(self.sampled, bias_adjust_mode="change-by-statistic")
-        bias_changed = self.out_bias()
-        np.testing.assert_allclose(bias_changed[1:], preset)
-        # a repeated change fits a vanishing residual and leaves every type in place
-        self.model.change_out_bias(self.sampled, bias_adjust_mode="change-by-statistic")
-        np.testing.assert_allclose(self.out_bias(), bias_changed, atol=1e-10)
+        np.testing.assert_allclose(self.out_bias(), preset)
+
+    def test_spin_model(self) -> None:
+        # the virtual spin types are excluded from the output and need no preset
+        model = get_model(
+            {
+                "type_map": ["O", "H", "B"],
+                "descriptor": {
+                    "type": "dpa1",
+                    "sel": 20,
+                    "rcut_smth": 0.5,
+                    "rcut": 4.0,
+                    "neuron": [4, 8],
+                    "axis_neuron": 2,
+                    "attn_layer": 0,
+                    "seed": 1,
+                },
+                "fitting_net": {"neuron": [8, 8], "seed": 1},
+                "spin": {"use_spin": [True, False, False], "virtual_scale": [0.3]},
+                "preset_out_bias": {"energy": {"O": -10.0, "H": -13.6}},
+            }
+        ).to(env.DEVICE)
+        rng = np.random.default_rng(1)
+        sampled = [
+            {**self.sampled[0], "spin": to_torch_tensor(rng.normal(size=(2, 3, 3)))}
+        ]
+        for mode in ("set-by-statistic", "change-by-statistic"):
+            model.change_out_bias(sampled, bias_adjust_mode=mode)
+            out_bias = to_numpy_array(model.get_out_bias()).reshape(-1)
+            np.testing.assert_allclose(out_bias[:3], [-10.0, -13.6, 0.0])
+
+    def test_preset_needs_no_data(self) -> None:
+        def raise_error() -> NoReturn:
+            raise RuntimeError
+
+        self.model.atomic_model.change_out_bias(
+            raise_error, bias_adjust_mode="set-by-statistic", observed_type=["O", "H"]
+        )
+        np.testing.assert_allclose(self.out_bias(), [-10.0, -13.6, 0.0])
+
+    def test_missing_element_rejected(self) -> None:
+        model = get_model(
+            {
+                "type_map": ["O", "H", "B"],
+                "descriptor": {
+                    "type": "dpa1",
+                    "sel": 20,
+                    "rcut_smth": 0.5,
+                    "rcut": 4.0,
+                    "neuron": [4, 8],
+                    "axis_neuron": 2,
+                    "attn_layer": 0,
+                    "seed": 1,
+                },
+                "fitting_net": {"neuron": [8, 8], "seed": 1},
+                "preset_out_bias": {"energy": {"H": -13.6, "B": 3.0}},
+            }
+        ).to(env.DEVICE)
+        with self.assertRaisesRegex(ValueError, "O"):
+            model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
 
     def test_dp_file_round_trip(self) -> None:
         self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
@@ -605,20 +624,20 @@ class TestModelPresetBias(unittest.TestCase):
             )
             self.assertEqual(
                 loaded.atomic_model.preset_out_bias,
-                {"energy": [None, [-13.6], [3.0]]},
+                {"energy": [[-10.0], [-13.6], None]},
             )
 
     def test_nonfinite_assigned_bias_from_checkpoint(self) -> None:
+        # the preset replaces a non-finite stored bias of an assigned type
         for value in (np.nan, np.inf, -np.inf):
             with self.subTest(value=value):
-                self.model.atomic_model.out_bias[0, 1:, 0] = value
+                self.model.atomic_model.out_bias[0, :2, 0] = value
                 loaded = EnergyModel.deserialize(self.model.serialize())
                 loaded.change_out_bias(
                     self.sampled, bias_adjust_mode="change-by-statistic"
                 )
                 bias = to_numpy_array(loaded.get_out_bias()).reshape(-1)
-                self.assertTrue(np.isfinite(bias).all())
-                np.testing.assert_allclose(bias[1:], [-13.6, 3.0])
+                np.testing.assert_allclose(bias, [-10.0, -13.6, 0.0])
                 loaded.change_out_bias(
                     self.sampled, bias_adjust_mode="change-by-statistic"
                 )
@@ -628,10 +647,10 @@ class TestModelPresetBias(unittest.TestCase):
 
     def test_change_type_map_remaps_preset(self) -> None:
         self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
-        # H is dropped, B keeps its preset, C is new
+        # H is dropped, O keeps its preset, B and C are unassigned
         self.model.change_type_map(["B", "O", "C"])
         self.assertEqual(
-            self.model.atomic_model.preset_out_bias, {"energy": [[3.0], None, None]}
+            self.model.atomic_model.preset_out_bias, {"energy": [None, [-10.0], None]}
         )
         sampled = [
             {
@@ -644,8 +663,9 @@ class TestModelPresetBias(unittest.TestCase):
                 ),
             }
         ]
-        self.model.change_out_bias(sampled, bias_adjust_mode="change-by-statistic")
-        np.testing.assert_allclose(self.out_bias()[0], 3.0)
+        # C occurs in the new data without a preset
+        with self.assertRaisesRegex(ValueError, "C"):
+            self.model.change_out_bias(sampled, bias_adjust_mode="change-by-statistic")
 
     def test_dipole_preset_rejected(self) -> None:
         params = {

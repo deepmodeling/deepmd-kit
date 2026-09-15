@@ -48,10 +48,9 @@ from deepmd.utils.path import (
     DPPath,
 )
 from deepmd.utils.preset_out_bias import (
-    apply_preset_out_bias,
     check_preset_out_bias,
     normalize_preset_out_bias,
-    preset_out_bias_shift,
+    preset_out_bias_rows,
     remap_preset_out_bias,
 )
 
@@ -179,6 +178,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference into the fitting bias; nothing to fold without a fitting network."""
+        return
 
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
@@ -734,6 +737,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             merged,
             stat_file_path=stat_file_path,
             bias_adjust_mode="set-by-statistic",
+            observed_type=self.observed_type,
         )
 
     def _make_wrapped_sampler(
@@ -795,6 +799,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         sample_merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
+        observed_type: list[str] | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -812,75 +817,84 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
-            In both modes a type assigned in `preset_out_bias` ends at exactly the preset value.
+            An output assigned in `preset_out_bias` is fixed by the preset in both modes:
+            every element in the data must be assigned, the assigned types take the
+            preset value, and the types absent from the data keep zero
+            ('set-by-statistic') or their stored bias ('change-by-statistic'); no
+            statistics are computed, read or written for such an output, whose
+            output std keeps its stored value.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
+        observed_type : list[str], optional
+            The elements that occur in the data; derived from the sample when
+            not given.
         """
         from deepmd.dpmodel.utils.stat import (
+            collect_observed_types,
             compute_output_stats,
         )
 
+        if bias_adjust_mode not in ("change-by-statistic", "set-by-statistic"):
+            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+        change = bias_adjust_mode == "change-by-statistic"
         distinguish_types = self.get_compute_stats_distinguish_types()
         check_preset_out_bias(self.preset_out_bias, self.bias_keys, distinguish_types)
-        # The fitted statistics are absolute biases in 'set-by-statistic' mode and
-        # shifts of the stored bias in 'change-by-statistic' mode. The preset values
-        # enter the fit expressed in the same frame, so the assigned types end at the
-        # preset value in both modes while the other types are fitted around them.
-        if bias_adjust_mode == "change-by-statistic":
-            if self.preset_out_bias is not None:
-                pinned_bias = apply_preset_out_bias(
-                    self.preset_out_bias,
-                    to_numpy_array(self.out_bias),
-                    self.bias_keys,
-                    [self.atomic_output_def()[kk].size for kk in self.bias_keys],
-                )
-                self.out_bias = pinned_bias
-            forward = self._get_forward_wrapper_func()
-            preset_bias = preset_out_bias_shift(
+        sampled = sample_merged
+        # === Step 1. Outputs fixed by the preset ===
+        fitted_keys = self.bias_keys
+        if self.preset_out_bias:
+            if observed_type is None:
+                sampled = sample_merged() if callable(sample_merged) else sample_merged
+                observed_type = collect_observed_types(sampled, self.type_map)
+            rows = preset_out_bias_rows(
                 self.preset_out_bias,
+                self.type_map,
+                observed_type,
                 to_numpy_array(self.out_bias),
                 self.bias_keys,
                 [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+                keep_unassigned=change,
+                excluded_types=self.atom_exclude_types,
             )
-        elif bias_adjust_mode == "set-by-statistic":
-            forward = None
-            preset_bias = self.preset_out_bias
-        else:
-            raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+            self._store_out_stat(rows)
+            fitted_keys = [kk for kk in self.bias_keys if kk not in rows]
+        if not fitted_keys:
+            return
+        # === Step 2. Outputs fitted from the data ===
+        # The fitted statistics are absolute biases in 'set-by-statistic' mode and
+        # shifts of the stored bias in 'change-by-statistic' mode.
+        forward = self._get_forward_wrapper_func() if change else None
         out_bias, out_std = compute_output_stats(
-            sample_merged,
+            sampled,
             self.get_ntypes(),
-            keys=self.bias_keys,
+            keys=fitted_keys,
             stat_file_path=stat_file_path,
             model_forward=forward,
             rcond=self.rcond,
-            preset_bias=preset_bias,
             stats_distinguish_types=distinguish_types,
             intensive=self.get_intensive(),
         )
-        self._store_out_stat(
-            out_bias, out_std, add=bias_adjust_mode == "change-by-statistic"
-        )
+        self._store_out_stat(out_bias, out_std, add=change)
 
     def _store_out_stat(
         self,
         out_bias: dict[str, np.ndarray],
-        out_std: dict[str, np.ndarray],
+        out_std: dict[str, np.ndarray] | None = None,
         add: bool = False,
     ) -> None:
-        """Store output bias and std into the model."""
+        """Store the output bias, and the output std when given, into the model."""
         ntypes = self.get_ntypes()
         out_bias_data = np.array(to_numpy_array(self.out_bias))
         out_std_data = np.array(to_numpy_array(self.out_std))
         for kk in out_bias.keys():
-            assert kk in out_std.keys()
             idx = self._get_bias_index(kk)
             size = self._varsize(self.atomic_output_def()[kk].shape)
             if not add:
                 out_bias_data[idx, :, :size] = out_bias[kk].reshape(ntypes, size)
             else:
                 out_bias_data[idx, :, :size] += out_bias[kk].reshape(ntypes, size)
-            out_std_data[idx, :, :size] = out_std[kk].reshape(ntypes, size)
+            if out_std is not None:
+                out_std_data[idx, :, :size] = out_std[kk].reshape(ntypes, size)
         self.out_bias = out_bias_data
         self.out_std = out_std_data
 

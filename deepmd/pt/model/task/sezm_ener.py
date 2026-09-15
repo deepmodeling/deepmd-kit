@@ -645,6 +645,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Run the SeZM fitting path with optional case FiLM."""
@@ -657,6 +658,7 @@ class SeZMEnergyFittingNet(InvarFitting):
                 h2,
                 fparam,
                 aparam,
+                vacuum_descriptor=vacuum_descriptor,
                 return_atomic_feature=return_atomic_feature,
             )
         return self._forward_case_film(
@@ -664,6 +666,7 @@ class SeZMEnergyFittingNet(InvarFitting):
             atype,
             fparam,
             aparam,
+            vacuum_descriptor=vacuum_descriptor,
             return_atomic_feature=return_atomic_feature,
         )
 
@@ -673,6 +676,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         atype: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
@@ -688,6 +692,9 @@ class SeZMEnergyFittingNet(InvarFitting):
             Frame parameters with shape (nf, numb_fparam).
         aparam
             Atomic parameters with shape (nf, nloc, numb_aparam).
+        vacuum_descriptor
+            Descriptor of an isolated atom of every type with shape
+            (ntypes, dim_descrpt), required by ``vacuum_ref``.
         return_atomic_feature
             When True, also return the last hidden activation under the
             ``atomic_feature`` key.
@@ -699,81 +706,49 @@ class SeZMEnergyFittingNet(InvarFitting):
         """
         xx = descriptor.to(self.prec)
         nf, nloc, nd = xx.shape
-        if self.numb_fparam > 0 and fparam is None:
-            assert self.default_fparam_tensor is not None
-            fparam = torch.tile(self.default_fparam_tensor.unsqueeze(0), [nf, 1])
-        fparam = fparam.to(self.prec) if fparam is not None else None
-        aparam = aparam.to(self.prec) if aparam is not None else None
-
-        if self.remove_vaccum_contribution is not None:
-            xx_zeros = torch.zeros_like(xx)
-        else:
-            xx_zeros = None
-        net_dim_out = self._net_out_dim()
-
         if nd != self.dim_descrpt:
             raise ValueError(
                 f"get an input descriptor of dim {nd},"
                 f"which is not consistent with {self.dim_descrpt}."
             )
-
-        if self.numb_fparam > 0:
-            assert fparam is not None, "fparam should not be None"
-            assert self.fparam_avg is not None
-            assert self.fparam_inv_std is not None
-            if fparam.numel() != nf * self.numb_fparam:
-                raise ValueError(
-                    f"input fparam: cannot reshape {list(fparam.shape)} "
-                    f"into ({nf}, {self.numb_fparam})."
-                )
-            fparam = fparam.view([nf, self.numb_fparam])
-            nb, _ = fparam.shape
-            t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
-            t_fparam_inv_std = self._extend_f_avg_std(self.fparam_inv_std, nb)
-            fparam = (fparam - t_fparam_avg) * t_fparam_inv_std
-            fparam = torch.tile(fparam.reshape([nf, 1, -1]), [1, nloc, 1])
-            xx = torch.cat([xx, fparam], dim=-1)
-            if xx_zeros is not None:
-                xx_zeros = torch.cat([xx_zeros, fparam], dim=-1)
-
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
-            assert aparam is not None, "aparam should not be None"
-            assert self.aparam_avg is not None
-            assert self.aparam_inv_std is not None
-            if aparam.numel() % (nf * self.numb_aparam) != 0:
-                raise ValueError(
-                    f"input aparam: cannot reshape {list(aparam.shape)} "
-                    f"into ({nf}, nloc, {self.numb_aparam})."
-                )
-            aparam = aparam.view([nf, -1, self.numb_aparam])
-            nb, nloc, _ = aparam.shape
-            t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
-            t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
-            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
-            xx = torch.cat([xx, aparam], dim=-1)
-            if xx_zeros is not None:
-                xx_zeros = torch.cat([xx_zeros, aparam], dim=-1)
+        # The case embedding modulates the hidden features through FiLM and is
+        # not concatenated to the input; the atoms and their vacuum references
+        # share the remaining conditioning columns.
+        cond = self.conditioning_columns(nf, nloc, fparam, aparam, None)
+        if cond is not None:
+            xx = torch.cat([xx, cond], dim=-1)
+        xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond, None)
 
         assert self.case_embd is not None
-        outs = torch.zeros(
-            (nf, nloc, net_dim_out),
-            dtype=self.prec,
-            device=descriptor.device,
-        )
-        results = {}
-
         fitting = self.filter_layers.networks[0]
+        results = {}
         atom_property = fitting(xx, self.case_embd)
         if return_atomic_feature:
             results["atomic_feature"] = fitting.call_until_last(xx, self.case_embd)
-        if xx_zeros is not None:
-            atom_property -= fitting(xx_zeros, self.case_embd)
-        outs = outs + atom_property + self.bias_atom_e[atype].to(self.prec)
+        if xx_vac is not None:
+            atom_property = atom_property - self.vacuum_output(
+                fitting(xx_vac, self.case_embd), atype
+            )
+        outs = atom_property + self.bias_atom_e[atype].to(self.prec)
 
         mask = self.emask(atype).to(torch.bool)
         outs = torch.where(mask[:, :, None], outs, 0.0)
         results.update({self.var_name: outs})
         return results
+
+    def vacuum_property(self, vacuum_descriptor: torch.Tensor) -> torch.Tensor:
+        """Network output on the vacuum descriptor of every type.
+
+        With case FiLM the case embedding modulates the hidden features
+        instead of extending the input rows.
+        """
+        if not self.case_film_embd:
+            return super().vacuum_property(vacuum_descriptor)
+        atype = torch.arange(
+            self.ntypes, dtype=torch.long, device=vacuum_descriptor.device
+        )
+        xx_vac = self.vacuum_input(vacuum_descriptor, atype, None, None)
+        return self.filter_layers.networks[0](xx_vac, self.case_embd)
 
     @classmethod
     def deserialize(cls, data: dict) -> GeneralFitting:
@@ -783,6 +758,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
+        data.pop("atom_ener", None)
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = to_torch_tensor(variables[kk])

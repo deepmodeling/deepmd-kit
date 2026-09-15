@@ -88,6 +88,7 @@ class PropertyFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
+        vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         default_fparam: list | None = None,
         distinguish_types: bool = True,
@@ -114,6 +115,7 @@ class PropertyFittingNet(InvarFitting):
             precision=precision,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            vacuum_ref=vacuum_ref,
             type_map=type_map,
             default_fparam=default_fparam,
         )
