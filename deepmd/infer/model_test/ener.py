@@ -30,7 +30,6 @@ from deepmd.utils.eval_metrics import (
     DP_TEST_WEIGHTED_METRIC_KEYS,
     compute_energy_type_metrics,
     compute_error_stat,
-    compute_spin_force_metrics,
     compute_weighted_error_stat,
 )
 
@@ -45,6 +44,11 @@ __all__ = ["EnerTester", "SpinEnerTester"]
 def _reshape_force_by_atom(force_array: np.ndarray, natoms: int) -> np.ndarray:
     """Reshape flattened force arrays into `[nframes, natoms, 3]`."""
     return np.reshape(force_array, [-1, natoms, 3])
+
+
+def _real_atom_mask(atype: np.ndarray, nframes: int, natoms: int) -> np.ndarray:
+    """Select non-padding atoms, broadcasting fixed types across frames."""
+    return np.broadcast_to(np.reshape(atype, [-1, natoms]) >= 0, (nframes, natoms))
 
 
 def _concat_force_rows(
@@ -66,8 +70,13 @@ def _align_spin_force_arrays(
     prediction_force_mag: np.ndarray | None,
     reference_force_mag: np.ndarray | None,
     mask_mag: np.ndarray | None,
+    exclude_padding: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
-    """Align spin force arrays into real-atom and magnetic subsets."""
+    """Align spin forces, optionally omitting type -1 rows for metrics.
+
+    The default preserves the detail-file layout. Legacy spin partner types
+    are magnetic degrees of freedom, not padding, and remain selected.
+    """
     prediction_force_by_atom = _reshape_force_by_atom(prediction_force, natoms)
     reference_force_by_atom = _reshape_force_by_atom(reference_force, natoms)
     if dp.get_ntypes_spin() != 0:  # old tf support for spin
@@ -93,7 +102,9 @@ def _align_spin_force_arrays(
             strict=False,
         ):
             real_mask = frame_atype < ntypes_real
-            magnetic_mask = ~real_mask
+            magnetic_mask = frame_atype >= ntypes_real
+            if exclude_padding:
+                real_mask &= frame_atype >= 0
             force_real_prediction_chunks.append(frame_prediction[real_mask])
             force_real_reference_chunks.append(frame_reference[real_mask])
             force_magnetic_prediction_chunks.append(frame_prediction[magnetic_mask])
@@ -119,9 +130,17 @@ def _align_spin_force_arrays(
 
     force_real_prediction = prediction_force_by_atom.reshape(-1, 3)
     force_real_reference = reference_force_by_atom.reshape(-1, 3)
+    if exclude_padding:
+        real_mask = _real_atom_mask(
+            atype, prediction_force_by_atom.shape[0], natoms
+        ).reshape(-1)
+        force_real_prediction = force_real_prediction[real_mask]
+        force_real_reference = force_real_reference[real_mask]
     if prediction_force_mag is None or reference_force_mag is None or mask_mag is None:
         return force_real_prediction, force_real_reference, None, None
     magnetic_mask = mask_mag.reshape(-1).astype(bool)
+    if exclude_padding:
+        magnetic_mask &= real_mask
     return (
         force_real_prediction,
         force_real_reference,
@@ -482,19 +501,33 @@ class EnerTester(ModelTester):
             find_atom_pref=find_atom_pref,
         )
 
+        real_atoms = _real_atom_mask(atype, nframes, natoms)
+        has_real_atoms = bool(np.any(real_atoms))
+        metric_force = force
+        metric_reference_force = test_data["force"]
+        if self.reports_plain_force:
+            # Select before subtracting so even NaN padding cannot enter the
+            # numerator. The selected scalar count also supplies chunk weights.
+            metric_force = _reshape_force_by_atom(force, natoms)[real_atoms]
+            metric_reference_force = _reshape_force_by_atom(test_data["force"], natoms)[
+                real_atoms
+            ]
+
         reports_virial = find_virial == 1 and data.pbc
         shared_metrics = compute_energy_type_metrics(
             prediction={
                 "energy": energy,
-                "force": force,
+                "force": metric_force,
                 **({"virial": virial} if reports_virial else {}),
             },
             test_data={
                 "find_energy": find_energy,
-                "find_force": find_force if self.reports_plain_force else 0.0,
+                "find_force": (
+                    find_force if self.reports_plain_force and has_real_atoms else 0.0
+                ),
                 "find_virial": find_virial,
                 "energy": test_data["energy"],
-                "force": test_data["force"],
+                "force": metric_reference_force,
                 **(
                     {"virial": test_data["virial"], "box": box}
                     if reports_virial
@@ -531,10 +564,17 @@ class EnerTester(ModelTester):
             prediction_stress = -virial / volume
             reference_stress = -test_data["virial"] / volume
 
-        if dp.has_hessian:
+        if dp.has_hessian and has_real_atoms:
+            # A Hessian entry is valid only when both Cartesian indices
+            # belong to real atoms in the same frame.
+            real_dof = np.repeat(real_atoms, 3, axis=1)
+            real_pairs = (real_dof[:, :, None] & real_dof[:, None, :]).reshape(
+                nframes, -1
+            )
             errors.update(
                 compute_error_stat(
-                    optional_outputs.hessian, test_data["hessian"]
+                    optional_outputs.hessian[real_pairs],
+                    test_data["hessian"].reshape(nframes, -1)[real_pairs],
                 ).as_weighted_average_errors(*DP_TEST_HESSIAN_METRIC_KEYS)
             )
         if self.atomic:
@@ -616,13 +656,20 @@ class EnerTester(ModelTester):
             forces the shared detail writer already covers.
         """
         if find_force == 1 and find_atom_pref == 1:
-            errors.update(
-                compute_weighted_error_stat(
-                    prediction_force,
-                    test_data["force"],
-                    test_data["atom_pref"],
-                ).as_weighted_average_errors(*DP_TEST_WEIGHTED_FORCE_METRIC_KEYS)
+            real_atoms = _real_atom_mask(atype, prediction_force.shape[0], natoms)
+            if not np.any(real_atoms):
+                return _ForceDetails()
+            weighted_force = compute_weighted_error_stat(
+                _reshape_force_by_atom(prediction_force, natoms)[real_atoms],
+                _reshape_force_by_atom(test_data["force"], natoms)[real_atoms],
+                _reshape_force_by_atom(test_data["atom_pref"], natoms)[real_atoms],
             )
+            if weighted_force.weight > 0.0:
+                errors.update(
+                    weighted_force.as_weighted_average_errors(
+                        *DP_TEST_WEIGHTED_FORCE_METRIC_KEYS
+                    )
+                )
         return _ForceDetails()
 
 
@@ -662,36 +709,42 @@ class SpinEnerTester(EnerTester):
             reference_force_mag=test_data.get("force_mag"),
             mask_mag=optional_outputs.mask_mag,
         )
-        if find_force_mag == 1 and (force_mag is None or reference_mag is None):
-            raise RuntimeError(
-                "Spin magnetic force metrics require magnetic force arrays and mask."
+        # Filter metric inputs before subtraction, independently of the raw
+        # arrays above that retain padding positions for detail output.
+        metric_real, metric_reference_real, metric_mag, metric_reference_mag = (
+            _align_spin_force_arrays(
+                dp=self.dp,
+                atype=atype,
+                natoms=natoms,
+                prediction_force=prediction_force,
+                reference_force=test_data["force"],
+                prediction_force_mag=optional_outputs.force_mag,
+                reference_force_mag=test_data.get("force_mag"),
+                mask_mag=optional_outputs.mask_mag,
+                exclude_padding=True,
             )
-        spin_metrics = compute_spin_force_metrics(
-            force_real_prediction=force_real,
-            force_real_reference=reference_real,
-            force_magnetic_prediction=force_mag if find_force_mag == 1 else None,
-            force_magnetic_reference=reference_mag if find_force_mag == 1 else None,
         )
-        if spin_metrics.force_real is None:
-            raise RuntimeError("Spin force metrics are unavailable for dp test.")
-        if find_force == 1:
+        if find_force == 1 and metric_real.size:
             errors.update(
-                spin_metrics.as_weighted_average_errors(
-                    {"force_real": DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_real"]}
+                compute_error_stat(
+                    metric_real, metric_reference_real
+                ).as_weighted_average_errors(
+                    *DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_real"]
                 )
             )
         if find_force_mag == 1:
-            if spin_metrics.force_magnetic is None:
-                raise RuntimeError("Spin magnetic force metrics are unavailable.")
-            errors.update(
-                spin_metrics.as_weighted_average_errors(
-                    {
-                        "force_magnetic": DP_TEST_SPIN_WEIGHTED_METRIC_KEYS[
-                            "force_magnetic"
-                        ]
-                    }
+            if metric_mag is None or metric_reference_mag is None:
+                raise RuntimeError(
+                    "Spin magnetic force metrics require magnetic force arrays and mask."
                 )
-            )
+            if metric_mag.size:
+                errors.update(
+                    compute_error_stat(
+                        metric_mag, metric_reference_mag
+                    ).as_weighted_average_errors(
+                        *DP_TEST_SPIN_WEIGHTED_METRIC_KEYS["force_magnetic"]
+                    )
+                )
         return _ForceDetails(
             reference_real=reference_real,
             prediction_real=force_real,

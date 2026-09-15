@@ -98,6 +98,7 @@ from deepmd.pt.utils.lmdb_dataset import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
     min_pair_dist_frame_mask,
+    scan_redu_stats,
     select_batch_frames,
 )
 from deepmd.pt.utils.utils import (
@@ -128,6 +129,9 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
+)
+from deepmd.utils.out_stat import (
+    ReduStatScanner,
 )
 
 if torch.__version__.startswith("2"):
@@ -395,6 +399,7 @@ class Trainer:
             _training_data: DpLoaderSet,
             _stat_file_spec: StatFileSpec,
             _min_pair_dist: float = 0.0,
+            _data_stat_full: bool = False,
             finetune_has_new_type: bool = False,
             preset_observed_type: list[str] | None = None,
         ) -> Callable[[], Any]:
@@ -407,6 +412,19 @@ class Trainer:
                     min_pair_dist=_min_pair_dist,
                 )
                 return sampled
+
+            if _data_stat_full:
+                # sampling a few batches per system can miss rare elements
+                # entirely; scan every frame for the output statistics instead
+                get_sample.redu_stat_scanner = ReduStatScanner(
+                    lambda ntypes, keys, intensive: scan_redu_stats(
+                        _training_data.dataloaders,
+                        ntypes,
+                        keys,
+                        intensive=intensive,
+                        min_pair_dist=_min_pair_dist,
+                    )
+                )
 
             if not has_initial_state or finetune_has_new_type:
 
@@ -529,6 +547,7 @@ class Trainer:
                 training_data,
                 self.stat_file_specs["Default"],
                 _min_pair_dist=min_pair_dist,
+                _data_stat_full=model_params.get("data_stat_full", False),
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -613,6 +632,9 @@ class Trainer:
                     training_data[model_key],
                     self.stat_file_specs[model_key],
                     _min_pair_dist=min_pair_dist,
+                    _data_stat_full=model_params["model_dict"][model_key].get(
+                        "data_stat_full", False
+                    ),
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()

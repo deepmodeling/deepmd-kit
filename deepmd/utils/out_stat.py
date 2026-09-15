@@ -1,6 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Output statistics."""
 
+from collections.abc import (
+    Callable,
+    Sequence,
+)
+from dataclasses import (
+    dataclass,
+)
+
 import numpy as np
 
 from deepmd.env import (
@@ -192,3 +200,221 @@ def compute_stats_do_not_distinguish_types(
     output_std = np.tile(output_std, (computed_output_bias.shape[0], 1))
 
     return computed_output_bias, output_std
+
+
+class ReduStatAccumulator:
+    """Streaming, exact form of :func:`compute_stats_from_redu`.
+
+    Frames are folded into a running QR factor of the augmented design matrix
+    ``[natoms | output_redu | 1]``. Because ``R.T @ R == A.T @ A``, the least
+    squares solution and the residual std are identical to the ones a single
+    call on all frames would return, while memory stays at
+    ``O((ntypes + ndim + 1) ** 2)`` regardless of the number of frames.
+
+    Parameters
+    ----------
+    ntypes
+        The number of atom types.
+    ndim
+        The flattened output dimension.
+    var_shape
+        The unflattened output shape, ``(ndim,)`` when not given.
+    intensive
+        Whether the output is intensive or extensive.
+    """
+
+    def __init__(
+        self,
+        ntypes: int,
+        ndim: int,
+        var_shape: list[int] | None = None,
+        intensive: bool = False,
+    ) -> None:
+        self.ntypes = ntypes
+        self.ndim = ndim
+        self.var_shape = [ndim] if var_shape is None else list(var_shape)
+        self.intensive = intensive
+        self.nframes = 0
+        # total occurrences of each type over every accumulated frame
+        self.natoms_total = np.zeros(ntypes, dtype=np.int64)
+        self._ncols = ntypes + ndim + 1
+        self._r_factor = np.zeros((0, self._ncols), dtype=np.float64)
+        # buffer whole blocks so that one QR amortizes over many small batches
+        self._pending: list[np.ndarray] = []
+        self._pending_rows = 0
+        self._compress_every = max(1024, 8 * self._ncols)
+
+    def add(self, output_redu: np.ndarray, natoms: np.ndarray) -> None:
+        """Accumulate one chunk of frames.
+
+        Parameters
+        ----------
+        output_redu
+            The reduced output value, shape is [nframes, *(odim0, odim1, ...)].
+        natoms
+            The number of atoms of each type, shape is [nframes, ntypes].
+        """
+        natoms = np.asarray(natoms, dtype=np.float64).reshape(-1, self.ntypes)
+        nf = natoms.shape[0]
+        if nf == 0:
+            return
+        output_redu = np.asarray(output_redu, dtype=np.float64).reshape(nf, self.ndim)
+        self.natoms_total += np.rint(natoms.sum(axis=0)).astype(np.int64)
+        self.nframes += nf
+        if self.intensive:
+            natoms = natoms / np.sum(natoms, axis=1, keepdims=True)
+        self._pending.append(
+            np.concatenate(
+                [natoms, output_redu, np.ones((nf, 1), dtype=np.float64)], axis=1
+            )
+        )
+        self._pending_rows += nf
+        if self._pending_rows >= self._compress_every:
+            self._compress()
+
+    def _compress(self) -> None:
+        """Fold the buffered blocks into the running QR factor."""
+        if not self._pending:
+            return
+        self._r_factor = np.linalg.qr(
+            np.concatenate([self._r_factor, *self._pending], axis=0), mode="r"
+        )
+        self._pending.clear()
+        self._pending_rows = 0
+
+    def solve(
+        self,
+        assigned_bias: np.ndarray | None = None,
+        rcond: float | None = None,
+        type_mask: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Solve the accumulated regression.
+
+        Parameters
+        ----------
+        assigned_bias
+            The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
+            Set to a tensor of shape (odim0, odim1, ...) filled with nan if the
+            bias of the type is not assigned.
+        rcond
+            Cut-off ratio for small singular values of a. ``None`` reproduces
+            the numpy default of the equivalent uncompressed problem.
+        type_mask
+            Excluded types, shape is [ntypes]. Types with a zero entry do not
+            contribute to the regression.
+
+        Returns
+        -------
+        np.ndarray
+            The computed output bias, shape is [ntypes, *(odim0, odim1, ...)].
+        np.ndarray
+            The computed output std, shape is [*(odim0, odim1, ...)].
+
+        Raises
+        ------
+        ValueError
+            If no frame has been accumulated.
+        """
+        if self.nframes == 0:
+            raise ValueError("No frame has been accumulated.")
+        self._compress()
+        r_factor = self._r_factor.copy()
+        design = r_factor[:, : self.ntypes]
+        redu = r_factor[:, self.ntypes : self.ntypes + self.ndim]
+        constant = r_factor[:, -1]
+
+        if type_mask is not None:
+            design *= np.asarray(type_mask, dtype=np.float64).reshape(1, self.ntypes)
+
+        assigned_mask = None
+        if assigned_bias is not None:
+            assigned_bias = np.asarray(assigned_bias, dtype=np.float64).reshape(
+                self.ntypes, self.ndim
+            )
+            assigned_mask = ~np.isnan(assigned_bias).any(axis=1)
+            # the same column operations compute_stats_from_redu applies to the
+            # frames; they are linear, so applying them to R is equivalent
+            redu -= design[:, assigned_mask] @ assigned_bias[assigned_mask]
+            design[:, assigned_mask] = 0.0
+
+        if rcond is None:
+            # np.linalg.lstsq scales its default cut-off with the number of
+            # rows, which compression changed; restore the uncompressed one
+            rcond = np.finfo(np.float64).eps * max(self.nframes, self.ntypes)
+        bias, _, _, _ = np.linalg.lstsq(design, redu, rcond=rcond)
+        if assigned_mask is not None:
+            bias[assigned_mask] = assigned_bias[assigned_mask]
+
+        residual = redu - design @ bias
+        residual_mean = (constant @ residual) / self.nframes
+        centered = residual - np.outer(constant, residual_mean)
+        variance = np.sum(centered * centered, axis=0) / self.nframes
+        std = np.sqrt(np.maximum(variance, 0.0))
+        return (
+            bias.reshape([self.ntypes] + self.var_shape),  # noqa: RUF005
+            std.reshape(self.var_shape),
+        )
+
+
+@dataclass
+class ReduScanResult:
+    """Exact statistics collected by one full pass over the training data.
+
+    Parameters
+    ----------
+    stats
+        One accumulator per output key that carries a global label.
+    natoms_total
+        Total occurrences of each type over every scanned frame, shape [ntypes].
+    nframes
+        The number of scanned frames.
+    """
+
+    stats: dict[str, ReduStatAccumulator]
+    natoms_total: np.ndarray
+    nframes: int
+
+
+class ReduStatScanner:
+    """Cache full passes over the training data for a single training run.
+
+    The trainer attaches an instance to the stat sampler; the consumers of that
+    sampler pick it up and use it instead of estimating the output statistics
+    from a handful of sampled batches.
+
+    Parameters
+    ----------
+    scan_fn
+        Backend function performing one pass, called as
+        ``scan_fn(ntypes, keys, intensive)``.
+    """
+
+    def __init__(self, scan_fn: Callable[..., ReduScanResult]) -> None:
+        self._scan_fn = scan_fn
+        self._cache: dict[tuple, ReduScanResult] = {}
+
+    def scan(
+        self, ntypes: int, keys: Sequence[str], intensive: bool = False
+    ) -> ReduScanResult:
+        """Return the statistics for *keys*, scanning the data once per request."""
+        cache_key = (ntypes, tuple(keys), bool(intensive))
+        if cache_key not in self._cache:
+            self._cache[cache_key] = self._scan_fn(ntypes, tuple(keys), bool(intensive))
+        return self._cache[cache_key]
+
+    def natoms_total(self, ntypes: int) -> np.ndarray:
+        """Return the per-type atom counts, reusing any scan already performed."""
+        if self._cache:
+            return next(iter(self._cache.values())).natoms_total
+        return self.scan(ntypes, ()).natoms_total
+
+
+def get_redu_stat_scanner(sampler: object) -> ReduStatScanner | None:
+    """Return the full-data scanner a statistics sampler carries, if any.
+
+    The scanner rides on the sampler as an attribute so that it reaches the
+    statistics consumers without a new argument on every atomic model. The type
+    check keeps that loose contract from picking up an unrelated attribute.
+    """
+    scanner = getattr(sampler, "redu_stat_scanner", None)
+    return scanner if isinstance(scanner, ReduStatScanner) else None
