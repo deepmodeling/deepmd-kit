@@ -331,7 +331,7 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         mask_sum = pool_mask.sum(dim=1)
         if bool((mask_sum == 0).any()):
             raise ValueError("all-zero pool_mask is not allowed for any frame.")
-        denom = mask_sum.clamp_min(1.0)
+        denom = mask_sum
         # Zero out non-pooled atoms (padding/virtual atoms and excluded caps)
         # before the weighted sum so a non-finite descriptor on those rows --
         # e.g. a virtual padding atom -- cannot poison the frame embedding via

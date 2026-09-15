@@ -132,6 +132,25 @@ def test_pool_descriptor_is_nan_safe_for_masked_atoms():
     assert torch.allclose(summ[0], torch.tensor([4.0, 6.0]))
 
 
+def test_pool_descriptor_fractional_mask_preserves_mean_normalization():
+    torch = pytest.importorskip("torch")
+    torch.set_default_device("cpu")
+    from dpa_adapt.finetuner import (
+        _pool_descriptor,
+    )
+
+    descrpt = torch.tensor([[[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]])
+    full = _pool_descriptor(
+        descrpt, parse_pooling("mean"), mask=torch.tensor([[1.0, 1.0, 0.0]])
+    )
+    fractional = _pool_descriptor(
+        descrpt, parse_pooling("mean"), mask=torch.tensor([[0.1, 0.1, 0.0]])
+    )
+
+    assert torch.allclose(full, fractional)
+    assert torch.allclose(fractional, torch.tensor([[0.5, 0.5]]))
+
+
 def test_pooling_primitives_canonical_constant():
     # guards against accidental reordering that would shift feature columns
     assert POOLING_PRIMITIVES == ("mean", "sum", "std", "max", "min")

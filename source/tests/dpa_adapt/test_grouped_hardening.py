@@ -68,7 +68,7 @@ def test_masked_mean_divides_by_mask_sum():
     # mirror GroupPropertyModel.forward masked mean
     mask_sum = pool_mask.sum(dim=1)
     assert not bool((mask_sum == 0).any())
-    denom = mask_sum.clamp_min(1.0)
+    denom = mask_sum
     keep = pool_mask[:, :, None] > 0
     desc = torch.where(keep, descriptor, torch.zeros_like(descriptor))
     frame_emb = (desc * pool_mask[:, :, None]).sum(dim=1) / denom[:, None]

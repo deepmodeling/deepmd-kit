@@ -151,6 +151,32 @@ def test_masked_mean_model_divides_by_mask_sum():
     )
 
 
+def test_fractional_pool_mask_preserves_weighted_mean_normalization():
+    model = _model(_fitting())
+    coord = _coords(1, 3)
+    atype = torch.tensor([[0, 1, 0]], device=env.DEVICE)
+
+    def frame_embedding(mask):
+        out = model(
+            coord,
+            atype,
+            box=None,
+            group_id=torch.tensor([[0]], device=env.DEVICE),
+            weight=torch.tensor([[1.0]], device=env.DEVICE),
+            pool_mask=torch.tensor([mask], device=env.DEVICE),
+        )
+        return out["frame_embedding"]
+
+    full = frame_embedding([1.0, 1.0, 0.0])
+    fractional = frame_embedding([0.1, 0.1, 0.0])
+
+    assert torch.allclose(full, fractional)
+    assert torch.allclose(
+        fractional,
+        torch.tensor([[0.5, 0.5]], dtype=torch.float64, device=env.DEVICE),
+    )
+
+
 def test_zero_mask_rejected_by_model():
     model = _model(_fitting())
     with pytest.raises(ValueError, match="all-zero pool_mask"):

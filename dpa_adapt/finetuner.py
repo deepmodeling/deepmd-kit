@@ -104,7 +104,7 @@ def _pool_descriptor(descrpt: Any, primitives: Any, mask: Any = None) -> Any:
 
     if mask is not None:
         m = mask.to(dtype=descrpt.dtype, device=descrpt.device).unsqueeze(-1)
-        count = m.sum(dim=1).clamp_min(1.0)
+        count = m.sum(dim=1)
         # Sanitize masked (virtual/padding) rows to a finite value before any
         # reduction below.  Multiplying a non-finite descriptor by a zero
         # mask keeps 0 * NaN == NaN, which would poison the whole frame's
