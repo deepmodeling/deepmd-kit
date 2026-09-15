@@ -44,6 +44,26 @@ def _(
     )
 
 
+def build_destination_row_ptr(dst: torch.Tensor, n_nodes: int) -> torch.Tensor:
+    """Build integer CSR for sorted destinations through an opaque runtime op.
+
+    Parameters
+    ----------
+    dst : torch.Tensor
+        Nondecreasing int32 or int64 destinations with shape ``(E,)``.
+    n_nodes : int
+        Number of nodes addressed by the edge list.
+
+    Returns
+    -------
+    torch.Tensor
+        Contiguous int32 row pointers with shape ``(n_nodes + 1,)`` and no
+        autograd history. The runtime op preserves nonzero storage offsets
+        when ``dst`` is a view such as ``edge_index[1]`` under Inductor.
+    """
+    return _destination_row_ptr_op(dst, n_nodes)
+
+
 def build_sorted_edge_index_metadata(
     src: torch.Tensor,
     dst: torch.Tensor,
@@ -119,4 +139,4 @@ def build_sorted_edge_index_metadata(
     return destination_row_ptr, source_order, source_row_ptr
 
 
-__all__ = ["build_sorted_edge_index_metadata"]
+__all__ = ["build_destination_row_ptr", "build_sorted_edge_index_metadata"]

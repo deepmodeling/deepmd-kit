@@ -14,6 +14,9 @@ from types import (
 import torch
 
 from deepmd.pt_expt.kernels.cute.sezm import gie as gie_module
+from deepmd.pt_expt.kernels.cute.sezm.so2.metadata import (
+    build_destination_row_ptr,
+)
 
 
 def _load_gie_module():
@@ -221,6 +224,106 @@ class TestSeZMCuTeGIEContract(unittest.TestCase):
                     torch.testing.assert_close(
                         actual_grad, expected_grad, rtol=2e-5, atol=2e-5
                     )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_inductor_gie_handles_offset_destination_view(self):
+        gie = _load_gie_module()
+        if not gie.SEZM_CUTE_GIE_AVAILABLE:
+            self.skipTest("CuTe DSL is not available")
+
+        def run_gie(edge_index, radial, zonal, inv, gate):
+            dst = edge_index[1]
+            n_nodes = inv.shape[0]
+            out = gie.gie_fused_cuda(
+                radial,
+                zonal,
+                inv,
+                dst,
+                gate,
+                n_nodes=n_nodes,
+                lmax=3,
+            )
+            return out, build_destination_row_ptr(dst, n_nodes)
+
+        compiled = torch.compile(
+            run_gie, backend="inductor", dynamic=True, fullgraph=True
+        )
+        for with_gate in (False, True):
+            for n_nodes, src_values, dst_values, row_ptr in (
+                (4, (2, 0, 3, 0, 1, 2), (0, 0, 1, 2, 2, 3), (0, 2, 3, 5, 6)),
+                (
+                    7,
+                    (6, 0, 5, 2, 0, 4, 1, 3, 2),
+                    (0, 1, 1, 1, 4, 6, 6, 6, 6),
+                    (0, 1, 4, 4, 4, 5, 5, 9),
+                ),
+            ):
+                with self.subTest(
+                    gate=with_gate, n_nodes=n_nodes, edges=len(dst_values)
+                ):
+                    expected_inputs = _inputs(
+                        n_nodes=n_nodes,
+                        dst_values=dst_values,
+                        lmax=3,
+                        channels=32,
+                        device=torch.device("cuda"),
+                        with_gate=with_gate,
+                    )
+                    radial, dense_dt, zonal, inv, dst, gate = expected_inputs
+                    weight = torch.randn_like(radial.new_empty(n_nodes, 16, 32))
+                    expected = _materialized_reference(
+                        radial,
+                        zonal,
+                        inv,
+                        dst,
+                        gate,
+                        n_nodes=n_nodes,
+                        lmax=3,
+                    )
+                    expected_grads = torch.autograd.grad(
+                        (expected * weight).sum(),
+                        (radial, dense_dt, zonal, inv, *([gate] if with_gate else [])),
+                    )
+
+                    actual_inputs = _inputs(
+                        n_nodes=n_nodes,
+                        dst_values=dst_values,
+                        lmax=3,
+                        channels=32,
+                        device=torch.device("cuda"),
+                        with_gate=with_gate,
+                    )
+                    radial, dense_dt, zonal, inv, _dst, gate = actual_inputs
+                    # The first row is deliberately not sorted: losing the second
+                    # row's offset makes searchsorted operate on unrelated sources.
+                    edge_index = torch.tensor(
+                        (src_values, dst_values), dtype=torch.int64, device="cuda"
+                    )
+                    self.assertTrue(edge_index[1].is_contiguous())
+                    self.assertEqual(edge_index[1].storage_offset(), len(dst_values))
+                    self.assertFalse(edge_index.requires_grad)
+                    actual, dst_ptr = compiled(edge_index, radial, zonal, inv, gate)
+                    self.assertEqual(dst_ptr.dtype, torch.int32)
+                    self.assertTrue(dst_ptr.is_contiguous())
+                    self.assertFalse(dst_ptr.requires_grad)
+                    self.assertIsNone(dst_ptr.grad_fn)
+                    torch.testing.assert_close(
+                        dst_ptr,
+                        torch.tensor(row_ptr, dtype=torch.int32, device="cuda"),
+                        rtol=0,
+                        atol=0,
+                    )
+                    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
+                    actual_grads = torch.autograd.grad(
+                        (actual * weight).sum(),
+                        (radial, dense_dt, zonal, inv, *([gate] if with_gate else [])),
+                    )
+                    for actual_grad, expected_grad in zip(
+                        actual_grads, expected_grads, strict=True
+                    ):
+                        torch.testing.assert_close(
+                            actual_grad, expected_grad, rtol=2e-5, atol=2e-5
+                        )
 
 
 if __name__ == "__main__":

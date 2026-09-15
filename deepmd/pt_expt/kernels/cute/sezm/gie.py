@@ -30,6 +30,10 @@ from torch import (
     Tensor,
 )
 
+from .so2.metadata import (
+    build_destination_row_ptr,
+)
+
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
@@ -678,12 +682,7 @@ def gie_fused_cuda(
     """Run the fused CUDA path after the caller has validated its contract."""
     if not SEZM_CUTE_GIE_AVAILABLE:
         raise RuntimeError("CuTe DSL is unavailable")
-    boundaries = torch.arange(
-        n_nodes + 1,
-        device=dst.device,
-        dtype=dst.dtype,
-    )
-    dst_ptr = torch.searchsorted(dst, boundaries)
+    dst_ptr = build_destination_row_ptr(dst, n_nodes)
     has_gate = gate.numel() != 0
     kernel_gate = gate if has_gate else radial.new_ones((1,))
     return _gie_op(
