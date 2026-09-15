@@ -1206,6 +1206,64 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         self.assertTrue(metadata["has_message_passing"])
         self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_with_comm_export_failure_falls_back_to_single_rank(self) -> None:
+        """A failing with-comm export degrades to a single-rank archive.
+
+        The with-comm artifact is optional: when its export raises (e.g. the
+        FakeTensorMode mismatch between the main-graph ``make_fx`` trace and
+        ``torch.export``'s ``make_fake_inputs`` on torch 2.12.1), freeze must
+        still emit a complete, loadable ``.pt2`` instead of aborting and
+        leaving behind a partial archive without ``metadata.json``.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            params = _tiny_sezm_model_params()
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
+            out = tmp_path / "single_rank.pt2"
+
+            with (
+                mock.patch(
+                    "deepmd.pt.entrypoints.freeze_pt2._export_with_comm_artifact",
+                    side_effect=RuntimeError("simulated with-comm export failure"),
+                ),
+                self.assertLogs(
+                    "deepmd.pt.entrypoints.freeze_pt2", level="WARNING"
+                ) as logs,
+            ):
+                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
+
+            self.assertTrue(
+                any("single-rank" in message for message in logs.output),
+                msg=f"expected a single-rank fallback warning, got {logs.output}",
+            )
+            self.assertTrue(zipfile.is_zipfile(str(out)))
+            with zipfile.ZipFile(str(out), "r") as zf:
+                names = zf.namelist()
+                self.assertIn("model/extra/metadata.json", names)
+                self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
+                metadata = json.loads(
+                    zf.read("model/extra/metadata.json").decode("utf-8")
+                )
+            self.assertFalse(metadata["has_comm_artifact"])
+
+            # The fallback archive still loads and runs in single-rank mode.
+            from torch._inductor import (
+                aoti_load_package,
+            )
+
+            loader = aoti_load_package(str(out))
+            probe = _build_tiny_sezm_model()
+            outs = loader(*_make_sample(probe, nloc=5, start=2))
+            if hasattr(outs, "items"):
+                out_map = dict(outs.items())
+            else:
+                out_map = dict(zip(metadata["output_keys"], outs, strict=True))
+            for key in ("energy_redu", "energy_derv_r"):
+                self.assertIn(key, out_map)
+                self.assertTrue(torch.isfinite(out_map[key]).all().item())
+
 
 if __name__ == "__main__":
     unittest.main()
