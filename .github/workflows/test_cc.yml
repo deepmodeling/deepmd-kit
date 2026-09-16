@@ -75,6 +75,7 @@ jobs:
           # tests or backend changes should not invalidate these artifacts.
           source_fingerprint=$(git ls-files -s -- \
             uv.lock pyproject.toml \
+            source/install/test_cc_local.sh \
             'source/tests/infer/gen_*.py' \
             'source/tests/infer/*.yaml' \
             'source/tests/infer/*.pth' \
