@@ -482,7 +482,6 @@ class TestChangeByStatMixedLabels(unittest.TestCase, TestCaseSingleFrameWithNlis
             ft,
             type_map=type_map,
         )
-        args = [self.coord_ext, self.atype_ext, self.nlist]
 
         # set initial bias
         md0.compute_or_load_out_stat(
