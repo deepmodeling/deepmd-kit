@@ -70,7 +70,19 @@ jobs:
           } > "${RUNNER_TEMP}/native-cache-env.txt"
           cat "${RUNNER_TEMP}/native-cache-env.txt"
           fingerprint=$(sha256sum "${RUNNER_TEMP}/native-cache-env.txt" | cut -c1-16)
-          source_fingerprint=$(git ls-files -s -- uv.lock pyproject.toml source deepmd | sha256sum | cut -c1-16)
+          # Hash only inputs that can affect the generated PT/PT2/JAX fixtures.
+          # In particular, do not hash the whole source/ tree: unrelated C++
+          # tests or backend changes should not invalidate these artifacts.
+          source_fingerprint=$(git ls-files -s -- \
+            uv.lock pyproject.toml \
+            'source/tests/infer/gen_*.py' \
+            'source/tests/infer/*.yaml' \
+            'source/tests/infer/*.pth' \
+            'deepmd/*.py' \
+            deepmd/dpmodel deepmd/pt deepmd/pt_expt deepmd/jax \
+            deepmd/infer deepmd/utils deepmd/backend \
+            source/op/pt \
+            | sha256sum | cut -c1-16)
           echo "fingerprint=${fingerprint}" >> "${GITHUB_OUTPUT}"
           echo "source_fingerprint=${source_fingerprint}" >> "${GITHUB_OUTPUT}"
       - name: Cache generated PyTorch C++ fixtures
