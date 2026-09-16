@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 import os
 import shutil
 import tempfile
@@ -25,6 +26,9 @@ from deepmd.pt.entrypoints.main import (
 )
 from deepmd.utils.argcheck import (
     normalize,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 model_density = {
@@ -199,7 +203,108 @@ class TestDPTestDensity(unittest.TestCase):
             self._training_config(self.system, start=0.0, limit=0.0), workdir
         )
 
+    def test_env_protection_default(self) -> None:
+        # a density model built without an explicit env_protection gets
+        # 1e-6 by default (with a warning), and the recorded def script
+        # agrees with the built model
+        config = deepcopy(self.config)
+        config["model"]["descriptor"].pop("env_protection")
+        trainer = get_trainer(normalize(config))
+        descriptor = trainer.model.atomic_model.descriptor
+        self.assertEqual(descriptor.get_env_protection(), 1e-6)
+        recorded = json.loads(trainer.model.model_def_script)
+        self.assertEqual(recorded["descriptor"]["env_protection"], 1e-6)
+
+    def test_stat_file_grid_row_writeback(self) -> None:
+        # the patched grid-type row is written back to the stat cache, and a
+        # complete cache then takes the fast path without the injected pass
+        stat_dir = DPPath(tempfile.mkdtemp(dir=self.tmpdir.name), "w")
+        atomic_model = self.torch_model.atomic_model
+
+        def sampler() -> list:
+            return [dict(self.input_dict)]
+
+        atomic_model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
+        grid_type = len(self.config["model"]["type_map"]) - 1
+        r_x = list(stat_dir.rglob(f"r_{grid_type}"))
+        self.assertTrue(r_x, "no grid-type stat item written to the cache")
+        for path in r_x:
+            self.assertNotEqual(
+                float(path.load_numpy()[0]),
+                0.0,
+                f"{path} still holds zero samples (placeholder row)",
+            )
+        # second call with the complete cache: the injected pass must not run
+        original_inject = atomic_model._inject_grid_samples
+
+        def boom(_sampled: list) -> list:
+            raise AssertionError("injected pass should not run on a complete cache")
+
+        atomic_model._inject_grid_samples = boom  # type: ignore[method-assign]
+        try:
+            atomic_model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
+        finally:
+            atomic_model._inject_grid_samples = original_inject  # type: ignore[method-assign]
+
     def test_grid_type_statistics(self) -> None:
+        # the reserved grid type X gets real input statistics from the
+        # injected grid samples, not the descriptor's placeholder defaults
+        descriptor = self.torch_model.atomic_model.descriptor
+        dstd = descriptor.sea["dstd"].detach().cpu().numpy()
+        self.assertEqual(dstd.shape[0], 3)
+        self.assertTrue(np.isfinite(dstd).all())
+        # placeholder default is 0.1; real statistics differ from it
+        self.assertFalse(
+            np.allclose(dstd[-1], 0.1, atol=1e-3),
+            f"grid type still has placeholder statistics: {dstd[-1]}",
+        )
+
+    def test_grid_type_statistics_dpa2(self) -> None:
+        # DPA-2 carries several stat blocks (repinit, repformers,
+        # repinit_three_body); the grid-type row must be patched in all of
+        # them, not just the first one
+        config = deepcopy(self.config)
+        config["model"]["descriptor"] = {
+            "type": "dpa2",
+            "repinit": {
+                "tebd_dim": 4,
+                "rcut": 4.0,
+                "rcut_smth": 0.5,
+                "nsel": 16,
+                "neuron": [8, 16],
+                "axis_neuron": 4,
+                "activation_function": "tanh",
+                "use_three_body": True,
+                "three_body_sel": 8,
+                "three_body_rcut": 2.0,
+                "three_body_rcut_smth": 1.0,
+            },
+            "repformer": {
+                "rcut": 2.0,
+                "rcut_smth": 1.5,
+                "nsel": 8,
+                "nlayers": 2,
+                "g1_dim": 16,
+                "g2_dim": 8,
+                "attn2_hidden": 8,
+                "attn2_nhead": 2,
+                "attn1_hidden": 16,
+                "attn1_nhead": 2,
+                "axis_neuron": 4,
+            },
+            "env_protection": 1e-6,
+            "seed": 1,
+        }
+        trainer = get_trainer(normalize(config))
+        descriptor = trainer.model.atomic_model.descriptor
+        for name in ("repinit", "repformers", "repinit_three_body"):
+            block = getattr(descriptor, name)
+            dstd = block["dstd"].detach().cpu().numpy()
+            self.assertTrue(np.isfinite(dstd).all(), name)
+            self.assertFalse(
+                np.allclose(dstd[-1], 0.1, atol=1e-3),
+                f"{name} still has placeholder statistics for the grid type",
+            )
         # the reserved grid type X gets real input statistics from the
         # injected grid samples, not the descriptor's placeholder defaults
         descriptor = self.torch_model.atomic_model.descriptor

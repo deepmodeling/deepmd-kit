@@ -6615,6 +6615,35 @@ def validate_no_multitask_lora(data: dict[str, Any], multi_task: bool = False) -
             )
 
 
+def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
+    """Default env_protection to 1e-6 for density models.
+
+    Applied at normalization time so that the recorded model_def_script and
+    the built model agree on this field. Grid points may legitimately
+    coincide with atoms, and the default 0.0 would let the 1/r terms in the
+    environment matrix produce NaN densities.
+    """
+
+    def _fix(model: dict[str, Any]) -> None:
+        if (
+            model.get("fitting_net", {}).get("type") == "density"
+            and model.get("descriptor", {}).get("env_protection", 0.0) == 0.0
+        ):
+            log.warning(
+                "env_protection is 0.0 for a density model; grid points "
+                "coincident with atoms would produce NaN densities. "
+                "Setting env_protection to 1e-6."
+            )
+            model.setdefault("descriptor", {})["env_protection"] = 1e-6
+
+    model = data.get("model", {})
+    if "model_dict" in model:
+        for sub_model in model["model_dict"].values():
+            _fix(sub_model)
+    else:
+        _fix(model)
+
+
 def normalize(
     data: dict[str, Any], multi_task: bool = False, *, check: bool = True
 ) -> dict[str, Any]:
@@ -6626,6 +6655,7 @@ def normalize(
     validate_full_validation_config(data, multi_task=multi_task)
     _check_dpa3_chg_spin_migration(data)
     validate_no_multitask_lora(data, multi_task=multi_task)
+    _apply_density_env_protection_default(data)
 
     return data
 

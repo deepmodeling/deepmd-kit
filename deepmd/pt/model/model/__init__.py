@@ -445,15 +445,6 @@ def get_standard_model(model_params: dict) -> BaseModel:
         )
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
-    if model_params.get("fitting_net", {}).get("type") == "density":
-        descriptor_params = model_params.get("descriptor", {})
-        if descriptor_params.get("env_protection", 0.0) == 0.0:
-            log.warning(
-                "env_protection is 0.0 for a density model; grid points "
-                "coincident with atoms would produce NaN densities. "
-                "Setting env_protection to 1e-6."
-            )
-            descriptor_params["env_protection"] = 1e-6
     ntypes = len(model_params["type_map"])
     descriptor, fitting, fitting_net_type = _get_standard_model_components(
         model_params, ntypes

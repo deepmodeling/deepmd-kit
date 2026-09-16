@@ -55,13 +55,14 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        grid: torch.Tensor,
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        grid: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        assert grid is not None
         model_ret = self.forward_common(
             coord,
             atype,
@@ -69,6 +70,7 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
             grid=grid,
         )
         model_predict = {}

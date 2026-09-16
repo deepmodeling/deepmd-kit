@@ -7,8 +7,12 @@ from typing import (
     Any,
 )
 
+import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.env_mat_stat import (
+    EnvMatStatSe,
+)
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
@@ -374,44 +378,70 @@ class DPDensityAtomicModel(DPAtomicModel):
         grid type, and only the grid-type row of the statistics is taken
         from it; the real types keep their clean statistics from the
         standard pass.
+
+        The injected pass only runs when the grid-type statistics are
+        missing (no cache, or a cache whose grid-type row has zero
+        samples), so the stat-file fast path still applies; when a stat
+        file is used, the patched grid-type row is written back to disk so
+        that the file and the in-memory statistics agree.
         """
-        sampled = sampled_func() if callable(sampled_func) else sampled_func
-        grid_davg = None
-        grid_dstd = None
-        if any("grid" in sample for sample in sampled):
-            try:
-                self.descriptor.compute_input_stats(self._inject_grid_samples(sampled))
-                davg, dstd = self._descriptor_stat_tensors()
-                grid_davg = davg[-1].detach().clone()
-                grid_dstd = dstd[-1].detach().clone()
-            except (TypeError, KeyError) as err:
+        sampled = None
+        grid_stats = None
+        if self._grid_stat_missing(stat_file_path):
+            sampled = sampled_func() if callable(sampled_func) else sampled_func
+            if any("grid" in sample for sample in sampled):
+                try:
+                    self.descriptor.compute_input_stats(
+                        self._inject_grid_samples(sampled)
+                    )
+                    grid_stats = [
+                        (
+                            block["davg"][-1].detach().clone(),
+                            block["dstd"][-1].detach().clone(),
+                        )
+                        for block in self._descriptor_stat_blocks()
+                    ]
+                except (TypeError, KeyError) as err:
+                    log.warning(
+                        "Cannot compute input statistics for the grid type (%s); "
+                        "falling back to the descriptor defaults.",
+                        err,
+                    )
+            else:
                 log.warning(
-                    "Cannot compute input statistics for the grid type (%s); "
-                    "falling back to the descriptor defaults.",
-                    err,
+                    "No grid data in the sampled frames; the grid type gets the "
+                    "descriptor's default input statistics."
                 )
-        else:
-            log.warning(
-                "No grid data in the sampled frames; the grid type gets the "
-                "descriptor's default input statistics."
-            )
         super().compute_or_load_stat(
-            lambda: sampled,
+            (lambda: sampled) if sampled is not None else sampled_func,
             stat_file_path,
             compute_or_load_out_stat=compute_or_load_out_stat,
             preset_observed_type=preset_observed_type,
         )
-        if grid_davg is not None:
-            davg, dstd = self._descriptor_stat_tensors()
-            davg[-1] = grid_davg.to(device=davg.device, dtype=davg.dtype)
-            dstd[-1] = grid_dstd.to(device=dstd.device, dtype=dstd.dtype)
+        if grid_stats is not None:
+            for block, (grid_davg, grid_dstd) in zip(
+                self._descriptor_stat_blocks(), grid_stats, strict=True
+            ):
+                davg = block["davg"]
+                dstd = block["dstd"]
+                davg[-1] = grid_davg.to(device=davg.device, dtype=davg.dtype)
+                dstd[-1] = grid_dstd.to(device=dstd.device, dtype=dstd.dtype)
+            if stat_file_path is not None:
+                self._write_back_grid_stat(stat_file_path, grid_stats)
 
-    def _descriptor_stat_tensors(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """Access the (davg, dstd) statistics tensors of the descriptor block."""
+    def _descriptor_stat_blocks(self) -> list:
+        """Collect every descriptor block that carries davg/dstd statistics.
+
+        Descriptors such as DPA-2 carry several blocks (repinit, repformers,
+        repinit_three_body), each with its own statistics; the grid-type row
+        must be patched in all of them, not just the first one found.
+        """
         try:
-            return self.descriptor["davg"], self.descriptor["dstd"]
+            self.descriptor["davg"]
+            return [self.descriptor]
         except (TypeError, KeyError):
             pass
+        blocks = []
         for attr in (
             "sea",
             "ser",
@@ -422,23 +452,92 @@ class DPDensityAtomicModel(DPAtomicModel):
             "repformers",
             "repflow",
             "repflows",
+            "repinit_three_body",
         ):
             block = getattr(self.descriptor, attr, None)
             if block is None:
                 continue
             try:
-                return block["davg"], block["dstd"]
+                block["davg"]
+                blocks.append(block)
             except (TypeError, KeyError):
                 continue
-        raise KeyError("davg/dstd not accessible on this descriptor")
+        if not blocks:
+            raise KeyError("davg/dstd not accessible on this descriptor")
+        return blocks
+
+    def _stat_cache_root(self, stat_file_path: DPPath) -> DPPath:
+        """Apply the same type_map subdirectory as the parent's stat path."""
+        if self.type_map is not None:
+            stat_file_path = stat_file_path / " ".join(self.type_map)
+        return stat_file_path
+
+    def _grid_stat_missing(self, stat_file_path: DPPath | None) -> bool:
+        """Tell whether the grid-type input statistics still need computing.
+
+        True when there is no complete stat cache, or when the cache is
+        complete but its grid-type row has zero samples (placeholder
+        statistics saved by an older run).
+        """
+        if stat_file_path is None:
+            return True
+        stat_file_path = self._stat_cache_root(stat_file_path)
+        grid_type = self.descriptor.get_ntypes() - 1
+        for block in self._descriptor_stat_blocks():
+            env_stat = EnvMatStatSe(block)
+            cache = stat_file_path / env_stat.get_hash()
+            keys = env_stat.get_stat_keys()
+            if not cache.is_dir() or any(not (cache / kk).is_file() for kk in keys):
+                return True
+            # number of samples of the grid-type row; zero means placeholder
+            if float((cache / f"r_{grid_type}").load_numpy()[0]) == 0.0:
+                return True
+        return False
+
+    def _write_back_grid_stat(
+        self,
+        stat_file_path: DPPath,
+        grid_stats: list[tuple[torch.Tensor, torch.Tensor]],
+    ) -> None:
+        """Write the patched grid-type row back to the stat cache files.
+
+        The cache stores raw sums (number, sum, squared_sum) per stat key;
+        a single sample reproduces the patched mean and stddev exactly.
+        """
+        grid_type = self.descriptor.get_ntypes() - 1
+        stat_file_path = self._stat_cache_root(stat_file_path)
+        for block, (grid_davg, grid_dstd) in zip(
+            self._descriptor_stat_blocks(), grid_stats, strict=True
+        ):
+            env_stat = EnvMatStatSe(block)
+            cache = stat_file_path / env_stat.get_hash()
+            if not cache.is_dir():
+                continue
+            davg_np = grid_davg.detach().cpu().numpy()
+            dstd_np = grid_dstd.detach().cpu().numpy()
+            mean_r = float(davg_np[0, 0])
+            std_r = float(dstd_np[0, 0])
+            (cache / f"r_{grid_type}").save_numpy(
+                np.array([1.0, mean_r, std_r**2 + mean_r**2])
+            )
+            if dstd_np.shape[-1] == 4:
+                std_a = float(dstd_np[0, 1])
+                (cache / f"a_{grid_type}").save_numpy(np.array([1.0, 0.0, std_a**2]))
 
     def _inject_grid_samples(self, sampled: list[dict]) -> list[dict]:
         """Append the grid points of each sample as pseudo-atoms of the
         reserved grid type, so the descriptor input statistics get real
         samples for it. Neighbor lists are rebuilt by the stat machinery,
         so only ``coord`` and ``atype`` need to be extended.
+
+        Grid-grid pairs are excluded from the injected neighbor lists so
+        that the grid-type statistics are computed over grid-to-atom
+        pairs, matching the directional neighbor list of the forward pass
+        (a no-op for per-type-sel descriptors with ``sel[-1] == 0``, but
+        required for mixed-type descriptors with a scalar sel).
         """
         ntypes = self.descriptor.get_ntypes()
+        grid_type = ntypes - 1
         injected = []
         for sample in sampled:
             grid = sample.get("grid")
@@ -459,13 +558,19 @@ class DPDensityAtomicModel(DPAtomicModel):
                     atype,
                     torch.full(
                         (nframes, ngrid),
-                        ntypes - 1,
+                        grid_type,
                         dtype=atype.dtype,
                         device=atype.device,
                     ),
                 ],
                 dim=1,
             )
+            pair_exclude_types = [
+                tuple(pair) for pair in sample.get("pair_exclude_types", [])
+            ]
+            if (grid_type, grid_type) not in pair_exclude_types:
+                pair_exclude_types.append((grid_type, grid_type))
+            sample["pair_exclude_types"] = pair_exclude_types
             injected.append(sample)
         return injected
 
