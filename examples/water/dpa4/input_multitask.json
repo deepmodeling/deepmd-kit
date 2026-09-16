@@ -1,8 +1,6 @@
 {
   "_comment": "DPA4-Mini multitask example with a shared descriptor and case-conditioned shared fitting network.",
   "model": {
-    "use_compile": false,
-    "enable_tf32": true,
     "shared_dict": {
       "type_map": [
         "O",
@@ -52,6 +50,8 @@
     },
     "model_dict": {
       "water_1": {
+        "use_compile": false,
+        "enable_tf32": true,
         "type": "dpa4",
         "type_map": "type_map",
         "descriptor": "descriptor",
@@ -65,6 +65,8 @@
         }
       },
       "water_2": {
+        "use_compile": false,
+        "enable_tf32": true,
         "type": "dpa4",
         "type_map": "type_map",
         "descriptor": "descriptor",
@@ -116,6 +118,7 @@
     "weight_decay": 0.001
   },
   "training": {
+    "enable_tf32": true,
     "model_prob": {
       "water_1": 0.5,
       "water_2": 0.5

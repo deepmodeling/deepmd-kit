@@ -2,8 +2,6 @@
   "_comment": "DPA4-Nano multitask example with a shared descriptor and case-conditioned shared fitting network, both taken from the named preset; only run-specific keys are written out.",
   "model": {
     "preset": "dpa4-nano-v20260901",
-    "use_compile": false,
-    "enable_tf32": true,
     "shared_dict": {
       "type_map": [
         "O",
@@ -21,6 +19,8 @@
     },
     "model_dict": {
       "water_1": {
+        "use_compile": false,
+        "enable_tf32": true,
         "type_map": "type_map",
         "descriptor": "descriptor",
         "fitting_net": "shared_fit_with_id",
@@ -33,6 +33,8 @@
         }
       },
       "water_2": {
+        "use_compile": false,
+        "enable_tf32": true,
         "type_map": "type_map",
         "descriptor": "descriptor",
         "fitting_net": "shared_fit_with_id",
@@ -83,6 +85,7 @@
     "weight_decay": 0.001
   },
   "training": {
+    "enable_tf32": true,
     "model_prob": {
       "water_1": 0.5,
       "water_2": 0.5
