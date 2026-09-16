@@ -88,6 +88,7 @@ ENER_FITTING_CASE_FIELDS = (
     "mixed_types",
     "fparam",
     "aparam",
+    "atom_ener",
 )
 
 ENER_FITTING_BASELINE_CASE = {
@@ -96,6 +97,7 @@ ENER_FITTING_BASELINE_CASE = {
     "mixed_types": True,
     "fparam": (0, None),
     "aparam": (0, False),
+    "atom_ener": [],
 }
 
 
@@ -114,12 +116,14 @@ ENER_FITTING_CURATED_CASES = (
     ener_fitting_case(fparam=(1, [1.0])),
     ener_fitting_case(aparam=(1, False)),
     ener_fitting_case(aparam=(1, True)),
+    ener_fitting_case(atom_ener=[-12345.6, None]),
     ener_fitting_case(
         resnet_dt=False,
         precision="float32",
         mixed_types=False,
         fparam=(1, [1.0]),
         aparam=(1, True),
+        atom_ener=[-12345.6, None],
     ),
 )
 
@@ -138,6 +142,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return {
             "neuron": [5, 5, 5],
@@ -147,6 +152,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             "numb_aparam": numb_aparam,
             "default_fparam": default_fparam,
             "seed": 20240217,
+            "atom_ener": atom_ener,
             "use_aparam_as_mask": use_aparam_as_mask,
             "activation_function": "relu",
         }
@@ -159,6 +165,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -172,6 +179,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # TypeError: The array_api_strict namespace does not support the dtype 'bfloat16'
         return not INSTALLED_ARRAY_API_STRICT or precision == "bfloat16"
@@ -184,6 +192,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # Paddle do not support "bfloat16" in some kernels,
         # so skip this in CI test
@@ -197,6 +206,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return not INSTALLED_TF or default_fparam is not None
 
@@ -208,12 +218,14 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return (
             not INSTALLED_TF2
             or precision == "bfloat16"
             or default_fparam is not None
             or use_aparam_as_mask
+            or atom_ener != []
         )
 
     @property
@@ -224,6 +236,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # PyTorch does not support bfloat16 for some operations
         return CommonTest.skip_pt_expt or precision == "bfloat16"
@@ -260,6 +273,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -274,6 +288,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return self.build_tf_fitting(
             obj,
@@ -292,6 +307,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return (
             pt_obj(
@@ -320,6 +336,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return (
             pt_expt_obj(
@@ -348,6 +365,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return dp_obj(
             self.inputs,
@@ -363,6 +381,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return to_numpy_array(
             tf2_obj(
@@ -382,6 +401,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return np.asarray(
             jax_obj(
@@ -401,6 +421,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return to_numpy_array(
             array_api_strict_obj(
@@ -420,6 +441,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return (
             pd_obj(
@@ -456,6 +478,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -475,6 +498,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -496,6 +520,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return {
             "neuron": [5, 5, 5],
@@ -505,6 +530,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             "numb_aparam": numb_aparam,
             "default_fparam": default_fparam,
             "seed": 20240217,
+            "atom_ener": atom_ener,
             "use_aparam_as_mask": use_aparam_as_mask,
         }
 
@@ -538,12 +564,14 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return (
             not INSTALLED_TF2
             or precision == "bfloat16"
             or default_fparam is not None
             or use_aparam_as_mask
+            or atom_ener != []
         )
 
     tf_class = EnerFittingTF
@@ -573,6 +601,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
 
         # Create fparam and aparam with correct dimensions
@@ -619,6 +648,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -633,6 +663,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         return self.build_tf_fitting(
             obj,
@@ -651,6 +682,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # Convert stat_data to torch tensors for pt backend
         pt_stat_data = [
@@ -690,6 +722,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # dpmodel's compute_input_stats accepts numpy arrays
         pt_expt_obj.compute_input_stats(self.stat_data, protection=1e-2)
@@ -720,6 +753,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         dp_obj.compute_input_stats(self.stat_data, protection=1e-2)
         return dp_obj(
@@ -736,6 +770,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         tf2_stat_data = [
             {
@@ -767,6 +802,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # Convert stat_data to jax arrays
         jax_stat_data = [
@@ -795,6 +831,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # Convert stat_data to array_api_strict arrays
         strict_stat_data = [
@@ -827,6 +864,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         # Convert stat_data to paddle tensors
         pd_stat_data = [
@@ -874,6 +912,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -891,6 +930,7 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             mixed_types,
             (numb_fparam, default_fparam),
             (numb_aparam, use_aparam_as_mask),
+            atom_ener,
         ) = self.param
         if precision == "float64":
             return 1e-10

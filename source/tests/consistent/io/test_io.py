@@ -266,6 +266,7 @@ class TestDeepPot(unittest.TestCase, IOTest):
                 ],
                 "resnet_dt": True,
                 "precision": "float64",
+                "atom_ener": [],
                 "seed": 1,
             },
         }
@@ -308,6 +309,7 @@ class TestDeepPotFparamAparam(unittest.TestCase, IOTest):
                 ],
                 "resnet_dt": True,
                 "precision": "float64",
+                "atom_ener": [],
                 "seed": 1,
                 "numb_fparam": 2,
                 "numb_aparam": 2,
@@ -366,6 +368,7 @@ class TestDeepPotPairExclude(unittest.TestCase, IOTest):
                 ],
                 "resnet_dt": True,
                 "precision": "float64",
+                "atom_ener": [],
                 "seed": 1,
             },
         }

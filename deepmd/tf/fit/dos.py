@@ -744,6 +744,7 @@ class DOSFitting(Fitting):
             "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "trainable": self.trainable,
+            "vacuum_ref": False,
             "activation_function": self.activation_function,
             "precision": self.fitting_precision.name,
             "exclude_types": [],

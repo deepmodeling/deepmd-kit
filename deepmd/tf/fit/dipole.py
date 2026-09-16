@@ -472,6 +472,7 @@ class DipoleFittingSeA(Fitting):
             "rcond": None,
             "tot_ener_zero": False,
             "trainable": self.trainable,
+            "vacuum_ref": False,
             "layer_name": None,
             "use_aparam_as_mask": False,
             "spin": None,

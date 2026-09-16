@@ -155,9 +155,18 @@ class TestSeZMVacuumRef(unittest.TestCase):
             atol=1e-10,
         )
 
+    def test_fold_drops_the_compiled_graphs(self) -> None:
+        from deepmd.pt.model.model.sezm_model import (
+            _sezm_structure_key,
+        )
 
-if __name__ == "__main__":
-    unittest.main()
+        model = self.make_model(True)
+        key_live = _sezm_structure_key(model)
+        model.compiled_core_compute_cache[(False, False)] = object()
+        model.fold_vacuum_reference()
+        self.assertEqual(model.compiled_core_compute_cache, {})
+        # a folded model traces a graph without reference nodes
+        self.assertNotEqual(_sezm_structure_key(model), key_live)
 
 
 class TestSeZMNativeSpinVacuumRef(unittest.TestCase):
@@ -376,3 +385,7 @@ def test_isolated_atom_under_amp_and_fused_training_kernels(monkeypatch) -> None
     atype = torch.tensor([[0], [1]], dtype=torch.long, device=env.DEVICE)
     energy = model(coord, atype, None)["atom_energy"][..., 0].detach().cpu().numpy()
     np.testing.assert_allclose(energy, BIAS[:, 0][:, None], rtol=0.0, atol=1e-5)
+
+
+if __name__ == "__main__":
+    unittest.main()

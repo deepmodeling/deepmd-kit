@@ -98,11 +98,13 @@ class TestGetModel(unittest.TestCase):
             },
         )
 
-    def test_model_attr_energy_unknown_element(self):
+    def test_model_attr_energy_unknown_element_ignored(self):
         model_params = copy.deepcopy(model_se_e2_a)
-        model_params["preset_out_bias"] = {"energy": {"C": 3.0}}
-        with self.assertRaises(ValueError):
-            self.model = get_model(model_params).to(env.DEVICE)
+        model_params["preset_out_bias"] = {"energy": {"C": 3.0, "H": 1.0}}
+        self.model = get_model(model_params).to(env.DEVICE)
+        self.assertEqual(
+            self.model.atomic_model.preset_out_bias, {"energy": [None, [1.0], None]}
+        )
 
     def test_model_attr_energy_unsupported_type(self):
         model_params = copy.deepcopy(model_se_e2_a)

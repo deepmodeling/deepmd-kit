@@ -102,6 +102,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             different fitting nets for different atom types.
     exclude_types: list[int]
             Atomic contributions of the excluded atom types are set zero.
+    remove_vaccum_contribution: list[bool], optional
+        Remove vacuum contribution before the bias is added. The list assigned each
+        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
+        length as `ntypes` signaling if or not removing the vacuum contribution for the atom types in the list.
     vacuum_ref: bool
         Reference the network output of every atom to the output of the same
         network for an isolated atom of the same type under the same frame
@@ -145,6 +149,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
+        remove_vaccum_contribution: list[bool] | None = None,
         vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         seed: int | list[int] | None = None,
@@ -182,6 +187,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.reinit_exclude(exclude_types)
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
+        self.remove_vaccum_contribution = remove_vaccum_contribution
         self.vacuum_ref = vacuum_ref
         self.eval_return_middle_output = False
 
@@ -963,8 +969,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         # in its descriptor only.
         xx = descriptor
         cond = self.conditioning_columns(descriptor, fparam, aparam)
+        # ``remove_vaccum_contribution`` subtracts the network output for a zero
+        # descriptor under the same conditioning columns.
+        xx_zeros = (
+            None if self.remove_vaccum_contribution is None else xp.zeros_like(xx)
+        )
         if cond is not None:
             xx = xp.concat([xx, cond], axis=-1)
+            if xx_zeros is not None:
+                xx_zeros = xp.concat([xx_zeros, cond], axis=-1)
         xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond)
 
         # === Step 2. Evaluate the fitting networks ===
@@ -987,6 +1000,12 @@ class GeneralFitting(NativeOP, BaseFitting):
                     (1, 1, net_dim_out),
                 )
                 atom_property = self.nets[(type_i,)](xx)
+                if self.remove_vaccum_contribution is not None and not (
+                    len(self.remove_vaccum_contribution) > type_i
+                    and not self.remove_vaccum_contribution[type_i]
+                ):
+                    assert xx_zeros is not None
+                    atom_property -= self.nets[(type_i,)](xx_zeros)
                 if xx_vac is not None:
                     # The mask below keeps the atoms of type ``type_i`` alone, so
                     # the network of the type runs on its own reference row when
@@ -1012,6 +1031,8 @@ class GeneralFitting(NativeOP, BaseFitting):
                     middle_outs = middle_outs + mid
         else:
             outs = self.nets[()](xx)
+            if xx_zeros is not None:
+                outs -= self.nets[()](xx_zeros)
             if xx_vac is not None:
                 outs = outs - self.vacuum_output(self.nets[()](xx_vac), atype)
             if self.eval_return_middle_output and len(self.neuron) > 0:
@@ -1103,6 +1124,12 @@ class GeneralFitting(NativeOP, BaseFitting):
         ap1 = None if aparam is None else xp.reshape(aparam, (n, 1, aparam.shape[-1]))
         # fparam: dense API expects (nf, nfp); here nf'=N single-atom frames, so the
         # node-level (N, nfp) IS the per-(pseudo)frame param -- tiled over nloc'=1.
+        # Only referencing fittings take the keyword; it travels with a table.
+        vacuum_kwargs = (
+            {}
+            if vacuum_descriptor is None
+            else {"vacuum_descriptor": vacuum_descriptor}
+        )
         ret = self.__call__(
             d1,
             a1,
@@ -1111,6 +1138,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             h2=h2,
             fparam=fparam,
             aparam=ap1,
-            vacuum_descriptor=vacuum_descriptor,
+            **vacuum_kwargs,
         )
         return {kk: xp.reshape(vv, (n, *vv.shape[2:])) for kk, vv in ret.items()}

@@ -396,6 +396,10 @@ class GeneralFitting(Fitting):
         If the parameters in the fitting net are trainable.
         Now this only supports setting all the parameters in the fitting net at one state.
         When in list[bool], the trainable will be True only if all the boolean parameters are True.
+    remove_vaccum_contribution: list[bool], optional
+        Remove vacuum contribution before the bias is added. The list assigned each
+        type. For `mixed_types` provide `[True]`, otherwise it should be a list of the same
+        length as `ntypes` signaling if or not removing the vacuum contribution for the atom types in the list.
     vacuum_ref : bool
         Reference the network output of every atom to the output of the same
         network for an isolated atom of the same type under the same frame
@@ -431,6 +435,7 @@ class GeneralFitting(Fitting):
         seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
         trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
         vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
@@ -462,6 +467,7 @@ class GeneralFitting(Fitting):
         self.trainable = (
             all(self.trainable) if isinstance(self.trainable, list) else self.trainable
         )
+        self.remove_vaccum_contribution = remove_vaccum_contribution
         self.vacuum_ref = vacuum_ref
 
         net_dim_out = self._net_out_dim()
@@ -989,8 +995,15 @@ class GeneralFitting(Fitting):
         # references, so that the reference of an atom differs from the atom
         # in its descriptor only.
         cond = self.conditioning_columns(nf, nloc, fparam, aparam, self.case_embd)
+        # ``remove_vaccum_contribution`` subtracts the network output for a zero
+        # descriptor under the same conditioning columns.
+        xx_zeros = (
+            None if self.remove_vaccum_contribution is None else torch.zeros_like(xx)
+        )
         if cond is not None:
             xx = torch.cat([xx, cond], dim=-1)
+            if xx_zeros is not None:
+                xx_zeros = torch.cat([xx_zeros, cond], dim=-1)
         xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond, self.case_embd)
 
         # === Step 2. Evaluate the fitting networks ===
@@ -1007,6 +1020,8 @@ class GeneralFitting(Fitting):
                 results["atomic_feature"] = self.filter_layers.networks[
                     0
                 ].call_until_last(xx)
+            if xx_zeros is not None:
+                atom_property = atom_property - self.filter_layers.networks[0](xx_zeros)
             if xx_vac is not None:
                 atom_property = atom_property - self.vacuum_output(
                     self.filter_layers.networks[0](xx_vac), atype
@@ -1041,6 +1056,14 @@ class GeneralFitting(Fitting):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, net_dim_out))
                 atom_property = ll(xx)
+                if xx_zeros is not None:
+                    # must assert, otherwise jit is not happy
+                    assert self.remove_vaccum_contribution is not None
+                    if not (
+                        len(self.remove_vaccum_contribution) > type_i
+                        and not self.remove_vaccum_contribution[type_i]
+                    ):
+                        atom_property = atom_property - ll(xx_zeros)
                 if xx_vac is not None:
                     # The mask below keeps the atoms of type ``type_i`` alone, so
                     # the network of the type runs on its own reference row when

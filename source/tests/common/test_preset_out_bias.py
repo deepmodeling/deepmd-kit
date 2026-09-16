@@ -119,7 +119,9 @@ class TestBundledTables(unittest.TestCase):
         )
         for name, table in tables.items():
             with self.subTest(name=name):
-                self.assertTrue(set(table) <= set(electronic_configuration_embedding))
+                self.assertLessEqual(
+                    set(table), set(electronic_configuration_embedding)
+                )
                 self.assertTrue(np.all(np.isfinite(list(table.values()))))
         self.assertEqual(len(tables["omat24"]), 89)
         self.assertEqual(tables["omat24"]["H"], -1.11700253)

@@ -758,7 +758,6 @@ class SeZMEnergyFittingNet(InvarFitting):
         check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
-        data.pop("atom_ener", None)
         obj = cls(**data)
         for kk in variables.keys():
             obj[kk] = to_torch_tensor(variables[kk])

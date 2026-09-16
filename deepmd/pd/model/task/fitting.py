@@ -410,6 +410,7 @@ class GeneralFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "vacuum_ref": False,
             "default_fparam": self.default_fparam,
             "activation_function": self.activation_function,
             "precision": self.precision,

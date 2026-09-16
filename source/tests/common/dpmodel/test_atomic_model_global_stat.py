@@ -403,7 +403,6 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
     def test_serialize(self) -> None:
-        nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -471,7 +470,6 @@ class TestChangeByStatMixedLabels(unittest.TestCase, TestCaseSingleFrameWithNlis
 
     def test_change_by_statistic(self) -> None:
         """Test change-by-statistic with atomic foo + global pix + global bar."""
-        nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,
@@ -485,8 +483,6 @@ class TestChangeByStatMixedLabels(unittest.TestCase, TestCaseSingleFrameWithNlis
             type_map=type_map,
         )
         args = [self.coord_ext, self.atype_ext, self.nlist]
-
-        ret0 = md0.forward_common_atomic(*args)
 
         # set initial bias
         md0.compute_or_load_out_stat(
@@ -593,7 +589,6 @@ class TestEnergyModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_energy_stat(self) -> None:
         """Test energy statistics computation with real energy fitting net."""
-        nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(
             self.rcut,
             self.rcut_smth,

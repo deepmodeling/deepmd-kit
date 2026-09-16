@@ -369,9 +369,9 @@ class TestVacuumRef(unittest.TestCase):
     def test_serialization(self) -> None:
         data = self.build(True).serialize()
         self.assertTrue(data["vacuum_ref"])
-        self.assertNotIn("atom_ener", data)
         self.assertTrue(InvarFitting.deserialize(data).vacuum_ref)
-        # a legacy ``atom_ener`` entry is dropped
-        self.assertTrue(
-            InvarFitting.deserialize({**data, "atom_ener": None}).vacuum_ref
-        )
+
+    def test_atom_ener_is_exclusive(self) -> None:
+        self.assertTrue(self.build(True, atom_ener=[None] * self.ntypes).vacuum_ref)
+        with self.assertRaises(ValueError):
+            self.build(True, atom_ener=[1.0] + [None] * (self.ntypes - 1))

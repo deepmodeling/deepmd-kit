@@ -70,6 +70,11 @@ class InvarFitting(GeneralFitting):
         Random seed.
     exclude_types: list[int]
         Atomic contributions of the excluded atom types are set zero.
+    atom_ener: list[Optional[torch.Tensor]], optional
+        Specifying atomic energy contribution in vacuum.
+        The value is a list specifying the bias. the elements can be None or np.array of output shape.
+        For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The `set_davg_zero` key in the descriptor should be set.
     vacuum_ref : bool
         Reference the network output of every atom to the output of the same
         network for an isolated atom of the same type under the same
@@ -102,6 +107,7 @@ class InvarFitting(GeneralFitting):
         rcond: float | None = None,
         seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
+        atom_ener: list[torch.Tensor | None] | None = None,
         vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
@@ -109,6 +115,16 @@ class InvarFitting(GeneralFitting):
         **kwargs: Any,
     ) -> None:
         self.dim_out = dim_out
+        self.atom_ener = atom_ener
+        if (
+            vacuum_ref
+            and atom_ener is not None
+            and any(x is not None for x in atom_ener)
+        ):
+            raise ValueError(
+                "atom_ener and vacuum_ref are exclusive; vacuum_ref references every "
+                "atom to the isolated atom of its type by itself"
+            )
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -125,6 +141,9 @@ class InvarFitting(GeneralFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            remove_vaccum_contribution=None
+            if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
+            else [x is not None for x in atom_ener],
             vacuum_ref=vacuum_ref,
             type_map=type_map,
             use_aparam_as_mask=use_aparam_as_mask,
@@ -140,13 +159,13 @@ class InvarFitting(GeneralFitting):
         data = super().serialize()
         data["type"] = "invar"
         data["dim_out"] = self.dim_out
+        data["atom_ener"] = self.atom_ener
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 4, 1)
-        data.pop("atom_ener", None)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:

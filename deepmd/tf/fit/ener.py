@@ -947,6 +947,7 @@ class EnerFitting(Fitting):
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
+            "vacuum_ref": False,
             "atom_ener": self.atom_ener_v,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,

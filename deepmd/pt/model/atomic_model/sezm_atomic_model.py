@@ -828,6 +828,7 @@ class SeZMAtomicModel(DPAtomicModel):
             "rcond": fitting.rcond,
             "exclude_types": copy.deepcopy(fitting.exclude_types),
             "trainable": copy.deepcopy(fitting.trainable),
+            "atom_ener": copy.deepcopy(fitting.atom_ener),
             "vacuum_ref": bool(fitting.vacuum_ref),
             "use_aparam_as_mask": bool(fitting.use_aparam_as_mask),
         }

@@ -416,6 +416,8 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         Atom types excluded by the scalar energy branch.
     trainable
         Whether the `dens` fitting parameters are trainable.
+    atom_ener
+        Optional vacuum atomic energy contribution for the scalar energy branch.
     vacuum_ref
         Whether the scalar energy branch references every atom to the isolated
         atom of its type.
@@ -448,6 +450,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         rcond: float | None = None,
         exclude_types: list[int] | None = None,
         trainable: bool | list[bool] = True,
+        atom_ener: list[torch.Tensor | None] | None = None,
         vacuum_ref: bool = False,
         use_aparam_as_mask: bool = False,
     ) -> None:
@@ -474,6 +477,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         self.rcond = None if rcond is None else float(rcond)
         self.exclude_types = [] if exclude_types is None else list(exclude_types)
         self.trainable = copy.deepcopy(trainable)
+        self.atom_ener = atom_ener
         self.vacuum_ref = bool(vacuum_ref)
         self.use_aparam_as_mask = bool(use_aparam_as_mask)
         self.has_force_embedding_latent = self.condition_lmax >= 1
@@ -505,6 +509,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             rcond=self.rcond,
             exclude_types=self.exclude_types,
             trainable=self.trainable,
+            atom_ener=self.atom_ener,
             vacuum_ref=self.vacuum_ref,
             use_aparam_as_mask=self.use_aparam_as_mask,
         )
@@ -739,6 +744,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
                 "rcond": self.rcond,
                 "exclude_types": self.exclude_types.copy(),
                 "trainable": self.trainable,
+                "atom_ener": self.atom_ener,
                 "vacuum_ref": self.vacuum_ref,
                 "use_aparam_as_mask": self.use_aparam_as_mask,
             },
@@ -755,7 +761,6 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        config.pop("atom_ener", None)
         obj = cls(**config)
         template = obj.state_dict()
         state = {

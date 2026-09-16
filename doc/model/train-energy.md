@@ -127,7 +127,8 @@ limit of the model is pinned. Two model options provide this together:
   atom to the output the same network gives an isolated atom of the same type,
   under the same frame parameters, atomic parameters and case embedding. With
   it, the energy of an atom without neighbors is exactly its bias, whatever the
-  network parameters are, so the preset value is the isolated-atom energy.
+  network parameters are, so the preset value is the isolated-atom energy. It
+  cannot be combined with the fitting option `atom_ener`.
 
 ```json
 {

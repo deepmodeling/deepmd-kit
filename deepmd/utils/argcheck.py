@@ -109,7 +109,8 @@ doc_vacuum_ref = (
     "Reference the fitting network output of every atom to the output the same network gives "
     "an isolated atom of the same type under the same frame parameters, atomic parameters and "
     "case embedding, so that the energy of an atom without neighbors is exactly its output bias. "
-    "Together with `preset_out_bias`, this fixes the isolated-atom energy of every element to the preset value."
+    "Together with `preset_out_bias`, this fixes the isolated-atom energy of every element to the preset value. "
+    "It cannot be combined with `atom_ener`."
 )
 doc_se_atten = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor."
 doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor."
@@ -2857,7 +2858,8 @@ def fitting_ener() -> list[Argument]:
             "atom_ener",
             list[float | None],
             optional=True,
-            doc=supported_backends("tf", "pd") + doc_atom_ener,
+            default=[],
+            doc=doc_atom_ener,
         ),
         Argument(
             "vacuum_ref",
@@ -2896,6 +2898,7 @@ def fitting_sezm_ener() -> list[Argument]:
 - list of bool {supported_backends('pt', 'pt_expt').strip()}: The DPA4/SeZM fitting net is trainable only when all values in the list are True."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_atom_ener = "Specify the atomic energy in vacuum for each type"
     doc_layer_name = (
         "The name of the each layer. The length of this list should be equal to n_neuron + 1. "
         "If two layers, either in the same fitting or different fittings, "
@@ -2954,6 +2957,13 @@ def fitting_sezm_ener() -> list[Argument]:
             "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
         ),
         Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        Argument(
+            "atom_ener",
+            list[float | None],
+            optional=True,
+            default=[],
+            doc=doc_atom_ener,
+        ),
         Argument(
             "vacuum_ref",
             bool,

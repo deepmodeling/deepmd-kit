@@ -655,7 +655,10 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         descriptor.inner_clamp_r_outer,
         int(descriptor.get_dim_chg_spin()),
     )
-    fitting_state = (_int_tuple(fitting.exclude_types),)
+    fitting_state = (
+        _int_tuple(fitting.exclude_types),
+        bool(fitting.needs_vacuum_descriptor()),
+    )
     atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
     model_state = (
         str(model.bridging_method),
@@ -3229,6 +3232,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Target mode to reset.
         """
         self.atomic_model.reset_head_for_mode(mode)
+        self.drop_compiled_graphs(mode)
+
+    def drop_compiled_graphs(self, mode: str) -> None:
+        """
+        Drop the compiled graphs of one head so the next forward retraces.
+
+        Parameters
+        ----------
+        mode
+            ``"dens"`` for the DeNS head; any other value for the energy head,
+            whose embedding graph reads the same fitting head and is dropped
+            together with it.
+        """
         if mode == "dens":
             self._dens_compiled = False
             self._dens_pending_compile_t0 = None
@@ -3236,12 +3252,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         else:
             self._core_compute_pending_compile_t0 = None
             self._core_compute_pending_compile_key = None
-            # Drop every compile slot so the next forward retraces against the
-            # reinitialised fitting head.  The embedding graph reads the same
-            # fitting head, so it is invalidated together with the energy graph.
             self.compiled_core_compute_cache.clear()
             object.__setattr__(self, "compiled_embedding", None)
             object.__setattr__(self, "_embedding_task_buf_order", None)
+
+    def fold_vacuum_reference(self) -> None:
+        """
+        Fold the vacuum reference into the fitting and drop the compiled graphs.
+
+        A traced graph bakes in whether reference nodes trail the real nodes,
+        so both heads retrace after the fold.
+        """
+        self.atomic_model.fold_vacuum_reference()
+        self.drop_compiled_graphs("dens")
+        self.drop_compiled_graphs("ener")
 
     # =========================================================================
     # Bridging Helpers
