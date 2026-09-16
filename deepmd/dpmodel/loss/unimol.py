@@ -14,6 +14,10 @@ the two norm regularisers (0.01 each). The regularisers are produced by the
 backbone, so the loss only weights them.
 """
 
+from collections.abc import (
+    Iterable,
+)
+
 import array_api_compat
 
 from deepmd.dpmodel.array_api import (
@@ -33,6 +37,19 @@ from deepmd.utils.version import (
 # (unimol/losses/unimol.py:17-18). They are hard-coded there, not fitted.
 DIST_MEAN = 6.312581655060595
 DIST_STD = 3.3899264663911888
+
+# Which model output each weighted term reads. A backbone carries the heads its
+# fitting was configured with, and Uni-Mol's two norm regularisers describe its
+# own transformer, so not every term can be evaluated against every backbone.
+# The weights are what the configuration exposes, so a term that cannot be fed
+# is reported by the name of the knob that switches it off.
+TERM_OUTPUT = {
+    "masked_token_loss": "token_logits",
+    "masked_coord_loss": "coord_update",
+    "masked_dist_loss": "pair_dist",
+    "x_norm_loss": "x_norm",
+    "delta_pair_repr_norm_loss": "delta_pair_norm",
+}
 
 
 def _smooth_l1(pred: Array, label: Array, beta: float = 1.0) -> Array:
@@ -214,6 +231,49 @@ class UniMolLoss(Loss):
         # distance columns. A DPA backbone wraps it in nothing.
         self.virtual_tokens = virtual_tokens
 
+    def check_backbone_outputs(self, available: Iterable[str]) -> None:
+        """Refuse a weighted term that this backbone cannot feed.
+
+        The five weights are independent of which fitting is on the other end,
+        so a configuration can ask for a term whose model output does not
+        exist -- the two norm regularisers on a DPA backbone being the case
+        that arises in practice, since they describe Uni-Mol's own transformer
+        and a DPA backbone has nothing corresponding. Left alone that surfaces
+        as a ``KeyError`` on the first batch, after the data has been read and
+        the statistics computed; this says what to change instead, and the
+        trainer calls it while the model and the loss are being wired together.
+
+        Parameters
+        ----------
+        available : Iterable[str]
+            The names the model emits, either from its output definition or
+            from a batch it has already produced.
+
+        Raises
+        ------
+        ValueError
+            If any term with a non-zero weight has no matching output.
+        """
+        have = set(available)
+        missing = [
+            (knob, key)
+            for knob, key in TERM_OUTPUT.items()
+            if getattr(self, knob) > 0 and key not in have
+        ]
+        if not missing:
+            return
+        keys = ", ".join(key for _, key in missing)
+        knobs = ", ".join(knob for knob, _ in missing)
+        raise ValueError(
+            f"this backbone emits no {keys}, so the objective cannot evaluate "
+            f"the term(s) weighted by {knobs}. Uni-Mol's two norm regularisers "
+            "constrain quantities belonging to its own transformer, and a DPA "
+            "backbone has no counterpart for them, so on a DPA backbone their "
+            "weights belong at zero -- as examples/unimol/dpa_pretrain/"
+            "input.json sets them. Otherwise give the fitting the head that "
+            f"produces {keys}."
+        )
+
     def call(
         self,
         learning_rate: float,
@@ -224,6 +284,10 @@ class UniMolLoss(Loss):
     ) -> tuple[Array, dict[str, Array]]:
         """Evaluate the five terms and their weighted sum."""
         del learning_rate, natoms, mae
+        # The trainer already checked this while wiring the two together; it is
+        # repeated here so that a loss built by hand fails the same way rather
+        # than on a missing key several lines down.
+        self.check_backbone_outputs(model_dict.keys())
         mask = model_dict.get("mask")
         token_target = label_dict["unimol_token_target"]
         xp = array_api_compat.array_namespace(token_target)

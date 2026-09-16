@@ -36,6 +36,21 @@ transformer and have no counterpart here, so they carry no weight; and because
 there are no virtual tokens, the objective is configured with
 `virtual_tokens: false`.
 
+Both are weighted `0.01` by default, which is Uni-Mol's own recipe, so a
+configuration that selects this fitting and leaves the loss alone asks for two
+terms this backbone cannot produce. That is refused when the model and the loss
+are wired together, naming the weights to zero -- so the two lines below are
+required, not decorative:
+
+```json
+"loss": {
+  "type": "unimol",
+  "x_norm_loss": 0.0,
+  "delta_pair_repr_norm_loss": 0.0,
+  "virtual_tokens": false
+}
+```
+
 ## Which pairs the distance term covers
 
 This is the one place the objective departs from Uni-Mol by construction, and it

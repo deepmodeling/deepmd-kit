@@ -240,8 +240,12 @@ class PairDistanceHead(NativeOP):
         pair_dist : Array
             Predicted distances, shape ``(nf, nloc, nloc)``.
         pair_mask : Array
-            1 where the pair is covered and is not the diagonal, else 0, same
-            shape. The objective averages over these entries only.
+            1 where the pair is covered, else 0, same shape. The objective
+            averages over these entries only. What "covered" means is the
+            coverage setting: a neighbour list never holds an atom as its own
+            neighbour, so ``neighbour`` leaves the diagonal at 0; ``all_pairs``
+            reproduces upstream, which scores the zero self-distance too, so
+            its diagonal is 1.
         """
         xp = array_api_compat.array_namespace(node_ebd)
         nf, nloc = node_ebd.shape[0], node_ebd.shape[1]

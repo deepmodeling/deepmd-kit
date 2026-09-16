@@ -346,8 +346,14 @@ def get_loss(
         return PropertyLoss(**loss_params)
     elif loss_type == "unimol":
         # Self-supervised: it takes no learning rate and no model geometry,
-        # because its targets come from the corruption it defines itself.
-        return UniMolLoss(**loss_params)
+        # because its targets come from the corruption it defines itself. It
+        # does need to know which heads the model carries: the five term
+        # weights are set independently of the fitting, so a configuration can
+        # weight a term the backbone has no output for. Checked here, while the
+        # two are being wired together, rather than on the first batch.
+        loss = UniMolLoss(**loss_params)
+        loss.check_backbone_outputs(_model.model_output_def().keys())
+        return loss
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 

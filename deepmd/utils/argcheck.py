@@ -5615,8 +5615,16 @@ def loss_unimol() -> list[Argument]:
     doc_masked_token_loss = "Weight of the element-prediction term."
     doc_masked_coord_loss = "Weight of the coordinate-denoising term."
     doc_masked_dist_loss = "Weight of the distance-prediction term."
-    doc_x_norm_loss = "Weight of the node-norm regularizer."
-    doc_delta_pair_repr_norm_loss = "Weight of the pair-delta-norm regularizer."
+    doc_x_norm_loss = (
+        "Weight of the node-norm regularizer. It constrains a quantity of "
+        "Uni-Mol's own transformer, so only the unimol_pretrain fitting "
+        "produces it; on any other backbone this must be 0."
+    )
+    doc_delta_pair_repr_norm_loss = (
+        "Weight of the pair-delta-norm regularizer. As with the node-norm "
+        "regularizer, only the unimol_pretrain fitting produces it; on any "
+        "other backbone this must be 0."
+    )
     doc_beta = (
         "Transition point of the smooth L1 used by the coordinate and distance terms."
     )

@@ -266,6 +266,89 @@ class TestUniMolDPAConfigured(unittest.TestCase):
         self.assertEqual(sorted(terms), ["coord_loss", "dist_loss", "token_loss"])
         self.assertTrue(bool(torch.isfinite(torch.as_tensor(total))))
 
+    def test_keeping_the_loss_defaults_on_this_backbone_is_refused(self) -> None:
+        """The two norm weights default to Uni-Mol's 0.01, unasked for.
+
+        A configuration that selects this fitting and leaves the loss block
+        alone therefore weights two regularisers the backbone does not
+        produce, which used to surface as ``KeyError: 'x_norm'`` on the first
+        batch -- after the data had been read and the statistics computed.
+        The trainer checks it while the model and the loss are wired together,
+        so this goes through ``get_loss``, the function that does the wiring,
+        rather than calling the check directly.
+        """
+        from deepmd.pt_expt.train.training import (
+            get_loss,
+        )
+
+        cfg = normalize(
+            _config() | {"loss": {"type": "unimol", "virtual_tokens": False}}
+        )
+        # the weights nobody wrote
+        self.assertEqual(cfg["loss"]["x_norm_loss"], 0.01)
+        self.assertEqual(cfg["loss"]["delta_pair_repr_norm_loss"], 0.01)
+        model = get_model(copy.deepcopy(cfg["model"]))
+        with self.assertRaises(ValueError) as caught:
+            get_loss(
+                copy.deepcopy(cfg["loss"]),
+                1e-4,
+                len(cfg["model"]["type_map"]),
+                model,
+            )
+        message = str(caught.exception)
+        for expected in (
+            "x_norm",
+            "delta_pair_norm",
+            "x_norm_loss",
+            "delta_pair_repr_norm_loss",
+        ):
+            with self.subTest(names=expected):
+                self.assertIn(expected, message)
+
+    def test_a_loss_built_by_hand_is_refused_the_same_way(self) -> None:
+        """Not every caller goes through the trainer."""
+        out = self._run(self._build())
+        device = next(self._build().parameters()).device
+        token_target = torch.zeros((1, self.nloc), dtype=torch.int64, device=device)
+        token_target[0, 1] = 5
+        labels = {
+            "unimol_token_target": token_target,
+            "unimol_coord_target": torch.zeros(
+                (1, self.nloc, 3), dtype=torch.float64, device=device
+            ),
+        }
+        with self.assertRaisesRegex(ValueError, "emits no x_norm"):
+            UniMolLoss(virtual_tokens=False).call(1.0, 0, out, labels)
+
+    def test_the_shipped_configuration_is_not_refused(self) -> None:
+        """A guard that fires on the supported case is worse than none."""
+        from deepmd.pt_expt.train.training import (
+            get_loss,
+        )
+
+        with open(
+            os.path.join(
+                HERE,
+                "..",
+                "..",
+                "..",
+                "..",
+                "examples",
+                "unimol",
+                "dpa_pretrain",
+                "input.json",
+            )
+        ) as fh:
+            shipped = {
+                k: v for k, v in json.load(fh)["loss"].items() if not k.startswith("_")
+            }
+        cfg = normalize(_config() | {"loss": shipped})
+        model = get_model(copy.deepcopy(cfg["model"]))
+        loss = get_loss(
+            copy.deepcopy(cfg["loss"]), 1e-4, len(cfg["model"]["type_map"]), model
+        )
+        self.assertEqual(loss.x_norm_loss, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
