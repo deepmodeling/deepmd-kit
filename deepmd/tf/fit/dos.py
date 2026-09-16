@@ -699,8 +699,9 @@ class DOSFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
-        if data.pop("vacuum_ref", False):
+        version = data.pop("@version", 1)
+        check_version_compatibility(version, 5, 1)
+        if version >= 5 and data.pop("vacuum_ref"):
             raise NotImplementedError(
                 "vacuum_ref is not supported by the TensorFlow backend"
             )
@@ -730,7 +731,7 @@ class DOSFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dos",
-            "@version": 4,
+            "@version": 5,
             "var_name": "dos",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,

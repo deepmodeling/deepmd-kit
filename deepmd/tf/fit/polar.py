@@ -653,7 +653,7 @@ class PolarFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "polar",
-            "@version": 5,
+            "@version": 6,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
@@ -720,10 +720,9 @@ class PolarFittingSeA(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(
-            data.pop("@version", 1), 5, 1
-        )  # to allow PT version.
-        if data.pop("vacuum_ref", False):
+        version = data.pop("@version", 1)
+        check_version_compatibility(version, 6, 1)  # to allow PT version.
+        if version >= 6 and data.pop("vacuum_ref"):
             raise NotImplementedError(
                 "vacuum_ref is not supported by the TensorFlow backend"
             )

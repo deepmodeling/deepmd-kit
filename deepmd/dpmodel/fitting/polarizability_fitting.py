@@ -226,7 +226,7 @@ class PolarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 5
+        data["@version"] = 6
         data["embedding_width"] = self.embedding_width
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
@@ -237,7 +237,7 @@ class PolarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 5, 1)
+        check_version_compatibility(data.pop("@version", 1), 6, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "polar"
         return super().deserialize(data)

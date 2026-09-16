@@ -185,7 +185,7 @@ class DipoleFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "dipole"
         return super().deserialize(data)

@@ -429,7 +429,7 @@ class DipoleFittingSeA(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dipole",
-            "@version": 4,
+            "@version": 5,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
@@ -496,8 +496,9 @@ class DipoleFittingSeA(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
-        if data.pop("vacuum_ref", False):
+        version = data.pop("@version", 1)
+        check_version_compatibility(version, 5, 1)
+        if version >= 5 and data.pop("vacuum_ref"):
             raise NotImplementedError(
                 "vacuum_ref is not supported by the TensorFlow backend"
             )

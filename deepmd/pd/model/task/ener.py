@@ -20,9 +20,6 @@ from deepmd.pd.utils import (
 from deepmd.pd.utils.env import (
     DEFAULT_PRECISION,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 
 dtype = env.GLOBAL_PD_FLOAT_PRECISION
 device = env.DEVICE
@@ -71,7 +68,6 @@ class EnergyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data.pop("var_name")
         data.pop("dim_out")
         return super().deserialize(data)

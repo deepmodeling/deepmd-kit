@@ -401,7 +401,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 4,
+            "@version": 5,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -443,10 +443,6 @@ class GeneralFitting(Fitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        if data.pop("vacuum_ref", False):
-            raise NotImplementedError(
-                "vacuum_ref is not supported by the Paddle backend"
-            )
         variables = data.pop("@variables")
         nets = data.pop("nets")
         obj = cls(**data)
