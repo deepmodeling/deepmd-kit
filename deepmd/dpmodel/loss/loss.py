@@ -51,7 +51,7 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
 
-    def frame_transform(self, type_map: list[str]):  # noqa: ANN201
+    def frame_transform(self, type_map: list[str], stream: str = "default"):  # noqa: ANN201
         """Return a per-frame data transform this objective needs, or None.
 
         Self-supervised objectives build their own labels by corrupting the
@@ -64,6 +64,12 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         type_map : list[str]
             Element names of the model, which a transform needs in order to map
             elements onto types.
+        stream : str
+            Which dataset the transform is for. An objective whose randomness
+            must not be shared between datasets derives its draw sequence from
+            this, so the caller passes something stable and distinct per
+            dataset; the trainer uses ``<task>/training`` and
+            ``<task>/validation``.
         """
         return None
 

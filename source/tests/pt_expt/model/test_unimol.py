@@ -685,6 +685,73 @@ class TestUniMolTraining(unittest.TestCase):
         self.assertIn("unimol_token_target", frame)
         trainer.run()
 
+    def test_the_trainer_gives_each_dataset_its_own_corruption(self) -> None:
+        """Through the trainer, not by handing the labels over myself.
+
+        The draw sequence is derived from a label the caller supplies. Passing
+        two distinct labels in a test proves nothing about production, because
+        the question is whether the *trainer* passes two -- and for a while it
+        did not: both datasets took the default, shared one generator, and a
+        validation pass advanced the corruption training was about to see.
+        """
+        from deepmd.pt_expt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        config = {
+            "model": {
+                "type_map": self.type_map,
+                "descriptor": {
+                    "type": "unimol",
+                    "encoder_layers": 1,
+                    "encoder_embed_dim": 16,
+                    "encoder_ffn_embed_dim": 32,
+                    "encoder_attention_heads": 2,
+                    "max_atoms": 16,
+                    "virtual_token_position": "origin",
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "type": "unimol_pretrain",
+                    "attention_heads": 2,
+                    "max_atoms": 16,
+                    "seed": 1,
+                },
+            },
+            "learning_rate": {"type": "exp", "start_lr": 1e-3, "stop_lr": 1e-4},
+            "loss": {"type": "unimol"},
+            "training": {
+                "training_data": {"systems": self.data, "batch_size": 2},
+                "validation_data": {"systems": self.data, "batch_size": 2},
+                "numb_steps": 1,
+                "seed": 1,
+                "disp_freq": 10,
+                "save_freq": 100,
+                "disp_file": os.path.join(self.tmp, "lcurve_streams.out"),
+                "save_ckpt": os.path.join(self.tmp, "model_streams.ckpt"),
+            },
+        }
+        trainer = get_trainer(normalize(update_deepmd_input(config, warning=False)))
+
+        def installed(dataset):
+            return dataset._reader._decode_config.frame_transform
+
+        train = installed(trainer.training_data)
+        valid = installed(trainer.validation_data)
+        self.assertIsNotNone(train)
+        self.assertIsNotNone(valid)
+        # different objects is the easy half; different draw sequences is the
+        # half that was broken
+        self.assertIsNot(train, valid)
+        self.assertNotEqual(
+            train.stream,
+            valid.stream,
+            "the trainer gave both datasets the same corruption stream",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

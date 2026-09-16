@@ -1866,6 +1866,14 @@ class Trainer(AbstractTrainer):
         self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
 
         # Data requirements ---------------------------------------------------
+        # Draw sequences for input-corrupting objectives live in the process, so
+        # a second run in one interpreter would otherwise continue the first
+        # run's sequence instead of repeating it.
+        from deepmd.dpmodel.utils.unimol_transform import (
+            reset_epoch_streams,
+        )
+
+        reset_epoch_streams()
         self.valid_numb_batch_by_task: dict[str, int] = {}
         for model_key in self.model_keys:
             data_requirement = list(self.losses[model_key].label_requirement)
@@ -1879,17 +1887,21 @@ class Trainer(AbstractTrainer):
                 )
             # A self-supervised objective builds its labels by corrupting the
             # input, which has to happen as the data is read.
-            for dataset in (
-                self.training_data_by_task[model_key],
-                self.validation_data_by_task[model_key],
+            for split, dataset in (
+                ("training", self.training_data_by_task[model_key]),
+                ("validation", self.validation_data_by_task[model_key]),
             ):
                 if dataset is None:
                     continue
-                # A fresh transform per dataset: it carries the counter that
-                # stands in for the epoch, so sharing one would let validation
-                # passes advance the training corruption.
+                # A fresh transform per dataset is not enough: an objective that
+                # corrupts its input derives its draw sequence from this label,
+                # so two datasets given the same one share a generator and a
+                # validation pass advances the corruption training is about to
+                # see. The task name is in it too, so two Uni-Mol tasks in one
+                # multi-task run do not collide either.
                 frame_transform = self.losses[model_key].frame_transform(
-                    self.model_params_by_task[model_key]["type_map"]
+                    self.model_params_by_task[model_key]["type_map"],
+                    stream=f"{model_key}/{split}",
                 )
                 if frame_transform is None:
                     break
