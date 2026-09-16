@@ -2618,6 +2618,8 @@ int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp);
  * @brief Copy the current default charge/spin state, including frozen states.
  * Supported by the PyTorch Exportable backend. Zero values identify an
  * unconditioned model; an unknown state is an error.
+ * Clears any previous error before querying; DP_DeepPotCheckOK reports only
+ * the result of this query.
  * @param[in] dp An initialized DP.
  * @param[out] values Caller-owned buffer, or NULL with capacity zero to query
  * the required length. No values are written on error.
@@ -2631,6 +2633,8 @@ int DP_DeepPotGetDefaultChgSpin(DP_DeepPot* dp, double* values, int capacity);
 /**
  * @brief Whether the model provides atomic virials.
  * Supported by the PyTorch Exportable backend.
+ * Clears any previous error before querying; DP_DeepPotCheckOK reports only
+ * the result of this query, including successful queries returning false.
  * @param[in] dp An initialized DP.
  * @return True if available, false if unavailable or on error. Inspect
  * DP_DeepPotCheckOK to distinguish an unsupported query from unavailability.

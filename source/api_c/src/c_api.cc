@@ -2792,6 +2792,7 @@ int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp) { return dp->dp.dim_chg_spin(); }
 
 int DP_DeepPotGetDefaultChgSpin(DP_DeepPot* dp, double* values, int capacity) {
   try {
+    dp->exception.clear();
     if (capacity < 0 || (values == nullptr && capacity != 0)) {
       throw deepmd::deepmd_exception(
           "default charge/spin output requires a nonnegative capacity and "
@@ -2819,6 +2820,7 @@ int DP_DeepPotGetDefaultChgSpin(DP_DeepPot* dp, double* values, int capacity) {
 
 bool DP_DeepPotHasAtomicVirial(DP_DeepPot* dp) {
   try {
+    dp->exception.clear();
     return dp->dp.has_atomic_virial();
   } catch (const deepmd::deepmd_exception& ex) {
     dp->exception = ex.what();

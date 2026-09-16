@@ -155,6 +155,21 @@ def check_c_api(library: Path, model: Path, state: list, atomic_virial: bool) ->
             assert getter(handle, pointer, capacity) == -1
             assert list(buffer) == before
             assert error(handle), "C API must expose the buffer error through CheckOK"
+            assert getter(handle, None, 0) == size
+            assert not error(handle), "successful length query must clear the old error"
+
+            assert getter(handle, None, -1) == -1
+            assert error(handle)
+            assert getter(handle, buffer, size) == size
+            assert list(buffer) == [*state, sentinel]
+            assert not error(handle), "successful buffer query must clear the old error"
+
+            assert getter(handle, None, -1) == -1
+            assert error(handle)
+            assert api.DP_DeepPotHasAtomicVirial(handle) is atomic_virial
+            assert not error(handle), (
+                "successful capability query must clear the old error"
+            )
     finally:
         api.DP_DeleteDeepPot(handle)
 
