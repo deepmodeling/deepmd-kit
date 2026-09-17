@@ -202,6 +202,52 @@ def open_stat_file(
         owner.close()
 
 
+_FULL_SCAN_ITEM = "output_stat_full_scan"
+
+
+def load_output_stat_full_scan(path: DPPath | None) -> bool:
+    """Report whether the cached output statistics came from a full data scan.
+
+    A cache written before this flag existed reports ``False``: its values were
+    estimated from sampled batches.
+
+    Parameters
+    ----------
+    path
+        Statistics-cache root used by the current consumer.
+
+    Returns
+    -------
+    bool
+        Whether the cached output statistics scanned every frame.
+    """
+    if path is None or not (path / _FULL_SCAN_ITEM).is_file():
+        return False
+    return bool(np.asarray((path / _FULL_SCAN_ITEM).load_numpy()).item())
+
+
+def save_output_stat_full_scan(path: DPPath | None, full_scan: bool) -> None:
+    """Record how the output statistics now in the cache were produced.
+
+    A cache that never held full-scan statistics keeps the legacy layout: the
+    absence of the item already means that its values were sampled. The item is
+    written only to claim a full scan, or to withdraw a claim that a sampled
+    recomputation has just invalidated.
+
+    Parameters
+    ----------
+    path
+        Writable statistics-cache root.
+    full_scan
+        Whether the stored statistics scanned every frame.
+    """
+    if path is None or (not full_scan and not load_output_stat_full_scan(path)):
+        return
+    path.mkdir(exist_ok=True, parents=True)
+    # a one-element array: the cache readers slice what they load
+    (path / _FULL_SCAN_ITEM).save_numpy(np.array([bool(full_scan)]))
+
+
 def load_required_items(
     path: DPPath | None,
     names: Sequence[str],

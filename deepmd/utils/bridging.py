@@ -104,6 +104,7 @@ _LEARNED_CHILD_KEYS = (
     "enable_tf32",
     "data_stat_nbatch",
     "data_stat_protect",
+    "data_stat_full",
     "data_bias_nsample",
     "use_srtab",
     "smin_alpha",

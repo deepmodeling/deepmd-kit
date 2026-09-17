@@ -3,6 +3,7 @@
 
 import functools
 import logging
+import warnings
 from collections.abc import (
     Iterator,
 )
@@ -408,7 +409,18 @@ class LmdbDataset(Dataset):
                 log.info(f"  {bl}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        self._reader.set_noise(noise_settings)
+        """Deprecated no-op kept for backward compatibility.
+
+        Mirrors :meth:`LmdbDataReader.set_noise`; see there. It will be
+        removed in a future release.
+        """
+        warnings.warn(
+            "LmdbDataset.set_noise() is deprecated and does nothing. "
+            "The denoising data pipeline it belonged to has been removed; "
+            "drop the call. This shim will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     @property
     def index(self) -> list[int]:

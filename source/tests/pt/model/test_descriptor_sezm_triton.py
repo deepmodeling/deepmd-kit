@@ -1970,6 +1970,49 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             )
         self.assertEqual(calls, [])
 
+    def test_tune_missing_configs_runs_the_real_flash_bwd_sweep(self):
+        """The flash-backward sweep launches the kernels it tunes.
+
+        The other tuning tests replace every sweep with a fake, so a sweep
+        launch that drifts from its kernel signature (as happened when the
+        ``PACKED`` layout flag and the Wigner strides were added to the
+        flash-attention backward kernels) is only caught by running the real
+        sweep once.  The built-in tables are hidden so the key is uncovered on
+        every GPU, and the edge count is kept tiny because the launch contract,
+        not the timing, is under test; the winners are therefore only checked
+        for membership in the candidate sets.
+        """
+        import itertools
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            sweep_tile_configs,
+        )
+
+        tc = self.tile_configs
+        specs = {"flash_bwd": sweep_tile_configs._SWEEP_SPECS["flash_bwd"]}
+        with (
+            mock.patch.object(tc, "_builtin_tables", return_value={}),
+            mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, specs, clear=True),
+        ):
+            registered = sweep_tile_configs.tune_missing_configs(
+                [(32, 2, 1, 1)], level=2, device="cuda", n_edge=4096
+            )
+        key = (32, 2)
+        self.assertEqual(sorted(registered), ["flash_bwd_block", "flash_bwd_edge"])
+        self.assertIn(
+            registered["flash_bwd_edge"][key],
+            set(itertools.product((1, 2, 4), (1, 2))),
+        )
+        block = registered["flash_bwd_block"][key]
+        self.assertTrue(
+            block is None or block in set(sweep_tile_configs._EDGE_BLOCK_CANDIDATES)
+        )
+        self.assertTrue(tc.has_tile_config("flash_bwd_edge", key))
+        self.assertTrue(tc.has_tile_config("flash_bwd_block", key))
+
 
 if __name__ == "__main__":
     unittest.main()

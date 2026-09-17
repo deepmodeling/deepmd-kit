@@ -2,9 +2,6 @@
 from .charge import (
     GridDensityLoss,
 )
-from .denoise import (
-    DenoiseLoss,
-)
 from .dens import (
     DeNSLoss,
 )
@@ -34,7 +31,6 @@ from .tensor import (
 __all__ = [
     "DOSLoss",
     "DeNSLoss",
-    "DenoiseLoss",
     "EnergyHessianStdLoss",
     "EnergySpinLoss",
     "EnergyStdLoss",
