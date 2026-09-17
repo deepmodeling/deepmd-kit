@@ -134,7 +134,13 @@ def model_call_from_call_lower(
     # Non-periodic datasets may carry an all-zero cell; treat it as no box.
     if bb is not None:
         xp_bb = array_api_compat.array_namespace(bb)
-        if bool(xp_bb.all(bb == 0)):
+        try:
+            zero_box = bool(xp_bb.all(bb == 0))
+        except Exception:
+            # Traced/symbolic arrays (e.g. JAX export) cannot be evaluated to
+            # a Python bool; keep the box as-is in that case.
+            zero_box = False
+        if zero_box:
             bb = None
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
     # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
@@ -1073,8 +1079,13 @@ def make_model(
             # A frame can never contribute more than nall neighbors; cap the
             # requested neighbor count so sentinel capacities (e.g. DPA4C's
             # effectively-unbounded sel) do not allocate absurd padding.
+            # Skip the cap when nall is symbolic (e.g. jax2tf export), where
+            # the comparison would be inconclusive; sentinel capacities only
+            # occur on backends with concrete shapes.
             nall = extended_atype.shape[1]
-            nnei = min(sum(self.get_sel()), nall)
+            nnei = sum(self.get_sel())
+            if isinstance(nall, int) and nnei > nall:
+                nnei = nall
             ret = self._format_nlist(
                 extended_coord,
                 nlist,
