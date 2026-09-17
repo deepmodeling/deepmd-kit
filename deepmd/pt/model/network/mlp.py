@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import os
 from typing import (
     Any,
     ClassVar,
@@ -51,25 +50,21 @@ def empty_t(shape: tuple[int, ...], precision: torch.dtype) -> torch.Tensor:
 def _use_so2_compile_visible_linear(
     input_device: torch.device | None = None,
 ) -> bool:
-    """Keep the SM80 linear topology stable for one compiled graph."""
-    truthy = {"1", "true", "yes", "on"}
-    falsy = {"0", "false", "no", "off"}
-    cute_enabled = os.environ.get("DP_CUTE_INFER", "").strip().lower()
-    if cute_enabled not in truthy:
-        return False
-    thin_enabled = os.environ.get("DP_CUTE_SO2_THIN_WRAPPER", "").strip().lower()
-    if thin_enabled in falsy:
-        return False
-    if thin_enabled in truthy:
-        return True
-    if input_device is not None and input_device.type != "cuda":
-        return False
-    if not torch.cuda.is_available():
-        return False
-    try:
-        return tuple(torch.cuda.get_device_capability(input_device)) == (8, 0)
-    except RuntimeError:
-        return False
+    """Use the same device-aware thin-wrapper policy as SO2 dispatch."""
+    from deepmd.pt_expt.kernels.cute.sezm.runtime_policy import (
+        is_so2_thin_wrapper_enabled,
+    )
+
+    capability = None
+    if (
+        input_device is None or input_device.type == "cuda"
+    ) and torch.cuda.is_available():
+        try:
+            capability = tuple(torch.cuda.get_device_capability(input_device))
+        except RuntimeError:
+            pass
+    # A sentinel avoids querying another device when the input is on the CPU.
+    return is_so2_thin_wrapper_enabled(capability or (-1, -1))
 
 
 def _matmul_bias(

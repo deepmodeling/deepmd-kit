@@ -328,7 +328,7 @@ class GeometricInitialEmbedding(NativeOP):
 
         # === Step 4. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
-        # The fused operator spans this broadcast and the scatter of Step 5, so
+        # The fused operator spans this broadcast and the scatter of Step 6, so
         # it takes over whenever nothing else joins the message in between.
         if (
             self.can_run_cuda_infer_l_1_scatter(zonal_coupling)

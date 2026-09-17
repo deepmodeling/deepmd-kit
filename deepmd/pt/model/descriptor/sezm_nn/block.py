@@ -832,8 +832,23 @@ class SeZMInteractionBlock(nn.Module):
             )
             if accelerated is not None:
                 return accelerated
-            raise RuntimeError(
-                "packed Wigner cache reached an ineligible Neo SO2 dispatch"
+            from deepmd.pt_expt.kernels.cute.sezm.so2.wigner_layout import (
+                dense_wigner_for_fallback,
+            )
+
+            if edge_cache.edge_quat is None:
+                raise ValueError("packed Wigner fallback requires edge quaternions")
+            d_full, dt_full = dense_wigner_for_fallback(
+                edge_cache.edge_quat,
+                lmax=self.lmax,
+                eps=self.so2_conv.eps,
+            )
+            edge_cache = edge_cache._replace(
+                D_full=d_full,
+                Dt_full=dt_full,
+                D_packed=None,
+                D_to_m_cache=None,
+                Dt_from_m_cache=None,
             )
 
         n_node = x.shape[0]

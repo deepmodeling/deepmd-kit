@@ -54,7 +54,10 @@ def _env_override(name: str) -> bool | None:
         return True
     if normalized in _FALSE_VALUES:
         return False
-    return False
+    raise ValueError(
+        f"{name} must be a boolean value (0/1, false/true, no/yes, off/on); "
+        f"got {value!r}"
+    )
 
 
 def is_cute_infer_enabled() -> bool:

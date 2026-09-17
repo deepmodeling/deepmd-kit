@@ -14,13 +14,22 @@ from __future__ import (
 from dataclasses import (
     dataclass,
 )
+from functools import (
+    lru_cache,
+)
 from typing import (
     TYPE_CHECKING,
 )
 
+import torch
+
 if TYPE_CHECKING:
     from collections.abc import (
         Iterator,
+    )
+
+    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+        WignerDCalculator,
     )
 
 
@@ -31,6 +40,41 @@ FULL_BLOCK_OFFSETS = (0, 1, 4, 9, 16)
 SELECTED_LOCAL_ROWS = ((0,), (1, 0, 2), (2, 1, 3), (3, 2, 4))
 PANEL_BLOCK_OFFSETS = (0, 1, 10, 25, 46)
 PACKED_VALUE_COUNT = PANEL_BLOCK_OFFSETS[-1]
+
+
+@lru_cache(maxsize=8)
+def _reference_wigner_calculator(
+    lmax: int, eps: float, dtype: torch.dtype, device: torch.device
+) -> WignerDCalculator:
+    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+        WignerDCalculator,
+    )
+
+    calculator = WignerDCalculator(lmax, eps=eps, dtype=dtype).to(device)
+    # The recovery path must not depend on an optional accelerated backend.
+    calculator.cutile_infer_monomials = False
+    calculator.triton_infer_l_1_monomials = False
+    calculator.triton_train_l_1_monomials = False
+    return calculator.eval()
+
+
+@torch.compiler.disable
+def dense_wigner_for_fallback(
+    quaternion: torch.Tensor,
+    *,
+    lmax: int,
+    eps: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Rebuild dense rotations only when a packed SO2 invocation declines.
+
+    The quaternion retains its geometry autograd history. Only constant
+    coefficient tables are cached, never edge tensors or their gradients.
+    """
+    calculator = _reference_wigner_calculator(
+        lmax, eps, quaternion.dtype, quaternion.device
+    )
+    return calculator(quaternion)
+
 
 # DeePMD's m-major reduced ordering for lmax=3, mmax=1.
 COEFF_INDEX_M = (0, 2, 6, 12, 1, 5, 11, 3, 7, 13)

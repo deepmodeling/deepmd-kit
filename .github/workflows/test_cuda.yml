@@ -28,7 +28,7 @@ jobs:
     # container:
     #   image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     #   options: --gpus all
-    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
+    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'Test CUDA') || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -79,7 +79,7 @@ jobs:
   test_cc:
     name: Test C++ on CUDA
     runs-on: gpu
-    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
+    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'Test CUDA') || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       # Jobs run on separate runners, so the C++ job needs its own complete
       # CUDA toolchain and Python dependency installation.

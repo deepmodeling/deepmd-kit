@@ -11,7 +11,17 @@ from unittest import (
     mock,
 )
 
+import pytest
+
 from deepmd.pt_expt.kernels.cute.sezm import runtime_policy as policy
+
+
+@pytest.mark.parametrize("value", ["2", "unsupported", "tru"])
+@pytest.mark.parametrize("name", ["DP_CUTE_STRICT", "DP_CUTE_SO2_THIN_WRAPPER"])
+def test_invalid_boolean_override_raises(name: str, value: str) -> None:
+    with mock.patch.dict(os.environ, {name: value}, clear=True):
+        with pytest.raises(ValueError, match=name):
+            policy._env_override(name)
 
 
 def test_cute_master_gate_controls_sezm_path() -> None:

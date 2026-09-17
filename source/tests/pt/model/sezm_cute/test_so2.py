@@ -563,6 +563,148 @@ def test_runtime_contract_rejects_tf32_matmul_policy(
     assert not _SO2.is_neo_so2_runtime_eligible(block, **kwargs)
 
 
+@pytest.mark.parametrize("change", ["tf32", "trainable", "dtype", "training"])
+def test_prepared_dispatch_rechecks_mutable_model_state(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    monkeypatch.setenv("DP_CUTE_INFER", "1")
+    monkeypatch.setattr(runtime_policy, "uses_strict_fp32_matmul", lambda: True)
+    block = _neo_like_block().eval()
+    config = NeoSO2RuntimeConfig()
+    handle = _SO2.register_cute_so2_block(block, config)
+    block._deepmd_cute_so2_state = _SO2._RegisteredSO2State(0, handle, config)
+    try:
+        assert _SO2._has_frozen_fp32_contract(block)
+        if change == "tf32":
+            monkeypatch.setattr(
+                runtime_policy, "uses_strict_fp32_matmul", lambda: False
+            )
+        elif change == "trainable":
+            block.runtime_weight.requires_grad_(True)
+        elif change == "dtype":
+            block.double()
+        else:
+            block.train()
+
+        # Rejection must happen before inspecting edge data or entering a kernel.
+        assert _SO2._maybe_run_prepared_cute_so2(block, None, None, None) is None
+        with pytest.raises(RuntimeError, match="model or precision state changed"):
+            _SO2._build_runner(handle, *([None] * 11))
+    finally:
+        _SO2.invalidate_cute_so2_state(block)
+
+
+@pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_packed_dispatch_decline_recovers_outputs_and_gradients(
+    monkeypatch: pytest.MonkeyPatch, backend: str, dtype: torch.dtype
+) -> None:
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        EdgeCache,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.block import (
+        SeZMInteractionBlock,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+        WignerDCalculator,
+    )
+    from deepmd.pt_expt.descriptor.dpa4_nn.block import (
+        SeZMInteractionBlock as ExptBlock,
+    )
+    from deepmd.pt_expt.kernels.cute.sezm.so2.wigner_layout import (
+        iter_packed_entries,
+    )
+
+    monkeypatch.setenv("DP_TRITON_INFER", "0")
+    monkeypatch.setenv("DP_CUTE_INFER", "0")
+    generator = torch.Generator(device="cpu").manual_seed(71)
+    block = (
+        SeZMInteractionBlock(
+            lmax=3,
+            mmax=1,
+            channels=4,
+            mixing_layers=3,
+            radial_so2_mode="degree_channel",
+            radial_so2_rank=1,
+            ffn_activation_function="silu",
+            dtype=dtype,
+            seed=11,
+            trainable=True,
+        )
+        .cpu()
+        .eval()
+    )
+    with torch.no_grad():
+        for parameter in block.parameters():
+            parameter.add_(
+                0.05
+                * torch.randn(
+                    parameter.shape, dtype=dtype, device="cpu", generator=generator
+                )
+            )
+    if backend == "pt_expt":
+        block = ExptBlock.deserialize(block.serialize()).cpu().eval()
+    calculator = WignerDCalculator(3, dtype=dtype).cpu()
+    x_base = torch.randn(3, 16, 1, 4, dtype=dtype, device="cpu", generator=generator)
+    radial_base = torch.randn(4, 4, 4, dtype=dtype, device="cpu", generator=generator)
+    quat_base = torch.randn(4, 4, dtype=dtype, device="cpu", generator=generator)
+    src = torch.tensor([1, 2, 0, 1], dtype=torch.int64, device="cpu")
+    dst = torch.tensor([0, 0, 1, 2], dtype=torch.int64, device="cpu")
+    parameter = block.so2_conv.so2_linears[0].weight_m0.requires_grad_(True)
+
+    def run(*, packed: bool):
+        x, radial, quaternion = (
+            value.clone().requires_grad_(True)
+            for value in (x_base, radial_base, quat_base)
+        )
+        d_full, dt_full = calculator(quaternion)
+        panel = torch.stack(
+            [
+                d_full[:, entry.full_row, entry.full_col]
+                for entry in iter_packed_entries()
+            ],
+            dim=1,
+        )
+        cache_type = EdgeFeatureCache if backend == "pt" else EdgeCache
+        cache = cache_type(
+            src=src,
+            dst=dst,
+            edge_type_feat=radial[:, 0],
+            edge_vec=quaternion[:, 1:],
+            edge_rbf=radial[:, 0],
+            edge_env=torch.ones(4, 1, dtype=dtype, device="cpu"),
+            deg=torch.tensor([2, 1, 1], dtype=dtype, device="cpu"),
+            inv_sqrt_deg=torch.ones(3, 1, 1, dtype=dtype, device="cpu"),
+            edge_quat=quaternion,
+            D_full=None if packed else d_full,
+            Dt_full=None if packed else dt_full,
+            D_packed=panel if packed else None,
+            destinations_sorted=True,
+        )
+        output = block._run_so2_unit_impl(x, cache, radial)
+        gradients = torch.autograd.grad(
+            output.square().sum(), (x, radial, quaternion, parameter)
+        )
+        if packed:
+            # Recovery is local to the declined block, not a mutation of shared state.
+            assert cache.D_full is None and cache.D_packed is panel
+        return output, gradients
+
+    expected, expected_grads = run(packed=False)
+    declined_calls = []
+
+    def decline(*args, **kwargs):
+        declined_calls.append(True)
+
+    monkeypatch.setattr(_SO2, "maybe_run_cute_so2", decline)
+    actual, actual_grads = run(packed=True)
+    assert declined_calls == [True]
+    tol = 5e-5 if dtype == torch.float32 else 1e-10
+    torch.testing.assert_close(actual, expected, atol=tol, rtol=tol)
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads, strict=True):
+        torch.testing.assert_close(actual_grad, expected_grad, atol=tol, rtol=tol)
+
+
 def test_fake_native_gradient_layout_matches_runtime_contract() -> None:
     x = torch.empty(5, 16, 1, 32, device="cpu")
 

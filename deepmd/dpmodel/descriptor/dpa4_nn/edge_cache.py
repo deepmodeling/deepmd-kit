@@ -617,6 +617,8 @@ def _finalize_edge_cache(
     EdgeCache
         Finalized per-edge cache shared by eager and compile paths.
     """
+    if deg_norm_floor <= 0.0:
+        raise ValueError("deg_norm_floor must be positive")
     xp = array_api_compat.array_namespace(edge_vec, dst)
     device = array_api_compat.device(edge_vec)
     # === Step 1. Build smooth destination degrees ===

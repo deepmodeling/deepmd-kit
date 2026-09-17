@@ -1472,7 +1472,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                         x,
                         edge_cache,
                         rad_feat_per_block,
-                        comm_dict=comm_dict,
                     )
 
         # === Step 12. Final l=0 output mixing ===

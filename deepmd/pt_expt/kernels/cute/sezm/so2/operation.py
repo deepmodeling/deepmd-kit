@@ -396,13 +396,21 @@ def is_neo_so2_static_eligible(
         and _device_is_supported_for_so2(device)
         and dtype == torch.float32
         and not torch.is_autocast_enabled(device.type)
-        and runtime_policy.uses_strict_fp32_matmul()
-        and _module_uses_strict_fp32(block)
-        and _module_is_frozen(block)
+        and _has_frozen_fp32_contract(block)
         and _module_state_is_aligned(block)
         and _gate_expand_index_structure_is_supported(block)
         and getattr(block, "_deepmd_cute_so2_state", None) is not False
         and is_supported_neo_so2_block(block)
+    )
+
+
+def _has_frozen_fp32_contract(block: Any) -> bool:
+    """Recheck mutable precision and parameter state before inference dispatch."""
+    return (
+        not block.training
+        and runtime_policy.uses_strict_fp32_matmul()
+        and _module_uses_strict_fp32(block)
+        and _module_is_frozen(block)
     )
 
 
@@ -1395,6 +1403,13 @@ def _build_runner(
     """
     with _REGISTRY_LOCK:
         entry = _REGISTRY[int(handle)]
+    # Compiled graphs keep the handle, not guards on the registered parameters.
+    # Enforce the contract here too if state changes after graph capture.
+    if not _has_frozen_fp32_contract(entry.block):
+        raise RuntimeError(
+            "CuTe SO2 requires frozen FP32 parameters and strict FP32 matmul; "
+            "model or precision state changed after preparation"
+        )
     config = entry.config
     if config.native_sm90_path:
         from .sm90.phase_c_attention_backward import (
@@ -2043,6 +2058,10 @@ def _maybe_run_prepared_cute_so2(
     """Dispatch prevalidated packed SO2 state without a Python graph break."""
     state = getattr(block, "_deepmd_cute_so2_state", None)
     if not isinstance(state, _RegisteredSO2State):
+        return None
+    if not runtime_policy.is_cute_infer_enabled() or not _has_frozen_fp32_contract(
+        block
+    ):
         return None
     with _REGISTRY_LOCK:
         entry = _REGISTRY.get(state.handle)

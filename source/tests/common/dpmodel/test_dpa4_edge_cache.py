@@ -2,11 +2,32 @@
 """Tests for the backend-neutral DPA4 edge-cache acceleration seams."""
 
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
     _edge_cache_from_arrays,
+    _finalize_edge_cache,
     edge_cache_to_dtype,
 )
+
+
+@pytest.mark.parametrize("floor", [0.0, -1.0])
+def test_degree_normalization_rejects_nonpositive_floor(floor: float) -> None:
+    with pytest.raises(ValueError, match="deg_norm_floor must be positive"):
+        _finalize_edge_cache(
+            n_nodes=1,
+            src=np.zeros(1, dtype=np.int64),
+            dst=np.zeros(1, dtype=np.int64),
+            edge_type_feat=np.ones((1, 1)),
+            edge_vec=np.ones((1, 3)),
+            edge_rbf=np.ones((1, 1)),
+            edge_env=np.ones((1, 1)),
+            D_full=None,
+            Dt_full=None,
+            D_packed=None,
+            edge_quat=np.ones((1, 4)),
+            deg_norm_floor=floor,
+        )
 
 
 def test_fused_builders_replace_reference_and_initialize_step_cache() -> None:

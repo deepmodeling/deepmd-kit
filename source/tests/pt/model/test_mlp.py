@@ -156,7 +156,11 @@ class TestMLPLayer(unittest.TestCase):
         expected = mlp_module.F.linear(value, layer.matrix.t(), layer.bias)
         torch.testing.assert_close(actual, expected)
 
-    def test_thin_so2_linear_defaults_on_only_for_sm80(self) -> None:
+    def test_thin_so2_linear_matches_shared_device_policy(self) -> None:
+        from deepmd.pt_expt.kernels.cute.sezm import (
+            runtime_policy,
+        )
+
         with (
             mock.patch.dict(
                 os.environ,
@@ -164,9 +168,20 @@ class TestMLPLayer(unittest.TestCase):
                 clear=True,
             ),
             mock.patch.object(torch.cuda, "is_available", return_value=True),
-            mock.patch.object(torch.cuda, "get_device_capability", return_value=(8, 0)),
         ):
-            self.assertTrue(mlp_module._use_so2_compile_visible_linear())
+            for capability in ((8, 0), (8, 6), (8, 9), (9, 0), (12, 0)):
+                with (
+                    self.subTest(capability=capability),
+                    mock.patch.object(
+                        torch.cuda, "get_device_capability", return_value=capability
+                    ) as get_capability,
+                ):
+                    device = torch.device("cuda", 1)
+                    self.assertEqual(
+                        mlp_module._use_so2_compile_visible_linear(device),
+                        runtime_policy.is_so2_thin_wrapper_enabled(capability),
+                    )
+                    get_capability.assert_called_once_with(device)
 
         with (
             mock.patch.dict(
