@@ -131,6 +131,11 @@ def model_call_from_call_lower(
     nframes, nloc = atype.shape[:2]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
+    # Non-periodic datasets may carry an all-zero cell; treat it as no box.
+    if bb is not None:
+        xp_bb = array_api_compat.array_namespace(bb)
+        if bool(xp_bb.all(bb == 0)):
+            bb = None
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
     # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
     # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
@@ -1065,10 +1070,15 @@ def make_model(
             """
             n_nf, n_nloc, n_nnei = nlist.shape
             mixed_types = self.mixed_types()
+            # A frame can never contribute more than nall neighbors; cap the
+            # requested neighbor count so sentinel capacities (e.g. DPA4C's
+            # effectively-unbounded sel) do not allocate absurd padding.
+            nall = extended_atype.shape[1]
+            nnei = min(sum(self.get_sel()), nall)
             ret = self._format_nlist(
                 extended_coord,
                 nlist,
-                sum(self.get_sel()),
+                nnei,
                 extra_nlist_sort=extra_nlist_sort,
             )
             if not mixed_types:

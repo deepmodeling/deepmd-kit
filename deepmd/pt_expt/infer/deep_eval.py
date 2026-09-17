@@ -664,6 +664,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         use_graph_lower = model_uses_graph_lower(model)
+        needs_long_range_edges = bool(getattr(model, "_needs_long_range_edges", False))
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -717,6 +718,7 @@ class DeepEval(DeepEvalBackend):
             ),
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
+            "needs_long_range_edges": needs_long_range_edges,
         }
         if use_graph_lower:
             from deepmd.pt_expt.model.graph_lower import (
@@ -805,7 +807,17 @@ class DeepEval(DeepEvalBackend):
                     fparam: torch.Tensor | None,
                     aparam: torch.Tensor | None,
                     charge_spin: torch.Tensor | None = None,
+                    lr_edge_index: torch.Tensor | None = None,
+                    lr_edge_vec: torch.Tensor | None = None,
+                    lr_edge_mask: torch.Tensor | None = None,
                 ) -> dict[str, torch.Tensor]:
+                    long_range_kwargs = {}
+                    if needs_long_range_edges:
+                        long_range_kwargs = {
+                            "lr_edge_index": lr_edge_index,
+                            "lr_edge_vec": lr_edge_vec,
+                            "lr_edge_mask": lr_edge_mask,
+                        }
                     model_ret = model.forward_common_lower_graph(
                         atype,
                         n_node,
@@ -822,6 +834,7 @@ class DeepEval(DeepEvalBackend):
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
+                        **long_range_kwargs,
                     )
                     return _translate_energy_keys(
                         model_ret,
@@ -2410,6 +2423,19 @@ class DeepEval(DeepEvalBackend):
         # Build the carry-all graph at its exact edge count; the exported edge
         # axis is dynamic.
         graph = self._build_eval_graph(coord_input, atom_types, box_input, DEVICE)
+        lr_graph = None
+        if self.metadata.get("needs_long_range_edges", False):
+            if box_input is not None and bool(np.any(box_input != 0)):
+                raise NotImplementedError(
+                    "DPA4C-LR supports only non-periodic systems (box=None)."
+                )
+            lr_graph = self._build_eval_graph(
+                coord_input,
+                atom_types,
+                None,
+                DEVICE,
+                long_range=True,
+            )
 
         atype_t = torch.tensor(
             np.asarray(atom_types).reshape(-1), dtype=torch.int64, device=DEVICE
@@ -2528,6 +2554,24 @@ class DeepEval(DeepEvalBackend):
                 aparam_t,
                 charge_spin_t,
             )
+            if lr_graph is not None:
+                model_inputs += (
+                    torch.as_tensor(
+                        lr_graph.edge_index,
+                        dtype=torch.int64,
+                        device=DEVICE,
+                    ),
+                    torch.as_tensor(
+                        lr_graph.edge_vec,
+                        dtype=edge_dtype,
+                        device=DEVICE,
+                    ),
+                    torch.as_tensor(
+                        lr_graph.edge_mask,
+                        dtype=torch.bool,
+                        device=DEVICE,
+                    ),
+                )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:
@@ -2552,6 +2596,8 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         box_input: np.ndarray | None,
         device: "torch.device",
+        *,
+        long_range: bool = False,
     ) -> "NeighborGraph":
         """Build the carry-all NeighborGraph for graph-lower inference.
 
@@ -2567,7 +2613,11 @@ class DeepEval(DeepEvalBackend):
         destination-major graph-form ``.pt2`` ABI after construction; the
         caller transfers its fields to the model device.
         """
-        method = self._neighbor_graph_method
+        # The LR graph is all-pairs by definition.  Do not send its artificial
+        # 1e6 cutoff through the spatial NV/vesin builders: their capacity/cell
+        # estimates are intended for finite local cutoffs and can explode for
+        # this sentinel radius.
+        method = "dense" if long_range else self._neighbor_graph_method
         if method == "auto":
             coord_arr = np.asarray(coord_input)
             nf = int(coord_arr.shape[0]) if coord_arr.ndim >= 2 else 1
@@ -2576,7 +2626,8 @@ class DeepEval(DeepEvalBackend):
         # (decision #18): apply it here so the exported ``.pt2`` lower consumes a
         # pre-excluded ``edge_mask`` and never re-applies it (mirrors the C++
         # ``applyPairExclusion`` and the eager dpmodel/pt_expt build path).
-        pair_excl = self._model_pair_excl()
+        pair_excl = None if long_range else self._model_pair_excl()
+        rcut = 1.0e6 if long_range else self._rcut
         builder_device = torch.device("cpu") if method == "cell" else device
         # The fused builder writes the whole destination-major payload from one
         # search. It applies only where nothing has to be filtered or masked
@@ -2616,7 +2667,7 @@ class DeepEval(DeepEvalBackend):
                 )
                 if box_input is not None
                 else None,
-                self._rcut,
+                rcut,
                 edge_dtype=edge_dtype,
             )
         if method == "dense":
@@ -2628,7 +2679,7 @@ class DeepEval(DeepEvalBackend):
                 coord_input,
                 atom_types,
                 box_input,
-                self._rcut,
+                rcut,
                 canonicalize=True,
                 pair_excl=pair_excl,
             )
@@ -2641,7 +2692,7 @@ class DeepEval(DeepEvalBackend):
                 coord_input,
                 atom_types,
                 box_input,
-                self._rcut,
+                rcut,
                 canonicalize=True,
                 pair_excl=pair_excl,
             )
@@ -2679,7 +2730,7 @@ class DeepEval(DeepEvalBackend):
                     cc,
                     aa,
                     bb,
-                    self._rcut,
+                    rcut,
                     canonicalize=True,
                     pair_excl=pair_excl,
                 )
@@ -2691,7 +2742,7 @@ class DeepEval(DeepEvalBackend):
                 cc,
                 aa,
                 bb,
-                self._rcut,
+                rcut,
                 canonicalize=True,
                 pair_excl=pair_excl,
             )
