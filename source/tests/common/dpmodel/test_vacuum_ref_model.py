@@ -29,7 +29,7 @@ TYPE_MAP = ["O", "H"]
 BIAS = np.array([[-3.0], [0.5]])
 
 
-def make_model(kind: str, vacuum_ref: bool) -> EnergyModel:
+def make_model(kind: str, vacuum_ref: bool, preset: bool = True) -> EnergyModel:
     if kind == "se_e2_a":
         ds = DescrptSeA(
             rcut=4.0, rcut_smth=0.5, sel=[10, 10], neuron=[4, 8], axis_neuron=2, seed=1
@@ -56,7 +56,8 @@ def make_model(kind: str, vacuum_ref: bool) -> EnergyModel:
         seed=1,
     )
     ft["bias_atom_e"] = BIAS.copy()
-    return EnergyModel(ds, ft, type_map=TYPE_MAP)
+    preset_out_bias = {"energy": BIAS.tolist()} if preset else None
+    return EnergyModel(ds, ft, type_map=TYPE_MAP, preset_out_bias=preset_out_bias)
 
 
 def atom_energies(
@@ -122,3 +123,27 @@ def test_fold_reproduces_the_referenced_model(kind: str, method: str) -> None:
     )
     # the folded model is a plain model: its serialization carries no reference
     assert model.serialize()["fitting"]["vacuum_ref"] is False
+
+
+@pytest.mark.parametrize(
+    "kind, method",
+    [("se_e2_a", "legacy"), ("dpa1", "dense")],  # dense nlist route / graph route
+)
+def test_without_preset_the_output_is_not_referenced(kind: str, method: str) -> None:
+    """A bias fitted from the data is no isolated-atom energy, so the output stays plain."""
+    rng = np.random.default_rng(1)
+    coord = rng.normal(size=(2, 6, 3)) * 1.2
+    atype = np.array([[0, 1, 1, 0, 1, 0], [1, 1, 0, 0, 1, 0]])
+    plain = make_model(kind, False)
+    unreferenced = make_model(kind, True, preset=False)
+    fitting = unreferenced.atomic_model.fitting_net
+    assert not fitting.vacuum_ref
+    assert not fitting.needs_vacuum_descriptor()
+    np.testing.assert_allclose(
+        atom_energies(unreferenced, coord, atype, method),
+        atom_energies(plain, coord, atype, method),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    unreferenced.fold_vacuum_reference()
+    np.testing.assert_array_equal(fitting["bias_atom_e"], BIAS)

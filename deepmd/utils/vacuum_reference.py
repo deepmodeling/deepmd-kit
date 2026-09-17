@@ -10,10 +10,17 @@ quantity derives from the spin-resolved orbital occupation table of the
 elements.
 """
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 
 from deepmd.utils.econf_embd import (
     electronic_configuration_embedding,
+)
+from deepmd.utils.preset_out_bias import (
+    preset_assigns,
 )
 
 
@@ -91,3 +98,28 @@ def reference_spin(type_map: list[str]) -> np.ndarray:
     spin = np.zeros((len(type_map), 3), dtype=np.float64)
     spin[:, 2] = unpaired_electrons(type_map)
     return spin
+
+
+def resolve_vacuum_ref(
+    fitting: Any, preset_out_bias: dict[str, list[list | None]] | None
+) -> None:
+    """Keep the vacuum reference of a fitting only on an output whose bias the preset fixes.
+
+    The reference makes an atom without neighbors contribute exactly its bias,
+    which is the isolated-atom value only when ``preset_out_bias`` fixes it. An
+    output whose bias is fitted from the data keeps the plain network output:
+    in multi-task training a branch without a table then differs from the
+    referenced branches that share its network by a constant per type, which
+    the case conditioning represents, instead of by an offset that would have
+    to vanish on the isolated atoms.
+
+    Parameters
+    ----------
+    fitting
+        A fitting network; its ``vacuum_ref`` option is switched off in place
+        when the preset does not fix the bias of its output ``var_name``.
+    preset_out_bias
+        Normalized preset bias of the atomic model, or None.
+    """
+    if fitting.vacuum_ref and not preset_assigns(preset_out_bias, fitting.var_name):
+        fitting.vacuum_ref = False

@@ -69,11 +69,16 @@ CONFIG = {
 }
 
 
-def make_model(vacuum_ref: bool) -> EnergyModel:
+PRESET = {"energy": {"O": float(BIAS[0, 0]), "H": float(BIAS[1, 0])}}
+
+
+def make_model(vacuum_ref: bool, preset: bool = True) -> EnergyModel:
     config = {
         **CONFIG,
         "fitting_net": {**CONFIG["fitting_net"], "vacuum_ref": vacuum_ref},
     }
+    if preset:
+        config["preset_out_bias"] = PRESET
     model = get_model(config)
     data = jitter_zero_arrays(
         model.atomic_model.descriptor.serialize(), np.random.default_rng(3)
@@ -228,6 +233,7 @@ def freeze_model(
     for key in ("use_spin", "add_chg_spin_ebd", "default_chg_spin"):
         config["descriptor"].pop(key)
     config["fitting_net"].update({"vacuum_ref": True, "numb_fparam": numb_fparam})
+    config["preset_out_bias"] = PRESET
     model = get_model(config)
     data = jitter_zero_arrays(
         model.atomic_model.descriptor.serialize(), np.random.default_rng(3)
@@ -382,3 +388,23 @@ def test_archive_carries_the_live_model(tmp_path) -> None:
             np.testing.assert_allclose(
                 atom_energy.reshape(-1), BIAS[itype], rtol=1e-8, atol=1e-8
             )
+
+
+def test_without_preset_the_output_is_not_referenced() -> None:
+    """A bias fitted from the data is no isolated-atom energy, so the output stays plain."""
+    rng = np.random.default_rng(1)
+    coord = rng.normal(size=(2, 6, 3)) * 1.2
+    atype = np.array([[0, 1, 1, 0, 1, 0], [1, 1, 0, 0, 1, 0]])
+    charge_spin = np.array([[0.0, 1.0], [1.0, 2.0]])
+    spin = rng.normal(size=(2, 6, 3)) * (atype == 0)[..., None]
+    plain = make_model(False)
+    unreferenced = make_model(True, preset=False)
+    fitting = unreferenced.atomic_model.fitting_net
+    assert not fitting.vacuum_ref
+    assert not fitting.needs_vacuum_descriptor()
+    np.testing.assert_allclose(
+        atom_energies(unreferenced, coord, atype, charge_spin, spin),
+        atom_energies(plain, coord, atype, charge_spin, spin),
+        rtol=1e-12,
+        atol=1e-12,
+    )

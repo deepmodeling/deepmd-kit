@@ -22,9 +22,11 @@ from deepmd.pt.utils import (
 
 TYPE_MAP = ["O", "H"]
 BIAS = np.array([[-3.0], [0.5]])
+PRESET = {"energy": {"O": float(BIAS[0, 0]), "H": float(BIAS[1, 0])}}
 MODEL_PARAMS = {
     "type": "SeZM",
     "type_map": TYPE_MAP,
+    "preset_out_bias": PRESET,
     "descriptor": {
         "type": "SeZM",
         "sel": [4, 4],
@@ -61,8 +63,10 @@ MODEL_PARAMS = {
 
 
 class TestSeZMVacuumRef(unittest.TestCase):
-    def make_model(self, vacuum_ref: bool) -> torch.nn.Module:
+    def make_model(self, vacuum_ref: bool, preset: bool = True) -> torch.nn.Module:
         params = copy.deepcopy(MODEL_PARAMS)
+        if not preset:
+            params.pop("preset_out_bias")
         params["fitting_net"]["vacuum_ref"] = vacuum_ref
         model = get_model(params).to(env.DEVICE)
         fitting = model.atomic_model.fitting_net
@@ -117,6 +121,108 @@ class TestSeZMVacuumRef(unittest.TestCase):
         iso_ref = self.atom_energies(ref, iso_coord, iso_atype)[:, 0]
         expected = e_ref - (iso_ref - BIAS[:, 0])[atype]
         np.testing.assert_allclose(e_vac, expected, rtol=1e-10, atol=1e-10)
+
+    def test_without_preset_the_output_is_not_referenced(self) -> None:
+        """A bias fitted from the data is no isolated-atom energy, so the output stays plain."""
+        rng = np.random.default_rng(1)
+        coord = rng.normal(size=(2, 6, 3)) * 1.2
+        atype = np.array([[0, 1, 1, 0, 1, 0], [1, 1, 0, 0, 1, 0]])
+        plain = self.make_model(False)
+        unreferenced = self.make_model(True, preset=False)
+        fitting = unreferenced.atomic_model.fitting_net
+        self.assertFalse(fitting.vacuum_ref)
+        self.assertFalse(fitting.needs_vacuum_descriptor())
+        np.testing.assert_allclose(
+            self.atom_energies(unreferenced, coord, atype),
+            self.atom_energies(plain, coord, atype),
+            rtol=1e-12,
+            atol=1e-12,
+        )
+
+    def test_shared_fitting_references_only_the_branch_with_a_preset(self) -> None:
+        """Branches sharing one fitting reference their output only where a preset fixes the bias."""
+        from deepmd.pt.train.training import (
+            get_model_for_wrapper,
+            prepare_model_for_loss,
+        )
+        from deepmd.pt.train.wrapper import (
+            ModelWrapper,
+        )
+        from deepmd.pt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+
+        branch = {
+            "type": "SeZM",
+            "type_map": "type_map",
+            "descriptor": "descriptor",
+            "fitting_net": "fitting",
+        }
+        config = {
+            "shared_dict": {
+                "type_map": TYPE_MAP,
+                "descriptor": copy.deepcopy(MODEL_PARAMS["descriptor"]),
+                "fitting": {
+                    **MODEL_PARAMS["fitting_net"],
+                    "vacuum_ref": True,
+                    "dim_case_embd": 2,
+                },
+            },
+            "model_dict": {
+                "with_table": {**branch, "preset_out_bias": PRESET},
+                "without_table": dict(branch),
+            },
+        }
+        config, shared_links = preprocess_shared_params(config)
+        models = get_model_for_wrapper(config)
+        prepare_model_for_loss(models, {key: {"type": "ener"} for key in models})
+        wrapper = ModelWrapper(models)
+        wrapper.share_params(shared_links, dict.fromkeys(models, 0.5))
+        referenced = wrapper.model["with_table"].to(env.DEVICE).eval()
+        unreferenced = wrapper.model["without_table"].to(env.DEVICE).eval()
+        fit_a = referenced.atomic_model.fitting_net
+        fit_b = unreferenced.atomic_model.fitting_net
+        # one network, one decision per branch
+        self.assertIs(fit_a.filter_layers, fit_b.filter_layers)
+        self.assertTrue(fit_a.vacuum_ref)
+        self.assertFalse(fit_b.vacuum_ref)
+        for fitting in (fit_a, fit_b):
+            with torch.no_grad():
+                fitting.bias_atom_e.copy_(
+                    torch.as_tensor(
+                        BIAS,
+                        dtype=fitting.bias_atom_e.dtype,
+                        device=fitting.bias_atom_e.device,
+                    )
+                )
+
+        rng = np.random.default_rng(5)
+        coord = rng.normal(size=(2, 6, 3)) * 1.2
+        atype = np.array([[0, 1, 1, 0, 1, 0], [1, 1, 0, 0, 1, 0]])
+        iso_coord = np.zeros((2, 1, 3))
+        iso_atype = np.array([[0], [1]])
+        # the branch with a table pins its isolated atoms to the preset
+        np.testing.assert_allclose(
+            self.atom_energies(referenced, iso_coord, iso_atype),
+            BIAS[:, 0][:, None],
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        # the branch without a table is the plain model on the shared weights
+        params = copy.deepcopy(MODEL_PARAMS)
+        params.pop("preset_out_bias")
+        params["fitting_net"]["dim_case_embd"] = 2
+        plain = get_model(params).to(env.DEVICE)
+        plain.load_state_dict(unreferenced.state_dict())
+        plain.eval()
+        np.testing.assert_allclose(
+            self.atom_energies(unreferenced, coord, atype),
+            self.atom_energies(plain, coord, atype),
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        iso_energy = self.atom_energies(unreferenced, iso_coord, iso_atype)
+        self.assertGreater(np.abs(iso_energy - BIAS[:, 0][:, None]).max(), 1e-6)
 
     def test_forces_are_unchanged(self) -> None:
         """The reference is independent of the coordinates, so forces do not move."""
@@ -277,6 +383,20 @@ class TestSeZMDeNSVacuumRef(unittest.TestCase):
             )
         return model.eval()
 
+    def test_without_preset_the_head_is_not_referenced(self) -> None:
+        """The DeNS energy head follows the preset of the branch like the energy fitting."""
+        params = copy.deepcopy(MODEL_PARAMS)
+        params.pop("preset_out_bias")
+        params["descriptor"]["l_schedule"] = [1, 1]
+        params["fitting_net"]["vacuum_ref"] = True
+        model = get_model(params)
+        model.set_active_mode("dens")
+        dens = model.atomic_model.get_dens_fitting_net()
+        self.assertFalse(dens.vacuum_ref)
+        self.assertFalse(dens.energy_head.vacuum_ref)
+        self.assertFalse(dens.needs_vacuum_descriptor())
+        self.assertFalse(model.atomic_model.fitting_net.vacuum_ref)
+
     def atom_energies(
         self,
         model: torch.nn.Module,
@@ -351,6 +471,7 @@ def test_isolated_atom_under_amp_and_fused_training_kernels(monkeypatch) -> None
     params = {
         "type": "dpa4",
         "type_map": TYPE_MAP,
+        "preset_out_bias": PRESET,
         "descriptor": {
             "type": "dpa4",
             "sel": 20,

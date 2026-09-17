@@ -265,6 +265,27 @@ def check_preset_out_bias(
         )
 
 
+def preset_assigns(
+    preset_out_bias: dict[str, list[list | None]] | None, key: str
+) -> bool:
+    """Whether the normalized preset fixes the bias of the output ``key`` for at least one type.
+
+    Parameters
+    ----------
+    preset_out_bias
+        Normalized preset bias, or None.
+    key
+        Output name.
+
+    Returns
+    -------
+    bool
+        True if at least one type of the output has a preset entry.
+    """
+    entries = (preset_out_bias or {}).get(key)
+    return entries is not None and any(entry is not None for entry in entries)
+
+
 def make_preset_out_bias(
     ntypes: int,
     ibias: list[list | np.ndarray | None] | np.ndarray,

@@ -33,6 +33,7 @@ from deepmd.utils.path import (
 from deepmd.utils.vacuum_reference import (
     reference_charge_spin,
     reference_spin,
+    resolve_vacuum_ref,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -148,7 +149,10 @@ class DPAtomicModel(BaseAtomicModel):
             self._supports_native_spin and self.descriptor.use_spin is not None
         )
         super().init_out_stat()
-        # === Reference conditions of the isolated neutral atoms ===
+        # === Reference of the isolated atoms ===
+        # The fitting references its output only when the preset fixes the
+        # bias of that output; the conditions of the reference atoms follow.
+        resolve_vacuum_ref(self.fitting_net, self.preset_out_bias)
         self.init_vacuum_conditions()
 
     def init_vacuum_conditions(self) -> None:

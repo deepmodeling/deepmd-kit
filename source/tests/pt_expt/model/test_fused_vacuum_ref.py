@@ -57,7 +57,16 @@ def make_model_with(
         seed=1,
     )
     fitting["bias_atom_e"] = BIAS.copy()
-    return EnergyModel(descriptor, fitting, type_map=["O", "H"]).to(env.DEVICE).eval()
+    return (
+        EnergyModel(
+            descriptor,
+            fitting,
+            type_map=["O", "H"],
+            preset_out_bias={"energy": BIAS.tolist()},
+        )
+        .to(env.DEVICE)
+        .eval()
+    )
 
 
 def make_dpa1(numb_fparam: int = 0) -> EnergyModel:

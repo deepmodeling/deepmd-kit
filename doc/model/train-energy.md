@@ -127,8 +127,10 @@ limit of the model is pinned. Two model options provide this together:
   atom to the output the same network gives an isolated atom of the same type,
   under the same frame parameters, atomic parameters and case embedding. With
   it, the energy of an atom without neighbors is exactly its bias, whatever the
-  network parameters are, so the preset value is the isolated-atom energy. It
-  cannot be combined with the fitting option `atom_ener`.
+  network parameters are, so the preset value is the isolated-atom energy. The
+  reference applies to an output whose bias `preset_out_bias` fixes; an output
+  whose bias is fitted from the data keeps the plain network output. It cannot
+  be combined with the fitting option `atom_ener`.
 
 ```json
 {
@@ -149,15 +151,14 @@ limit of the model is pinned. Two model options provide this together:
 
 `omat24` is one of the bundled tables of isolated-atom energies in eV:
 
-| Name     | Reference calculation         | Elements                                  |
-| -------- | ----------------------------- | ----------------------------------------- |
-| `omat24` | OMat24                        | 89, H to Pu without Po, At, Rn, Fr and Ra |
-| `omol25` | OMol25, neutral atoms         | 83, H to Bi                               |
-| `omc25`  | OMC25                         | 94, H to Bk without Tb, Am and Cm         |
-| `odac25` | ODAC25                        | 94, H to Pu                               |
-| `oc20`   | OC20, adsorption-energy scale | 97, H to Cf without Bk                    |
+| Name     | Reference calculation | Elements                                  |
+| -------- | --------------------- | ----------------------------------------- |
+| `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
+| `omc25`  | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
+| `odac25` | ODAC25                | 94, H to Pu                               |
 
-These five tables are the isolated-atom reference energies of the UMA training
+These four tables are the isolated-atom reference energies of the UMA training
 tasks published with fairchem
 (`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
 license). Each table is on the energy scale of its own reference calculation
@@ -172,7 +173,13 @@ neither on the file nor on the bundled data.
 
 In multi-task training `preset_out_bias` is given in each branch, so a branch
 trained on another reference calculation names its own table; written once
-next to `model_dict`, it applies to every branch that does not set its own.
+next to `model_dict`, it applies to every branch that does not set its own. A
+branch without a table takes its bias from the statistics and keeps the plain
+network output even when it shares a fitting network with `vacuum_ref`: the
+shared network then represents the same binding energy in every branch, the
+branches differ by a constant per element that the case embedding carries, and
+the isolated-atom energies of the branches with a table stay exactly their
+presets.
 `examples/water/dpa4/input_e0.json` and
 `examples/water/dpa4/input_multitask_e0.json` show the single-task and the
 multi-task setup on the water example, whose reference calculation is not one

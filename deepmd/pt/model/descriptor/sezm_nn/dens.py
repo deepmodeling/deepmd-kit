@@ -478,7 +478,6 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         self.exclude_types = [] if exclude_types is None else list(exclude_types)
         self.trainable = copy.deepcopy(trainable)
         self.atom_ener = atom_ener
-        self.vacuum_ref = bool(vacuum_ref)
         self.use_aparam_as_mask = bool(use_aparam_as_mask)
         self.has_force_embedding_latent = self.condition_lmax >= 1
         self.has_vector_latent = self.latent_lmax >= 1
@@ -510,7 +509,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             exclude_types=self.exclude_types,
             trainable=self.trainable,
             atom_ener=self.atom_ener,
-            vacuum_ref=self.vacuum_ref,
+            vacuum_ref=bool(vacuum_ref),
             use_aparam_as_mask=self.use_aparam_as_mask,
         )
 
@@ -584,6 +583,20 @@ class SeZMDeNSFittingNet(torch.nn.Module):
     def needs_vacuum_descriptor(self) -> bool:
         """Whether the energy head takes the vacuum descriptor of every type from the descriptor."""
         return self.energy_head.needs_vacuum_descriptor()
+
+    @property
+    def vacuum_ref(self) -> bool:
+        """Whether the scalar energy branch references every atom to the isolated atom of its type."""
+        return self.energy_head.vacuum_ref
+
+    @vacuum_ref.setter
+    def vacuum_ref(self, value: bool) -> None:
+        self.energy_head.vacuum_ref = bool(value)
+
+    @property
+    def var_name(self) -> str:
+        """Output name of the scalar energy branch."""
+        return self.energy_head.var_name
 
     def get_dim_aparam(self) -> int:
         """Return the atomic-parameter width of the energy branch."""

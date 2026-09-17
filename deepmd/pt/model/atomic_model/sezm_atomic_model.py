@@ -47,6 +47,7 @@ from deepmd.utils.stat_file import (
 from deepmd.utils.vacuum_reference import (
     reference_charge_spin,
     reference_spin,
+    resolve_vacuum_ref,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -113,7 +114,12 @@ class SeZMAtomicModel(DPAtomicModel):
             "dens_force_rmsd",
             self.out_std.new_tensor(1.0),
         )
-        # === Reference conditions of the isolated neutral atoms ===
+        # === Reference of the isolated atoms ===
+        # Each head references its output only when the preset fixes the
+        # bias of that output; the conditions of the reference atoms follow.
+        resolve_vacuum_ref(fitting, self.preset_out_bias)
+        if dens_fitting is not None:
+            resolve_vacuum_ref(dens_fitting, self.preset_out_bias)
         self.add_spin_ebd: bool = self.descriptor.use_spin is not None
         self.register_buffer("vacuum_charge_spin", None, persistent=False)
         self.register_buffer("vacuum_spin", None, persistent=False)

@@ -69,6 +69,7 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
 
     def check_frozen_model(self, numb_fparam: int, device: torch.device = _CPU) -> None:
         params = _tiny_sezm_model_params()
+        params["preset_out_bias"] = {"energy": {"A": BIAS[0, 0], "B": BIAS[1, 0]}}
         params["fitting_net"]["vacuum_ref"] = True
         params["fitting_net"]["numb_fparam"] = numb_fparam
         fparam = None if numb_fparam == 0 else np.array([[0.7]])

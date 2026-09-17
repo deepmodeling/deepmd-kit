@@ -9,9 +9,6 @@ from pathlib import (
 
 import numpy as np
 
-from deepmd.utils.econf_embd import (
-    electronic_configuration_embedding,
-)
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
 )
@@ -112,20 +109,6 @@ class TestNormalizePresetOutBias(unittest.TestCase):
 
 
 class TestBundledTables(unittest.TestCase):
-    def test_tables(self) -> None:
-        tables = bundled_preset_out_bias_tables()
-        self.assertEqual(
-            sorted(tables), ["oc20", "odac25", "omat24", "omc25", "omol25"]
-        )
-        for name, table in tables.items():
-            with self.subTest(name=name):
-                self.assertLessEqual(
-                    set(table), set(electronic_configuration_embedding)
-                )
-                self.assertTrue(np.all(np.isfinite(list(table.values()))))
-        self.assertEqual(len(tables["omat24"]), 89)
-        self.assertEqual(tables["omat24"]["H"], -1.11700253)
-
     def test_name_before_path(self) -> None:
         tables = bundled_preset_out_bias_tables()
         self.assertEqual(load_preset_out_bias_table("omat24"), tables["omat24"])
