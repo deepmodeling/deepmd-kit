@@ -71,21 +71,17 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             do_atomic_virial=do_atomic_virial,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict = {}
-            model_predict["dipole"] = model_ret["dipole"]
-            model_predict["global_dipole"] = model_ret["dipole_redu"]
-            if self.do_grad_r("dipole"):
-                model_predict["force"] = model_ret["dipole_derv_r"]
-            if self.do_grad_c("dipole"):
-                model_predict["virial"] = model_ret["dipole_derv_c_redu"]
-                if do_atomic_virial:
-                    model_predict["atom_virial"] = model_ret["dipole_derv_c"]
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-        else:
-            model_predict = model_ret
-            model_predict["updated_coord"] += coord
+        model_predict = {}
+        model_predict["dipole"] = model_ret["dipole"]
+        model_predict["global_dipole"] = model_ret["dipole_redu"]
+        if self.do_grad_r("dipole"):
+            model_predict["force"] = model_ret["dipole_derv_r"]
+        if self.do_grad_c("dipole"):
+            model_predict["virial"] = model_ret["dipole_derv_c_redu"]
+            if do_atomic_virial:
+                model_predict["atom_virial"] = model_ret["dipole_derv_c"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
 
     @torch.jit.export
@@ -113,18 +109,15 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict = {}
-            model_predict["dipole"] = model_ret["dipole"]
-            model_predict["global_dipole"] = model_ret["dipole_redu"]
-            if self.do_grad_r("dipole"):
-                model_predict["extended_force"] = model_ret["dipole_derv_r"]
-            if self.do_grad_c("dipole"):
-                model_predict["virial"] = model_ret["dipole_derv_c_redu"]
-                if do_atomic_virial:
-                    model_predict["extended_virial"] = model_ret["dipole_derv_c"]
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-        else:
-            model_predict = model_ret
+        model_predict = {}
+        model_predict["dipole"] = model_ret["dipole"]
+        model_predict["global_dipole"] = model_ret["dipole_redu"]
+        if self.do_grad_r("dipole"):
+            model_predict["extended_force"] = model_ret["dipole_derv_r"]
+        if self.do_grad_c("dipole"):
+            model_predict["virial"] = model_ret["dipole_derv_c_redu"]
+            if do_atomic_virial:
+                model_predict["extended_virial"] = model_ret["dipole_derv_c"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
