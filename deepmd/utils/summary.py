@@ -86,6 +86,14 @@ class SummaryPrinter(ABC):
         if self.is_built_with_cuda() or self.is_built_with_rocm():
             build_info["Visible GPU Count"] = str(self.get_ngpus())
 
+        world_size = os.environ.get("WORLD_SIZE")
+        local_world_size = os.environ.get("LOCAL_WORLD_SIZE")
+        if world_size is not None:
+            processes = f"{world_size} total"
+            if local_world_size is not None:
+                processes += f", {local_world_size} on this node"
+            build_info["Distributed Processes"] = processes
+
         intra, inter = get_default_nthreads()
         build_info.update(
             {
