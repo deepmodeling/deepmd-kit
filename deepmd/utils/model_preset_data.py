@@ -145,13 +145,13 @@ _DPA4_VERSIONS: dict[str, dict[str, Any]] = {
         },
         "grades": ("nano", "mini", "neo", "air", "plus", "pro"),
     },
-    # Channel RMSNorm on FiLM and focus features, with no radial-site RMSNorm.
-    # Pre-norm before SO(2) and FFN branches, without post-norm.
+    # Channel RMSNorm on focus features only, with no radial-site or FiLM
+    # RMSNorm. Pre-norm before SO(2) and FFN branches, without post-norm.
     # One C^3 envelope on the messages with no envelope on the radial basis,
     # and fixed Gaussian centres.
     "v20260911": {
         "descriptor": {
-            "edge_norm": [False, True, True],
+            "edge_norm": [False, False, True],
             "sandwich_norm": [True, False, True, False],
             "env_exp": 5,
             "basis_type": "gaussian/fix",

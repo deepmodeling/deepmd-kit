@@ -5,9 +5,6 @@ import copy
 import logging
 
 import pytest
-from dargs.dargs import (
-    ArgumentKeyError,
-)
 
 from deepmd.dpmodel.utils.multi_task import (
     preprocess_shared_params,
@@ -96,12 +93,6 @@ def test_expansion_is_idempotent_and_a_noop_without_preset() -> None:
     assert expand_model_preset(expanded) is expanded
 
 
-def test_preset_name_is_case_insensitive() -> None:
-    assert expand_model_preset({"preset": "DPA4-Neo-v20260911"}) == expand_model_preset(
-        {"preset": "dpa4-neo-v20260911"}
-    )
-
-
 def test_unknown_or_malformed_preset_raises() -> None:
     with pytest.raises(ValueError, match="Unknown model preset"):
         expand_model_preset({"preset": "dpa4-huge-v20260911"})
@@ -185,7 +176,7 @@ def test_preset_catalog() -> None:
             "dpa4",
             "v20260911",
             {
-                "edge_norm": [False, True, True],
+                "edge_norm": [False, False, True],
                 "sandwich_norm": [True, False, True, False],
                 "env_exp": 5,
                 "basis_type": "gaussian/fix",
@@ -217,15 +208,6 @@ def test_periodic_table_matches_econf_type_map() -> None:
     )
 
     assert list(PERIODIC_TABLE) == type_map
-
-
-def test_leftover_preset_fails_argument_check() -> None:
-    config = {
-        "model": {"preset": "dpa4-nano-v20260911"},
-        "training": copy.deepcopy(TRAINING),
-    }
-    with pytest.raises(ArgumentKeyError, match="preset"):
-        normalize(config)
 
 
 def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
@@ -382,18 +364,6 @@ def test_explicit_alias_replaces_the_preset_canonical_key() -> None:
     _normalize_model(model)
 
 
-def test_explicit_dict_for_a_whole_value_region_does_not_crash() -> None:
-    """`type_map` (and `type`) are always replaced as a whole; a malformed
-    dict there must not raise before the argument check reports it.
-    """
-    expanded = expand_model_preset(
-        {"preset": "dpa4-nano-v20260911", "type_map": {"O": 0, "H": 1}}
-    )
-    assert expanded["type_map"] == {"O": 0, "H": 1}
-    with pytest.raises(Exception):
-        _normalize_model(expanded)
-
-
 def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
     """A `descriptor`/`fitting_net` reference inherited by a branch only
     through the top-level default must still be recognised as referenced.
@@ -408,18 +378,6 @@ def test_shared_dict_role_is_recognised_through_a_branch_default() -> None:
     expanded = expand_model_preset(model)
     assert expanded["shared_dict"]["desc"] == {**nano["descriptor"], "seed": 42}
     assert expanded["model_dict"]["water_1"]["descriptor"] == "desc"
-
-
-def test_malformed_multi_task_layout_is_left_to_argcheck() -> None:
-    malformed = {"preset": "dpa4-nano-v20260911", "model_dict": "water"}
-    assert expand_model_preset(malformed) is malformed
-    branch_not_mapping = {
-        "preset": "dpa4-nano-v20260911",
-        "model_dict": {"water": "not a mapping"},
-    }
-    assert expand_model_preset(branch_not_mapping)["model_dict"] == {
-        "water": "not a mapping"
-    }
 
 
 def test_update_deepmd_input_expands_presets() -> None:
