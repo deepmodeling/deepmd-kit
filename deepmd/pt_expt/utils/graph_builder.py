@@ -271,6 +271,8 @@ def build_neighbor_graph_for_method(
     with_csr: bool = False,
 ) -> "NeighborGraph":
     """Build a carry-all graph with one concrete pt_expt backend."""
+    if box is not None and torch.all(box == 0):
+        box = None
     if method == "dense":
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_neighbor_graph,

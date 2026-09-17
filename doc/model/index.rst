@@ -14,6 +14,7 @@ Model
    dpa4
    dpa4c
    unimol
+   dpa4c_lr
    train-hybrid
    sel
    train-energy
