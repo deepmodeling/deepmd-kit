@@ -63,16 +63,12 @@ class DOSModel(DPModelCommon, DPDOSModel_):
             do_atomic_virial=do_atomic_virial,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict = {}
-            model_predict["atom_dos"] = model_ret["dos"]
-            model_predict["dos"] = model_ret["dos_redu"]
+        model_predict = {}
+        model_predict["atom_dos"] = model_ret["dos"]
+        model_predict["dos"] = model_ret["dos_redu"]
 
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-        else:
-            model_predict = model_ret
-            model_predict["updated_coord"] += coord
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
 
     @torch.jit.export
@@ -105,12 +101,9 @@ class DOSModel(DPModelCommon, DPDOSModel_):
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict = {}
-            model_predict["atom_dos"] = model_ret["dos"]
-            model_predict["dos"] = model_ret["dos_redu"]
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-        else:
-            model_predict = model_ret
+        model_predict = {}
+        model_predict["atom_dos"] = model_ret["dos"]
+        model_predict["dos"] = model_ret["dos_redu"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict

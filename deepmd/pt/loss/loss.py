@@ -35,6 +35,17 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
         raise NotImplementedError
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Display columns for the default training call, excluding l2 terms.
+
+        The names depend on the loss configuration, not on whether a task or
+        label has been sampled. Averaged logging uses them without a forward.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must define training_metric_names for disp_avg."
+        )
+
+    @property
     @abstractmethod
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
