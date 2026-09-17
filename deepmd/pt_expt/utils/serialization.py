@@ -494,19 +494,20 @@ def build_synthetic_graph_inputs(
     want_aparam: bool = True,
     want_charge_spin: bool = True,
     want_spin: bool = False,
+    canonicalize: bool = True,
 ) -> tuple[torch.Tensor | None, ...]:
     """Build a synthetic carry-all ``NeighborGraph`` for graph-lower tracing.
 
     Single source of the trace-time graph inputs, shared by ``.pt2`` export
     (:func:`_trace_and_export`) and compiled training
-    (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`), so the two
-    traces can never desync on the graph input schema.  Builds a small random
-    system, runs the carry-all
+    (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`). Builds a
+    small random system and runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
-    padded ``GraphLayout(edge_capacity=e_max)`` trace sample, then canonicalizes
-    it to the destination-major deployment ABI. The exported edge axis remains
-    dynamic; the concrete capacity only supplies representative tensors to
-    ``make_fx``. Inputs follow the positional order expected by
+    padded ``GraphLayout(edge_capacity=e_max)`` trace sample. Export uses the
+    destination-major graph with CSR metadata; compiled training selects the
+    plain graph without CSR to match its runtime builders. The edge axis
+    remains dynamic; the concrete capacity only supplies representative tensors
+    to ``make_fx``. Inputs follow the positional order expected by
     ``forward_(common_)lower_graph``:
     ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask, destination_order,
     destination_row_ptr, source_order, source_row_ptr, fparam, aparam,
@@ -519,8 +520,7 @@ def build_synthetic_graph_inputs(
     (native spin rejects ``add_chg_spin_ebd`` at build).
 
     The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
-    i % ntypes``) is identical for both callers; the only two former differences
-    are now parameters.
+    i % ntypes``) is identical for both callers.
 
     Parameters
     ----------
@@ -559,6 +559,11 @@ def build_synthetic_graph_inputs(
         all-zero spin leaf can hit degenerate branches, e.g. a
         ``norm(spin) == 0`` special case, in the equivariant spin
         embedding).
+    canonicalize : bool, optional
+        Sort edges by destination and include destination/source CSR metadata,
+        as required by the deployment ABI. If ``False``, preserve the builder's
+        edge order and leave all four CSR metadata inputs as ``None``, matching
+        the compiled-training graph contract.
     """
     import deepmd.pt_expt.utils.env as _env
     from deepmd.dpmodel.utils.neighbor_graph import (
@@ -595,7 +600,7 @@ def build_synthetic_graph_inputs(
         box_t,
         rcut,
         layout=GraphLayout(edge_capacity=e_max),
-        canonicalize=True,
+        canonicalize=canonicalize,
     )
 
     fparam = (

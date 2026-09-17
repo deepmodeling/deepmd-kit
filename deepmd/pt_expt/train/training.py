@@ -280,6 +280,11 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     per-node moment input and return additional magnetic outputs. A spin task
     must therefore never reuse a spin-free task's compiled graph even when the
     descriptor and fitting parameters are shared.
+
+    The fitting's vacuum-reference state selects static branches in the
+    atomic model and fitting. Shared weights do not make those branches
+    interchangeable: tasks without a preset bias disable the reference,
+    while a folded reference no longer appends isolated atoms to the graph.
     """
     descriptor_id: int = 0
     try:
@@ -293,14 +298,19 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
         pass
 
     fitting_id: int = id(model)
+    vacuum_state = (0, 0)
     try:
         fitting = model.get_fitting_net()
+        vacuum_state = (
+            int(fitting.vacuum_ref),
+            int(fitting.needs_vacuum_descriptor()),
+        )
         for _, child in fitting.named_children():
             fitting_id = id(child)
             break
     except AttributeError:
         pass
-    return (int(model.has_spin()), descriptor_id, fitting_id)
+    return (int(model.has_spin()), descriptor_id, fitting_id, *vacuum_state)
 
 
 # ---------------------------------------------------------------------------
@@ -811,9 +821,9 @@ def _trace_and_compile_graph(
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
 
-    # Shared with the .pt2 export trace (serialization.py) so the two graph
-    # traces can never desync on the input schema.  Training uses the run-time
-    # float precision and device; optional tensors match the actual call.
+    # The positional input order is shared with .pt2 export (serialization.py).
+    # Training uses the runtime precision, device, and optional-input presence;
+    # its graph builders omit the CSR metadata carried by deployment inputs.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
         check_graph_trace_torch_version,
@@ -854,6 +864,7 @@ def _trace_and_compile_graph(
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
         want_spin=spin is not None,
+        canonicalize=False,
     )
     (
         s_atype,
@@ -880,10 +891,10 @@ def _trace_and_compile_graph(
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
-        destination_order: torch.Tensor,
-        destination_row_ptr: torch.Tensor,
-        source_order: torch.Tensor,
-        source_row_ptr: torch.Tensor,
+        destination_order: torch.Tensor | None,
+        destination_row_ptr: torch.Tensor | None,
+        source_order: torch.Tensor | None,
+        source_row_ptr: torch.Tensor | None,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,

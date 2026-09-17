@@ -239,14 +239,16 @@ def test_padding_never_reaches_the_network() -> None:
     assert out["force"].shape == (len(nlocs), pad_nloc, 3)
 
 
-def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
+@pytest.mark.parametrize("vacuum_ref", [False, True])
+def test_compiled_lower_accepts_a_compacted_node_axis(vacuum_ref: bool) -> None:
     """The compiled artifact must not carry ``N == nframes * nloc`` as a guard.
 
     Its trace is taken on a uniform system, where the flat node axis happens to
     be the product of the frame count and the atom count. Dropping the padding
     breaks that relation, so this exercises the compiled lower on a batch where
     it no longer holds, and holds the result against the eager graph path,
-    which takes the same compaction.
+    which takes the same compaction. Both public layouts preserve force-loss
+    gradients, including the isolated-atom reference when it is enabled.
     """
     from deepmd.pt_expt.train.training import (
         _CompiledModel,
@@ -255,9 +257,15 @@ def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
 
     torch.manual_seed(0)
     config = _config()
+    config["type_map"] = ["O", "H"]
+    config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
     config["descriptor"]["channels"] = 8
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    config["descriptor"]["default_chg_spin"] = [0.0, 1.0]
     config["fitting_net"]["neuron"] = [8, 8]
+    config["fitting_net"]["vacuum_ref"] = vacuum_ref
     model = get_model(config).to(env.DEVICE).train()
+    assert model.get_fitting_net().needs_vacuum_descriptor() == vacuum_ref
     compiled = _CompiledModel(model, _get_model_structure_key(model))
 
     rng = np.random.default_rng(0)
@@ -282,10 +290,91 @@ def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
     expected = model(*args)
 
     assert got["force"].shape == (len(nlocs), pad_nloc, 3)
-    torch.testing.assert_close(got["energy"], expected["energy"])
-    torch.testing.assert_close(got["force"], expected["force"])
     phantom = args[1] < 0
     assert bool(torch.all(got["force"][phantom] == 0.0))
+    ragged = compiled.forward_ragged(
+        args[0][~phantom],
+        args[1][~phantom],
+        torch.tensor(nlocs, dtype=torch.int64, device=env.DEVICE),
+        box=args[2],
+    )
+    parameters = tuple(p for p in model.parameters() if p.requires_grad)
+    expected_gradients = torch.autograd.grad(
+        expected["energy"].sum() + expected["force"].square().sum(),
+        parameters,
+        allow_unused=True,
+    )
+    for result, force in (
+        (got, expected["force"]),
+        (ragged, expected["force"][~phantom]),
+    ):
+        torch.testing.assert_close(result["energy"], expected["energy"])
+        torch.testing.assert_close(result["virial"], expected["virial"])
+        torch.testing.assert_close(result["force"], force)
+        gradients = torch.autograd.grad(
+            result["energy"].sum() + result["force"].square().sum(),
+            parameters,
+            allow_unused=True,
+        )
+        for actual, reference in zip(gradients, expected_gradients, strict=True):
+            if reference is None:
+                assert actual is None
+            else:
+                torch.testing.assert_close(actual, reference)
+
+
+def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
+    """A referenced task cannot supply the compiled graph of a plain task."""
+    from deepmd.pt_expt.train.training import (
+        _CompiledModel,
+        _detect_task_buffers,
+        _get_model_structure_key,
+    )
+
+    models = []
+    for has_preset in (True, False):
+        config = _config()
+        config["type_map"] = ["O", "H"]
+        config["descriptor"].update({"channels": 8, "lmax": 2})
+        config["fitting_net"].update(
+            {"neuron": [8, 8], "dim_case_embd": 2, "vacuum_ref": True}
+        )
+        if has_preset:
+            config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
+        model = get_model(config).to(env.DEVICE).train()
+        assert model.get_fitting_net().vacuum_ref == has_preset
+        if models:
+            model.get_descriptor().share_params(
+                models[0].get_descriptor(), 0, resume=True
+            )
+            model.get_fitting_net().share_params(
+                models[0].get_fitting_net(), 0, resume=True
+            )
+        models.append(model)
+
+    coord = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    atype = torch.tensor([0, 1, 1], device=env.DEVICE)
+    n_node = torch.tensor([3], device=env.DEVICE)
+    shared_graphs = {}
+    for model in models:
+        key = _get_model_structure_key(model)
+        group = [other for other in models if _get_model_structure_key(other) == key]
+        buffers = _detect_task_buffers(model, group)
+        compiled = _CompiledModel(
+            model,
+            key,
+            task_buf_order=tuple(buffers),
+            task_buffers=buffers,
+            compiled_by_structure=shared_graphs,
+        )
+        expected = model.forward_ragged(coord, atype, n_node)
+        actual = compiled.forward_ragged(coord, atype, n_node)
+        for name in ("energy", "force", "virial"):
+            torch.testing.assert_close(actual[name], expected[name])
 
 
 def test_ragged_and_padded_batches_agree() -> None:
