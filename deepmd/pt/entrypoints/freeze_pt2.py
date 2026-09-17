@@ -985,6 +985,11 @@ def _freeze_sezm_to_pt2(
     model = get_model(params)
     is_spin = _model_has_spin(model)
     ModelWrapper(model).load_state_dict(state_dict)
+    if model.get_active_mode() == "dens":
+        raise ValueError(
+            "SeZM freeze supports only the `ener` mode: the DeNS head serves "
+            "training alone and is not exported."
+        )
     model.eval()
     # The vacuum reference is resolved on the target device, folded into the
     # fitting bias or stored as a per-type table, so the exported graph

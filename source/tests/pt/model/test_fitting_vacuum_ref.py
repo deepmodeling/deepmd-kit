@@ -316,6 +316,30 @@ class TestSeZMFittingVacuumRef(VacuumRefInputs):
             self.assertTrue(ft_vac.vacuum_ref)
             self.assert_reference_subtraction(ft_ref, ft_vac, *self.conditioning(2, 0))
 
+    def test_atom_ener_subtracts_the_zero_descriptor_output(self) -> None:
+        """``atom_ener`` removes the output of a zero descriptor, also under case FiLM."""
+        for case_film_embd in [False, True]:
+            ft_ref = self.build(False, case_film_embd)
+            ft = SeZMEnergyFittingNet.deserialize(
+                {**ft_ref.serialize(), "atom_ener": [1.0] * NTYPES}
+            ).to(env.DEVICE)
+            fparam, _ = self.conditioning(2, 0)
+            zeros = torch.zeros_like(self.descriptor)
+            # an atom with a zero descriptor contributes exactly its bias
+            out_zero = ft(zeros, self.atype, fparam=fparam)["energy"]
+            np.testing.assert_allclose(
+                to_numpy_array(out_zero), self.expected_bias(), rtol=1e-10, atol=1e-10
+            )
+            out = ft(self.descriptor, self.atype, fparam=fparam)["energy"]
+            ref = ft_ref(self.descriptor, self.atype, fparam=fparam)["energy"]
+            ref_zero = ft_ref(zeros, self.atype, fparam=fparam)["energy"]
+            expected = (
+                to_numpy_array(ref) - to_numpy_array(ref_zero) + self.expected_bias()
+            )
+            np.testing.assert_allclose(
+                to_numpy_array(out), expected, rtol=1e-10, atol=1e-10
+            )
+
     def test_fold_vacuum_reference(self) -> None:
         for case_film_embd in [False, True]:
             ft = SeZMEnergyFittingNet(

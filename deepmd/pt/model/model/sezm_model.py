@@ -3249,13 +3249,13 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
     def fold_vacuum_reference(self) -> None:
         """
-        Fold the vacuum reference into the fitting and drop the compiled graphs.
+        Fold the vacuum reference into the energy fitting and drop its compiled graphs.
 
         A traced graph bakes in whether reference nodes trail the real nodes,
-        so both heads retrace after the fold.
+        so the energy head retraces after the fold. The DeNS head serves
+        training alone and is not exported, so it keeps its reference.
         """
         self.atomic_model.fold_vacuum_reference()
-        self.drop_compiled_graphs("dens")
         self.drop_compiled_graphs("ener")
 
     # =========================================================================

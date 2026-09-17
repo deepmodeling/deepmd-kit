@@ -206,11 +206,13 @@ class SeZMAtomicModel(DPAtomicModel):
         return descriptor.reshape(ntypes, -1)
 
     def fold_vacuum_reference(self) -> None:
-        """Fold the vacuum reference of the fitting so the forward carries no reference atoms.
+        """Fold the vacuum reference of the energy fitting so the forward carries no reference atoms.
 
         The vacuum descriptor of every type is evaluated once with the current
         parameters and handed to the fitting, which folds the reference into
-        its bias or stores the table (see its ``fold_vacuum_reference``).
+        its bias or stores the table (see its ``fold_vacuum_reference``). The
+        DeNS head serves training alone and is not exported, so it keeps its
+        reference.
         """
         fitting = self.fitting_net
         if fitting.needs_vacuum_descriptor():

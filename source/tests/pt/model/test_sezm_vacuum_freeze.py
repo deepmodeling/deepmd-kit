@@ -52,6 +52,21 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
         """The fold and the compiled archive share the CUDA target."""
         self.check_frozen_model(numb_fparam=1, device=torch.device("cuda"))
 
+    def test_dens_checkpoint_is_rejected(self) -> None:
+        """The DeNS head serves training alone, so a ``dens`` checkpoint is not frozen."""
+        params = _tiny_sezm_model_params()
+        # the DeNS vector heads need an l=1 latent
+        params["descriptor"]["l_schedule"] = [1, 1]
+        params["fitting_net"]["vacuum_ref"] = True
+        model = get_model(params)
+        model.set_active_mode("dens")
+        with tempfile.TemporaryDirectory() as tmp, _clear_default_device():
+            wrapper = ModelWrapper(model, model_params=copy.deepcopy(params))
+            ckpt = Path(tmp) / "dens.pt"
+            torch.save({"model": wrapper.state_dict()}, ckpt)
+            with self.assertRaisesRegex(ValueError, "`ener` mode"):
+                freeze_sezm_to_pt2(str(ckpt), str(Path(tmp) / "dens.pt2"))
+
     def check_frozen_model(self, numb_fparam: int, device: torch.device = _CPU) -> None:
         params = _tiny_sezm_model_params()
         params["fitting_net"]["vacuum_ref"] = True

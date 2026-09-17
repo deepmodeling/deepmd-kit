@@ -715,8 +715,15 @@ class SeZMEnergyFittingNet(InvarFitting):
         # not concatenated to the input; the atoms and their vacuum references
         # share the remaining conditioning columns.
         cond = self.conditioning_columns(nf, nloc, fparam, aparam, None)
+        # ``remove_vaccum_contribution`` subtracts the network output for a zero
+        # descriptor under the same conditioning columns.
+        xx_zeros = (
+            None if self.remove_vaccum_contribution is None else torch.zeros_like(xx)
+        )
         if cond is not None:
             xx = torch.cat([xx, cond], dim=-1)
+            if xx_zeros is not None:
+                xx_zeros = torch.cat([xx_zeros, cond], dim=-1)
         xx_vac = self.vacuum_input(vacuum_descriptor, atype, cond, None)
 
         assert self.case_embd is not None
@@ -725,6 +732,8 @@ class SeZMEnergyFittingNet(InvarFitting):
         atom_property = fitting(xx, self.case_embd)
         if return_atomic_feature:
             results["atomic_feature"] = fitting.call_until_last(xx, self.case_embd)
+        if xx_zeros is not None:
+            atom_property = atom_property - fitting(xx_zeros, self.case_embd)
         if xx_vac is not None:
             atom_property = atom_property - self.vacuum_output(
                 fitting(xx_vac, self.case_embd), atype
