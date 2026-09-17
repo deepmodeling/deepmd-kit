@@ -7,7 +7,6 @@ from typing import (
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.checkpoint
 
 from deepmd.dpmodel.utils.type_embed import (
@@ -140,68 +139,6 @@ class Linear(nn.Linear):
 
     def _normal_init(self) -> None:
         nn.init.kaiming_normal_(self.weight, nonlinearity="linear")
-
-
-class NonLinearHead(nn.Module):
-    def __init__(
-        self,
-        input_dim: int,
-        out_dim: int,
-        activation_fn: str,
-        hidden: int | None = None,
-    ) -> None:
-        super().__init__()
-        hidden = input_dim if not hidden else hidden
-        self.linear1 = SimpleLinear(input_dim, hidden, activate=activation_fn)
-        self.linear2 = SimpleLinear(hidden, out_dim)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.linear1(x)
-        x = self.linear2(x)
-        return x
-
-
-class MaskLMHead(nn.Module):
-    """Head for masked language modeling."""
-
-    def __init__(
-        self,
-        embed_dim: int,
-        output_dim: int,
-        activation_fn: str,
-        weight: torch.Tensor | None = None,
-    ) -> None:
-        super().__init__()
-        self.dense = SimpleLinear(embed_dim, embed_dim)
-        self.activation_fn = ActivationFn(activation_fn)
-        self.layer_norm = nn.LayerNorm(embed_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)
-
-        if weight is None:
-            weight = nn.Linear(
-                embed_dim, output_dim, bias=False, dtype=env.GLOBAL_PT_FLOAT_PRECISION
-            ).weight
-        self.weight = weight
-        self.bias = nn.Parameter(
-            torch.zeros(output_dim, dtype=env.GLOBAL_PT_FLOAT_PRECISION)  # pylint: disable=no-explicit-dtype,no-explicit-device
-        )
-
-    def forward(
-        self,
-        features: torch.Tensor,
-        masked_tokens: torch.Tensor | None = None,
-        **kwargs: Any,
-    ) -> torch.Tensor:
-        # Only project the masked tokens while training,
-        # saves both memory and computation
-        if masked_tokens is not None:
-            features = features[masked_tokens, :]
-
-        x = self.dense(features)
-        x = self.activation_fn(x)
-        x = self.layer_norm(x)
-        # project back to size of vocabulary with bias
-        x = F.linear(x, self.weight) + self.bias
-        return x
 
 
 class ResidualDeep(nn.Module):

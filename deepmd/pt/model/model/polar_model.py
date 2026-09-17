@@ -66,15 +66,11 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             do_atomic_virial=do_atomic_virial,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict = {}
-            model_predict["polar"] = model_ret["polarizability"]
-            model_predict["global_polar"] = model_ret["polarizability_redu"]
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-        else:
-            model_predict = model_ret
-            model_predict["updated_coord"] += coord
+        model_predict = {}
+        model_predict["polar"] = model_ret["polarizability"]
+        model_predict["global_polar"] = model_ret["polarizability_redu"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
 
     @torch.jit.export
@@ -102,12 +98,9 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict = {}
-            model_predict["polar"] = model_ret["polarizability"]
-            model_predict["global_polar"] = model_ret["polarizability_redu"]
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-        else:
-            model_predict = model_ret
+        model_predict = {}
+        model_predict["polar"] = model_ret["polarizability"]
+        model_predict["global_polar"] = model_ret["polarizability_redu"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict

@@ -13,6 +13,7 @@ import os
 import signal
 import threading
 import time
+import warnings
 from collections.abc import (
     Callable,
     Iterable,
@@ -2596,7 +2597,19 @@ class LmdbDataReader:
             log.info(f"  nloc groups: {row}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        """No-op for now."""
+        """Deprecated no-op kept for backward compatibility.
+
+        The denoising pipeline this hook belonged to was removed; the method
+        never did anything and is retained only so that existing callers do
+        not break. It will be removed in a future release.
+        """
+        warnings.warn(
+            "LmdbDataReader.set_noise() is deprecated and does nothing. "
+            "The denoising data pipeline it belonged to has been removed; "
+            "drop the call. This shim will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     # --- Properties ---
 
