@@ -732,8 +732,13 @@ class DefaultNeighborList(NeighborList):
         # A frame can never contribute more than nall neighbors; cap the
         # requested neighbor count so sentinel capacities (e.g. DPA4C's
         # effectively-unbounded sel) do not allocate absurd padding.
+        # Skip the cap when nall is symbolic (e.g. jax2tf export), where
+        # the comparison would be inconclusive; sentinel capacities only
+        # occur on backends with concrete shapes.
         nall = extended_atype.shape[1]
-        nsel = min(sum(sel), nall)
+        nsel = sum(sel)
+        if isinstance(nall, int) and nsel > nall:
+            nsel = nall
         # Types are distinguished in the lower interface, so keep them merged
         # here.  The dense path remains faster for small systems; the spatial
         # path avoids the nloc*nall distance matrix for larger supported arrays.
