@@ -46,11 +46,11 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     frame_id_from_n_node,
     segment_sum,
 )
-from deepmd.pt_expt.kernels.utils import (
-    cuda_infer_level,
-)
 from deepmd.pt_expt.fitting.dpa4c_lr import (
     DPA4CLRFitting,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
 )
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,

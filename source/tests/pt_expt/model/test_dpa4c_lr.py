@@ -13,13 +13,13 @@ from deepmd.infer import (
 from deepmd.pt_expt.fitting.dpa4c_lr import (
     DPA4CLRFitting,
 )
-from deepmd.pt_expt.model.get_model import (
-    get_model,
-)
 from deepmd.pt_expt.model.dpa4c_lr_model import (
     E2_PER_ANGSTROM_TO_EV,
-    _SOGKernel,
     _les_kernel_from_squared_distance,
+    _SOGKernel,
+)
+from deepmd.pt_expt.model.get_model import (
+    get_model,
 )
 from deepmd.pt_expt.train.wrapper import (
     ModelWrapper,

@@ -7,9 +7,7 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.fitting.dpa4c_lr import (
-    DPA4CLRFitting as DPA4CLRFittingDP,
-)
+from deepmd.dpmodel.fitting.dpa4c_lr import DPA4CLRFitting as DPA4CLRFittingDP
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     torch_module,
