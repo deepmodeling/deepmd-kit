@@ -2969,7 +2969,7 @@ def fitting_sezm_ener() -> list[Argument]:
             bool,
             optional=True,
             default=False,
-            doc=doc_vacuum_ref,
+            doc=supported_backends("pt", "pt_expt") + doc_vacuum_ref,
         ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(

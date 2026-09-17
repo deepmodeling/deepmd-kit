@@ -370,6 +370,9 @@ class TestVacuumRef(unittest.TestCase):
         data = self.build(True).serialize()
         self.assertTrue(data["vacuum_ref"])
         self.assertTrue(InvarFitting.deserialize(data).vacuum_ref)
+        # a dictionary of the previous version carries no key
+        older = {k: v for k, v in data.items() if k != "vacuum_ref"}
+        self.assertFalse(InvarFitting.deserialize({**older, "@version": 4}).vacuum_ref)
 
     def test_atom_ener_is_exclusive(self) -> None:
         self.assertTrue(self.build(True, atom_ener=[None] * self.ntypes).vacuum_ref)
