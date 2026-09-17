@@ -210,13 +210,17 @@ def test_periodic_table_matches_econf_type_map() -> None:
     assert list(PERIODIC_TABLE) == type_map
 
 
-def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
+@pytest.mark.parametrize("family", ["dpa4", "dpa4c"])
+@pytest.mark.parametrize("shared_type_map", [False, True])
+def test_multi_task_preset_passes_shared_param_preprocessing(
+    family: str, shared_type_map: bool
+) -> None:
     """The expansion runs before multi-task preprocessing and argument check."""
     model = {
-        "preset": "dpa4-nano-v20260911",
+        "preset": f"{family}-nano-v20260911",
         "shared_dict": {
             "type_map": ["O", "H"],
-            "descriptor": {"type": "dpa4", "rcut": 6.0},
+            "descriptor": {"type": family, "rcut": 6.0},
         },
         "model_dict": {
             "water_1": {
@@ -231,16 +235,22 @@ def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
             },
         },
     }
+    if not shared_type_map:
+        del model["shared_dict"]["type_map"]
+        for branch in model["model_dict"].values():
+            del branch["type_map"]
     processed, shared_links = preprocess_shared_params(
         expand_model_preset(model), lambda item_key, params: dict
     )
     assert set(shared_links) == {"descriptor"}
-    nano = get_model_preset("dpa4-nano-v20260911")
+    nano = get_model_preset(model["preset"])
     for branch in processed["model_dict"].values():
-        assert branch["type"] == "dpa4"
-        assert branch["type_map"] == ["O", "H"]
+        assert branch.get("type", "standard") == nano.get("type", "standard")
+        assert branch["type_map"] == (
+            ["O", "H"] if shared_type_map else list(PERIODIC_TABLE)
+        )
         assert branch["descriptor"] == nano["descriptor"]
-        assert branch["fitting_net"]["neuron"] == [0]
+        assert branch["fitting_net"]["neuron"] == nano["fitting_net"]["neuron"]
     config = {
         "model": processed,
         "loss_dict": {"water_1": {"type": "ener"}, "water_2": {"type": "ener"}},
@@ -255,6 +265,35 @@ def test_multi_task_preset_passes_shared_param_preprocessing() -> None:
     }
     normalized = normalize(config, multi_task=True)
     assert set(normalized["model"]["model_dict"]) == {"water_1", "water_2"}
+
+
+@pytest.mark.parametrize(
+    ("type_map", "valid"),
+    [
+        (["O", "H"], True),
+        ("other_type_map", True),
+        (["H", "O"], False),
+        (["O", "C"], False),
+        (None, False),
+    ],
+)
+def test_multi_task_checks_resolved_type_maps(
+    type_map: list[str] | str | None, valid: bool
+) -> None:
+    model = {
+        "shared_dict": {"type_map": ["O", "H"], "other_type_map": ["O", "H"]},
+        "model_dict": {
+            "a": {"type_map": "type_map"},
+            "b": {"type_map": type_map} if type_map is not None else {},
+        },
+    }
+    if valid:
+        processed, _ = preprocess_shared_params(model, lambda key, params: dict)
+        for branch in processed["model_dict"].values():
+            assert branch["type_map"] == ["O", "H"]
+    else:
+        with pytest.raises(ValueError, match="same type_map"):
+            preprocess_shared_params(model, lambda key, params: dict)
 
 
 def test_multi_task_top_level_regions_are_branch_defaults() -> None:
