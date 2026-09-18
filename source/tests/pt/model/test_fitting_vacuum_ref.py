@@ -18,6 +18,12 @@ from deepmd.dpmodel.fitting import InvarFitting as DPInvarFitting
 from deepmd.pt.model.descriptor.sezm_nn.dens import (
     SeZMDeNSFittingNet,
 )
+from deepmd.pt.model.model import (
+    get_model,
+)
+from deepmd.pt.model.model.model import (
+    BaseModel,
+)
 from deepmd.pt.model.task.invar_fitting import (
     InvarFitting,
 )
@@ -38,6 +44,40 @@ from ...seed import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 NTYPES, ND, NF, NLOC = 3, 8, 2, 5
 CONDITIONING = [(0, 0), (2, 0), (0, 1), (2, 1)]
+
+
+class TestVacuumRefModelSupport(unittest.TestCase):
+    def test_standard_model_rejects_vacuum_ref(self) -> None:
+        """Unsupported atomic models reject the option before their first forward."""
+        config = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "se_e2_a",
+                "rcut": 4.0,
+                "rcut_smth": 3.5,
+                "sel": [4, 4],
+                "neuron": [4, 8],
+                "axis_neuron": 2,
+                "seed": GLOBAL_SEED,
+            },
+            "fitting_net": {"type": "ener", "neuron": [8], "seed": GLOBAL_SEED},
+        }
+        serialized = get_model(config).serialize()
+        config["fitting_net"]["vacuum_ref"] = True
+        serialized["fitting"]["vacuum_ref"] = True
+        for preset in (None, {"energy": [[-3.0], [0.5]]}):
+            config["preset_out_bias"] = preset
+            serialized["preset_out_bias"] = preset
+            with (
+                self.subTest(preset=preset, entry="constructor"),
+                self.assertRaisesRegex(NotImplementedError, "DPA4/SeZM"),
+            ):
+                get_model(config)
+            with (
+                self.subTest(preset=preset, entry="deserialize"),
+                self.assertRaisesRegex(NotImplementedError, "DPA4/SeZM"),
+            ):
+                BaseModel.deserialize(serialized)
 
 
 class VacuumRefInputs(unittest.TestCase):
@@ -153,6 +193,26 @@ class TestInvarFittingVacuumRef(VacuumRefInputs):
             self.assert_reference_subtraction(
                 ft_ref, ft_vac, *self.conditioning(nfp, nap)
             )
+
+    def test_aparam_layout_and_atom_count(self) -> None:
+        """Flat and per-atom layouts agree; atomic parameters match descriptor rows."""
+        _, aparam = self.conditioning(0, 2)
+        for vacuum_ref in (False, True):
+            with self.subTest(vacuum_ref=vacuum_ref):
+                fitting = self.build(vacuum_ref, numb_aparam=2)
+                kwargs = {"vacuum_descriptor": self.vacuum}
+                expected = fitting(self.descriptor, self.atype, aparam=aparam, **kwargs)
+                actual = fitting(
+                    self.descriptor,
+                    self.atype,
+                    aparam=aparam.reshape(NF, NLOC * 2),
+                    **kwargs,
+                )
+                torch.testing.assert_close(actual["energy"], expected["energy"])
+                with self.assertRaisesRegex(ValueError, "input aparam"):
+                    fitting(
+                        self.descriptor, self.atype, aparam=aparam[:, :-1], **kwargs
+                    )
 
     def test_dpmodel_consistency(self) -> None:
         for mixed_types, (nfp, nap), ncase in itertools.product(

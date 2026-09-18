@@ -86,6 +86,8 @@ class SeZMAtomicModel(DPAtomicModel):
         If fitting is not an energy fitting network.
     """
 
+    _supports_vacuum_ref: bool = True
+
     def __init__(
         self,
         descriptor: Any,

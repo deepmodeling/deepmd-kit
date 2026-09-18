@@ -48,6 +48,8 @@ class DPAtomicModel(BaseAtomicModel):
             For example `type_map[1]` gives the name of the type 1.
     """
 
+    _supports_vacuum_ref: bool = False
+
     def __init__(
         self,
         descriptor: BaseDescriptor,
@@ -55,6 +57,11 @@ class DPAtomicModel(BaseAtomicModel):
         type_map: list[str],
         **kwargs: Any,
     ) -> None:
+        if fitting.vacuum_ref and not self._supports_vacuum_ref:
+            raise NotImplementedError(
+                "vacuum_ref is only supported by DPA4/SeZM models "
+                "(model.type='dpa4' or 'sezm') in the PyTorch backend"
+            )
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map

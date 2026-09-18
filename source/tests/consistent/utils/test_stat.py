@@ -59,11 +59,11 @@ NFRAMES = 2
 NLOC = 4
 
 
-@pytest.mark.parametrize("backend", ["dp", "pt", "pd"])
-@pytest.mark.parametrize("operation", ["preset", "delta"])
-def test_state_dependent_statistics_do_not_use_cache(
-    tmp_path: Path, backend: str, operation: str
+@pytest.mark.parametrize("backend", ["dp", "pt", "pd"])  # statistics implementation
+def test_output_stats_cache_depends_on_model_predictions(
+    tmp_path: Path, backend: str
 ) -> None:
+    """Absolute constrained statistics are reusable; model-dependent shifts are not."""
     if backend == "pt" and not INSTALLED_PT:
         pytest.skip("PyTorch is not installed")
     if backend == "pd" and not INSTALLED_PD:
@@ -86,31 +86,37 @@ def test_state_dependent_statistics_do_not_use_cache(
     with h5py.File(filename, "w"):
         pass
     path = DPPath(filename, "a")
-    original, _ = compute(sampled, NTYPES, ["energy"], stat_file_path=path)
+    preset_bias = {"energy": [None, [0.25]]}
+    original, _ = compute(
+        sampled, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset_bias
+    )
+
+    def no_sampling() -> list[dict]:
+        pytest.fail("Absolute output statistics must remain reusable")
+
+    restored, _ = compute(
+        no_sampling, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset_bias
+    )
+    np.testing.assert_array_equal(
+        as_numpy(restored["energy"]), as_numpy(original["energy"])
+    )
 
     for value in (0.25, 1.5):
 
         def predict(coord: Any, atype: Any, box: Any, **kwargs: Any) -> dict[str, Any]:
             return {"energy": atype[..., None] * 0 + value, "mask": atype * 0 + 1}
 
-        kwargs = (
-            {"preset_bias": {"energy": [None, [value]]}}
-            if operation == "preset"
-            else {"model_forward": predict}
-        )
+        kwargs = {"model_forward": predict, "preset_bias": preset_bias}
         expected, _ = compute(sampled, NTYPES, ["energy"], **kwargs)
         actual, _ = compute(sampled, NTYPES, ["energy"], stat_file_path=path, **kwargs)
         np.testing.assert_allclose(
             as_numpy(actual["energy"]), as_numpy(expected["energy"])
         )
-        fresh_dir = tmp_path / f"{operation}-{value}"
+        fresh_dir = tmp_path / f"delta-{value}"
         fresh_dir.mkdir()
         fresh_path = DPPath(str(fresh_dir), "a")
         compute(sampled, NTYPES, ["energy"], stat_file_path=fresh_path, **kwargs)
         assert not list(fresh_dir.iterdir())
-
-    def no_sampling() -> list[dict]:
-        pytest.fail("Unmodified label-only statistics must remain reusable")
 
     restored, _ = compute(no_sampling, NTYPES, ["energy"], stat_file_path=path)
     np.testing.assert_array_equal(
