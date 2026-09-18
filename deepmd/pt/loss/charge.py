@@ -30,6 +30,10 @@ class GridDensityLoss(TaskLoss):
     ) -> None:
         r"""Construct a layer to compute loss on grid density.
 
+        The residual is masked by the grid-point mask (excluded points do
+        not contribute) and reduced per frame before averaging over the
+        batch, consistent with the other losses in the package.
+
         Parameters
         ----------
         starter_learning_rate : float
@@ -104,16 +108,28 @@ class GridDensityLoss(TaskLoss):
                 return model_pred, loss, more_loss
             density_label = label["density"]
             pref_d = pref_d * find_density
-            density_pred_reshape = density_pred.reshape(-1)
-            density_label_reshape = density_label.reshape(-1)
-            l2_density_loss = torch.square(
-                density_label_reshape - density_pred_reshape
-            ).mean()
+            # mask out excluded grid points (the atomic model zeroes them
+            # and returns the mask) and reduce per frame, consistent with
+            # the other losses in the package, so that frames with larger
+            # grids do not dominate the batch
+            mask = model_pred.get("mask", None)
+            nframes = density_pred.shape[0]
+            if mask is None:
+                mask_f = torch.ones(
+                    density_pred.shape[:2],
+                    dtype=density_pred.dtype,
+                    device=density_pred.device,
+                )
+            else:
+                mask_f = mask.reshape(density_pred.shape[:2]).to(density_pred.dtype)
+            mask_sum = mask_f.sum(dim=-1).clamp(min=1.0)
+            residual = (
+                density_label.reshape(nframes, -1) - density_pred.reshape(nframes, -1)
+            ) * mask_f
+            l2_density_loss = torch.square(residual).sum(dim=-1).div(mask_sum).mean()
             rmse_d = l2_density_loss.sqrt()
             more_loss["rmse_d"] = self.display_if_exist(rmse_d.detach(), find_density)
-            l1_density_loss = torch.abs(
-                density_label_reshape - density_pred_reshape
-            ).mean()
+            l1_density_loss = residual.abs().sum(dim=-1).div(mask_sum).mean()
             mae_d = l1_density_loss
             # minimise the squared error, consistent with every other loss
             # in the package; the absolute error is only for display
@@ -136,12 +152,14 @@ class GridDensityLoss(TaskLoss):
         """
         label_requirement = []
         if self.has_d:
+            # the density label is the only supervision signal of this model:
+            # a missing file must abort training, not silently optimise nothing
             label_requirement.append(
                 DataRequirementItem(
                     "density",
                     ndof=1,
                     atomic=False,
-                    must=False,
+                    must=True,
                     high_prec=True,
                     special_shape="frame_major",
                 )

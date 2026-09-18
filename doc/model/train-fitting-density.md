@@ -2,6 +2,12 @@
 
 > [!NOTE]
 > **Supported backends**: PyTorch-TorchScript {{ pytorch_icon }}
+>
+> Training and evaluation are supported in Python (`dp train`, `dp test`,
+> and the `DeepEval`/`DeepDensity` interfaces). C++/LAMMPS inference is
+> **not** supported yet: the model's `forward_lower` interface is not
+> implemented for density models. See the multi-backend tracking issue for
+> the planned dpmodel implementation and backend wrappers.
 
 Here we present an API to the grid density model, which predicts the charge density on a set of grid points for a given atomic configuration.
 

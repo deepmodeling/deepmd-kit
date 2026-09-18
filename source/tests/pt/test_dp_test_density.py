@@ -21,6 +21,21 @@ from deepmd.infer.deep_density import (
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
+from deepmd.pt.model.atomic_model.density_atomic_model import (
+    DPDensityAtomicModel,
+)
+from deepmd.pt.model.descriptor.hybrid import (
+    DescrptHybrid,
+)
+from deepmd.pt.model.descriptor.se_a import (
+    DescrptSeA,
+)
+from deepmd.pt.model.descriptor.se_r import (
+    DescrptSeR,
+)
+from deepmd.pt.model.task.density import (
+    DensityFittingNet,
+)
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
@@ -138,6 +153,23 @@ class TestDPTestDensity(unittest.TestCase):
         model.change_out_bias(self.input_dict, bias_adjust_mode="set-by-statistic")
         torch.testing.assert_close(model.atomic_model.out_bias, bias_before)
 
+    def test_pair_excl_involving_grid_type_applies_in_forward(self) -> None:
+        # exclusions involving the grid type must drop the neighbor in the
+        # directional grid-to-atom list too, not just in the atom nlist
+        model = self.torch_model
+        grid_type = len(self.config["model"]["type_map"]) - 1
+        input_dict = {
+            kk: vv.clone() if isinstance(vv, torch.Tensor) else vv
+            for kk, vv in self.input_dict.items()
+        }
+        model.atomic_model.reinit_pair_exclude([(0, grid_type)])
+        try:
+            out_excl = model(**input_dict)["density"]
+        finally:
+            model.atomic_model.reinit_pair_exclude([])
+        out_none = model(**input_dict)["density"]
+        self.assertFalse(torch.allclose(out_excl, out_none))
+
     def test_atom_excl_does_not_mask_grid(self) -> None:
         # grid points carry the reserved type X; excluding a real atom type
         # must not zero the density predictions (it would if grid_type were 0)
@@ -152,6 +184,37 @@ class TestDPTestDensity(unittest.TestCase):
             self.assertFalse(bool((out["density"] == 0).all()))
         finally:
             model.atomic_model.reinit_atom_exclude([])
+
+    def test_property_named_density_dispatches_to_property(self) -> None:
+        # the dispatch keys on the grid capability, not the output name, so
+        # a property fitting with property_name "density" is not hijacked
+        from deepmd.infer.deep_property import (
+            DeepProperty,
+        )
+        from deepmd.pt.model.model.property_model import (
+            PropertyModel,
+        )
+        from deepmd.pt.model.task.property import (
+            PropertyFittingNet,
+        )
+
+        descriptor = DescrptSeA(rcut=4.0, rcut_smth=0.5, sel=[8, 8])
+        fitting = PropertyFittingNet(
+            descriptor.get_ntypes(),
+            descriptor.get_dim_out(),
+            "density",
+            neuron=[8, 8],
+        )
+        model = PropertyModel(descriptor, fitting, type_map=["O", "H"])
+        fd, path = tempfile.mkstemp(suffix=".pth")
+        os.close(fd)
+        try:
+            with torch.device("cpu"):
+                torch.jit.save(torch.jit.script(model), path)
+            dp = DeepEval(path)
+            self.assertIsInstance(dp, DeepProperty)
+        finally:
+            os.unlink(path)
 
     def test_model_type_dispatch(self) -> None:
         dp = DeepEval(self.model_path)
@@ -181,19 +244,114 @@ class TestDPTestDensity(unittest.TestCase):
         config["loss"]["limit_pref_d"] = limit
         return config
 
+    def test_eval_single_frame_grid_2d(self) -> None:
+        # a natural single-frame grid of shape (ngrid, 3) must be carried
+        # through with its frame dimension, not sliced to one grid point
+        dp = DeepDensity(self.model_path)
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:1]
+        box = np.load(set_dir / "box.npy")[:1]
+        grid = np.load(set_dir / "grid.npy")[0]  # (ngrid, 3): no frame dim
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        out = dp.eval(coord, box, atype, grid=grid)
+        self.assertEqual(out.shape, (1, self.ngrid))
+
+    def test_eval_grid_frame_mismatch(self) -> None:
+        dp = DeepDensity(self.model_path)
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:2]
+        box = np.load(set_dir / "box.npy")[:2]
+        grid = np.load(set_dir / "grid.npy")[:1]  # fewer frames than coord
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        with self.assertRaisesRegex(ValueError, "frames"):
+            dp.eval(coord, box, atype, grid=grid)
+
+    def test_fitting_rejects_aparam(self) -> None:
+        # grid descriptor rows have no per-atom parameters
+        descriptor = DescrptSeA(rcut=4.0, rcut_smth=0.5, sel=[8, 8, 0])
+        with self.assertRaisesRegex(ValueError, "aparam"):
+            DensityFittingNet(
+                descriptor.get_ntypes(),
+                descriptor.get_dim_out(),
+                numb_aparam=2,
+            )
+
+    def test_loss_inference_mode(self) -> None:
+        # inference=True reports the metrics even with zero prefactors
+        from deepmd.pt.loss.charge import (
+            GridDensityLoss,
+        )
+        from deepmd.pt.utils import (
+            env,
+        )
+
+        loss_fn = GridDensityLoss(inference=True)
+
+        class FakeModel(torch.nn.Module):
+            def forward(self, **kwargs):
+                return {
+                    "density": torch.tensor([[[2.0], [4.0]]], device=env.DEVICE),
+                    "mask": torch.tensor(
+                        [[1, 1]], dtype=torch.int32, device=env.DEVICE
+                    ),
+                }
+
+        label = {
+            "density": torch.tensor([[[1.0], [2.0]]], device=env.DEVICE),
+            "find_density": 1.0,
+        }
+        _, loss, more_loss = loss_fn({}, FakeModel(), label, 1, 1.0)
+        self.assertIn("rmse_d", more_loss)
+        self.assertIn("mae_d", more_loss)
+        self.assertAlmostEqual(more_loss["rmse_d"].item(), ((1.0 + 4.0) / 2) ** 0.5)
+
+    def test_loss_masks_excluded_grid_points(self) -> None:
+        # excluded grid points (mask == 0) must not contribute to the
+        # residual, which is normalised by the per-frame mask sum
+        from deepmd.pt.loss.charge import (
+            GridDensityLoss,
+        )
+        from deepmd.pt.utils import (
+            env,
+        )
+
+        loss_fn = GridDensityLoss(start_pref_d=1.0, limit_pref_d=1.0)
+
+        class FakeModel(torch.nn.Module):
+            def forward(self, **kwargs):
+                return {
+                    "density": torch.tensor(
+                        [[[1.0], [2.0], [3.0], [4.0]]], device=env.DEVICE
+                    ),
+                    "mask": torch.tensor(
+                        [[1, 1, 0, 0]], dtype=torch.int32, device=env.DEVICE
+                    ),
+                }
+
+        label = {
+            "density": torch.tensor(
+                [[[1.0], [1.0], [100.0], [100.0]]], device=env.DEVICE
+            ),
+            "find_density": 1.0,
+        }
+        _, loss, more_loss = loss_fn({}, FakeModel(), label, 1, 1.0)
+        # only the two unmasked points count: (0^2 + 1^2) / 2
+        self.assertAlmostEqual(loss.item(), 0.5)
+        self.assertAlmostEqual(more_loss["rmse_d"].item(), 0.5**0.5)
+
     def test_training_steps(self) -> None:
         # exercises GridDensityLoss.forward on the main path
         workdir = tempfile.mkdtemp(dir=self.tmpdir.name)
         self._run_training(self._training_config(self.system), workdir)
 
-    def test_training_without_density_label(self) -> None:
-        # density.npy absent with must=False: the find_density == 0 branch
-        # must skip the residual but keep the graph connected
+    def test_training_requires_density_label(self) -> None:
+        # density is the only supervision signal: a missing density.npy must
+        # abort training instead of silently optimising nothing
         system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "system"
         shutil.copytree(self.system, system)
         (system / "set.000" / "density.npy").unlink()
-        workdir = tempfile.mkdtemp(dir=self.tmpdir.name)
-        self._run_training(self._training_config(system), workdir)
+        with self.assertRaisesRegex(RuntimeError, "not found"):
+            get_trainer(normalize(self._training_config(system)))
 
     def test_training_zero_prefactor(self) -> None:
         # start_pref_d = limit_pref_d = 0 disables the density term;
@@ -214,6 +372,82 @@ class TestDPTestDensity(unittest.TestCase):
         self.assertEqual(descriptor.get_env_protection(), 1e-6)
         recorded = json.loads(trainer.model.model_def_script)
         self.assertEqual(recorded["descriptor"]["env_protection"], 1e-6)
+
+    def test_hybrid_descriptor_stat_blocks(self) -> None:
+        # hybrid descriptors keep their blocks in descrpt_list: the block
+        # discovery must walk the module tree instead of a hard-coded
+        # attribute list, and a stat file must not abort the run
+        descriptor = DescrptHybrid(
+            [
+                DescrptSeA(rcut=4.0, rcut_smth=0.5, sel=[8, 8, 0]),
+                DescrptSeR(rcut=2.0, rcut_smth=1.0, sel=[4, 4, 0]),
+            ]
+        )
+        fitting = DensityFittingNet(descriptor.get_ntypes(), descriptor.get_dim_out())
+        model = DPDensityAtomicModel(descriptor, fitting, type_map=["O", "H", "X"])
+        blocks = model._descriptor_stat_blocks()
+        self.assertEqual(len(blocks), 2)
+        # a stat file must take the soft-failure path, not abort
+        stat_dir = DPPath(tempfile.mkdtemp(dir=self.tmpdir.name), "w")
+
+        def sampler() -> list:
+            return [dict(self.input_dict)]
+
+        model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
+
+    def test_env_protection_enforced_at_model_level(self) -> None:
+        # models constructed directly with env_protection == 0.0 get the
+        # guard set on the descriptor block, not just a warning
+        descriptor = DescrptSeA(
+            rcut=4.0, rcut_smth=0.5, sel=[8, 8, 0], env_protection=0.0
+        )
+        fitting = DensityFittingNet(descriptor.get_ntypes(), descriptor.get_dim_out())
+        model = DPDensityAtomicModel(descriptor, fitting, type_map=["O", "H", "X"])
+        self.assertEqual(model.descriptor.get_env_protection(), 1e-6)
+
+    def test_env_protection_hybrid(self) -> None:
+        # hybrid descriptors have no top-level env_protection: the default
+        # must reach every sub-descriptor
+        config = deepcopy(self.config)
+        descriptor = config["model"].pop("descriptor")
+        config["model"]["descriptor"] = {"type": "hybrid", "list": [descriptor]}
+        normalized = normalize(config)
+        self.assertEqual(
+            normalized["model"]["descriptor"]["list"][0]["env_protection"],
+            1e-6,
+        )
+
+    def test_injected_pass_honors_pair_exclude_types(self) -> None:
+        # the injected stat pass must see the model's pair_exclude_types,
+        # which are only written by the wrapped sampler
+        atomic_model = self.torch_model.atomic_model
+        atomic_model.reinit_pair_exclude([(0, 1)])
+        seen: list = []
+        original = atomic_model.descriptor.compute_input_stats
+
+        def spy(merged, path=None):
+            samples = merged() if callable(merged) else merged
+            seen.extend(samples)
+            original(merged, path)
+
+        atomic_model.descriptor.compute_input_stats = spy  # type: ignore[method-assign]
+        try:
+
+            def sampler() -> list:
+                return [dict(self.input_dict)]
+
+            atomic_model.compute_or_load_stat(sampler, stat_file_path=None)
+        finally:
+            atomic_model.descriptor.compute_input_stats = original  # type: ignore[method-assign]
+            atomic_model.reinit_pair_exclude([])
+        # injected samples carry the grid pseudo-atoms (more rows than atoms)
+        natoms = len(np.loadtxt(self.system / "type.raw", dtype=int))
+        injected = [s for s in seen if s["atype"].shape[1] > natoms and "grid" in s]
+        self.assertTrue(injected, "no injected samples reached the descriptor")
+        for sample in injected:
+            excluded = [tuple(pair) for pair in sample["pair_exclude_types"]]
+            self.assertIn((0, 1), excluded, "model exclusions not honoured")
+            self.assertIn((2, 2), excluded, "grid-grid pairs not excluded")
 
     def test_stat_file_grid_row_writeback(self) -> None:
         # the patched grid-type row is written back to the stat cache, and a

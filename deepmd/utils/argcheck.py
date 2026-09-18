@@ -6642,16 +6642,23 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
     """
 
     def _fix(model: dict[str, Any]) -> None:
-        if (
-            model.get("fitting_net", {}).get("type") == "density"
-            and model.get("descriptor", {}).get("env_protection", 0.0) == 0.0
-        ):
-            log.warning(
-                "env_protection is 0.0 for a density model; grid points "
-                "coincident with atoms would produce NaN densities. "
-                "Setting env_protection to 1e-6."
-            )
-            model.setdefault("descriptor", {})["env_protection"] = 1e-6
+        if model.get("fitting_net", {}).get("type") != "density":
+            return
+        descriptor = model.get("descriptor", {})
+        # a hybrid descriptor has no top-level env_protection; each
+        # sub-descriptor carries its own
+        if descriptor.get("type") == "hybrid":
+            sub_descriptors = descriptor.get("list", [])
+        else:
+            sub_descriptors = [descriptor]
+        for sub in sub_descriptors:
+            if sub.get("env_protection", 0.0) == 0.0:
+                log.warning(
+                    "env_protection is 0.0 for a density model; grid points "
+                    "coincident with atoms would produce NaN densities. "
+                    "Setting env_protection to 1e-6."
+                )
+                sub["env_protection"] = 1e-6
 
     model = data.get("model", {})
     if "model_dict" in model:

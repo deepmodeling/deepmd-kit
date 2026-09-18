@@ -112,10 +112,34 @@ class DeepDensity(DeepEval):
             False,
             fparam=fparam,
             aparam=aparam,
-            grid=np.array(grid),
+            grid=self._standard_grid(grid, nframes),
             **kwargs,
         )
         return results["density"].reshape(nframes, -1)
+
+    @staticmethod
+    def _standard_grid(grid: np.ndarray, nframes: int) -> np.ndarray:
+        """Normalise the grid coordinates to ``(nframes, ngrid, 3)``.
+
+        The auto batcher slices every argument with ``ndim > 1`` along axis
+        0, so a natural single-frame ``(ngrid, 3)`` input would silently be
+        truncated to one grid point; carry the frame dimension explicitly.
+        """
+        arr = np.asarray(grid)
+        if arr.ndim == 2:
+            if nframes != 1:
+                raise ValueError(
+                    f"grid of shape {arr.shape} is ambiguous for {nframes} "
+                    "frames; pass grid with shape (nframes, ngrid, 3)"
+                )
+            arr = arr[None, ...]
+        if arr.ndim != 3 or arr.shape[-1] != 3:
+            raise ValueError(
+                f"grid must have shape (nframes, ngrid, 3), got {arr.shape}"
+            )
+        if arr.shape[0] != nframes:
+            raise ValueError(f"grid has {arr.shape[0]} frames but coord has {nframes}")
+        return arr
 
 
 __all__ = ["DeepDensity"]

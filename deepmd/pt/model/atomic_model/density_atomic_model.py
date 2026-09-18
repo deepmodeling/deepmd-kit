@@ -16,6 +16,9 @@ from deepmd.dpmodel.utils.env_mat_stat import (
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.pt.model.descriptor.descriptor import (
+    DescriptorBlock,
+)
 from deepmd.pt.model.task.density import (
     DensityFittingNet,
 )
@@ -55,9 +58,9 @@ class DPDensityAtomicModel(DPAtomicModel):
         if self.descriptor.get_env_protection() == 0.0:
             log.warning(
                 "The descriptor env_protection is 0.0; grid points coincident "
-                "with atoms would produce NaN densities. Set a positive "
-                "env_protection in the descriptor configuration."
+                "with atoms would produce NaN densities. Setting it to 1e-6."
             )
+            self._set_descriptor_env_protection(1e-6)
         self.sel = self.descriptor.get_sel()
         self.nnei = self.descriptor.get_nsel()
 
@@ -143,6 +146,10 @@ class DPDensityAtomicModel(DPAtomicModel):
         # nb x (ngrid+nall)
         merged_mapping = torch.cat([grid_mapping, mapping + ngrid], dim=1)
 
+        # the descriptor evaluates the environment of every merged point;
+        # the atom rows are computed and discarded (only the grid rows feed
+        # the fitting net), which is inherent to evaluating the merged
+        # grid+atom system in one call
         descriptor, rot_mat, g2, h2, _sw = self.descriptor(
             merged_coord,
             merged_atype,
@@ -225,6 +232,27 @@ class DPDensityAtomicModel(DPAtomicModel):
             pair_mask = self.pair_excl(nlist, extended_atype)
             # exclude neighbors in the nlist
             nlist = torch.where(pair_mask == 1, nlist, -1)
+            # the directional grid-to-atom list: every center is the grid
+            # type, so exclusions involving the grid type drop the neighbor
+            reserved_type = self.descriptor.get_ntypes() - 1
+            if any(
+                reserved_type in pair for pair in self.pair_excl.get_exclude_types()
+            ):
+                nall = extended_atype.shape[1]
+                nsel = grid_nlist.shape[-1]
+                virtual_type = self.pair_excl.ntypes * torch.ones(
+                    [nframes, 1],
+                    dtype=extended_atype.dtype,
+                    device=extended_atype.device,
+                )
+                ae = torch.cat([extended_atype, virtual_type], dim=-1)
+                index = torch.where(grid_nlist == -1, nall, grid_nlist).view(
+                    nframes, ngrid * nsel
+                )
+                type_j = torch.gather(ae, 1, index)
+                type_ij = reserved_type * (self.pair_excl.ntypes + 1) + type_j
+                grid_mask = self.pair_excl.type_mask[type_ij].view(nframes, ngrid, nsel)
+                grid_nlist = torch.where(grid_mask == 1, grid_nlist, -1)
 
         ext_atom_mask = self.make_atom_mask(extended_atype)
         ret_dict = self.forward_atomic(
@@ -391,8 +419,11 @@ class DPDensityAtomicModel(DPAtomicModel):
             sampled = sampled_func() if callable(sampled_func) else sampled_func
             if any("grid" in sample for sample in sampled):
                 try:
+                    # run the wrapped sampler first so the injected pass sees
+                    # the same pair_exclude_types as the standard pass
+                    wrapped = self._make_wrapped_sampler(lambda: sampled)
                     self.descriptor.compute_input_stats(
-                        self._inject_grid_samples(sampled)
+                        self._inject_grid_samples(wrapped())
                     )
                     grid_stats = [
                         (
@@ -432,39 +463,45 @@ class DPDensityAtomicModel(DPAtomicModel):
     def _descriptor_stat_blocks(self) -> list:
         """Collect every descriptor block that carries davg/dstd statistics.
 
-        Descriptors such as DPA-2 carry several blocks (repinit, repformers,
-        repinit_three_body), each with its own statistics; the grid-type row
-        must be patched in all of them, not just the first one found.
+        Descriptors such as DPA-2 and hybrids carry several blocks, each with
+        its own statistics; the grid-type row must be patched in all of them.
+        The blocks are discovered by walking the module tree (via
+        ``named_modules``) and probing the statistics item protocol, so no
+        per-descriptor attribute list is needed.
         """
+        blocks = []
+        for _name, module in self.descriptor.named_modules():
+            # filter networks etc. also implement __getitem__ with unrelated
+            # semantics, so only descriptor-level modules are probed for the
+            # statistics item protocol (some descriptors, e.g. se_r, carry
+            # the statistics on the descriptor itself)
+            if not isinstance(module, (BaseDescriptor, DescriptorBlock)):
+                continue
+            try:
+                module["davg"]
+                module["dstd"]
+            except (TypeError, KeyError):
+                continue
+            blocks.append(module)
+        if blocks:
+            return blocks
         try:
             self.descriptor["davg"]
+            self.descriptor["dstd"]
             return [self.descriptor]
         except (TypeError, KeyError):
             pass
-        blocks = []
-        for attr in (
-            "sea",
-            "ser",
-            "seat",
-            "se_atten",
-            "se_ttebd",
-            "repinit",
-            "repformers",
-            "repflow",
-            "repflows",
-            "repinit_three_body",
-        ):
-            block = getattr(self.descriptor, attr, None)
-            if block is None:
-                continue
-            try:
-                block["davg"]
-                blocks.append(block)
-            except (TypeError, KeyError):
-                continue
-        if not blocks:
-            raise KeyError("davg/dstd not accessible on this descriptor")
-        return blocks
+        raise KeyError("davg/dstd not accessible on this descriptor")
+
+    def _set_descriptor_env_protection(self, value: float) -> None:
+        """Set env_protection on every descriptor block, hybrids included.
+
+        Wrapper-level fields, if any, are derived from the blocks; the whole
+        module tree is walked so no per-descriptor attribute list is needed.
+        """
+        for _name, module in self.descriptor.named_modules():
+            if hasattr(module, "env_protection"):
+                module.env_protection = value
 
     def _stat_cache_root(self, stat_file_path: DPPath) -> DPPath:
         """Apply the same type_map subdirectory as the parent's stat path."""
@@ -481,9 +518,14 @@ class DPDensityAtomicModel(DPAtomicModel):
         """
         if stat_file_path is None:
             return True
+        try:
+            blocks = self._descriptor_stat_blocks()
+        except KeyError:
+            # no accessible statistics: let the injected pass soft-fail below
+            return True
         stat_file_path = self._stat_cache_root(stat_file_path)
         grid_type = self.descriptor.get_ntypes() - 1
-        for block in self._descriptor_stat_blocks():
+        for block in blocks:
             env_stat = EnvMatStatSe(block)
             cache = stat_file_path / env_stat.get_hash()
             keys = env_stat.get_stat_keys()

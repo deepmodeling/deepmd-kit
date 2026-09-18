@@ -443,12 +443,25 @@ class DeepEval(DeepEvalBackend):
             return DeepWFC
         elif "population" in model_output_type:
             return DeepPopulation
-        elif "density" in model_output_type:
+        elif "density" in model_output_type and self._model_has_grid(
+            self.dp.model["Default"]
+        ):
+            # key on the grid capability rather than the output name, so a
+            # property fitting with property_name "density" still dispatches
+            # to DeepProperty below
             return DeepDensity
         elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:
             raise RuntimeError("Unknown model type")
+
+    @staticmethod
+    def _model_has_grid(model: Any) -> bool:
+        has_grid = getattr(model, "has_grid", None)
+        try:
+            return bool(has_grid()) if callable(has_grid) else False
+        except Exception:
+            return False
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

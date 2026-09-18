@@ -204,5 +204,6 @@ ______________________________________________________________________
 ## Notes
 
 - **Backend:** PyTorch only (`--pt`). Make sure DeePMD-kit is installed with PyTorch support.
+- **Deployment scope:** Python inference only (`dp test`, `DeepEval`/`DeepDensity`, and the standalone script). C++/LAMMPS inference is not supported yet (`forward_lower` is not implemented for density models).
 - **Stat file:** `input.json` specifies `"stat_file": "./qm9_charge_density.hdf5"` for caching descriptor statistics; it is generated automatically on the first run.
 - **Checkpoint vs. frozen model:** evaluation requires a frozen model (`.pth`). Freeze a checkpoint first with `dp --pt freeze`.
