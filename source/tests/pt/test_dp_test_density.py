@@ -21,6 +21,9 @@ from deepmd.infer.deep_density import (
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
+from deepmd.pt.entrypoints.main import (
+    get_trainer,
+)
 from deepmd.pt.model.atomic_model.density_atomic_model import (
     DPDensityAtomicModel,
 )
@@ -35,9 +38,6 @@ from deepmd.pt.model.descriptor.se_r import (
 )
 from deepmd.pt.model.task.density import (
     DensityFittingNet,
-)
-from deepmd.pt.entrypoints.main import (
-    get_trainer,
 )
 from deepmd.utils.argcheck import (
     normalize,
