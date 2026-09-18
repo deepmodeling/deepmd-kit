@@ -303,8 +303,8 @@ class TestNativeSpinEnergyModelPtExpt:
     def test_adam_route_patterns_match_parameters(self) -> None:
         """The DPA4 backbone and its native-spin model declare the same routed tensors."""
         expected = [
-            "descriptor.env_seed_embedding.rbf_proj_layer1.",
-            "descriptor.radial_embedding.net.0.",
+            "atomic_model.descriptor.env_seed_embedding.rbf_proj_layer1.",
+            "atomic_model.descriptor.radial_embedding.net.0.",
         ]
         for model in (_build_jittered_backbone(), _jittered_wrapper()):
             patterns = sorted(model.adam_route_patterns())

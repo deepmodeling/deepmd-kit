@@ -714,7 +714,7 @@ def adam_route_patterns(models: Iterable[Any]) -> list[str]:
     Parameters
     ----------
     models : Iterable[Any]
-        The task models; each may implement ``adam_route_patterns``.
+        The task models, each declaring ``adam_route_patterns``.
 
     Returns
     -------
@@ -722,11 +722,7 @@ def adam_route_patterns(models: Iterable[Any]) -> list[str]:
         Sorted union of the declared patterns.
     """
     return sorted(
-        {
-            pattern
-            for model in models
-            for pattern in getattr(model, "adam_route_patterns", list)()
-        }
+        {pattern for model in models for pattern in model.adam_route_patterns()}
     )
 
 

@@ -489,6 +489,12 @@ class SpinModel(NativeOP):
             preset_observed_type=preset_observed_type,
         )
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
+
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()

@@ -60,15 +60,17 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
         self.device = env.DEVICE
 
     @pytest.mark.parametrize(
-        "options",
+        "options",  # edge-local grid and Cartesian configurations
         [
             {"node_wise_s2": True},
             {"node_wise_so3": True},
             {"s2_activation": [True, False]},
+            {"edge_cartesian": True, "lmax": 1},
+            {"edge_cartesian": True, "lmax": 2},
         ],
     )
-    @pytest.mark.parametrize("training", [False, True])
-    def test_empty_edge_grid_paths(self, options: dict, training: bool) -> None:
+    @pytest.mark.parametrize("training", [False, True])  # inference vs force training
+    def test_empty_edge_paths(self, options: dict, training: bool) -> None:
         """Empty graph edges and fully masked neighbors give the same descriptors."""
         descriptor = make_descriptor(2, 2, 3.0, channels=4, **options).to(self.device)
         descriptor.train(training)

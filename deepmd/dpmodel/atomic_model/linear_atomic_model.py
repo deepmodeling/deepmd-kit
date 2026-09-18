@@ -126,6 +126,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         self.weights = weights
 
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"models.{index}.{pattern}"
+            for index, model in enumerate(self.models)
+            for pattern in model.adam_route_patterns()
+        ]
+
     def _rebuild_mapping_state(self) -> None:
         """Rebuild ``mapping_list`` and everything derived from it.
 

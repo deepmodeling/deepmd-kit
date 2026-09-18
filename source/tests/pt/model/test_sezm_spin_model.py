@@ -210,8 +210,8 @@ class TestSeZMSpinModel(unittest.TestCase):
         self.assertEqual(
             patterns,
             [
-                "descriptor.env_seed_embedding.rbf_proj_layer1.",
-                "descriptor.radial_embedding.net.0.",
+                "atomic_model.descriptor.env_seed_embedding.rbf_proj_layer1.",
+                "atomic_model.descriptor.radial_embedding.net.0.",
             ],
         )
         names = [name for name, _ in model.named_parameters()]

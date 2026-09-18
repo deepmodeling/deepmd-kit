@@ -95,6 +95,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         self.weights = weights
 
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"models.{index}.{pattern}"
+            for index, model in enumerate(self.models)
+            for pattern in model.adam_route_patterns()
+        ]
+
     def _build_mapping_list(self) -> list[torch.Tensor]:
         """Map common type IDs to the current type IDs of every submodel."""
         common_type_map = set(self.type_map)

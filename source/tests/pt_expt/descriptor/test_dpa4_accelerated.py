@@ -87,10 +87,10 @@ def _make_descriptor(
 
 
 @pytest.mark.parametrize(
-    ("precision", "expected_bound"),
+    ("precision", "expected_bound"),  # descriptor dtype and CUDA binding eligibility
     [("float32", True), ("float64", False)],
 )
-@pytest.mark.parametrize("env_exp", [5, [7, 5]])
+@pytest.mark.parametrize("env_exp", [5, [7, 5]])  # single vs double envelope
 def test_fp32_only_cuda_bindings(
     monkeypatch: pytest.MonkeyPatch,
     precision: str,
@@ -241,8 +241,10 @@ class TestDPA4AcceleratedParity(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)
         np.testing.assert_allclose(gradient, dense_gradient, rtol=2e-4, atol=2e-5)
 
-    @pytest.mark.parametrize("backend", ["triton", "cuda", "cutile"])
-    @pytest.mark.parametrize("env_exp", [None, 5])
+    @pytest.mark.parametrize(
+        "backend", ["triton", "cuda", "cutile"]
+    )  # inference kernels
+    @pytest.mark.parametrize("env_exp", [None, 5])  # default double vs single envelope
     def test_forward_and_coordinate_gradient(
         self, monkeypatch: pytest.MonkeyPatch, backend: str, env_exp: int | None
     ) -> None:

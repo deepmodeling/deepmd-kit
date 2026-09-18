@@ -3472,7 +3472,7 @@ class TestSeZMModelAdamRouting(unittest.TestCase):
     """The model composes the AdamW routing patterns its descriptor declares."""
 
     def test_adam_route_patterns_match_parameters(self) -> None:
-        """Every declared AdamW pattern names existing matrices; the base declares none."""
+        """Every declared AdamW pattern names existing matrices."""
         model = get_model(_build_lora_sezm_model_params())
         patterns = model.adam_route_patterns()
         self.assertEqual(len(patterns), 2)
@@ -3484,13 +3484,3 @@ class TestSeZMModelAdamRouting(unittest.TestCase):
                 any(dict(model.named_parameters())[n].dim() >= 2 for n in matched),
                 pattern,
             )
-        from types import (
-            SimpleNamespace,
-        )
-
-        from deepmd.pt.model.model.model import (
-            BaseModel,
-        )
-
-        plain = SimpleNamespace(atomic_model=SimpleNamespace(descriptor=object()))
-        self.assertEqual(BaseModel.adam_route_patterns(plain), [])

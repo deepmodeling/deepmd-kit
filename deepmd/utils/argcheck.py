@@ -495,7 +495,12 @@ def descrpt_dpa4c_args() -> list[Argument]:
             str,
             optional=True,
             default="bessel",
-            doc="DPA4 radial basis type: `bessel` or `gaussian`.",
+            doc=(
+                "Radial basis type. Supported values are `bessel`, `gaussian`, "
+                "`bessel/fix` and `gaussian/fix`. The `/fix` forms keep the "
+                "Bessel frequencies or Gaussian centres at their initial "
+                "values instead of training them."
+            ),
         ),
         Argument(
             "n_radial",
