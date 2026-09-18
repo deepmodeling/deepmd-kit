@@ -1199,10 +1199,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # Accelerated backends may replace the distance-to-radial chain and the
         # packed Wigner-D construction. The array-API reference leaves these
         # hooks unbound and always retains the dense Wigner matrices.
-        self._cuda_radial_fn = None
-        self._cuda_wigner_fn = None
-        self._wigner_free_conv = False
-        self._packed_wigner_train = False
+        self.cuda_infer_l_1_radial = None
+        self.cuda_infer_l_1_wigner = None
+        self.cuda_infer_l_2_covers_all_blocks = False
+        self.cuda_train_covers_all_blocks = False
 
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
@@ -1542,9 +1542,31 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             graph = apply_pair_exclusion(graph, atype_flat, self.emask)
         if n_out_nodes is None:
             n_out_nodes = atype_flat.shape[0]
+        packed_wigner_graph = self.prepare_packed_wigner_graph(
+            graph, atype_flat.shape[0]
+        )
+        packed_wigner = packed_wigner_graph is not None
+        if packed_wigner_graph is not None:
+            graph = packed_wigner_graph
         edge_index = graph.edge_index
         edge_vec = graph.edge_vec
         edge_mask = graph.edge_mask
+        # Graph-owned endpoint orderings remain aligned with the edge payload
+        # and are shared by every segmented consumer through the edge cache.
+        graph_csr_cache = None
+        if all(
+            value is not None
+            for value in (
+                graph.destination_order,
+                graph.destination_row_ptr,
+                graph.source_order,
+                graph.source_row_ptr,
+            )
+        ):
+            graph_csr_cache = {
+                "dst": (graph.destination_order, graph.destination_row_ptr),
+                "src": (graph.source_order, graph.source_row_ptr),
+            }
 
         xp = array_api_compat.array_namespace(edge_vec)
         device = array_api_compat.device(edge_vec)
@@ -1592,14 +1614,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             bridging_switch=self.bridging_switch,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
-            fused_radial=None if training else self._cuda_radial_fn,
-            fused_wigner=None if training else self._cuda_wigner_fn,
+            fused_radial=None if training else self.cuda_infer_l_1_radial,
+            fused_wigner=None if training else self.cuda_infer_l_1_wigner,
             # Random local-Z roll is a training-only augmentation; the model
             # is roll-equivariant, so inference fixes gamma.
             random_gamma=self.random_gamma and training,
             wigner_calc=self.wigner_calc,
-            build_wigner=self._build_full_wigner(),
+            build_wigner=self._build_full_wigner() or packed_wigner,
             node_partial_exchange=node_partial_exchange,
+            packed_wigner=packed_wigner,
+            destinations_sorted=graph.destination_sorted,
+            packed_wigner_fn=self.build_packed_wigner,
+            csr_cache=graph_csr_cache,
         )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1718,6 +1744,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if self.blocks:
             edge_cache = edge_cache_to_dtype(
                 edge_cache, get_xp_precision(xp, self.precision)
+            )
+            edge_cache.cute_infer_so2_metadata = self.prepare_cute_infer_so2_metadata(
+                edge_cache, n_nodes
             )
             x = self._forward_blocks(
                 x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
@@ -1897,9 +1926,29 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
+        if not self.readout_pre_layers and self.so3_readout != "none":
+            accelerated = self.run_cute_infer_readout(x_ro)
+            if accelerated is not None:
+                return xp.reshape(accelerated, (n_rows, 1, 1, self.channels))
         if self.so3_readout == "none":
             return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
         return x_ro[:, 0:1, :, :] + self.output_ffn.call_scalar(x_ro)
+
+    def run_cute_infer_readout(self, ffn_in: Array) -> Array | None:
+        """Run the CuTe readout when its exact inference contract matches.
+
+        Parameters
+        ----------
+        ffn_in : Array
+            Equivariant readout input with shape ``(N, D, 1, C)``.
+
+        Returns
+        -------
+        Array or None
+            Residual-inclusive scalar output with shape ``(N, C)``, or ``None``
+            when the backend has no eligible implementation.
+        """
+        return None
 
     def _edge_quaternion(self, edge_cache: EdgeCache) -> Array:
         """
@@ -1931,8 +1980,73 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if not self._need_full_wigner:
             return False
         if self._in_training_mode():
-            return not self._packed_wigner_train
-        return not self._wigner_free_conv
+            return not self.cuda_train_covers_all_blocks
+        return not self.cuda_infer_l_2_covers_all_blocks
+
+    def prepare_packed_wigner_graph(
+        self,
+        graph: NeighborGraph,
+        n_nodes: int,
+    ) -> NeighborGraph | None:
+        """Prepare an edge graph for backend packed-Wigner storage.
+
+        Parameters
+        ----------
+        graph : NeighborGraph
+            Edge graph supplied to the descriptor.
+        n_nodes : int
+            Number of nodes addressed by the graph.
+
+        Returns
+        -------
+        NeighborGraph or None
+            A graph satisfying the packed layout contract, or ``None`` when
+            the backend does not select that representation.
+        """
+        return None
+
+    def build_packed_wigner(
+        self,
+        edge_quat: Array,
+        wigner_calc: Any,
+    ) -> Array | None:
+        """Build backend-specific packed Wigner storage when available.
+
+        Parameters
+        ----------
+        edge_quat : Array
+            Global-to-local edge quaternions with shape ``(E, 4)``.
+        wigner_calc : Any
+            Wigner calculator carrying the degree and basis convention.
+
+        Returns
+        -------
+        Array or None
+            Packed per-edge Wigner storage, or ``None`` to retain dense storage.
+        """
+        return None
+
+    def prepare_cute_infer_so2_metadata(
+        self,
+        edge_cache: EdgeCache,
+        n_nodes: int,
+    ) -> tuple[Array, Array, Array] | None:
+        """Build the edge metadata consumed by the CuTe SO2 implementation.
+
+        Parameters
+        ----------
+        edge_cache : EdgeCache
+            Per-forward cache carrying the destination-major edge payload.
+        n_nodes : int
+            Number of nodes addressed by the edge payload.
+
+        Returns
+        -------
+        tuple[Array, Array, Array] or None
+            Destination row pointers, source order, and source row pointers, or
+            ``None`` when the backend does not select CuTe SO2.
+        """
+        return None
 
     def _shared_wigner_runs(
         self,
@@ -1981,6 +2095,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             the blocks are skipped (all-Cartesian model) the full coupling is
             reconstructed from the edge quaternion via the m=0-only path.
         """
+        if edge_cache.D_packed is not None:
+            return self.build_cute_infer_zonal_coupling(edge_cache)
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
             shared = self._shared_wigner_runs(edge_cache, calc.lmax)
@@ -2007,6 +2123,28 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             lmin=self.lmax + 1,
         )
         return xp.concat([mp_coupling, extra_coupling], axis=1)
+
+    def build_cute_infer_zonal_coupling(self, edge_cache: EdgeCache) -> Array:
+        """Extract the GIE zonal coupling from packed Wigner storage.
+
+        Parameters
+        ----------
+        edge_cache : EdgeCache
+            Per-forward cache carrying backend packed Wigner storage.
+
+        Returns
+        -------
+        Array
+            Zonal coupling with shape ``(E, D_node - 1)``.
+
+        Raises
+        ------
+        NotImplementedError
+            If a backend supplies packed Wigner storage without this extractor.
+        """
+        raise NotImplementedError(
+            "packed Wigner storage requires a backend zonal-coupling implementation"
+        )
 
     def _apply_charge_spin_embedding(
         self,

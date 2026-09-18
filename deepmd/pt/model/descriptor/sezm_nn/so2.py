@@ -37,7 +37,6 @@ from deepmd.pt_expt.kernels.utils import (
     cuda_train_enabled,
     triton_infer_level,
     triton_train_level,
-    use_cute_infer,
     use_cutile_infer,
 )
 from deepmd.utils.version import (
@@ -371,7 +370,7 @@ class SO2Linear(nn.Module):
         # Export override for the block-diagonal vs dense matmul branch below.
         # ``None`` keeps the runtime ``x_flat.is_cuda`` dispatch; the freeze sets
         # it so the AOTI graph follows the *target* device, not the CPU trace.
-        self._force_block_diag_matmul: bool | None = None
+        self.force_block_diag_matmul: bool | None = None
 
         # The assembled SO(2) weight is block-diagonal over |m| groups; the
         # forward contracts only the diagonal blocks (see _block_diagonal_matmul).
@@ -383,7 +382,7 @@ class SO2Linear(nn.Module):
         # Triton BN=64 block-diagonal GEMM that consumes the strided operands
         # without a contiguity copy. Bound only when Triton is available and every
         # block width aligns to BN=64; otherwise the eager path is kept.
-        self._block_diag_gemm = None
+        self.triton_l_1_block_diag_gemm = None
         self.triton_infer_level = triton_infer_level()
         self.triton_train_level = triton_train_level()
         if max(self.triton_infer_level, self.triton_train_level) >= 1:
@@ -396,7 +395,7 @@ class SO2Linear(nn.Module):
             if SO2_BLOCK_GEMM_TRITON_AVAILABLE and slices_supported(
                 self._block_diag_slices
             ):
-                self._block_diag_gemm = block_diag_gemm
+                self.triton_l_1_block_diag_gemm = block_diag_gemm
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -432,12 +431,12 @@ class SO2Linear(nn.Module):
         # trips an Inductor AVX2 C++ codegen bug, so only CPU needs it. Every other
         # device uses the block-diagonal contraction, which skips the structural
         # off-|m| zeros. ``make_fx`` resolves this Python branch at trace time, so
-        # the freeze pins ``_force_block_diag_matmul`` to the AOTI target device
+        # the freeze pins ``force_block_diag_matmul`` to the AOTI target device
         # (tracing always runs on CPU regardless of where the artifact will run).
-        if self._force_block_diag_matmul is None:
+        if self.force_block_diag_matmul is None:
             use_block_diag = not x_flat.is_cpu
         else:
-            use_block_diag = self._force_block_diag_matmul
+            use_block_diag = self.force_block_diag_matmul
         if use_block_diag:
             out_flat = self._block_diagonal_matmul(x_flat, weight)
         else:
@@ -576,8 +575,13 @@ class SO2Linear(nn.Module):
             Flattened output with shape ``(F, E, D_m*Cout)``.
         """
         weight = weight.permute(1, 0, 2)  # (F, D_m*Cin, D_m*Cout)
-        if self._block_diag_gemm is not None and active_triton_level(self) >= 1:
-            return self._block_diag_gemm(x_flat, weight, self._block_diag_slices)
+        if (
+            self.triton_l_1_block_diag_gemm is not None
+            and active_triton_level(self) >= 1
+        ):
+            return self.triton_l_1_block_diag_gemm(
+                x_flat, weight, self._block_diag_slices
+            )
         blocks = [
             torch.bmm(
                 x_flat[:, :, in0:in1],
@@ -727,7 +731,7 @@ class DynamicRadialDegreeMixer(nn.Module):
         # of the ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
         self.triton_infer_level = triton_infer_level()
         self.triton_train_level = triton_train_level()
-        self._radial_mix_block = None
+        self.triton_l_1_radial_mix = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1
             and self.mode == "degree_channel"
@@ -738,7 +742,7 @@ class DynamicRadialDegreeMixer(nn.Module):
                 radial_mix_block,
             )
 
-            self._radial_mix_block = radial_mix_block
+            self.triton_l_1_radial_mix = radial_mix_block
 
     def _build_dense_scatter_indices(self) -> tuple[torch.Tensor, torch.Tensor]:
         compact_indices: list[int] = []
@@ -832,8 +836,11 @@ class DynamicRadialDegreeMixer(nn.Module):
             compact = kernel_flat.view(
                 x_local.shape[0], self.degree_kernel_size, self.rank
             )
-            if self._radial_mix_block is not None and active_triton_level(self) >= 1:
-                return self._radial_mix_block(
+            if (
+                self.triton_l_1_radial_mix is not None
+                and active_triton_level(self) >= 1
+            ):
+                return self.triton_l_1_radial_mix(
                     compact, x_local, self.channel_basis, self.lmax
                 )
             kernel = self._scatter_rank_kernel(compact)
@@ -1213,35 +1220,27 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        # Opt-in fused fast paths, selected by ``DP_TRITON_INFER`` /
-        # ``DP_TRITON_TRAIN`` (cumulative levels, see :func:`triton_infer_level`
-        # and :func:`triton_train_level`) and ``DP_CUTE_INFER``. Each is read
-        # once at construction so it becomes a compile-time constant in the
-        # traced (``make_fx``) graph. Level 1 replaces the dense ``bmm``
-        # rotation with universal Triton kernels; level 2 additionally binds the
-        # table-configured fused value path; inference level 3 routes the mixing
-        # stack through the fp16x3 tensor-core operator on swept shapes.
-        # ``DP_CUTE_INFER`` selects the experimental CuTe value-path operator
-        # instead; both gates claim the same ``so2_message`` value path, so
-        # enabling them together has no coherent meaning and is rejected at
-        # construction. The CuTe, cuTile and hand-written CUDA paths remain
-        # inference-only. The fused value-path entries are bound at the end of
-        # construction (once every submodule exists) and stay ``None`` when the
-        # backend is unavailable or the block layout is unsupported.
+        # Acceleration gates are read once at construction so they become
+        # compile-time constants in the traced (``make_fx``) graph. Triton level
+        # 1 replaces individual operators, level 2 binds the fused value path,
+        # and inference level 3 selects its fp16x3 implementation on swept
+        # shapes. ``DP_CUTILE_INFER`` selects a complete alternative SO(2) path
+        # and is mutually exclusive with Triton. ``DP_CUDA_INFER`` and
+        # ``DP_CUDA_TRAIN`` independently bind hand-written CUDA producers that
+        # take precedence over the corresponding narrower paths. CuTe dispatch
+        # is resolved at the enclosing block, where its exact-shape SO2 kernel
+        # can coexist with every fallback. Unsupported entries remain ``None``.
         self.triton_infer_level = triton_infer_level()
         self.triton_train_level = triton_train_level()
-        self.use_triton_infer = self.triton_infer_level >= 1
-        self.use_cute_infer = use_cute_infer()
-        self.use_cutile_infer = use_cutile_infer()
-        if sum((self.use_triton_infer, self.use_cute_infer, self.use_cutile_infer)) > 1:
+        self.cuda_infer_level = cuda_infer_level()
+        self.cutile_infer_enabled = use_cutile_infer()
+        if self.triton_infer_level >= 1 and self.cutile_infer_enabled:
             raise ValueError(
-                "DP_TRITON_INFER, DP_CUTE_INFER and DP_CUTILE_INFER are mutually "
-                "exclusive: each selects a complete accelerated inference path. "
-                "Enable exactly one of them."
+                "DP_TRITON_INFER and DP_CUTILE_INFER are mutually exclusive: "
+                "each selects a complete accelerated SO(2) inference path."
             )
-        self._cute_value_path = None
-        self._triton_value_path = None
-        self._cutile_value_path = None
+        self.triton_infer_l_2_value = None
+        self.cutile_infer_value = None
 
         # === Step 1. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
@@ -1620,9 +1619,9 @@ class SO2Convolution(nn.Module):
         # attention layout without the optional focus-mix / value / output
         # projections (the deployed DPA4 configuration). Whichever of the
         # mutually exclusive inference gates is active then supplies the
-        # implementation, and ``self._flash_atten_fn`` being bound is what marks
+        # implementation, and ``self.flash_attention`` being bound is what marks
         # the fused path as live.
-        self._flash_atten_layout_ok = (
+        self.flash_attention_layout_supported = (
             self.n_atten_head > 0
             and self.mmax == 1
             and self.needs_local_frame
@@ -1634,24 +1633,24 @@ class SO2Convolution(nn.Module):
         )
         # The cuTile aggregation is inference-only; the Triton one also serves
         # training, so it is bound whenever either gate asks for level 1.
-        self._flash_atten_fn = None
-        self._flash_atten_trains = False
-        if self._flash_atten_layout_ok and self.use_cutile_infer:
+        self.flash_attention = None
+        self.flash_attention_supports_training = False
+        if self.flash_attention_layout_supported and self.cutile_infer_enabled:
             from deepmd.pt_expt.kernels.cutile.sezm.flash_atten import (
                 flash_atten_aggregate,
             )
 
-            self._flash_atten_fn = flash_atten_aggregate
+            self.flash_attention = flash_atten_aggregate
         elif (
-            self._flash_atten_layout_ok
+            self.flash_attention_layout_supported
             and max(self.triton_infer_level, self.triton_train_level) >= 1
         ):
             from deepmd.pt_expt.kernels.triton.sezm.flash_atten import (
                 flash_atten_aggregate,
             )
 
-            self._flash_atten_fn = flash_atten_aggregate
-            self._flash_atten_trains = self.triton_train_level >= 1
+            self.flash_attention = flash_atten_aggregate
+            self.flash_attention_supports_training = self.triton_train_level >= 1
 
         # === Step 12. Optional fused Triton SO(2) value path (inference) ===
         # Fuses rotate-to-local, the radial degree mixing, the gated mixing
@@ -1672,7 +1671,7 @@ class SO2Convolution(nn.Module):
                 make_triton_value_path,
             )
 
-            self._triton_value_path = make_triton_value_path(self)
+            self.triton_infer_l_2_value = make_triton_value_path(self)
 
         # === Step 13. Optional fused rotate-to-local + radial degree mixing ===
         # Level-1 companion of the value path: only the rotation and the
@@ -1689,7 +1688,7 @@ class SO2Convolution(nn.Module):
         # hidden widths. Below the bound the separate rotation and radial-mix
         # kernels win end to end (a 64-wide stack loses ~10%, a 128-wide one
         # gains), so the binding follows the measured crossover.
-        self._triton_rotate_mix = None
+        self.triton_l_1_rotate_mix = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1
             and self.hidden_channels >= 128
@@ -1698,7 +1697,7 @@ class SO2Convolution(nn.Module):
                 make_triton_rotate_mix,
             )
 
-            self._triton_rotate_mix = make_triton_rotate_mix(self)
+            self.triton_l_1_rotate_mix = make_triton_rotate_mix(self)
 
         # === Step 14. Optional fused CUDA SO(2) convolution (inference) ===
         # One hand-written CUDA operator spans the complete per-edge path:
@@ -1708,13 +1707,13 @@ class SO2Convolution(nn.Module):
         # flash aggregation, and takes precedence over them when the block
         # matches its supported configuration. The factory returns ``None``
         # otherwise, leaving whichever narrower path is bound in charge.
-        self._cuda_conv_fn = None
-        if cuda_infer_level() >= 2 and self._flash_atten_layout_ok:
+        self.cuda_infer_l_2_conv = None
+        if self.cuda_infer_level >= 2 and self.flash_attention_layout_supported:
             from deepmd.pt_expt.kernels.cuda.dpa4 import (
                 make_cuda_so2_conv,
             )
 
-            self._cuda_conv_fn = make_cuda_so2_conv(self)
+            self.cuda_infer_l_2_conv = make_cuda_so2_conv(self)
 
         # === Step 15. Optional fused CUDA SO(2) value path (training) ===
         # One CUDA operator spans the training value stream up to the attention
@@ -1725,13 +1724,13 @@ class SO2Convolution(nn.Module):
         # behind the same differentiable boundary. The attention span stays on
         # the Triton operator composition inside the traced graph. Bound under
         # ``DP_CUDA_TRAIN=1``; ``so2_message`` dispatches to it in training mode.
-        self._cuda_value_train = None
+        self.cuda_train_value = None
         if cuda_train_enabled():
             from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import (
                 make_cuda_so2_value,
             )
 
-            self._cuda_value_train = make_cuda_so2_value(self)
+            self.cuda_train_value = make_cuda_so2_value(self)
 
         # === Step 16. Optional fused destination-segmented attention softmax ===
         # One CSR-segmented operator per direction replaces the
@@ -1740,7 +1739,7 @@ class SO2Convolution(nn.Module):
         # hand-derived second order keep the force-loss trace from expanding
         # the chain into materialized surfaces and serialized scatters. The
         # source-gated (SFPG) form keeps the reference path.
-        self._segment_softmax_fn = None
+        self.triton_l_1_segment_softmax = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1
             and self.attn_n_focus * self.n_atten_head <= 16
@@ -1751,28 +1750,18 @@ class SO2Convolution(nn.Module):
             )
 
             if SEGMENT_SOFTMAX_TRITON_AVAILABLE:
-                self._segment_softmax_fn = segment_softmax
+                self.triton_l_1_segment_softmax = segment_softmax
 
-        # === Step 17. Optional fused CuTe SO(2) value-path operator ===
-        # Experimental alternative backend; mutually exclusive with the Triton
-        # flag (enforced above).
-        if self.use_cute_infer:
-            from deepmd.pt_expt.kernels.cute.sezm import (
-                make_cute_value_path,
-            )
-
-            self._cute_value_path = make_cute_value_path(self)
-
-        # === Step 18. Optional fused cuTile SO(2) value-path operators ===
-        # Complete cuTile inference path, mutually exclusive with the two gates
-        # above. The factory validates the block layout and returns ``None``
+        # === Step 17. Optional fused cuTile SO(2) value-path operators ===
+        # Complete cuTile inference path, mutually exclusive with Triton. The
+        # factory validates the block layout and returns ``None``
         # otherwise, leaving the dense reference path in charge.
-        if self.use_cutile_infer:
+        if self.cutile_infer_enabled:
             from deepmd.pt_expt.kernels.cutile.sezm.so2_value_path import (
                 make_cutile_value_path,
             )
 
-            self._cutile_value_path = make_cutile_value_path(self)
+            self.cutile_infer_value = make_cutile_value_path(self)
 
     def forward(
         self,
@@ -1911,23 +1900,25 @@ class SO2Convolution(nn.Module):
         # The fused CUDA operator computes the attention weights itself, so it
         # does not serve the bridging mode, whose source gate reshapes the
         # softmax normalization.
-        run_cuda = (
-            self._cuda_conv_fn is not None
+        run_cuda_infer_l_2 = (
+            self.cuda_infer_l_2_conv is not None
             and not self.training
             and edge_cache.edge_src_gate is None
         )
-        run_flash = (
-            self._flash_atten_fn is not None
-            and (self._flash_atten_trains or not self.training)
-            and not run_cuda
+        run_flash_attention = (
+            self.flash_attention is not None
+            and (self.flash_attention_supports_training or not self.training)
+            and not run_cuda_infer_l_2
         )
-        if run_cuda:
-            return self.forward_attention_cuda(x, edge_cache, radial_feat, x_l0_node)
-        if run_flash:
+        if run_cuda_infer_l_2:
+            return self.forward_attention_cuda_infer_l_2(
+                x, edge_cache, radial_feat, x_l0_node
+            )
+        if run_flash_attention:
             return self.forward_attention_flash(x, edge_cache, radial_feat, x_l0_node)
         return self.forward_attention_dense(x, edge_cache, radial_feat, x_l0_node)
 
-    def forward_attention_cuda(
+    def forward_attention_cuda_infer_l_2(
         self,
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
@@ -1961,7 +1952,7 @@ class SO2Convolution(nn.Module):
             Node update with shape (N, D, C_wide).
         """
         # === Step 1. Projected radial features ===
-        rad_feat = self._cuda_conv_fn.radial_features(
+        rad_feat = self.cuda_infer_l_2_conv.radial_features(
             radial_feat
         )  # (E, lmax+1, C_wide)
 
@@ -1972,7 +1963,9 @@ class SO2Convolution(nn.Module):
         head_gate = self.attention_head_gate(x_l0_node)  # (N, Fa, H)
 
         # === Step 4. Fused convolution ===
-        out = self._cuda_conv_fn(x, edge_cache, rad_feat, q_node, k_node, head_gate)
+        out = self.cuda_infer_l_2_conv(
+            x, edge_cache, rad_feat, q_node, k_node, head_gate
+        )
         return out.to(dtype=self.dtype)  # (N, D, C_wide)
 
     def forward_attention_flash(
@@ -1989,7 +1982,10 @@ class SO2Convolution(nn.Module):
         kernel folds the block-diagonal rotate-back, the inverse-rotation
         rescale, the per-edge weighting and the destination reduction into a
         single atomic-free pass, so the transient rotate-back message and
-        weighted value tensors are never materialized.
+        weighted value tensors are never materialized. The value producer is
+        selected independently inside ``so2_message``: training uses
+        ``cuda_train_value`` when it is bound, while the flash operator remains
+        the aggregation consumer selected by the Triton training gate.
 
         Parameters
         ----------
@@ -2028,8 +2024,8 @@ class SO2Convolution(nn.Module):
         order, row_ptr = cached_edge_csr(edge_cache, "dst", n_node)
         rotation = edge_cache.Dt_full
         if rotation is None:
-            rotation = self._cuda_value_train.edge_runs(edge_cache)
-        pre_gate = self._flash_atten_fn(
+            rotation = self.cuda_train_value.edge_runs(edge_cache)
+        pre_gate = self.flash_attention(
             x_local,
             rotation,
             self.rotate_inv_rescale_full,
@@ -2214,7 +2210,7 @@ class SO2Convolution(nn.Module):
         edge_src_gate = edge_cache.edge_src_gate
         n_nodes = x_l0_node.shape[0]
         if (
-            self._segment_softmax_fn is not None
+            self.triton_l_1_segment_softmax is not None
             and edge_src_gate is None
             and attn_logits.is_cuda
             and active_triton_level(self) >= 1
@@ -2232,7 +2228,7 @@ class SO2Convolution(nn.Module):
                 + float(self.eps)
             ).reshape(-1)  # (F * H,)
             n_channel = self.attn_n_focus * self.n_atten_head
-            alpha = self._segment_softmax_fn(
+            alpha = self.triton_l_1_segment_softmax(
                 attn_logits.reshape(n_edge, n_channel).to(dtype=torch.float32),
                 edge_cache.edge_env.reshape(n_edge).to(dtype=torch.float32),
                 null_logit,
@@ -2434,24 +2430,21 @@ class SO2Convolution(nn.Module):
         src, dst = edge_cache.src, edge_cache.dst
         n_edge = src.numel()
 
-        if self._cutile_value_path is not None and not self.training:
+        if self.cutile_infer_value is not None and not self.training:
             # === Steps 1-5 (fused cuTile operators). ``rotate_mix`` folds the
             # rotation and the radial degree mixing into one edge-parallel
             # kernel writing the focus-major layout; ``mixing_stack`` runs the
             # whole gated stack, keeping the inter-layer activations and the
             # gated-layer pre-activations off the traced graph entirely. ===
-            x_local, rad_feat = self._cutile_value_path(x, edge_cache, radial_feat)
-        elif self._cuda_value_train is not None and self.training:
+            x_local, rad_feat = self.cutile_infer_value(x, edge_cache, radial_feat)
+        elif self.cuda_train_value is not None and self.training:
             # === Steps 1-5 (one CUDA kernel, training). The whole value
-            # stream up to the attention aggregation runs in a single launch;
-            # only the backward anchors reach device memory. ===
+            # stream up to the attention aggregation runs in a single launch
+            # with analytic backward and second order; only the backward
+            # anchors reach device memory. ===
             cached_edge_csr(edge_cache, "src", x.shape[0])
-            x_local, rad_feat = self._cuda_value_train(x, edge_cache, radial_feat)
-        elif (
-            self._triton_value_path is not None
-            and not self.training
-            and active_triton_level(self) >= 2
-        ):
+            x_local, rad_feat = self.cuda_train_value(x, edge_cache, radial_feat)
+        elif self.triton_infer_l_2_value is not None and not self.training:
             # === Steps 1-5 (fused Triton operators, inference).
             # ``so2_rotate_mix`` folds the rotation and the radial degree
             # mixing into one edge-parallel kernel writing the focus-major
@@ -2459,14 +2452,8 @@ class SO2Convolution(nn.Module):
             # the competition weight fused into its final store, keeping the
             # inter-layer activations off the traced graph. ===
             cached_edge_csr(edge_cache, "src", x.shape[0])
-            x_local, rad_feat = self._triton_value_path(x, edge_cache, radial_feat)
-        elif self._cute_value_path is not None and not self.training:
-            # === Steps 1-5 (fused CuTe operator). The operator folds
-            # rotate_to_local, radial degree mixing, the multi-layer gated SO(2)
-            # stack, and the focus competition into the bucketed kernels; the
-            # per-edge focus-major intermediates stay resident on chip. ===
-            x_local, rad_feat = self._cute_value_path(x, edge_cache, radial_feat)
-        elif self._triton_rotate_mix is not None and active_triton_level(self) >= 1:
+            x_local, rad_feat = self.triton_infer_l_2_value(x, edge_cache, radial_feat)
+        elif self.triton_l_1_rotate_mix is not None and active_triton_level(self) >= 1:
             # === Steps 1-3 (fused rotate-mix operator). One edge-parallel
             # kernel gathers the source features, applies the block-diagonal
             # Wigner rotation and the radial degree mixing, and writes the
@@ -2476,7 +2463,7 @@ class SO2Convolution(nn.Module):
             # step and kept on the edge cache. ===
             with nvtx_range("SO2Conv/rotate_mix"):
                 cached_edge_csr(edge_cache, "src", x.shape[0])
-                u0, rad_feat = self._triton_rotate_mix(x, edge_cache, radial_feat)
+                u0, rad_feat = self.triton_l_1_rotate_mix(x, edge_cache, radial_feat)
                 x_local = u0.view(
                     self.n_focus, n_edge, self.reduced_dim, self.so2_focus_dim
                 )  # (F, E, D_m, Cf)
@@ -2495,14 +2482,14 @@ class SO2Convolution(nn.Module):
                 D_full = edge_cache.D_full
                 x_dst_local: torch.Tensor | None = None
                 if active_triton_level(self) >= 1:
-                    # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
+                    # ``self.triton_l_1_rotate_to_local`` was bound in ``__init__`` (the
                     # block kernel for the m-major ``mmax == 1`` layout, dense
                     # otherwise).
-                    x_local = self._rotate_to_local_fn(
+                    x_local = self.triton_l_1_rotate_to_local(
                         x, src, D_full
                     )  # (E, D_m, C_wide)
                     if self.node_wise_grid_product is not None:
-                        x_dst_local = self._rotate_to_local_fn(
+                        x_dst_local = self.triton_l_1_rotate_to_local(
                             x, dst, D_full
                         )  # (E, D_m, C_wide)
                 else:
@@ -2733,7 +2720,9 @@ class SO2Convolution(nn.Module):
             if active_triton_level(self) >= 1 and self.mmax == 1:
                 # The block kernel consumes the (E, F, D_m, Cf) focus layout in
                 # place, folding the inverse transpose into its channel addressing.
-                x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
+                x_message = self.triton_l_1_rotate_back(
+                    x_local, Dt_full
+                )  # (E, D, C_wide)
             else:
                 # Restore reduced global layout (E, D_m, C_wide) for inverse rotation.
                 x_local = (
@@ -2742,7 +2731,9 @@ class SO2Convolution(nn.Module):
                     .reshape(n_edge, self.reduced_dim, self.hidden_channels)
                 )
                 if active_triton_level(self) >= 1:
-                    x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
+                    x_message = self.triton_l_1_rotate_back(
+                        x_local, Dt_full
+                    )  # (E, D, C_wide)
                 else:
                     Dt_from_m = project_Dt_from_m(
                         Dt_full=Dt_full,
@@ -2893,8 +2884,8 @@ class SO2Convolution(nn.Module):
         self.reduced_dim = int(coeff_index_m.numel())
 
         # === Step 2. Triton rotation kernels: block for mmax == 1, dense otherwise ===
-        self._rotate_to_local_fn = None
-        self._rotate_back_fn = None
+        self.triton_l_1_rotate_to_local = None
+        self.triton_l_1_rotate_back = None
         if max(self.triton_infer_level, self.triton_train_level) >= 1:
             from deepmd.pt_expt.kernels.triton.sezm.so2_rotation import (
                 rotate_back_block_so2,
@@ -2904,20 +2895,22 @@ class SO2Convolution(nn.Module):
             )
 
             if self.mmax == 1:
-                self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_block(
-                    x, src, wigner, self.lmax
+                self.triton_l_1_rotate_to_local = lambda x, src, wigner: (
+                    rotate_to_local_block(x, src, wigner, self.lmax)
                 )
                 # The block kernel reads the (E, F, D_m, Cf) focus layout directly,
                 # so the rotate-back path passes ``x_local`` before the global
                 # reshape and the transpose-back copy is skipped.
-                self._rotate_back_fn = lambda x_local, wigner: rotate_back_block_so2(
-                    x_local, wigner, self.lmax
+                self.triton_l_1_rotate_back = lambda x_local, wigner: (
+                    rotate_back_block_so2(x_local, wigner, self.lmax)
                 )
             else:
-                self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_dense(
-                    x, src, wigner, self.coeff_index_m, self.ebed_dim_full
+                self.triton_l_1_rotate_to_local = lambda x, src, wigner: (
+                    rotate_to_local_dense(
+                        x, src, wigner, self.coeff_index_m, self.ebed_dim_full
+                    )
                 )
-                self._rotate_back_fn = lambda x_local, wigner: rotate_back_dense(
+                self.triton_l_1_rotate_back = lambda x_local, wigner: rotate_back_dense(
                     x_local, wigner, self.coeff_index_m, self.ebed_dim_full
                 )
 

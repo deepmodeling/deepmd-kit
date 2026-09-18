@@ -120,9 +120,9 @@ class TestDPA4RuntimeFeatures(TestCaseSingleFrameWithNlist):
         monkeypatch.setenv("DP_TRITON_INFER", "1")
         m = DescrptDPA4.deserialize(self.data).to(self.device).eval()
         so2 = next(x for x in m.modules() if isinstance(x, SO2Convolution))
-        assert so2.use_triton_infer
-        assert so2._rotate_to_local_fn is not None
-        assert so2._rotate_back_fn is not None
+        assert so2.triton_infer_level >= 1
+        assert so2.triton_l_1_rotate_to_local is not None
+        assert so2.triton_l_1_rotate_back is not None
         mixers = [x for x in m.modules() if isinstance(x, DynamicRadialDegreeMixer)]
         assert mixers and all(x.triton_infer_level >= 1 for x in mixers)
 
