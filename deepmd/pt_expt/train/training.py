@@ -71,6 +71,9 @@ from deepmd.dpmodel.utils.learning_rate import (
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 from deepmd.loggers.training import (
     log_parameter_counts,
 )
@@ -1074,9 +1077,15 @@ class _CompiledModel(torch.nn.Module):
         cache_key = (*self._structure_key, self.training)
         cached = self._compiled_by_structure.get(cache_key)
         if cached is not None:
-            log.info("Reusing the graph compiled for an earlier task (%s).", attributes)
+            log.debug(
+                "Reusing the graph compiled for an earlier task (%s).", attributes
+            )
             return cached
-        log.info("Tracing and compiling the model (%s).", attributes)
+        log.info(
+            "Tracing and compiling the model (%s).",
+            attributes,
+            extra={"rank_scope": "all"},
+        )
         started = time.perf_counter()
         compiled = trace()
         # ``torch.compile`` only schedules the Inductor compile; it runs on the
@@ -1105,6 +1114,7 @@ class _CompiledModel(torch.nn.Module):
             "Finished compiling (%s) in %.1f s.",
             attributes,
             time.perf_counter() - started,
+            extra={"rank_scope": "all"},
         )
 
     def __getattr__(self, name: str) -> Any:
@@ -2340,7 +2350,7 @@ class Trainer(AbstractTrainer):
             validation_data=self.validation_data if not self.multi_task else None,
         )
 
-        if self.rank == 0:
+        if is_node_main_process(self.rank):
             log_parameter_counts(
                 {key: count_parameters(self.models[key]) for key in self.model_keys},
                 multi_task=self.multi_task,
@@ -2755,7 +2765,7 @@ class Trainer(AbstractTrainer):
 
     def _log_sharding_strategy(self) -> None:
         """Report the distribution strategy once the wrapper is in place."""
-        if self.sharding.enabled and self.rank == 0:
+        if self.sharding.enabled:
             log.info(self.sharding.describe())
 
     def _load_optimizer_state(self, optimizer_state_dict: dict[str, Any]) -> None:
@@ -3096,7 +3106,10 @@ class Trainer(AbstractTrainer):
             return
         if self.opt_type not in ("Adam", "AdamW", "HybridMuon"):
             return
-        log.info("Compiling training graphs before the first collective.")
+        log.info(
+            "Compiling training graphs before the first collective.",
+            extra={"rank_scope": "all"},
+        )
         start = time.time()
         inner = self._unwrapped
         trainable_parameters = tuple(
@@ -3116,6 +3129,7 @@ class Trainer(AbstractTrainer):
         log.info(
             "Training graphs ready in %.1f s; waiting for the other ranks.",
             time.time() - start,
+            extra={"rank_scope": "all"},
         )
         store = dist.distributed_c10d._get_default_store()
         key = "deepmd/precompile_ready"

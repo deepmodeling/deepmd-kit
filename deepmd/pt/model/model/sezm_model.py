@@ -1247,6 +1247,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         "train" if self.training else "eval",
                         has_coord_corr,
                         time.perf_counter() - self._core_compute_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._core_compute_pending_compile_t0 = None
                     self._core_compute_pending_compile_key = None
@@ -1369,6 +1370,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     log.info(
                         "SeZM: finished compiling dens path in %.2fs",
                         time.perf_counter() - self._dens_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._dens_pending_compile_t0 = None
             else:
@@ -1942,7 +1944,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 full_cache_key
             ]
             self._task_buf_order_cache[cache_key] = _SEZM_TASK_BUF_ORDER[structure_key]
-            log.info(
+            log.debug(
                 "SeZM: reusing shared compiled graph (mode=%s, coord_corr=%s)",
                 mode,
                 has_coord_corr,
@@ -1953,6 +1955,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             "SeZM: start tracing and compiling (mode=%s, coord_corr=%s)",
             mode,
             has_coord_corr,
+            extra={"rank_scope": "all"},
         )
 
         # Promote the per-task buffers (see ``get_task_buffer_names``) to
@@ -2429,7 +2432,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         check_compile_torch_version()
         from torch._inductor import config as inductor_config
 
-        log.info("SeZM: start compiling dens path")
+        log.info("SeZM: start compiling dens path", extra={"rank_scope": "all"})
         _compile_t0 = time.perf_counter()
 
         inductor_config.max_autotune_report_choices_stats = False
