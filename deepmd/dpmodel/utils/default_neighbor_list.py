@@ -731,10 +731,13 @@ class DefaultNeighborList(NeighborList):
         )
         # A frame can never contribute more than nall neighbors; cap the
         # requested neighbor count so sentinel capacities (e.g. DPA4C's
-        # effectively-unbounded sel) do not allocate absurd padding.
-        # Skip the cap when nall is symbolic (e.g. jax2tf export), where
-        # the comparison would be inconclusive; sentinel capacities only
-        # occur on backends with concrete shapes.
+        # effectively-unbounded sel) do not allocate absurd padding.  This is
+        # always safe here: real neighbors number at most nall, and
+        # ``format_nlist`` re-pads the neighbor axis to ``sum(sel)`` for
+        # type-distinguished descriptors downstream.  Skip the cap when nall
+        # is symbolic (e.g. jax2tf export), where the comparison would be
+        # inconclusive; sentinel capacities only occur on backends with
+        # concrete shapes.
         nall = extended_atype.shape[1]
         nsel = sum(sel)
         if isinstance(nall, int) and nsel > nall:

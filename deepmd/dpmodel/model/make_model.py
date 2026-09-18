@@ -1076,15 +1076,19 @@ def make_model(
             """
             n_nf, n_nloc, n_nnei = nlist.shape
             mixed_types = self.mixed_types()
-            # A frame can never contribute more than nall neighbors; cap the
-            # requested neighbor count so sentinel capacities (e.g. DPA4C's
-            # effectively-unbounded sel) do not allocate absurd padding.
-            # Skip the cap when nall is symbolic (e.g. jax2tf export), where
-            # the comparison would be inconclusive; sentinel capacities only
-            # occur on backends with concrete shapes.
+            # A frame can never contribute more than nall neighbors, so for
+            # carry-all (mixed-types) descriptors cap the requested neighbor
+            # count: sentinel capacities (e.g. DPA4C's effectively-unbounded
+            # sel) would otherwise allocate absurd padding.  Type-
+            # distinguished descriptors instead REQUIRE exactly sum(sel)
+            # columns (their statistics and ``nlist_distinguish_types`` depend
+            # on it), so they must never be capped.  Skip the cap when nall is
+            # symbolic (e.g. jax2tf export), where the comparison would be
+            # inconclusive; sentinel capacities only occur on backends with
+            # concrete shapes.
             nall = extended_atype.shape[1]
             nnei = sum(self.get_sel())
-            if isinstance(nall, int) and nnei > nall:
+            if mixed_types and isinstance(nall, int) and nnei > nall:
                 nnei = nall
             ret = self._format_nlist(
                 extended_coord,
