@@ -1085,18 +1085,32 @@ def _freeze_sezm_to_pt2(
             "Compiling the parallel with-comm artifact (second AOTInductor "
             "compilation)..."
         )
-        with_comm_bytes = _export_with_comm_artifact(
-            model,
-            target_device=target_device,
-            compile_options=compile_options,
-        )
+        try:
+            with_comm_bytes = _export_with_comm_artifact(
+                model,
+                target_device=target_device,
+                compile_options=compile_options,
+            )
+        except Exception as e:
+            # The with-comm artifact is optional: the .pt2 format and the
+            # loader already handle its absence (``has_comm_artifact=false``,
+            # single-rank inference).  A failure here must not abort the
+            # whole freeze, which would leave behind an unloadable partial
+            # archive without ``model/extra/metadata.json``.
+            with_comm_bytes = None
+            log.warning(
+                "Parallel with-comm artifact export failed (%s); the frozen "
+                ".pt2 will support single-rank inference only "
+                "(has_comm_artifact=false).",
+                e,
+            )
 
     metadata = _collect_metadata(
         model,
         output_keys=output_keys,
         is_spin=is_spin,
         do_atomic_virial=atomic_virial,
-        has_comm_artifact=with_comm,
+        has_comm_artifact=with_comm and with_comm_bytes is not None,
     )
     with zipfile.ZipFile(out_path_str, "a") as zf:
         zf.writestr("model/extra/metadata.json", json.dumps(metadata))
