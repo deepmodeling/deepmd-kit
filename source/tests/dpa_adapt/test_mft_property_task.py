@@ -38,10 +38,13 @@ class _FakePropertyTuner:
     aux_branch = "SPICE2"
     aux_prob = 0.5
     type_map: ClassVar[list[str]] = ["H", "C", "N", "O"]
-    # aux fitting_net pulled from ckpt — an ener config (the actual SPICE2 head)
+    # aux fitting_net pulled from ckpt — an ener config (the actual SPICE2
+    # head). dim_case_embd=31 mirrors what a real DPA-3.1-3M checkpoint's aux
+    # branch fitting_net carries (it was itself trained as one of 31 branches).
     fitting_net_params: ClassVar[dict[str, object]] = {
         "type": "ener",
         "neuron": [240, 240, 240],
+        "dim_case_embd": 31,
     }
     downstream_task_type = "property"
     property_name = "homo"
@@ -106,8 +109,44 @@ def test_property_task_config_has_property_fitting_net():
     assert fn["neuron"] == [240, 240, 240]
     assert fn["activation_function"] == "tanh"
     assert fn["seed"] == 42
-    # Required for DPA-3.1-3M multi-task case-embedding layer.
+    # dim_case_embd is read from the aux branch's own (ckpt-derived)
+    # fitting_net_params, not hardcoded — see
+    # test_dim_case_embd_is_read_from_aux_fitting_net_not_hardcoded below.
     assert fn["dim_case_embd"] == 31
+
+
+def test_dim_case_embd_is_read_from_aux_fitting_net_not_hardcoded():
+    """dim_case_embd must match the aux branch's own pretrained checkpoint
+    (i.e. the number of branches THAT checkpoint was originally trained
+    with), not a hardcoded constant. A checkpoint other than DPA-3.1-3M
+    (e.g. a 23-branch checkpoint) has a different aux dim_case_embd, and
+    hardcoding 31 would build a downstream head with the wrong case-embedding
+    width -- get_case_embd_config's all-branches-must-match check would then
+    reject the config, or (with resuming=True) the mismatched shapes would
+    fail to load.
+    """
+    t = _FakePropertyTuner()
+    t.fitting_net_params = {
+        "type": "ener",
+        "neuron": [240, 240, 240],
+        "dim_case_embd": 23,
+    }
+    config = MFTConfigManager(t).build()
+    fn = config["model"]["model_dict"]["property"]["fitting_net"]
+    assert fn["dim_case_embd"] == 23
+
+
+def test_dim_case_embd_omitted_when_aux_fitting_net_has_none():
+    """A single-task-pretrained (non-multitask) checkpoint's aux fitting_net
+    has no dim_case_embd at all; the downstream head must not invent one
+    (which would fail get_case_embd_config's all-branches-match check
+    against the aux branch's real dim_case_embd of 0).
+    """
+    t = _FakePropertyTuner()
+    t.fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
+    config = MFTConfigManager(t).build()
+    fn = config["model"]["model_dict"]["property"]["fitting_net"]
+    assert "dim_case_embd" not in fn
 
 
 def test_property_task_config_has_property_loss():
@@ -164,7 +203,11 @@ def test_property_task_aux_branch_keeps_ener_fitting_net():
     config = MFTConfigManager(_FakePropertyTuner()).build()
     aux_fn = config["model"]["model_dict"]["SPICE2"]["fitting_net"]
     assert aux_fn["type"] == "ener"
-    assert aux_fn == {"type": "ener", "neuron": [240, 240, 240]}
+    assert aux_fn == {
+        "type": "ener",
+        "neuron": [240, 240, 240],
+        "dim_case_embd": 31,
+    }
 
 
 def test_property_task_aux_branch_keeps_ener_loss():

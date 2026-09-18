@@ -31,6 +31,9 @@ import numpy as np
 from dpa_adapt._backend import (
     resolve_pretrained_path,
 )
+from dpa_adapt.data.loader import (
+    _get_source,
+)
 
 if TYPE_CHECKING:
     import dpdata
@@ -74,6 +77,13 @@ def _system_fingerprint(system: dpdata.System) -> str:
     element costs O(total array size), but that is negligible next to the
     descriptor extraction the cache guards, and it makes the key collision-safe
     for changed systems.
+
+    Grouped (heterogeneous) systems also fold in ``set.*/pool_mask.npy`` and
+    ``set.*/real_atom_types.npy`` when present: their per-atom, per-frame
+    masking/typing is what the extractor actually consumes for those systems
+    (``atom_types``/``coords`` alone are the uniform placeholder + padded
+    geometry, which can be identical across two systems with different group
+    markers or real atom types).
     """
     d = system.data
 
@@ -87,6 +97,17 @@ def _system_fingerprint(system: dpdata.System) -> str:
     _hash_array(h, np.asarray(d["coords"]))
     if "cells" in d:
         _hash_array(h, np.asarray(d["cells"]))
+    # grouped-only per-frame arrays: real local atom types (with -1 padding)
+    # and the pooling mask, read straight from disk since dpdata does not
+    # surface either as a per-frame field.
+    source = _get_source(system)
+    if source is not None:
+        for set_dir in sorted(Path(source).glob("set.*")):
+            for name in ("real_atom_types.npy", "pool_mask.npy"):
+                path = set_dir / name
+                if path.is_file():
+                    h.update(name.encode())
+                    _hash_array(h, np.load(path))
     return h.hexdigest()[:16]
 
 
