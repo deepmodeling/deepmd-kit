@@ -22,6 +22,7 @@ from .neighbor_list import (
     NeighborList,
 )
 from .nlist import (
+    UNBOUNDED_NSEL,
     apply_pair_exclusion_nlist,
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -729,18 +730,19 @@ class DefaultNeighborList(NeighborList):
         extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
             coord_normalized, atype, box, rcut
         )
-        # A frame can never contribute more than nall neighbors; cap the
-        # requested neighbor count so sentinel capacities (e.g. DPA4C's
-        # effectively-unbounded sel) do not allocate absurd padding.  This is
-        # always safe here: real neighbors number at most nall, and
-        # ``format_nlist`` re-pads the neighbor axis to ``sum(sel)`` for
-        # type-distinguished descriptors downstream.  Skip the cap when nall
-        # is symbolic (e.g. jax2tf export), where the comparison would be
-        # inconclusive; sentinel capacities only occur on backends with
-        # concrete shapes.
+        # Sentinel capacities (e.g. DPA4C's effectively-unbounded sel) would
+        # allocate absurd padding; a frame can never contribute more than nall
+        # neighbors, so cap them.  Normal capacities must NOT be capped:
+        # type-distinguished descriptors and serialized lowers (e.g. the jax
+        # StableHLO export, whose polymorphic shape bakes the neighbor axis
+        # as the sum(sel) constant) require exactly sum(sel) columns, and
+        # ``format_nlist`` only re-pads on the eager model path.  Skip the cap
+        # when nall is symbolic (e.g. jax2tf export), where the comparison
+        # would be inconclusive; sentinel capacities only occur on backends
+        # with concrete shapes.
         nall = extended_atype.shape[1]
         nsel = sum(sel)
-        if isinstance(nall, int) and nsel > nall:
+        if nsel >= UNBOUNDED_NSEL and isinstance(nall, int) and nsel > nall:
             nsel = nall
         # Types are distinguished in the lower interface, so keep them merged
         # here.  The dense path remains faster for small systems; the spatial
