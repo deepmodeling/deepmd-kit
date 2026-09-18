@@ -100,6 +100,7 @@ from deepmd.pt_expt.loss import (
     EnergySpinLoss,
     PropertyLoss,
     TensorLoss,
+    UniMolLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,
@@ -347,6 +348,10 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "unimol":
+        # Self-supervised: it takes no learning rate and no model geometry,
+        # because its targets come from the corruption it defines itself.
+        return UniMolLoss(**loss_params)
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 
@@ -1883,6 +1888,30 @@ class Trainer(AbstractTrainer):
                 self.validation_data_by_task[model_key].add_data_requirements(
                     data_requirement
                 )
+            # A self-supervised objective builds its labels by corrupting the
+            # input, which has to happen as the data is read.
+            for dataset in (
+                self.training_data_by_task[model_key],
+                self.validation_data_by_task[model_key],
+            ):
+                if dataset is None:
+                    continue
+                # A fresh transform per dataset: it carries the counter that
+                # stands in for the epoch, so sharing one would let validation
+                # passes advance the training corruption.
+                frame_transform = self.losses[model_key].frame_transform(
+                    self.model_params_by_task[model_key]["type_map"]
+                )
+                if frame_transform is None:
+                    break
+                if not hasattr(dataset, "set_frame_transform"):
+                    raise ValueError(
+                        f"the {self.losses[model_key].__class__.__name__} "
+                        "objective corrupts its input as the data is read, "
+                        "which this dataset type does not support; convert "
+                        "the data to LMDB first"
+                    )
+                dataset.set_frame_transform(frame_transform)
             if self.multi_task:
                 valid_params = (
                     training_params["data_dict"][model_key].get("validation_data", {})
@@ -2263,6 +2292,7 @@ class Trainer(AbstractTrainer):
                 torch.optim.Adam if opt_type == "Adam" else torch.optim.AdamW,
                 lr=initial_lr,
                 betas=adam_betas,
+                eps=float(optimizer_params["adam_eps"]),
                 weight_decay=weight_decay,
             )
         else:

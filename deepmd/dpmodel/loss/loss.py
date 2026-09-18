@@ -62,6 +62,22 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
 
+    def frame_transform(self, type_map: list[str]):  # noqa: ANN201
+        """Return a per-frame data transform this objective needs, or None.
+
+        Self-supervised objectives build their own labels by corrupting the
+        input, which has to happen while the data is read rather than inside
+        the loss. A trainer installs whatever this returns on the datasets of
+        the corresponding task. Supervised losses need nothing and return None.
+
+        Parameters
+        ----------
+        type_map : list[str]
+            Element names of the model, which a transform needs in order to map
+            elements onto types.
+        """
+        return None
+
     @property
     def supports_ragged_batches(self) -> bool:
         """Whether this objective accepts a flat per-node batch axis."""

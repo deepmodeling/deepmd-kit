@@ -1273,6 +1273,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
         spin: Array | None = None,
+        return_latent: bool = False,
     ) -> tuple[
         Array,
         Array | None,
@@ -1308,6 +1309,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             initial SO(3) backbone state before the interaction blocks.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
+        return_latent
+            Return ``(descriptor, latent)`` instead of the five-tuple. Prefer
+            :meth:`call_with_latent`, which is this flag with a name.
 
         Returns
         -------
@@ -1370,7 +1374,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph, atype_flat = _graph_from_padded_nlist(
             coord_ext, atype_ext, nlist, mapping
         )
-        x_scalar, _ = self._run_graph(
+        x_scalar, latent = self._run_graph(
             graph,
             atype_flat,
             nf=nf,
@@ -1382,12 +1386,72 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # ``_run_graph`` returns (nf*nloc, 1, 1, channels) already in
         # global precision; flatten the SO(3) singleton axes to (nf, nloc, C).
         descriptor = xp.reshape(x_scalar, (nf, nloc, self.channels))
-        return (
-            descriptor,
-            None,
-            None,
-            None,
-            None,
+        if not return_latent:
+            return (
+                descriptor,
+                None,
+                None,
+                None,
+                None,
+            )
+        # Cast the latent the way ``_run_graph`` already casts the scalar, so
+        # that everything leaving a public entry is in the global precision.
+        return descriptor, xp.astype(latent, get_xp_precision(xp, "global"))
+
+    def call_with_latent(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        comm_dict: dict[str, Array] | None = None,
+        fparam: Array | None = None,
+        force_embedding: Array | None = None,
+        charge_spin: Array | None = None,
+        spin: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Compute the descriptor and the equivariant state it was read out of.
+
+        ``call`` returns the l=0 read-out only, which is all a potential energy
+        surface needs. A head that predicts a per-atom vector needs the l=1 part
+        of the backbone state instead, and that state is otherwise discarded.
+        The pt backend exposes the same thing as ``forward_with_edges``.
+
+        Arguments are those of :meth:`call`.
+
+        Returns
+        -------
+        descriptor
+            Descriptor with shape (nf, nloc, channels), exactly what
+            :meth:`call` returns in its first slot.
+        latent
+            The final equivariant state, with shape
+            ``(nf * nloc, node_readout_dim, 1, channels)`` where
+            ``node_readout_dim = (node_readout_lmax + 1) ** 2``. Rows ``1:4`` of
+            the second axis are the l=1 block, in a packed real-harmonic basis
+            rather than Cartesian order; see
+            :func:`deepmd.dpmodel.fitting.unimol_dpa_heads.l1_to_cartesian` for
+            the mapping that rotates with the input, which was established by
+            measurement rather than by assuming a convention.
+
+            Note that on the torch backend this state is not bit-reproducible
+            between identical calls when ``use_env_seed`` is on and the
+            precision is single: measured at 7e-09, against exactly zero for the
+            scalar read-out, and gone in double precision or with
+            ``use_env_seed`` off. The scalar output :meth:`call` returns is
+            unaffected, so this surfaces only through this accessor.
+        """
+        return self.call(
+            coord_ext,
+            atype_ext,
+            nlist,
+            mapping=mapping,
+            comm_dict=comm_dict,
+            fparam=fparam,
+            force_embedding=force_embedding,
+            charge_spin=charge_spin,
+            spin=spin,
+            return_latent=True,
         )
 
     def call_graph(
