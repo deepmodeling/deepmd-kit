@@ -471,6 +471,49 @@ class TestRadialParity:
         assert restored.exponent == 7
         assert restored.envelope is not None
 
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    @pytest.mark.parametrize("apply_envelope", [None, True, False])
+    def test_radial_basis_version_one_envelope(
+        self, basis_type: str, apply_envelope: bool | None
+    ) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        exponent = 0 if apply_envelope is False else 5
+        reference = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=4,
+            basis_type=basis_type,
+            exponent=exponent,
+            dtype=torch.float64,
+        )
+        with torch.no_grad():
+            reference.adam_freqs.add_(0.01)
+        data = reference.serialize()
+        data["@version"] = 1
+        data["config"]["exponent"] = 5
+        if apply_envelope is not None:
+            data["config"]["apply_envelope"] = apply_envelope
+        r = self._r_grid()
+        expected = reference(to_pt(r))
+        dp_restored = DPRadialBasis.deserialize(data)
+        pt_restored = PTRadialBasis.deserialize(data)
+        assert_parity(dp_restored.call(r), expected)
+        torch.testing.assert_close(
+            pt_restored(to_pt(r)), expected, rtol=PT_RTOL, atol=PT_ATOL
+        )
+        for restored in (dp_restored, pt_restored):
+            assert restored.exponent == exponent
+            assert (restored.envelope is None) is (exponent == 0)
+            serialized = restored.serialize()
+            assert serialized["@version"] == 2
+            assert "apply_envelope" not in serialized["config"]
+        assert data["config"]["exponent"] == 5
+
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
     @pytest.mark.parametrize("exponent", [0, 7])
     def test_radial_basis_roundtrip(self, basis_type: str, exponent: int) -> None:

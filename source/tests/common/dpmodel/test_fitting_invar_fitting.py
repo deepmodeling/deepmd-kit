@@ -218,9 +218,9 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # Backend wrappers eagerly convert these NumPy attributes and would
         # hide the generic dpmodel boundary, so convert only runtime inputs.
         result = fitting(
-            torch.as_tensor(descriptor),
-            torch.as_tensor(atype),
-            aparam=torch.as_tensor(aparam),
+            torch.as_tensor(descriptor, device="cpu"),
+            torch.as_tensor(atype, device="cpu"),
+            aparam=torch.as_tensor(aparam, device="cpu"),
         )["energy"]
 
         self.assertIsInstance(result, torch.Tensor)

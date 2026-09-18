@@ -580,7 +580,7 @@ class RadialBasis(nn.Module):
         state = self.state_dict()
         return {
             "@class": "RadialBasis",
-            "@version": 1,
+            "@version": 2,
             "config": {
                 "rcut": self.rcut,
                 "basis_type": self.basis_type,
@@ -600,7 +600,7 @@ class RadialBasis(nn.Module):
         if data_cls != "RadialBasis":
             raise ValueError(f"Invalid class for RadialBasis: {data_cls}")
         version = int(data.pop("@version"))
-        check_version_compatibility(version, 1, 1)
+        check_version_compatibility(version, 2, 1)
         config = data.pop("config", data)
         variables = data.pop("@variables", None)
         precision = config["precision"]
@@ -609,7 +609,11 @@ class RadialBasis(nn.Module):
             rcut=float(config["rcut"]),
             n_radial=int(config["n_radial"]),
             basis_type=str(config.get("basis_type", "bessel")),
-            exponent=int(config.get("exponent", 7)),
+            exponent=(
+                0
+                if version == 1 and config.get("apply_envelope") is False
+                else int(config.get("exponent", 7))
+            ),
             dtype=dtype,
             trainable=bool(config.get("trainable", True)),
         )
