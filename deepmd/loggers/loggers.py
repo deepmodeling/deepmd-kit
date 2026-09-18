@@ -5,6 +5,7 @@ import logging
 import os
 from dataclasses import (
     dataclass,
+    replace,
 )
 from typing import (
     TYPE_CHECKING,
@@ -259,23 +260,38 @@ def _replace_handlers(level: int, handlers: list[logging.Handler]) -> None:
 
 @dataclass(frozen=True)
 class _LogHandlerConfig:
-    """Serializable handler settings without live streams or locks."""
+    """DeePMD handler policy without formatter, filter, or stream objects."""
 
     level: int
-    formatter: logging.Formatter | None
-    filters: tuple[logging.Filter, ...]
-    filename: str | None
+    filename: str | None = None
+    context: _DistributedLogContext | None = None
+    mpi_rank: int | None = None
+    mpi_master: bool = False
 
-    def create_handler(self) -> logging.Handler:
+    def create_handler(self, *, mode: str = "a") -> logging.Handler:
+        """Construct a local handler from its rank and destination policy."""
         handler = (
-            logging.FileHandler(self.filename, mode="a")
+            logging.FileHandler(self.filename, mode=mode)
             if self.filename is not None
             else logging.StreamHandler()
         )
+        console = self.filename is None
+        formatter = CFORMATTER if console else FFORMATTER
+        if self.context is not None:
+            handler.addFilter(_DistributedLogFilter(self.context, filter_ranks=console))
+            if console:
+                formatter = CFORMATTER_DISTRIBUTED
+        elif self.mpi_rank is not None:
+            if self.mpi_master:
+                handler.addFilter(_MPIMasterFilter(self.mpi_rank))
+            elif console:
+                handler.addFilter(_MPIRankFilter(self.mpi_rank))
+                formatter = CFORMATTER_MPI
         handler.setLevel(self.level)
-        handler.setFormatter(self.formatter)
-        for log_filter in self.filters:
-            handler.addFilter(log_filter)
+        handler.setFormatter(formatter)
+        handler.addFilter(_AppFilter())
+        # Runtime logging integrations may attach non-serializable objects.
+        handler._deepmd_log_config = self
         return handler
 
 
@@ -284,9 +300,9 @@ class WorkerLogConfig:
     """Serializable DeePMD logging configuration for process-pool workers.
 
     Workers retain the parent's console selection, process-rank context,
-    and ordinary file destinations. File streams reopen in append mode.
-    MPI-IO handlers stay owned by the parent ranks because an independent
-    worker cannot participate in their collective file operations.
+    and DeePMD file destinations. File streams reopen in append mode. External
+    logging integrations remain in the parent process, as do MPI-IO handlers
+    whose collective file operations cannot involve an independent worker.
     """
 
     level: int
@@ -296,22 +312,14 @@ class WorkerLogConfig:
     def capture(cls) -> "WorkerLogConfig":
         """Capture configured handlers, or the effective level before CLI setup."""
         root_log = logging.getLogger("deepmd")
+        configs = []
+        for handler in root_log.handlers:
+            config = getattr(handler, "_deepmd_log_config", None)
+            if isinstance(config, _LogHandlerConfig):
+                configs.append(replace(config, level=handler.level))
         return cls(
             level=root_log.getEffectiveLevel(),
-            handlers=tuple(
-                _LogHandlerConfig(
-                    level=handler.level,
-                    formatter=handler.formatter,
-                    filters=tuple(handler.filters),
-                    filename=(
-                        handler.baseFilename
-                        if isinstance(handler, logging.FileHandler)
-                        else None
-                    ),
-                )
-                for handler in root_log.handlers
-                if not isinstance(handler, _MPIHandler)
-            ),
+            handlers=tuple(configs),
         )
 
     def configure(self) -> None:
@@ -408,73 +416,45 @@ def set_log_handles(
     context = None if MPI else _DistributedLogContext.from_environment()
 
     # * add console handler ************************************************************
-    ch = logging.StreamHandler()
-    if MPI:
-        rank = MPI.COMM_WORLD.Get_rank()
-        if mpi_log == "master":
-            ch.setFormatter(CFORMATTER)
-            ch.addFilter(_MPIMasterFilter(rank))
-        else:
-            ch.setFormatter(CFORMATTER_MPI)
-            ch.addFilter(_MPIRankFilter(rank))
-    elif context is not None:
-        ch.setFormatter(CFORMATTER_DISTRIBUTED)
-        ch.addFilter(_DistributedLogFilter(context, filter_ranks=True))
-    else:
-        ch.setFormatter(CFORMATTER)
-
-    ch.setLevel(level)
-    ch.addFilter(_AppFilter())
-    handlers: list[logging.Handler] = [ch]
+    rank = MPI.COMM_WORLD.Get_rank() if MPI else None
+    config = _LogHandlerConfig(
+        level=level,
+        context=context,
+        mpi_rank=rank,
+        mpi_master=mpi_log == "master",
+    )
+    handlers = [config.create_handler()]
 
     # * add file handler ***************************************************************
     if log_path:
         # create directory
         log_path.parent.mkdir(exist_ok=True, parents=True)
 
-        fh = None
-
-        if mpi_log == "master":
-            rank = MPI.COMM_WORLD.Get_rank()
-            if rank == 0:
-                fh = logging.FileHandler(log_path, mode="w")
-                fh.addFilter(_MPIMasterFilter(rank))
-                fh.setFormatter(FFORMATTER)
-        elif mpi_log == "collect":
-            rank = MPI.COMM_WORLD.Get_rank()
+        if mpi_log == "collect":
             fh = _MPIHandler(log_path, MPI, mode=MPI.MODE_WRONLY | MPI.MODE_CREATE)
             fh.addFilter(_MPIRankFilter(rank))
             fh.setFormatter(FFORMATTER_MPI)
-        elif mpi_log == "workers":
-            rank = MPI.COMM_WORLD.Get_rank()
-            # if file has suffix than insert rank number before suffix
-            # e.g deepmd.log -> deepmd_<rank>.log
-            # if no suffix is present, insert rank as suffix
-            # e.g. deepmdlog -> deepmdlog.<rank>
-            if log_path.suffix:
-                worker_log = (log_path.parent / f"{log_path.stem}_{rank}").with_suffix(
-                    log_path.suffix
-                )
-            else:
-                worker_log = log_path.with_suffix(f".{rank}")
-
-            fh = logging.FileHandler(worker_log, mode="w")
-            fh.setFormatter(FFORMATTER)
-        elif context is not None:
-            rank_log = log_path.with_name(
-                f"{log_path.stem}.rank{context.rank}{log_path.suffix}"
-            )
-            # Worker configuration reopens this path in append mode as well.
-            fh = logging.FileHandler(rank_log, mode="a")
-            fh.addFilter(_DistributedLogFilter(context, filter_ranks=False))
-            fh.setFormatter(FFORMATTER)
-        else:
-            fh = logging.FileHandler(log_path, mode="w")
-            fh.setFormatter(FFORMATTER)
-
-        if fh:
             fh.setLevel(level)
             fh.addFilter(_AppFilter())
             handlers.append(fh)
+        elif mpi_log != "master" or rank == 0:
+            if mpi_log == "workers":
+                # MPI worker paths retain their existing suffix convention.
+                # deepmd.log becomes deepmd_<rank>.log; deepmdlog gains .<rank>.
+                log_path = (
+                    (log_path.parent / f"{log_path.stem}_{rank}").with_suffix(
+                        log_path.suffix
+                    )
+                    if log_path.suffix
+                    else log_path.with_suffix(f".{rank}")
+                )
+            elif context is not None:
+                log_path = log_path.with_name(
+                    f"{log_path.stem}.rank{context.rank}{log_path.suffix}"
+                )
+            file_config = replace(config, filename=str(log_path.absolute()))
+            handlers.append(
+                file_config.create_handler(mode="a" if context is not None else "w")
+            )
 
     _replace_handlers(level, handlers)

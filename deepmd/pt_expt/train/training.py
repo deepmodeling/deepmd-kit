@@ -3106,7 +3106,10 @@ class Trainer(AbstractTrainer):
             return
         if self.opt_type not in ("Adam", "AdamW", "HybridMuon"):
             return
-        log.info("Compiling training graphs before the first collective.")
+        log.info(
+            "Compiling training graphs before the first collective.",
+            extra={"rank_scope": "all"},
+        )
         start = time.time()
         inner = self._unwrapped
         trainable_parameters = tuple(

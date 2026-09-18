@@ -1382,7 +1382,10 @@ class Trainer:
         inner = self._get_inner_module()
         if not any(getattr(module, "use_compile", False) for module in inner.modules()):
             return
-        log.info("Compiling training graphs before the first collective.")
+        log.info(
+            "Compiling training graphs before the first collective.",
+            extra={"rank_scope": "all"},
+        )
         start = time.time()
         trainable_parameters = tuple(
             parameter for parameter in inner.parameters() if parameter.requires_grad

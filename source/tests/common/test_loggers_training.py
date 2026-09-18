@@ -153,10 +153,12 @@ def test_rank_files_retain_records_filtered_from_the_console(
     assert not log_path.exists()
 
 
+@pytest.mark.parametrize("external_logging", [False, True])
 @pytest.mark.usefixtures("isolated_logging")
 def test_lmdb_scan_worker_inherits_the_rank_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    external_logging: bool,
 ) -> None:
     import lmdb
     import msgpack
@@ -175,6 +177,15 @@ def test_lmdb_scan_worker_inherits_the_rank_file(
 
     _configure_rank(monkeypatch, 2)
     set_log_handles(logging.INFO, tmp_path / "train.log")
+    if external_logging:
+        # Logging integrations can keep terminal streams in their formatters.
+        logger = logging.getLogger("deepmd")
+        formatter = logging.Formatter("%(message)s")
+        formatter.stream = sys.__stderr__
+        logger.handlers[0].setFormatter(formatter)
+        external_handler = logging.StreamHandler()
+        external_handler.setFormatter(formatter)
+        logger.addHandler(external_handler)
     # Worker logging retains its configured owner when the environment differs.
     _configure_rank(monkeypatch, 1)
     path = _create_lmdb(str(tmp_path / "frames.lmdb"), nframes=2)
@@ -224,6 +235,14 @@ def test_node_summary_does_not_take_checkpoint_ownership(
         epoch_length=lambda _: 10,
         rank=2,
     )
+    task_schedule = resolve_step_schedule(
+        {"numb_steps": 20},
+        multi_task=True,
+        model_keys=["a", "b"],
+        training_data={"a": [0], "b": [0, 1]},
+        epoch_length=lambda _: 10,
+        rank=2,
+    )
     checkpoint_dir = tmp_path / "checkpoints"
     store, _ = build_checkpoint_stores(
         {
@@ -238,6 +257,8 @@ def test_node_summary_does_not_take_checkpoint_ownership(
 
     output = capsys.readouterr().err
     assert "Computed num_steps=20" in output
+    assert "defaulting to the number of systems per task" in output
+    assert task_schedule.model_prob.tolist() == [1 / 3, 2 / 3]
     assert "Resolved checkpoint retention to 2" in output
     assert store.max_keep == 2
     assert not checkpoint_dir.exists()
