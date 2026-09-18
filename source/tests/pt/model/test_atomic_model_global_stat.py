@@ -98,6 +98,9 @@ class FooFitting(torch.nn.Module, BaseFitting):
     def get_type_map(self) -> list[str]:
         raise NotImplementedError
 
+    def get_dim_fparam(self) -> int:
+        return 1
+
     def forward(
         self,
         descriptor: torch.Tensor,
@@ -108,7 +111,10 @@ class FooFitting(torch.nn.Module, BaseFitting):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
     ):
-        nf, nloc, _ = descriptor.shape
+        nloc = descriptor.shape[1]
+        # The frame parameter selects predictions independently of batching.
+        assert fparam is not None
+        frame_index = fparam[:, 0].to(torch.long)
         ret = {}
         ret["foo"] = (
             torch.Tensor(
@@ -117,9 +123,10 @@ class FooFitting(torch.nn.Module, BaseFitting):
                     [4.0, 5.0, 6.0],
                 ]
             )
-            .view([nf, nloc] + self.output_def()["foo"].shape)  # noqa: RUF005
+            .view([-1, nloc, *self.output_def()["foo"].shape])
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
+            .index_select(0, frame_index)
         )
         ret["pix"] = (
             torch.Tensor(
@@ -128,9 +135,10 @@ class FooFitting(torch.nn.Module, BaseFitting):
                     [6.0, 5.0, 4.0],
                 ]
             )
-            .view([nf, nloc] + self.output_def()["pix"].shape)  # noqa: RUF005
+            .view([-1, nloc, *self.output_def()["pix"].shape])
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
+            .index_select(0, frame_index)
         )
         ret["bar"] = (
             torch.Tensor(
@@ -139,9 +147,10 @@ class FooFitting(torch.nn.Module, BaseFitting):
                     [4.0, 5.0, 6.0, 10.0, 11.0, 12.0],
                 ]
             )
-            .view([nf, nloc] + self.output_def()["bar"].shape)  # noqa: RUF005
+            .view([-1, nloc, *self.output_def()["bar"].shape])
             .to(env.GLOBAL_PT_FLOAT_PRECISION)
             .to(env.DEVICE)
+            .index_select(0, frame_index)
         )
         return ret
 
@@ -152,6 +161,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
+        self.fparam = to_torch_tensor(
+            np.arange(self.nf, dtype=np.float64).reshape(-1, 1)
+        )
         nf, nloc, nnei = self.nlist.shape
         self.merged_output_stat = [
             {
@@ -177,6 +189,8 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 "find_bar": np.float32(1.0),
             }
         ]
+        for system in self.merged_output_stat:
+            system["fparam"] = self.fparam
         self.tempdir = tempfile.TemporaryDirectory()
         h5file = str((Path(self.tempdir.name) / "testcase.h5").resolve())
         with h5py.File(h5file, "w") as f:
@@ -209,7 +223,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
         # 1. test run without bias
         # nf x na x odim
-        ret0 = md0.forward_common_atomic(*args)
+        ret0 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret0 = cvt_ret(ret0)
 
         expected_ret0 = {}
@@ -238,7 +252,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
-        ret1 = md0.forward_common_atomic(*args)
+        ret1 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret1 = cvt_ret(ret1)
         expected_std = np.array(
             [[[0, 1], [0, 1]], [[1, 1], [1, 1]], [[0, 0], [0, 0]]]
@@ -259,7 +273,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             raise RuntimeError
 
         md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
-        ret2 = md0.forward_common_atomic(*args)
+        ret2 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret2 = cvt_ret(ret2)
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], ret2[kk])
@@ -277,7 +291,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.nlist,
             ]
         ]
-        ret3 = md0.forward_common_atomic(*args)
+        ret3 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret3 = cvt_ret(ret3)
         ## model output on foo: [[2, 3, 6], [5, 8, 9]] given bias [1, 3]
         ## foo sumed: [11, 22] compared with [5, 7], fit target is [-6, -15]
@@ -324,7 +338,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
         # 1. test run without bias
         # nf x na x odim
-        ret0 = md0.forward_common_atomic(*args)
+        ret0 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret0 = cvt_ret(ret0)
         expected_ret0 = {}
         expected_ret0["foo"] = np.array(
@@ -351,7 +365,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
-        ret1 = md0.forward_common_atomic(*args)
+        ret1 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret1 = cvt_ret(ret1)
         foo_bias = np.array(preset_out_bias["foo"], dtype=np.float64).reshape(2, 1)
         bar_bias = preset_out_bias["bar"]
@@ -365,7 +379,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         BaseAtomicModel.change_out_bias(
             md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
         )
-        ret3 = md0.forward_common_atomic(*args)
+        ret3 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret3 = cvt_ret(ret3)
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret3[kk], ret1[kk])
@@ -412,7 +426,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
         # 1. test run without bias
         # nf x na x odim
-        ret0 = md0.forward_common_atomic(*args)
+        ret0 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret0 = cvt_ret(ret0)
         expected_ret0 = {}
         expected_ret0["foo"] = np.array(
@@ -440,7 +454,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
-        ret1 = md0.forward_common_atomic(*args)
+        ret1 = md0.forward_common_atomic(*args, fparam=self.fparam)
         ret1 = cvt_ret(ret1)
         # nt x odim
         foo_bias = np.array([1.0, 3.0]).reshape(2, 1)
