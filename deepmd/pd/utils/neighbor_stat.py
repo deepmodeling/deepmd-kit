@@ -85,30 +85,38 @@ class NeighborStatOP(paddle.nn.Layer):
             1
         ) - coord0.reshape([nframes, -1, 3]).unsqueeze(2)
         assert list(diff.shape) == [nframes, nloc, nall, 3]
-        # remove the diagonal elements
-        mask = paddle.eye(nloc, nall).to(dtype=paddle.bool, device=diff.place)
-        # diff[:, mask] = float("inf")
-        # diff.masked_fill_(
-        #     paddle.broadcast_to(mask.unsqueeze([0, -1]), diff.shape),
-        #     paddle.to_tensor(float("inf")),
-        # )
-        diff[paddle.broadcast_to(mask.unsqueeze([0, -1]), diff.shape)] = float("inf")
+        # Match the generic neighbor-stat operator: virtual atoms cannot be
+        # statistics centers or neighbors, and self pairs are always excluded.
+        self_pair = paddle.eye(nloc, nall).to(dtype=paddle.bool, device=diff.place)
+        real_center = atype >= 0
+        real_neighbor = extend_atype >= 0
+        valid_pair = (
+            ~self_pair.unsqueeze(0)
+            & real_center.unsqueeze(2)
+            & real_neighbor.unsqueeze(1)
+        )
         rr2 = paddle.sum(paddle.square(diff), axis=-1)
+        rr2 = paddle.where(valid_pair, rr2, paddle.full_like(rr2, float("inf")))
         min_rr2 = paddle.min(rr2, axis=-1)
         # count the number of neighbors
+        within_rcut = valid_pair & (rr2 < self.rcut**2)
         if not self.mixed_types:
-            mask = rr2 < self.rcut**2
-            nnei = paddle.zeros([nframes, nloc, self.ntypes], dtype=paddle.int64)
-            for ii in range(self.ntypes):
-                nnei[:, :, ii] = paddle.sum(
-                    mask & ((extend_atype == ii)[:, None, :]), axis=-1
-                )
+            nnei = paddle.stack(
+                [
+                    paddle.sum(
+                        (within_rcut & (extend_atype == ii).unsqueeze(1)).astype(
+                            extend_atype.dtype
+                        ),
+                        axis=-1,
+                    )
+                    for ii in range(self.ntypes)
+                ],
+                axis=-1,
+            )
         else:
-            mask = rr2 < self.rcut**2
-            # virtual types (<0) are not counted
-            nnei = paddle.sum(
-                mask & ((extend_atype >= 0).unsqueeze(1)), axis=-1
-            ).reshape([nframes, nloc, 1])
+            nnei = paddle.sum(within_rcut.astype(extend_atype.dtype), axis=-1).reshape(
+                [nframes, nloc, 1]
+            )
         max_nnei = paddle.max(nnei, axis=1)
         return min_rr2, max_nnei
 
