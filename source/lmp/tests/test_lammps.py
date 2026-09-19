@@ -766,3 +766,24 @@ def test_pair_deepmd_mpi_subcommunicators(tmp_path: Path) -> None:
 
     np.testing.assert_allclose(np.loadtxt(output_a), expected_f)
     np.testing.assert_allclose(np.loadtxt(output_b), expected_f2)
+
+
+def _ordinary_model_on_spin_atoms(style: str) -> None:
+    """Same spin-enabled admission used for host and Kokkos pair styles."""
+    lammps = PyLammps()
+    lammps.units("metal")
+    lammps.atom_style("spin")
+    lammps.region("box block 0 10 0 10 0 10")
+    lammps.create_box("1 box")
+    lammps.create_atoms("1 single 1.0 1.0 1.0")
+    lammps.mass("1 1.0")
+    with pytest.raises(Exception, match="does not support spin atoms"):
+        lammps.pair_style(f"{style} {pb_file.resolve()}")
+        lammps.pair_coeff("* *")
+        lammps.run(0)
+
+
+@pytest.mark.parametrize("style", ["deepmd", "deepmd/kk"])
+def test_ordinary_model_rejects_spin_atoms_on_host_and_kokkos(style: str) -> None:
+    """Host compute and Kokkos init_style must refuse the same spin input."""
+    _ordinary_model_on_spin_atoms(style)
