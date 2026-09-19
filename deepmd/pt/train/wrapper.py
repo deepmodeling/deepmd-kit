@@ -163,6 +163,7 @@ class ModelWrapper(torch.nn.Module):
         coord: torch.Tensor,
         atype: torch.Tensor,
         spin: torch.Tensor | None = None,
+        grid: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
         cur_lr: torch.Tensor | None = None,
         label: torch.Tensor | None = None,
@@ -193,6 +194,12 @@ class ModelWrapper(torch.nn.Module):
             has_spin = has_spin()
         if has_spin:
             input_dict["spin"] = spin
+
+        has_grid = getattr(self.model[task_key], "has_grid", False)
+        if callable(has_grid):
+            has_grid = has_grid()
+        if has_grid:
+            input_dict["grid"] = grid
 
         # A loss-free wrapper is a pure inference object, so parameters can be
         # treated as constants while coordinate gradients remain enabled.
