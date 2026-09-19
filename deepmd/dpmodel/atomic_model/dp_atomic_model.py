@@ -511,7 +511,7 @@ class DPAtomicModel(BaseAtomicModel):
                 ],
                 axis=0,
             )
-        if spin is not None:
+        if self.add_spin_ebd and spin is not None:
             spin = xp.concat(
                 [
                     xp.reshape(spin, (-1, 3)),

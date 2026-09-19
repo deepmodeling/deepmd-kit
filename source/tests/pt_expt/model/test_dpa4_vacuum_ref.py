@@ -112,6 +112,33 @@ def atom_energies(
     return ret["energy"][..., 0].detach().cpu().numpy()
 
 
+@pytest.mark.parametrize("vacuum_ref", [False, True])  # isolated-atom reference
+def test_non_spin_atomic_model_ignores_unused_spin(vacuum_ref: bool) -> None:
+    """The statistics graph ignores spin inputs unused by its descriptor."""
+    config = {
+        **CONFIG,
+        "descriptor": {**CONFIG["descriptor"], "use_spin": None},
+        "fitting_net": {**CONFIG["fitting_net"], "vacuum_ref": vacuum_ref},
+        "preset_out_bias": PRESET,
+    }
+    model = get_model(config).to(env.DEVICE).eval()
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]], dtype=torch.float64, device=env.DEVICE
+    )
+    atype = torch.tensor([[0, 1]], dtype=torch.int64, device=env.DEVICE)
+    graph = build_neighbor_graph(coord, atype, None, model.get_rcut())
+    graph.edge_vec.requires_grad_(True)
+    atype = atype.reshape(-1)
+    expected = model.atomic_model.forward_common_atomic_graph(graph, atype)
+    actual = model.atomic_model.forward_common_atomic_graph(
+        graph, atype, spin=torch.ones_like(coord).reshape(-1, 3)
+    )
+    torch.testing.assert_close(actual["energy"], expected["energy"], rtol=0, atol=0)
+    expected_grad = torch.autograd.grad(expected["energy"].sum(), graph.edge_vec)[0]
+    actual_grad = torch.autograd.grad(actual["energy"].sum(), graph.edge_vec)[0]
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=0, atol=0)
+
+
 def test_isolated_atoms_and_reference_subtraction() -> None:
     rng = np.random.default_rng(0)
     coord = rng.normal(size=(2, 6, 3)) * 1.2
@@ -270,7 +297,7 @@ def eager_energies(
     return ret["energy"][..., 0].detach().cpu().numpy().reshape(-1)
 
 
-@pytest.mark.parametrize("suffix", [".pt2", ".pte"])
+@pytest.mark.parametrize("suffix", [".pt2", ".pte"])  # compiled vs exported artifact
 def test_freeze_folds_the_reference(tmp_path, suffix) -> None:
     """A frozen model reproduces the referenced model without reference atoms."""
     model, dp = freeze_model(tmp_path, numb_fparam=0, suffix=suffix)

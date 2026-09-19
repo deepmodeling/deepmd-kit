@@ -30,9 +30,9 @@ from deepmd.utils.preset_out_bias import (
     override_assigned_bias,
 )
 from deepmd.utils.stat_file import (
-    load_paired_items,
+    load_output_stats,
     load_required_items,
-    replace_paired_items,
+    save_output_stats,
 )
 
 log = logging.getLogger(__name__)
@@ -117,37 +117,6 @@ def _save_observed_type_to_file(
     fp = stat_file_path / "observed_type"
     # Use bytes dtype for h5py compatibility (h5py cannot store Unicode strings)
     fp.save_numpy(np.array(observed_type, dtype="S"))
-
-
-def _restore_from_file(
-    stat_file_path: DPPath | None,
-    keys: list[str],
-) -> tuple[dict | None, dict | None]:
-    """Restore bias and std from stat file."""
-    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
-    items = load_paired_items(stat_file_path, pairs)
-    if items is None:
-        return None, None
-    cached_keys = [key for key in keys if f"bias_atom_{key}" in items]
-    ret_bias = {key: items[f"bias_atom_{key}"] for key in cached_keys}
-    ret_std = {key: items[f"std_atom_{key}"] for key in cached_keys}
-    return ret_bias, ret_std
-
-
-def _save_to_file(
-    stat_file_path: DPPath,
-    requested_keys: list[str],
-    bias_out: dict,
-    std_out: dict,
-) -> None:
-    """Save bias and std to stat file."""
-    assert stat_file_path is not None
-    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in requested_keys]
-    items = {
-        **{f"bias_atom_{key}": value for key, value in bias_out.items()},
-        **{f"std_atom_{key}": value for key, value in std_out.items()},
-    }
-    replace_paired_items(stat_file_path, pairs, items)
 
 
 def _post_process_stat(
@@ -289,13 +258,21 @@ def compute_output_stats(
     assert isinstance(keys, list)
     requested_keys = list(keys)
 
+    # Per-type constraints participate in both cache validation and regression.
+    assigned_bias = {
+        kk: make_preset_out_bias(ntypes, preset_bias[kk])
+        if preset_bias is not None and kk in preset_bias
+        else None
+        for kk in keys
+    }
+
     # Model residuals depend on parameters not recorded in the statistics cache.
     # Neither reuse nor persist them as absolute output statistics.
     if model_forward is not None:
         stat_file_path = None
 
     # try to restore the bias from stat file
-    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    bias_atom_e, std_atom_e = load_output_stats(stat_file_path, keys, assigned_bias)
 
     # failed to restore the bias from stat file. compute
     if bias_atom_e is None:
@@ -367,15 +344,6 @@ def compute_output_stats(
             else None
         )
 
-        # assigned bias of every output as a (ntypes, ...) array, NaN where a
-        # type is left to the statistics
-        assigned_bias = {
-            kk: make_preset_out_bias(ntypes, preset_bias[kk])
-            if preset_bias is not None and kk in preset_bias
-            else None
-            for kk in keys
-        }
-
         # compute stat
         bias_atom_g, std_atom_g = _compute_output_stats_global(
             sampled,
@@ -417,11 +385,12 @@ def compute_output_stats(
                 raise RuntimeError("Fail to compute stat.")
 
         if stat_file_path is not None:
-            _save_to_file(
+            save_output_stats(
                 stat_file_path,
                 requested_keys,
                 bias_atom_e,
                 std_atom_e,
+                assigned_bias,
             )
 
     return bias_atom_e, std_atom_e

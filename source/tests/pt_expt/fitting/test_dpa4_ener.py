@@ -122,7 +122,9 @@ class TestSeZMEnergyFittingNetVacuumRef(TestCaseSingleFrameWithNlist):
         self.bias = rng.normal(size=(self.nt, 1))
 
     @pytest.mark.parametrize("numb_fparam", [0, 2])  # per-type / per-atom references
-    @pytest.mark.parametrize("mixed_types", [True, False])
+    @pytest.mark.parametrize(
+        "mixed_types", [True, False]
+    )  # shared vs per-type networks
     def test_isolated_atom_gives_bias_and_matches_dpmodel(
         self, numb_fparam, mixed_types
     ) -> None:

@@ -118,10 +118,37 @@ def test_output_stats_cache_depends_on_model_predictions(
         compute(sampled, NTYPES, ["energy"], stat_file_path=fresh_path, **kwargs)
         assert not list(fresh_dir.iterdir())
 
-    restored, _ = compute(no_sampling, NTYPES, ["energy"], stat_file_path=path)
+    restored, _ = compute(
+        no_sampling, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset_bias
+    )
     np.testing.assert_array_equal(
         as_numpy(restored["energy"]), as_numpy(original["energy"])
     )
+
+    # Removing, adding or changing a constraint also changes the fitted free rows.
+    for preset in (
+        None,
+        {"energy": [None, [1.5]]},
+        {"energy": [[-0.5], None]},
+        {"energy": [None, 2.0]},
+        {"energy": [None, [2.0]]},
+        {"energy": [None, None]},
+        None,
+    ):
+        expected = compute(sampled, NTYPES, ["energy"], preset_bias=preset)
+        actual = compute(
+            sampled, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset
+        )
+        restored = compute(
+            no_sampling, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset
+        )
+        for reference, computed, cached in zip(expected, actual, restored, strict=True):
+            np.testing.assert_allclose(
+                as_numpy(computed["energy"]), as_numpy(reference["energy"])
+            )
+            np.testing.assert_array_equal(
+                as_numpy(cached["energy"]), as_numpy(computed["energy"])
+            )
 
 
 def _make_data(

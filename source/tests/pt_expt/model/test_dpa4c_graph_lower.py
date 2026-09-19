@@ -239,7 +239,7 @@ def test_padding_never_reaches_the_network() -> None:
     assert out["force"].shape == (len(nlocs), pad_nloc, 3)
 
 
-@pytest.mark.parametrize("vacuum_ref", [False, True])
+@pytest.mark.parametrize("vacuum_ref", [False, True])  # isolated-atom reference
 def test_compiled_lower_accepts_a_compacted_node_axis(vacuum_ref: bool) -> None:
     """The compiled artifact must not carry ``N == nframes * nloc`` as a guard.
 
@@ -515,7 +515,7 @@ def test_charge_state_with_comm_is_rejected_before_compilation(
 
 
 @_GPU
-@pytest.mark.parametrize("channels", [8, 64])
+@pytest.mark.parametrize("channels", [8, 64])  # compressed channel width
 def test_compact_canonical_graph_export(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
@@ -535,7 +535,7 @@ def test_compact_canonical_graph_export(
 
 
 @_GPU
-@pytest.mark.parametrize("channels", [8, 64, 128])
+@pytest.mark.parametrize("channels", [8, 64, 128])  # compressed channel width
 def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model = get_model(_compressed_config(channels)).to("cpu").eval()
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
@@ -669,7 +669,7 @@ def test_compact_canonical_eligibility_rejects_other_descriptors() -> None:
     assert not canonical_model_eligible(model)
 
 
-@pytest.mark.parametrize("channels", [8, 64])
+@pytest.mark.parametrize("channels", [8, 64])  # compressed channel width
 def test_compressed_level_two_matches_autograd(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
@@ -724,7 +724,7 @@ def _spin_sample(model: torch.nn.Module) -> tuple:
 
 
 @_GPU
-@pytest.mark.parametrize("gate", [0.8, 0.0])
+@pytest.mark.parametrize("gate", [0.8, 0.0])  # active vs inactive spin gate
 def test_compressed_spin_lowers_match_autograd(
     monkeypatch: pytest.MonkeyPatch,
     gate: float,

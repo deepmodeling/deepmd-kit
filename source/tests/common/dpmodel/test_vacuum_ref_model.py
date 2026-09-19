@@ -67,6 +67,19 @@ def atom_energies(
     return ret["energy"][..., 0]
 
 
+@pytest.mark.parametrize("vacuum_ref", [False, True])  # isolated-atom reference
+def test_non_spin_model_ignores_unused_spin(vacuum_ref: bool) -> None:
+    """An unused spin input does not alter the graph or its reference nodes."""
+    model = make_model("dpa1", vacuum_ref)
+    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]])
+    atype = np.array([[0, 1]], dtype=np.int64)
+    expected = model.call_common(coord, atype, None, neighbor_graph_method="dense")
+    actual = model.call_common(
+        coord, atype, None, spin=np.ones_like(coord), neighbor_graph_method="dense"
+    )
+    np.testing.assert_array_equal(actual["energy"], expected["energy"])
+
+
 @pytest.mark.parametrize(
     "kind, method",
     [("se_e2_a", "legacy"), ("dpa1", "dense")],  # dense nlist route / graph route

@@ -47,7 +47,9 @@ from deepmd.utils.preset_out_bias import (
 )
 from deepmd.utils.stat_file import (
     load_output_stat_full_scan,
+    load_output_stats,
     save_output_stat_full_scan,
+    save_output_stats,
 )
 
 log = logging.getLogger(__name__)
@@ -198,49 +200,6 @@ def scan_redu_stats(
     return ReduScanResult(stats=stats, natoms_total=natoms_total, nframes=nframes)
 
 
-def _restore_from_file(
-    stat_file_path: DPPath,
-    keys: list[str] = ["energy"],
-) -> dict | None:
-    if stat_file_path is None:
-        return None, None
-    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-    stat_files = [stat_file_path / f"std_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-
-    ret_bias = {}
-    ret_std = {}
-    for kk in keys:
-        fp = stat_file_path / f"bias_atom_{kk}"
-        # only read the key that exists
-        if fp.is_file():
-            ret_bias[kk] = fp.load_numpy()
-    for kk in keys:
-        fp = stat_file_path / f"std_atom_{kk}"
-        # only read the key that exists
-        if fp.is_file():
-            ret_std[kk] = fp.load_numpy()
-    return ret_bias, ret_std
-
-
-def _save_to_file(
-    stat_file_path: DPPath,
-    bias_out: dict,
-    std_out: dict,
-) -> None:
-    assert stat_file_path is not None
-    stat_file_path.mkdir(exist_ok=True, parents=True)
-    for kk, vv in bias_out.items():
-        fp = stat_file_path / f"bias_atom_{kk}"
-        fp.save_numpy(vv)
-    for kk, vv in std_out.items():
-        fp = stat_file_path / f"std_atom_{kk}"
-        fp.save_numpy(vv)
-
-
 def _post_process_stat(
     out_bias: paddle.Tensor,
     out_std: paddle.Tensor,
@@ -375,6 +334,17 @@ def compute_output_stats(
     intensive : bool, optional
         Whether the fitting target is intensive.
     """
+    keys = [keys] if isinstance(keys, str) else keys
+    requested_keys = list(keys)
+
+    # Per-type constraints participate in both cache validation and regression.
+    assigned_bias = {
+        kk: make_preset_out_bias(ntypes, preset_bias[kk])
+        if preset_bias is not None and kk in preset_bias
+        else None
+        for kk in keys
+    }
+
     # a full scan cannot replace the sampled path for delta bias or type-blind
     # statistics, so resolve it before the cache is consulted
     redu_scanner = get_redu_stat_scanner(merged)
@@ -393,7 +363,7 @@ def compute_output_stats(
         stat_file_path = None
 
     # try to restore the bias from stat file
-    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    bias_atom_e, std_atom_e = load_output_stats(stat_file_path, keys, assigned_bias)
     if (
         bias_atom_e is not None
         and redu_scanner is not None
@@ -487,15 +457,6 @@ def compute_output_stats(
             else None
         )
 
-        # assigned bias of every output as a (ntypes, ...) array, NaN where a
-        # type is left to the statistics
-        assigned_bias = {
-            kk: make_preset_out_bias(ntypes, preset_bias[kk])
-            if preset_bias is not None and kk in preset_bias
-            else None
-            for kk in keys
-        }
-
         # compute stat
         bias_atom_g, std_atom_g = _compute_output_stats_global(
             sampled,
@@ -541,7 +502,9 @@ def compute_output_stats(
             # withdraw any standing claim before the values it describes are
             # replaced, so an interruption leaves the cache looking sampled
             save_output_stat_full_scan(stat_file_path, False)
-            _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
+            save_output_stats(
+                stat_file_path, requested_keys, bias_atom_e, std_atom_e, assigned_bias
+            )
             save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
     bias_atom_e = {kk: to_paddle_tensor(vv) for kk, vv in bias_atom_e.items()}

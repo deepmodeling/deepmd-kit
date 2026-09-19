@@ -46,9 +46,9 @@ from deepmd.utils.preset_out_bias import (
 )
 from deepmd.utils.stat_file import (
     load_output_stat_full_scan,
-    load_paired_items,
-    replace_paired_items,
+    load_output_stats,
     save_output_stat_full_scan,
+    save_output_stats,
 )
 
 log = logging.getLogger(__name__)
@@ -341,35 +341,6 @@ def scan_redu_stats(
     return ReduScanResult(stats=stats, natoms_total=natoms_total, nframes=nframes)
 
 
-def _restore_from_file(
-    stat_file_path: DPPath | None,
-    keys: list[str],
-) -> tuple[dict | None, dict | None]:
-    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
-    items = load_paired_items(stat_file_path, pairs)
-    if items is None:
-        return None, None
-    cached_keys = [key for key in keys if f"bias_atom_{key}" in items]
-    ret_bias = {key: items[f"bias_atom_{key}"] for key in cached_keys}
-    ret_std = {key: items[f"std_atom_{key}"] for key in cached_keys}
-    return ret_bias, ret_std
-
-
-def _save_to_file(
-    stat_file_path: DPPath,
-    requested_keys: list[str],
-    bias_out: dict,
-    std_out: dict,
-) -> None:
-    assert stat_file_path is not None
-    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in requested_keys]
-    items = {
-        **{f"bias_atom_{key}": value for key, value in bias_out.items()},
-        **{f"std_atom_{key}": value for key, value in std_out.items()},
-    }
-    replace_paired_items(stat_file_path, pairs, items)
-
-
 def _post_process_stat(
     out_bias: torch.Tensor,
     out_std: torch.Tensor,
@@ -563,6 +534,14 @@ def compute_output_stats(
     assert isinstance(keys, list)
     requested_keys = list(keys)
 
+    # Per-type constraints participate in both cache validation and regression.
+    assigned_bias = {
+        kk: make_preset_out_bias(ntypes, preset_bias[kk])
+        if preset_bias is not None and kk in preset_bias
+        else None
+        for kk in keys
+    }
+
     # a full scan cannot replace the sampled path for delta bias or type-blind
     # statistics, so resolve it before the cache is consulted
     redu_scanner = get_redu_stat_scanner(merged)
@@ -581,7 +560,7 @@ def compute_output_stats(
         stat_file_path = None
 
     # try to restore the bias from stat file
-    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    bias_atom_e, std_atom_e = load_output_stats(stat_file_path, keys, assigned_bias)
     if (
         bias_atom_e is not None
         and redu_scanner is not None
@@ -687,15 +666,6 @@ def compute_output_stats(
             else None
         )
 
-        # assigned bias of every output as a (ntypes, ...) array, NaN where a
-        # type is left to the statistics
-        assigned_bias = {
-            kk: make_preset_out_bias(ntypes, preset_bias[kk])
-            if preset_bias is not None and kk in preset_bias
-            else None
-            for kk in keys
-        }
-
         # compute stat
         bias_atom_g, std_atom_g = _compute_output_stats_global(
             sampled,
@@ -741,11 +711,12 @@ def compute_output_stats(
             # withdraw any standing claim before the values it describes are
             # replaced, so an interruption leaves the cache looking sampled
             save_output_stat_full_scan(stat_file_path, False)
-            _save_to_file(
+            save_output_stats(
                 stat_file_path,
                 requested_keys,
                 bias_atom_e,
                 std_atom_e,
+                assigned_bias,
             )
             save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
