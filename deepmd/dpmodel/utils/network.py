@@ -25,6 +25,7 @@ from deepmd.dpmodel.array_api import (
     Array,
     xp_add_at,
     xp_bincount,
+    xp_erf,
     xp_setitem_at,
     xp_sigmoid,
 )
@@ -349,6 +350,15 @@ def get_activation_fn(activation_function: str) -> Callable[[np.ndarray], np.nda
                 * x
                 * (1 + xp.tanh(xp.sqrt(xp.asarray(2 / xp.pi)) * (x + 0.044715 * x**3)))
             )
+
+        return fn
+    elif activation_function == "gelu_erf":
+
+        def fn(x):  # noqa: ANN001, ANN202
+            xp = array_api_compat.array_namespace(x)
+            # Exact GELU, x * Phi(x). deepmd's "gelu"/"gelu_tf" are the tanh
+            # approximation, which differs from this by up to 4.7e-4 per element.
+            return 0.5 * x * (1 + xp_erf(x / xp.sqrt(xp.asarray(2.0, dtype=x.dtype))))
 
         return fn
     elif activation_function == "relu6":

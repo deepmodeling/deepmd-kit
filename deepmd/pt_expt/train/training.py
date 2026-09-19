@@ -103,6 +103,7 @@ from deepmd.pt_expt.loss import (
     EnergySpinLoss,
     PropertyLoss,
     TensorLoss,
+    UniMolLoss,
 )
 from deepmd.pt_expt.model import (
     get_model,
@@ -350,6 +351,10 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "unimol":
+        # Self-supervised: it takes no learning rate and no model geometry,
+        # because its targets come from the corruption it defines itself.
+        return UniMolLoss(**loss_params)
     else:
         raise ValueError(f"Unsupported loss type for pt_expt: {loss_type}")
 
@@ -1875,6 +1880,14 @@ class Trainer(AbstractTrainer):
         self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
 
         # Data requirements ---------------------------------------------------
+        # Draw sequences for input-corrupting objectives live in the process, so
+        # a second run in one interpreter would otherwise continue the first
+        # run's sequence instead of repeating it.
+        from deepmd.dpmodel.utils.unimol_transform import (
+            reset_epoch_streams,
+        )
+
+        reset_epoch_streams()
         self.valid_numb_batch_by_task: dict[str, int] = {}
         for model_key in self.model_keys:
             data_requirement = list(self.losses[model_key].label_requirement)
@@ -1886,6 +1899,34 @@ class Trainer(AbstractTrainer):
                 self.validation_data_by_task[model_key].add_data_requirements(
                     data_requirement
                 )
+            # A self-supervised objective builds its labels by corrupting the
+            # input, which has to happen as the data is read.
+            for split, dataset in (
+                ("training", self.training_data_by_task[model_key]),
+                ("validation", self.validation_data_by_task[model_key]),
+            ):
+                if dataset is None:
+                    continue
+                # A fresh transform per dataset is not enough: an objective that
+                # corrupts its input derives its draw sequence from this label,
+                # so two datasets given the same one share a generator and a
+                # validation pass advances the corruption training is about to
+                # see. The task name is in it too, so two Uni-Mol tasks in one
+                # multi-task run do not collide either.
+                frame_transform = self.losses[model_key].frame_transform(
+                    self.model_params_by_task[model_key]["type_map"],
+                    stream=f"{model_key}/{split}",
+                )
+                if frame_transform is None:
+                    break
+                if not hasattr(dataset, "set_frame_transform"):
+                    raise ValueError(
+                        f"the {self.losses[model_key].__class__.__name__} "
+                        "objective corrupts its input as the data is read, "
+                        "which this dataset type does not support; convert "
+                        "the data to LMDB first"
+                    )
+                dataset.set_frame_transform(frame_transform)
             if self.multi_task:
                 valid_params = (
                     training_params["data_dict"][model_key].get("validation_data", {})
@@ -2266,6 +2307,7 @@ class Trainer(AbstractTrainer):
                 torch.optim.Adam if opt_type == "Adam" else torch.optim.AdamW,
                 lr=initial_lr,
                 betas=adam_betas,
+                eps=float(optimizer_params["adam_eps"]),
                 weight_decay=weight_decay,
             )
         else:
