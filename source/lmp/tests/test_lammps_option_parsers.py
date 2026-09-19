@@ -78,6 +78,21 @@ def _assert_lammps_error(result: sp.CompletedProcess[str], message: str) -> None
     [
         ("deepmd", "relative", "Illegal relative, not provided"),
         ("deepmd", "relative_v", "Illegal relative_v, not provided"),
+        (
+            "deepmd",
+            "center_group",
+            "Illegal center_group, group ID is not provided",
+        ),
+        (
+            "deepmd",
+            "environment_cutoff",
+            "Illegal environment_cutoff, value is not provided",
+        ),
+        (
+            "deepmd",
+            "include_molecule",
+            "Illegal include_molecule, yes/no is not provided",
+        ),
         ("deepspin", "relative", "Illegal relative, not provided"),
         ("deepspin", "relative_v", "Illegal relative_v, not provided"),
         (
@@ -144,6 +159,38 @@ def test_deepspin_accepts_complete_option_values(spin_model: Path) -> None:
         "virtual_len 0.4 spin_norm 1.2737 atomic",
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (
+            "center_group qm",
+            "center_group requires environment_cutoff in pair_style deepmd",
+        ),
+        (
+            "environment_cutoff 2.0",
+            "environment_cutoff and include_molecule require center_group in "
+            "pair_style deepmd",
+        ),
+        (
+            "include_molecule no",
+            "environment_cutoff and include_molecule require center_group in "
+            "pair_style deepmd",
+        ),
+        (
+            "center_group qm environment_cutoff 0",
+            "environment_cutoff must be a finite value greater than zero",
+        ),
+    ],
+)
+def test_deepmd_rejects_incomplete_compact_options(
+    spin_model: Path, options: str, message: str
+) -> None:
+    result = _run_lammps(
+        "units metal", f"pair_style deepmd {spin_model.resolve()} {options}"
+    )
+    _assert_lammps_error(result, message)
 
 
 @pytest.mark.parametrize(
