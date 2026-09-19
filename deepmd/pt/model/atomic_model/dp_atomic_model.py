@@ -70,6 +70,10 @@ class DPAtomicModel(BaseAtomicModel):
             self.descriptor, "add_chg_spin_ebd", False
         )
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the descriptor's AdamW patterns with its parameter path."""
+        return [f"descriptor.{p}" for p in self.descriptor.adam_route_patterns()]
+
     @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""

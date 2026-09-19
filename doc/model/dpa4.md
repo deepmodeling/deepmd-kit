@@ -85,16 +85,22 @@ unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 
 ### Presets
 
-The released DPA4 grades are available as named model presets. Setting
-`model.preset` fills in the four architecture-defining regions of the model
-section, `type`, `type_map` (all 118 elements), `descriptor` and
-`fitting_net`, from the release configuration, so an input only names the grade
-and adds what is specific to the run:
+DPA4 preset names use `dpa4-<size>-<version>`. Available sizes are listed in
+ascending computational cost:
+
+| Version     | Available sizes                                             |
+| ----------- | ----------------------------------------------------------- |
+| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus`, `pro`, `max`, `ultra` |
+| `v20260820` | `nano`, `mini`, `neo`, `air`, `plus`, `pro`                 |
+
+Setting `model.preset` supplies `type`, `type_map` (all 118 elements),
+`descriptor` and `fitting_net`. An input names the preset and adds only
+run-specific settings:
 
 ```json
 {
   "model": {
-    "preset": "dpa4-nano-v20260901",
+    "preset": "dpa4-nano-v20260911",
     "type_map": [
       "O",
       "H"
@@ -118,12 +124,9 @@ take precedence over it:
 
 - `type` and `type_map` are replaced as a whole. The two-element `type_map`
   above replaces the 118-element periodic table of the preset.
-- Inside `descriptor` and `fitting_net` the merge is key by key: a key that the
-  preset defines takes the explicit value (`rcut` above, written here with the
-  value the preset has anyway), and a key it does not define is added. Options
-  that are not part of an architecture are meant to be added this way:
-  `use_amp`, `seed`, `sel`, `trainable`, and the charge and spin conditioning
-  pair `add_chg_spin_ebd` / `default_chg_spin` for molecular datasets.
+- Inside `descriptor` and `fitting_net`, explicit keys replace preset values
+  or add settings such as `use_amp`, `seed`, `sel`, `trainable`, and the
+  charge and spin conditioning pair `add_chg_spin_ebd` / `default_chg_spin`.
 
 Every explicit entry that changes a preset value is reported in the log. In
 multi-task training a `preset` next to `model_dict` is the base of every branch
@@ -132,19 +135,6 @@ and of the `shared_dict` entries that the branches reference as `descriptor` or
 a `preset` inside a branch applies to that branch alone, and shared-dictionary
 references written in a branch keep precedence over the preset. See
 `examples/water/dpa4/input_multitask_preset.json`.
-
-Preset names are `<family>-<grade>-<version>`. The version tag identifies the
-release a preset reproduces: a later release with different settings gets a new
-version, and existing presets are never changed. The available DPA4 presets
-are, in ascending cost:
-
-- `v20260901`, the current release grades: `dpa4-nano-v20260901`,
-  `dpa4-mini-v20260901`, `dpa4-neo-v20260901`, `dpa4-air-v20260901`,
-  `dpa4-plus-v20260901`, `dpa4-pro-v20260901`, `dpa4-max-v20260901` and
-  `dpa4-ultra-v20260901`.
-- `v20260820`, the earlier baseline grades: `dpa4-nano-v20260820`,
-  `dpa4-mini-v20260820`, `dpa4-neo-v20260820`, `dpa4-air-v20260820`,
-  `dpa4-plus-v20260820` and `dpa4-pro-v20260820`.
 
 `examples/water/dpa4/input_preset.json` is a water example that names a preset
 instead of spelling out the architecture.
@@ -912,12 +902,18 @@ only the `l = 0` scalar channels are read out and passed to the fitting network:
 
 ### Radial basis and smooth cutoff
 
-Every edge uses a radial basis (`basis_type`, with `n_radial` functions)
-multiplied by a smooth envelope whose value and first three derivatives vanish
-at `rcut`. This smoothness matters for MD because nonsmooth descriptor cutoffs
-would be inherited by the force derivatives. The two `env_exp` exponents control
-the radial-basis envelope and the message-passing edge weights respectively;
-larger values keep an envelope closer to one for more of the cutoff range.
+Every edge uses a radial basis (`basis_type`, with `n_radial` functions):
+Bessel functions (`bessel`) or Gaussians (`gaussian`), whose frequencies or
+centres are trained by default. The `bessel/fix` and `gaussian/fix` forms keep
+them at their initial values, so that separations no training frame constrains
+cannot move them. The message-passing edge weights carry a smooth envelope
+whose value and first three derivatives vanish at `rcut`. This smoothness
+matters for MD because nonsmooth descriptor cutoffs would be inherited by the
+force derivatives. `env_exp` written as one integer sets the exponent of that
+envelope and leaves the radial basis bare; written as a list
+`[rbf_env_exp, edge_env_exp]` it applies a second envelope to the radial basis
+itself. Larger values keep an envelope closer to one for more of the cutoff
+range.
 
 ### Attention and focus streams
 

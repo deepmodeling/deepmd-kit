@@ -138,6 +138,10 @@ class DPAtomicModel(BaseAtomicModel):
         self.supports_charge_spin: bool = self.descriptor.supports_charge_spin()
         super().init_out_stat()
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the descriptor's AdamW patterns with its parameter path."""
+        return [f"descriptor.{p}" for p in self.descriptor.adam_route_patterns()]
+
     def has_chg_spin_ebd(self) -> bool:
         """Check if the model has charge spin embedding."""
         return self.add_chg_spin_ebd

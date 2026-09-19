@@ -35,6 +35,10 @@ def make_base_atomic_model(
     class BAM(ABC, PluginVariant, make_plugin_registry("atomic model")):
         """Base Atomic Model provides the interfaces of an atomic model."""
 
+        def adam_route_patterns(self) -> list[str]:
+            """Return atomic-model-relative parameter name patterns for HybridMuon's AdamW path."""
+            return []
+
         @abstractmethod
         def fitting_output_def(self) -> FittingOutputDef:
             """Get the output def of developer implemented atomic models."""
