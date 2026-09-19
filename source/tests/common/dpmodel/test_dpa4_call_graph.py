@@ -1000,3 +1000,49 @@ def test_call_graph_comm_dict_reaches_leaf_stub() -> None:
     )
     with pytest.raises(NotImplementedError, match="dpmodel backend"):
         dd.call_graph(graph, atype.reshape(-1), comm_dict=fake_comm)
+
+
+@pytest.mark.parametrize("counts", [(1, 2), (1, 3), (2, 2)])
+@pytest.mark.parametrize("precision", ["float32", "float64"])
+@pytest.mark.parametrize("use_default", [False, True])
+def test_call_graph_ragged_charge_spin(counts, precision, use_default) -> None:
+    """Each node must receive its own frame's condition, not N // nf rows."""
+    descriptor = DescrptDPA4(
+        ntypes=1,
+        sel=2,
+        rcut=3.0,
+        channels=4,
+        n_radial=2,
+        lmax=0,
+        kmax=0,
+        n_blocks=0,
+        use_env_seed=False,
+        random_gamma=False,
+        add_chg_spin_ebd=True,
+        default_chg_spin=[-1.0, 3.0],
+        precision=precision,
+        seed=1,
+    )
+    descriptor = DescrptDPA4.deserialize(descriptor.serialize())
+    conditions = np.asarray([[0.0, 1.0], [1.0, 2.0]], dtype=precision)
+
+    def evaluate(frame_counts, charge_spin):
+        # Masked guard edges isolate the frame-to-node conditioning map.
+        graph = NeighborGraph(
+            n_node=np.asarray(frame_counts, dtype=np.int64),
+            edge_index=np.zeros((2, 2), dtype=np.int64),
+            edge_vec=np.zeros((2, 3), dtype=precision),
+            edge_mask=np.zeros(2, dtype=bool),
+        )
+        return descriptor.call_graph(
+            graph,
+            np.zeros(sum(frame_counts), dtype=np.int64),
+            charge_spin=None if use_default else charge_spin,
+        )[0]
+
+    expected = np.concatenate(
+        [evaluate([n], conditions[i : i + 1]) for i, n in enumerate(counts)]
+    )
+    actual = evaluate(counts, conditions)
+    tol = 1e-6 if precision == "float32" else 1e-12
+    np.testing.assert_allclose(actual, expected, rtol=tol, atol=tol)
