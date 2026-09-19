@@ -729,6 +729,19 @@ class DefaultNeighborList(NeighborList):
         extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
             coord_normalized, atype, box, rcut
         )
+        # A frame can never contribute more than nall neighbors; cap the
+        # requested neighbor count so sentinel capacities (e.g. DPA4C's
+        # effectively-unbounded sel) do not allocate absurd padding.  This is
+        # always safe here: real neighbors number at most nall, and
+        # ``format_nlist`` re-pads the neighbor axis to ``sum(sel)`` for
+        # type-distinguished descriptors downstream.  Skip the cap when nall
+        # is symbolic (e.g. jax2tf export), where the comparison would be
+        # inconclusive; sentinel capacities only occur on backends with
+        # concrete shapes.
+        nall = extended_atype.shape[1]
+        nsel = sum(sel)
+        if isinstance(nall, int) and nsel > nall:
+            nsel = nall
         # Types are distinguished in the lower interface, so keep them merged
         # here.  The dense path remains faster for small systems; the spatial
         # path avoids the nloc*nall distance matrix for larger supported arrays.
@@ -738,7 +751,7 @@ class DefaultNeighborList(NeighborList):
                 extended_atype,
                 nloc,
                 rcut,
-                sum(sel),
+                nsel,
                 pair_excl=pair_excl,
             )
         else:
@@ -747,7 +760,7 @@ class DefaultNeighborList(NeighborList):
                 extended_atype,
                 nloc,
                 rcut,
-                sel,
+                nsel,
                 distinguish_types=False,
                 pair_excl=pair_excl,
             )
