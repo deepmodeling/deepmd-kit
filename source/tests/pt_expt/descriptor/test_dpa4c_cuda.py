@@ -34,6 +34,10 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     op_available,
 )
 
+from ...dpa4_fixtures import (
+    activate_dpa4c_condition_head,
+)
+
 _GPU = pytest.mark.skipif(
     not torch.cuda.is_available() or not op_available(),
     reason="CUDA and the compiled DPA4C operator are required",
@@ -439,18 +443,7 @@ def _build_charge_descriptor(
         .cuda()
         .eval()
     )
-    head = descriptor.charge_spin_embedding.network.layers[-1]
-    generator = torch.Generator(device="cuda").manual_seed(11)
-    with torch.no_grad():
-        head.w.copy_(
-            torch.randn(
-                head.w.shape,
-                dtype=torch.float32,
-                device="cuda",
-                generator=generator,
-            )
-            * 0.5
-        )
+    activate_dpa4c_condition_head(descriptor)
     return descriptor
 
 
