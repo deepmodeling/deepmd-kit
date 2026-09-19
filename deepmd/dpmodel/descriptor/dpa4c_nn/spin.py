@@ -327,7 +327,10 @@ class SpinChannels(NativeOP):
                 # anisotropy sum over neighbours.
                 xp.reshape(
                     xp.matmul(xp.permute_dims(quadrupole, (0, 2, 1)), degree_two),
-                    (spin_moments.shape[0], -1),
+                    (
+                        spin_moments.shape[0],
+                        self.quadrupole_width * self.degree_channels[2],
+                    ),
                 ),
                 magnitude,
                 coordination,
