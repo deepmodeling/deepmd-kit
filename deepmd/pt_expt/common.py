@@ -248,9 +248,9 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
     1. **numpy arrays → torch buffers**: State such as statistics (davg, dstd) that
        is saved in state_dict and moved with .to(device). An array the owning
        class lists in ``CONFIG_DERIVED_ARRAYS`` becomes a NON-persistent buffer
-       instead: being a pure function of the configuration it is rebuilt by
-       ``__init__``, so adopting a stored copy would let a checkpoint whose
-       configuration differs override the built value.
+       instead: it is either rebuilt by ``__init__`` from the configuration or
+       resolved at export time, so adopting a stored copy would let a
+       checkpoint override the value the model builds for itself.
     2. **None values → clear buffers**: Setting an existing buffer to None.
     3. **dpmodel objects → pt_expt modules**: Nested dpmodel objects like
        AtomExcludeMaskDP or NetworkCollectionDP are converted to their pt_expt

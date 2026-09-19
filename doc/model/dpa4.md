@@ -645,7 +645,11 @@ dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
 
 The PyTorch backend detects DPA4/SeZM and writes `frozen_model.pt2`. The
-pt_expt backend uses the same kernel-level policy for a DPA4/SeZM `.pt2`.
+pt_expt backend uses the same kernel-level policy for a DPA4/SeZM `.pt2`. A
+fitting with the [isolated-atom energy reference](train-energy.md#isolated-atom-energy-reference)
+has its reference resolved at this point: folded into the fitting bias, or
+stored as a per-type table when frame or atomic parameters make it vary
+between atoms.
 Unless the environment says otherwise, a CUDA archive is built at
 `DP_TRITON_INFER=2` and `DP_CUDA_INFER=1`, the fastest all-float32 combination;
 set either variable to override, for instance `DP_CUDA_INFER=2` on a part with

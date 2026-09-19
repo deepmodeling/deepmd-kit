@@ -51,6 +51,7 @@ class DOSFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         exclude_types: list[int] = [],
+        vacuum_ref: bool = False,
         mixed_types: bool = True,
         type_map: list[str] | None = None,
         default_fparam: list | None = None,
@@ -78,6 +79,7 @@ class DOSFittingNet(InvarFitting):
             rcond=rcond,
             seed=seed,
             exclude_types=exclude_types,
+            vacuum_ref=vacuum_ref,
             trainable=trainable,
             type_map=type_map,
             default_fparam=default_fparam,
@@ -99,7 +101,7 @@ class DOSFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "DOSFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data.pop("@class", None)
         data.pop("var_name", None)
         data.pop("tot_ener_zero", None)

@@ -273,6 +273,7 @@ def get_linear_model(model_params: dict) -> BaseModel:
         weights=weights,
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
+        preset_out_bias=model_params.get("preset_out_bias"),
     )
     model.shared_links = shared_links
     if shared_links:
@@ -388,43 +389,10 @@ def get_zbl_model(model_params: dict) -> DPZBLModel:
         type_map=model_params["type_map"],
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
+        preset_out_bias=model_params.get("preset_out_bias"),
     )
     model.model_def_script = json.dumps(model_params)
     return model
-
-
-def _can_be_converted_to_float(value: Any) -> bool | None:
-    try:
-        float(value)
-        return True
-    except (TypeError, ValueError):
-        # return false for any failure...
-        return False
-
-
-def _convert_preset_out_bias_to_array(
-    preset_out_bias: dict | None, type_map: list[str]
-) -> dict | None:
-    if preset_out_bias is not None:
-        for kk in preset_out_bias:
-            if len(preset_out_bias[kk]) != len(type_map):
-                raise ValueError(
-                    "length of the preset_out_bias should be the same as the type_map"
-                )
-            for jj in range(len(preset_out_bias[kk])):
-                if preset_out_bias[kk][jj] is not None:
-                    if isinstance(preset_out_bias[kk][jj], list):
-                        bb = preset_out_bias[kk][jj]
-                    elif _can_be_converted_to_float(preset_out_bias[kk][jj]):
-                        bb = [float(preset_out_bias[kk][jj])]
-                    else:
-                        raise ValueError(
-                            f"unsupported type/value of the {jj}th element of "
-                            f"preset_out_bias['{kk}'] "
-                            f"{type(preset_out_bias[kk][jj])}"
-                        )
-                    preset_out_bias[kk][jj] = np.array(bb)
-    return preset_out_bias
 
 
 def get_standard_model(model_params: dict) -> BaseModel:
@@ -446,9 +414,6 @@ def get_standard_model(model_params: dict) -> BaseModel:
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
     preset_out_bias = model_params.get("preset_out_bias")
-    preset_out_bias = _convert_preset_out_bias_to_array(
-        preset_out_bias, model_params["type_map"]
-    )
     data_stat_protect = model_params.get("data_stat_protect", 1e-2)
 
     if fitting_net_type == "dipole":
@@ -582,9 +547,6 @@ def get_sezm_model(model_params: dict) -> BaseModel:
         )
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     preset_out_bias = model_params.get("preset_out_bias")
-    preset_out_bias = _convert_preset_out_bias_to_array(
-        preset_out_bias, model_params["type_map"]
-    )
     data_stat_protect = model_params.get("data_stat_protect", 1e-2)
     use_compile = bool(model_params.get("use_compile", False))
     enable_tf32 = bool(model_params.get("enable_tf32", True))
@@ -681,9 +643,6 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
     fitting = SeZMEnergyFittingNet(**fitting_net)
 
     preset_out_bias = model_params.get("preset_out_bias")
-    preset_out_bias = _convert_preset_out_bias_to_array(
-        preset_out_bias, model_params["type_map"]
-    )
     data_stat_protect = model_params.get("data_stat_protect", 1e-2)
     use_compile = bool(model_params.get("use_compile", False))
     enable_tf32 = bool(model_params.get("enable_tf32", True))
@@ -764,9 +723,6 @@ def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
     fitting = SeZMEnergyFittingNet(**fitting_net)
     preset_out_bias = model_params.get("preset_out_bias")
-    preset_out_bias = _convert_preset_out_bias_to_array(
-        preset_out_bias, model_params["type_map"]
-    )
     data_stat_protect = model_params.get("data_stat_protect", 1e-2)
     use_compile = bool(model_params.get("use_compile", False))
     enable_tf32 = bool(model_params.get("enable_tf32", True))

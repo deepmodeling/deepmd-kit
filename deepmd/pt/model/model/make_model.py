@@ -37,9 +37,6 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
     nlist_distinguish_types,
 )
-from deepmd.pt.utils.stat import (
-    compute_output_stats,
-)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -328,33 +325,15 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 spin=spin,
             )
 
-        def _change_out_bias_with_model_forward(
-            self,
-            merged: Callable[[], list[dict]] | list[dict],
-            model_forward: Callable[..., dict[str, torch.Tensor]],
-        ) -> None:
-            """Fit a residual output-bias shift from a complete model predictor."""
-            atomic_model = self.atomic_model
-            delta_bias, out_std = compute_output_stats(
-                merged,
-                atomic_model.get_ntypes(),
-                keys=atomic_model.bias_keys,
-                model_forward=model_forward,
-                rcond=atomic_model.rcond,
-                preset_bias=atomic_model.preset_out_bias,
-                stats_distinguish_types=(
-                    atomic_model.get_compute_stats_distinguish_types()
-                ),
-                intensive=atomic_model.get_intensive(),
-            )
-            atomic_model._store_out_stat(delta_bias, out_std, add=True)
-
         def change_out_bias(
             self,
             merged: Any,
             bias_adjust_mode: str = "change-by-statistic",
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
+
+            The residual fit of 'change-by-statistic' evaluates the complete model
+            prediction through ``predict_atomic_outputs_for_stat``.
 
             Parameters
             ----------
@@ -371,15 +350,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                         and do least square on the errors to obtain the target shift as bias.
                 'set-by-statistic' : directly use the statistic output bias in the target dataset.
             """
-            if bias_adjust_mode == "change-by-statistic":
-                self._change_out_bias_with_model_forward(
-                    merged,
-                    self.predict_atomic_outputs_for_stat,
-                )
-                return
             self.atomic_model.change_out_bias(
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
+                model_forward=self.predict_atomic_outputs_for_stat,
             )
 
         def forward_common_lower(
@@ -777,6 +751,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def atomic_output_def(self) -> FittingOutputDef:
             """Get the output def of the atomic model."""
             return self.atomic_model.atomic_output_def()
+
+        def fold_vacuum_reference(self) -> None:
+            """Fold the vacuum reference of the atomic model into its fitting bias."""
+            self.atomic_model.fold_vacuum_reference()
 
         def compute_or_load_stat(
             self,

@@ -499,6 +499,10 @@ class SpinModel(NativeOP):
         """Returns the number of element types."""
         return len(self.get_type_map())
 
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the backbone fitting into its bias."""
+        self.backbone_model.fold_vacuum_reference()
+
     def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.backbone_model.get_rcut()
