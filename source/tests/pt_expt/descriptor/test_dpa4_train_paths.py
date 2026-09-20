@@ -77,7 +77,9 @@ TRAIN_GATES = ("DP_TRITON_TRAIN", "DP_CUDA_TRAIN")
 INFER_GATES = ("DP_TRITON_INFER", "DP_CUDA_INFER", "DP_CUTILE_INFER", "DP_CUTE_INFER")
 
 
-def _make_descriptor(ntypes: int, sel: list[int], rcut: float) -> DescrptDPA4:
+def _make_descriptor(
+    ntypes: int, sel: list[int], rcut: float, *, precision: str = "float32"
+) -> DescrptDPA4:
     """Build a small DPA4 descriptor in the deployed layout."""
     return DescrptDPA4(
         ntypes=ntypes,
@@ -95,7 +97,7 @@ def _make_descriptor(ntypes: int, sel: list[int], rcut: float) -> DescrptDPA4:
         grid_branch=[1, 1, 1],
         s2_activation=[False, True],
         random_gamma=False,
-        precision="float32",
+        precision=precision,
         seed=7,
     )
 
@@ -119,8 +121,9 @@ def test_cuda_train_gate_accepts_shared_truthy_values(monkeypatch, value: str) -
     ids=("training", "inference"),
 )
 @pytest.mark.parametrize("enabled", [0, 1])
+@pytest.mark.parametrize("precision", ["float32", "float64"])
 def test_triton_mode_gate_binds_each_stage(
-    monkeypatch, gate_name: str, training: bool, enabled: int
+    monkeypatch, gate_name: str, training: bool, enabled: int, precision: str
 ) -> None:
     """Each Triton gate binds every supported stage for only its own mode."""
     _clear_gates(monkeypatch)
@@ -129,7 +132,7 @@ def test_triton_mode_gate_binds_each_stage(
     train_level = enabled if training else 0
     infer_level = enabled if not training else 0
 
-    descriptor = _make_descriptor(2, [20], 4.0)
+    descriptor = _make_descriptor(2, [20], 4.0, precision=precision)
     convolutions = [
         module for module in descriptor.modules() if isinstance(module, SO2Convolution)
     ]
@@ -144,10 +147,10 @@ def test_triton_mode_gate_binds_each_stage(
         assert (conv._rotate_back_fn is not None) is requested
         assert (conv._flash_atten_fn is not None) is requested
         assert conv._flash_atten_trains is (requested and training)
-        # Segment softmax has no wrapper-level fallback and binds only when its
-        # own Triton implementation is importable.
+        # Segment softmax uses fp32 accumulation and preserves fp64 compute
+        # through the descriptor's reference path.
         assert (conv._segment_softmax_fn is not None) is (
-            requested and SEGMENT_SOFTMAX_TRITON_AVAILABLE
+            requested and SEGMENT_SOFTMAX_TRITON_AVAILABLE and precision == "float32"
         )
         # The rotate-mix front end is bound by a profitability bound on the
         # hidden width, which this narrow block sits below.

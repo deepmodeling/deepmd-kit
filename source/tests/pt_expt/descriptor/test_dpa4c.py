@@ -252,6 +252,20 @@ class TestDPA4C:
                 original_parameters[name],
             )
 
+    def test_deserialization_preserves_version_one_raw_radial_basis(self) -> None:
+        data = self.descriptor.serialize()
+        radial_basis = data["radial_basis"]
+        radial_basis["@version"] = 1
+        radial_basis["config"]["exponent"] = 5
+        radial_basis["config"]["apply_envelope"] = False
+        restored = DescrptDPA4C.deserialize(data).to(env.DEVICE)
+
+        assert restored.radial_basis.envelope is None
+        torch.testing.assert_close(
+            self._evaluate(restored, self.coord),
+            self._evaluate(self.descriptor, self.coord),
+        )
+
     @pytest.mark.parametrize("structure", STRUCTURES)
     def test_torch_export_matches_eager(self, structure: dict[str, int]) -> None:
         descriptor = self.build(**structure).eval()

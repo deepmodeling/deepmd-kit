@@ -690,7 +690,6 @@ class TestSeZMModelCompile(unittest.TestCase):
             deg_norm_floor=descriptor.deg_norm_floor,
             edge_envelope=descriptor.edge_envelope,
             radial_basis=descriptor.radial_basis,
-            n_radial=descriptor.radial_basis.n_radial,
             random_gamma=False,
             wigner_calc=descriptor.wigner_calc,
         )
@@ -3466,4 +3465,22 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
                 atol=force_grad_atol,
                 rtol=force_grad_rtol,
                 msg=f"force-grad-sq mismatch at {name}",
+            )
+
+
+class TestSeZMModelAdamRouting(unittest.TestCase):
+    """The model composes the AdamW routing patterns its descriptor declares."""
+
+    def test_adam_route_patterns_match_parameters(self) -> None:
+        """Every declared AdamW pattern names existing matrices."""
+        model = get_model(_build_lora_sezm_model_params())
+        patterns = model.adam_route_patterns()
+        self.assertEqual(len(patterns), 2)
+        names = [name for name, _ in model.named_parameters()]
+        for pattern in patterns:
+            matched = [n for n in names if pattern in n]
+            self.assertTrue(matched, pattern)
+            self.assertTrue(
+                any(dict(model.named_parameters())[n].dim() >= 2 for n in matched),
+                pattern,
             )

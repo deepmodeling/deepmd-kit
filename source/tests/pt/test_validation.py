@@ -9,6 +9,7 @@ from pathlib import (
     Path,
 )
 from unittest.mock import (
+    MagicMock,
     patch,
 )
 
@@ -272,6 +273,58 @@ class TestValidationHelpers(unittest.TestCase):
         self.assertEqual(resolve_full_validation_start_step(0.1, 2000000), 200000)
         self.assertEqual(resolve_full_validation_start_step(5000, 2000000), 5000)
         self.assertIsNone(resolve_full_validation_start_step(1, 2000000))
+
+    def test_full_validator_releases_workspace_after_restoring_model(self) -> None:
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as tmpdir:
+                model = _DummyModel()
+                eval_context = MagicMock()
+                validator = FullValidator(
+                    validating_params={
+                        "full_validation": True,
+                        "validation_freq": 1,
+                        "full_val_start": 0.0,
+                        "save_best": False,
+                        "full_val_file": str(Path(tmpdir) / "val.log"),
+                    },
+                    validation_data=_DummyValidationData(),
+                    model=model,
+                    state_store={},
+                    num_steps=10,
+                    rank=0,
+                    restart_training=False,
+                    checkpoint_dir=Path(tmpdir),
+                    model_eval_context=lambda: eval_context,
+                )
+
+                def evaluate() -> dict[str, float]:
+                    self.assertFalse(model.training)
+                    if fail:
+                        raise RuntimeError("validation failure")
+                    return {validator.metric_key: 1.0}
+
+                def release() -> None:
+                    self.assertTrue(model.training)
+                    eval_context.__exit__.assert_called_once()
+
+                with (
+                    patch.object(
+                        validator, "evaluate_all_systems", side_effect=evaluate
+                    ),
+                    patch("torch.cuda.is_available", return_value=True),
+                    patch("torch.cuda.empty_cache", side_effect=release) as empty_cache,
+                ):
+                    if fail:
+                        with self.assertRaisesRegex(RuntimeError, "validation failure"):
+                            validator.run(
+                                step_id=1, display_step=1, lr=1e-3, save_checkpoint=None
+                            )
+                    else:
+                        result = validator.run(
+                            step_id=1, display_step=1, lr=1e-3, save_checkpoint=None
+                        )
+                        self.assertEqual(result.metrics[validator.metric_key], 1.0)
+                empty_cache.assert_called_once()
 
     def test_full_validator_rotates_best_checkpoint(self) -> None:
         train_infos = {}
