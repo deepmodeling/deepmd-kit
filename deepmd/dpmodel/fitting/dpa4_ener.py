@@ -464,7 +464,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         data = data.copy()
         variables = data.pop("@variables")
         nets = data.pop("nets")
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         data.pop("@class", None)
         data.pop("type", None)
         data.pop("var_name")

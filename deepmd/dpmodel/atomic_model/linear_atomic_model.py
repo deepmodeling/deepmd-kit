@@ -227,6 +227,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """Get the type map."""
         return self.type_map
 
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of every sub-model into its bias."""
+        for model in self.models:
+            model.fold_vacuum_reference()
+
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:

@@ -10,7 +10,6 @@ from typing import (
     Optional,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel.atomic_model import (
@@ -19,6 +18,9 @@ from deepmd.dpmodel.atomic_model import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
     OutputVariableDef,
+)
+from deepmd.dpmodel.utils.stat import (
+    collect_observed_types,
 )
 from deepmd.pt.utils import (
     AtomExcludeMask,
@@ -46,6 +48,12 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    check_preset_out_bias,
+    normalize_preset_out_bias,
+    preset_out_bias_rows,
+    remap_preset_out_bias,
+)
 
 log = logging.getLogger(__name__)
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
@@ -69,11 +77,13 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         of the atomic model. Implemented by removing the pairs from the nlist.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_out_bias : dict[str, list[Optional[np.ndarray]]], optional
-        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
-        For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
-        The `set_davg_zero` key in the descriptor should be set.
+    preset_out_bias : dict, optional
+        Preset output bias, typically the atomic energy in vacuum, keyed by output
+        name. An assigned output is fixed by the preset: every type that occurs in
+        the data must be assigned and no statistics are computed for it. The value
+        is a list with one entry per type (None leaves a type unassigned), a dict
+        keyed by element name, or the name of a bundled table or the path of a
+        JSON file holding such a dict.
 
     """
 
@@ -83,7 +93,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
         rcond: float | None = None,
-        preset_out_bias: dict[str, np.ndarray] | None = None,
+        preset_out_bias: dict | None = None,
         data_stat_protect: float = 1e-2,
     ) -> None:
         torch.nn.Module.__init__(self)
@@ -92,7 +102,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.reinit_atom_exclude(atom_exclude_types)
         self.reinit_pair_exclude(pair_exclude_types)
         self.rcond = rcond
-        self.preset_out_bias = preset_out_bias
+        self.preset_out_bias = normalize_preset_out_bias(preset_out_bias, type_map)
         self.data_stat_protect = data_stat_protect
         self._observed_type: list[str] | None = None
 
@@ -144,6 +154,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """Initialize the output bias."""
         ntypes = self.get_ntypes()
         self.bias_keys: list[str] = list(self.fitting_output_def().keys())
+        check_preset_out_bias(self.preset_out_bias, self.bias_keys)
         self.max_out_size = max(
             [self.atomic_output_def()[kk].size for kk in self.bias_keys]
         )
@@ -181,6 +192,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference into the fitting bias; nothing to fold without a fitting network."""
+        return
 
     def get_compute_stats_distinguish_types(self) -> bool:
         """Get whether the fitting net computes stats which are not distinguished between different types of atoms."""
@@ -477,6 +492,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.reinit_pair_exclude(
             map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
+        self.preset_out_bias = remap_preset_out_bias(self.preset_out_bias, remap_index)
         if has_new_type:
             extend_shape = [
                 self.out_bias.shape[0],
@@ -580,6 +596,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             merged,
             stat_file_path=stat_file_path,
             bias_adjust_mode="set-by-statistic",
+            observed_type=self.observed_type,
         )
 
     def apply_out_stat(
@@ -610,6 +627,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         sample_merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
+        model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
+        observed_type: list[str] | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -622,41 +641,74 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
                 only when needed. Since the sampling process can be slow and memory-intensive,
                 the lazy function helps by only sampling once.
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
         bias_adjust_mode : str
             The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
+            An output assigned in `preset_out_bias` is fixed by the preset in both modes:
+            every element in the data must be assigned, the assigned types take the
+            preset value, and the types absent from the data keep zero
+            ('set-by-statistic') or their stored bias ('change-by-statistic'); no
+            statistics are computed, read or written for such an output, whose
+            output std keeps its stored value.
+        model_forward : Callable[..., dict[str, torch.Tensor]], optional
+            Predictor of the complete atomic outputs used by 'change-by-statistic'.
+            Defaults to the forward of this atomic model; a model that adds
+            contributions on top of the atomic model passes its complete forward.
+        observed_type : list[str], optional
+            The elements that occur in the data; derived from the sample when
+            not given.
         """
-        if bias_adjust_mode == "change-by-statistic":
-            delta_bias, out_std = compute_output_stats(
-                sample_merged,
-                self.get_ntypes(),
-                keys=self.bias_keys,
-                stat_file_path=stat_file_path,
-                model_forward=self._get_forward_wrapper_func(),
-                rcond=self.rcond,
-                preset_bias=self.preset_out_bias,
-                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
-                intensive=self.get_intensive(),
-            )
-            self._store_out_stat(delta_bias, out_std, add=True)
-        elif bias_adjust_mode == "set-by-statistic":
-            bias_out, std_out = compute_output_stats(
-                sample_merged,
-                self.get_ntypes(),
-                keys=self.bias_keys,
-                stat_file_path=stat_file_path,
-                rcond=self.rcond,
-                preset_bias=self.preset_out_bias,
-                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
-                intensive=self.get_intensive(),
-            )
-            self._store_out_stat(bias_out, std_out)
-        else:
+        if bias_adjust_mode not in ("change-by-statistic", "set-by-statistic"):
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
+        change = bias_adjust_mode == "change-by-statistic"
+        distinguish_types = self.get_compute_stats_distinguish_types()
+        check_preset_out_bias(self.preset_out_bias, self.bias_keys, distinguish_types)
+        sampled = sample_merged
+        # === Step 1. Outputs fixed by the preset ===
+        fitted_keys = self.bias_keys
+        if self.preset_out_bias:
+            if observed_type is None:
+                sampled = sample_merged() if callable(sample_merged) else sample_merged
+                observed_type = collect_observed_types(sampled, self.type_map)
+            rows = preset_out_bias_rows(
+                self.preset_out_bias,
+                self.type_map,
+                observed_type,
+                to_numpy_array(self.out_bias),
+                self.bias_keys,
+                [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+                keep_unassigned=change,
+                excluded_types=self.atom_exclude_types,
+            )
+            self._store_out_stat({kk: to_torch_tensor(vv) for kk, vv in rows.items()})
+            fitted_keys = [kk for kk in self.bias_keys if kk not in rows]
+        if not fitted_keys:
+            return
+        # === Step 2. Outputs fitted from the data ===
+        # The fitted statistics are absolute biases in 'set-by-statistic' mode and
+        # shifts of the stored bias in 'change-by-statistic' mode.
+        forward = None
+        if change:
+            forward = (
+                self._get_forward_wrapper_func()
+                if model_forward is None
+                else model_forward
+            )
+        out_bias, out_std = compute_output_stats(
+            sampled,
+            self.get_ntypes(),
+            keys=fitted_keys,
+            stat_file_path=stat_file_path,
+            model_forward=forward,
+            rcond=self.rcond,
+            stats_distinguish_types=distinguish_types,
+            intensive=self.get_intensive(),
+        )
+        self._store_out_stat(out_bias, out_std, add=change)
 
     def compute_fitting_input_stat(
         self,
@@ -760,21 +812,22 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def _store_out_stat(
         self,
         out_bias: dict[str, torch.Tensor],
-        out_std: dict[str, torch.Tensor],
+        out_std: dict[str, torch.Tensor] | None = None,
         add: bool = False,
     ) -> None:
+        """Store the output bias, and the output std when given, into the model."""
         ntypes = self.get_ntypes()
         out_bias_data = torch.clone(self.out_bias)
         out_std_data = torch.clone(self.out_std)
         for kk in out_bias.keys():
-            assert kk in out_std.keys()
             idx = self._get_bias_index(kk)
             size = self._varsize(self.atomic_output_def()[kk].shape)
             if not add:
                 out_bias_data[idx, :, :size] = out_bias[kk].view(ntypes, size)
             else:
                 out_bias_data[idx, :, :size] += out_bias[kk].view(ntypes, size)
-            out_std_data[idx, :, :size] = out_std[kk].view(ntypes, size)
+            if out_std is not None:
+                out_std_data[idx, :, :size] = out_std[kk].view(ntypes, size)
         self.out_bias.copy_(out_bias_data)
         self.out_std.copy_(out_std_data)
 

@@ -149,10 +149,14 @@ def _energy_scan_sampler(bias: float) -> Mock:
 def test_full_scan_replaces_a_sampled_cache(tmp_path: Path) -> None:
     stat_file = tmp_path / "stat.hdf5"
     sampled = _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
-    # a cache that never held full-scan values keeps the legacy layout
+    # Sampled statistics carry no full-scan claim.
     assert not _full_scan_claim(stat_file)
     with h5py.File(stat_file, "r") as file:
-        assert set(file) == {"bias_atom_energy", "std_atom_energy"}
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
 
     # those values were estimated from batches, which is what the flag exists
     # to replace, so the scan must win over the cache
@@ -207,7 +211,7 @@ def test_interrupted_replacement_drops_the_full_scan_claim(tmp_path: Path) -> No
         del file["std_atom_energy"]
     with (
         patch(
-            "deepmd.pt.utils.stat._save_to_file",
+            "deepmd.pt.utils.stat.save_output_stats",
             side_effect=RuntimeError("interrupted"),
         ),
         pytest.raises(RuntimeError, match="interrupted"),
@@ -295,6 +299,7 @@ def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
     with h5py.File(stat_file, "w") as file:
         file.create_dataset("bias_atom_energy", data=np.zeros((1, 1)))
         file.create_dataset("std_atom_energy", data=np.ones((1, 1)))
+        file.create_dataset("preset_bias_energy", data=np.empty(0))
 
     spec = StatFileSpec(str(stat_file), "read")
     with open_stat_file(spec) as reader_one, open_stat_file(spec) as reader_two:
@@ -370,6 +375,8 @@ def test_update_mode_recomputes_partial_multi_output_cache(tmp_path: Path) -> No
             "bias_atom_property",
             "std_atom_energy",
             "std_atom_property",
+            "preset_bias_energy",
+            "preset_bias_property",
         }
         assert not np.all(file["bias_atom_energy"][:] == 100.0)
 
@@ -393,7 +400,11 @@ def test_update_mode_replaces_orphaned_output_pair(tmp_path: Path) -> None:
     assert set(bias) == {"energy"}
     assert set(std) == {"energy"}
     with h5py.File(stat_file, "r") as file:
-        assert set(file) == {"bias_atom_energy", "std_atom_energy"}
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
     original = stat_file.read_bytes()
 
     sampler.reset_mock(side_effect=True)

@@ -126,6 +126,7 @@ class DipoleFitting(GeneralFitting):
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
+        vacuum_ref: bool = False,
         r_differentiable: bool = True,
         c_differentiable: bool = True,
         type_map: list[str] | None = None,
@@ -163,6 +164,7 @@ class DipoleFitting(GeneralFitting):
             spin=spin,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            vacuum_ref=vacuum_ref,
             type_map=type_map,
             seed=seed,
             default_fparam=default_fparam,
@@ -183,7 +185,7 @@ class DipoleFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "dipole"
         return super().deserialize(data)

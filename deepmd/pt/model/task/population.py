@@ -123,7 +123,7 @@ class PopulationFittingNet(InvarFitting):
     def deserialize(cls, data: dict) -> "PopulationFittingNet":
         """Deserialize the fitting from a dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         # var_name and dim_out are hardcoded in __init__; remove them so they
         # don't conflict with the positional arguments passed by super().__init__.
         data.pop("var_name", None)
@@ -137,7 +137,7 @@ class PopulationFittingNet(InvarFitting):
             **InvarFitting.serialize(self),
             "type": "population",
         }
-        dd["@version"] = 4
+        dd["@version"] = 5
         return dd
 
     # make jit happy with torch 2.0.0

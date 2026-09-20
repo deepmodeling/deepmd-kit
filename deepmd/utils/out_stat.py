@@ -144,14 +144,14 @@ def compute_stats_from_atomic(
 def compute_stats_do_not_distinguish_types(
     output_redu: np.ndarray,
     natoms: np.ndarray,
-    assigned_bias: np.ndarray | None = None,
     intensive: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute element-independent statistics for property fitting.
 
     Computes mean and standard deviation of the output, treating all elements equally.
     For extensive properties, the output is normalized by the total number of atoms
-    before computing statistics.
+    before computing statistics. The statistics do not resolve atom types, so a
+    per-type preset bias cannot be assigned here.
 
     Parameters
     ----------
@@ -160,10 +160,6 @@ def compute_stats_do_not_distinguish_types(
     natoms
         The number of atoms for each atom, shape is [nframes, ntypes].
         Used for normalization of extensive properties and generating uniform bias.
-    assigned_bias
-        The assigned output bias, shape is [ntypes, *(odim0, odim1, ...)].
-        Set to a tensor of shape (odim0, odim1, ...) filled with nan if the bias
-        of the type is not assigned.
     intensive
         Whether the output is intensive or extensive.
         If False, the output will be normalized by the total number of atoms before computing statistics.

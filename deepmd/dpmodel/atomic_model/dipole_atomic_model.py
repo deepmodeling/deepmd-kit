@@ -50,6 +50,15 @@ class DPDipoleAtomicModel(DPAtomicModel):
                 "fitting must be an instance of DipoleFitting for DPDipoleAtomicModel"
             )
         super().__init__(descriptor, fitting, type_map, **kwargs)
+        if self.preset_out_bias is not None and any(
+            entry is not None
+            for entries in self.preset_out_bias.values()
+            for entry in entries
+        ):
+            raise ValueError(
+                "Dipole models do not apply an output bias and cannot use "
+                "assigned preset_out_bias values."
+            )
 
     def apply_out_stat(
         self,
