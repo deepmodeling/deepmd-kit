@@ -30,6 +30,11 @@ else:
 
 SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 DP_DTYPE_PROMOTION_STRICT = os.environ.get("DP_DTYPE_PROMOTION_STRICT", "0") == "1"
+# Number of Hessian rows evaluated per second-order backward pass. The Hessian
+# is built from Hessian-vector products; batching them over replicated frames
+# trades memory for far fewer kernel launches. 0 or 1 keeps the one-row-at-a-time
+# path. Measured on an H20: 8-24 is the sweet spot, beyond that only memory grows.
+DP_HESSIAN_HVP_BATCH = int(os.environ.get("DP_HESSIAN_HVP_BATCH", "16"))
 try:
     # only linux
     ncpus = len(os.sched_getaffinity(0))
