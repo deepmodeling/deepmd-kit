@@ -384,6 +384,7 @@ class _WrapperForwardEnergyGraph:
 
 log = logging.getLogger(__name__)
 
+
 def _hessian_graph_batched_hvp(
     model: Any,
     kk: str,
@@ -476,7 +477,6 @@ def _hessian_graph_batched_hvp(
     return torch.cat(rows)[:wanted]
 
 
-
 def _hvp_replica_cost(device: torch.device, probe: Any) -> int:
     """Peak memory, in bytes, that one Hessian-vector product costs."""
     torch.cuda.synchronize(device)
@@ -510,9 +510,7 @@ def _auto_hvp_batch(device: torch.device, probe: Any) -> int:
     free, _total = torch.cuda.mem_get_info(device)
     # Blocks the caching allocator holds but is not using are free to us even
     # though the driver counts them as taken.
-    reusable = torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(
-        device
-    )
+    reusable = torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(device)
     budget = (free + reusable) * DP_HESSIAN_HVP_MEMORY_FRACTION
     return max(1, min(int(budget // cost), DP_HESSIAN_HVP_BATCH_CAP))
 

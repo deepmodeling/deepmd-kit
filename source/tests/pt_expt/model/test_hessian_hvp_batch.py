@@ -152,7 +152,9 @@ class TestHessianHvpBatch:
         )
         return out["hessian"].reshape(NDOF, NDOF)
 
-    def test_batch_one_takes_the_unbatched_path(self, route_counts, monkeypatch) -> None:
+    def test_batch_one_takes_the_unbatched_path(
+        self, route_counts, monkeypatch
+    ) -> None:
         """1 (and 0) must reach the original one-row-at-a-time implementation."""
         model = self._make_model()
         for batch in (0, 1):
@@ -197,9 +199,7 @@ class TestHessianHvpBatch:
         # zero row in the middle; neither is possible for a real Hessian here.
         assert (hessian.abs().sum(dim=1) > 0).all()
 
-    def test_probe_prices_one_product_not_the_whole_hessian(
-        self, monkeypatch
-    ) -> None:
+    def test_probe_prices_one_product_not_the_whole_hessian(self, monkeypatch) -> None:
         """The automatic choice must not pay for a Hessian to decide the batch.
 
         ``max_rows`` is what keeps the probe to a single Hessian-vector product;
@@ -317,18 +317,14 @@ class TestHvpBatchPolicy:
         """A stand-in Hessian-vector product that costs a known amount."""
 
         def probe():
-            return torch.empty(
-                nbytes, dtype=torch.uint8, device=env.DEVICE
-            )
+            return torch.empty(nbytes, dtype=torch.uint8, device=env.DEVICE)
 
         return probe
 
     @pytest.mark.skipif(
         not torch.cuda.is_available(), reason="the automatic batch needs CUDA"
     )
-    @pytest.mark.parametrize(
-        "free_mib", [8, 64, 256, 1024, 4096, 16384, 65536]
-    )
+    @pytest.mark.parametrize("free_mib", [8, 64, 256, 1024, 4096, 16384, 65536])
     def test_auto_batch_is_bounded(self, free_mib, monkeypatch) -> None:
         """Whatever the free memory, the batch stays within [1, cap]."""
         monkeypatch.setattr(
@@ -345,7 +341,9 @@ class TestHvpBatchPolicy:
         chosen = []
         for free_mib in (8, 32, 128, 512, 2048, 8192):
             monkeypatch.setattr(
-                torch.cuda, "mem_get_info", lambda *a, _f=free_mib, **k: (_f * self.MIB, 0)
+                torch.cuda,
+                "mem_get_info",
+                lambda *a, _f=free_mib, **k: (_f * self.MIB, 0),
             )
             chosen.append(mm._auto_hvp_batch(env.DEVICE, self._probe(32 * self.MIB)))
         assert chosen == sorted(chosen), chosen
@@ -360,4 +358,3 @@ class TestHvpBatchPolicy:
             raise AssertionError("the probe must not run on a non-CUDA device")
 
         assert mm._auto_hvp_batch(torch.device("cpu"), explode) == 1
-
