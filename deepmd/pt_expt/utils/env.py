@@ -32,9 +32,38 @@ SAMPLER_RECORD = os.environ.get("SAMPLER_RECORD", False)
 DP_DTYPE_PROMOTION_STRICT = os.environ.get("DP_DTYPE_PROMOTION_STRICT", "0") == "1"
 # Number of Hessian rows evaluated per second-order backward pass. The Hessian
 # is built from Hessian-vector products; batching them over replicated frames
-# trades memory for far fewer kernel launches. 0 or 1 keeps the one-row-at-a-time
-# path. Measured on an H20: 8-24 is the sweet spot, beyond that only memory grows.
-DP_HESSIAN_HVP_BATCH = int(os.environ.get("DP_HESSIAN_HVP_BATCH", "16"))
+# trades memory for far fewer kernel launches. 1 keeps the one-row-at-a-time
+# path and reproduces the pre-batching behaviour exactly.
+#
+# Left unset, the batch is chosen per call: one Hessian-vector product is run to
+# measure what a replica costs, and the batch is what the free memory affords,
+# clamped to [1, DP_HESSIAN_HVP_BATCH_CAP]. That is not a tuning preference but
+# a correctness matter, because peak memory is linear in this value while the
+# speedup is not. Measured on one H20 with DPA-4.0.1-Pro-MPtrj in eval mode,
+# float32, TF32 off:
+#
+#     peak(MiB) = 782 + [4.50 + 3.27*(B-1)]*edges + [10.9 + 7.96*(B-1)]*natoms
+#
+# so at fcc-solid density a 96 GiB card holds ~381 atoms at B=1 but only ~63 at
+# B=8, while the speedup falls from 5.06x at 72 edges to 1.24x at 5832 edges --
+# batching recovers kernel-launch overhead, which stops mattering once a single
+# Hessian-vector product already saturates the device. A fixed large value
+# therefore costs the size ceiling and buys nothing on the systems that need it.
+#
+# An explicit value is honoured as given, including above the cap. The
+# out-of-memory fallback still applies to it: halving the batch changes how the
+# Hessian is computed, never what it is, so a run that would have died is
+# finished instead, with a warning naming the batch actually used.
+_hessian_hvp_batch = os.environ.get("DP_HESSIAN_HVP_BATCH")
+DP_HESSIAN_HVP_BATCH: int | None = (
+    int(_hessian_hvp_batch) if _hessian_hvp_batch is not None else None
+)
+# Ceiling for the automatic choice. Past this the speedup has flattened on every
+# system measured, so more batch would only cost memory.
+DP_HESSIAN_HVP_BATCH_CAP = 8
+# Share of the free memory the automatic choice plans for. The rest absorbs the
+# gap between one replica's measured cost and the marginal cost of the next.
+DP_HESSIAN_HVP_MEMORY_FRACTION = 0.5
 try:
     # only linux
     ncpus = len(os.sched_getaffinity(0))

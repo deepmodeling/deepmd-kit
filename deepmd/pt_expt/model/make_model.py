@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import logging
 import math
 import types
 from typing import (
@@ -34,6 +35,8 @@ from deepmd.pt_expt.kernels.utils import (
 )
 from deepmd.pt_expt.utils.env import (
     DP_HESSIAN_HVP_BATCH,
+    DP_HESSIAN_HVP_BATCH_CAP,
+    DP_HESSIAN_HVP_MEMORY_FRACTION,
 )
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
@@ -379,6 +382,8 @@ class _WrapperForwardEnergyGraph:
         return atom_out.sum(dim=0).reshape(-1)[self.ci]
 
 
+log = logging.getLogger(__name__)
+
 def _hessian_graph_batched_hvp(
     model: Any,
     kk: str,
@@ -396,6 +401,7 @@ def _hessian_graph_batched_hvp(
     charge_spin: torch.Tensor | None,
     batch: int,
     create_graph: bool,
+    max_rows: int | None = None,
 ) -> torch.Tensor:
     """Hessian of one reduced-output component via batched Hessian-vector products.
 
@@ -408,10 +414,19 @@ def _hessian_graph_batched_hvp(
     backward build a graph that every chunk of seed vectors then reuses.
 
     No ``vmap`` is involved, so custom autograd Functions that lack a batching
-    rule keep working, and no approximation is made: on DPA-4 in float64 the
-    result matches the one-row-at-a-time path to ~1e-16, i.e. machine precision.
+    rule keep working, and no approximation is made: in float64 the result
+    matches the one-row-at-a-time path to 2.8e-14 relative RMS on the
+    DPA-4.0.1-Pro-MPtrj checkpoint (1e-16 on the smaller example model), against
+    a 6.4e-16 asymmetry in the unbatched path's own answer. In float32 the two
+    differ by ~3e-6 relative RMS, a few times the unbatched path's own ~5e-7
+    asymmetry -- the longer summation chain, not a different computation.
 
-    Returns the ``(nloc * 3, nloc * 3)`` Hessian for output component ``ci``.
+    ``max_rows`` stops after that many leading rows. Only the memory probe
+    uses it: pricing one Hessian-vector product must not pay for the whole
+    Hessian first.
+
+    Returns the ``(nloc * 3, nloc * 3)`` Hessian for output component ``ci``
+    (or its first ``max_rows`` rows).
     """
     ndof = nloc * 3
     nb = max(1, min(batch, ndof))
@@ -443,7 +458,8 @@ def _hessian_graph_batched_hvp(
 
     eye = torch.eye(ndof, dtype=x.dtype, device=x.device)
     rows: list[torch.Tensor] = []
-    for start in range(0, ndof, nb):
+    wanted = ndof if max_rows is None else min(max_rows, ndof)
+    for start in range(0, wanted, nb):
         seeds = eye[start : start + nb]
         if seeds.shape[0] < nb:  # pad so the seed batch keeps the graph's shape
             seeds = torch.cat([seeds, seeds.new_zeros(nb - seeds.shape[0], ndof)])
@@ -454,8 +470,90 @@ def _hessian_graph_batched_hvp(
             retain_graph=True,
             create_graph=create_graph,
         )
-        rows.append(hvp[: min(nb, ndof - start)])
-    return torch.cat(rows)
+        rows.append(hvp)
+    # Padding rows carry a zero seed and sit at the end of the final chunk, so
+    # one slice drops both them and anything past ``max_rows``.
+    return torch.cat(rows)[:wanted]
+
+
+
+def _hvp_replica_cost(device: torch.device, probe: Any) -> int:
+    """Peak memory, in bytes, that one Hessian-vector product costs."""
+    torch.cuda.synchronize(device)
+    torch.cuda.reset_peak_memory_stats(device)
+    base = torch.cuda.memory_allocated(device)
+    probe()
+    torch.cuda.synchronize(device)
+    return max(torch.cuda.max_memory_allocated(device) - base, 1)
+
+
+def _auto_hvp_batch(device: torch.device, probe: Any) -> int:
+    """Pick a batch from what one Hessian-vector product costs and what is free.
+
+    Peak memory is linear in the batch, so the batch that fits is the one worth
+    taking: past it the run dies, and below it the device is idle. Pricing a
+    single product costs one row out of ``3 * nloc`` and needs no per-model
+    constants, which a fitted memory model would.
+
+    The measured cost covers a whole product, while each batch step beyond the
+    first adds only its marginal share, so this reads high and the batch comes
+    out conservative -- the direction to err, since
+    :func:`_hessian_graph_row_block` can recover from a batch that turns out too
+    large but nothing recovers the time lost to one that was too small.
+    """
+    if device.type != "cuda":
+        # Without allocator introspection there is nothing to size against, and
+        # without a recoverable out-of-memory error nothing to catch if the
+        # guess is wrong. Stay on the one-row-at-a-time path.
+        return 1
+    cost = _hvp_replica_cost(device, probe)
+    free, _total = torch.cuda.mem_get_info(device)
+    # Blocks the caching allocator holds but is not using are free to us even
+    # though the driver counts them as taken.
+    reusable = torch.cuda.memory_reserved(device) - torch.cuda.memory_allocated(
+        device
+    )
+    budget = (free + reusable) * DP_HESSIAN_HVP_MEMORY_FRACTION
+    return max(1, min(int(budget // cost), DP_HESSIAN_HVP_BATCH_CAP))
+
+
+def _hessian_graph_row_block(
+    batch: int,
+    wrapper: Any,
+    coord_flat: torch.Tensor,
+    create_graph: bool,
+    **kwargs: Any,
+) -> torch.Tensor:
+    """One output component's Hessian, halving the batch if memory runs out.
+
+    Batching changes how the Hessian is computed, never what it is, so a batch
+    that does not fit can simply be retried smaller instead of ending the run.
+    Reaching 1 hands over to the original one-row-at-a-time path rather than to
+    this helper with a batch of one, so the fallback bottoms out in exactly the
+    code a user who set 1 would have taken.
+    """
+    while batch > 1:
+        try:
+            return _hessian_graph_batched_hvp(
+                coord_flat=coord_flat,
+                batch=batch,
+                create_graph=create_graph,
+                **kwargs,
+            )
+        except torch.OutOfMemoryError:
+            batch //= 2
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            log.warning(
+                "Hessian-vector product batch did not fit in memory; retrying "
+                "with %d. Set DP_HESSIAN_HVP_BATCH to choose it yourself.",
+                batch,
+            )
+    return torch.autograd.functional.hessian(
+        wrapper,
+        coord_flat,
+        create_graph=create_graph,
+    )
 
 
 def _cal_hessian_ext_graph(
@@ -495,6 +593,9 @@ def _cal_hessian_ext_graph(
         if charge_spin is not None and charge_spin.ndim == 1
         else charge_spin
     )
+    # Resolved once and reused: what a replica costs is set by the neighbour
+    # count, which is the same for every component of one call.
+    hvp_batch = DP_HESSIAN_HVP_BATCH
     hessians = []
     for ii in range(nf):
         node_index = torch.nonzero(atype[ii] >= 0, as_tuple=False).reshape(-1)
@@ -525,31 +626,42 @@ def _cal_hessian_ext_graph(
                 spin=spin_frame,
                 charge_spin=charge_spin_frame,
             )
-            if DP_HESSIAN_HVP_BATCH > 1:
-                hess = _hessian_graph_batched_hvp(
-                    model=model,
-                    kk=kk,
-                    ci=ci,
-                    nloc=n_real,
-                    coord_flat=coord_flat,
-                    atype=atype_frame,
-                    box=box[ii : ii + 1] if box is not None else None,
-                    method=method,
-                    pair_excl=pair_excl,
-                    rcut=rcut,
-                    fparam=fparam[ii : ii + 1] if fparam is not None else None,
-                    aparam=aparam_frame,
-                    spin=spin_frame,
-                    charge_spin=charge_spin_frame,
-                    batch=DP_HESSIAN_HVP_BATCH,
-                    create_graph=create_graph,
-                )  # (n_real*3, n_real*3)
-            else:
-                hess = torch.autograd.functional.hessian(
-                    wrapper,
-                    coord_flat,
-                    create_graph=create_graph,
-                )  # (n_real*3, n_real*3)
+            hvp_kwargs = {
+                "model": model,
+                "kk": kk,
+                "ci": ci,
+                "nloc": n_real,
+                "atype": atype_frame,
+                "box": box[ii : ii + 1] if box is not None else None,
+                "method": method,
+                "pair_excl": pair_excl,
+                "rcut": rcut,
+                "fparam": fparam[ii : ii + 1] if fparam is not None else None,
+                "aparam": aparam_frame,
+                "spin": spin_frame,
+                "charge_spin": charge_spin_frame,
+            }
+            if hvp_batch is None and n_real:
+                hvp_batch = _auto_hvp_batch(
+                    coord.device,
+                    lambda: _hessian_graph_batched_hvp(
+                        coord_flat=coord_flat,
+                        batch=1,
+                        create_graph=create_graph,
+                        max_rows=1,
+                        **hvp_kwargs,
+                    ),
+                )
+                log.debug(
+                    "Hessian-vector products batched %d rows at a time", hvp_batch
+                )
+            hess = _hessian_graph_row_block(
+                batch=hvp_batch if hvp_batch is not None else 1,
+                wrapper=wrapper,
+                coord_flat=coord_flat,
+                create_graph=create_graph,
+                **hvp_kwargs,
+            )  # (n_real*3, n_real*3)
             if n_real != nloc:
                 component_index = (
                     node_index[:, None] * 3
