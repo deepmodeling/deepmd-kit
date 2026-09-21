@@ -15,7 +15,9 @@ import unittest
 
 import torch
 
-from deepmd.pt.model.model import sezm_model
+from deepmd.pt.model.model import (
+    sezm_model,
+)
 
 
 class TestNeighborBackendMissing(unittest.TestCase):
