@@ -133,6 +133,16 @@ ipi = [
 nvalchemi = [
     'nvalchemi-toolkit; python_version >= "3.11" and python_version < "3.14" and platform_system == "Linux"',
 ]
+# Runtime requirements of the DPA-4 / SeZM descriptor: e3nn for the S2 grid
+# projections, and vesin for the O(N) neighbor list. Neither is needed by the
+# rest of the package, and nothing else declares them, so a plain install
+# cannot run DPA-4. `nvalchemiops` (from nvalchemi-toolkit-ops) is an
+# alternative neighbor-list backend rather than an addition, and is left out so
+# this extra stays portable.
+dpa4 = [
+    "e3nn",
+    "vesin[torch]",
+]
 gui = [
     "dpgui",
 ]
