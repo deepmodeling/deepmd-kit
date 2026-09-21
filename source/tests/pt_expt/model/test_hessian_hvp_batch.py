@@ -199,6 +199,9 @@ class TestHessianHvpBatch:
         # zero row in the middle; neither is possible for a real Hessian here.
         assert (hessian.abs().sum(dim=1) > 0).all()
 
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="the automatic choice needs CUDA"
+    )
     def test_probe_prices_one_product_not_the_whole_hessian(self, monkeypatch) -> None:
         """The automatic choice must not pay for a Hessian to decide the batch.
 
