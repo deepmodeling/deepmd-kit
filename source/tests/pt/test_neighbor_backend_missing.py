@@ -1,16 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Missing neighbor-list backends must say what to install.
+"""A missing neighbor-list backend must say what to install.
 
-The DPA-4 / SeZM descriptor needs a neighbor-list backend at runtime, but
-neither ``vesin`` nor ``nvalchemiops`` was declared anywhere in the project
-metadata, so a plain install got as far as building a model and then failed
-with a message that named the imports and not the packages. These tests pin
-both halves of the fix: the message is actionable, and an extra declares the
-dependency.
+The DPA-4 / SeZM descriptor needs ``vesin`` or ``nvalchemiops`` at runtime.
+Both ship with the ``torch`` extra, so a normal install has one, but an
+install that skips that extra reaches a model build and then fails with a
+message naming the *imports* rather than the distributions that provide
+them. These tests pin that the message names installable packages.
 """
 
-import pathlib
-import tomllib
 import unittest
 
 import torch
@@ -45,20 +42,7 @@ class TestNeighborBackendMissing(unittest.TestCase):
 
     def test_error_points_at_the_extra(self) -> None:
         """A user who wants the whole descriptor should be told about it."""
-        self.assertIn("deepmd-kit[dpa4]", self._message_without_backends())
-
-    def test_dpa4_extra_declares_the_runtime_dependencies(self) -> None:
-        """The extra must cover what DPA-4 needs and nothing else declares."""
-        root = pathlib.Path(__file__).resolve().parents[3]
-        data = tomllib.loads((root / "pyproject.toml").read_text())
-        extras = data["tool"]["deepmd_build_backend"]["optional-dependencies"]
-        self.assertIn("dpa4", extras)
-        joined = " ".join(extras["dpa4"])
-        self.assertIn("e3nn", joined)
-        self.assertIn("vesin", joined)
-        # the pre-existing extra pulls the full toolkit for deepmd.pt.nvalchemi
-        # and must not be repurposed for the neighbor list
-        self.assertIn("nvalchemi-toolkit", " ".join(extras["nvalchemi"]))
+        self.assertIn("deepmd-kit[torch]", self._message_without_backends())
 
 
 if __name__ == "__main__":

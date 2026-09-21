@@ -567,7 +567,7 @@ def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
         "neither 'vesin' nor 'nvalchemiops' is importable. Install one of:\n"
         "  pip install 'vesin[torch]'        # portable CPU/CUDA cell list\n"
         "  pip install nvalchemi-toolkit-ops # batched CUDA kernels\n"
-        "'vesin' also ships with the DPA-4 extra: pip install 'deepmd-kit[dpa4]'."
+        "'vesin' also ships with the PyTorch extra: pip install 'deepmd-kit[torch]'."
     )
 
 
