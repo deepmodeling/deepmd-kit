@@ -227,6 +227,121 @@ class TestHessianHvpBatch:
         assert probe_max_rows == 1
         assert probe_rows == 1, "the probe computed more than one row"
 
+    def test_create_graph_keeps_the_path_to_the_coordinates(self, monkeypatch) -> None:
+        """``create_graph`` must leave the Hessian differentiable in the input.
+
+        ``torch.autograd.functional.hessian`` keeps the input in the graph when
+        ``create_graph`` is set; detaching instead severs everything upstream of
+        the coordinates while leaving the parameter path intact, so the loss of
+        signal is silent.
+        """
+        model = self._make_model()
+        model.train()
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 4)
+        upstream = self.coord.clone().requires_grad_(True)
+        # a non-leaf coordinate, which is what makes the severed path visible
+        out = model.forward(upstream * 1.0, self.atype, box=self.box)
+        hessian = out["hessian"].reshape(NDOF, NDOF)
+        assert hessian.requires_grad, "create_graph produced a detached Hessian"
+        (back,) = torch.autograd.grad(
+            hessian.sum(), upstream, retain_graph=True, allow_unused=True
+        )
+        assert back is not None, "the Hessian no longer depends on the coordinates"
+        assert torch.isfinite(back).all()
+
+    def test_a_linear_energy_gives_a_zero_hessian_not_a_crash(
+        self, monkeypatch
+    ) -> None:
+        """Constant or linear coordinate dependence must yield zeros.
+
+        ``functional.hessian`` materialises the zero block under its default
+        ``strict=False``. Differentiating a constant first derivative again
+        instead raises, which turns a legitimate model into a crash.
+        """
+
+        class _LinearAtomicModel:
+            """Energy exactly linear in the coordinates: d2E/dx2 == 0."""
+
+            def forward_common_atomic_graph(self, graph, atype_flat, **kwargs):
+                nb = graph.shape[0]
+                energy = (3.0 * graph).sum(-1).reshape(nb * graph.shape[1], 1)
+                return {"energy": energy}
+
+        class _Model:
+            atomic_model = _LinearAtomicModel()
+
+        monkeypatch.setattr(
+            mm,
+            "build_neighbor_graph_for_method",
+            lambda method, pos, atype, box, rcut, pair_excl: pos,
+        )
+        nloc = NATOMS
+        coord_flat = self.coord.reshape(-1).clone()
+        hessian = mm._hessian_graph_batched_hvp(
+            model=_Model(),
+            kk="energy",
+            ci=0,
+            nloc=nloc,
+            coord_flat=coord_flat,
+            atype=self.atype,
+            box=self.box,
+            method="graph",
+            pair_excl=None,
+            rcut=RCUT,
+            fparam=None,
+            aparam=None,
+            spin=None,
+            charge_spin=None,
+            batch=4,
+            create_graph=False,
+        )
+        assert hessian.shape == (NDOF, NDOF)
+        assert torch.count_nonzero(hessian) == 0, "a linear energy has no curvature"
+
+    def test_the_probe_does_not_build_a_full_identity(self, monkeypatch) -> None:
+        """Pricing one product must not allocate the ``ndof x ndof`` identity.
+
+        The identity is the allocation batching exists to avoid; building it to
+        decide the batch can itself be what runs the device out of memory, and
+        it inflates the very cost the probe is measuring.
+        """
+        seen = []
+        real_eye = torch.eye
+
+        def record_eye(n, *args, **kwargs):
+            seen.append(n)
+            return real_eye(n, *args, **kwargs)
+
+        monkeypatch.setattr(torch, "eye", record_eye)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 4)
+        model = self._make_model()
+        self._hessian(model)
+        assert NDOF not in seen, (
+            f"an identity of size {NDOF} was built; sizes seen: {seen}"
+        )
+
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="the automatic choice needs CUDA"
+    )
+    def test_an_out_of_memory_probe_falls_back_instead_of_escaping(
+        self, monkeypatch
+    ) -> None:
+        """Pricing a product is a product, so it can be the thing that does not fit.
+
+        Letting that escape ends the run before the one-row-at-a-time path --
+        which may well have fit -- is ever tried.
+        """
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", None)
+
+        def always_oom(device, probe):
+            raise torch.OutOfMemoryError("probe did not fit")
+
+        monkeypatch.setattr(mm, "_auto_hvp_batch", always_oom)
+        model = self._make_model()
+        hessian = self._hessian(model)
+        assert hessian.shape == (NDOF, NDOF)
+        assert torch.isfinite(hessian).all()
+
     def test_dense_route_is_untouched(self, route_counts, monkeypatch) -> None:
         """The batch size must not reach, or change, the dense Hessian route."""
         dense_model = self._make_model(graph=False)

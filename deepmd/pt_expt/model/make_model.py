@@ -431,8 +431,15 @@ def _hessian_graph_batched_hvp(
     """
     ndof = nloc * 3
     nb = max(1, min(batch, ndof))
-    x = coord_flat.detach().reshape(1, ndof).expand(nb, ndof).contiguous()
-    x = x.requires_grad_(True)
+    if create_graph and coord_flat.requires_grad:
+        # Mirror ``torch.autograd.functional._grad_preprocess``: with
+        # ``create_graph`` the caller means to differentiate the Hessian
+        # itself, so the path back to the coordinates has to survive.
+        # Detaching would silently cut it and leave only the parameter path.
+        x = coord_flat.reshape(1, ndof).expand(nb, ndof).contiguous()
+    else:
+        x = coord_flat.detach().reshape(1, ndof).expand(nb, ndof).contiguous()
+        x = x.requires_grad_(True)
     atype_b = atype.reshape(1, nloc).expand(nb, nloc).contiguous()
     box_b = (
         box.reshape(1, -1).expand(nb, box.numel()).contiguous()
@@ -455,21 +462,39 @@ def _hessian_graph_batched_hvp(
     # flat (nb * nloc, *def) -> one scalar per replica, summed: the replicas are
     # independent, so d/dx_b only sees replica b.
     total = atomic_ret[kk].reshape(nb, nloc, -1)[..., ci].sum()
-    (grad,) = torch.autograd.grad(total, x, create_graph=True)
+    (grad,) = torch.autograd.grad(
+        total, x, create_graph=True, allow_unused=True, materialize_grads=True
+    )
 
-    eye = torch.eye(ndof, dtype=x.dtype, device=x.device)
-    rows: list[torch.Tensor] = []
     wanted = ndof if max_rows is None else min(max_rows, ndof)
+    if not grad.requires_grad:
+        # The reduced output is constant or linear in the coordinates, so every
+        # second derivative is zero. ``functional.hessian`` materialises that
+        # zero block under its default ``strict=False``; differentiating a
+        # constant ``grad`` again would instead raise, which would turn a
+        # legitimate model into a crash.
+        return x.new_zeros(wanted, ndof)
+
+    rows: list[torch.Tensor] = []
     for start in range(0, wanted, nb):
-        seeds = eye[start : start + nb]
-        if seeds.shape[0] < nb:  # pad so the seed batch keeps the graph's shape
-            seeds = torch.cat([seeds, seeds.new_zeros(nb - seeds.shape[0], ndof)])
+        stop = min(start + nb, wanted)
+        # One seed block per chunk rather than one ``ndof x ndof`` identity:
+        # the identity is the very allocation the batching exists to avoid, and
+        # a fresh block per chunk keeps ``create_graph`` from retaining a buffer
+        # that a later chunk would overwrite.
+        seeds = torch.zeros(nb, ndof, dtype=x.dtype, device=x.device)
+        seeds[
+            torch.arange(stop - start, dtype=torch.int64, device=x.device),
+            torch.arange(start, stop, dtype=torch.int64, device=x.device),
+        ] = 1
         (hvp,) = torch.autograd.grad(
             grad,
             x,
             grad_outputs=seeds,
             retain_graph=True,
             create_graph=create_graph,
+            allow_unused=True,
+            materialize_grads=True,
         )
         rows.append(hvp)
     # Padding rows carry a zero seed and sit at the end of the final chunk, so
@@ -640,16 +665,30 @@ def _cal_hessian_ext_graph(
                 "charge_spin": charge_spin_frame,
             }
             if hvp_batch is None and n_real:
-                hvp_batch = _auto_hvp_batch(
-                    coord.device,
-                    lambda: _hessian_graph_batched_hvp(
-                        coord_flat=coord_flat,
-                        batch=1,
-                        create_graph=create_graph,
-                        max_rows=1,
-                        **hvp_kwargs,
-                    ),
-                )
+                try:
+                    hvp_batch = _auto_hvp_batch(
+                        coord.device,
+                        lambda: _hessian_graph_batched_hvp(
+                            coord_flat=coord_flat,
+                            batch=1,
+                            create_graph=create_graph,
+                            max_rows=1,
+                            **hvp_kwargs,
+                        ),
+                    )
+                except torch.OutOfMemoryError:
+                    # Pricing one product is itself a product, so it can be the
+                    # allocation that does not fit. Letting that escape would
+                    # end the run before the one-row-at-a-time path -- which
+                    # might well have fit -- was ever tried.
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    log.warning(
+                        "Ran out of memory measuring the Hessian-vector "
+                        "product; falling back to one row at a time. Set "
+                        "DP_HESSIAN_HVP_BATCH to choose the batch yourself."
+                    )
+                    hvp_batch = 1
                 log.debug(
                     "Hessian-vector products batched %d rows at a time", hvp_batch
                 )
