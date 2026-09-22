@@ -713,7 +713,13 @@ class SeZMInteractionBlock(nn.Module):
             - full AttnRes path returns `(block_output, None, so2_unit_output, ffn_unit_outputs)`
             - block AttnRes path returns `(block_output, block_summary, None, None)`
         """
-        return self._forward_impl(x, edge_cache, radial_feat, unit_history, comm_dict)
+        return self._forward_impl(
+            x,
+            edge_cache,
+            radial_feat,
+            unit_history,
+            comm_dict,
+        )
 
     def _extract_l0_from_canonical(self, value: torch.Tensor) -> torch.Tensor:
         """
@@ -793,7 +799,11 @@ class SeZMInteractionBlock(nn.Module):
                 use_reentrant=False,
                 preserve_rng_state=True,
             )
-        return self._run_so2_unit_impl(x, edge_cache, radial_feat)
+        return self._run_so2_unit_impl(
+            x,
+            edge_cache,
+            radial_feat,
+        )
 
     def _run_so2_unit_impl(
         self,
@@ -802,6 +812,45 @@ class SeZMInteractionBlock(nn.Module):
         radial_feat: torch.Tensor,
     ) -> torch.Tensor:
         """Run the SO(2) unit implementation."""
+        if edge_cache.D_packed is not None:
+            from deepmd.pt_expt.kernels.cute.sezm.so2.operation import (
+                maybe_run_cute_so2,
+            )
+
+            metadata = edge_cache.cute_infer_so2_metadata
+            destination_row_ptr, source_order, source_row_ptr = (
+                (None, None, None) if metadata is None else metadata
+            )
+            accelerated = maybe_run_cute_so2(
+                self,
+                x,
+                edge_cache,
+                radial_feat,
+                dst_ptr=destination_row_ptr,
+                source_order=source_order,
+                source_ptr=source_row_ptr,
+            )
+            if accelerated is not None:
+                return accelerated
+            from deepmd.pt_expt.kernels.cute.sezm.so2.wigner_layout import (
+                dense_wigner_for_fallback,
+            )
+
+            if edge_cache.edge_quat is None:
+                raise ValueError("packed Wigner fallback requires edge quaternions")
+            d_full, dt_full = dense_wigner_for_fallback(
+                edge_cache.edge_quat,
+                lmax=self.lmax,
+                eps=self.so2_conv.eps,
+            )
+            edge_cache = edge_cache._replace(
+                D_full=d_full,
+                Dt_full=dt_full,
+                D_packed=None,
+                D_to_m_cache=None,
+                Dt_from_m_cache=None,
+            )
+
         n_node = x.shape[0]
         channels = self.channels
         use_full_node = self.node_lmax == self.lmax
@@ -892,7 +941,12 @@ class SeZMInteractionBlock(nn.Module):
             Tuple `(block_output, None, None, None)`.
         """
         with nvtx_range("so2_conv"):
-            so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat, comm_dict)
+            so2_unit_output = self._run_so2_unit(
+                x,
+                edge_cache,
+                radial_feat,
+                comm_dict,
+            )
             so2_state = x + so2_unit_output
 
         with nvtx_range("ffn"):
@@ -950,7 +1004,10 @@ class SeZMInteractionBlock(nn.Module):
                     current_x=x,
                 )
             so2_unit_output = self._run_so2_unit(
-                so2_input, edge_cache, radial_feat, comm_dict
+                so2_input,
+                edge_cache,
+                radial_feat,
+                comm_dict,
             )
 
         with nvtx_range("ffn"):
@@ -1018,7 +1075,10 @@ class SeZMInteractionBlock(nn.Module):
                     current_x=x,
                 )
             so2_unit_output = self._run_so2_unit(
-                so2_input, edge_cache, radial_feat, comm_dict
+                so2_input,
+                edge_cache,
+                radial_feat,
+                comm_dict,
             )
 
         with nvtx_range("ffn"):

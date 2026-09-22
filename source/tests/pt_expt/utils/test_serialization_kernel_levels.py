@@ -225,7 +225,7 @@ def test_packed_weights_only_prepare_for_bound_dpa4_value_path(
 ) -> None:
     model = torch.nn.Module()
     conv = torch.nn.Module()
-    conv._triton_value_path = object() if has_value_path else None
+    conv.triton_infer_l_2_value = object() if has_value_path else None
     model.add_module("conv", conv)
 
     calls = []
