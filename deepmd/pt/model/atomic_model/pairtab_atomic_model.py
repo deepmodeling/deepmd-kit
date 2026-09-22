@@ -59,8 +59,6 @@ class PairTabAtomicModel(BaseAtomicModel):
         For example `type_map[1]` gives the name of the type 1.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    atom_ener
-        Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
 
     """
 
@@ -249,17 +247,16 @@ class PairTabAtomicModel(BaseAtomicModel):
             If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
 
         """
-        if compute_or_load_out_stat:
-            self.compute_or_load_out_stat(sampled_func, stat_file_path)
-
+        observed_stat_path = stat_file_path
         if stat_file_path is not None and self.type_map is not None:
-            stat_file_path /= " ".join(self.type_map)
-
+            observed_stat_path = stat_file_path / " ".join(self.type_map)
         self._collect_and_set_observed_type(
             sampled_func if callable(sampled_func) else lambda: sampled_func,
-            stat_file_path,
+            observed_stat_path,
             preset_observed_type,
         )
+        if compute_or_load_out_stat:
+            self.compute_or_load_out_stat(sampled_func, stat_file_path)
 
     def forward_atomic(
         self,

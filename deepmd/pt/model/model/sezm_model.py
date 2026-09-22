@@ -789,7 +789,10 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         descriptor.inner_clamp_r_outer,
         int(descriptor.get_dim_chg_spin()),
     )
-    fitting_state = (_int_tuple(fitting.exclude_types),)
+    fitting_state = (
+        _int_tuple(fitting.exclude_types),
+        bool(fitting.needs_vacuum_descriptor()),
+    )
     atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
     model_state = (
         str(model.bridging_method),
@@ -1419,6 +1422,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         "train" if self.training else "eval",
                         has_coord_corr,
                         time.perf_counter() - self._core_compute_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._core_compute_pending_compile_t0 = None
                     self._core_compute_pending_compile_key = None
@@ -1541,6 +1545,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     log.info(
                         "SeZM: finished compiling dens path in %.2fs",
                         time.perf_counter() - self._dens_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._dens_pending_compile_t0 = None
             else:
@@ -1737,8 +1742,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # either way. ``comm_dict`` (possibly ``None``) and ``nloc`` are
         # forwarded unconditionally -- ``forward_with_edges`` ignores ``nloc``
         # without ``comm_dict``, and ``extended_coord`` only supplies the device.
+        fitting_net = self.atomic_model.fitting_net
         with nvtx_range("SeZM/descriptor"):
-            descriptor, _ = descriptor_model.forward_with_edges(
+            descriptor, _, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=coord,
                 extended_atype=descriptor_atype,
                 edge_index=edge_index,
@@ -1749,17 +1755,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 spin=spin,
                 comm_dict=comm_dict,
                 nloc=nloc,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if fitting_net.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 3. Fitting net ===
         # The same fitting forward serves both modes; ``embedding_only`` only asks
         # it to also return the last hidden activation.
         with nvtx_range("SeZM/fitting_net"):
-            fit_ret = self.atomic_model.fitting_net(
+            fit_ret = fitting_net(
                 descriptor,
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_atomic_feature=embedding_only,
             )
 
@@ -1945,7 +1955,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         # === Step 3. Descriptor forward with force embedding ===
         with nvtx_range("SeZM/descriptor_dens"):
-            descriptor, latent = descriptor_model.forward_with_edges(
+            descriptor, latent, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=extended_coord[:, :nloc, :],
                 extended_atype=atype,
                 edge_index=edge_index,
@@ -1954,6 +1964,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_index_sorted_by_dst=sort_edges_by_dst,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if dens_fitting.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 4. Dens fitting net ===
@@ -1965,6 +1978,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 noise_mask=noise_mask,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_components=True,
             )
         return torch.cat(
@@ -2137,7 +2151,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 full_cache_key
             ]
             self._task_buf_order_cache[cache_key] = _SEZM_TASK_BUF_ORDER[structure_key]
-            log.info(
+            log.debug(
                 "SeZM: reusing shared compiled graph (mode=%s, coord_corr=%s)",
                 mode,
                 has_coord_corr,
@@ -2195,6 +2209,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             "SeZM: start tracing and compiling (mode=%s, coord_corr=%s)",
             mode,
             has_coord_corr,
+            extra={"rank_scope": "all"},
         )
 
         # Promote the per-task buffers (see ``get_task_buffer_names``) to
@@ -2671,7 +2686,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         check_compile_torch_version()
         from torch._inductor import config as inductor_config
 
-        log.info("SeZM: start compiling dens path")
+        log.info("SeZM: start compiling dens path", extra={"rank_scope": "all"})
         _compile_t0 = time.perf_counter()
 
         inductor_config.max_autotune_report_choices_stats = False
@@ -3476,6 +3491,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Target mode to reset.
         """
         self.atomic_model.reset_head_for_mode(mode)
+        self.drop_compiled_graphs(mode)
+
+    def drop_compiled_graphs(self, mode: str) -> None:
+        """
+        Drop the compiled graphs of one head so the next forward retraces.
+
+        Parameters
+        ----------
+        mode
+            ``"dens"`` for the DeNS head; any other value for the energy head,
+            whose embedding graph reads the same fitting head and is dropped
+            together with it.
+        """
         if mode == "dens":
             self._dens_compiled = False
             self._dens_pending_compile_t0 = None
@@ -3483,12 +3511,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         else:
             self._core_compute_pending_compile_t0 = None
             self._core_compute_pending_compile_key = None
-            # Drop every compile slot so the next forward retraces against the
-            # reinitialised fitting head.  The embedding graph reads the same
-            # fitting head, so it is invalidated together with the energy graph.
             self.compiled_core_compute_cache.clear()
             object.__setattr__(self, "compiled_embedding", None)
             object.__setattr__(self, "_embedding_task_buf_order", None)
+
+    def fold_vacuum_reference(self) -> None:
+        """
+        Fold the vacuum reference into the energy fitting and drop its compiled graphs.
+
+        A traced graph bakes in whether reference nodes trail the real nodes,
+        so the energy head retraces after the fold. The DeNS head serves
+        training alone and is not exported, so it keeps its reference.
+        """
+        self.atomic_model.fold_vacuum_reference()
+        self.drop_compiled_graphs("ener")
 
     # =========================================================================
     # Bridging Helpers

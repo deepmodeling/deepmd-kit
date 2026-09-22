@@ -41,9 +41,15 @@ from deepmd.utils.out_stat import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    make_preset_out_bias,
+    override_assigned_bias,
+)
 from deepmd.utils.stat_file import (
     load_output_stat_full_scan,
+    load_output_stats,
     save_output_stat_full_scan,
+    save_output_stats,
 )
 
 log = logging.getLogger(__name__)
@@ -194,49 +200,6 @@ def scan_redu_stats(
     return ReduScanResult(stats=stats, natoms_total=natoms_total, nframes=nframes)
 
 
-def _restore_from_file(
-    stat_file_path: DPPath,
-    keys: list[str] = ["energy"],
-) -> dict | None:
-    if stat_file_path is None:
-        return None, None
-    stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-    stat_files = [stat_file_path / f"std_atom_{kk}" for kk in keys]
-    if all(not (ii.is_file()) for ii in stat_files):
-        return None, None
-
-    ret_bias = {}
-    ret_std = {}
-    for kk in keys:
-        fp = stat_file_path / f"bias_atom_{kk}"
-        # only read the key that exists
-        if fp.is_file():
-            ret_bias[kk] = fp.load_numpy()
-    for kk in keys:
-        fp = stat_file_path / f"std_atom_{kk}"
-        # only read the key that exists
-        if fp.is_file():
-            ret_std[kk] = fp.load_numpy()
-    return ret_bias, ret_std
-
-
-def _save_to_file(
-    stat_file_path: DPPath,
-    bias_out: dict,
-    std_out: dict,
-) -> None:
-    assert stat_file_path is not None
-    stat_file_path.mkdir(exist_ok=True, parents=True)
-    for kk, vv in bias_out.items():
-        fp = stat_file_path / f"bias_atom_{kk}"
-        fp.save_numpy(vv)
-    for kk, vv in std_out.items():
-        fp = stat_file_path / f"std_atom_{kk}"
-        fp.save_numpy(vv)
-
-
 def _post_process_stat(
     out_bias: paddle.Tensor,
     out_std: paddle.Tensor,
@@ -298,31 +261,6 @@ def _compute_model_predict(
     return model_predict
 
 
-def _make_preset_out_bias(
-    ntypes: int,
-    ibias: list[np.ndarray | None],
-) -> np.ndarray | None:
-    """Make preset out bias.
-
-    output:
-        a np array of shape [ntypes, *(odim0, odim1, ...)] is any item is not None
-        None if all items are None.
-    """
-    if len(ibias) != ntypes:
-        raise ValueError("the length of preset bias list should be ntypes")
-    if all(ii is None for ii in ibias):
-        return None
-    for refb in ibias:
-        if refb is not None:
-            break
-    refb = np.array(refb)
-    nbias = [
-        np.full_like(refb, np.nan, dtype=np.float64) if ii is None else ii
-        for ii in ibias
-    ]
-    return np.array(nbias)
-
-
 def _fill_stat_with_global(
     atomic_stat: np.ndarray | None,
     global_stat: np.ndarray,
@@ -378,10 +316,13 @@ def compute_output_stats(
         The path to the stat file.
     rcond : float, optional
         The condition number for the regression of atomic energy.
-    preset_bias : dict[str, list[Optional[paddle.Tensor]]], optional
-        Specifying atomic energy contribution in vacuum. Given by key:value pairs.
-        The value is a list specifying the bias. the elements can be None or np.ndarray of output shape.
+    preset_bias : dict[str, list[Optional[np.ndarray]]], optional
+        Assigned values of the returned bias, given by key:value pairs.
+        The value is a list with one element per type: None leaves the type to the
+        statistics, an np.ndarray of output shape assigns the type.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
+        The values live in the frame of the returned bias: absolute biases without
+        `model_forward`, shifts of the model's stored bias with `model_forward`.
         The `set_davg_zero` key in the descriptor should be set.
     model_forward : Callable[..., paddle.Tensor], optional
         The wrapped forward function of atomic model.
@@ -393,6 +334,17 @@ def compute_output_stats(
     intensive : bool, optional
         Whether the fitting target is intensive.
     """
+    keys = [keys] if isinstance(keys, str) else keys
+    requested_keys = list(keys)
+
+    # Per-type constraints participate in both cache validation and regression.
+    assigned_bias = {
+        kk: make_preset_out_bias(ntypes, preset_bias[kk])
+        if preset_bias is not None and kk in preset_bias
+        else None
+        for kk in keys
+    }
+
     # a full scan cannot replace the sampled path for delta bias or type-blind
     # statistics, so resolve it before the cache is consulted
     redu_scanner = get_redu_stat_scanner(merged)
@@ -405,8 +357,13 @@ def compute_output_stats(
         )
         redu_scanner = None
 
+    # Model residuals depend on parameters not recorded in the statistics cache.
+    # Neither reuse nor persist them as absolute output statistics.
+    if model_forward is not None:
+        stat_file_path = None
+
     # try to restore the bias from stat file
-    bias_atom_e, std_atom_e = _restore_from_file(stat_file_path, keys)
+    bias_atom_e, std_atom_e = load_output_stats(stat_file_path, keys, assigned_bias)
     if (
         bias_atom_e is not None
         and redu_scanner is not None
@@ -506,7 +463,7 @@ def compute_output_stats(
             ntypes,
             keys,
             rcond,
-            preset_bias,
+            assigned_bias,
             global_sampled_idx,
             stats_distinguish_types,
             intensive,
@@ -519,6 +476,7 @@ def compute_output_stats(
             keys,
             atomic_sampled_idx,
             model_pred_a,
+            assigned_bias,
         )
 
         # merge global/atomic bias
@@ -544,7 +502,9 @@ def compute_output_stats(
             # withdraw any standing claim before the values it describes are
             # replaced, so an interruption leaves the cache looking sampled
             save_output_stat_full_scan(stat_file_path, False)
-            _save_to_file(stat_file_path, bias_atom_e, std_atom_e)
+            save_output_stats(
+                stat_file_path, requested_keys, bias_atom_e, std_atom_e, assigned_bias
+            )
             save_output_stat_full_scan(stat_file_path, redu_scanner is not None)
 
     bias_atom_e = {kk: to_paddle_tensor(vv) for kk, vv in bias_atom_e.items()}
@@ -557,7 +517,7 @@ def _compute_output_stats_global(
     ntypes: int,
     keys: list[str],
     rcond: float | None = None,
-    preset_bias: dict[str, list[paddle.Tensor | None]] | None = None,
+    assigned_bias: dict[str, np.ndarray | None] | None = None,
     global_sampled_idx: dict | None = None,
     stats_distinguish_types: bool = True,
     intensive: bool = False,
@@ -609,15 +569,8 @@ def _compute_output_stats_global(
         if len(input_natoms[kk]) > 0
     }
     nf = {kk: merged_natoms[kk].shape[0] for kk in keys if kk in merged_natoms}
-    if preset_bias is not None:
-        assigned_atom_ener = {
-            kk: _make_preset_out_bias(ntypes, preset_bias[kk])
-            if kk in preset_bias.keys()
-            else None
-            for kk in keys
-        }
-    else:
-        assigned_atom_ener = dict.fromkeys(keys)
+    if assigned_bias is None:
+        assigned_bias = dict.fromkeys(keys)
 
     if model_pred is None:
         stats_input = merged_output
@@ -651,7 +604,7 @@ def _compute_output_stats_global(
     for kk in keys:
         if scan is not None and kk in scan.stats:
             bias_atom_e[kk], std_atom_e[kk] = scan.stats[kk].solve(
-                assigned_bias=assigned_atom_ener[kk],
+                assigned_bias=assigned_bias[kk],
                 rcond=rcond,
                 type_mask=type_mask,
             )
@@ -662,7 +615,6 @@ def _compute_output_stats_global(
                     compute_stats_do_not_distinguish_types(
                         stats_input[kk],
                         merged_natoms[kk],
-                        assigned_bias=assigned_atom_ener[kk],
                         intensive=intensive,
                     )
                 )
@@ -670,7 +622,7 @@ def _compute_output_stats_global(
                 bias_atom_e[kk], std_atom_e[kk] = compute_stats_from_redu(
                     stats_input[kk],
                     merged_natoms[kk],
-                    assigned_bias=assigned_atom_ener[kk],
+                    assigned_bias=assigned_bias[kk],
                     rcond=rcond,
                     intensive=intensive,
                 )
@@ -726,6 +678,7 @@ def _compute_output_stats_atomic(
     keys: list[str],
     atomic_sampled_idx: dict | None = None,
     model_pred: dict[str, np.ndarray] | None = None,
+    assigned_bias: dict[str, np.ndarray | None] | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """Compute output statistics from atomic labels."""
     # return directly if no atomic samples
@@ -733,6 +686,8 @@ def _compute_output_stats_atomic(
         len(v) == 0 for v in atomic_sampled_idx.values()
     ):
         return {}, {}
+    if assigned_bias is None:
+        assigned_bias = dict.fromkeys(keys)
 
     # get label dict from sample; for each key, only picking the system with atomic labels.
     outputs = {
@@ -804,6 +759,9 @@ def _compute_output_stats_atomic(
                 nan_padding.fill(np.nan)
                 bias_atom_e[kk] = np.concatenate([bias_atom_e[kk], nan_padding], axis=0)
                 std_atom_e[kk] = np.concatenate([std_atom_e[kk], nan_padding], axis=0)
+            # the per-type means are independent, so an assigned type is
+            # overridden exactly
+            bias_atom_e[kk] = override_assigned_bias(bias_atom_e[kk], assigned_bias[kk])
         else:
             # this key does not have atomic labels, skip it.
             continue

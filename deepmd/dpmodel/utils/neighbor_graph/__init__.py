@@ -43,6 +43,7 @@ from .from_ijs import (
 from .graph import (
     GraphLayout,
     NeighborGraph,
+    append_isolated_frames,
     apply_pair_exclusion,
     compact_edges,
     compact_nodes,
@@ -69,6 +70,7 @@ __all__ = [
     "angle_padding_fraction",
     "angle_to_edge_sum",
     "angle_to_node_sum",
+    "append_isolated_frames",
     "apply_pair_exclusion",
     "attach_angles",
     "attach_edge_csr",

@@ -48,6 +48,8 @@ class DPAtomicModel(BaseAtomicModel):
             For example `type_map[1]` gives the name of the type 1.
     """
 
+    _supports_vacuum_ref: bool = False
+
     def __init__(
         self,
         descriptor: BaseDescriptor,
@@ -55,6 +57,11 @@ class DPAtomicModel(BaseAtomicModel):
         type_map: list[str],
         **kwargs: Any,
     ) -> None:
+        if fitting.vacuum_ref and not self._supports_vacuum_ref:
+            raise NotImplementedError(
+                "vacuum_ref is only supported by DPA4/SeZM models "
+                "(model.type='dpa4' or 'sezm') in the PyTorch backend"
+            )
         super().__init__(type_map, **kwargs)
         ntypes = len(type_map)
         self.type_map = type_map
@@ -69,6 +76,10 @@ class DPAtomicModel(BaseAtomicModel):
         self.add_chg_spin_ebd: bool = getattr(
             self.descriptor, "add_chg_spin_ebd", False
         )
+
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the descriptor's AdamW patterns with its parameter path."""
+        return [f"descriptor.{p}" for p in self.descriptor.adam_route_patterns()]
 
     @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
@@ -395,12 +406,11 @@ class DPAtomicModel(BaseAtomicModel):
         wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
-        if compute_or_load_out_stat:
-            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
-
         self._collect_and_set_observed_type(
             wrapped_sampler, stat_file_path, preset_observed_type
         )
+        if compute_or_load_out_stat:
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
 
     def compute_fitting_input_stat(
         self,

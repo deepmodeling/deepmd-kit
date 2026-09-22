@@ -65,6 +65,7 @@ from deepmd.dpmodel.utils.exclude_mask import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
+    frame_id_from_n_node,
     graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.seed import (
@@ -307,14 +308,18 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     rcut
         Cutoff radius in Å.
     env_exp
-        C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`.
-        - `rbf_env_exp`: Controls radial basis function envelope decay.
-        - `edge_env_exp`: Controls message passing edge weight envelope decay.
+        C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]`
+        specifies the radial-basis and message-passing envelopes separately.
+        A zero radial-basis exponent disables that envelope.
+        An integer specifies only the message-passing envelope exponent and
+        disables the radial-basis envelope.
         Larger values give weaker suppression (values stay near 1.0 longer).
     channels
         Total channels per (l,m) coefficient.
     basis_type
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``; the ``/fix`` forms keep the
+        frequencies or centres fixed during training.
     n_radial
         Number of radial basis functions.
     radial_mlp
@@ -607,7 +612,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         ntypes: int,
         sel: list[int] | int,
         rcut: float = 6.0,
-        env_exp: list[int] | None = None,
+        env_exp: int | list[int] | None = None,
         channels: int = 64,
         basis_type: str = "bessel",
         n_radial: int = 16,
@@ -675,11 +680,17 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.rcut = float(rcut)
         if env_exp is None:
             env_exp = [7, 5]
-        if len(env_exp) != 2:
-            raise ValueError(
-                "`env_exp` must be a list of two integers: [rbf_env_exp, edge_env_exp]"
-            )
-        self.env_exp = [int(x) for x in env_exp]
+        if isinstance(env_exp, int):
+            self.env_exp = env_exp
+            edge_env_exp = env_exp
+        else:
+            if len(env_exp) != 2:
+                raise ValueError(
+                    "`env_exp` must be an integer or a list of two integers: "
+                    "[rbf_env_exp, edge_env_exp]"
+                )
+            self.env_exp = [int(x) for x in env_exp]
+            edge_env_exp = self.env_exp[1]
         self.eps = float(eps)
         # Floor for the envelope-squared degree normalization (GIE / env_seed).
         # version < 1.1 keeps the tiny ``eps`` floor (legacy path, untouched);
@@ -1068,7 +1079,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             basis_type=self.basis_type,
             n_radial=self.n_radial,
             precision=self.compute_precision,  # force fp32+
-            exponent=self.env_exp[0],
+            exponent=0 if isinstance(self.env_exp, int) else self.env_exp[0],
         )
 
         # === Shared radial embedding: RBF -> per-l radial features ===
@@ -1088,7 +1099,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )
 
         # === C^3 cutoff envelope for edge weight ===
-        self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=self.env_exp[1])
+        self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=edge_env_exp)
 
         # === Edge-aligned Wigner-D calculator ===
         # Cartesian blocks (degree 1 or 2) skip the SO(2) rotations, so the full
@@ -1373,7 +1384,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x_scalar, _ = self._run_graph(
             graph,
             atype_flat,
-            nf=nf,
             n_out_nodes=nf * nloc,
             force_embedding=force_embedding,
             charge_spin=charge_spin,
@@ -1455,7 +1465,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ref=graph.edge_vec,
         )
         x_scalar, _ = self._run_graph(
-            graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
+            graph, atype, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
         )
         # ``_run_graph`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
@@ -1469,7 +1479,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph: NeighborGraph,
         atype_flat: Array,
         *,
-        nf: int = 1,
         n_out_nodes: int | None = None,
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
@@ -1505,8 +1514,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             geometry/autograd leaf, ``edge_mask`` flags valid edges.
         atype_flat
             Flat node types with shape (N,).
-        nf
-            Frame count (only consumed by the charge/spin FiLM conditioning).
         n_out_nodes
             Leading node count kept for the read-out (owned atoms). ``None``
             keeps all nodes (``atype_flat.shape[0]``).
@@ -1577,10 +1584,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )  # (N, C)
         if self.charge_spin_embedding is not None:
             type_ebed = self._apply_charge_spin_embedding(
-                type_ebed,
-                charge_spin,
-                nf=nf,
-                nloc=n_out_nodes // nf,
+                type_ebed, charge_spin, graph.n_node
             )
         n_nodes = type_ebed.shape[0]
 
@@ -2150,9 +2154,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self,
         type_ebed: Array,
         charge_spin: Array,
-        *,
-        nf: int,
-        nloc: int,
+        n_node: Array,
     ) -> Array:
         """
         Add frame-level charge and spin conditions to scalar type features.
@@ -2160,23 +2162,22 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Parameters
         ----------
         type_ebed
-            Flattened type embeddings with shape (nf * nloc, channels).
+            Flattened type embeddings with shape (N, channels).
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
-        nf
-            Number of frames.
-        nloc
-            Number of local atoms.
+        n_node
+            Node count of every frame with shape (nf,); the frames occupy
+            consecutive blocks of the node axis.
 
         Returns
         -------
         Array
-            Conditioned type embeddings with shape (nf * nloc, channels).
+            Conditioned type embeddings with shape (N, channels).
         """
         xp = array_api_compat.array_namespace(type_ebed, charge_spin)
         condition = self.charge_spin_embedding(xp.astype(charge_spin, type_ebed.dtype))
-        condition = xp.broadcast_to(condition[:, None, :], (nf, nloc, self.channels))
-        return type_ebed + xp.reshape(condition, type_ebed.shape)
+        frame_id = frame_id_from_n_node(n_node, n_total=type_ebed.shape[0])
+        return type_ebed + xp.take(condition, frame_id, axis=0)
 
     def _apply_spin_embedding(
         self,

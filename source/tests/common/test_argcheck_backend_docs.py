@@ -82,7 +82,7 @@ class TestBackendDocumentation(unittest.TestCase):
         preset_out_bias = argcheck.model_args()["preset_out_bias"]
         self.assertTrue(
             preset_out_bias.doc.startswith(
-                "(Supported Backend: PyTorch, PaddlePaddle) "
+                "(Supported Backend: PyTorch, JAX, PaddlePaddle, PyTorch Exportable) "
             )
         )
         rglob_patterns = argcheck.training_data_args()["rglob_patterns"]

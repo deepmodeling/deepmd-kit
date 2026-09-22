@@ -69,6 +69,45 @@ def _build_descriptor(
     ).eval()
 
 
+def test_fixed_basis_types_freeze_the_basis() -> None:
+    """``/fix`` basis types keep the DPA4C basis parameters out of training."""
+    for family in ("bessel", "gaussian"):
+        fixed = DescrptDPA4C(
+            rcut=3.0,
+            ntypes=2,
+            channels=8,
+            lmax=2,
+            n_radial=8,
+            precision="float32",
+            seed=17,
+            basis_type=f"{family}/fix",
+        )
+        assert fixed.radial_basis.basis_family == family
+        assert not fixed.radial_basis.adam_freqs.requires_grad
+        frozen = [name for name, p in fixed.named_parameters() if not p.requires_grad]
+        assert frozen == ["radial_basis.adam_freqs"]
+        assert fixed.serialize()["basis_type"] == f"{family}/fix"
+
+
+def test_adam_route_patterns_name_the_first_radial_layer() -> None:
+    """The descriptor routes the layer that reads the radial basis to AdamW."""
+    descriptor = DescrptDPA4C(
+        rcut=3.0,
+        ntypes=2,
+        channels=8,
+        lmax=2,
+        n_radial=8,
+        radial_modes=2,
+        precision="float32",
+        seed=17,
+    )
+    patterns = descriptor.adam_route_patterns()
+    assert patterns == ["radial_embedding.layers.0."]
+    names = [name for name, _ in descriptor.named_parameters()]
+    routed = [name for name in names if any(pattern in name for pattern in patterns)]
+    assert routed == ["radial_embedding.layers.0.w"]
+
+
 def _build_graph(descriptor: DescrptDPA4C, canonical: bool, node_count: int = 24):
     generator = torch.Generator().manual_seed(23)
     coordinate = 5.0 * torch.rand(

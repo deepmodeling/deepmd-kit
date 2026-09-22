@@ -38,6 +38,9 @@ from deepmd.dpmodel.train import (
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 from deepmd.loggers.training import (
     format_training_message,
     format_training_message_per_task,
@@ -70,6 +73,9 @@ from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
+)
+from deepmd.pt.optimizer.hybrid_muon import (
+    adam_route_patterns,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -945,10 +951,9 @@ class Trainer:
                 for model_key in self.model_keys:
                     finetune_rule = self.finetune_links[model_key]
                     if self.multi_task and finetune_rule.get_resuming():
-                        if self.rank == 0:
-                            log.info("Model branch %s will resume training.", model_key)
+                        log.info("Model branch %s will resume training.", model_key)
                         continue
-                    if self.multi_task and self.rank == 0:
+                    if self.multi_task:
                         log.info(
                             "Model branch %s will be fine-tuned. "
                             "This may take a long time...",
@@ -1129,6 +1134,9 @@ class Trainer:
                     "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
+                    "adam_patterns": adam_route_patterns(
+                        self._get_inner_module().model.values()
+                    ),
                     # FSDP2 shards parameters as DTensor; several torch._foreach_*
                     # ops lack DTensor sharding propagation on older PyTorch, so
                     # fall back to the per-tensor path under zero_stage >= 2.
@@ -1164,7 +1172,7 @@ class Trainer:
                 state=ema_state_dict,
             )
 
-        if self.sharding.enabled and self.rank == 0:
+        if self.sharding.enabled:
             log.info(self.sharding.describe())
 
         # Tensorboard
@@ -1180,7 +1188,7 @@ class Trainer:
         )
 
         # Log model parameter count
-        if self.rank == 0:
+        if is_node_main_process(self.rank):
             self._log_parameter_count()
 
     def _run_stat_on_chief(
@@ -1380,7 +1388,10 @@ class Trainer:
         inner = self._get_inner_module()
         if not any(getattr(module, "use_compile", False) for module in inner.modules()):
             return
-        log.info("Compiling training graphs before the first collective.")
+        log.info(
+            "Compiling training graphs before the first collective.",
+            extra={"rank_scope": "all"},
+        )
         start = time.time()
         trainable_parameters = tuple(
             parameter for parameter in inner.parameters() if parameter.requires_grad
@@ -1399,6 +1410,7 @@ class Trainer:
         log.info(
             "Training graphs ready in %.1f s; waiting for the other ranks.",
             time.time() - start,
+            extra={"rank_scope": "all"},
         )
         store = dist.distributed_c10d._get_default_store()
         key = "deepmd/precompile_ready"
@@ -1443,8 +1455,6 @@ class Trainer:
             record_file = f"Sample_rank_{self.rank}.txt"
             fout1 = open(record_file, mode="w", buffering=1)
         log.info("Start to train %d steps.", self.num_steps)
-        if dist.is_available() and dist.is_initialized():
-            log.info(f"Rank: {dist.get_rank()}/{dist.get_world_size()}")
         self._precompile_outside_collectives()
         if self.enable_tensorboard:
             from torch.utils.tensorboard import (

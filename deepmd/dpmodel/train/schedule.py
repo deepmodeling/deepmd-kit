@@ -30,6 +30,9 @@ from deepmd.dpmodel.utils.training_utils import (
     resolve_model_prob,
     resolve_model_prob_from_epochs,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -100,7 +103,7 @@ def resolve_step_schedule(
         unit across ranks, which would desynchronize the run length and
         deadlock later collective calls.
     rank : int, optional
-        Process rank, used to restrict informational logging to the chief.
+        Global rank used for reporting when the launcher supplies no local rank.
 
     Returns
     -------
@@ -134,7 +137,7 @@ def resolve_step_schedule(
             raise ValueError("training.num_epoch must be positive.")
         (total_numb_batch,) = _epoch_lengths(keys, epoch_length, broadcast)
         steps = int(np.ceil(num_epoch * total_numb_batch))
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
                 steps,
@@ -155,7 +158,7 @@ def resolve_step_schedule(
             num_epoch_dict,
             np.asarray(per_task_total, dtype=np.float64),
         )
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
                 "with per-task target steps: %s.",

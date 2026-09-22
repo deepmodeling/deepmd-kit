@@ -489,6 +489,12 @@ class SpinModel(NativeOP):
             preset_observed_type=preset_observed_type,
         )
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
+
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         tmap = self.backbone_model.get_type_map()
@@ -498,6 +504,10 @@ class SpinModel(NativeOP):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the backbone fitting into its bias."""
+        self.backbone_model.fold_vacuum_reference()
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""

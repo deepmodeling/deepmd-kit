@@ -28,12 +28,20 @@ from deepmd.pt.train.wrapper import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_compat import (
+    SUPPORTED_COMPILE_TORCH,
+)
 
-# The SeZM compile path is validated on torch 2.11.x / 2.12.x only.
+# Keep the compile-test gate aligned with the runtime allowlist.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_COMPILE = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {(2, 11), (2, 12)}
+_SKIP_COMPILE = (
+    _TORCH_VERSION.major,
+    _TORCH_VERSION.minor,
+) not in SUPPORTED_COMPILE_TORCH
 _SKIP_COMPILE_REASON = (
-    "SeZM's torch.compile path is only supported on torch 2.11.x and 2.12.x."
+    "SeZM's torch.compile path is only supported on torch "
+    + ", ".join(f"{major}.{minor}.x" for major, minor in SUPPORTED_COMPILE_TORCH)
+    + f"; current torch is {torch.__version__}."
 )
 
 
