@@ -93,8 +93,11 @@ class DescrptUniMol(NativeOP, BaseDescriptor):
     activation_function : str
         Activation of the blocks and heads. Uni-Mol uses the exact GELU.
     dropout, emb_dropout, attention_dropout, activation_dropout : float
-        Dropout rates. They are inert in this backend-agnostic implementation
-        and are applied by the PyTorch-Exportable wrapper during training.
+        Dropout rates. They are applied here, by the shared encoder, when the
+        arrays are torch tensors and the module is in training mode. Inference
+        is the identity, and training on any other array namespace raises
+        ``NotImplementedError`` rather than silently dropping the
+        regularisation (see ``unimol_nn.encoder.dropout``).
     no_final_head_layer_norm : bool
         Skip the layer norm on the pair delta. Upstream builds that norm unless
         its weight is negative.
