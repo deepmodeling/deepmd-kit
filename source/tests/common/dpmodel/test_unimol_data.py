@@ -6,6 +6,7 @@ import pickle
 import shutil
 import tempfile
 import unittest
+import unittest.mock
 
 import numpy as np
 
@@ -297,6 +298,76 @@ class TestUniMolDataConversion(unittest.TestCase):
     def test_transform_requires_the_mask_pseudo_element(self) -> None:
         with self.assertRaisesRegex(ValueError, r"\[MASK\]"):
             make_unimol_data_transform(list(UNIMOL_ELEMENTS))
+
+    def _convert(self, dst, **kwargs):
+        return convert_unimol_lmdb(self.src, dst, map_size=1 << 24, **kwargs)
+
+    def test_replacing_a_dataset_keeps_one_on_disk(self) -> None:
+        """The second conversion must not leave the destination empty."""
+        dst = os.path.join(self.tmp, "replaced_twice")
+        self._convert(dst)
+        first = os.path.getsize(os.path.join(dst, "data.mdb"))
+        self._convert(dst)
+        self.assertTrue(os.path.isdir(dst))
+        self.assertGreater(os.path.getsize(os.path.join(dst, "data.mdb")), 0)
+        # and the backup is cleaned up once the new one is in place
+        self.assertFalse(os.path.exists(dst + ".replaced"))
+        self.assertGreater(first, 0)
+
+    def test_a_stranded_backup_survives_a_failed_publish(self) -> None:
+        """A run that died between the two renames leaves the only copy aside.
+
+        Deleting that copy and then failing to put the new one in place loses
+        both. The publish is two renames, so the window is the second one
+        failing -- which is what this forces, because nothing else reaches it.
+        """
+        dst = os.path.join(self.tmp, "stranded")
+        self._convert(dst)
+        # exactly the state an interrupted publish leaves behind
+        os.rename(dst, dst + ".replaced")
+        self.assertFalse(os.path.exists(dst))
+
+        real_rename = os.rename
+
+        def fail_on_publish(a, b):
+            # let the restore through, refuse the staging -> dst move
+            if str(a).endswith(".partial"):
+                raise OSError("simulated failure publishing the new dataset")
+            return real_rename(a, b)
+
+        with unittest.mock.patch("os.rename", side_effect=fail_on_publish):
+            with self.assertRaises(OSError):
+                self._convert(dst)
+
+        survivor = dst if os.path.exists(dst) else dst + ".replaced"
+        self.assertTrue(
+            os.path.exists(survivor), "the only copy of the dataset was destroyed"
+        )
+        self.assertGreater(os.path.getsize(os.path.join(survivor, "data.mdb")), 0)
+
+    def test_a_failed_conversion_leaves_the_old_dataset_in_place(self) -> None:
+        """Rolling back has to put the previous dataset back at its name."""
+        dst = os.path.join(self.tmp, "kept_on_failure")
+        self._convert(dst)
+        before = os.path.getsize(os.path.join(dst, "data.mdb"))
+
+        # a source that cannot be read: the conversion raises before publishing
+        with self.assertRaises(Exception):
+            convert_unimol_lmdb(
+                os.path.join(self.tmp, "missing.lmdb"), dst, map_size=1 << 24
+            )
+        self.assertTrue(os.path.isdir(dst))
+        self.assertEqual(os.path.getsize(os.path.join(dst, "data.mdb")), before)
+
+    def test_an_empty_conversion_does_not_replace_a_good_dataset(self) -> None:
+        """Refusing an empty result must not cost the dataset already there."""
+        dst = os.path.join(self.tmp, "kept_on_empty")
+        self._convert(dst)
+        before = os.path.getsize(os.path.join(dst, "data.mdb"))
+        with self.assertRaisesRegex(ValueError, "no usable frame"):
+            self._convert(dst, max_molecules=0)
+        self.assertTrue(os.path.isdir(dst))
+        self.assertEqual(os.path.getsize(os.path.join(dst, "data.mdb")), before)
 
     def test_limits_are_respected(self) -> None:
         dst = os.path.join(self.tmp, "limited")

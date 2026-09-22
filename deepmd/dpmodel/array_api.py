@@ -533,6 +533,23 @@ def xp_erf(x: Array) -> Array:
         import torch
 
         return torch.special.erf(x)
+
+    xp = array_api_compat.array_namespace(x)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        # The NumPy round-trip below cannot serve TensorFlow. Under
+        # ``tf.function`` the conversion is refused outright, and in eager mode
+        # it detaches the erf factor from the tape, which leaves the exact GELU
+        # differentiating to Phi(x) alone -- silently, and for every backend
+        # user of ``gelu_erf`` rather than only Uni-Mol.
+        #
+        # Imported directly rather than through ``deepmd.tf2.env`` for symmetry
+        # with the JAX branch above: that module raises at import time unless
+        # eager execution is on, and this branch has to work inside
+        # ``tf.function``, where it is not.
+        return xp.asarray(tf.math.erf(x.unwrap()))
+
     from scipy.special import (
         erf,
     )
@@ -540,7 +557,6 @@ def xp_erf(x: Array) -> Array:
     if array_api_compat.is_numpy_array(x):
         return erf(x)
     # array-api-strict and friends: round-trip through NumPy.
-    xp = array_api_compat.array_namespace(x)
     return xp.asarray(erf(np.asarray(x)), dtype=x.dtype)
 
 

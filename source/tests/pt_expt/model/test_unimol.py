@@ -239,21 +239,102 @@ class TestUniMolPtExpt(unittest.TestCase):
                 self.assertTrue(torch.isfinite(out[name]).all())
 
     def test_the_default_virtual_token_position_is_refused(self) -> None:
-        """The default configuration, which no test used to cover.
+        """The default configuration, reached the way a user reaches it.
 
         Under "centroid" the descriptor puts the virtual tokens at the centroid
         of the coordinates it is handed, which during pretraining are the
         corrupted ones, while the distance target puts them at the origin. The
         two virtual columns of every corrupted row would then train against a
         label for a different position, off by about the size of the noise.
+
+        The key is *omitted* here rather than set to "centroid" by hand. Those
+        are different paths: writing the value tests the guard, while leaving it
+        out tests what a user who never heard of the option actually gets, which
+        is whatever argcheck fills in. A test that only wrote the value would
+        keep passing if the default moved out from under it.
         """
         import copy
 
         config = copy.deepcopy(self.config(8))
-        # what argcheck fills in when the key is absent
+        del config["model"]["descriptor"]["virtual_token_position"]
+        normalized = normalize(config)
+        # argcheck fills the key, and what it fills is the position this
+        # objective cannot score
+        self.assertEqual(
+            normalized["model"]["descriptor"]["virtual_token_position"], "centroid"
+        )
+        with self.assertRaisesRegex(ValueError, "virtual_token_position='origin'"):
+            get_model(normalized["model"])
+
+    def test_writing_the_wrong_position_by_hand_is_refused_too(self) -> None:
+        """The same guard, reached by stating the value instead of defaulting."""
+        import copy
+
+        config = copy.deepcopy(self.config(8))
         config["model"]["descriptor"]["virtual_token_position"] = "centroid"
         with self.assertRaisesRegex(ValueError, "virtual_token_position='origin'"):
             get_model(normalize(config)["model"])
+
+    def test_the_norm_regularisers_ignore_the_padding(self) -> None:
+        """The regulariser is recovered through the real-atom mask.
+
+        A batch holds frames of different sizes, so the short ones are padded,
+        and the atomic model zeroes every output it hands back at the padded
+        rows. The norm regularisers are scalars broadcast over the atoms, so
+        averaging one over *all* the rows divides it by the fraction of the
+        frame that is real -- a number that depends on which other molecules
+        happen to share the batch.
+
+        ``mask`` is what prevents that. This pins both halves: that the padded
+        rows really are zero, and that dropping the mask really would change
+        the answer.
+
+        ``delta_pair_norm`` is the probe rather than ``x_norm`` because
+        ``x_norm`` is a hinge -- upstream penalises only the part of
+        ``|‖h‖ - sqrt(d)|`` past a tolerance of 1.0 -- so behind a LayerNorm it
+        sits at exactly zero and would compare equal either way, proving
+        nothing.
+        """
+        coord, atype, nlist = self.inputs()
+        # A padded row is marked by a negative type, which is how a mixed-size
+        # batch reaches the model (deepmd/dpmodel/utils/lmdb_data.py). Padding
+        # it with type 0 instead would make the short frames look full of
+        # carbon, and this test would prove nothing.
+        atype = atype.copy()
+        for frame in range(atype.shape[0]):
+            atype[frame, int(self.n_real[frame]) :] = -1
+        nloc = coord.shape[1]
+        model = self.build_torch_model(nloc)
+        out = model.forward_lower(
+            torch.as_tensor(coord),
+            torch.as_tensor(atype),
+            torch.as_tensor(nlist),
+        )
+        self.assertIn("mask", out)
+        mask = out["mask"]
+        value = out["delta_pair_norm"].detach()
+
+        short = [f for f in range(mask.shape[0]) if int(mask[f].sum()) < nloc]
+        # the batch has to actually contain a padded frame, or this proves nothing
+        self.assertTrue(short, "fixture carries no padded frame")
+
+        for frame in short:
+            with self.subTest(frame=frame):
+                n_real = int(mask[frame].sum())
+                rows = value[frame].reshape(nloc)
+                self.assertTrue(bool((rows[mask[frame] == 0] == 0).all()))
+                masked_mean = float(rows[mask[frame] == 1].mean())
+                unmasked_mean = float(rows.mean())
+                # every real row carries the same scalar, so the masked mean is
+                # that scalar
+                self.assertAlmostEqual(
+                    float(rows[mask[frame] == 1][0]), masked_mean, places=10
+                )
+                # and the unmasked one is it diluted by exactly the padding
+                self.assertAlmostEqual(
+                    unmasked_mean, masked_mean * n_real / nloc, places=6
+                )
+                self.assertLess(unmasked_mean, masked_mean)
 
     def test_matches_the_array_api_implementation(self) -> None:
         """Same weights, same numbers, once the fp32 basis is out of the way.
@@ -684,6 +765,73 @@ class TestUniMolTraining(unittest.TestCase):
         frame = trainer.training_data._reader[0]
         self.assertIn("unimol_token_target", frame)
         trainer.run()
+
+    def test_the_trainer_gives_each_dataset_its_own_corruption(self) -> None:
+        """Through the trainer, not by handing the labels over myself.
+
+        The draw sequence is derived from a label the caller supplies. Passing
+        two distinct labels in a test proves nothing about production, because
+        the question is whether the *trainer* passes two -- and for a while it
+        did not: both datasets took the default, shared one generator, and a
+        validation pass advanced the corruption training was about to see.
+        """
+        from deepmd.pt_expt.entrypoints.main import (
+            get_trainer,
+        )
+        from deepmd.utils.compat import (
+            update_deepmd_input,
+        )
+
+        config = {
+            "model": {
+                "type_map": self.type_map,
+                "descriptor": {
+                    "type": "unimol",
+                    "encoder_layers": 1,
+                    "encoder_embed_dim": 16,
+                    "encoder_ffn_embed_dim": 32,
+                    "encoder_attention_heads": 2,
+                    "max_atoms": 16,
+                    "virtual_token_position": "origin",
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "type": "unimol_pretrain",
+                    "attention_heads": 2,
+                    "max_atoms": 16,
+                    "seed": 1,
+                },
+            },
+            "learning_rate": {"type": "exp", "start_lr": 1e-3, "stop_lr": 1e-4},
+            "loss": {"type": "unimol"},
+            "training": {
+                "training_data": {"systems": self.data, "batch_size": 2},
+                "validation_data": {"systems": self.data, "batch_size": 2},
+                "numb_steps": 1,
+                "seed": 1,
+                "disp_freq": 10,
+                "save_freq": 100,
+                "disp_file": os.path.join(self.tmp, "lcurve_streams.out"),
+                "save_ckpt": os.path.join(self.tmp, "model_streams.ckpt"),
+            },
+        }
+        trainer = get_trainer(normalize(update_deepmd_input(config, warning=False)))
+
+        def installed(dataset):
+            return dataset._reader._decode_config.frame_transform
+
+        train = installed(trainer.training_data)
+        valid = installed(trainer.validation_data)
+        self.assertIsNotNone(train)
+        self.assertIsNotNone(valid)
+        # different objects is the easy half; different draw sequences is the
+        # half that was broken
+        self.assertIsNot(train, valid)
+        self.assertNotEqual(
+            train.stream,
+            valid.stream,
+            "the trainer gave both datasets the same corruption stream",
+        )
 
 
 if __name__ == "__main__":

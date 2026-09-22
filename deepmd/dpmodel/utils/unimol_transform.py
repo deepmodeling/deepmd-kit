@@ -46,6 +46,7 @@ __all__ = [
     "numpy_seed",
     "pair_distance",
     "remove_hydrogen",
+    "reset_epoch_streams",
     "sample_conformer",
     "unimol_frame_transform",
 ]
@@ -302,6 +303,18 @@ def edge_type(tokens: np.ndarray, num_types: int) -> np.ndarray:
 _EPOCH_STREAMS: dict[tuple[int, int], np.random.Generator] = {}
 
 
+def reset_epoch_streams() -> None:
+    """Forget the per-process draw sequences.
+
+    The generators live in the process so that they survive a transform being
+    re-created for every batch in a decoder worker. That also means a second
+    run inside one interpreter continues the first run's sequence rather than
+    repeating it, which would make the seed reproducible only for whichever run
+    happened to be first. A trainer calls this as it installs its transforms.
+    """
+    _EPOCH_STREAMS.clear()
+
+
 def _stream_entropy(value: int | str | None) -> int:
     """A stable non-negative integer for a seed or a stream label.
 
@@ -328,8 +341,16 @@ def _next_epoch(stream: int, seed: int | None) -> int:
     the next number from it.
 
     The generator is seeded from the configured seed and the stream alone, so
-    one process decoding a run twice draws the same sequence both times. With
-    workers the draws still depend on how frames were distributed between them.
+    one process decoding a run twice draws the same sequence both times, given
+    the reset the trainer performs between runs.
+
+    With more than one decoder process (``DP_LMDB_NUM_WORKERS > 1``) every
+    worker seeds an identical generator and therefore draws the same sequence
+    of epoch numbers; frames still differ from one another because the index
+    enters the per-sample seed, but the draws are no longer decorrelated
+    between workers, and which frame meets which epoch depends on how the
+    batches were distributed. The reproducibility the seed offers is for a
+    single decoding process.
     """
     # The process id keys the cache so a forked child builds its own generator
     # rather than inheriting a half-consumed one. It deliberately does not enter

@@ -379,11 +379,15 @@ class UniMolLoss(Loss):
             )
         return loss, more_loss
 
-    def frame_transform(self, type_map: list[str]):  # noqa: ANN201
+    def frame_transform(self, type_map: list[str], stream: str = "default"):  # noqa: ANN201
         """Build Uni-Mol's corruption, which also produces the labels.
 
-        A fresh object each time: it carries the counter that stands in for the
-        epoch, and the training and validation sets must not share one.
+        ``stream`` has to differ per dataset. The draw sequence standing in for
+        the epoch is derived from ``(data_seed, stream)`` and then kept per
+        process, so two datasets handed the same label share one generator and a
+        validation pass advances the corruption training is about to see. A
+        fresh object per dataset is not enough on its own -- the label is what
+        separates them.
         """
         from deepmd.dpmodel.utils.unimol_transform import (
             make_unimol_data_transform,
@@ -392,6 +396,7 @@ class UniMolLoss(Loss):
         return make_unimol_data_transform(
             type_map,
             seed=self.data_seed,
+            stream=stream,
             mask_prob=self.mask_prob,
             leave_unmasked_prob=self.leave_unmasked_prob,
             random_token_prob=self.random_token_prob,

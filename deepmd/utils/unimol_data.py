@@ -241,13 +241,22 @@ def convert_unimol_lmdb(
             f"{skipped} record(s) were skipped for holding one atom or an "
             "element outside the type_map"
         )
-    # Move the old dataset aside rather than deleting it first: between a
-    # delete and a rename there is a moment with nothing at `dst`, which is the
-    # loss this staging directory exists to prevent. A rename is atomic, so
-    # every instant has either the old dataset or the new one in place.
+    # Move the old dataset aside rather than deleting it first. Two renames
+    # still leave one instant with nothing at `dst`, so this does not promise
+    # that `dst` is always readable -- it promises that a complete dataset is
+    # always somewhere on disk, at `dst` or beside it, and that an interrupted
+    # run can be recovered rather than having lost data.
     previous = f"{dst}.replaced"
     if os.path.exists(previous):
-        shutil.rmtree(previous)
+        if os.path.exists(dst):
+            # A leftover from a run that finished: `dst` is the current dataset
+            # and this is the superseded one.
+            shutil.rmtree(previous)
+        else:
+            # A run died between the two renames below, which makes this the
+            # only surviving copy. Deleting it here -- before the new
+            # conversion has proved itself -- is how both copies get lost.
+            os.rename(previous, dst)
     had_previous = os.path.exists(dst)
     if had_previous:
         os.rename(dst, previous)
