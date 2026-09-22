@@ -563,8 +563,11 @@ def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
     if is_vesin_torch_available():
         return VesinNeighborList()
     raise RuntimeError(
-        "SeZM neighbor-list construction requires either 'nvalchemiops' or "
-        "'vesin', but neither is importable."
+        "SeZM neighbor-list construction requires a neighbor-list backend, but "
+        "neither 'vesin' nor 'nvalchemiops' is importable. Install one of:\n"
+        "  pip install 'vesin[torch]'        # portable CPU/CUDA cell list\n"
+        "  pip install nvalchemi-toolkit-ops # batched CUDA kernels\n"
+        "'vesin' also ships with the PyTorch extra: pip install 'deepmd-kit[torch]'."
     )
 
 
