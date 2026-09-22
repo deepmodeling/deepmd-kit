@@ -1690,9 +1690,9 @@ class SO2Convolution(NativeOP):
         Reduce the edge messages with the scalar envelope weight.
 
         The attention-free path: an envelope-weighted scatter add followed by the
-        degree normalization. Folding the Source Freeze Propagation Gate into the
-        envelope keeps the operation count unchanged; ``edge_src_gate`` is ``None``
-        outside bridging mode, where the branch disappears.
+        degree normalization. In bridging mode the envelope already carries the
+        Source Freeze Propagation Gate, so a muted source drops out of both the
+        sum and the normalization.
 
         Parameters
         ----------
@@ -1714,12 +1714,8 @@ class SO2Convolution(NativeOP):
         x_message, _ = self.edge_message(x, edge_cache, radial_feat)
         # (E, D, C_wide)
 
-        # === Step 2. Envelope weighting, with the source gate folded in ===
-        edge_weight = edge_cache.edge_env  # (E, 1)
-        edge_src_gate = edge_cache.edge_src_gate
-        if edge_src_gate is not None:
-            edge_weight = edge_weight * xp.astype(edge_src_gate, edge_weight.dtype)
-        x_message = x_message * edge_weight[..., None]  # (E, D, C_wide)
+        # === Step 2. Envelope weighting ===
+        x_message = x_message * edge_cache.edge_env[..., None]  # (E, D, C_wide)
 
         # === Step 3. Destination reduction and degree normalization ===
         compute_dtype = get_xp_precision(xp, self.compute_precision)
@@ -1769,15 +1765,8 @@ class SO2Convolution(NativeOP):
         )  # (N, Fa, Ca)
 
         # === Step 2. Backend dispatch ===
-        # The fused CUDA operator computes the attention weights itself, so it
-        # does not serve the bridging mode, whose source gate reshapes the
-        # softmax normalization.
         training = getattr(self, "training", False)
-        run_cuda = (
-            self._cuda_conv_fn is not None
-            and not training
-            and edge_cache.edge_src_gate is None
-        )
+        run_cuda = self._cuda_conv_fn is not None and not training
         run_flash = (
             self._flash_atten_fn is not None
             and (not training or self._flash_atten_trains)
@@ -2046,12 +2035,12 @@ class SO2Convolution(NativeOP):
         """
         Build envelope-gated attention weights from the scalar channels.
 
-        The softmax takes ``src_weight`` so that the Source Freeze Propagation
-        Gate enters both the numerator and the denominator. A muted source
-        (``eta_src = 0``) then drops out of the destination's normalization
-        entirely, which the frozen-zone invariance requires: post-multiplying the
-        weights alone would still leak the muted source through the shared
-        denominator.
+        The envelope enters both the numerator and the denominator of the
+        softmax. In bridging mode it carries the Source Freeze Propagation
+        Gate, so a muted source (``eta_src = 0``) drops out of the
+        destination's normalization entirely, which the frozen-zone invariance
+        requires: post-multiplying the weights alone would still leak the muted
+        source through the shared denominator.
 
         Parameters
         ----------
@@ -2134,7 +2123,6 @@ class SO2Convolution(NativeOP):
         xp = array_api_compat.array_namespace(attn_logits)
         device = array_api_compat.device(attn_logits)
         compute_dtype = get_xp_precision(xp, self.compute_precision)
-        edge_src_gate = edge_cache.edge_src_gate
         return segment_envelope_gated_softmax(
             logits=attn_logits,
             edge_env=xp.astype(edge_cache.edge_env, compute_dtype),
@@ -2144,11 +2132,6 @@ class SO2Convolution(NativeOP):
                 xp, self.adamw_attn_z_bias_raw[...], device=device
             ),
             eps=self.eps,
-            src_weight=(
-                None
-                if edge_src_gate is None
-                else xp.astype(edge_src_gate, compute_dtype)
-            ),
             edge_mask=edge_cache.edge_mask,
         )
 

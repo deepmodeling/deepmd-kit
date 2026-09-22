@@ -361,6 +361,55 @@ def _worker_single_task_train(rank, world_size, port, data_dir, result_dict):
         dist.destroy_process_group()
 
 
+def _worker_filtered_train(rank, world_size, port, data_dir, result_dict):
+    """Worker: DDP training whose ranks drop different too-close frames."""
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_filter_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_config(data_dir, numb_steps=4)
+            # About a quarter of the water frames keep every pair 0.92 Å
+            # apart, so most batches shrink and some are replaced outright.
+            config["training"]["training_data"]["batch_size"] = 2
+            config["training"]["training_data"]["min_pair_dist"] = 0.92
+            config["training"]["seed"] = 10 + rank
+            config = update_deepmd_input(config, warning=False)
+            config = normalize(config)
+            trainer = get_trainer(config)
+            sizes = []
+            fetch = trainer.get_data
+
+            def counting_fetch(*args, **kwargs):
+                batch = fetch(*args, **kwargs)
+                if kwargs.get("is_train", True):
+                    kept = batch[1]["pair_margin"].reshape(-1)
+                    # The field is a margin against the frame's own pair
+                    # thresholds, so every surviving frame reaches one; a
+                    # frame that slipped through unfiltered would not.
+                    assert bool((kept >= 1.0).all())
+                    sizes.append(int(kept.numel()))
+                return batch
+
+            trainer.get_data = counting_fetch
+            trainer.run()
+            result_dict[rank] = {
+                "sizes": sizes,
+                "weights": {
+                    name: p.detach().cpu().clone()
+                    for name, p in trainer._unwrapped.named_parameters()
+                },
+            }
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
 def _worker_multitask_train(rank, world_size, port, data_dir, result_dict):
     """Worker: run multi-task DDP training."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
@@ -932,6 +981,43 @@ class TestDDPSingleTaskTrain(unittest.TestCase):
         )
 
         # Final weights should be identical across ranks
+        for name in results[0]["weights"]:
+            torch.testing.assert_close(
+                results[0]["weights"][name],
+                results[1]["weights"][name],
+                msg=f"Weights differ across ranks: {name}",
+            )
+
+
+class TestDDPMinPairDistFilter(unittest.TestCase):
+    """`min_pair_dist` filters per rank without breaking the DDP lockstep."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = os.path.join(data_dir, "data_0")
+
+    def test_ranks_stay_in_lockstep(self) -> None:
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            _worker_filtered_train,
+            args=(2, port, self.data_dir, result_dict),
+            nprocs=2,
+            join=True,
+        )
+        results = dict(result_dict)
+        # Every rank contributes a non-empty batch to every step, and the
+        # filter is active: at least one batch lost a frame.
+        for rank in (0, 1):
+            self.assertGreaterEqual(len(results[rank]["sizes"]), 4)
+            self.assertTrue(all(size >= 1 for size in results[rank]["sizes"]))
+        self.assertLess(
+            min(results[0]["sizes"] + results[1]["sizes"]),
+            2,
+        )
         for name in results[0]["weights"]:
             torch.testing.assert_close(
                 results[0]["weights"][name],

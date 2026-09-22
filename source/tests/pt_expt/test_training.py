@@ -30,6 +30,10 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_margin_batch,
+    pair_half_thresholds,
+)
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
 )
@@ -45,6 +49,9 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.data import (
+    DataRequirementItem,
 )
 
 from ..common.stat_file import (
@@ -619,6 +626,69 @@ class TestTraining(unittest.TestCase):
         self._run_training(config)
 
     @REQUIRES_SUPPORTED_COMPILE
+    def test_training_loop_compiled_bridged(self) -> None:
+        """Run compiled training of a ZBL-bridged DPA4C composition.
+
+        The composition has no single fitting net, so the buffers the compiled
+        graph reads per call belong to its atomic model alone.
+        """
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"] = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 8,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [16, 16], "seed": 1},
+            "bridging_method": "zbl",
+            "bridging_r_inner": 0.5,
+            "bridging_r_outer": 0.8,
+            "data_stat_nbatch": 1,
+        }
+        config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self._run_training(config)
+
+    @REQUIRES_SUPPORTED_COMPILE
+    def test_training_loop_compiled_zbl(self) -> None:
+        """Run compiled training of a composition on the dense route.
+
+        The tabulated pair potential has no graph lower, so the composition
+        trains through the dense compiled forward; it has no single fitting
+        net, so the buffers that forward reads per call belong to its atomic
+        model alone.
+        """
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"] = {
+            # The table carries three element columns.
+            "type_map": ["O", "H", "B"],
+            "use_srtab": os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "pt",
+                "model",
+                "water",
+                "data",
+                "zbl_tab_potential",
+                "H2O_tab_potential.txt",
+            ),
+            "smin_alpha": 0.1,
+            "sw_rmin": 0.2,
+            "sw_rmax": 1.0,
+            "descriptor": copy.deepcopy(_DESCRIPTOR_DPA1_NO_ATTN),
+            "fitting_net": copy.deepcopy(config["model"]["fitting_net"]),
+            "data_stat_nbatch": 1,
+        }
+        config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self._run_training(config)
+
+    @REQUIRES_SUPPORTED_COMPILE
     def test_training_loop_compiled_silu(self) -> None:
         """Run compiled training with silu activation."""
         config = _make_config(self.data_dir, numb_steps=5)
@@ -1006,6 +1076,101 @@ class TestGetData(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestMinPairDistFilter(unittest.TestCase):
+    """`training_data.min_pair_dist` drops too-close frames from training."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def _trainer(self, min_pair_dist: float) -> "training_module.Trainer":
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["training"]["training_data"]["batch_size"] = 8
+        config["training"]["training_data"]["min_pair_dist"] = min_pair_dist
+        config = normalize(update_deepmd_input(config, warning=False))
+        return get_trainer(config)
+
+    def _run(self, body: Callable[[], None]) -> None:
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_min_pair_dist_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            body()
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_frames_below_the_threshold_are_dropped(self) -> None:
+        def body() -> None:
+            # A frame that clears its window carries a margin it reaches
+            # rather than its minimum, so the distances that set a splitting
+            # threshold are measured on the geometry itself.
+            probe = self._trainer(1.0e-3)
+            input_dict, label_dict = probe.get_data(is_train=True)
+            self.assertEqual(label_dict["pair_margin"].numel(), 8)
+            distances = compute_min_pair_margin_batch(
+                input_dict["coord"].detach().cpu().numpy(),
+                input_dict["box"].detach().cpu().numpy(),
+                input_dict["atype"].detach().cpu().numpy(),
+                pair_half_thresholds(1.0, "absolute", ntypes=8),
+            )
+            threshold = float(np.median(distances))
+            self.assertTrue((distances < threshold).any())
+
+            trainer = self._trainer(threshold)
+            sizes = []
+            for _ in range(6):
+                input_dict, label_dict = trainer.get_data(is_train=True)
+                kept = label_dict["pair_margin"].reshape(-1)
+                self.assertTrue((kept >= 1.0).all())
+                self.assertEqual(input_dict["coord"].shape[0], kept.numel())
+                self.assertEqual(label_dict["energy"].shape[0], kept.numel())
+                sizes.append(kept.numel())
+            self.assertTrue(all(size >= 1 for size in sizes))
+            self.assertLess(min(sizes), 8)
+            # Validation batches are never filtered.
+            _, valid_label = trainer.get_data(is_train=False)
+            self.assertNotIn("pair_margin", valid_label)
+
+        self._run(body)
+
+    def test_a_dataset_without_valid_frames_is_reported(self) -> None:
+        def body() -> None:
+            # The statistics see the filtered frames, so they fail first.
+            with self.assertRaisesRegex(RuntimeError, "beyond the filter radius"):
+                self._trainer(100.0)
+            # Widening the registered window past every pair empties every
+            # batch, which the training loop reports after one epoch of retries.
+            trainer = self._trainer(1.0e-3)
+            trainer.training_data_by_task[
+                training_module.DEFAULT_TASK_KEY
+            ].add_data_requirements(
+                [
+                    DataRequirementItem(
+                        "pair_margin",
+                        ndof=1,
+                        default=100.0,
+                        source_policy="derived",
+                    )
+                ]
+            )
+            with self.assertRaisesRegex(RuntimeError, "consecutive batches"):
+                trainer.get_data(is_train=True)
+
+        self._run(body)
+
+    def test_training_runs_on_the_filtered_batches(self) -> None:
+        def body() -> None:
+            trainer = self._trainer(0.9)
+            trainer.run()
+            self.assertTrue(os.path.exists("lcurve.out"))
+
+        self._run(body)
 
 
 class TestAdditionalDataRequirement(unittest.TestCase):

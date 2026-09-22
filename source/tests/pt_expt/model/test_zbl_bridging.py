@@ -186,6 +186,297 @@ class TestZBLBridgingPtExpt:
         )
         assert diff > 1e-3
 
+    def _learned_energies_on_graph(self, backend: str, graph, atype) -> torch.Tensor:
+        """Atomic energies of the learned model alone on an explicit edge set."""
+        if backend == "pt":
+            model = copy.deepcopy(self.pt_model)
+            model.inter_potential = None
+            coord = torch.zeros((1, atype.shape[1], 3), dtype=torch.float64)
+            out = model.forward_lower(
+                coord,
+                atype,
+                graph.edge_index,
+                graph.edge_vec,
+                graph.edge_index,
+                graph.edge_mask,
+            )
+            return out["atom_energy"].detach().reshape(-1)
+        learned = self.pt_expt_model.atomic_model.models[0]
+        out = learned.forward_atomic_graph(graph, atype.reshape(-1))
+        return out["energy"].detach().reshape(-1)
+
+    def _learned_descriptor_on_graph(self, backend: str, graph, atype) -> torch.Tensor:
+        """Descriptor of the learned model alone on an explicit edge set."""
+        descriptor = self._descriptor(backend)
+        if backend == "pt":
+            out = descriptor.forward_with_edges(
+                extended_coord=torch.zeros((1, atype.shape[1], 3), dtype=torch.float64),
+                extended_atype=atype,
+                edge_index=graph.edge_index,
+                edge_vec=graph.edge_vec,
+                edge_mask=graph.edge_mask,
+            )[0]
+        else:
+            out = descriptor.call_graph(graph, atype.reshape(-1))[0]
+        return out.detach().reshape(atype.shape[1], -1)
+
+    def _descriptor(self, backend: str):
+        """The descriptor of the learned model of either backend."""
+        if backend == "pt":
+            return self.pt_model.atomic_model.descriptor
+        return self.pt_expt_model.atomic_model.models[0].descriptor
+
+    def _bias(self, backend: str, atype: torch.Tensor) -> torch.Tensor:
+        """The per-atom end point of the fade: the fitting bias of each atom's type."""
+        fitting = (
+            self.pt_model.atomic_model.fitting_net
+            if backend == "pt"
+            else self.pt_expt_model.atomic_model.models[0].fitting_net
+        )
+        bias = torch.as_tensor(fitting.bias_atom_e, dtype=torch.float64).reshape(-1)
+        return bias[atype.reshape(-1)]
+
+    @staticmethod
+    def _quartet(gap: float = 0.6, shift=(0.0, 0.0, 0.0)):
+        """Four atoms ``(A, B, C, D)`` with ``A`` and ``B`` a frozen pair.
+
+        ``A`` and ``B`` sit ``gap`` apart, inside the frozen zone of the 0.8 /
+        1.2 Å window, and ``shift`` translates that pair rigidly. ``C`` and
+        ``D`` are ordinary atoms: every one of their separations from the pair
+        and from each other is beyond the outer radius and within the cutoff,
+        so they carry an ordinary bond to each other.
+        """
+        sx, sy, sz = shift
+        coord = torch.tensor(
+            [
+                [
+                    [sx, sy, sz],
+                    [sx + gap, sy, sz],
+                    [2.4, 0.3, 0.1],
+                    [-1.0, 1.2, -0.4],
+                ]
+            ],
+            dtype=torch.float64,
+        )
+        atype = torch.tensor([[0, 1, 0, 1]], dtype=torch.int64)
+        return coord, atype
+
+    @classmethod
+    def _quartet_graph(cls, gap: float = 0.6, shift=(0.0, 0.0, 0.0)):
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        coord, atype = cls._quartet(gap=gap, shift=shift)
+        graph = build_neighbor_graph(
+            coord, atype, None, ZBL_CONFIG["descriptor"]["rcut"], with_csr=True
+        )
+        return graph, atype
+
+    @staticmethod
+    def _mask_edges(graph, sources, destinations):
+        """The same graph with every ``sources -> destinations`` edge masked."""
+        import dataclasses
+
+        src, dst = graph.edge_index[0], graph.edge_index[1]
+        drop = torch.isin(src, torch.tensor(sources)) & torch.isin(
+            dst, torch.tensor(destinations)
+        )
+        return (
+            dataclasses.replace(graph, edge_mask=graph.edge_mask & ~drop),
+            int((drop & graph.edge_mask).sum()),
+        )
+
+    @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+    def test_a_frozen_pair_leaves_the_environment_of_the_others(self, backend) -> None:
+        """The four edges out of the frozen pair into ``C`` and ``D`` are gone.
+
+        ``A`` and ``B`` are closer than the inner radius, so the leave-one-out
+        gate is zero on every edge they emit except the two between them.
+        Deleting those four edges by hand must therefore change no learned
+        energy at all: the gate is folded into the envelope, the one factor
+        the messages, the environment seed, the attention masses and the
+        degree normalization all weight an edge by. The frozen atoms
+        themselves are left with the per-type bias the fitting stores, the end
+        point of the fade.
+        """
+        graph, atype = self._quartet_graph()
+        pruned, dropped = self._mask_edges(graph, sources=[0, 1], destinations=[2, 3])
+        # Twelve real edges: six pairs, of which four edges leave the pair.
+        assert int(graph.edge_mask.sum()) == 12
+        assert dropped == 4
+
+        full = self._learned_energies_on_graph(backend, graph, atype)
+        deleted = self._learned_energies_on_graph(backend, pruned, atype)
+        torch.testing.assert_close(full, deleted, rtol=0.0, atol=1e-12)
+
+        bias = self._bias(backend, atype)
+        torch.testing.assert_close(full[:2], bias[:2], rtol=0.0, atol=1e-12)
+        # the ordinary atoms still carry a learned energy of their own
+        assert (full[2:] - bias[2:]).abs().min().item() > 1e-6
+
+    @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+    def test_the_edge_inside_a_frozen_pair_stays_alive(self, backend) -> None:
+        """``A`` and ``B`` go on seeing each other at the clamped distance.
+
+        The gate an edge carries is the product over the other pairs of its
+        source, so the pair ``(A, B)`` leaves its own two edges untouched.
+        Masking them is therefore a visible change to the descriptors of ``A``
+        and ``B``, which is what separates the leave-one-out gate from a gate
+        that folded a node's whole edge set. It leaves the energies of the
+        ordinary atoms alone, since the pair had already vanished from their
+        environment.
+
+        The mask is also what carries the freeze: a masked edge contributes the
+        multiplicative identity to the products, so removing the pair edge
+        removes the amplitude of zero with it and the two atoms stop being
+        faded. Their energies sit on the per-type bias while the pair edge is
+        there and leave it once the edge is gone, which pins the mask
+        convention alongside.
+        """
+        graph, atype = self._quartet_graph()
+        pruned, _ = self._mask_edges(graph, sources=[0, 1], destinations=[2, 3])
+        isolated, dropped = self._mask_edges(
+            pruned, sources=[0, 1], destinations=[0, 1]
+        )
+        assert dropped == 2
+
+        with_pair = self._learned_descriptor_on_graph(backend, pruned, atype)
+        without_pair = self._learned_descriptor_on_graph(backend, isolated, atype)
+        assert (with_pair[:2] - without_pair[:2]).abs().max().item() > 1e-6
+
+        energy_with_pair = self._learned_energies_on_graph(backend, pruned, atype)
+        energy_without_pair = self._learned_energies_on_graph(backend, isolated, atype)
+        torch.testing.assert_close(
+            energy_with_pair[2:], energy_without_pair[2:], rtol=0.0, atol=1e-12
+        )
+        bias = self._bias(backend, atype)
+        torch.testing.assert_close(energy_with_pair[:2], bias[:2], rtol=0.0, atol=1e-12)
+        assert (energy_without_pair[:2] - bias[:2]).abs().max().item() > 1e-6
+
+    @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+    @pytest.mark.parametrize(
+        "gap, shift",
+        [
+            (0.6, (0.1, 0.05, 0.0)),  # rigid translation of the frozen pair
+            (0.7, (0.0, 0.0, 0.0)),  # a different separation, still frozen
+        ],
+    )
+    def test_a_frozen_pair_moves_without_changing_any_energy(
+        self, backend, gap, shift
+    ) -> None:
+        """Nothing the frozen pair does inside its own zone reaches an energy.
+
+        Both motions change the geometry every edge of the pair carries, and
+        both leave every learned energy exactly where it was: the atoms of the
+        pair are pinned to their per-type bias and the ordinary atoms no
+        longer see the pair at all.
+        """
+        reference = self._learned_energies_on_graph(backend, *self._quartet_graph())
+        moved = self._learned_energies_on_graph(
+            backend, *self._quartet_graph(gap=gap, shift=shift)
+        )
+        torch.testing.assert_close(reference, moved, rtol=0.0, atol=1e-12)
+
+    @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+    def test_clearing_the_gate_reopens_the_leak(self, backend) -> None:
+        """Ablation: without the switch the frozen pair is back in the graph.
+
+        Clearing ``bridging_switch`` leaves the distance clamp in place, so a
+        difference here pins the gate, and not the clamp, as the owner of the
+        isolation above.
+        """
+        graph, atype = self._quartet_graph()
+        pruned, _ = self._mask_edges(graph, sources=[0, 1], destinations=[2, 3])
+        deleted = self._learned_energies_on_graph(backend, pruned, atype)
+
+        descriptor = self._descriptor(backend)
+        switch = descriptor.bridging_switch
+        descriptor.bridging_switch = None
+        try:
+            ungated = self._learned_energies_on_graph(backend, graph, atype)
+        finally:
+            descriptor.bridging_switch = switch
+        assert (ungated - deleted).abs().max().item() > 1e-6
+
+    @pytest.mark.parametrize("backend", ["pt", "pt_expt"])
+    def test_a_closing_dimer_follows_the_switch(self, backend) -> None:
+        """A dimer's learned energy is proportional to the switch amplitude.
+
+        On a two-atom system the leave-one-out gate is the empty product, so
+        both edges keep their full envelope and the descriptor reads exactly
+        the distance the clamp displays; the per-node gate is the switching
+        amplitude of the single pair. The clamp freezes that displayed distance
+        two fifths into the window for every separation at or below that
+        point, so from the inner radius to the freeze point the descriptor
+        never changes and
+
+            ``E(r) - bias = w(r) * (E_unbridged(r_z) - bias)``
+
+        holds with one fixed factor: the deviation from the bias is the
+        amplitude times a constant, to round-off. Below the inner radius the
+        amplitude is zero and only the bias is left.
+        """
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            BridgingSwitch,
+            InnerClamp,
+        )
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        f_inner = ZBL_CONFIG["bridging_r_inner"]
+        f_outer = ZBL_CONFIG["bridging_r_outer"]
+        # The absolute scale gives every pair the unit length scale, so the two
+        # radii are read straight off the separation in Å.
+        contact = np.ones((1,))
+        switch = BridgingSwitch(f_inner, f_outer)
+        clamp = InnerClamp(f_inner, f_outer)
+        freeze = f_inner + 0.4 * (f_outer - f_inner)
+        assert clamp.f_freeze == pytest.approx(freeze)
+        atype = torch.tensor([[0, 1]], dtype=torch.int64)
+        bias = self._bias(backend, atype)
+        descriptor = self._descriptor(backend)
+
+        def _dimer_energies(separation: float, bridged: bool) -> torch.Tensor:
+            coord = torch.tensor(
+                [[[0.0, 0.0, 0.0], [separation, 0.0, 0.0]]], dtype=torch.float64
+            )
+            graph = build_neighbor_graph(
+                coord, atype, None, ZBL_CONFIG["descriptor"]["rcut"], with_csr=True
+            )
+            if bridged:
+                return self._learned_energies_on_graph(backend, graph, atype)
+            saved = descriptor.bridging_clamp, descriptor.bridging_switch
+            descriptor.bridging_clamp = None
+            descriptor.bridging_switch = None
+            try:
+                return self._learned_energies_on_graph(backend, graph, atype)
+            finally:
+                descriptor.bridging_clamp, descriptor.bridging_switch = saved
+
+        # below the inner radius the pair contributes its bias and nothing else
+        for separation in (0.40, 0.60, 0.79, f_inner):
+            torch.testing.assert_close(
+                _dimer_energies(separation, bridged=True), bias, rtol=0.0, atol=1e-12
+            )
+
+        # the one fixed factor: the unbridged deviation at the frozen distance
+        factor = _dimer_energies(freeze, bridged=False) - bias
+        # the fixture must not make the proportionality vacuous
+        assert factor.abs().max().item() > 1e-4
+        for separation in (0.85, 0.90, 0.95, freeze):
+            displayed = float(clamp.call(np.array([separation]), contact)[0])
+            assert displayed == pytest.approx(freeze, abs=1e-15)
+            amplitude = float(switch.call(np.array([separation]), contact)[0])
+            assert 0.0 < amplitude < 1.0
+            torch.testing.assert_close(
+                _dimer_energies(separation, bridged=True) - bias,
+                amplitude * factor,
+                rtol=0.0,
+                atol=1e-12,
+            )
+
     def test_force_matches_finite_difference(self) -> None:
         """F = -dE/dx through the shared-edge-leaf summed autograd."""
         eps = 1e-5
@@ -293,8 +584,11 @@ class TestNativeSpinWithBridging:
         assert model.has_spin() is True
         kinds = [type(c).__name__ for c in model.atomic_model.models]
         assert kinds[1] == "InnerPotentialAtomicModel", kinds
-        # bridging radii still reach the LEARNED child's descriptor
-        assert float(model.atomic_model.models[0].descriptor.inner_clamp.r_inner) == 0.8
+        # the bridging window still reaches the LEARNED child's descriptor,
+        # an explicit radius in Å arriving as a fraction of a unit length scale
+        learned = model.atomic_model.models[0]
+        assert float(learned.descriptor.bridging_switch.f_inner) == 0.8
+        assert float(learned.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
 
     def test_forward_energy_force_force_mag(self) -> None:
         model = get_model(_native_spin_zbl_config()).to(torch.device("cpu")).eval()
@@ -378,16 +672,21 @@ def test_native_spin_with_bridging_dpmodel() -> None:
     ]
 
 
-def test_bridging_radii_defaults() -> None:
-    """bridging_r_inner/r_outer default to 0.5/0.8 on the learned child."""
+def test_bridging_window_defaults() -> None:
+    """Without explicit radii the window defaults to fractions of the bond length.
+
+    The learned child then measures the window against each pair's own length
+    scale, so the switch carries the two dimensionless bounds and the clamp
+    its freeze point two fifths between them, rather than a distance in Å.
+    """
     cfg = copy.deepcopy(ZBL_CONFIG)
     cfg.pop("bridging_r_inner")
     cfg.pop("bridging_r_outer")
     model = get_model(cfg)
-    ic = model.atomic_model.models[0].descriptor.inner_clamp
-    assert ic is not None
-    assert float(ic.r_inner) == 0.5
-    assert float(ic.r_outer) == 0.8
+    descriptor = model.atomic_model.models[0].descriptor
+    assert float(descriptor.bridging_switch.f_inner) == 0.26
+    assert float(descriptor.bridging_switch.f_outer) == 0.80
+    assert float(descriptor.bridging_clamp.f_freeze) == pytest.approx(0.476)
 
 
 class TestZBLBridgingExportAndTraining:
@@ -516,8 +815,8 @@ class TestInnerPotentialChangeTypeMapPtExpt:
 
     Exercised through the REAL composition: ``LinearEnergyModel`` ->
     ``LinearEnergyAtomicModel`` -> ``InnerPotentialAtomicModel`` ->
-    ``InnerPotential``.  Inside a pt_expt module tree the element lookup is a
-    wrapped torch buffer, so the rebuild must land on the same
+    ``InnerPotential``.  Inside a pt_expt module tree the coefficient tables
+    are wrapped torch buffers, so the rebuild must land on the same
     device/namespace (review 3649295675) -- a numpy rebuild would desync the
     buffer or fail outright on CUDA.
     """
@@ -558,41 +857,44 @@ class TestInnerPotentialChangeTypeMapPtExpt:
         return get_model(config).to(_env.DEVICE).eval()
 
     def test_lookup_is_a_wrapped_buffer(self) -> None:
-        """Precondition: inside pt_expt the lookup is a torch buffer."""
+        """Precondition: inside pt_expt the tables are torch buffers."""
         from deepmd.pt_expt.utils import env as _env
 
-        z = self._zbl_child(self._build(["Ni", "O"])).potential.atomic_numbers
-        assert isinstance(z, torch.Tensor), (
-            "the pt_expt wrapper no longer converts the lookup to a tensor; "
+        table = self._zbl_child(self._build(["Ni", "O"])).potential.series_table
+        assert isinstance(table, torch.Tensor), (
+            "the pt_expt wrapper no longer converts the table to a tensor; "
             "this test would stop covering the device-safe rebuild"
         )
-        assert z.device.type == torch.device(_env.DEVICE).type
+        assert table.device.type == torch.device(_env.DEVICE).type
 
     def test_reorder_matches_a_freshly_built_model(self) -> None:
         # NOTE: applied to the ZBL CHILD, not the whole composition -- the
         # DPA4/SeZM learned child does not implement change_type_map at all
         # ("change_type_map is not supported for SeZM"), a separate pre-existing
-        # limitation.  The lookup under test belongs to this child.
+        # limitation.  The tables under test belong to this child.
         child = self._zbl_child(self._build(["Ni", "O"]))
         e_nini = self._pair_energy(child)
         child.change_type_map(["O", "Ni"])
         fresh = self._zbl_child(self._build(["O", "Ni"]))
         e_fresh = self._pair_energy(fresh)
-        # anti-vacuity: Ni-Ni and O-O must be far apart, else a stale lookup
+        # anti-vacuity: Ni-Ni and O-O must be far apart, else a stale table
         # would be indistinguishable from a rebuilt one
         assert abs(e_fresh - e_nini) > 1.0
         np.testing.assert_allclose(self._pair_energy(child), e_fresh, rtol=1e-12)
-        assert [float(v) for v in child.potential.atomic_numbers] == [8.0, 28.0]
+        torch.testing.assert_close(
+            child.potential.series_table, fresh.potential.series_table
+        )
 
     def test_added_element_extends_the_lookup_on_device(self) -> None:
         from deepmd.pt_expt.utils import env as _env
 
         child = self._zbl_child(self._build(["Ni", "O"]))
         child.change_type_map(["Ni", "O", "H"])
-        z = child.potential.atomic_numbers
-        assert isinstance(z, torch.Tensor), "the rebuild dropped out of torch"
-        assert z.device.type == torch.device(_env.DEVICE).type
-        assert [float(v) for v in z] == [28.0, 8.0, 1.0]
+        table = child.potential.series_table
+        assert isinstance(table, torch.Tensor), "the rebuild dropped out of torch"
+        assert table.device.type == torch.device(_env.DEVICE).type
+        # one row per ordered pair of the three types plus the padding type
+        assert tuple(table.shape) == (16, 8)
         # the new type is addressable -- a stale (length-2) table raises here
         np.testing.assert_allclose(
             self._pair_energy(child, atype_value=2),

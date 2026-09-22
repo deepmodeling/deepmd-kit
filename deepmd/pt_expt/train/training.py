@@ -65,6 +65,10 @@ from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
 )
+from deepmd.dpmodel.utils.dist_check import (
+    pair_margin_frame_mask,
+    select_frames,
+)
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
@@ -143,6 +147,7 @@ from deepmd.pt_expt.utils.stat import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+    min_pair_dist_requirement,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -1352,7 +1357,6 @@ class _CompiledModel(torch.nn.Module):
 
         if self._task_buf_order:
             try:
-                _fitting = self.original_model.get_fitting_net()
                 _am = getattr(self.original_model, "atomic_model", None)
                 _vals: list[torch.Tensor] = []
                 for _name in self._task_buf_order:
@@ -1360,6 +1364,9 @@ class _CompiledModel(torch.nn.Module):
                         _actual = _name[len(_AM_PREFIX) :]
                         _vals.append(_am._buffers[_actual])
                     else:
+                        # Only a fitting-net buffer needs the fitting net; a
+                        # composition promotes atomic-model buffers alone.
+                        _fitting = self.original_model.get_fitting_net()
                         _vals.append(getattr(_fitting, _name))
                 task_buf_vals: tuple = tuple(_vals)
             except AttributeError as exc:
@@ -1658,7 +1665,6 @@ class _CompiledModel(torch.nn.Module):
 
         if self._task_buf_order:
             try:
-                _fitting = _model.get_fitting_net()
                 _am = getattr(_model, "atomic_model", None)
                 _vals: list[torch.Tensor] = []
                 for _name in self._task_buf_order:
@@ -1666,6 +1672,9 @@ class _CompiledModel(torch.nn.Module):
                         _actual = _name[len(_AM_PREFIX) :]
                         _vals.append(_am._buffers[_actual])
                     else:
+                        # Only a fitting-net buffer needs the fitting net; a
+                        # composition promotes atomic-model buffers alone.
+                        _fitting = _model.get_fitting_net()
                         _vals.append(getattr(_fitting, _name))
                 task_buf_vals: tuple = tuple(_vals)
             except AttributeError as exc:
@@ -1887,11 +1896,28 @@ class Trainer(AbstractTrainer):
 
         # Data requirements ---------------------------------------------------
         self.valid_numb_batch_by_task: dict[str, int] = {}
+        self.min_pair_dist_by_task: dict[str, float] = {}
         for model_key in self.model_keys:
             data_requirement = list(self.losses[model_key].label_requirement)
             data_requirement += get_additional_data_requirement(self.models[model_key])
+            task_params = (
+                training_params["data_dict"][model_key]
+                if self.multi_task
+                else training_params
+            )
+            pair_filter = min_pair_dist_requirement(
+                self.model_params_by_task[model_key],
+                float(
+                    (task_params.get("training_data") or {}).get("min_pair_dist", 0.0)
+                ),
+            )
+            self.min_pair_dist_by_task[model_key] = (
+                0.0 if pair_filter is None else float(pair_filter.default)
+            )
+            # Only training frames are filtered, so only the training data
+            # pays for the derived margin.
             self.training_data_by_task[model_key].add_data_requirements(
-                data_requirement
+                data_requirement + ([] if pair_filter is None else [pair_filter])
             )
             if self.validation_data_by_task[model_key] is not None:
                 self.validation_data_by_task[model_key].add_data_requirements(
@@ -1938,9 +1964,11 @@ class Trainer(AbstractTrainer):
 
             @functools.lru_cache
             def _make_sample(
-                _d: DeepmdDataSystem = _data, _n: int = _nbatch
+                _d: DeepmdDataSystem = _data,
+                _n: int = _nbatch,
+                _min_pair_dist: float = self.min_pair_dist_by_task[model_key],
             ) -> list[dict[str, np.ndarray]]:
-                return make_stat_input(_d, _n)
+                return make_stat_input(_d, _n, _min_pair_dist)
 
             self._sample_funcs[model_key] = _make_sample
 
@@ -2174,6 +2202,19 @@ class Trainer(AbstractTrainer):
                 # Selective weight copy (per-branch key remapping)
                 pretrained_state = pretrained_wrapper.state_dict()
                 target_state = self._unwrapped.state_dict()
+                # A plain model and its zone-bridging composition hold the same
+                # learned descriptor and fitting net at different paths.
+                learned_paths = {
+                    model_key: (
+                        _learned_part_path(self._unwrapped.model[model_key]),
+                        _learned_part_path(
+                            pretrained_wrapper.model[
+                                finetune_links[model_key].get_model_branch()
+                            ]
+                        ),
+                    )
+                    for model_key in self.model_keys
+                }
                 new_state = {}
                 for key in target_state:
                     if key == "_extra_state":
@@ -2188,6 +2229,15 @@ class Trainer(AbstractTrainer):
                         finetune_rule = finetune_links[model_key]
                         _key_from = finetune_rule.get_model_branch()
                         pretrained_key = key.replace(f".{model_key}.", f".{_key_from}.")
+                        path, source_path = learned_paths[model_key]
+                        if (
+                            pretrained_key not in pretrained_state
+                            and path is not None
+                            and source_path is not None
+                        ):
+                            pretrained_key = _move_learned_key(
+                                pretrained_key, path, source_path
+                            )
                         use_random = (
                             finetune_rule.get_random_fitting()
                             and ".descriptor." not in key
@@ -2637,7 +2687,11 @@ class Trainer(AbstractTrainer):
         if data_sys is None:
             return {}, {}
 
-        batch = normalize_batch(data_sys.get_batch())
+        batch = (
+            self._next_training_batch(data_sys, task_key)
+            if is_train
+            else normalize_batch(data_sys.get_batch())
+        )
         input_dict, label_dict = split_batch(batch)
 
         # Drop optional inputs whose find_* flag is False so the model sees None.
@@ -2671,6 +2725,53 @@ class Trainer(AbstractTrainer):
             input_dict["coord"] = input_dict["coord"].requires_grad_(True)
 
         return input_dict, label_dict
+
+    def _next_training_batch(self, data_sys: Any, task_key: str) -> dict[str, Any]:
+        """Fetch the next training batch of a task, without its too-close frames.
+
+        Frames holding an atom pair closer than the task's frame filter allows
+        are dropped, and a batch left empty is replaced by the next one.
+        The retry is local to the rank and involves no collective, so
+        distributed ranks stay in lockstep: every rank still contributes
+        exactly one batch per optimizer step.
+
+        Parameters
+        ----------
+        data_sys : Any
+            Training data system of the task.
+        task_key : str
+            Resolved task key.
+
+        Returns
+        -------
+        dict[str, Any]
+            Normalized NumPy batch with at least one frame.
+
+        Raises
+        ------
+        RuntimeError
+            If one epoch of consecutive batches holds no valid frame.
+        """
+        filter_enabled = self.min_pair_dist_by_task[task_key] > 0.0
+        discarded = 0
+        while True:
+            batch = normalize_batch(data_sys.get_batch())
+            frame_mask = pair_margin_frame_mask(batch, filter_enabled)
+            if frame_mask is None or frame_mask.all():
+                return batch
+            if frame_mask.any():
+                return select_frames(batch, frame_mask)
+            discarded += 1
+            if discarded >= self._epoch_length(task_key):
+                raise RuntimeError(
+                    f"No training frame of task {task_key!r} keeps every atom "
+                    "pair beyond the frame-filter radius within "
+                    f"{discarded} consecutive batches. A bridged model filters "
+                    "at the midpoint of its bridging window, so lower "
+                    "`bridging_fraction_inner` or `bridging_fraction_outer` "
+                    "there, or `training_data.min_pair_dist` on any other "
+                    "model, or clean the dataset."
+                )
 
     def _epoch_length(self, model_key: str) -> int:
         """Return the steps this rank takes during one epoch of a task.
@@ -3393,6 +3494,33 @@ class Trainer(AbstractTrainer):
             for key, value in more_loss.items()
             if "l2_" not in key
         }
+
+
+def _learned_part_path(model: torch.nn.Module) -> str | None:
+    """Return the state-dict path of the learned descriptor-fitting part of a model.
+
+    A plain model holds that part as its atomic model and a composition with
+    one learned sub-model, such as a zone-bridging one, as that sub-model, so
+    fine-tuning between the two transfers the part across the paths. A model
+    without a single learned part returns ``None``.
+    """
+    atomic_model = model.atomic_model
+    if getattr(atomic_model, "descriptor", None) is not None:
+        return "atomic_model."
+    learned = [
+        index
+        for index, child in enumerate(getattr(atomic_model, "models", ()))
+        if getattr(child, "descriptor", None) is not None
+    ]
+    return f"atomic_model.models.{learned[0]}." if len(learned) == 1 else None
+
+
+def _move_learned_key(key: str, path: str, source_path: str) -> str:
+    """Rewrite a descriptor or fitting-net key from one learned-part path to another."""
+    for part in ("descriptor.", "fitting_net."):
+        if f".{path}{part}" in key:
+            return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
+    return key
 
 
 def model_change_out_bias(

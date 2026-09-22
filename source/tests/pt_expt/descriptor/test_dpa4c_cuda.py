@@ -5,6 +5,9 @@ import dataclasses
 from collections.abc import (
     Sequence,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 import pytest
@@ -27,6 +30,7 @@ from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     _table_lookup,
     build_compression_artifacts,
     build_radial_table,
+    contact_radius_input,
     descriptor_profile,
     dpa4c_graph_compress_energy_force,
     ensure_registered,
@@ -40,10 +44,22 @@ _GPU = pytest.mark.skipif(
 )
 
 
+#: Element symbols of the two test types. They fix the covalent radii, whose
+#: pairwise sums give the three distinct length scales the window is measured
+#: against, so a kernel that gathered the wrong radius would misplace it.
+_TYPE_MAP = ["O", "H"]
+
+#: A bridging window wide enough that the random test cluster populates its
+#: frozen zone, its transition zone and the plain zone beyond it. The bounds
+#: are fractions of each pair's own length scale, not distances in Å.
+_WINDOW = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.6}
+
+
 def _build_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
+    **window: float,
 ) -> DescrptDPA4C:
     return (
         DescrptDPA4C(
@@ -55,10 +71,24 @@ def _build_descriptor(
             radial_modes=radial_modes,
             precision="float32",
             seed=17,
+            type_map=_TYPE_MAP,
+            **window,
         )
         .cuda()
         .eval()
     )
+
+
+def _reduced_distance(
+    descriptor: DescrptDPA4C,
+    graph: Any,
+    atype: torch.Tensor,
+) -> torch.Tensor:
+    """Return the valid edge distances in units of each pair's length scale."""
+    source, destination = graph.edge_index[0], graph.edge_index[1]
+    distance = graph.edge_vec.norm(dim=-1, keepdim=True)
+    contact = descriptor.pair_contact(atype[destination], atype[source], distance.dtype)
+    return (distance / contact)[graph.edge_mask, 0]
 
 
 def _build_graph(
@@ -125,10 +155,26 @@ def _arguments(
         artifacts["spin_type"][:0],
         artifacts["spin_pair"],
         artifacts["spin_type"],
+        contact_radius_input(descriptor),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *(float(value) for value in artifacts["info"]),
+        descriptor.bridging_f_inner or 0.0,
+        descriptor.bridging_f_outer or 0.0,
     )
+
+
+def _descriptor_backward(
+    cotangent: torch.Tensor,
+    state: torch.Tensor,
+    edge_vec: torch.Tensor,
+    *arguments: Any,
+) -> tuple[torch.Tensor, ...]:
+    """Differentiate the descriptor alone, without an analytical pair potential."""
+    no_pair = edge_vec.new_empty(0)
+    return torch.ops.deepmd.dpa4c_graph_compress_backward(
+        cotangent, state, edge_vec, *arguments, no_pair, no_pair
+    )[:3]
 
 
 def _spin_free(arguments: tuple) -> tuple:
@@ -250,13 +296,13 @@ def test_wide_backward_is_deterministic(channels: int) -> None:
     previous = torch.are_deterministic_algorithms_enabled()
     torch.use_deterministic_algorithms(True)
     try:
-        first = torch.ops.deepmd.dpa4c_graph_compress_backward(
+        first = _descriptor_backward(
             torch.ones_like(output),
             state,
             graph.edge_vec,
             *arguments,
         )
-        second = torch.ops.deepmd.dpa4c_graph_compress_backward(
+        second = _descriptor_backward(
             torch.ones_like(output),
             state,
             graph.edge_vec,
@@ -268,10 +314,19 @@ def test_wide_backward_is_deterministic(channels: int) -> None:
 
 
 @_GPU
+@pytest.mark.parametrize("window", [{}, _WINDOW], ids=["plain", "bridged"])
 @pytest.mark.parametrize("channels", [8, 16, 32, 64, 128])
-def test_compressed_matches_uncompressed_descriptor(channels: int) -> None:
-    descriptor = _build_descriptor(channels)
+def test_compressed_matches_uncompressed_descriptor(
+    channels: int,
+    window: dict[str, float],
+) -> None:
+    descriptor = _build_descriptor(channels, **window)
     graph, atype = _build_graph(descriptor, canonical=False)
+    if window:
+        reduced = _reduced_distance(descriptor, graph, atype)
+        inner, outer = window.values()
+        assert (reduced < inner).any() and (reduced > outer).any()
+        assert ((reduced > inner) & (reduced < outer)).sum() > 8
     arguments = _arguments(descriptor, graph, atype)
     compressed, _state = torch.ops.deepmd.dpa4c_graph_compress(
         graph.edge_vec,
@@ -431,6 +486,7 @@ def _build_charge_descriptor(
             radial_modes=radial_modes,
             precision="float32",
             seed=17,
+            type_map=_TYPE_MAP,
             add_chg_spin_ebd=True,
             default_chg_spin=(
                 None if default_chg_spin is None else list(default_chg_spin)
@@ -544,6 +600,7 @@ def test_compression_rejects_float64_descriptor() -> None:
             n_radial=8,
             precision="float64",
             seed=17,
+            type_map=_TYPE_MAP,
         )
         .cuda()
         .eval()
@@ -557,19 +614,24 @@ def test_compression_rejects_float64_descriptor() -> None:
 @pytest.mark.parametrize("lmax", [2, 3, 4])
 @pytest.mark.parametrize("radial_modes", [0, 2, 4, 8])
 @pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("windowed", [False, True])
 def test_supported_surface_parity(
     channels: int,
     lmax: int,
     radial_modes: int,
     canonical: bool,
+    windowed: bool,
 ) -> None:
     """Cover the complete compiled surface against the portable equations.
 
     Each scalar width owns a distinct lane mapping and each angular degree a
     distinct instantiation, so the cross product is the contract the operator
-    advertises rather than a sample of it.
+    advertises rather than a sample of it. A bridging window selects the
+    bridged specialization of every profile.
     """
-    descriptor = _build_descriptor(channels, lmax, radial_modes)
+    descriptor = _build_descriptor(
+        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+    )
     graph, atype = _build_graph(descriptor, canonical)
     arguments = _arguments(descriptor, graph, atype)
     ensure_registered()
@@ -593,7 +655,10 @@ def test_supported_surface_parity(
         (reference_value * cotangent).sum(),
         reference_edge,
     )
-    torch.testing.assert_close(gradient, reference_gradient, atol=8e-6, rtol=1e-4)
+    # Inside the window the switch is steep, and the float32 reference then
+    # carries a rounding error of its own that exceeds the plain tolerance.
+    atol, rtol = (1e-4, 5e-4) if windowed else (8e-6, 1e-4)
+    torch.testing.assert_close(gradient, reference_gradient, atol=atol, rtol=rtol)
 
 
 @_GPU
@@ -778,16 +843,25 @@ def test_compressed_cutoff_matches_removed_topology(channels: int) -> None:
 
 
 @_GPU
+@pytest.mark.parametrize("frozen_by", ["mask", "window"])
 @pytest.mark.parametrize("channels", [8, 64, 128])
-def test_in_row_mask_matches_removed_edge(channels: int) -> None:
-    descriptor = _build_descriptor(channels)
+def test_in_row_mask_matches_removed_edge(channels: int, frozen_by: str) -> None:
+    """An edge switched off in its row equals an edge absent from the graph.
+
+    The mask and the bridging window are the two ways a row may hold an edge
+    that contributes nothing; the second edge lies inside the frozen zone of
+    the window and is switched off by either.
+    """
+    descriptor = _build_descriptor(
+        channels, **(_WINDOW if frozen_by == "window" else {})
+    )
     edge_index = torch.tensor(
         [[1, 0], [0, 1]],
         dtype=torch.long,
         device="cuda",
     )
     edge_vec = torch.tensor(
-        [[1.0, 0.2, -0.1], [-0.7, 0.3, 0.4]],
+        [[1.0, 1.4, -0.1], [-0.7, 0.3, 0.4]],
         dtype=torch.float32,
         device="cuda",
     )
@@ -806,7 +880,9 @@ def test_in_row_mask_matches_removed_edge(channels: int) -> None:
     )
     masked_graph = dataclasses.replace(
         graph,
-        edge_mask=torch.tensor([True, False], dtype=torch.bool, device="cuda"),
+        edge_mask=torch.tensor(
+            [True, frozen_by == "window"], dtype=torch.bool, device="cuda"
+        ),
     )
     masked_edge = edge_vec.detach().clone().requires_grad_(True)
     masked, _masked_state = torch.ops.deepmd.dpa4c_graph_compress(
@@ -842,7 +918,8 @@ def test_in_row_mask_matches_removed_edge(channels: int) -> None:
         removed_edge,
     )
 
-    assert not torch.allclose(full, masked)
+    if frozen_by == "mask":
+        assert not torch.allclose(full, masked)
     torch.testing.assert_close(masked, removed, atol=2e-6, rtol=2e-6)
     torch.testing.assert_close(
         masked_gradient[:1],
@@ -857,6 +934,96 @@ def test_in_row_mask_matches_removed_edge(channels: int) -> None:
         rtol=0.0,
     )
     assert torch.count_nonzero(masked_gradient[0]).item() > 0
+
+
+@_GPU
+@pytest.mark.parametrize("mode", ["zbl", "nlh"])
+@pytest.mark.parametrize("windowed", [True, False])
+@pytest.mark.parametrize("canonical", [False, True])
+@pytest.mark.parametrize("channels", [8, 32, 128])
+@pytest.mark.parametrize(("lmax", "radial_modes"), [(2, 0), (3, 4), (4, 2)])
+def test_pair_potential_matches_the_portable_term(
+    channels: int,
+    canonical: bool,
+    windowed: bool,
+    lmax: int,
+    radial_modes: int,
+    mode: str,
+) -> None:
+    """The backward scan evaluates the analytical pair potential of a bridged model.
+
+    A vanishing descriptor cotangent isolates the term: the edge gradient is
+    then the pair slope alone, weighted by the energy cotangent of the
+    destination, and the scan returns the pair energy of every node. The three
+    widths cover the two-, four- and eight-lane splits of the four series
+    terms. Without a window the pair table alone selects the bridged backward,
+    behind a plain forward. Both supported modes ride the kernel, which reads
+    the coefficients of whichever potential filled the table; their decay rates
+    differ by three orders of magnitude, so the single-precision table has to
+    carry either.
+    """
+    from deepmd.dpmodel.atomic_model.inner_potential import (
+        InnerPotential,
+    )
+
+    descriptor = _build_descriptor(
+        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+    )
+    graph, atype = _build_graph(descriptor, canonical=canonical)
+    arguments = _arguments(descriptor, graph, atype)
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    potential = InnerPotential(type_map=["O", "H"], mode=mode)
+    pair_table = torch.as_tensor(potential.pair_table, device="cuda")
+    # Ghost nodes carry no energy, so their cotangent vanishes.
+    seed = (torch.arange(atype.shape[0], device="cuda") % 3 != 0).to(torch.float64)
+
+    edge_gradient, _, _, pair_energy = torch.ops.deepmd.dpa4c_graph_compress_backward(
+        torch.zeros_like(output),
+        state,
+        graph.edge_vec,
+        *arguments,
+        pair_table,
+        seed,
+    )
+    edge = graph.edge_vec.double().requires_grad_(True)
+    reference = potential.call(
+        edge, graph.edge_index, atype, graph.edge_mask, atype.shape[0]
+    )[0]
+    (reference_gradient,) = torch.autograd.grad((reference[:, 0] * seed).sum(), edge)
+    assert reference.max() > 10.0
+    torch.testing.assert_close(pair_energy, reference, atol=3e-5, rtol=3e-5)
+    torch.testing.assert_close(
+        edge_gradient.double(), reference_gradient, atol=3e-5, rtol=3e-5
+    )
+
+    no_pair = graph.edge_vec.new_empty(0)
+    plain_gradient, _, _, absent = torch.ops.deepmd.dpa4c_graph_compress_backward(
+        torch.zeros_like(output), state, graph.edge_vec, *arguments, no_pair, no_pair
+    )
+    assert absent.numel() == 0
+    assert torch.count_nonzero(plain_gradient).item() == 0
+
+    # A pair term without energy cotangent leaves the descriptor gradient of
+    # the plain backward. Without a window that gradient comes from the plain
+    # specialization, which the compiler schedules and contracts independently
+    # of the bridged one, so the two agree to single-precision rounding, far
+    # below any slope of the pair term.
+    cotangent = torch.randn_like(output)
+    descriptor_gradient = _descriptor_backward(
+        cotangent, state, graph.edge_vec, *arguments
+    )[0]
+    unseeded_gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
+        cotangent,
+        state,
+        graph.edge_vec,
+        *arguments,
+        pair_table,
+        torch.zeros_like(seed),
+    )[0]
+    scale = descriptor_gradient.abs().max().item()
+    torch.testing.assert_close(
+        unseeded_gradient, descriptor_gradient, atol=1e-6 * scale, rtol=1e-6
+    )
 
 
 @_GPU
@@ -912,17 +1079,19 @@ def test_int32_edge_indices() -> None:
 
 
 @_GPU
+@pytest.mark.parametrize("windowed", [False, True])
 @pytest.mark.parametrize("channels", [8, 64, 128])
 @pytest.mark.parametrize("index_dtype", [torch.int64, torch.uint32])
 def test_compact_canonical_parity(
     channels: int,
     index_dtype: torch.dtype,
+    windowed: bool,
 ) -> None:
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         ensure_registered as ensure_canonical_registered,
     )
 
-    descriptor = _build_descriptor(channels)
+    descriptor = _build_descriptor(channels, **(_WINDOW if windowed else {}))
     graph, atype = _build_graph(descriptor, canonical=True)
     arguments = _arguments(descriptor, graph, atype)
     ensure_canonical_registered()
@@ -934,8 +1103,8 @@ def test_compact_canonical_parity(
         graph.edge_index[0].to(index_dtype),
         graph.destination_row_ptr,
         atype,
-        *arguments[5:18],
-        *arguments[19:],
+        *arguments[5:19],
+        *arguments[20:],
     )
     compact_output, compact_state = torch.ops.deepmd.dpa4c_canonical_compress(
         graph.edge_vec,
@@ -945,7 +1114,7 @@ def test_compact_canonical_parity(
     torch.testing.assert_close(compact_state, generic_state)
 
     cotangent = torch.randn_like(generic_output)
-    generic_gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
+    generic_gradient = _descriptor_backward(
         cotangent,
         generic_state,
         graph.edge_vec,
@@ -979,8 +1148,8 @@ def test_compact_inplace_backward_reuses_state(channels: int) -> None:
         graph.edge_index[0].to(torch.uint32),
         graph.destination_row_ptr,
         atype,
-        *arguments[5:18],
-        *arguments[19:],
+        *arguments[5:19],
+        *arguments[20:],
     )
     ensure_canonical_registered()
     output, state = torch.ops.deepmd.dpa4c_canonical_compress(
@@ -1214,11 +1383,105 @@ def test_compact_canonical_tiling_is_equivalent(
             torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@pytest.mark.parametrize("bridged", [False, True])
+def test_fused_canonical_cpu_reference_matches_the_kernel(
+    bridged: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The CPU implementation of the fused canonical operator reproduces it.
+
+    The operator runs once on CUDA through the energy-force helper and once on
+    CPU copies of the same arguments, where it dispatches to the reference
+    sequence of descriptor, fitting, fitting backward and descriptor backward,
+    with the pair potential when the model is bridged.
+    """
+    from deepmd.dpmodel.atomic_model.inner_potential import (
+        InnerPotential,
+    )
+    from deepmd.pt_expt.fitting.ener_fitting import (
+        EnergyFittingNet,
+    )
+    from deepmd.pt_expt.kernels.dpa4c import (
+        canonical,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    canonical.ensure_registered()
+    window = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.3} if bridged else {}
+    descriptor = _build_descriptor(8, **window)
+    neighbor_graph, atype = _build_graph(descriptor, canonical=True)
+    graph = canonical_graph_from_neighbor_graph(
+        dataclasses.replace(neighbor_graph, n_local=neighbor_graph.n_node)
+    )
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    fitting = (
+        EnergyFittingNet(
+            ntypes=2,
+            dim_descrpt=descriptor.get_dim_out(),
+            neuron=[32, 32],
+            resnet_dt=False,
+            activation_function="silu",
+            precision="float32",
+            mixed_types=True,
+            seed=29,
+        )
+        .cuda()
+        .eval()
+    )
+    pair_table = (
+        torch.as_tensor(InnerPotential(["O", "H"]).pair_table, device="cuda")
+        if bridged
+        else None
+    )
+    operator = torch.ops.deepmd.dpa4c_canonical_compress_energy_gradient
+    calls = []
+
+    def record(*args: Any) -> tuple[torch.Tensor, ...]:
+        calls.append(args)
+        return operator(*args)
+
+    monkeypatch.setattr(
+        torch.ops.deepmd, "dpa4c_canonical_compress_energy_gradient", record
+    )
+    dpa4c_canonical_compress_energy_force(
+        descriptor,
+        fitting,
+        graph,
+        atype,
+        torch.ones(atype.shape[0], dtype=torch.bool, device="cuda"),
+        fitting.bias_atom_e[:, 0],
+        False,
+        None,
+        pair_table,
+    )
+    (arguments,) = calls
+
+    def to_cpu(value: Any) -> Any:
+        if isinstance(value, torch.Tensor):
+            return value.cpu()
+        if isinstance(value, list):
+            return [to_cpu(item) for item in value]
+        return value
+
+    kernel = operator(*arguments)
+    reference = operator(*[to_cpu(argument) for argument in arguments])
+    for actual, expected in zip(reference, kernel, strict=True):
+        scale = max(expected.abs().max().item(), 1.0) if expected.numel() else 1.0
+        torch.testing.assert_close(actual, expected.cpu(), atol=2e-5 * scale, rtol=2e-5)
+
+
 def _build_spin_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
     device: str = "cuda",
+    **window: float,
 ) -> DescrptDPA4C:
     """Return a spin-conditioned descriptor with a non-unit reference moment.
 
@@ -1238,7 +1501,9 @@ def _build_spin_descriptor(
             radial_modes=radial_modes,
             precision="float32",
             seed=17,
+            type_map=_TYPE_MAP,
             use_spin=[True, False],
+            **window,
         )
         .to(device)
         .eval()
@@ -1302,13 +1567,11 @@ def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
         *arguments,
     )
 
-    edge_gradient, spin_gradient, edge_spin_gradient = (
-        torch.ops.deepmd.dpa4c_graph_compress_backward(
-            torch.empty_like(output),
-            state,
-            graph.edge_vec,
-            *arguments,
-        )
+    edge_gradient, spin_gradient, edge_spin_gradient = _descriptor_backward(
+        torch.empty_like(output),
+        state,
+        graph.edge_vec,
+        *arguments,
     )
 
     assert edge_gradient.shape == (0, 3)
@@ -1321,11 +1584,13 @@ def test_empty_native_spin_cuda_backward_preserves_spin_contract() -> None:
     ("channels", "lmax", "radial_modes"),
     [(8, 2, 0), (16, 2, 0), (32, 2, 4), (64, 3, 0), (128, 3, 8), (32, 4, 0)],
 )
+@pytest.mark.parametrize("windowed", [False, True])
 def test_spin_compressed_matches_portable(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
     lmax: int,
     radial_modes: int,
+    windowed: bool,
 ) -> None:
     """Descriptor, coordinate gradient and magnetic force all match.
 
@@ -1336,7 +1601,9 @@ def test_spin_compressed_matches_portable(
     their index inflates the gradient magnitude at the widest profile until
     fp32 tabulation noise alone exceeds the tolerance.
     """
-    descriptor = _build_spin_descriptor(channels, lmax, radial_modes)
+    descriptor = _build_spin_descriptor(
+        channels, lmax, radial_modes, **(_WINDOW if windowed else {})
+    )
     assert mega_eligible(descriptor)
     graph, atype = _build_graph(descriptor, canonical=True)
     generator = torch.Generator(device="cuda").manual_seed(11)
@@ -1376,8 +1643,11 @@ def test_spin_compressed_matches_portable(
     actual = run()
     _assert_dispatched(actual[0], reference[0])
     # Tabulation error reaches the gradients through the table derivative, so
-    # they carry the wider tolerance the geometric backward already uses.
-    tolerances = ((3e-5, 3e-5), (8e-6, 1e-4), (8e-6, 1e-4))
+    # they carry the wider tolerance the geometric backward already uses, and
+    # the steep switch inside a bridging window widens it as in the surface
+    # test.
+    gradient = (1e-4, 5e-4) if windowed else (8e-6, 1e-4)
+    tolerances = ((3e-5, 3e-5), gradient, gradient)
     for (atol, rtol), value, expected in zip(
         tolerances, actual, reference, strict=True
     ):
@@ -1494,19 +1764,35 @@ def test_spin_bond_family_couples_the_kernel_to_the_edge_direction(
 
 
 @_GPU
+@pytest.mark.parametrize("bridged", [False, True])
 @pytest.mark.parametrize("spin_conditioned", [False, True])
-def test_backward_operator_satisfies_its_schema(spin_conditioned: bool) -> None:
-    """The backward operator declares three independent results.
+def test_backward_operator_satisfies_its_schema(
+    spin_conditioned: bool,
+    bridged: bool,
+) -> None:
+    """The backward operator declares four independent results.
 
-    All three are unannotated, so any two of them sharing storage would be an
+    All four are unannotated, so any two of them sharing storage would be an
     alias the schema does not describe, which is undefined under
     functionalization. ``opcheck`` decides that mechanically, including on the
-    spin-free path where two of the three are absent and an allocation shared
-    between them would otherwise go unnoticed.
+    spin-free path without a pair potential, where three of the four are
+    absent and an allocation shared between them would otherwise go unnoticed.
     """
+    from deepmd.dpmodel.atomic_model.inner_potential import (
+        InnerPotential,
+    )
+
     descriptor = _build_spin_descriptor(8) if spin_conditioned else _build_descriptor(8)
     graph, atype = _build_graph(descriptor, canonical=True)
     arguments = _arguments(descriptor, graph, atype)
+    pair = (
+        (
+            torch.as_tensor(InnerPotential(["O", "H"]).pair_table, device="cuda"),
+            torch.ones(atype.shape[0], dtype=torch.float64, device="cuda"),
+        )
+        if bridged
+        else (graph.edge_vec.new_empty(0),) * 2
+    )
     if spin_conditioned:
         arguments = _with_spin(
             arguments,
@@ -1518,7 +1804,7 @@ def test_backward_operator_satisfies_its_schema(spin_conditioned: bool) -> None:
     )
     torch.library.opcheck(
         torch.ops.deepmd.dpa4c_graph_compress_backward.default,
-        (torch.ones_like(output), state, graph.edge_vec, *arguments),
+        (torch.ones_like(output), state, graph.edge_vec, *arguments, *pair),
     )
 
 

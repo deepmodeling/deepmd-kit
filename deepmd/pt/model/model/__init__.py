@@ -37,7 +37,11 @@ from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
 )
 from deepmd.utils.bridging import (
+    DEFAULT_FRACTION_INNER,
+    DEFAULT_FRACTION_OUTER,
+    concise_bridging_window,
     expand_bridging_method,
+    resolve_bridging_window,
     route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
@@ -355,8 +359,14 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
     learned["atom_exclude_types"] = model_params.get("atom_exclude_types", [])
     learned["pair_exclude_types"] = model_params.get("pair_exclude_types", [])
     learned["bridging_method"] = inner_cfg.get("mode", "zbl")
-    learned["bridging_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
-    learned["bridging_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
+    learned["bridging_fraction_inner"] = inner_cfg.get(
+        "fraction_inner", DEFAULT_FRACTION_INNER
+    )
+    learned["bridging_fraction_outer"] = inner_cfg.get(
+        "fraction_outer", DEFAULT_FRACTION_OUTER
+    )
+    learned["bridging_r_inner"] = inner_cfg.get("r_inner")
+    learned["bridging_r_outer"] = inner_cfg.get("r_outer")
     if "spin" in model_params:
         learned["spin"] = model_params["spin"]
         return get_sezm_spin_model(learned)
@@ -446,6 +456,24 @@ def get_standard_model(model_params: dict) -> BaseModel:
     return model
 
 
+def _bridging_window_options(model_params: dict) -> dict:
+    """
+    Resolve the bridging window of a SeZM model section.
+
+    Parameters
+    ----------
+    model_params : dict
+        A DPA4/SeZM model section carrying the concise bridging keys.
+
+    Returns
+    -------
+    dict
+        The window options of the learned descriptor, as
+        :func:`deepmd.utils.bridging.resolve_bridging_window` spells them.
+    """
+    return resolve_bridging_window(concise_bridging_window(model_params))
+
+
 def _reconcile_sezm_pair_exclude_types(model_params: dict) -> list[list[int]]:
     """Reconcile ``pair_exclude_types`` with ``descriptor.exclude_types``.
 
@@ -504,12 +532,10 @@ def get_sezm_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    bridging_window = _bridging_window_options(model_params)
     # Only inject bridging parameters when bridging is enabled.
     if bridging_method != "NONE":
-        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
-        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+        model_params["descriptor"].update(bridging_window)
 
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
@@ -562,8 +588,6 @@ def get_sezm_model(model_params: dict) -> BaseModel:
         use_compile=use_compile,
         enable_tf32=enable_tf32,
         bridging_method=bridging_method,
-        bridging_r_inner=bridging_r_inner,
-        bridging_r_outer=bridging_r_outer,
     )
     model.model_def_script = json.dumps(model_params_old)
     return model
@@ -620,11 +644,9 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters (no virtual atoms, so ZBL needs no masking) ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    bridging_window = _bridging_window_options(model_params)
     if bridging_method != "NONE":
-        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
-        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+        model_params["descriptor"].update(bridging_window)
 
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
@@ -658,8 +680,6 @@ def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
         use_compile=use_compile,
         enable_tf32=enable_tf32,
         bridging_method=bridging_method,
-        bridging_r_inner=bridging_r_inner,
-        bridging_r_outer=bridging_r_outer,
         spin=spin,
     )
     model.model_def_script = json.dumps(model_params_old)
@@ -699,14 +719,6 @@ def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
 
-    # === Bridging parameters ===
-    bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
-    if bridging_method != "NONE":
-        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
-        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
-
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
     fitting_net = copy.deepcopy(model_params["fitting_net"])
@@ -737,9 +749,7 @@ def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
         data_stat_protect=data_stat_protect,
         use_compile=use_compile,
         enable_tf32=enable_tf32,
-        bridging_method=bridging_method,
-        bridging_r_inner=bridging_r_inner,
-        bridging_r_outer=bridging_r_outer,
+        bridging_method=str(model_params.get("bridging_method", "none")),
         real_sel=real_sel_list,
         spin=spin,
     )

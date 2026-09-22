@@ -43,7 +43,9 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils.dist_check import (
-    compute_min_pair_dist_single,
+    compute_min_pair_margin_batch,
+    compute_min_pair_margin_single,
+    requirement_half_thresholds,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -125,7 +127,7 @@ _FRAME_LEVEL_KEYS = frozenset(
         "charge_spin",
         "natoms",
         "real_natoms_vec",
-        "min_pair_dist",
+        "pair_margin",
     }
 )
 
@@ -688,6 +690,9 @@ class LmdbDecodeConfig:
         Registered data requirements keyed by field name.
     dataset
         Dataset identifier used in frame-level diagnostics.
+    type_map
+        Element symbols of the model types, from which a derived field sizes
+        the per-type length scale it measures against.
     """
 
     ntypes: int
@@ -695,6 +700,7 @@ class LmdbDecodeConfig:
     type_remap: np.ndarray | None
     data_requirements: dict[str, Any]
     dataset: str = "<unknown LMDB>"
+    type_map: list[str] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -838,6 +844,92 @@ def _compute_frame_natoms(atype: np.ndarray, ntypes: int) -> np.ndarray:
     return natoms
 
 
+def _resolve_derived_batch(
+    batch: dict[str, Any],
+    key: str,
+    requirement: Any,
+    config: LmdbDecodeConfig,
+    layout: "BatchLayout",
+) -> None:
+    """Resolve one derived field from the assembled arrays of a batch.
+
+    The batch holds the same structural data as its frames, and taking the
+    field here lets the geometric scan cross the frames of the batch in one
+    pass. The value settles the frame against the window the requirement
+    declares, exactly as the per-frame
+    :func:`_resolve_derived_requirement` does, and equals the minimum pair
+    margin whenever that margin decides the frame; a frame the window accepts
+    may carry a larger margin that it reaches, because the scan stops once
+    the side is known.
+
+    Parameters
+    ----------
+    batch : dict[str, Any]
+        Assembled batch, modified in place.
+    key : str
+        Name of the derived field.
+    requirement : Any
+        Its data requirement.
+    config : LmdbDecodeConfig
+        Decoder state, which fixes the field dtype and the pair length scale.
+    layout : BatchLayout
+        Where each frame's per-atom rows are, which tells a ragged batch from
+        a rectangular one.
+    """
+    if key != "pair_margin":
+        raise ValueError(f"Unsupported derived LMDB field {key!r}")
+
+    coord = batch.get("coord")
+    atype = batch.get("atype")
+    if not isinstance(coord, np.ndarray) or not isinstance(atype, np.ndarray):
+        batch.pop(key, None)
+        batch[f"find_{key}"] = np.float32(0.0)
+        return
+
+    # A frame without periodicity carries a cell of zeros, which the scan
+    # reads frame by frame; the batch may hold both kinds.
+    margins = compute_min_pair_margin_batch(
+        coord,
+        batch.get("box"),
+        atype,
+        _derived_half_thresholds(requirement, config),
+        n_node=layout.n_node if layout.ragged else None,
+        screened=True,
+    )
+    batch[key] = margins.reshape(-1, 1).astype(
+        _resolve_frame_dtype(config, key), copy=False
+    )
+    batch[f"find_{key}"] = np.float32(1.0)
+
+
+def _derived_half_thresholds(
+    requirement: Any,
+    config: LmdbDecodeConfig,
+) -> np.ndarray:
+    """Resolve the per-type half-thresholds a derived margin measures against.
+
+    Parameters
+    ----------
+    requirement : Any
+        The data requirement, whose default carries the filter radius and
+        whose length scale names the per-element radii it multiplies.
+    config : LmdbDecodeConfig
+        Decoder state, which carries the model type map.
+
+    Returns
+    -------
+    np.ndarray
+        Half-thresholds in Å with shape ``(ntypes,)``, read-only because every
+        frame of a decoder shares one table.
+    """
+    return requirement_half_thresholds(
+        float(_requirement_value(requirement, "default", 0.0)),
+        str(_requirement_value(requirement, "length_scale", "absolute")),
+        None if config.type_map is None else tuple(config.type_map),
+        config.ntypes,
+    )
+
+
 def _resolve_derived_requirement(
     frame: dict[str, Any],
     key: str,
@@ -845,7 +937,7 @@ def _resolve_derived_requirement(
     config: LmdbDecodeConfig,
 ) -> None:
     """Resolve one derived field from normalized structural frame data."""
-    if key != "min_pair_dist":
+    if key != "pair_margin":
         raise ValueError(f"Unsupported derived LMDB field {key!r}")
 
     coord = frame.get("coord")
@@ -858,9 +950,16 @@ def _resolve_derived_requirement(
     box = frame.get("box")
     if box is not None and np.allclose(box, 0.0):
         box = None
-    threshold = float(_requirement_value(requirement, "default", 0.0))
     frame[key] = np.array(
-        [compute_min_pair_dist_single(coord, box, atype, stop_below=threshold)],
+        [
+            compute_min_pair_margin_single(
+                coord,
+                box,
+                atype,
+                _derived_half_thresholds(requirement, config),
+                screened=True,
+            )
+        ],
         dtype=_resolve_frame_dtype(config, key),
     )
     frame[f"find_{key}"] = np.float32(1.0)
@@ -872,6 +971,7 @@ def decode_lmdb_frame(
     config: LmdbDecodeConfig,
     *,
     copy_arrays: bool,
+    derive: bool = True,
 ) -> dict[str, Any]:
     """Decode and normalize one LMDB record.
 
@@ -887,6 +987,11 @@ def decode_lmdb_frame(
         Whether encoded arrays are copied while unpacking. Batch decoding sets
         this to ``False`` because every value is copied exactly once into its
         preallocated batch destination.
+    derive
+        Whether the derived data requirements are resolved on this frame.
+        Batch decoding sets this to ``False`` and resolves them once on the
+        assembled batch, where the geometric scan they need runs over all
+        frames at once.
 
     Returns
     -------
@@ -952,7 +1057,7 @@ def decode_lmdb_frame(
 
     requirements = config.data_requirements
     for key, requirement in requirements.items():
-        if _requirement_source_policy(requirement) == "derived":
+        if derive and _requirement_source_policy(requirement) == "derived":
             _resolve_derived_requirement(frame, key, requirement, config)
 
     structural_keys = frozenset(
@@ -1289,6 +1394,7 @@ def decode_lmdb_batch(
             int(original_key),
             config,
             copy_arrays=False,
+            derive=False,
         )
         frame_nloc = frame["coord"].shape[0]
         if layout is None:
@@ -1367,6 +1473,9 @@ def decode_lmdb_batch(
             batch.pop(field, None)
     if layout.ragged:
         batch["n_node"] = layout.n_node
+    for key, requirement in config.data_requirements.items():
+        if _requirement_source_policy(requirement) == "derived":
+            _resolve_derived_batch(batch, key, requirement, config, layout)
     batch["sid"] = np.asarray([0], dtype=np.int64)
     return batch
 
@@ -2163,6 +2272,7 @@ class LmdbDataReader:
             type_remap=self._type_remap,
             data_requirements=self._data_requirements,
             dataset=self.lmdb_path,
+            type_map=self._type_map,
         )
         # Which fields carry an atom axis follows from the registered
         # requirements, so this cache is invalidated when they change.
@@ -3802,6 +3912,7 @@ class LmdbTestData:
             type_remap=self._type_remap,
             data_requirements=self._requirements,
             dataset=self.lmdb_path,
+            type_map=self._type_map,
         )
 
         # Detect PBC from the first retained frame.

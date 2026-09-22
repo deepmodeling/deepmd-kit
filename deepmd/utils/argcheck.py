@@ -32,6 +32,10 @@ from deepmd.common import (
 from deepmd.utils.argcheck_nvnmd import (
     nvnmd_args,
 )
+from deepmd.utils.bridging import (
+    DEFAULT_FRACTION_INNER,
+    DEFAULT_FRACTION_OUTER,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     FULL_VALIDATION_PROFILES,
@@ -3455,7 +3459,7 @@ def model_args(
         "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
         "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
         "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
-        "`{'energy': 'omat24'}`, one of `omat24`, `omol25`, `omc25` and `odac25`, which takes precedence "
+        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25` and `odac25`, which takes precedence "
         "over a file of the same name; "
         "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
         "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
@@ -3665,25 +3669,44 @@ def standard_model_args() -> Argument:
 
 def _bridging_method_args() -> list[Argument]:
     """The concise analytical-bridging arguments, shared by the model types
-    that accept the ``bridging_method`` sugar (``dpa4`` and ``standard``).
+    that accept the ``bridging_method`` sugar (``dpa4`` and ``standard``, the
+    latter with a DPA4C descriptor).
     """
     doc_bridging_method = (
-        "Short-range bridging method. Currently supports 'ZBL'. "
+        "Short-range bridging method. Supports 'ZBL' and 'NLH'. "
         "The value is case-insensitive; set it to 'None' to disable bridging. "
         "This concise form is the recommended interface; it expands to the "
         "equivalent explicit `linear_ener` composition over the learned "
         "model and an `inner_potential` sub-model."
     )
+    doc_bridging_fraction_inner = (
+        "Inner radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to. A pair closer than this interacts "
+        "through the analytical potential alone. In DPA4 the distance the "
+        "descriptor reads for the pair is frozen just below the window midpoint, "
+        "the two atoms disappear from the descriptors of every other atom, and their "
+        "fitting output falls to the bias of their types, which under `vacuum_ref` "
+        "leaves them the energy of isolated atoms; in DPA4C the pair is removed "
+        "from the descriptor. Because the window follows each pair's own size, "
+        "one value describes every element combination. Only used when "
+        "`bridging_method` is enabled and no explicit radius is given."
+    )
+    doc_bridging_fraction_outer = (
+        "Outer radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to. Pairs beyond it reach the learned "
+        "descriptor unchanged, and the transition zone between the two fractions "
+        "uses a C^3-continuous septic Hermite polynomial. Only used when "
+        "`bridging_method` is enabled and no explicit radius is given."
+    )
     doc_bridging_r_inner = (
-        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
-        "Only used when `bridging_method` is enabled. "
-        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
-        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
+        "Inner radius of the bridging window in Å, applied to every atom pair alike. "
+        "Giving it together with `bridging_r_outer` replaces the fractional window "
+        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
     )
     doc_bridging_r_outer = (
-        "Outer clamping radius in Å. The transition zone "
-        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
-        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
+        "Outer radius of the bridging window in Å, applied to every atom pair alike. "
+        "Giving it together with `bridging_r_inner` replaces the fractional window "
+        "of `bridging_fraction_inner` and `bridging_fraction_outer`."
     )
     return [
         Argument(
@@ -3694,17 +3717,31 @@ def _bridging_method_args() -> list[Argument]:
             doc=supported_backends("pt", "pt_expt") + doc_bridging_method,
         ),
         Argument(
+            "bridging_fraction_inner",
+            float,
+            optional=True,
+            default=DEFAULT_FRACTION_INNER,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_inner,
+        ),
+        Argument(
+            "bridging_fraction_outer",
+            float,
+            optional=True,
+            default=DEFAULT_FRACTION_OUTER,
+            doc=supported_backends("pt", "pt_expt") + doc_bridging_fraction_outer,
+        ),
+        Argument(
             "bridging_r_inner",
             float,
             optional=True,
-            default=0.5,
+            default=None,
             doc=supported_backends("pt", "pt_expt") + doc_bridging_r_inner,
         ),
         Argument(
             "bridging_r_outer",
             float,
             optional=True,
-            default=0.8,
+            default=None,
             doc=supported_backends("pt", "pt_expt") + doc_bridging_r_outer,
         ),
     ]
@@ -3935,34 +3972,57 @@ def inner_potential_model_args() -> Argument:
     injected only into the ``linear_ener`` ``models`` variant.
     """
     doc_mode = (
-        "The analytical pair-potential formula. Currently supports 'zbl' "
-        "(case-insensitive)."
+        "The analytical pair-potential formula. Supports 'zbl', the ZBL "
+        "universal screened repulsion, and 'nlh', a repulsion refitted to "
+        "self-consistent density-functional pair energies (case-insensitive)."
+    )
+    doc_fraction_inner = (
+        "Inner radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to, derived onto the learned sibling's "
+        "descriptor: a closer atom pair interacts through the analytical potential "
+        "alone. Because the window follows each pair's own size, one value "
+        "describes every element combination."
+    )
+    doc_fraction_outer = (
+        "Outer radius of the bridging window, as a fraction of the covalent bond "
+        "length of the atom pair it applies to. The transition zone between the "
+        "two fractions uses a C^3-continuous septic Hermite polynomial."
     )
     doc_r_inner = (
-        "Inner clamping radius in Å, applied to the learned sibling's "
-        "descriptor: ML descriptor distances below this radius are frozen. "
-        "For ZBL bridging, set `training.training_data.min_pair_dist` to the "
-        "same value so frames with atom pairs closer than `r_inner` are "
-        "skipped during training."
+        "Inner radius of the bridging window in Å, applied to every atom pair "
+        "alike. Giving it together with `r_outer` replaces the fractional window."
     )
     doc_r_outer = (
-        "Outer clamping radius in Å, applied to the learned sibling's "
-        "descriptor. The transition zone `[r_inner, r_outer]` uses a "
-        "C^3-continuous septic Hermite polynomial."
+        "Outer radius of the bridging window in Å, applied to every atom pair "
+        "alike. Giving it together with `r_inner` replaces the fractional window."
     )
     ca = Argument(
         "inner_potential",
         dict,
         [
             Argument("mode", str, optional=True, default="zbl", doc=doc_mode),
-            Argument("r_inner", float, optional=True, default=0.5, doc=doc_r_inner),
-            Argument("r_outer", float, optional=True, default=0.8, doc=doc_r_outer),
+            Argument(
+                "fraction_inner",
+                float,
+                optional=True,
+                default=DEFAULT_FRACTION_INNER,
+                doc=doc_fraction_inner,
+            ),
+            Argument(
+                "fraction_outer",
+                float,
+                optional=True,
+                default=DEFAULT_FRACTION_OUTER,
+                doc=doc_fraction_outer,
+            ),
+            Argument("r_inner", float, optional=True, default=None, doc=doc_r_inner),
+            Argument("r_outer", float, optional=True, default=None, doc=doc_r_outer),
         ],
         doc=supported_backends("pt", "pt_expt")
         + "Analytical short-range bridging pair potential (e.g. ZBL), usable "
-        "only as a sub-model of a `linear_ener` composition; the clamping "
-        "radii are derived onto the learned sibling's descriptor at build "
-        "time.",
+        "only as a sub-model of a `linear_ener` composition over one DPA4 or "
+        "DPA4C model; the window radii are derived onto the learned sibling's "
+        "descriptor at build time.",
     )
     return ca
 
@@ -5448,11 +5508,16 @@ If MPI is used, the value should be considered as the batch size per task.'
         "Frames containing any atom pair closer than this distance are excluded "
         "from loss computation, as DFT labels for near-collision configurations "
         "are often unreliable. Set to 0 to disable (default). "
-        "Under distributed training (DDP/FSDP), if any rank has no valid frame "
-        "in its current batch, every rank collectively skips that training step. "
-        "Note: enabling this adds an O(N²) distance check per frame in the "
-        "DataLoader workers (CPU-side), which may slow down training for large "
-        "systems. To avoid the overhead, consider pre-cleaning the dataset instead."
+        "A bridged model filters its training frames by the midpoint of its own "
+        "bridging window, below which its learned energy is throttled to less "
+        "than half of its amplitude; that radius is taken from the model, so this "
+        "key must be left unset for such a model and is an error otherwise. "
+        "A batch left without a valid frame is never trained on: under "
+        "distributed training the pt backend skips that step on every rank, and "
+        "the pt_expt backend draws the next batch on the rank concerned. "
+        "Note: enabling this adds a geometric check per frame on the CPU side "
+        "of the data pipeline, which may slow down training for large systems. "
+        "To avoid the overhead, consider pre-cleaning the dataset instead."
     )
 
     args = [
@@ -5497,7 +5562,7 @@ If MPI is used, the value should be considered as the batch size per task.'
             float,
             optional=True,
             default=0.0,
-            doc=supported_backends("pt") + doc_min_pair_dist,
+            doc=supported_backends("pt", "pt_expt") + doc_min_pair_dist,
         ),
     ]
 

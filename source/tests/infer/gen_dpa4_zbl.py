@@ -11,8 +11,10 @@ only end-to-end test drove the ``.pt2`` through the PYTHON ``DeepPot``, which
 never touches ``DeepPotPTExpt``.
 
 Multi-rank capable (issue #5906): bridging enables the descriptor's Source
-Freeze Propagation Gate, whose per-node ``eta_j = prod_{e: src_e = j} w_e``
-folds a node's FULL outgoing-edge set.  Edges exist only for owned centres,
+Freeze Propagation Gate, which folds into the envelope of an edge the
+amplitudes ``w`` of every pair of that edge's source OTHER than its own, and
+hands the full per-node product ``eta_j = prod_{e: src_e = j} w_e`` to the
+model as the readout gate.  Edges exist only for owned centres,
 so the per-node ``[log_eta, zero_count]`` partials are rank-incomplete; the
 with-comm artifact completes them via one reverse-accumulate
 (``border_op_backward``) + forward-broadcast (``border_op``) exchange before

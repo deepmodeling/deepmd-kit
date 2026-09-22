@@ -58,8 +58,14 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.bridging import (
+    check_window_inside_cutoff,
+)
 from deepmd.utils.charge_state import (
     validate_charge_state,
+)
+from deepmd.utils.element_radii import (
+    contact_radius_table,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -69,10 +75,13 @@ from .base_descriptor import (
     BaseDescriptor,
 )
 from .dpa4_nn import (
+    BridgingClamp,
+    BridgingSwitch,
     C3CutoffEnvelope,
     RadialBasis,
     SeZMTypeEmbedding,
     SwiGLUMLP,
+    pair_contact,
     resolve_swiglu_hidden_width,
 )
 from .dpa4c_nn import (
@@ -191,6 +200,22 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     spin
         Reserved for descriptor API compatibility; only ``None`` is supported.
         Native spin is configured through ``use_spin``.
+    inner_clamp_f_inner
+        Inner radius of the zone-bridging window as a fraction of the pair's
+        length scale, under the name the bridging composition injects into
+        every DPA4-family descriptor. An edge at or below it leaves the
+        descriptor entirely, and the pair length the radial features read is
+        frozen at the window midpoint. Given together with
+        ``inner_clamp_f_outer`` or not at all.
+    inner_clamp_f_outer
+        Outer radius of the zone-bridging window as a fraction of the pair's
+        length scale. An edge at or beyond it contributes exactly as it does
+        without a window.
+    inner_clamp_scale
+        Length scale the two fractions are measured against: ``"covalent"``
+        sizes every pair by the sum of its covalent radii and therefore needs
+        ``type_map``, ``"absolute"`` gives every pair a unit scale so the
+        fractions are radii in Å.
 
     Raises
     ------
@@ -198,8 +223,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         If ``channels`` or ``lmax`` is not an integer.
     ValueError
         If ``rcut``, ``ntypes``, or ``n_radial`` is not positive, if
-        ``radial_modes`` is negative, or if ``channels`` or ``lmax`` is
-        outside its supported set.
+        ``radial_modes`` is negative, if ``channels`` or ``lmax`` is outside
+        its supported set, if only one bridging radius is given, if
+        ``inner_clamp_scale`` is neither ``"covalent"`` nor ``"absolute"``, or
+        if a covalent window is asked for without a ``type_map`` covering every
+        type.
     NotImplementedError
         If ``spin`` is given.
     """
@@ -250,6 +278,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
         spin: None = None,
+        inner_clamp_f_inner: float | None = None,
+        inner_clamp_f_outer: float | None = None,
+        inner_clamp_scale: str = "covalent",
     ) -> None:
         # === Step 1. Validate the public architecture contract ===
         if spin is not None:
@@ -269,6 +300,16 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             or radial_modes < 0
         ):
             raise ValueError("`radial_modes` must be a non-negative integer.")
+        if (inner_clamp_f_inner is None) != (inner_clamp_f_outer is None):
+            raise ValueError(
+                "`inner_clamp_f_inner` and `inner_clamp_f_outer` must be given "
+                "together."
+            )
+        if inner_clamp_scale not in ("covalent", "absolute"):
+            raise ValueError(
+                "`inner_clamp_scale` must be 'covalent' or 'absolute', got "
+                f"{inner_clamp_scale!r}."
+            )
         default_chg_spin = (
             None
             if default_chg_spin is None
@@ -350,6 +391,35 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             exponent=self._ENVELOPE_EXPONENT,
             precision=self.precision,
         )
+        # Every edge term carries the envelope and no node feature crosses an
+        # edge, so one inner switch on the envelope removes a close pair from
+        # the descriptor as completely as deleting its edge from the graph.
+        self.bridging_f_inner = (
+            None if inner_clamp_f_inner is None else float(inner_clamp_f_inner)
+        )
+        self.bridging_f_outer = (
+            None if inner_clamp_f_outer is None else float(inner_clamp_f_outer)
+        )
+        self.bridging_scale = str(inner_clamp_scale)
+        self.bridging_switch = (
+            None
+            if self.bridging_f_inner is None
+            else BridgingSwitch(self.bridging_f_inner, self.bridging_f_outer)
+        )
+        self.bridging_clamp = (
+            None
+            if self.bridging_f_inner is None
+            else BridgingClamp(self.bridging_f_inner, self.bridging_f_outer)
+        )
+        # The table sizes a window, so an unbridged descriptor needs none and
+        # is not asked for the element symbols the covalent scale reads.
+        self.contact_radius = None
+        if self.bridging_f_inner is not None:
+            table = contact_radius_table(
+                self.ntypes, self.type_map, self.bridging_scale
+            )
+            check_window_inside_cutoff(table, self.bridging_f_outer, self.rcut)
+            self.contact_radius = table
         self.pair_film = OrderedPairFiLM(
             self.channels,
             radial_modes=self.radial_modes,
@@ -408,6 +478,12 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         self.stddev = np.ones_like(mean)
         self.compress = False
         self.reinit_exclude(exclude_types)
+
+    def pair_contact(
+        self, center_type: Array, neighbor_type: Array, dtype: Any
+    ) -> Array:
+        """Length scale of each edge in Å, shape (E, 1); see :func:`pair_contact`."""
+        return pair_contact(self.contact_radius, center_type, neighbor_type, dtype)
 
     # === Descriptor evaluation ===
 
@@ -939,7 +1015,19 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         # DPA4C requests the raw radial basis. One explicit C³ envelope gates
         # the combined radial and type feature, so the scalar edge amplitude
         # contains exactly one cutoff factor and vanishes smoothly at rcut.
-        envelope = self.evaluate_cutoff_envelope(distance) * mask
+        # A bridging window closes the same envelope from the inside: the
+        # switch reads the true pair length, and the radial features read the
+        # clamped one, which moves at the rate the switch has opened. The
+        # direction keeps the true geometry.
+        inner_switch = None
+        if self.bridging_switch is not None:
+            contact = self.pair_contact(center_type, neighbor_type, distance.dtype)
+            inner_switch = self.bridging_switch.call(distance, contact)
+            distance = self.bridging_clamp.call(distance, contact)
+        envelope = self.evaluate_cutoff_envelope(distance)
+        if inner_switch is not None:
+            envelope = envelope * inner_switch
+        envelope = envelope * mask
         radial_basis = self.radial_basis.call(distance)
         radial_hidden = self.radial_embedding.call_hidden(radial_basis)
         radial = self.radial_embedding.call_output(radial_hidden)
@@ -1303,9 +1391,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         missing input rather than a property of the shared parameters, so two
         branches may legitimately default to different charge states.
 
-        Branch-local state is deliberately absent. ``exclude_types`` is the
-        only such field: it configures the pair-exclusion mask, which each
-        replica keeps for itself.
+        Branch-local state is deliberately absent: ``exclude_types`` and the
+        bridging window configure the pair-exclusion mask and the inner
+        envelope switch, both parameter free, which each replica keeps for
+        itself.
 
         Returns
         -------
@@ -1736,7 +1825,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa4c",
-            "@version": 1,
+            "@version": 2,
             "rcut": self.rcut,
             "ntypes": self.ntypes,
             "channels": self.channels,
@@ -1753,6 +1842,9 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "default_chg_spin": self.default_chg_spin,
             "spin": None,
+            "inner_clamp_f_inner": self.bridging_f_inner,
+            "inner_clamp_f_outer": self.bridging_f_outer,
+            "inner_clamp_scale": self.bridging_scale,
             "spin_channels": (None if self.spin is None else self.spin.serialize()),
             "charge_spin_embedding": (
                 None
@@ -1798,7 +1890,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             Reconstructed descriptor with restored trainable components.
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         compression = data.pop("compress", None)

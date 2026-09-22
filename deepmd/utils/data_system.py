@@ -340,6 +340,7 @@ class DeepmdDataSystem:
                     "output_natoms_for_type_sel", False
                 ),
                 special_shape=adict[kk].get("special_shape"),
+                length_scale=adict[kk].get("length_scale", "absolute"),
             )
 
     def add_data_requirements(
@@ -361,6 +362,7 @@ class DeepmdDataSystem:
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
         special_shape: str | None = None,
+        length_scale: str = "absolute",
     ) -> None:
         """Add a data item that to be loaded.
 
@@ -391,6 +393,9 @@ class DeepmdDataSystem:
             If True and type_sel is True, the atomic dimension will be natoms instead of nsel
         special_shape : str, optional
             Name of a loader-defined non-standard shape contract.
+        length_scale : str, optional
+            Per-element length scale a derived geometric item measures its
+            default against, either ``"absolute"`` or ``"covalent"``.
         """
         for ii in self.data_systems:
             ii.add(
@@ -405,6 +410,7 @@ class DeepmdDataSystem:
                 dtype=dtype,
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
                 special_shape=special_shape,
+                length_scale=length_scale,
             )
 
     def reduce(self, key_out: str, key_in: str) -> None:

@@ -13,6 +13,13 @@ The model section selects the `Nano` grade with the named preset
 `descriptor` and `fitting_net`; the explicit water `type_map` replaces the
 element list, while `use_amp` and `seed` supply run-specific settings.
 
+`input-zbl.json` is the same model with ZBL zone bridging: `bridging_method`
+adds the analytical ZBL repulsion to the learned energy, and a pair closer than
+the inner radius of the bridging window interacts through ZBL alone. The window
+follows the covalent bond length of each element pair, so it needs no setting
+of its own. The model trains, compresses and deploys exactly like the plain
+one.
+
 DPA4C is built for extreme-speed molecular dynamics, so its arguments are best
 read as a budget split between two quantities: inference throughput and the
 largest system that fits in memory.

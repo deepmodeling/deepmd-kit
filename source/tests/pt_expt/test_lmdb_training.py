@@ -9,6 +9,7 @@ Covers:
   :class:`LmdbDataSystem` and runs a few training steps.
 """
 
+import copy
 import os
 import shutil
 import tempfile
@@ -25,6 +26,10 @@ from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
+)
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_margin_batch,
+    pair_half_thresholds,
 )
 from deepmd.dpmodel.utils.lmdb_data import (
     collate_lmdb_frames,
@@ -1020,6 +1025,50 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             batch = trainer.training_data.get_batch()
             trainer.run()
             return trainer, batch
+        finally:
+            os.chdir(cwd)
+
+    def test_min_pair_dist_filters_ragged_batches(self) -> None:
+        """Too-close frames leave a ragged batch together with their atoms."""
+        config = self._config(self._dpa1())
+        config["training"]["training_data"]["min_pair_dist"] = 1.0e-3
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            # A frame that clears its window carries a margin it reaches
+            # rather than its minimum, so the distances that set a splitting
+            # threshold are measured on the geometry itself. A unit pair
+            # threshold makes each margin the minimum pair distance in Å.
+            batch = get_trainer(copy.deepcopy(config)).training_data.get_batch()
+            distances = compute_min_pair_margin_batch(
+                np.asarray(batch["coord"]),
+                np.asarray(batch["box"]),
+                np.asarray(batch["atype"]),
+                pair_half_thresholds(1.0, "absolute", ntypes=2),
+                n_node=np.asarray(batch["n_node"]),
+            )
+            threshold = float(np.median(distances))
+            self.assertTrue((distances < threshold).any())
+
+            config["training"]["training_data"]["min_pair_dist"] = threshold
+            trainer = get_trainer(copy.deepcopy(config))
+            self.assertTrue(trainer.training_data._reader.ragged_batches)
+            dropped = False
+            for _ in range(6):
+                input_dict, label_dict = trainer.get_data(is_train=True)
+                kept = label_dict["pair_margin"].reshape(-1)
+                nframes = input_dict["n_node"].shape[0]
+                nnodes = int(input_dict["n_node"].sum())
+                self.assertTrue(bool((kept >= 1.0).all()))
+                self.assertEqual(kept.numel(), nframes)
+                self.assertEqual(label_dict["energy"].shape[0], nframes)
+                self.assertEqual(input_dict["coord"].shape[0], nnodes)
+                self.assertEqual(input_dict["atype"].shape[0], nnodes)
+                self.assertEqual(label_dict["force"].shape[0], nnodes)
+                # `mix:27` packs three frames unless the filter removes one.
+                dropped = dropped or nframes < 3
+            self.assertTrue(dropped)
+            trainer.run()
         finally:
             os.chdir(cwd)
 

@@ -293,9 +293,9 @@ def _dpa4_family_child_builder(sub: dict) -> "BaseModel | None":
     the semantics of a standalone ``type: "dpa4"`` model -- the
     descriptor/fitting type defaults, the exclusion consistency check, and
     the loud rejections of unsupported options (``lora``, ``use_compile``)
-    -- instead of the generic component build that
-    would silently ignore them. Returns ``None`` for non-DPA4-family
-    children so the shared builder uses its generic path.
+    -- instead of the generic component build that would silently ignore
+    them. Returns ``None`` for non-DPA4-family children so the shared
+    builder uses its generic path.
 
     Parameters
     ----------
@@ -319,11 +319,10 @@ def get_linear_model(model_params: dict) -> BaseModel:
 
     Children with a ``descriptor`` build as learned atomic models;
     ``pairtab`` children build as pair-tabulation atomic models; an
-    ``inner_potential`` child builds the analytical bridging term, with
-    the learned sibling descriptor's ``inner_clamp_r_inner``/``_outer``
-    derived from the child's ``r_inner``/``r_outer`` (issue #5948). A
-    top-level ``spin`` section (scheme ``native``) wraps the composition
-    as a :class:`NativeSpinEnergyModel`.
+    ``inner_potential`` child builds the analytical bridging term, with the
+    learned sibling descriptor's window derived from the child's (issue
+    #5948). A top-level ``spin`` section (scheme ``native``) wraps the
+    composition as a :class:`NativeSpinEnergyModel`.
 
     Parameters
     ----------

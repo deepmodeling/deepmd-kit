@@ -104,7 +104,8 @@ class ScanWorkspace {
 };
 
 /// Resolve the payload slot of one CSR entry.
-inline int64_t payload_slot(const Arguments& arguments, int64_t entry) {
+DPA4C_CPU_INLINE int64_t payload_slot(const Arguments& arguments,
+                                      int64_t entry) {
   return arguments.destination_order == nullptr ? entry
                                                 : arguments.destination_order[entry];
 }
@@ -119,12 +120,12 @@ inline int64_t payload_slot(const Arguments& arguments, int64_t entry) {
 /// mode-carrying grades. The amplitude fits L1 several times over, so the
 /// repeated passes cost nothing the reload does not already hide.
 template <bool HAS_MODES>
-inline void film_amplitude(const Arguments& arguments,
-                           const Layout& layout,
-                           int64_t pair,
-                           const float* __restrict value,
-                           const float* __restrict modes,
-                           float* __restrict amplitude) {
+DPA4C_CPU_INLINE void film_amplitude(const Arguments& arguments,
+                                     const Layout& layout,
+                                     int64_t pair,
+                                     const float* __restrict value,
+                                     const float* __restrict modes,
+                                     float* __restrict amplitude) {
   const int padded = layout.padded_channels;
   const float* __restrict scale = arguments.tables->film.data() + pair * 2 * padded;
   const float* __restrict shift = scale + padded;
@@ -150,7 +151,7 @@ inline void film_amplitude(const Arguments& arguments,
 }
 
 /// Accumulate every degree-wise moment of one node range.
-template <int LMAX, bool HAS_MODES>
+template <int LMAX, bool HAS_MODES, bool BRIDGED>
 void forward_scan(const Arguments& arguments,
                   const Layout& layout,
                   int64_t node_begin,
@@ -177,7 +178,9 @@ void forward_scan(const Arguments& arguments,
           continue;
         }
         EdgeGeometry geometry;
-        if (!resolve_edge(arguments, layout, edge, center_type, &geometry)) {
+        if (!resolve_edge<BRIDGED>(arguments, layout, edge, center_type,
+                                   &geometry) ||
+            (BRIDGED && geometry.chi == 0.0f)) {
           continue;
         }
         const float* interval =
@@ -248,7 +251,7 @@ void forward_scan(const Arguments& arguments,
 }
 
 /// Emit the edge cotangent of one node range.
-template <int LMAX, bool HAS_MODES>
+template <int LMAX, bool HAS_MODES, bool BRIDGED>
 void backward_scan(const Arguments& arguments,
                    const Layout& layout,
                    int64_t node_begin,
@@ -297,19 +300,37 @@ void backward_scan(const Arguments& arguments,
 
     const int64_t center_type = arguments.atype[node];
     const bool real_center = center_type < layout.type_count - 1;
+    // Only a bridged specialization carries the analytical pair potential,
+    // and its descriptor-only backward still runs without one. Half of every
+    // pair energy belongs to the destination, so the half and the node's
+    // energy cotangent fold into one weight of the radial slope.
+    const bool has_pair = BRIDGED && arguments.pair_table != nullptr;
+    const float pair_weight =
+        has_pair ? 0.5f * static_cast<float>(arguments.pair_seed[node]) : 0.0f;
+    float pair_energy = 0.0f;
     for (int64_t entry = arguments.row_ptr[node];
          entry < arguments.row_ptr[node + 1]; ++entry) {
       const int64_t edge = payload_slot(arguments, entry);
       float* target = arguments.edge_gradient + 3 * edge;
       EdgeGeometry geometry;
-      const bool active =
+      const bool present =
           real_center &&
           (arguments.edge_mask == nullptr || arguments.edge_mask[edge]) &&
-          resolve_edge(arguments, layout, edge, center_type, &geometry);
-      if (!active) {
-        target[0] = 0.0f;
-        target[1] = 0.0f;
-        target[2] = 0.0f;
+          resolve_edge<BRIDGED>(arguments, layout, edge, center_type,
+                                &geometry);
+      float pair_radial = 0.0f;
+      if (present && has_pair) {
+        float slope = 0.0f;
+        const float* row = arguments.pair_table + 8 * geometry.pair;
+        pair_energy += 0.5f * pair_series(row, geometry.radius, &slope);
+        pair_radial = pair_weight * slope;
+      }
+      if (!present || (BRIDGED && geometry.chi == 0.0f)) {
+        // Only the pair potential acts on an edge outside the descriptor.
+        for (int component = 0; component < 3; ++component) {
+          target[component] =
+              present ? pair_radial * geometry.direction[component] : 0.0f;
+        }
         continue;
       }
       const float* interval =
@@ -444,11 +465,14 @@ void backward_scan(const Arguments& arguments,
           radial_lanes[lane] += value * film[channel] * slope[channel];
         }
       }
+      // The table terms differentiate the length the table reads and are
+      // folded once through its slope; the envelope terms and the pair
+      // potential act on the true length.
       float envelope_accumulator = 0.0f;
-      float radial = 0.0f;
+      float table_gradient = 0.0f;
       for (int lane = 0; lane < kBlock; ++lane) {
         envelope_accumulator += envelope_lanes[lane];
-        radial += radial_lanes[lane];
+        table_gradient += radial_lanes[lane];
       }
       if (HAS_MODES) {
         const float* __restrict mixing =
@@ -470,13 +494,15 @@ void backward_scan(const Arguments& arguments,
           for (int lane = 0; lane < kBlock; ++lane) {
             mode_projection += mode_lanes[lane];
           }
-          radial += mode_projection * mode_slope[mode];
+          table_gradient += mode_projection * mode_slope[mode];
         }
       }
-      radial += (envelope_accumulator + 2.0f * chi * divisor_cotangent[0] +
-                 4.0f * chi * chi_squared * divisor_cotangent[1] +
-                 2.0f * chi * amplitude_dot) *
-                geometry.chi_slope;
+      const float radial =
+          pair_radial + table_gradient * geometry.chain +
+          (envelope_accumulator + 2.0f * chi * divisor_cotangent[0] +
+           4.0f * chi * chi_squared * divisor_cotangent[1] +
+           2.0f * chi * amplitude_dot) *
+              geometry.chi_slope;
 
       float direction_cotangent[3];
       harmonics_backward<LMAX>(geometry.direction[0], geometry.direction[1],
@@ -492,6 +518,9 @@ void backward_scan(const Arguments& arguments,
             inverse_radius * (direction_cotangent[component] -
                               radial_part * geometry.direction[component]);
       }
+    }
+    if (has_pair) {
+      arguments.pair_energy[node] += static_cast<double>(pair_energy);
     }
   }
 }
