@@ -462,17 +462,24 @@ def _hessian_graph_batched_hvp(
     # flat (nb * nloc, *def) -> one scalar per replica, summed: the replicas are
     # independent, so d/dx_b only sees replica b.
     total = atomic_ret[kk].reshape(nb, nloc, -1)[..., ci].sum()
+    wanted = ndof if max_rows is None else min(max_rows, ndof)
+    if not total.requires_grad:
+        # The reduced output does not depend on the coordinates at all, so both
+        # derivatives are zero. autograd refuses to differentiate an output
+        # that carries no graph, so this has to be caught before the first
+        # ``grad`` rather than after it.
+        return x.new_zeros(wanted, ndof)
+
     (grad,) = torch.autograd.grad(
         total, x, create_graph=True, allow_unused=True, materialize_grads=True
     )
 
-    wanted = ndof if max_rows is None else min(max_rows, ndof)
     if not grad.requires_grad:
-        # The reduced output is constant or linear in the coordinates, so every
-        # second derivative is zero. ``functional.hessian`` materialises that
-        # zero block under its default ``strict=False``; differentiating a
-        # constant ``grad`` again would instead raise, which would turn a
-        # legitimate model into a crash.
+        # The output is linear in the coordinates: the first derivative exists
+        # but is constant, so every second derivative is zero.
+        # ``functional.hessian`` materialises that zero block under its default
+        # ``strict=False``; differentiating a constant ``grad`` again would
+        # instead raise, turning a legitimate model into a crash.
         return x.new_zeros(wanted, ndof)
 
     rows: list[torch.Tensor] = []

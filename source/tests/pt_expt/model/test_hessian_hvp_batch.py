@@ -249,26 +249,38 @@ class TestHessianHvpBatch:
         assert back is not None, "the Hessian no longer depends on the coordinates"
         assert torch.isfinite(back).all()
 
-    def test_a_linear_energy_gives_a_zero_hessian_not_a_crash(
-        self, monkeypatch
+    @pytest.mark.parametrize("dependence", ["linear", "constant"])
+    def test_a_curvature_free_energy_gives_a_zero_hessian_not_a_crash(
+        self, dependence, monkeypatch
     ) -> None:
-        """Constant or linear coordinate dependence must yield zeros.
+        """Constant *and* linear coordinate dependence must yield zeros.
 
         ``functional.hessian`` materialises the zero block under its default
-        ``strict=False``. Differentiating a constant first derivative again
-        instead raises, which turns a legitimate model into a crash.
+        ``strict=False``. The two shapes fail differently and need separate
+        guards: a linear output reaches the second derivative with a constant
+        first derivative, while a constant output carries no graph at all and
+        is refused by the *first* ``autograd.grad`` -- before any guard placed
+        after it can run.
         """
 
-        class _LinearAtomicModel:
-            """Energy exactly linear in the coordinates: d2E/dx2 == 0."""
+        class _CurvatureFreeAtomicModel:
+            """Energy with no second derivative in the coordinates."""
+
+            def __init__(self, dependence: str) -> None:
+                self.dependence = dependence
 
             def forward_common_atomic_graph(self, graph, atype_flat, **kwargs):
-                nb = graph.shape[0]
-                energy = (3.0 * graph).sum(-1).reshape(nb * graph.shape[1], 1)
-                return {"energy": energy}
+                nb, nloc = graph.shape[0], graph.shape[1]
+                if self.dependence == "linear":
+                    energy = (3.0 * graph).sum(-1)
+                else:  # no dependence on the coordinates whatsoever
+                    energy = torch.full(
+                        (nb, nloc), 7.0, dtype=graph.dtype, device=graph.device
+                    )
+                return {"energy": energy.reshape(nb * nloc, 1)}
 
         class _Model:
-            atomic_model = _LinearAtomicModel()
+            atomic_model = _CurvatureFreeAtomicModel(dependence)
 
         monkeypatch.setattr(
             mm,
@@ -296,7 +308,9 @@ class TestHessianHvpBatch:
             create_graph=False,
         )
         assert hessian.shape == (NDOF, NDOF)
-        assert torch.count_nonzero(hessian) == 0, "a linear energy has no curvature"
+        assert torch.count_nonzero(hessian) == 0, (
+            f"a {dependence} energy has no curvature"
+        )
 
     def test_the_probe_does_not_build_a_full_identity(self, monkeypatch) -> None:
         """Pricing one product must not allocate the ``ndof x ndof`` identity.
