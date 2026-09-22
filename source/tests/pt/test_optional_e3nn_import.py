@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """The PyTorch backend must import without the optional ``e3nn`` package.
 
-``e3nn`` ships in the ``dpa-adapt`` extra, but ``sezm_nn.projection`` imported
-it at module scope, so ``import deepmd.pt.model.model`` failed outright on an
-installation without that extra -- the whole PyTorch backend was unusable even
-for models that never build a SeZM projector.
+``e3nn`` ships with the ``torch`` and ``dpa-adapt`` extras, but
+``sezm_nn.projection`` imported it at module scope, so
+``import deepmd.pt.model.model`` failed outright on an installation that uses
+neither -- such as the PyTorch CPU install documented in
+``doc/install/easy-install.md`` -- leaving the whole PyTorch backend unusable
+even for models that never build a SeZM projector.
 
 The import is checked in a subprocess: modules already imported by the test
 session cannot be un-imported, and a meta-path hook installed here would not

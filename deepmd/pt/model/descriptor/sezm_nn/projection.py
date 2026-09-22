@@ -48,9 +48,11 @@ from .wignerd import (
 def _import_e3nn_o3() -> Any:
     """Import :mod:`e3nn.o3` on first use, naming the extra that ships it.
 
-    ``e3nn`` is an optional dependency (the ``dpa-adapt`` extra), but it was
-    imported at module scope, which made it a hard requirement for importing
-    ``deepmd.pt.model.model`` at all: an installation without that extra
+    ``e3nn`` is optional: it ships with the ``torch`` and ``dpa-adapt``
+    extras, so most installations have it. It was imported at module scope,
+    though, which made it a hard requirement for importing
+    ``deepmd.pt.model.model`` at all -- so an installation that uses neither
+    extra, such as the PyTorch CPU install in ``doc/install/easy-install.md``,
     could not use the PyTorch backend, even when no SeZM projector was ever
     built. Only the two projection builders below need it.
     """
