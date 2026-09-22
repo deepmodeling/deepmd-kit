@@ -60,7 +60,14 @@ def _import_e3nn_o3() -> Any:
         from e3nn import (
             o3,
         )
-    except ImportError as e:
+    except ModuleNotFoundError as e:
+        if e.name != "e3nn":
+            # ``e3nn`` itself is present; something it imports is not. That is
+            # a broken environment rather than a missing optional dependency,
+            # and reporting it as "e3nn is not installed" would send the user
+            # to reinstall a package they already have. Its own traceback
+            # names the module that is actually missing, so let it through.
+            raise
         raise ImportError(
             "The SeZM function-space nonlinearities require the optional "
             "'e3nn' package, which is not installed. Install it with "

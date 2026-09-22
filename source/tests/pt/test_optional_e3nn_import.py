@@ -22,18 +22,12 @@ BLOCK_E3NN = textwrap.dedent(
     """
     import sys
 
-
-    class _BlockE3nn:
-        \"\"\"Make e3nn look absent, whether or not it is installed.\"\"\"
-
-        def find_spec(self, name, path=None, target=None):
-            if name == "e3nn" or name.startswith("e3nn."):
-                raise ModuleNotFoundError(f"No module named '{name}'")
-            return None
-
-
-    sys.meta_path.insert(0, _BlockE3nn())
-    assert "e3nn" not in sys.modules, "e3nn was already imported; the guard is void"
+    # Make e3nn unavailable, whether or not it is installed, and let CPython's
+    # own import machinery raise the error. Constructing the exception here
+    # instead would prove nothing about what the code actually meets: a
+    # hand-built ModuleNotFoundError is easy to give the wrong ``name``, and
+    # ``name`` is what tells a missing package from a broken one.
+    sys.modules["e3nn"] = None
     """
 )
 
@@ -41,6 +35,48 @@ BLOCK_E3NN = textwrap.dedent(
 def _run(body: str) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-c", BLOCK_E3NN + textwrap.dedent(body)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+# e3nn is importable, but something it imports is not: the failure a broken
+# environment produces, as opposed to an absent optional dependency.
+BREAK_E3NN_DEPENDENCY = textwrap.dedent(
+    """
+    import sys
+    import types
+
+
+    class _E3nnWithMissingDependency:
+        \"\"\"Serve an ``e3nn`` whose own import fails on a missing module.\"\"\"
+
+        def find_spec(self, name, path=None, target=None):
+            if name == "e3nn" or name.startswith("e3nn."):
+                import importlib.machinery
+
+                return importlib.machinery.ModuleSpec(name, _Loader())
+            return None
+
+
+    class _Loader:
+        def create_module(self, spec):
+            return types.ModuleType(spec.name)
+
+        def exec_module(self, module):
+            raise ModuleNotFoundError("No module named 'a_dependency_of_e3nn'",
+                                      name="a_dependency_of_e3nn")
+
+
+    sys.meta_path.insert(0, _E3nnWithMissingDependency())
+    """
+)
+
+
+def _run_broken(body: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", BREAK_E3NN_DEPENDENCY + textwrap.dedent(body)],
         capture_output=True,
         text=True,
         check=False,
@@ -89,6 +125,33 @@ class TestOptionalE3nnImport(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         self.assertIn("e3nn", proc.stdout)
         self.assertIn("dpa-adapt", proc.stdout)
+
+    def test_a_broken_e3nn_is_not_reported_as_a_missing_one(self) -> None:
+        """An installed e3nn that fails to import must not say "not installed".
+
+        Translating every ImportError sends a user whose environment is broken
+        to reinstall a package they already have, and hides the module that is
+        actually missing.
+        """
+        proc = _run_broken(
+            """
+            from deepmd.pt.model.descriptor.sezm_nn.projection import (
+                _import_e3nn_o3,
+            )
+
+            try:
+                _import_e3nn_o3()
+            except ModuleNotFoundError as e:
+                print("PROPAGATED:", e.name)
+            except ImportError as e:
+                print("TRANSLATED:", e)
+            """
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertIn("PROPAGATED: a_dependency_of_e3nn", proc.stdout)
+        # the misleading advice must not appear
+        self.assertNotIn("TRANSLATED", proc.stdout)
+        self.assertNotIn("not installed", proc.stdout)
 
 
 if __name__ == "__main__":
