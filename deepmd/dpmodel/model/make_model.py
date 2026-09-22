@@ -44,15 +44,15 @@ from deepmd.dpmodel.utils import (
     format_nlist,
     nlist_distinguish_types,
 )
-from deepmd.dpmodel.utils.nlist import (
-    UNBOUNDED_NSEL,
-)
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
     compact_nodes,
     expand_node_values,
+)
+from deepmd.dpmodel.utils.nlist import (
+    UNBOUNDED_NSEL,
 )
 from deepmd.utils.path import (
     DPPath,
