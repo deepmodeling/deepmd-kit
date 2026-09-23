@@ -181,6 +181,9 @@ def _torch_activation(x: torch.Tensor, name: str) -> torch.Tensor:
         return torch.relu(x)
     elif name in ("gelu", "gelu_tf"):
         return torch.nn.functional.gelu(x, approximate="tanh")
+    elif name == "gelu_erf":
+        # Exact GELU; the two names above are the tanh approximation.
+        return torch.nn.functional.gelu(x, approximate="none")
     elif name == "relu6":
         return torch.clamp(x, min=0.0, max=6.0)
     elif name == "softplus":

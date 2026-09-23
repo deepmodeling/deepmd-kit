@@ -45,6 +45,9 @@ from .polar_atomic_model import (
 from .property_atomic_model import (
     DPPropertyAtomicModel,
 )
+from .unimol_atomic_model import (
+    DPUniMolAtomicModel,
+)
 
 __all__ = [
     "BaseAtomicModel",
@@ -54,6 +57,7 @@ __all__ = [
     "DPEnergyAtomicModel",
     "DPPolarAtomicModel",
     "DPPropertyAtomicModel",
+    "DPUniMolAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
     "LinearEnergyAtomicModel",
     "PairTabAtomicModel",

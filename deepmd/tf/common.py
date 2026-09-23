@@ -186,6 +186,31 @@ def get_silut(activation_function: str = "silut") -> Callable[[tf.Tensor], tf.Te
     return silut
 
 
+def gelu_erf(x: tf.Tensor) -> tf.Tensor:
+    """Exact Gaussian Error Linear Unit.
+
+    Unlike :func:`gelu` and :func:`gelu_tf`, which are the tanh approximation,
+    this evaluates ``x * Phi(x)`` through the error function. The two forms
+    differ by up to 4.7e-4 per element.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        float Tensor to perform activation
+
+    Returns
+    -------
+    tf.Tensor
+        `x` with the exact GELU activation applied
+
+    References
+    ----------
+    Original paper
+    https://arxiv.org/abs/1606.08415
+    """
+    return 0.5 * x * (1.0 + tf.math.erf(x / tf.sqrt(tf.cast(2.0, x.dtype))))
+
+
 ACTIVATION_FN_DICT = {
     "relu": tf.nn.relu,
     "relu6": tf.nn.relu6,
@@ -194,6 +219,7 @@ ACTIVATION_FN_DICT = {
     "tanh": tf.nn.tanh,
     "gelu": gelu,
     "gelu_tf": gelu_tf,
+    "gelu_erf": gelu_erf,
     "silu": silu,
     "silut": get_silut("silut"),
     "linear": lambda x: x,
