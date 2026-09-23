@@ -2786,6 +2786,68 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 fitting_args_plugin = ArgsPlugin()
 
 
+@fitting_args_plugin.register("density", doc=supported_backends("pt"))
+def fitting_density() -> list[Argument]:
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
+    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+
+    # numb_aparam is deliberately not advertised: the fitting consumes
+    # grid-point descriptor rows, which have no per-atom parameters.
+    # rcond is deliberately not advertised: the per-type output shift it
+    # would control is disabled for density models.
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_default_fparam,
+        ),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_dim_case_embd,
+        ),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
 @fitting_args_plugin.register(
     "ener",
     doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2") + doc_ener,
@@ -4917,6 +4979,28 @@ def loss_ener() -> list[Argument]:
     ]
 
 
+@loss_args_plugin.register("grid_density", doc=supported_backends("pt"))
+def loss_grid_density() -> list[Argument]:
+    doc_start_pref_d = start_pref("density", abbr="d")
+    doc_limit_pref_d = limit_pref("density")
+    return [
+        Argument(
+            "start_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_start_pref_d,
+        ),
+        Argument(
+            "limit_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_d,
+        ),
+    ]
+
+
 @loss_args_plugin.register("dens", doc=supported_backends("pt"))
 def loss_dens() -> list[Argument]:
     doc_start_pref_e = start_pref("energy", abbr="e")
@@ -6604,6 +6688,45 @@ def validate_no_multitask_lora(data: dict[str, Any], multi_task: bool = False) -
             )
 
 
+def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
+    """Default env_protection to 1e-6 for density models.
+
+    Applied at normalization time so that the recorded model_def_script and
+    the built model agree on this field. Grid points may legitimately
+    coincide with atoms, and the default 0.0 would let the 1/r terms in the
+    environment matrix produce NaN densities. 1e-6 is chosen as the minimal
+    perturbation that keeps those terms finite (order 1e6 at exact
+    coincidence) without shifting normal environments measurably; users can
+    still set any positive value (e.g. 0.1) explicitly.
+    """
+
+    def _fix(model: dict[str, Any]) -> None:
+        if model.get("fitting_net", {}).get("type") != "density":
+            return
+        descriptor = model.get("descriptor", {})
+        # a hybrid descriptor has no top-level env_protection; each
+        # sub-descriptor carries its own
+        if descriptor.get("type") == "hybrid":
+            sub_descriptors = descriptor.get("list", [])
+        else:
+            sub_descriptors = [descriptor]
+        for sub in sub_descriptors:
+            if sub.get("env_protection", 0.0) == 0.0:
+                log.warning(
+                    "env_protection is 0.0 for a density model; grid points "
+                    "coincident with atoms would produce NaN densities. "
+                    "Setting env_protection to 1e-6."
+                )
+                sub["env_protection"] = 1e-6
+
+    model = data.get("model", {})
+    if "model_dict" in model:
+        for sub_model in model["model_dict"].values():
+            _fix(sub_model)
+    else:
+        _fix(model)
+
+
 def normalize(
     data: dict[str, Any], multi_task: bool = False, *, check: bool = True
 ) -> dict[str, Any]:
@@ -6615,6 +6738,7 @@ def normalize(
     validate_full_validation_config(data, multi_task=multi_task)
     _check_dpa3_chg_spin_migration(data)
     validate_no_multitask_lora(data, multi_task=multi_task)
+    _apply_density_env_protection_default(data)
 
     return data
 

@@ -74,6 +74,7 @@ class DeepmdDataSetForLoader(Dataset):
                 default=data_item["default"],
                 dtype=data_item["dtype"],
                 output_natoms_for_type_sel=data_item["output_natoms_for_type_sel"],
+                special_shape=getattr(data_item, "special_shape", None),
             )
 
     def preload_and_modify_all_data_torch(self) -> None:
