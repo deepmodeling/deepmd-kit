@@ -36,6 +36,7 @@ from deepmd.jax.utils.update_sel import (
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data_system import (
+    close_data_systems,
     get_data,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
@@ -189,23 +190,32 @@ class JAXTrainEntrypoint(AbstractTrainEntrypoint):
                 None,
             )
             valid_data = None
-            if task_config.validation_data_params is not None:
-                valid_data = get_data(
-                    dict(task_config.validation_data_params),
-                    task_model.get_rcut(),
-                    train_data.type_map,
-                    None,
-                )
-            return train_data, valid_data, None
+            try:
+                if task_config.validation_data_params is not None:
+                    valid_data = get_data(
+                        dict(task_config.validation_data_params),
+                        task_model.get_rcut(),
+                        train_data.type_map,
+                        None,
+                    )
+                return train_data, valid_data, None
+            except BaseException:
+                # The factory owns these objects until make_task_maps records
+                # them; validation setup or stat-file validation may fail.
+                close_data_systems(train_data, valid_data)
+                raise
 
         train_data_map, valid_data_map, _ = make_task_maps(config, factory)
-        print_data_summaries(train_data_map, valid_data_map)
+        try:
+            print_data_summaries(train_data_map, valid_data_map)
 
-        start_time = time.time()
-        model.train(train_data_map, valid_data_map)
-        end_time = time.time()
-        log.info("finished training")
-        log.info(f"wall time: {(end_time - start_time):.3f} s")
+            start_time = time.time()
+            model.train(train_data_map, valid_data_map)
+            end_time = time.time()
+            log.info("finished training")
+            log.info(f"wall time: {(end_time - start_time):.3f} s")
+        finally:
+            close_data_systems(train_data_map, valid_data_map)
 
 
 def train(
@@ -296,9 +306,12 @@ def update_sel(
                 type_map,
                 None,  # not used
             )
-            updated_model, task_min_nbor_dist = BaseModel.update_sel(
-                train_data, type_map, dict(task_config.model_params)
-            )
+            try:
+                updated_model, task_min_nbor_dist = BaseModel.update_sel(
+                    train_data, type_map, dict(task_config.model_params)
+                )
+            finally:
+                close_data_systems(train_data)
             if multi_task:
                 jdata_cpy["model"]["model_dict"][task_config.key] = updated_model
                 min_nbor_dist[task_config.key] = task_min_nbor_dist

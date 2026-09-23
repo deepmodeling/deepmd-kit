@@ -36,8 +36,12 @@ from deepmd.pt_expt.utils.lmdb_dataset import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+    close_data_systems,
+    conversion_will_write_lmdb,
     get_data,
     process_systems,
+    validate_lmdb_sampling_options,
+    validate_lmdb_systems,
 )
 from deepmd.utils.stat_file import (
     StatFileSpec,
@@ -119,13 +123,35 @@ def _get_neighbor_stat_data(
     ``make_neighbor_stat_data``; falls back to the legacy ``get_data`` for
     npy/HDF5 directories.
     """
-    lmdb_path = _detect_lmdb_path(dataset_params.get("systems"))
+    lmdb_path = (
+        None
+        if dataset_params.get("format") is not None
+        else _detect_lmdb_path(dataset_params.get("systems"))
+    )
     if lmdb_path is not None:
+        validate_lmdb_sampling_options(dataset_params)
         from deepmd.dpmodel.utils.lmdb_data import (
             make_neighbor_stat_data,
         )
 
         return make_neighbor_stat_data(lmdb_path, type_map)
+    if conversion_will_write_lmdb(dataset_params):
+        validate_lmdb_sampling_options(dataset_params)
+    systems = process_systems(
+        dataset_params["systems"],
+        patterns=dataset_params.get("rglob_patterns"),
+        fmt=dataset_params.get("format"),
+        out_fmt=dataset_params.get("out_format", dataset_params.get("output_format")),
+    )
+    converted_lmdb_path = validate_lmdb_systems(
+        systems, backend_name="PyTorch exportable"
+    )
+    if converted_lmdb_path is not None:
+        from deepmd.dpmodel.utils.lmdb_data import (
+            make_neighbor_stat_data,
+        )
+
+        return make_neighbor_stat_data(converted_lmdb_path, type_map)
     return get_data(dataset_params, 0, type_map, None)
 
 
@@ -145,8 +171,13 @@ def _build_data_system(
     systems.
     """
     systems_raw = dataset_params["systems"]
-    lmdb_path = _detect_lmdb_path(systems_raw)
+    lmdb_path = (
+        None
+        if dataset_params.get("format") is not None
+        else _detect_lmdb_path(systems_raw)
+    )
     if lmdb_path is not None:
+        validate_lmdb_sampling_options(dataset_params)
         return LmdbDataSystem(
             lmdb_path=lmdb_path,
             type_map=type_map,
@@ -156,10 +187,28 @@ def _build_data_system(
             rank=rank,
             world_size=world_size,
         )
+    if conversion_will_write_lmdb(dataset_params):
+        validate_lmdb_sampling_options(dataset_params)
     systems = process_systems(
         systems_raw,
         patterns=dataset_params.get("rglob_patterns"),
+        fmt=dataset_params.get("format"),
+        out_fmt=dataset_params.get("out_format", dataset_params.get("output_format")),
     )
+    converted_lmdb_path = validate_lmdb_systems(
+        systems, backend_name="PyTorch exportable"
+    )
+    if converted_lmdb_path is not None:
+        validate_lmdb_sampling_options(dataset_params)
+        return LmdbDataSystem(
+            lmdb_path=converted_lmdb_path,
+            type_map=type_map,
+            batch_size=dataset_params["batch_size"],
+            auto_prob_style=dataset_params.get("auto_prob"),
+            seed=seed,
+            rank=rank,
+            world_size=world_size,
+        )
     return DeepmdDataSystem(
         systems=systems,
         batch_size=dataset_params["batch_size"],
@@ -193,6 +242,7 @@ def get_trainer(
     def factory(
         task_config: TrainingTaskConfig,
     ) -> tuple[DeepmdDataSystem | LmdbDataSystem, Any | None, StatFileSpec]:
+        """Own partial datasets until all resources for this task are ready."""
         type_map = list(task_config.model_params["type_map"])
         train_data = _build_data_system(
             dict(task_config.training_data_params),
@@ -202,42 +252,51 @@ def get_trainer(
             world_size=world_size,
         )
         validation_data = None
-        if task_config.validation_data_params is not None:
-            validation_data = _build_data_system(
-                dict(task_config.validation_data_params), type_map, seed=data_seed
+        try:
+            if task_config.validation_data_params is not None:
+                validation_data = _build_data_system(
+                    dict(task_config.validation_data_params), type_map, seed=data_seed
+                )
+            return (
+                train_data,
+                validation_data,
+                task_config.stat_file_spec,
             )
-        return (
-            train_data,
-            validation_data,
-            task_config.stat_file_spec,
-        )
+        except BaseException:
+            close_data_systems(train_data, validation_data)
+            raise
 
     train_data_map, validation_data_map, stat_file_spec_map = make_task_maps(
         config, factory
     )
-    print_data_summaries(train_data_map, validation_data_map)
-    if multi_task:
-        train_data = train_data_map
-        validation_data = validation_data_map
-        stat_file_spec = stat_file_spec_map
-    else:
-        task_key = next(iter(train_data_map))
-        train_data = train_data_map[task_key]
-        validation_data = validation_data_map[task_key]
-        stat_file_spec = stat_file_spec_map[task_key]
+    try:
+        print_data_summaries(train_data_map, validation_data_map)
+        if multi_task:
+            train_data = train_data_map
+            validation_data = validation_data_map
+            stat_file_spec = stat_file_spec_map
+        else:
+            task_key = next(iter(train_data_map))
+            train_data = train_data_map[task_key]
+            validation_data = validation_data_map[task_key]
+            stat_file_spec = stat_file_spec_map[task_key]
 
-    trainer = training.Trainer(
-        config,
-        train_data,
-        stat_file_spec=stat_file_spec,
-        validation_data=validation_data,
-        init_model=init_model,
-        restart_model=restart_model,
-        finetune_model=finetune_model,
-        finetune_links=finetune_links,
-        shared_links=shared_links,
-    )
-    return trainer
+        return training.Trainer(
+            config,
+            train_data,
+            stat_file_spec=stat_file_spec,
+            validation_data=validation_data,
+            init_model=init_model,
+            restart_model=restart_model,
+            finetune_model=finetune_model,
+            finetune_links=finetune_links,
+            shared_links=shared_links,
+        )
+    except BaseException:
+        # Successful construction transfers ownership to the trainer. Until
+        # then, summary and trainer-setup failures must release every task.
+        close_data_systems(train_data_map, validation_data_map)
+        raise
 
 
 class SummaryPrinter(BaseSummaryPrinter):
