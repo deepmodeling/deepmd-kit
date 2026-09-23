@@ -176,7 +176,7 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
             },
         ]
         with self.assertRaisesRegex(ValueError, "extent"):
-            StubDS()._merge_batch_data(batch_data)
+            StubDS.__new__(StubDS)._merge_batch_data(batch_data)
 
     def test_property_named_density_not_hijacked(self) -> None:
         # a user property named "density" without a special_shape declaration
