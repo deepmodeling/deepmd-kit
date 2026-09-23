@@ -129,12 +129,22 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         self.assertEqual(frame["find_density"], 0.0)
 
     def test_ndof_mismatch(self) -> None:
-        # a grid file whose width is not a multiple of ndof must be rejected
-        self.set_data("grid", np.zeros((NFRAMES, NGRID, 4), dtype=np.float32))
+        # 3D layout: trailing dim must be exactly ndof (a divisible-but-wrong
+        # width like 6 would silently double ngrid downstream)
+        for width in (4, 6):
+            self.set_data("grid", np.zeros((NFRAMES, NGRID, width), dtype=np.float32))
+            with self.assertRaisesRegex(ValueError, "ndof"):
+                self.build_data()._load_set(self.set_dir)
+            with self.assertRaisesRegex(ValueError, "ndof"):
+                self.build_data().get_single_frame(0, 0)
+        # flattened layout: width must be a multiple of ndof
+        self.set_data("grid", np.zeros((NFRAMES, NGRID * 3 + 1), dtype=np.float32))
         with self.assertRaisesRegex(ValueError, "ndof"):
             self.build_data()._load_set(self.set_dir)
-        with self.assertRaisesRegex(ValueError, "ndof"):
-            self.build_data().get_single_frame(0, 0)
+        # correct flattened layout passes
+        self.set_data("grid", np.zeros((NFRAMES, NGRID * 3), dtype=np.float32))
+        loaded = self.build_data()._load_set(self.set_dir)
+        self.assertEqual(loaded["find_grid"], 1.0)
 
     def test_ragged_mixed_batch_clear_error(self) -> None:
         # mixed batching across systems with different ngrid must fail with

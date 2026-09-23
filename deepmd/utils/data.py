@@ -915,7 +915,16 @@ class DeepmdData:
                     f"The frame count of data {key} in {set_name} is "
                     f"{data.shape[0]}, which doesn't match the set's nframes {nframes}"
                 )
-            if data.shape[-1] % ndof_ != 0:
+            if data.ndim >= 3:
+                # (nframes, npoints, ndof): trailing dim must be exactly ndof
+                if data.shape[-1] != ndof_:
+                    raise ValueError(
+                        f"The data {key} in {set_name} has trailing dimension "
+                        f"{data.shape[-1]}, which doesn't match the declared "
+                        f"ndof {ndof_}"
+                    )
+            elif data.shape[-1] % ndof_ != 0:
+                # (nframes, npoints*ndof) flattened: width must be a multiple
                 raise ValueError(
                     f"The data {key} in {set_name} has trailing dimension "
                     f"{data.shape[-1]}, which is not a multiple of the "
@@ -1093,7 +1102,14 @@ class DeepmdData:
                     f"{mmap_obj.shape[0]}, which doesn't match the set's "
                     f"nframes {set_nframes}"
                 )
-            if mmap_obj.shape[-1] % ndof != 0:
+            if mmap_obj.ndim >= 3:
+                if mmap_obj.shape[-1] != ndof:
+                    raise ValueError(
+                        f"The data {key} in {set_dir} has trailing dimension "
+                        f"{mmap_obj.shape[-1]}, which doesn't match the declared "
+                        f"ndof {ndof}"
+                    )
+            elif mmap_obj.shape[-1] % ndof != 0:
                 raise ValueError(
                     f"The data {key} in {set_dir} has trailing dimension "
                     f"{mmap_obj.shape[-1]}, which is not a multiple of the "
