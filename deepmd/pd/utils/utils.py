@@ -224,6 +224,9 @@ class ActivationFn(paddle.nn.Layer):
             return F.relu(x)
         elif self.activation.lower() == "gelu" or self.activation.lower() == "gelu_tf":
             return F.gelu(x, approximate=True)
+        elif self.activation.lower() == "gelu_erf":
+            # Exact GELU; the two names above are the tanh approximation.
+            return F.gelu(x, approximate=False)
         elif self.activation.lower() == "tanh":
             return paddle.tanh(x)
         elif self.activation.lower() == "relu6":
