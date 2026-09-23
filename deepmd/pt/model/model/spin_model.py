@@ -374,6 +374,12 @@ class SpinModel(torch.nn.Module):
             )
         return aparam
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
+
     @torch.jit.export
     def get_type_map(self) -> list[str]:
         """Get the type map."""

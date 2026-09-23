@@ -432,7 +432,7 @@ def _mixing_stack_backward_reference(
         gz1 = g_cur[:, :, m0:] * sig2
         g_sig = (g_cur[:, :, focus_dim:m0] * z0[:, :, focus_dim:]).view(*sig.shape) + (
             g_cur[:, :, m0:] * z1
-        ).view(sig.shape[0], sig.shape[1], 2, -1).sum(2)
+        ).view(sig.shape[0], sig.shape[1], 2, sig.shape[2]).sum(2)
         g_logit = g_sig * sig * (1.0 - sig)
         gz0 = torch.cat(
             [
@@ -2242,7 +2242,9 @@ def _stack_weight_gradients(
 
     u_flat = state.inputs.reshape(n_gated * n_focus, n_edge, row)
     gz_flat = state.grad_z.reshape(n_gated * n_focus, n_edge, row)
-    gq_flat = state.grad_logit.reshape(n_gated * n_focus, n_edge, -1)
+    gq_flat = state.grad_logit.reshape(
+        n_gated * n_focus, n_edge, state.grad_logit.shape[-1]
+    )
     z_flat = z_all.reshape(n_gated * n_focus, n_edge, row)
 
     gw0 = torch.empty(
@@ -2649,10 +2651,12 @@ def _gated_act_reference(
     focus_dim = int(focus_dim)
     m0 = (lmax + 1) * focus_dim
     scalar = z[:, :, :focus_dim]
-    sig = torch.sigmoid(torch.bmm(scalar.float(), gw.float())).to(z.dtype)
+    compute_dtype = torch.float64 if z.dtype is torch.float64 else torch.float32
+    scalar_compute = scalar.to(compute_dtype)
+    sig = torch.sigmoid(torch.bmm(scalar_compute, gw.to(compute_dtype))).to(z.dtype)
     return torch.cat(
         [
-            scalar * torch.sigmoid(scalar.float()).to(z.dtype),
+            scalar * torch.sigmoid(scalar_compute).to(z.dtype),
             z[:, :, focus_dim:m0] * sig,
             z[:, :, m0:] * sig.repeat(1, 1, 2),
         ],
@@ -2715,7 +2719,7 @@ def _stack_point_bwd_reference(
 
     grad_sig = (grad[:, :, focus_dim:m0] * z[:, :, focus_dim:m0]) + (
         grad[:, :, m0:] * z[:, :, m0:]
-    ).view(sig.shape[0], sig.shape[1], 2, -1).sum(2)
+    ).view(sig.shape[0], sig.shape[1], 2, sig.shape[2]).sum(2)
     grad_logit = grad_sig * sig * (1.0 - sig)
     if not fold_logit:
         gz_scalar = gz_scalar + torch.bmm(grad_logit, gw.transpose(1, 2))

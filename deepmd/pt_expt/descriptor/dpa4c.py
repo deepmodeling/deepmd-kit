@@ -66,14 +66,13 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         The same module, for use as an expression.
     """
     for submodule in module.modules():
-        if not getattr(submodule, "trainable", True):
-            continue
+        trainable = bool(getattr(submodule, "trainable", True))
         for name in _TRAINABLE_ATTRS.get(type(submodule).__name__, ()):
             value = submodule._buffers.get(name)
             if value is None or not value.is_floating_point():
                 continue
             del submodule._buffers[name]
-            setattr(submodule, name, torch.nn.Parameter(value, requires_grad=True))
+            setattr(submodule, name, torch.nn.Parameter(value, requires_grad=trainable))
 
     for submodule in module.modules():
         if not getattr(submodule, "trainable", True):
@@ -102,6 +101,15 @@ class DescrptDPA4C(DescrptDPA4CDP):
     """
 
     _update_sel_cls = UpdateSel
+
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding,
+        which reads the radial basis and whose rows for rarely visited
+        separations receive almost no gradient.
+        """
+        return ["radial_embedding.layers.0."]
 
     #: Artifacts whose element type is not the ``float32`` the kernel consumes.
     _COMPRESSION_BUFFER_DTYPES: ClassVar[dict[str, torch.dtype]] = {

@@ -311,6 +311,44 @@ class TestHybridMuonOptimizer(unittest.TestCase):
         self.assertIn("momentum_buffer", optimizer.state[model.bias_proj.weight])
         self.assertNotIn("exp_avg", optimizer.state[model.bias_proj.weight])
 
+    def test_adam_patterns_route_matrices_to_adamw(self) -> None:
+        """Matrices whose name contains an ``adam_patterns`` entry leave Muon."""
+        torch.manual_seed(42)
+
+        class ToyModel(torch.nn.Module):
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                self.descriptor = torch.nn.Linear(4, 6, bias=False, device=device)
+                self.fitting_net = torch.nn.Linear(6, 3, device=device)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.fitting_net(self.descriptor(x)).sum()
+
+        model = ToyModel(self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            weight_decay=0.01,
+            named_parameters=tuple(model.named_parameters()),
+            adam_patterns=["Fitting_Net"],
+        )
+        model(torch.randn(4, 4, device=self.device)).backward()
+        optimizer.step()
+
+        # The matching matrix takes the AdamW path, its vector plain Adam.
+        self.assertIn("exp_avg", optimizer.state[model.fitting_net.weight])
+        self.assertNotIn("momentum_buffer", optimizer.state[model.fitting_net.weight])
+        routes = optimizer._routing[0]
+        self.assertTrue(
+            any(e["param"] is model.fitting_net.weight for e in routes["adam_decay"])
+        )
+        self.assertTrue(
+            any(e["param"] is model.fitting_net.bias for e in routes["adam_no_decay"])
+        )
+        # A matrix outside the patterns stays on Muon.
+        self.assertIn("momentum_buffer", optimizer.state[model.descriptor.weight])
+        self.assertNotIn("exp_avg", optimizer.state[model.descriptor.weight])
+
     def test_2d_mode_routes_3d_weight_to_adam(self) -> None:
         """Test muon_mode='2d' routes 3D matrix weights to Adam."""
         torch.manual_seed(42)

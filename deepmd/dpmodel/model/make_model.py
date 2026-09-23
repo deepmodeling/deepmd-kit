@@ -228,6 +228,12 @@ def make_model(
             self.global_np_float_precision = GLOBAL_NP_FLOAT_PRECISION
             self.global_ener_float_precision = GLOBAL_ENER_FLOAT_PRECISION
 
+        def adam_route_patterns(self) -> list[str]:
+            """Prefix the atomic model's AdamW patterns with its parameter path."""
+            return [
+                f"atomic_model.{p}" for p in self.atomic_model.adam_route_patterns()
+            ]
+
         def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())

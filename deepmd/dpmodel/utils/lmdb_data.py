@@ -9,7 +9,6 @@ import dataclasses
 import logging
 import math
 import multiprocessing
-import os
 import signal
 import threading
 import time
@@ -50,6 +49,10 @@ from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.loggers import (
+    WorkerLogConfig,
+    is_node_main_process,
+)
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -57,11 +60,6 @@ from deepmd.utils.data import (
 )
 
 log = logging.getLogger(__name__)
-
-
-def _is_local_rank_zero() -> bool:
-    """Whether this process owns node-local operational logging."""
-    return int(os.environ.get("LOCAL_RANK", "0")) == 0
 
 
 # LMDB key → DeePMD convention
@@ -552,7 +550,7 @@ def _scan_availability_index(
     _AvailabilityIndex
         Compact signature IDs aligned with domain positions.
     """
-    report_progress = _is_local_rank_zero()
+    report_progress = is_node_main_process()
     if report_progress:
         log.info(
             "LMDB label-availability scan started: dataset=%s, frames=%d, labels=%s",
@@ -610,11 +608,10 @@ def _scan_availability_index(
 def _scan_lmdb_path_sequential(
     lmdb_path: str,
     availability_keys: Sequence[str],
-    log_level: int,
+    log_config: WorkerLogConfig,
 ) -> _AvailabilityIndex:
     """Scan a complete LMDB under a sequential-readahead environment."""
-    logging.basicConfig(level=log_level)
-    logging.getLogger().setLevel(log_level)
+    log_config.configure()
     environment = lmdb.open(
         lmdb_path,
         readonly=True,
@@ -652,7 +649,7 @@ def _scan_lmdb_path_in_worker(
             _scan_lmdb_path_sequential,
             lmdb_path,
             availability_keys,
-            log.getEffectiveLevel(),
+            WorkerLogConfig.capture(),
         ).result()
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
@@ -2459,7 +2456,7 @@ class LmdbDataReader:
             and cache_entry[1] == 1
         )
         if not owns_environment_exclusively:
-            if _is_local_rank_zero():
+            if is_node_main_process():
                 log.info(
                     "LMDB label-availability scan uses an isolated sequential "
                     "reader because the random-read environment is shared: %s",

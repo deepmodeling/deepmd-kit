@@ -1,34 +1,16 @@
 {
-  "_comment": "DPA4C energy-training example for the water dataset.",
+  "_comment": "DPA4C-Nano energy-training example for the water dataset.",
   "model": {
+    "preset": "dpa4c-nano-v20260911",
     "type_map": [
       "O",
       "H"
     ],
     "descriptor": {
-      "type": "dpa4c",
-      "_comment": "The Neo grade, the architecture of the preset dpa4c-neo-v20260901: channels and lmax fix every derived width, and radial_modes 0 leaves each ordered atom-type pair with a rescaled copy of one shared radial function.",
-      "rcut": 6.0,
-      "channels": 64,
-      "lmax": 2,
-      "basis_type": "bessel",
-      "n_radial": 16,
-      "radial_modes": 0,
-      "_comment_precision": "float32 is required by the compressed CUDA path.",
-      "precision": "float32",
       "use_amp": false,
       "seed": 42
     },
     "fitting_net": {
-      "_comment": "The fitting width paired with the Neo descriptor width.",
-      "neuron": [
-        256,
-        256,
-        256
-      ],
-      "resnet_dt": false,
-      "activation_function": "silu",
-      "precision": "float32",
       "seed": 42
     }
   },
