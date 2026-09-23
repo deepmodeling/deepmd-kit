@@ -165,6 +165,7 @@ source/               # C++ source code and tests
 - **Configuration**: Use `input_torch.json` format typically
 - **Training**: `dp --pt train input_torch.json`
 - **Requirements**: `torch` package
+- **DPA4C-LR long-range variant**: model type `dpa4c_lr` with fitting type `dpa4c_lr` adds a non-periodic LES long-range term on top of the compact DPA4C descriptor (`deepmd/pt_expt/model/dpa4c_lr_model.py`, `deepmd/pt_expt/fitting/dpa4c_lr.py`). Only `box=None` systems are supported and only the `pt_expt` backend. The long-range all-pairs graph is built outside the compiled region and passed into the graph lower alongside the short-range graph, so `torch.compile` sees no data-dependent neighbor construction and memory scales as `Σ_f n_f^2` rather than the full-batch `N^2`. `.pt2`/`.pte` freeze is not yet implemented. Tests: `pytest source/tests/pt_expt/model/test_dpa4c_lr.py`.
 
 ### JAX Backend
 

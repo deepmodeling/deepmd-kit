@@ -763,6 +763,12 @@ def _trace_and_compile_graph(
         Representative optional inputs (or ``None``) so the traced branch
         matches what :meth:`_CompiledModel.forward` passes at run time.
         ``spin`` is the flat ``(N, 3)`` per-node moment.
+
+    Long-range edges (``lr_edge_index`` / ``lr_edge_vec`` / ``lr_edge_mask``)
+    are always part of the compiled lower's input schema.  Models that do not
+    use them receive empty tensors at run time; models with a long-range term
+    (e.g. DPA4C-LR) receive a real all-pairs graph built outside the compiled
+    region.
     compile_opts
         User-supplied inductor options (merged over the built-in defaults).
     task_buffers
@@ -890,6 +896,20 @@ def _trace_and_compile_graph(
     s_spin = s_conditioning.pop(0) if spin is not None else None
     s_fparam, s_aparam, s_charge_spin = s_conditioning
 
+    # Build a synthetic long-range all-pairs graph for models that consume one
+    # (e.g. DPA4C-LR).  The exact coordinates do not matter for shape tracing;
+    # we only need edge tensors whose dynamic axes are distinct from nf and N.
+    s_lr_coord = torch.randn(
+        trace_N, 3, dtype=GLOBAL_PT_FLOAT_PRECISION, device=_trace_device
+    )
+    from deepmd.pt_expt.utils.graph_builder import (
+        build_ragged_neighbor_graph,
+    )
+
+    s_lr_graph = build_ragged_neighbor_graph(
+        "dense", s_lr_coord, s_atype, s_n_node, None, 1e6, None
+    )
+
     def fn(
         atype: torch.Tensor,
         n_node: torch.Tensor,
@@ -905,6 +925,9 @@ def _trace_and_compile_graph(
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
         spin: torch.Tensor | None,
+        lr_edge_index: torch.Tensor,
+        lr_edge_vec: torch.Tensor,
+        lr_edge_mask: torch.Tensor,
         *task_buf_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         # Patch task-specific buffers with the proxy tensors so make_fx records
@@ -940,6 +963,9 @@ def _trace_and_compile_graph(
                 aparam=aparam,
                 charge_spin=charge_spin,
                 spin=spin,
+                lr_edge_index=lr_edge_index,
+                lr_edge_vec=lr_edge_vec,
+                lr_edge_mask=lr_edge_mask,
             )
             if spin is None:
                 return _translate_energy_keys(
@@ -986,6 +1012,9 @@ def _trace_and_compile_graph(
         s_aparam,
         s_charge_spin,
         s_spin,
+        s_lr_graph.edge_index,
+        s_lr_graph.edge_vec,
+        s_lr_graph.edge_mask,
         *task_buf_vals_trace,
     )
 
@@ -1234,6 +1263,8 @@ class _CompiledModel(torch.nn.Module):
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
 
+        if box_flat is not None and torch.all(box_flat == 0):
+            box_flat = None
         if box_flat is not None:
             coord_norm = normalize_coord(coord_3d, box_flat.reshape(nframes, 3, 3))
         else:
@@ -1242,6 +1273,10 @@ class _CompiledModel(torch.nn.Module):
         ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
             coord_norm, atype, box_flat, rcut
         )
+        # A frame can never contribute more than nall neighbors; cap the
+        # requested neighbor count so sentinel capacities (e.g. DPA4C's
+        # effectively-unbounded sel) do not allocate absurd padding.
+        nsel = min(nsel, ext_atype.shape[1])
         nlist = build_neighbor_list(
             ext_coord,
             ext_atype,
@@ -1629,6 +1664,32 @@ class _CompiledModel(torch.nn.Module):
             if spin is not None:
                 spin = spin[node_index]
 
+        # Long-range all-pairs graph (non-periodic).  Built eagerly outside the
+        # compiled region and consumed as an extra edge set by models that have
+        # a long-range term (e.g. DPA4C-LR).  Models without such a term still
+        # feed the compiled lower empty placeholders so the input signature is
+        # fixed across all graph models.
+        needs_lr = getattr(_model, "_needs_long_range_edges", False)
+        if needs_lr:
+            if ragged:
+                lr_graph = build_ragged_neighbor_graph(
+                    method, coord_3d, atype, n_node, None, 1e6, None
+                )
+            else:
+                coord_flat = coord_3d.reshape(n_padded, 3)[node_index]
+                lr_graph = build_ragged_neighbor_graph(
+                    method, coord_flat, atype_flat, ng.n_node, None, 1e6, None
+                )
+            lr_edge_index = lr_graph.edge_index
+            lr_edge_vec = lr_graph.edge_vec
+            lr_edge_mask = lr_graph.edge_mask
+        else:
+            _dev = coord_3d.device
+            _dt = coord_3d.dtype
+            lr_edge_index = torch.empty((2, 0), dtype=torch.int64, device=_dev)
+            lr_edge_vec = torch.empty((0, 3), dtype=_dt, device=_dev)
+            lr_edge_mask = torch.empty((0,), dtype=torch.bool, device=_dev)
+
         # Lazy compile of the GRAPH lower (cached per structure key and mode).
         compiled_lower = self._compiled_lower_by_mode.get(self.training)
         if compiled_lower is None:
@@ -1694,9 +1755,30 @@ class _CompiledModel(torch.nn.Module):
                 aparam,
                 charge_spin,
                 spin,
+                lr_edge_index,
+                lr_edge_vec,
+                lr_edge_mask,
                 *task_buf_vals,
             )
         self._report_pending_compile()
+
+        # Optional model-specific post-processing that needs coordinates and is
+        # kept eager (e.g. DPA4C-LR's LES correction).  The hook runs on the
+        # flat-node compiled output before the rectangular unravel below.
+        postprocess = getattr(self.original_model, "_postprocess_compiled_output", None)
+        if postprocess is not None:
+            result = postprocess(
+                coord=coord_3d,
+                edge_vec=edge_vec,
+                graph=ng,
+                result=result,
+                node_index=node_index,
+                n_padded=n_padded,
+                ragged=ragged,
+                fparam=fparam,
+                charge_spin=charge_spin,
+                create_graph=self.training,
+            )
 
         # The compiled graph lower emits PUBLIC keys on the FLAT node axis
         # (``atom_energy`` / ``force`` are (N, *); ``energy`` / ``virial`` are

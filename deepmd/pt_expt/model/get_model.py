@@ -37,6 +37,9 @@ from deepmd.pt_expt.model.dp_zbl_model import (
 from deepmd.pt_expt.model.dpa4_model import (
     DPA4EnergyModel,
 )
+from deepmd.pt_expt.model.dpa4c_lr_model import (
+    DPA4CLREnergyModel,
+)
 from deepmd.pt_expt.model.model import (
     BaseModel,
 )
@@ -77,6 +80,53 @@ _model_factory = BackendModelFactory(
     linear_atomic_model=LinearEnergyAtomicModel,
 )
 get_zbl_model = _model_factory.get_zbl_model
+
+
+def get_dpa4c_lr_model(data: dict) -> DPA4CLREnergyModel:
+    """Build a pt_expt DPA4C-LR energy model from config.
+
+    Mirrors :func:`get_sezm_model`: the descriptor must be DPA4/SeZM and the
+    fitting net must be ``dpa4c_lr``.
+    """
+    data = copy.deepcopy(data)
+    data.pop("type", None)
+    data.setdefault("descriptor", {})
+    data.setdefault("fitting_net", {})
+    data["descriptor"].setdefault("type", "dpa4c")
+    if data["descriptor"]["type"] not in ("dpa4", "dpa4c", "DPA4", "sezm", "SeZM"):
+        raise ValueError(
+            "Model type 'dpa4c_lr' requires a DPA4/SeZM descriptor, but got "
+            f"descriptor type '{data['descriptor']['type']}'."
+        )
+    if data["fitting_net"].get("type", "dpa4c_lr") != "dpa4c_lr":
+        raise ValueError(
+            "Model type 'dpa4c_lr' requires fitting type 'dpa4c_lr', but got "
+            f"'{data['fitting_net'].get('type')}'."
+        )
+
+    descriptor_exclude_types = [
+        list(pair) for pair in (data["descriptor"].get("exclude_types") or [])
+    ]
+    if "pair_exclude_types" in data:
+        pair_exclude_types = [list(pair) for pair in (data["pair_exclude_types"] or [])]
+        if descriptor_exclude_types and descriptor_exclude_types != pair_exclude_types:
+            raise ValueError(
+                "DPA4C-LR `pair_exclude_types` and `descriptor.exclude_types` must match "
+                "when both are provided."
+            )
+    else:
+        pair_exclude_types = descriptor_exclude_types
+    data["pair_exclude_types"] = pair_exclude_types
+    data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
+
+    descriptor, fitting, _ = _model_factory.get_model_components(data)
+    return DPA4CLREnergyModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=data["type_map"],
+        atom_exclude_types=data.get("atom_exclude_types", []),
+        pair_exclude_types=pair_exclude_types,
+    )
 
 
 def get_sezm_model(data: dict) -> BaseModel:
@@ -410,5 +460,6 @@ def get_model(data: dict) -> BaseModel:
             "DPA4": get_sezm_model,
             "sezm": get_sezm_model,
             "SeZM": get_sezm_model,
+            "dpa4c_lr": get_dpa4c_lr_model,
         },
     )
