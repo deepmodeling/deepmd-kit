@@ -10,6 +10,9 @@ from deepmd.dpmodel.utils.neighbor_stat import NeighborStatOP as NeighborStatOPD
 from deepmd.pt_expt.common import (
     torch_module,
 )
+from deepmd.pt_expt.utils.auto_batch_size import (
+    AutoBatchSize,
+)
 from deepmd.pt_expt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
@@ -27,6 +30,12 @@ class NeighborStatOP(NeighborStatOPDP):
 
 class NeighborStat(BaseNeighborStat):
     """Neighbor statistics using torch on DEVICE.
+
+    The statistics are evaluated one frame batch at a time. The intermediate
+    tensor is of shape ``[nframes, nloc, nall, 3]``, so processing a whole set
+    at once needs hundreds of GiB for a large set; :class:`AutoBatchSize`
+    keeps the batch within the available device memory, as the PyTorch,
+    Paddle, JAX and TensorFlow backends already do.
 
     Parameters
     ----------
@@ -46,6 +55,7 @@ class NeighborStat(BaseNeighborStat):
     ) -> None:
         super().__init__(ntypes, rcut, mixed_type)
         self.op = NeighborStatOP(ntypes, rcut, mixed_type)
+        self.auto_batch_size = AutoBatchSize()
 
     def iterator(
         self, data: DeepmdDataSystem
@@ -65,7 +75,10 @@ class NeighborStat(BaseNeighborStat):
             for jj in data.data_systems[ii].dirs:
                 data_set = data.data_systems[ii]
                 data_set_data = data_set._load_set(jj)
-                minrr2, max_nnei = self._execute(
+                minrr2, max_nnei = self.auto_batch_size.execute_all(
+                    self._execute,
+                    data_set_data["coord"].shape[0],
+                    data_set.get_natoms(),
                     data_set_data["coord"],
                     data_set_data["type"],
                     data_set_data["box"] if data_set.pbc else None,
