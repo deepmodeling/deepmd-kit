@@ -144,8 +144,7 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         )
 
         class StubDS(DeepmdDataSystem):
-            def __init__(self) -> None:
-                pass
+            """Test double: instantiated via __new__ to skip the heavy init."""
 
             def get_ntypes(self) -> int:
                 return 2
