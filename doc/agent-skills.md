@@ -23,14 +23,17 @@ in the DeePMD-kit repository under `skills/`.
   The skill uses progressive disclosure: the top-level workflow handles common
   training steps and model selection, while model-specific configuration lives
   under `skills/deepmd-train/models/` and is read only after a model is chosen.
-  Current references include DPA3 and se_e2_a.
+  Current references include DPA3, DPA4/SeZM, DPA4C, and se_e2_a.
 - `deepmd-finetune-dpa3`: Fine-tune DPA3 models from self-trained checkpoints,
   multi-task pretrained models, or built-in models downloaded by `dp pretrained download`.
+- `deepmd-finetune-dpa4`: Fine-tune DPA4/SeZM checkpoints with the PyTorch
+  backend using standard or LoRA fine-tuning, then validate and export to `.pt2`.
 - `deepmd-python-inference`: Run Python and CLI inference with trained or
-  frozen DeePMD-kit models, including energy, force, virial, descriptor, and
-  model-deviation workflows.
+  frozen DeePMD-kit models, including DPA4/SeZM `.pt2` archives and energy,
+  force, virial, descriptor, embedding, and model-deviation workflows.
 - `lammps-deepmd`: Prepare, explain, and run LAMMPS simulations with DeePMD-kit
-  potentials, including common NVE, NVT, and NPT setups.
+  potentials, including DPA4/SeZM and DPA4C `.pt2` deployment and common NVE,
+  NVT, and NPT setups.
 
 ## Related reference
 
@@ -97,6 +100,8 @@ without launching an expensive calculation. For example:
   for loading a frozen DeePMD-kit model and evaluating one frame.”
 - “Use the `deepmd-train` skill to choose between DPA3 and se_e2_a for a small
   water dataset and draft a training input, but do not start training.”
+- “Use the `deepmd-finetune-dpa4` skill to inspect a DPA4 checkpoint and draft
+  a LoRA fine-tuning input, but do not start training.”
 - “Use the `lammps-deepmd` skill to prepare an NVT LAMMPS input file for a
   DeePMD-kit model, and explain each command.”
 - “Use the `deepmd-install` skill to install the current stable release with
