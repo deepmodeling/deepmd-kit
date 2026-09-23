@@ -6638,7 +6638,10 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
     Applied at normalization time so that the recorded model_def_script and
     the built model agree on this field. Grid points may legitimately
     coincide with atoms, and the default 0.0 would let the 1/r terms in the
-    environment matrix produce NaN densities.
+    environment matrix produce NaN densities. 1e-6 is chosen as the minimal
+    perturbation that keeps those terms finite (order 1e6 at exact
+    coincidence) without shifting normal environments measurably; users can
+    still set any positive value (e.g. 0.1) explicitly.
     """
 
     def _fix(model: dict[str, Any]) -> None:

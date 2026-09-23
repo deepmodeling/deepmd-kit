@@ -411,11 +411,19 @@ def _compute_model_predict(
         charge_spin = system.get("charge_spin", None)
         spin = system.get("model_spin", system.get("spin", None))
 
+        size_proxy = system["atype"].shape[-1]
+        if "grid" in system:
+            # the directional neighbor list is dense in ngrid x nall, so the
+            # batching size proxy must account for the grid extent
+            grid = system["grid"]
+            ngrid = grid.shape[-2] if grid.ndim >= 3 else grid.shape[-1] // 3
+            size_proxy = max(size_proxy, ngrid)
+
         def model_forward_auto_batch_size(*args: Any, **kwargs: Any) -> Any:
             return auto_batch_size.execute_all(
                 model_forward,
                 nframes,
-                system["atype"].shape[-1],
+                size_proxy,
                 *args,
                 **kwargs,
             )

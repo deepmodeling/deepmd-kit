@@ -128,6 +128,56 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         frame = data.get_single_frame(0, 0)
         self.assertEqual(frame["find_density"], 0.0)
 
+    def test_ndof_mismatch(self) -> None:
+        # a grid file whose width is not a multiple of ndof must be rejected
+        self.set_data("grid", np.zeros((NFRAMES, NGRID, 4), dtype=np.float32))
+        with self.assertRaisesRegex(ValueError, "ndof"):
+            self.build_data()._load_set(self.set_dir)
+        with self.assertRaisesRegex(ValueError, "ndof"):
+            self.build_data().get_single_frame(0, 0)
+
+    def test_ragged_mixed_batch_clear_error(self) -> None:
+        # mixed batching across systems with different ngrid must fail with
+        # a clear message instead of a raw numpy shape error
+        from deepmd.utils.data_system import (
+            DeepmdDataSystem,
+        )
+
+        class StubDS(DeepmdDataSystem):
+            def __init__(self) -> None:
+                pass
+
+            def get_ntypes(self) -> int:
+                return 2
+
+            def get_data_dict(self, idx: int) -> dict:
+                return {
+                    "density": {
+                        "atomic": False,
+                        "special_shape": "frame_major",
+                        "ndof": 1,
+                    }
+                }
+
+        batch_data = [
+            {
+                "type": np.zeros((1, 3), dtype=np.int32),
+                "natoms_vec": np.array([3, 3, 1, 1], dtype=np.int32),
+                "default_mesh": np.zeros(9),
+                "density": np.zeros((1, 5), dtype=np.float32),
+                "find_density": 1.0,
+            },
+            {
+                "type": np.zeros((1, 3), dtype=np.int32),
+                "natoms_vec": np.array([3, 3, 1, 1], dtype=np.int32),
+                "default_mesh": np.zeros(9),
+                "density": np.zeros((1, 6), dtype=np.float32),
+                "find_density": 1.0,
+            },
+        ]
+        with self.assertRaisesRegex(ValueError, "extent"):
+            StubDS()._merge_batch_data(batch_data)
+
     def test_property_named_density_not_hijacked(self) -> None:
         # a user property named "density" without a special_shape declaration
         # must load through the ordinary path, not the frame-major branch

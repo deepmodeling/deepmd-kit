@@ -32,6 +32,9 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.region import (
     normalize_coord,
 )
+from deepmd.utils.model_preset import (
+    PERIODIC_TABLE,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -55,6 +58,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         super().__init__(descriptor, fitting, type_map, **kwargs)
         self.rcut = self.descriptor.get_rcut()
         self.rcut_smth = self.descriptor.get_rcut_smth()
+        if type_map and type_map[-1] in PERIODIC_TABLE:
+            raise ValueError(
+                "the last entry of type_map must be a reserved grid type "
+                "for a density model, but got the real element "
+                f"{type_map[-1]!r}; append a non-element placeholder "
+                '(e.g. "X") at the end of type_map'
+            )
         if self.descriptor.get_env_protection() == 0.0:
             log.warning(
                 "The descriptor env_protection is 0.0; grid points coincident "
@@ -385,6 +395,9 @@ class DPDensityAtomicModel(DPAtomicModel):
         adjustment (change-by-statistic / set-by-statistic) does not apply.
         The fitting net will adapt to the target dataset through normal
         gradient descent during training.
+
+        This guard stays until output-stat support is designed for grid
+        models; tracked in https://github.com/deepmodeling/deepmd-kit/issues/6029.
         """
         log.warning("change_out_bias is not supported for density models; skipping.")
 
@@ -621,20 +634,11 @@ class DPDensityAtomicModel(DPAtomicModel):
         merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
     ) -> None:
-        """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+        """Compute the output statistics for the fitting net.
 
-        Parameters
-        ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
-
+        Not implemented for density models: the output lives on grid points,
+        so per-type atomic output statistics do not apply. This guard stays
+        until output-stat support is designed for grid models; tracked in
+        https://github.com/deepmodeling/deepmd-kit/issues/6029.
         """
         log.warning("Not implemented yet for density out stat!")

@@ -915,6 +915,12 @@ class DeepmdData:
                     f"The frame count of data {key} in {set_name} is "
                     f"{data.shape[0]}, which doesn't match the set's nframes {nframes}"
                 )
+            if data.shape[-1] % ndof_ != 0:
+                raise ValueError(
+                    f"The data {key} in {set_name} has trailing dimension "
+                    f"{data.shape[-1]}, which is not a multiple of the "
+                    f"declared ndof {ndof_}"
+                )
             return np.float32(1.0), data
         if path.is_file():
             data = path.load_numpy().astype(dtype)
@@ -1086,6 +1092,12 @@ class DeepmdData:
                     f"The frame count of data {key} in {set_dir} is "
                     f"{mmap_obj.shape[0]}, which doesn't match the set's "
                     f"nframes {set_nframes}"
+                )
+            if mmap_obj.shape[-1] % ndof != 0:
+                raise ValueError(
+                    f"The data {key} in {set_dir} has trailing dimension "
+                    f"{mmap_obj.shape[-1]}, which is not a multiple of the "
+                    f"declared ndof {ndof}"
                 )
 
         # corner case: single frame. frame-major arrays always carry a

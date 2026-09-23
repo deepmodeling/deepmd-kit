@@ -460,7 +460,7 @@ class DeepEval(DeepEvalBackend):
         has_grid = getattr(model, "has_grid", None)
         try:
             return bool(has_grid()) if callable(has_grid) else False
-        except Exception:
+        except AttributeError:
             return False
 
     def get_sel_type(self) -> list[int]:
@@ -592,7 +592,9 @@ class DeepEval(DeepEvalBackend):
             if isinstance(out, tuple):
                 (out,) = out
             return {"density": out}
-        if "density" in self.output_def.var_defs:
+        if "density" in self.output_def.var_defs and self._model_has_grid(
+            self.dp.model["Default"]
+        ):
             raise ValueError(
                 "grid is required to evaluate a density model; "
                 "pass grid=... with shape (nframes, ngrid, 3)"

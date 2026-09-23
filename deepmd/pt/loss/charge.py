@@ -17,6 +17,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class GridDensityLoss(TaskLoss):
@@ -95,17 +98,8 @@ class GridDensityLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         if self.has_d and "density" in model_pred and "density" in label:
-            find_density = label.get("find_density", 0.0)
+            find_density = label.get("find_density", 1.0)
             density_pred = model_pred["density"]
-            if find_density == 0:
-                # density label is absent: the loader fills an atom-shaped
-                # default tensor, which cannot be subtracted from the
-                # grid-point prediction; skip the residual but keep the
-                # graph connected for backward
-                loss = loss + (density_pred.sum() * 0.0).to(GLOBAL_PT_FLOAT_PRECISION)
-                more_loss["rmse_d"] = torch.nan
-                more_loss["mae_d"] = torch.nan
-                return model_pred, loss, more_loss
             density_label = label["density"]
             pref_d = pref_d * find_density
             # mask out excluded grid points (the atomic model zeroes them
@@ -142,6 +136,41 @@ class GridDensityLoss(TaskLoss):
                 GLOBAL_PT_FLOAT_PRECISION
             )
         return model_pred, loss, more_loss
+
+    def serialize(self) -> dict:
+        """Serialize the loss module.
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        return {
+            "@class": "GridDensityLoss",
+            "@version": 1,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_d": self.start_pref_d,
+            "limit_pref_d": self.limit_pref_d,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TaskLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+
+        Returns
+        -------
+        TaskLoss
+            The deserialized loss module
+        """
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)
 
     @property
     def label_requirement(self) -> list[DataRequirementItem]:

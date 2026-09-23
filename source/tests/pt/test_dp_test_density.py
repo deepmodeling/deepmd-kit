@@ -213,6 +213,14 @@ class TestDPTestDensity(unittest.TestCase):
                 torch.jit.save(torch.jit.script(model), path)
             dp = DeepEval(path)
             self.assertIsInstance(dp, DeepProperty)
+            # the property must stay evaluable: the eval guard keys on the
+            # grid capability, not the output-variable name
+            set_dir = self.system / "set.000"
+            coord = np.load(set_dir / "coord.npy")[:2]
+            box = np.load(set_dir / "box.npy")[:2]
+            atype = np.loadtxt(self.system / "type.raw", dtype=int)
+            result = dp.eval(coord, box, atype)
+            self.assertEqual(result[0].shape[0], 2)
         finally:
             os.unlink(path)
 
@@ -275,6 +283,20 @@ class TestDPTestDensity(unittest.TestCase):
                 descriptor.get_dim_out(),
                 numb_aparam=2,
             )
+
+    def test_loss_serialization(self) -> None:
+        # GridDensityLoss round-trips through serialize/deserialize
+        from deepmd.pt.loss.charge import (
+            GridDensityLoss,
+        )
+
+        loss_fn = GridDensityLoss(
+            starter_learning_rate=0.001, start_pref_d=2.0, limit_pref_d=0.5
+        )
+        data = loss_fn.serialize()
+        self.assertEqual(data["@class"], "GridDensityLoss")
+        restored = GridDensityLoss.deserialize(data)
+        self.assertEqual(restored.serialize(), data)
 
     def test_loss_inference_mode(self) -> None:
         # inference=True reports the metrics even with zero prefactors
@@ -395,6 +417,16 @@ class TestDPTestDensity(unittest.TestCase):
 
         model.compute_or_load_stat(sampler, stat_file_path=stat_dir)
 
+    def test_grid_type_requires_reserved_slot(self) -> None:
+        # a real element in the reserved slot must be rejected, not
+        # silently used as the grid type
+        descriptor = DescrptSeA(rcut=4.0, rcut_smth=0.5, sel=[8, 8])
+        fitting = DensityFittingNet(descriptor.get_ntypes(), descriptor.get_dim_out())
+        with self.assertRaisesRegex(ValueError, "reserved grid type"):
+            DPDensityAtomicModel(descriptor, fitting, type_map=["O", "H"])
+        # non-element reserved slot is accepted (all other tests use X)
+        DPDensityAtomicModel(descriptor, fitting, type_map=["O", "X"])
+
     def test_env_protection_enforced_at_model_level(self) -> None:
         # models constructed directly with env_protection == 0.0 get the
         # guard set on the descriptor block, not just a warning
@@ -410,6 +442,9 @@ class TestDPTestDensity(unittest.TestCase):
         # must reach every sub-descriptor
         config = deepcopy(self.config)
         descriptor = config["model"].pop("descriptor")
+        # the sub-descriptor must not carry an explicit value: the asserted
+        # 1e-6 has to be an effect of the default, not of the input config
+        descriptor.pop("env_protection", None)
         config["model"]["descriptor"] = {"type": "hybrid", "list": [descriptor]}
         normalized = normalize(config)
         self.assertEqual(
