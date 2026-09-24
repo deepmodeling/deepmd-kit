@@ -13,6 +13,7 @@
 #endif
 #include "pair_deepmd.h"
 #include "pair_deepspin.h"
+#include "pair_dpa4spin.h"
 #include "version.h"
 #if LAMMPS_VERSION_NUMBER >= 20220328
 #include "pppm_dplr.h"
@@ -22,6 +23,7 @@ using namespace LAMMPS_NS;
 
 static Pair* pairdeepmd(LAMMPS* lmp) { return new PairDeepMD(lmp); }
 static Pair* pairdeepspin(LAMMPS* lmp) { return new PairDeepSpin(lmp); }
+static Pair* pairdpa4spin(LAMMPS* lmp) { return new PairDPA4Spin(lmp); }
 
 #ifdef LMP_KOKKOS
 // Runtime plugins do not consume the PairStyle declarations used by LAMMPS'
@@ -107,6 +109,13 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.author = "Duo Zhang";
   plugin.creator.v1 = (lammpsplugin_factory1*)&pairdeepspin;
   plugin.handle = handle;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.style = "pair";
+  plugin.name = "dpa4spin";
+  plugin.info = "dpa4spin pair style " STR_GIT_SUMM;
+  plugin.author = "Tiancheng Li";
+  plugin.creator.v1 = (lammpsplugin_factory1*)&pairdpa4spin;
   (*register_plugin)(&plugin, lmp);
 
   plugin.style = "compute";
