@@ -277,6 +277,59 @@ Run under Kokkos with one GPU:
 lmp -k on g 1 -sf kk -in in.lammps
 ```
 
+### Model-deviation sampling with Kokkos
+
+`deepmd/kk` supports model-deviation sampling with one MPI rank. The first
+model supplies the energy, force, and virial that drive dynamics on every
+step. Each model is loaded once. Additional models are evaluated only at the
+existing `out_freq` interval, including step zero; `out_freq 0` disables
+sampling. The first model's already computed outputs are reused, so a
+two-model sample takes two model evaluations in total.
+
+```lammps
+atom_modify map yes
+pair_style deepmd/kk m0.pt2 m1.pt2 out_freq 1000 out_file model_devi.out
+pair_coeff * * H C N O P Cl
+```
+
+Run with `-k on g 1 -sf kk -pk kokkos neigh full newton off`. Multi-model
+sampling requires float32 compact canonical `.pt2` artifacts with identical
+cutoffs and complete type maps. Models must have zero frame and atomic
+parameter dimensions and no spin types. A compressed archive's fixed default
+charge/spin state is supported: its API may report a nonzero charge/spin
+width because an optional fold can reset that state, even though the compiled
+canonical forward has no runtime charge/spin input. Reference models must
+have matching charge/spin widths and identical frozen default states, including
+older compressed archives without a charge-state fold. Every model must export
+atomic virials, even when the `atomic` output option is disabled, because the
+device path uses them to compute the total virial. Missing or incompatible
+default states and missing atomic-virial outputs are rejected during model
+initialization.
+Explicit `charge_spin` settings and runtime parameters from `compute`, `fix`,
+or `ttm` are unsupported in this mode. Incompatible models are rejected;
+there is no fallback to host sampling. The single-rank periodic
+box restriction still applies: its thickness must exceed twice the cutoff in
+every periodic direction. Multi-model runs with more than one MPI rank are
+rejected; existing single-model edge/graph and multi-rank execution is
+unchanged.
+
+All models consume the same canonical graph on the GPU. Kokkos accumulates
+force and virial deviations on the GPU with population statistics; no
+coordinates, neighbor lists, raw forces, or raw virials are copied to the
+host for sampling. Without `atomic`, only six final statistics and a status
+flag are copied back, and the file contains seven columns including the
+timestep. `atomic` optionally adds the final per-atom force deviations.
+`relative`, `relative_v`, units, and restart output retain ordinary `deepmd`
+semantics. The mean force deviation is the arithmetic mean over atoms; the
+reported average virial deviation is the RMS over nine tensor components.
+
+Sampling runs after the first model's driving outputs have been consumed;
+reference outputs never replace its dynamics. The existing graph builder's
+node-map refresh and LAMMPS control/thermodynamic output remain unchanged.
+The device-resident sampling claim concerns the additional model evaluations
+and statistics, not every operation performed by LAMMPS. Include the extra
+reference inference and device statistics when comparing performance.
+
 ### CPU hosts
 
 DPA4C has a second set of hand-written operators for the CPU, so a compressed

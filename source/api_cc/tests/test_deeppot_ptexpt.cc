@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <vector>
 
 #include "DeepPot.h"
@@ -125,6 +126,65 @@ TEST(TestPtExptMetadata, default_chg_spin_length_mismatch_throws) {
                deepmd::deepmd_exception);
 }
 
+TEST(TestPtExptMetadata, query_retains_frozen_default_without_a_fold) {
+  const auto metadata = deepmd::ptexpt::parse_json(
+      R"({"dim_chg_spin": 0, "has_chg_spin_ebd": true,
+          "default_chg_spin": [0, 1]})");
+  // The runtime-input reader must still report no input. The query instead
+  // reports the state frozen into this legacy artifact's constants.
+  EXPECT_TRUE(deepmd::ptexpt::read_default_chg_spin(metadata, 0).empty());
+  EXPECT_EQ(deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 0),
+            (std::vector<double>{0.0, 1.0}));
+}
+
+TEST(TestPtExptMetadata, query_identifies_unconditioned_models) {
+  const auto metadata = deepmd::ptexpt::parse_json(
+      R"({"dim_chg_spin": 0, "has_chg_spin_ebd": false,
+          "has_default_chg_spin": false, "default_chg_spin": null})");
+  EXPECT_TRUE(
+      deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 0).empty());
+}
+
+TEST(TestPtExptMetadata, query_rejects_unknown_or_malformed_states) {
+  for (const auto* json : {
+           R"({})",
+           R"({"has_chg_spin_ebd": true})",
+           R"({"has_chg_spin_ebd": true, "default_chg_spin": []})",
+           R"({"has_chg_spin_ebd": false, "default_chg_spin": [0, 1]})",
+           R"({"has_default_chg_spin": true, "default_chg_spin": null})",
+           R"({"has_default_chg_spin": false, "default_chg_spin": [0, 1]})",
+           R"({"has_chg_spin_ebd": "false"})",
+           R"({"default_chg_spin": "0, 1"})",
+           R"({"default_chg_spin": [0, "1"]})",
+           R"({"default_chg_spin": [0, 1.5]})",
+           R"({"dim_chg_spin": "0", "default_chg_spin": [0, 1]})",
+           R"({"default_chg_spin": [0, 1],
+               "chg_spin_table_ranges": [["0", 100], [0, 100]]})",
+       }) {
+    SCOPED_TRACE(json);
+    const auto metadata = deepmd::ptexpt::parse_json(json);
+    EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 0),
+                 deepmd::deepmd_exception);
+  }
+}
+
+TEST(TestPtExptMetadata, query_validates_input_width_and_state_domain) {
+  auto metadata = deepmd::ptexpt::parse_json(
+      R"({"default_chg_spin": [0, 1],
+          "chg_spin_table_ranges": [[-100, 100], [0, 100]]})");
+  EXPECT_EQ(deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 2),
+            (std::vector<double>{0.0, 1.0}));
+  EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 1),
+               deepmd::deepmd_exception);
+  metadata.obj_val["default_chg_spin"].arr_val[0].num_val = 100.0;
+  EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 0),
+               deepmd::deepmd_exception);
+  metadata.obj_val["default_chg_spin"].arr_val[0].num_val =
+      std::numeric_limits<double>::infinity();
+  EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin_for_query(metadata, 0),
+               deepmd::deepmd_exception);
+}
+
 // A compressed archive reports width zero at load and names its width only
 // once the charge-state fold is read, so the ranges are read twice. The first
 // read must yield nothing rather than judge the count it cannot yet know.
@@ -177,6 +237,8 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist) {
   deepmd::DeepPot& dp = this->dp;
   EXPECT_FALSE(dp.supports_device_edge_inference());
   EXPECT_FALSE(dp.uses_canonical_graph_inference());
+  EXPECT_TRUE(dp.get_default_chg_spin().empty());
+  EXPECT_TRUE(dp.has_atomic_virial());
   double ener;
   std::vector<VALUETYPE> force, virial;
   dp.compute(ener, force, virial, coord, atype, box);

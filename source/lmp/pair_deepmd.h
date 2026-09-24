@@ -28,6 +28,7 @@ namespace deepmd_compat = deepmd;
 namespace deepmd_compat = deepmd::hpp;
 #endif
 
+#include <array>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -54,10 +55,21 @@ class PairDeepMD : public PairDeepBaseModel {
  protected:
   deepmd_compat::DeepPot deep_pot;
   deepmd_compat::DeepPotModelDevi deep_pot_model_devi;
+  /** Load models and return whether the legacy ensemble accepts settings. */
+  virtual bool initialize_models(const std::vector<std::string>& models);
   // Assemble the send/recv swap metadata (a comm-only neighbor list; its
   // geometry fields are unused) for the device-resident message-passing path,
   // where ghost features are exchanged across ranks inside the forward pass.
   deepmd_compat::InputNlist make_comm_nlist();
+  /** Whether this timestep requires sampling, including setup at step zero. */
+  bool model_deviation_step() const;
+  /** Compute native-unit deviations after ghost forces have been folded. */
+  void write_model_deviation(
+      const std::vector<std::vector<double> >& all_virial);
+  /** Convert and write summary statistics and optional local-order atom data.
+   */
+  void write_model_deviation_output(const std::array<double, 6>& deviation,
+                                    const std::vector<double>& std_f);
 
  private:
   CommBrickDeepMD* commdata_;
