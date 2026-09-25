@@ -556,7 +556,7 @@ def _hessian_graph_row_block(
     coord_flat: torch.Tensor,
     create_graph: bool,
     **kwargs: Any,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, int]:
     """One output component's Hessian, halving the batch if memory runs out.
 
     Batching changes how the Hessian is computed, never what it is, so a batch
@@ -569,14 +569,22 @@ def _hessian_graph_row_block(
     failure does not always arrive as ``torch.OutOfMemoryError`` -- AOTInductor
     rewraps it in a plain ``RuntimeError`` -- and a catch keyed on the
     exception type alone lets the wrapped form end the run.
+
+    Returns the Hessian and the batch that fit, so the caller starts the next
+    component there instead of re-climbing the ladder from the top: each failed
+    attempt is a full forward plus a first-order backward, spent in exactly the
+    regime the fallback exists for.
     """
     while batch > 1:
         try:
-            return _hessian_graph_batched_hvp(
-                coord_flat=coord_flat,
-                batch=batch,
-                create_graph=create_graph,
-                **kwargs,
+            return (
+                _hessian_graph_batched_hvp(
+                    coord_flat=coord_flat,
+                    batch=batch,
+                    create_graph=create_graph,
+                    **kwargs,
+                ),
+                batch,
             )
         except Exception as e:
             if not AutoBatchSize(silent=True).is_oom_error(e):
@@ -587,10 +595,13 @@ def _hessian_graph_row_block(
                 "with %d. Set DP_HESSIAN_HVP_BATCH to choose it yourself.",
                 batch,
             )
-    return torch.autograd.functional.hessian(
-        wrapper,
-        coord_flat,
-        create_graph=create_graph,
+    return (
+        torch.autograd.functional.hessian(
+            wrapper,
+            coord_flat,
+            create_graph=create_graph,
+        ),
+        1,
     )
 
 
@@ -707,7 +718,7 @@ def _cal_hessian_ext_graph(
                 log.debug(
                     "Hessian-vector products batched %d rows at a time", hvp_batch
                 )
-            hess = _hessian_graph_row_block(
+            hess, hvp_batch = _hessian_graph_row_block(
                 batch=hvp_batch if hvp_batch is not None else 1,
                 wrapper=wrapper,
                 coord_flat=coord_flat,

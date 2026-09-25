@@ -490,6 +490,45 @@ class TestHessianHvpBatch:
             recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
         )
 
+    def test_the_surviving_batch_is_kept_for_the_next_frame(self, monkeypatch) -> None:
+        """A batch the ladder discovers must be reused, not re-discovered.
+
+        When the halved batch stayed local to the helper, every frame restarted
+        the ladder from the top: two frames with only batches up to 2 fitting
+        attempt [8, 4, 2, 8, 4, 2], and each failed attempt pays a full forward
+        plus a first-order backward in exactly the regime the fallback exists
+        for, printing a warning at every step.
+        """
+        model = self._make_model()
+        coord = torch.cat([self.coord, self.coord * 1.01], dim=0)
+        atype = torch.cat([self.atype, self.atype], dim=0)
+        box = torch.cat([self.box, self.box], dim=0)
+
+        def hessian2(batch: int) -> torch.Tensor:
+            monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", batch)
+            out = model.forward(coord.clone().requires_grad_(True), atype, box=box)
+            return out["hessian"].reshape(2, NDOF, NDOF)
+
+        reference = hessian2(1)
+
+        attempted = []
+        real = mm._hessian_graph_batched_hvp
+
+        def oom_above_two(*args, **kwargs):
+            attempted.append(kwargs["batch"])
+            if kwargs["batch"] > 2:
+                raise torch.OutOfMemoryError("simulated")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(mm, "_hessian_graph_batched_hvp", oom_above_two)
+        recovered = hessian2(8)
+
+        assert attempted == [8, 4, 2, 2], attempted
+        scale = reference.abs().max()
+        torch.testing.assert_close(
+            recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
+        )
+
     def test_hessian_is_symmetric(self, monkeypatch) -> None:
         """Batching changes the summation order; it must not break symmetry."""
         model = self._make_model()
