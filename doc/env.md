@@ -70,6 +70,35 @@ available device memory, leaving a 10% margin. This policy applies to both
 Other GPU allocators and backends grow batches until an out-of-memory error.
 :::
 
+:::{envvar} DP_HESSIAN_HVP_BATCH
+
+**Default**: automatically sized on CUDA devices; `1` elsewhere
+
+{{ pytorch_icon }} Number of Hessian rows evaluated per second-order backward
+pass when a PyTorch Exportable model computes a Hessian on the neighbour-graph
+route. The Hessian is assembled from Hessian-vector products,
+and batching them over replicated frames trades peak memory for far fewer
+kernel launches. `1` evaluates one row at a time, which is how the Hessian was
+computed before batching existed.
+
+Automatic sizing runs one Hessian-vector product per frame to measure what a
+replica costs there -- neighbour counts differ between frames, so one
+measurement does not price them all -- then takes the batch the free memory
+affords, capped at 8. Peak memory
+is linear in the batch while the speedup is not: batching recovers
+kernel-launch overhead, which stops mattering once a single Hessian-vector
+product already saturates the device. On one H20 with DPA-4, batching is worth
+about 5x on a system of 72 neighbour pairs but only 1.2x at 5832, where it also
+costs six times the memory -- so a large fixed batch lowers the system size that
+fits and buys little on the systems that need it.
+
+Setting this variable disables automatic sizing and uses the value given;
+out-of-memory errors can still reduce the batch, halving it, warning which
+batch was used, and keeping the surviving batch for the rest of the call. The
+result does not depend on the batch: it changes how the Hessian is computed,
+not what it is.
+:::
+
 :::{envvar} DP_BACKEND
 
 **Default**: `tensorflow`
