@@ -25,6 +25,9 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     compact_nodes,
     expand_node_values,
 )
+from deepmd.pt.utils.auto_batch_size import (
+    AutoBatchSize,
+)
 from deepmd.pt_expt.common import (
     auto_wrapped_class,
     torch_module,
@@ -561,6 +564,11 @@ def _hessian_graph_row_block(
     Reaching 1 hands over to the original one-row-at-a-time path rather than to
     this helper with a batch of one, so the fallback bottoms out in exactly the
     code a user who set 1 would have taken.
+
+    The out-of-memory test is the repository's ``is_oom_error``: the allocator
+    failure does not always arrive as ``torch.OutOfMemoryError`` -- AOTInductor
+    rewraps it in a plain ``RuntimeError`` -- and a catch keyed on the
+    exception type alone lets the wrapped form end the run.
     """
     while batch > 1:
         try:
@@ -570,10 +578,10 @@ def _hessian_graph_row_block(
                 create_graph=create_graph,
                 **kwargs,
             )
-        except torch.OutOfMemoryError:
+        except Exception as e:
+            if not AutoBatchSize(silent=True).is_oom_error(e):
+                raise
             batch //= 2
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
             log.warning(
                 "Hessian-vector product batch did not fit in memory; retrying "
                 "with %d. Set DP_HESSIAN_HVP_BATCH to choose it yourself.",
@@ -683,13 +691,13 @@ def _cal_hessian_ext_graph(
                             **hvp_kwargs,
                         ),
                     )
-                except torch.OutOfMemoryError:
+                except Exception as e:
                     # Pricing one product is itself a product, so it can be the
                     # allocation that does not fit. Letting that escape would
                     # end the run before the one-row-at-a-time path -- which
                     # might well have fit -- was ever tried.
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                    if not AutoBatchSize(silent=True).is_oom_error(e):
+                        raise
                     log.warning(
                         "Ran out of memory measuring the Hessian-vector "
                         "product; falling back to one row at a time. Set "

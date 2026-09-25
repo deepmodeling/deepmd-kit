@@ -337,17 +337,21 @@ class TestHessianHvpBatch:
     @pytest.mark.skipif(
         not torch.cuda.is_available(), reason="the automatic choice needs CUDA"
     )
+    @pytest.mark.parametrize("wrapped", [False, True])
     def test_an_out_of_memory_probe_falls_back_instead_of_escaping(
-        self, monkeypatch
+        self, wrapped, monkeypatch
     ) -> None:
         """Pricing a product is a product, so it can be the thing that does not fit.
 
         Letting that escape ends the run before the one-row-at-a-time path --
-        which may well have fit -- is ever tried.
+        which may well have fit -- is ever tried.  The OOM need not arrive as
+        ``torch.OutOfMemoryError``; the wrapped form must fall back too.
         """
         monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", None)
 
         def always_oom(device, probe):
+            if wrapped:
+                raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
             raise torch.OutOfMemoryError("probe did not fit")
 
         monkeypatch.setattr(mm, "_auto_hvp_batch", always_oom)
@@ -403,6 +407,63 @@ class TestHessianHvpBatch:
         torch.testing.assert_close(
             recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
         )
+
+    @pytest.mark.parametrize("wrapped", ["message", "cause", "aoti"])
+    def test_a_wrapped_out_of_memory_still_falls_back(
+        self, wrapped, monkeypatch
+    ) -> None:
+        """An OOM need not arrive as ``torch.OutOfMemoryError``.
+
+        AOTInductor rewraps the allocator failure in a plain ``RuntimeError``:
+        sometimes the original text survives in the message, sometimes only in
+        the ``__cause__`` chain, and sometimes both are stripped behind its
+        ``run_func_`` signature.  A catch keyed on the exception type alone
+        lets all three forms end the run; the fallback must recognise what the
+        repository's ``is_oom_error`` recognises.
+        """
+        model = self._make_model()
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 1)
+        reference = self._hessian(model)
+
+        attempted = []
+        real = mm._hessian_graph_batched_hvp
+
+        def oom_above_two(*args, **kwargs):
+            attempted.append(kwargs["batch"])
+            if kwargs["batch"] > 2:
+                if wrapped == "message":
+                    raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+                if wrapped == "cause":
+                    raise RuntimeError(
+                        "the forward call failed"
+                    ) from torch.cuda.OutOfMemoryError("CUDA out of memory.")
+                raise RuntimeError(
+                    "run_func_(...) API call failed at "
+                    "/tmp/model_container_runner.cpp:123"
+                )
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(mm, "_hessian_graph_batched_hvp", oom_above_two)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 8)
+        recovered = self._hessian(model)
+
+        assert attempted == [8, 4, 2], attempted
+        scale = reference.abs().max()
+        torch.testing.assert_close(
+            recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
+        )
+
+    def test_an_unrelated_runtime_error_is_not_retried(self, monkeypatch) -> None:
+        """Catching wider than ``OutOfMemoryError`` must not swallow real errors."""
+        model = self._make_model()
+
+        def bogus(*args, **kwargs):
+            raise RuntimeError("some unrelated failure")
+
+        monkeypatch.setattr(mm, "_hessian_graph_batched_hvp", bogus)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 8)
+        with pytest.raises(RuntimeError, match="some unrelated failure"):
+            self._hessian(model)
 
     def test_oom_all_the_way_down_lands_on_the_unbatched_path(
         self, route_counts, monkeypatch
