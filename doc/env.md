@@ -81,8 +81,10 @@ and batching them over replicated frames trades peak memory for far fewer
 kernel launches. `1` evaluates one row at a time, which is how the Hessian was
 computed before batching existed.
 
-Automatic sizing runs one Hessian-vector product to measure what a replica
-costs, then takes the batch the free memory affords, capped at 8. Peak memory
+Automatic sizing runs one Hessian-vector product per frame to measure what a
+replica costs there -- neighbour counts differ between frames, so one
+measurement does not price them all -- then takes the batch the free memory
+affords, capped at 8. Peak memory
 is linear in the batch while the speedup is not: batching recovers
 kernel-launch overhead, which stops mattering once a single Hessian-vector
 product already saturates the device. On one H20 with DPA-4, batching is worth

@@ -642,9 +642,11 @@ def _cal_hessian_ext_graph(
         if charge_spin is not None and charge_spin.ndim == 1
         else charge_spin
     )
-    # Resolved once and reused: what a replica costs is set by the neighbour
-    # count, which is the same for every component of one call.
+    # Priced per frame: within one frame every output component shares the
+    # neighbour count, but each frame has its own, so a batch priced on one
+    # frame does not price another.
     hvp_batch = DP_HESSIAN_HVP_BATCH
+    auto_batch = hvp_batch is None
     hessians = []
     for ii in range(nf):
         node_index = torch.nonzero(atype[ii] >= 0, as_tuple=False).reshape(-1)
@@ -659,6 +661,49 @@ def _cal_hessian_ext_graph(
         if charge_spin_by_frame is not None:
             frame_index = 0 if charge_spin_by_frame.shape[0] == 1 else ii
             charge_spin_frame = charge_spin_by_frame[frame_index : frame_index + 1]
+        hvp_kwargs = {
+            "model": model,
+            "kk": kk,
+            "nloc": n_real,
+            "atype": atype_frame,
+            "box": box[ii : ii + 1] if box is not None else None,
+            "method": method,
+            "pair_excl": pair_excl,
+            "rcut": rcut,
+            "fparam": fparam[ii : ii + 1] if fparam is not None else None,
+            "aparam": aparam_frame,
+            "spin": spin_frame,
+            "charge_spin": charge_spin_frame,
+        }
+        if auto_batch and n_real:
+            # Which component the probe differentiates does not change the
+            # graph, so the pricing probe fixes ci=0.
+            try:
+                hvp_batch = _auto_hvp_batch(
+                    coord.device,
+                    lambda: _hessian_graph_batched_hvp(
+                        coord_flat=coord_flat,
+                        batch=1,
+                        create_graph=create_graph,
+                        max_rows=1,
+                        ci=0,
+                        **hvp_kwargs,
+                    ),
+                )
+            except Exception as e:
+                # Pricing one product is itself a product, so it can be the
+                # allocation that does not fit. Letting that escape would
+                # end the run before the one-row-at-a-time path -- which
+                # might well have fit -- was ever tried.
+                if not AutoBatchSize(silent=True).is_oom_error(e):
+                    raise
+                log.warning(
+                    "Ran out of memory measuring the Hessian-vector "
+                    "product; falling back to one row at a time. Set "
+                    "DP_HESSIAN_HVP_BATCH to choose the batch yourself."
+                )
+                hvp_batch = 1
+            log.debug("Hessian-vector products batched %d rows at a time", hvp_batch)
         for ci in range(vsize):
             wrapper = _WrapperForwardEnergyGraph(
                 model=model,
@@ -675,54 +720,12 @@ def _cal_hessian_ext_graph(
                 spin=spin_frame,
                 charge_spin=charge_spin_frame,
             )
-            hvp_kwargs = {
-                "model": model,
-                "kk": kk,
-                "ci": ci,
-                "nloc": n_real,
-                "atype": atype_frame,
-                "box": box[ii : ii + 1] if box is not None else None,
-                "method": method,
-                "pair_excl": pair_excl,
-                "rcut": rcut,
-                "fparam": fparam[ii : ii + 1] if fparam is not None else None,
-                "aparam": aparam_frame,
-                "spin": spin_frame,
-                "charge_spin": charge_spin_frame,
-            }
-            if hvp_batch is None and n_real:
-                try:
-                    hvp_batch = _auto_hvp_batch(
-                        coord.device,
-                        lambda: _hessian_graph_batched_hvp(
-                            coord_flat=coord_flat,
-                            batch=1,
-                            create_graph=create_graph,
-                            max_rows=1,
-                            **hvp_kwargs,
-                        ),
-                    )
-                except Exception as e:
-                    # Pricing one product is itself a product, so it can be the
-                    # allocation that does not fit. Letting that escape would
-                    # end the run before the one-row-at-a-time path -- which
-                    # might well have fit -- was ever tried.
-                    if not AutoBatchSize(silent=True).is_oom_error(e):
-                        raise
-                    log.warning(
-                        "Ran out of memory measuring the Hessian-vector "
-                        "product; falling back to one row at a time. Set "
-                        "DP_HESSIAN_HVP_BATCH to choose the batch yourself."
-                    )
-                    hvp_batch = 1
-                log.debug(
-                    "Hessian-vector products batched %d rows at a time", hvp_batch
-                )
             hess, hvp_batch = _hessian_graph_row_block(
                 batch=hvp_batch if hvp_batch is not None else 1,
                 wrapper=wrapper,
                 coord_flat=coord_flat,
                 create_graph=create_graph,
+                ci=ci,
                 **hvp_kwargs,
             )  # (n_real*3, n_real*3)
             if n_real != nloc:

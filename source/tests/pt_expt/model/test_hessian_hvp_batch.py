@@ -13,8 +13,8 @@ into coverage of the unbatched path alone, silently.  Here the batch is the
 object under test, and a counter asserts which branch ran so the coverage
 cannot drift away again.
 
-``DP_HESSIAN_HVP_BATCH`` unset means "choose per call from free memory", so the
-choice itself and the out-of-memory fallback are tested too.
+``DP_HESSIAN_HVP_BATCH`` unset means "choose per frame from free memory", so
+the choice itself and the out-of-memory fallback are tested too.
 """
 
 import pytest
@@ -226,6 +226,47 @@ class TestHessianHvpBatch:
         probe_max_rows, probe_rows = calls[0]
         assert probe_max_rows == 1
         assert probe_rows == 1, "the probe computed more than one row"
+
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="the automatic choice needs CUDA"
+    )
+    def test_the_batch_is_repriced_for_each_frame(self, monkeypatch) -> None:
+        """One price does not fit all frames: neighbour counts differ per frame.
+
+        Pricing once on the first frame spends a sparse frame's batch on a
+        dense one (recovered only by the OOM ladder) and a dense frame's batch
+        on a sparse one (never recovered: the device just idles).  The probe
+        costs a single Hessian-vector product, so it runs once per frame; the
+        Hessians accumulated for earlier frames also shrink the free memory a
+        later price sees, which pricing once up front cannot know.
+        """
+        prices = []
+        real = mm._auto_hvp_batch
+
+        def record(device, probe):
+            batch = real(device, probe)
+            prices.append(batch)
+            return batch
+
+        monkeypatch.setattr(mm, "_auto_hvp_batch", record)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", None)
+        model = self._make_model()
+        coord = torch.cat([self.coord, self.coord * 1.01], dim=0)
+        atype = torch.cat([self.atype, self.atype], dim=0)
+        box = torch.cat([self.box, self.box], dim=0)
+        out = model.forward(coord.clone().requires_grad_(True), atype, box=box)
+        batched = out["hessian"].reshape(2, NDOF, NDOF)
+
+        assert len(prices) == 2, f"priced {len(prices)} times for 2 frames"
+
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 1)
+        out = model.forward(coord.clone().requires_grad_(True), atype, box=box)
+        reference = out["hessian"].reshape(2, NDOF, NDOF)
+        scale = reference.abs().max()
+        torch.testing.assert_close(
+            batched, reference, rtol=0.0, atol=float(1e-12 * scale)
+        )
+        assert len(prices) == 2, "a fixed batch must not price at all"
 
     def test_create_graph_keeps_the_path_to_the_coordinates(self, monkeypatch) -> None:
         """``create_graph`` must leave the Hessian differentiable in the input.
