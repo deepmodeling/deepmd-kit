@@ -191,6 +191,22 @@ pip install deepmd-kit
 
 ::::::
 
+Optional CuTe inference kernels are available on Linux with Python 3.11 or
+newer for the PT and PT-expt backends on supported NVIDIA Ampere, Ada, Hopper,
+and Blackwell GPUs:
+
+```bash
+pip install "deepmd-kit[torch,cute]"
+```
+
+The `cute` extra installs the CUTLASS CuTe DSL, TVM FFI, and NVIDIA Alchemi
+Toolkit-Ops runtimes used by the optional CuTe paths. Set `DP_CUTE_INFER=1` to
+enable the DPA4-Neo implementation in PT or PT-expt inference. It may coexist
+with `DP_TRITON_INFER`: CuTe replaces exact supported spans, while unsupported
+model shapes retain the selected Triton or reference path. CuTe is not captured
+in a frozen `.pt2`; requesting it without the runtime dependencies raises an error
+rather than silently selecting another implementation.
+
 The supported platform includes Linux x86-64 and aarch64 with GNU C Library 2.28 or above, macOS x86-64 and arm64, and Windows x86-64.
 
 > [!WARNING]
