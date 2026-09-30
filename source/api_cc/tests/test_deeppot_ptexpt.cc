@@ -756,6 +756,7 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_atomic_throws_when_disabled) {
   deepmd::DeepPot dp_no_av;
   ASSERT_NO_THROW(
       dp_no_av.init("../../tests/infer/deeppot_sea_no_atomic_virial.pt2"));
+  EXPECT_FALSE(dp_no_av.has_atomic_virial());
 
   std::vector<VALUETYPE>& coord = this->coord;
   std::vector<int>& atype = this->atype;

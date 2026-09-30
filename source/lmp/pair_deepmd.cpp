@@ -593,7 +593,7 @@ void PairDeepMD::write_model_deviation(
 void PairDeepMD::write_model_deviation_output(
     const std::array<double, 6>& deviation, const std::vector<double>& std_f) {
   const int rank = comm->me;
-  const int nlocal = atom->nlocal;
+  int nlocal = atom->nlocal;
   double all_v_max = deviation[0], all_v_min = deviation[1],
          all_v_avg = deviation[2];
   double all_f_max = deviation[3], all_f_min = deviation[4],

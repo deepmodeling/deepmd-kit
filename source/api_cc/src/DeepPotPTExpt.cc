@@ -2725,8 +2725,11 @@ std::vector<double> DeepPotPTExpt::get_default_chg_spin() const {
 
 bool DeepPotPTExpt::has_atomic_virial() const {
   assert(inited);
+  // Canonical graphs expose public output names; other lower schemas use
+  // the internal energy derivative names consumed by compute().
+  const char* key = lower_input_is_canonical_ ? "atom_virial" : "energy_derv_c";
   return do_atomic_virial && std::find(output_keys.begin(), output_keys.end(),
-                                       "atom_virial") != output_keys.end();
+                                       key) != output_keys.end();
 }
 
 #endif
