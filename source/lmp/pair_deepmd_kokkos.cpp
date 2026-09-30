@@ -169,11 +169,75 @@ void PairDeepMDKokkos<DeviceType>::unpack_reverse_comm_kokkos(
 }
 
 template <class DeviceType>
+bool PairDeepMDKokkos<DeviceType>::initialize_models(
+    const std::vector<std::string>& models) {
+  if (models.size() == 1) {
+    return PairDeepMD::initialize_models(models);
+  }
+  if (comm->nprocs != 1) {
+    error->all(FLERR,
+               "pair style deepmd/kk model deviation requires one MPI rank; "
+               "use pair style deepmd for multi-rank model deviation.");
+  }
+  const int gpu_rank = get_node_rank();
+  deep_pot.init(models[0], gpu_rank, get_file_content(models[0]));
+  std::string driver_types;
+  deep_pot.get_type_map(driver_types);
+  std::vector<double> driver_charge_spin;
+  reference_models.reserve(models.size() - 1);
+  for (std::size_t i = 0; i < models.size(); ++i) {
+    deepmd_compat::DeepPot* model = &deep_pot;
+    if (i > 0) {
+      reference_models.emplace_back(new deepmd_compat::DeepPot());
+      model = reference_models.back().get();
+      model->init(models[i], gpu_rank, get_file_content(models[i]));
+    }
+    if (!model->uses_canonical_graph_inference() ||
+        !model->uses_fp32_edge_vectors()) {
+      error->all(FLERR,
+                 "pair style deepmd/kk model deviation requires compatible "
+                 "float32 compact canonical .pt2 models.");
+    }
+    if (!model->has_atomic_virial()) {
+      error->all(FLERR,
+                 "pair style deepmd/kk model deviation requires atomic virial "
+                 "output from every model.");
+    }
+    const auto model_charge_spin = model->get_default_chg_spin();
+    if (i == 0) {
+      driver_charge_spin = model_charge_spin;
+    } else if (model_charge_spin != driver_charge_spin) {
+      error->all(FLERR,
+                 "pair style deepmd/kk model deviation requires identical "
+                 "frozen charge/spin defaults for all models.");
+    }
+    if (model->dim_fparam() != 0 || model->dim_aparam() != 0 ||
+        model->numb_types_spin() != 0) {
+      error->all(FLERR,
+                 "pair style deepmd/kk model deviation requires models with "
+                 "zero fparam and aparam dimensions and no spin types.");
+    }
+    std::string model_types;
+    model->get_type_map(model_types);
+    if (model->cutoff() != deep_pot.cutoff() ||
+        model->numb_types() != deep_pot.numb_types() ||
+        model->dim_chg_spin() != deep_pot.dim_chg_spin() ||
+        model_types != driver_types) {
+      error->all(
+          FLERR,
+          "pair style deepmd/kk model deviation requires identical "
+          "model cutoffs and type maps, and matching charge/spin widths.");
+    }
+  }
+  return false;
+}
+
+template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::init_style() {
   // Base setup and the full neighbor-list request.
   PairDeepMD::init_style();
 
-  // The device edge path requires a GPU execution space and a single model.
+  // The driving model requires a GPU execution space.
   if (std::is_same<DeviceType, LMPHostType>::value) {
     error->all(FLERR, "pair style deepmd/kk runs on the GPU backend only.");
   }
@@ -190,8 +254,17 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   // set. Message-passing models additionally receive communication metadata
   // through compute_edges_gpu.
   multi_rank = (comm->nprocs > 1);
-  if (numb_models != 1) {
-    error->all(FLERR, "pair style deepmd/kk does not support model deviation.");
+  if (numb_models > 1 && multi_rank) {
+    error->all(FLERR,
+               "pair style deepmd/kk model deviation requires one MPI rank; "
+               "use pair style deepmd for multi-rank model deviation.");
+  }
+  if (numb_models > 1 &&
+      (do_compute_fparam || do_fix_fparam || do_compute_aparam || do_ttm ||
+       !fparam.empty() || !aparam.empty() || !charge_spin.empty())) {
+    error->all(FLERR,
+               "pair style deepmd/kk model deviation does not support runtime "
+               "fparam, aparam, charge/spin, compute, fix or ttm parameters.");
   }
   // A local edge graph folds ghost neighbours onto their local owner through
   // the atom map; without it the fold returns -1 and corrupts the graph.
@@ -409,6 +482,244 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
 }
 
 template <class DeviceType>
+void PairDeepMDKokkos<DeviceType>::compute_model_deviation_device() {
+  Kokkos::Profiling::pushRegion("deepmd/kk:model_deviation");
+  const int nlocal = atom->nlocal;
+  const int nloc_m = compact_graph.nloc_model;
+  const int nnode_m = compact_graph.nnode_model;
+  const double natoms = static_cast<double>(atom->natoms);
+  if (natoms <= 0) {
+    error->all(FLERR, "deepmd/kk model deviation requires at least one atom.");
+  }
+  if (d_devi_force_mean.extent(0) < static_cast<std::size_t>(3) * nloc_m) {
+    d_devi_force_mean = Kokkos::View<double*, DeviceType>(
+        "deepmd/kk:devi_force_mean", static_cast<std::size_t>(3) * nloc_m);
+    d_devi_force_m2 =
+        Kokkos::View<double*, DeviceType>("deepmd/kk:devi_force_m2", nloc_m);
+  }
+  if (!d_devi_summary.data()) {
+    d_devi_virial_sum =
+        Kokkos::View<double[9], DeviceType>("deepmd/kk:devi_virial_sum");
+    d_devi_virial_mean =
+        Kokkos::View<double[9], DeviceType>("deepmd/kk:devi_virial_mean");
+    d_devi_virial_m2 =
+        Kokkos::View<double[9], DeviceType>("deepmd/kk:devi_virial_m2");
+    d_devi_summary =
+        Kokkos::View<double[7], DeviceType>("deepmd/kk:devi_summary");
+  }
+  Kokkos::deep_copy(d_devi_summary, 0.0);
+  auto mean_f = d_devi_force_mean;
+  auto m2_f = d_devi_force_m2;
+  auto sum_v = d_devi_virial_sum;
+  auto mean_v = d_devi_virial_mean;
+  auto m2_v = d_devi_virial_m2;
+  auto summary = d_devi_summary;
+  auto out_force = d_out_force;
+  auto atom_virial = d_atom_virial;
+
+  // Model 0's driving outputs are still in these buffers. Once incorporated
+  // in the statistics, they can be overwritten: force scatter and every
+  // requested LAMMPS energy/virial output have already completed above.
+  for (int imodel = 0; imodel < numb_models; ++imodel) {
+    if (imodel > 0 && nnode_m > 0) {
+      Kokkos::fence();  // the previous statistics must finish reading scratch
+      Kokkos::Profiling::pushRegion("deepmd/kk:reference_inference");
+      try {
+        reference_models[imodel - 1]->compute_canonical_graph_gpu(
+            d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
+            compact_graph.d_model_type.data(), compact_graph.d_source.data(),
+            compact_graph.d_edge_vec.data(),
+            compact_graph.d_destination_row_ptr.data(),
+            compact_graph.d_source_row_ptr.data(),
+            compact_graph.d_source_order.data(), nloc_m, nnode_m,
+            compact_graph.storage_count);
+      } catch (deepmd_compat::deepmd_exception& e) {
+        error->one(FLERR, e.what());
+      }
+      // The GPU API synchronizes its PyTorch stream before returning.
+      Kokkos::Profiling::popRegion();
+    }
+    const double count = static_cast<double>(imodel + 1);
+    Kokkos::parallel_for(
+        "deepmd/kk:devi_accumulate_force",
+        Kokkos::RangePolicy<DeviceType>(0, nloc_m), KOKKOS_LAMBDA(const int m) {
+          double increment = 0.0;
+          for (int k = 0; k < 3; ++k) {
+            const double value = out_force(3 * m + k);
+            if (!Kokkos::isfinite(value)) {
+              Kokkos::atomic_exchange(&summary(6), 1.0);
+            }
+            if (imodel == 0) {
+              mean_f(3 * m + k) = value;
+            } else {
+              const double delta = value - mean_f(3 * m + k);
+              mean_f(3 * m + k) += delta / count;
+              increment += delta * (value - mean_f(3 * m + k));
+            }
+          }
+          if (imodel == 0) {
+            m2_f(m) = 0.0;
+          } else {
+            m2_f(m) += increment;
+          }
+        });
+    // Keep all nine reduced virial components on the device. They are needed
+    // on every sample, even when LAMMPS did not request a thermodynamic virial.
+    for (int k = 0; k < 9; ++k) {
+      auto component = Kokkos::subview(sum_v, k);
+      Kokkos::parallel_reduce(
+          "deepmd/kk:devi_sum_virial",
+          Kokkos::RangePolicy<DeviceType>(0, nnode_m),
+          KOKKOS_LAMBDA(const int m, double& acc) {
+            const double value = atom_virial(9 * m + k);
+            if (!Kokkos::isfinite(value)) {
+              Kokkos::atomic_exchange(&summary(6), 1.0);
+            }
+            acc += value;
+          },
+          component);
+    }
+    Kokkos::parallel_for(
+        "deepmd/kk:devi_accumulate_virial",
+        Kokkos::RangePolicy<DeviceType>(0, 9), KOKKOS_LAMBDA(const int k) {
+          const double value = sum_v(k) / natoms;
+          if (!Kokkos::isfinite(value)) {
+            Kokkos::atomic_exchange(&summary(6), 1.0);
+          }
+          if (imodel == 0) {
+            mean_v(k) = value;
+            m2_v(k) = 0.0;
+          } else {
+            const double delta = value - mean_v(k);
+            mean_v(k) += delta / count;
+            m2_v(k) += delta * (value - mean_v(k));
+          }
+        });
+  }
+
+  const double model_count = static_cast<double>(numb_models);
+  const bool relative_f = out_rel == 1;
+  const bool relative_v = out_rel_v == 1;
+  const double epsilon_f = eps;
+  const double epsilon_v = eps_v;
+  const double largest = std::numeric_limits<double>::max();
+  Kokkos::parallel_for(
+      "deepmd/kk:devi_finish_force", Kokkos::RangePolicy<DeviceType>(0, nloc_m),
+      KOKKOS_LAMBDA(const int m) {
+        double value = Kokkos::sqrt(m2_f(m) / model_count);
+        if (relative_f) {
+          double norm2 = 0.0;
+          for (int k = 0; k < 3; ++k) {
+            norm2 += mean_f(3 * m + k) * mean_f(3 * m + k);
+          }
+          value /= Kokkos::sqrt(norm2) + epsilon_f;
+        }
+        m2_f(m) = value;  // no more models: reuse M2 for final atom deviations
+        if (!Kokkos::isfinite(value)) {
+          Kokkos::atomic_exchange(&summary(6), 1.0);
+        }
+      });
+  // Include virtual (NULL-type) atoms as zeros, matching the ordinary pair's
+  // all-atom min/max and division by atom->natoms.
+  auto loc2model = compact_graph.d_loc2model;
+  auto fmax = Kokkos::subview(summary, 3);
+  auto fmin = Kokkos::subview(summary, 4);
+  auto fsum = Kokkos::subview(summary, 5);
+  Kokkos::parallel_reduce(
+      "deepmd/kk:devi_force_max", Kokkos::RangePolicy<DeviceType>(0, nlocal),
+      KOKKOS_LAMBDA(const int i, double& acc) {
+        const int m = loc2model(i);
+        const double value = m < 0 ? 0.0 : m2_f(m);
+        if (value > acc) {
+          acc = value;
+        }
+      },
+      Kokkos::Max<double, typename DeviceType::memory_space>(fmax));
+  Kokkos::parallel_reduce(
+      "deepmd/kk:devi_force_min", Kokkos::RangePolicy<DeviceType>(0, nlocal),
+      KOKKOS_LAMBDA(const int i, double& acc) {
+        const int m = loc2model(i);
+        const double value = m < 0 ? 0.0 : m2_f(m);
+        if (value < acc) {
+          acc = value;
+        }
+      },
+      Kokkos::Min<double, typename DeviceType::memory_space>(fmin));
+  Kokkos::parallel_reduce(
+      "deepmd/kk:devi_force_sum", Kokkos::RangePolicy<DeviceType>(0, nlocal),
+      KOKKOS_LAMBDA(const int i, double& acc) {
+        const int m = loc2model(i);
+        acc += m < 0 ? 0.0 : m2_f(m);
+      },
+      fsum);
+  Kokkos::parallel_for(
+      "deepmd/kk:devi_finish_summary", Kokkos::RangePolicy<DeviceType>(0, 1),
+      KOKKOS_LAMBDA(const int) {
+        double vmax = 0.0;
+        double vmin = largest;
+        double vsq = 0.0;
+        for (int k = 0; k < 9; ++k) {
+          double value = Kokkos::sqrt(m2_v(k) / model_count);
+          if (relative_v) {
+            value /= Kokkos::abs(mean_v(k)) + epsilon_v;
+          }
+          if (!Kokkos::isfinite(value)) {
+            summary(6) = 1.0;
+          }
+          if (value > vmax) {
+            vmax = value;
+          }
+          if (value < vmin) {
+            vmin = value;
+          }
+          vsq += value * value;
+        }
+        summary(0) = vmax;
+        summary(1) = vmin;
+        summary(2) = Kokkos::sqrt(vsq / 9.0);
+        summary(5) /= natoms;
+        for (int k = 0; k < 6; ++k) {
+          if (!Kokkos::isfinite(summary(k))) {
+            summary(6) = 1.0;
+          }
+        }
+      });
+  Kokkos::Profiling::pushRegion("deepmd/kk:model_deviation_summary");
+  auto h_summary = Kokkos::create_mirror_view(d_devi_summary);
+  Kokkos::deep_copy(h_summary, d_devi_summary);
+  Kokkos::Profiling::popRegion();
+  if (h_summary(6) != 0.0) {
+    error->all(
+        FLERR,
+        "Non-finite force, virial or statistic in deepmd/kk model deviation.");
+  }
+
+  std::vector<double> std_f;
+  if (out_each == 1) {
+    // This optional transfer carries final output values, never model forces.
+    if (d_devi_atomic.extent(0) < static_cast<std::size_t>(nlocal)) {
+      d_devi_atomic = Kokkos::View<double*, DeviceType>(
+          "deepmd/kk:atomic_deviation", nlocal);
+    }
+    auto atomic_deviation = d_devi_atomic;
+    Kokkos::parallel_for(
+        "deepmd/kk:devi_atomic_output",
+        Kokkos::RangePolicy<DeviceType>(0, nlocal), KOKKOS_LAMBDA(const int i) {
+          const int m = loc2model(i);
+          atomic_deviation(i) = m < 0 ? 0.0 : m2_f(m);
+        });
+    auto h_atomic = Kokkos::create_mirror_view(d_devi_atomic);
+    Kokkos::deep_copy(h_atomic, d_devi_atomic);
+    std_f.assign(h_atomic.data(), h_atomic.data() + nlocal);
+    atomKK->sync(Host, TAG_MASK);
+  }
+  write_model_deviation_output({h_summary(0), h_summary(1), h_summary(2),
+                                h_summary(3), h_summary(4), h_summary(5)},
+                               std_f);
+  Kokkos::Profiling::popRegion();
+}
+
+template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   if (!device_path_ok) {
     error->all(FLERR,
@@ -534,6 +845,7 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     // them; edge-input models consume them).
     const double* coord_ptr =
         compact_graph.has_null_types ? d_coord_model.data() : x.data();
+    Kokkos::Profiling::pushRegion("deepmd/kk:driver_inference");
     try {
       if (canonical_graph) {
         deep_pot.compute_canonical_graph_gpu(
@@ -560,6 +872,7 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
+    Kokkos::Profiling::popRegion();
   }
 
   // === Scatter the model-node forces onto their atoms ===
@@ -690,6 +1003,9 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
       }
       reverse_virial = false;
     }
+  }
+  if (model_deviation_step()) {
+    compute_model_deviation_device();
   }
 }
 
