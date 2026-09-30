@@ -11,6 +11,9 @@ from .dos_fitting import (
 from .dpa4_ener import (
     SeZMEnergyFittingNet,
 )
+from .dpa4c_lr import (
+    DPA4CLRFitting,
+)
 from .ener_fitting import (
     EnergyFittingNet,
 )
@@ -27,6 +30,7 @@ from .property_fitting import (
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",
+    "DPA4CLRFitting",
     "DipoleFitting",
     "EnergyFittingNet",
     "InvarFitting",

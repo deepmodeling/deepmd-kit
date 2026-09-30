@@ -24,6 +24,17 @@ if TYPE_CHECKING:
     )
 
 
+#: Neighbor capacities at or beyond this value are sentinels for
+#: "effectively unbounded" descriptors (DPA4C reports sel 999999 per type)
+#: that carry every in-cutoff neighbor.  Dense neighbor-list builders may
+#: cap such capacities at the frame atom count instead of allocating the
+#: full sentinel width.  Realistic sel values are orders of magnitude
+#: smaller, so ordinary descriptors keep their exact ``sum(sel)`` column
+#: count, which type-distinguished statistics and serialized lowers
+#: require.
+UNBOUNDED_NSEL: int = 100_000
+
+
 def _is_ndtensorflow_namespace(xp: Any) -> bool:
     return getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow"
 

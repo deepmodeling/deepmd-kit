@@ -81,6 +81,11 @@ def _translate_energy_keys(
             ].squeeze(-2)
     if "mask" in model_ret:
         out["mask"] = model_ret["mask"]
+    # Preserve auxiliary outputs needed by post-compiled correction steps
+    # (e.g. DPA4C-LR latent charges) so a compiled graph can hand them to
+    # an eager post-processing hook.
+    if "latent_charge" in model_ret:
+        out["latent_charge"] = model_ret["latent_charge"]
     return out
 
 
@@ -571,6 +576,7 @@ def make_model(
             charge_spin: torch.Tensor | None = None,
             spin: torch.Tensor | None = None,
             comm_dict: dict | None = None,
+            **kwargs: Any,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
 
@@ -775,7 +781,10 @@ def make_model(
             if "energy" not in self.atomic_output_def().keys():
                 return None
             if self.mixed_types() and self.atomic_model.uses_graph_lower():
-                return getattr(self, "neighbor_graph_method", "dense")
+                method = getattr(self, "neighbor_graph_method", "dense")
+                # Honor an attribute-level opt-out as well: "legacy" forces
+                # the dense (nlist) path just like the explicit argument.
+                return None if method == "legacy" else method
             return None
 
         def call_common_ragged(
