@@ -42,6 +42,12 @@ from .property_model import (
 from .spin_ener_model import (
     SpinEnergyModel,
 )
+from .unimol_dpa_pretrain_model import (
+    UniMolDPAPretrainModel,
+)
+from .unimol_pretrain_model import (
+    UniMolPretrainModel,
+)
 
 __all__ = [
     "BaseModel",
@@ -56,6 +62,8 @@ __all__ = [
     "PolarModel",
     "PropertyModel",
     "SpinEnergyModel",
+    "UniMolDPAPretrainModel",
+    "UniMolPretrainModel",
     "get_model",
     "make_hessian_model",
 ]

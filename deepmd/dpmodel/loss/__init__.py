@@ -14,6 +14,9 @@ from deepmd.dpmodel.loss.property import (
 from deepmd.dpmodel.loss.tensor import (
     TensorLoss,
 )
+from deepmd.dpmodel.loss.unimol import (
+    UniMolLoss,
+)
 
 __all__ = [
     "DOSLoss",
@@ -21,4 +24,5 @@ __all__ = [
     "EnergySpinLoss",
     "PropertyLoss",
     "TensorLoss",
+    "UniMolLoss",
 ]
