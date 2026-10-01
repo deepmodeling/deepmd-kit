@@ -1,6 +1,6 @@
 # Formats of a system
 
-Two binary formats, NumPy and HDF5, are supported for training. The raw format is not directly supported, but a tool is provided to convert data from the raw format to the NumPy format.
+The native on-disk training formats are NumPy and HDF5. Labeled extended-XYZ files can also be listed directly in `training_data/systems` or `validation_data/systems`; DeePMD-kit transparently converts and caches them as NumPy systems before initializing the existing data loader. The raw format is not directly supported, but a tool is provided to convert data from the raw format to the NumPy format.
 
 ## NumPy format
 
