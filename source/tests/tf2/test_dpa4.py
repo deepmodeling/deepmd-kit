@@ -33,7 +33,7 @@ from deepmd.tf2.env import (
 )
 
 
-def _make_trainable_descriptor() -> DescrptDPA4:
+def _make_trainable_descriptor(basis_type: str = "bessel") -> DescrptDPA4:
     """Build a small descriptor that enables the optional trainable leaves."""
     return DescrptDPA4(
         ntypes=2,
@@ -41,6 +41,7 @@ def _make_trainable_descriptor() -> DescrptDPA4:
         rcut=4.0,
         channels=4,
         n_radial=4,
+        basis_type=basis_type,
         lmax=1,
         mmax=1,
         n_blocks=1,
@@ -91,6 +92,21 @@ def _assert_optional_weights_are_tracked(descriptor: DescrptDPA4) -> None:
 def test_optional_dpa4_weights_are_tf2_trainable_variables() -> None:
     """Optional cross-grid and FFN LayerScale weights must receive gradients."""
     _assert_optional_weights_are_tracked(_make_trainable_descriptor())
+
+
+@pytest.mark.parametrize("family", ["bessel", "gaussian"])
+def test_fixed_basis_is_not_an_optimizer_parameter(family: str) -> None:
+    """Fixed basis variables remain trackable without entering optimization."""
+    descriptor = _make_trainable_descriptor(f"{family}/fix")
+    restored = DescrptDPA4.deserialize(descriptor.serialize())
+    for model in (descriptor, restored):
+        variable = object.__getattribute__(
+            model.radial_basis, "_tf2_adam_freqs_variable"
+        )
+        assert not model.radial_basis.trainable
+        assert not variable.trainable
+        assert any(candidate is variable for candidate in model.variables)
+        assert all(candidate is not variable for candidate in model.trainable_variables)
 
 
 def test_dpa4_deserialize_refreshes_trackable_state() -> None:

@@ -35,11 +35,19 @@ from deepmd.pt.model.task.ener import (
 from deepmd.pt.model.task.sezm_ener import (
     SeZMEnergyFittingNet,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
 from deepmd.utils.stat_file import (
     load_required_items,
+)
+from deepmd.utils.vacuum_reference import (
+    reference_charge_spin,
+    reference_spin,
+    resolve_vacuum_ref,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -78,6 +86,8 @@ class SeZMAtomicModel(DPAtomicModel):
         If fitting is not an energy fitting network.
     """
 
+    _supports_vacuum_ref: bool = True
+
     def __init__(
         self,
         descriptor: Any,
@@ -106,6 +116,16 @@ class SeZMAtomicModel(DPAtomicModel):
             "dens_force_rmsd",
             self.out_std.new_tensor(1.0),
         )
+        # === Reference of the isolated atoms ===
+        # Each head references its output only when the preset fixes the
+        # bias of that output; the conditions of the reference atoms follow.
+        resolve_vacuum_ref(fitting, self.preset_out_bias)
+        if dens_fitting is not None:
+            resolve_vacuum_ref(dens_fitting, self.preset_out_bias)
+        self.add_spin_ebd: bool = self.descriptor.use_spin is not None
+        self.register_buffer("vacuum_charge_spin", None, persistent=False)
+        self.register_buffer("vacuum_spin", None, persistent=False)
+        self.init_vacuum_conditions()
         self.dens_fitting_net = dens_fitting
         # Start unlocked when `active_mode` is not provided.
         # The mode will be decided later by training setup (`loss.type`)
@@ -114,6 +134,97 @@ class SeZMAtomicModel(DPAtomicModel):
         self._active_mode = "ener"
         if active_mode is not None:
             self.set_active_mode(active_mode)
+
+    def init_vacuum_conditions(self) -> None:
+        """Build the conditioning inputs of the reference atoms for the type map.
+
+        A table exists for every condition the descriptor takes when the
+        fitting references the isolated atoms; the type names must then be
+        element symbols.
+        """
+        vacuum_ref = self.fitting_net.vacuum_ref
+        dtype = env.GLOBAL_PT_FLOAT_PRECISION
+        self.vacuum_charge_spin = (
+            torch.as_tensor(
+                reference_charge_spin(self.type_map), dtype=dtype, device=env.DEVICE
+            )
+            if vacuum_ref and self.add_chg_spin_ebd
+            else None
+        )
+        self.vacuum_spin = (
+            torch.as_tensor(
+                reference_spin(self.type_map), dtype=dtype, device=env.DEVICE
+            )
+            if vacuum_ref and self.add_spin_ebd
+            else None
+        )
+
+    def vacuum_conditions(self) -> dict[str, torch.Tensor]:
+        """Conditioning inputs of one isolated neutral ground-state atom per type.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            The charge/spin conditions with shape (ntypes, 2) under
+            ``charge_spin`` and the spin vectors with shape (ntypes, 3) under
+            ``spin``, for the conditions the descriptor takes.
+        """
+        conditions = {}
+        if self.vacuum_charge_spin is not None:
+            conditions["charge_spin"] = self.vacuum_charge_spin
+        if self.vacuum_spin is not None:
+            conditions["spin"] = self.vacuum_spin
+        return conditions
+
+    def vacuum_descriptor(self) -> torch.Tensor:
+        """Descriptor of an isolated atom of every type.
+
+        Every type is evaluated as a single-atom frame without neighbors under
+        the reference conditions.
+
+        Returns
+        -------
+        torch.Tensor
+            The vacuum descriptor with shape (ntypes, dim_descrpt) on the
+            device of the fitting bias.
+        """
+        bias = self.fitting_net.bias_atom_e
+        dtype = env.GLOBAL_PT_FLOAT_PRECISION
+        ntypes = self.get_ntypes()
+        coord = torch.zeros((ntypes, 1, 3), dtype=dtype, device=bias.device)
+        atype = torch.arange(ntypes, dtype=torch.long, device=bias.device).view(
+            ntypes, 1
+        )
+        nlist = torch.full(
+            (ntypes, 1, self.descriptor.get_nnei()),
+            -1,
+            dtype=torch.long,
+            device=bias.device,
+        )
+        mapping = torch.zeros((ntypes, 1), dtype=torch.long, device=bias.device)
+        conditions = {
+            name: table.to(dtype=dtype, device=bias.device)
+            for name, table in self.vacuum_conditions().items()
+        }
+        if "spin" in conditions:
+            conditions["spin"] = conditions["spin"][:, None, :]
+        descriptor = self.descriptor(
+            coord, atype, nlist, mapping=mapping, **conditions
+        )[0]
+        return descriptor.reshape(ntypes, -1)
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the energy fitting so the forward carries no reference atoms.
+
+        The vacuum descriptor of every type is evaluated once with the current
+        parameters and handed to the fitting, which folds the reference into
+        its bias or stores the table (see its ``fold_vacuum_reference``). The
+        DeNS head serves training alone and is not exported, so it keeps its
+        reference.
+        """
+        fitting = self.fitting_net
+        if fitting.needs_vacuum_descriptor():
+            fitting.fold_vacuum_reference(self.vacuum_descriptor())
 
     def _load_from_state_dict(
         self,
@@ -545,6 +656,7 @@ class SeZMAtomicModel(DPAtomicModel):
                 type_map=type_map,
                 model_with_new_type_stat=ref_dens,
             )
+        self.init_vacuum_conditions()
 
     def compute_or_load_stat(
         self,
@@ -578,6 +690,11 @@ class SeZMAtomicModel(DPAtomicModel):
         wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
+        self._collect_and_set_observed_type(
+            wrapped_sampler,
+            stat_file_path,
+            preset_observed_type,
+        )
         if compute_or_load_out_stat:
             self.set_active_mode("ener")
             try:
@@ -586,12 +703,6 @@ class SeZMAtomicModel(DPAtomicModel):
                 self.set_active_mode(original_mode)
             if original_mode == "dens":
                 self._compute_or_load_dens_force_stat(wrapped_sampler, stat_file_path)
-
-        self._collect_and_set_observed_type(
-            wrapped_sampler,
-            stat_file_path,
-            preset_observed_type,
-        )
 
     def apply_out_stat(
         self,
@@ -728,6 +839,7 @@ class SeZMAtomicModel(DPAtomicModel):
             "exclude_types": copy.deepcopy(fitting.exclude_types),
             "trainable": copy.deepcopy(fitting.trainable),
             "atom_ener": copy.deepcopy(fitting.atom_ener),
+            "vacuum_ref": bool(fitting.vacuum_ref),
             "use_aparam_as_mask": bool(fitting.use_aparam_as_mask),
         }
 

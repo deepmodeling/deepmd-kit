@@ -902,7 +902,12 @@ class EnerFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        version = data.pop("@version", 1)
+        check_version_compatibility(version, 5, 1)
+        if version >= 5 and data.pop("vacuum_ref"):
+            raise NotImplementedError(
+                "vacuum_ref is not supported by the TensorFlow backend"
+            )
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
@@ -928,7 +933,7 @@ class EnerFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "ener",
-            "@version": 4,
+            "@version": 5,
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt + self.tebd_dim,
@@ -943,6 +948,7 @@ class EnerFitting(Fitting):
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
+            "vacuum_ref": False,
             "atom_ener": self.atom_ener_v,
             "activation_function": self.activation_function_name,
             "precision": self.fitting_precision.name,

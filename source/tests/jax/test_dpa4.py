@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Focused tests for JAX DPA4 descriptor trainable-state conversion."""
 
+import pytest
+
 from deepmd.jax.descriptor.dpa4 import (
     DescrptDPA4,
     _iter_object_tree,
@@ -13,7 +15,7 @@ from deepmd.jax.utils.network import (
 )
 
 
-def _make_trainable_descriptor() -> DescrptDPA4:
+def _make_trainable_descriptor(basis_type: str = "bessel") -> DescrptDPA4:
     """Build a small descriptor that enables the optional trainable leaves."""
     return DescrptDPA4(
         ntypes=2,
@@ -21,6 +23,7 @@ def _make_trainable_descriptor() -> DescrptDPA4:
         rcut=4.0,
         channels=4,
         n_radial=4,
+        basis_type=basis_type,
         lmax=1,
         mmax=1,
         n_blocks=1,
@@ -59,6 +62,17 @@ def test_optional_dpa4_weights_are_jax_parameters() -> None:
         for block in interaction_blocks
         for scale in block.adam_ffn_layer_scales
     )
+
+
+@pytest.mark.parametrize("family", ["bessel", "gaussian"])
+def test_fixed_basis_is_not_an_optimizer_parameter(family: str) -> None:
+    """Fixed basis arrays remain serializable without entering the parameter tree."""
+    descriptor = _make_trainable_descriptor(f"{family}/fix")
+    restored = DescrptDPA4.deserialize(descriptor.serialize())
+    for model in (descriptor, restored):
+        assert not model.radial_basis.trainable
+        assert not isinstance(model.radial_basis.adam_freqs, nnx.Param)
+        assert len(nnx.to_flat_state(nnx.state(model, nnx.Param))) > 0
 
 
 def test_frozen_descriptor_has_no_optimizer_visible_parameters() -> None:

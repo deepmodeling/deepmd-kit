@@ -123,7 +123,7 @@ def radial_mix_reference(
     for coeff0, comp0, num_l in _block_layout(int(lmax)):
         # K[e, o, i, r] = compact[e, comp0 + i * num_l + o, r]
         block = compact[:, comp0 : comp0 + num_l * num_l, :].reshape(
-            n_edge, num_l, num_l, -1
+            n_edge, num_l, num_l, compact.shape[-1]
         )
         block = block.permute(0, 2, 1, 3)  # (E, o, i, R)
         x_block = x_local[:, coeff0 : coeff0 + num_l, :]  # (E, i, C)
@@ -176,7 +176,7 @@ def _radial_mix_backward_reference(
         #   with K[e, o, i, r] = compact[e, comp0 + i * num_l + o, r].
         k_block = (
             compact[:, comp0 : comp0 + num_l * num_l, :]
-            .reshape(n_edge, num_l, num_l, -1)
+            .reshape(n_edge, num_l, num_l, compact.shape[-1])
             .permute(0, 2, 1, 3)
         )  # (E, o, i, R)
         x_block = x_local[:, coeff0 : coeff0 + num_l, :]  # (E, i, C)
@@ -194,7 +194,7 @@ def _radial_mix_backward_reference(
         gk = torch.einsum("eoc,eic,rc->eoir", g_block, x_block, channel_basis)
         grad_compact[:, comp0 : comp0 + num_l * num_l, :] += gk.permute(
             0, 2, 1, 3
-        ).reshape(n_edge, num_l * num_l, -1)
+        ).reshape(n_edge, num_l * num_l, compact.shape[-1])
     return grad_compact, grad_x_local
 
 
@@ -826,7 +826,7 @@ def channel_basis_grad(
         # degree instead would leave the rank axis innermost and force a
         # transposing copy of the whole edge tensor before the reduction.
         kernel = compact[:, comp0 : comp0 + num_l * num_l, :].reshape(
-            n_edge, num_l, num_l, -1
+            n_edge, num_l, num_l, compact.shape[-1]
         )  # (E, i, o, R)
         x_block = x_local[:, coeff0 : coeff0 + num_l, :]  # (E, i, C)
         g_block = grad_out[:, coeff0 : coeff0 + num_l, :]  # (E, o, C)

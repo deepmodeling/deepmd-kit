@@ -181,6 +181,14 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Get the name to each type of atoms."""
         return self.descrpt_list[0].get_type_map()
 
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"descrpt_list.{index}.{pattern}"
+            for index, descriptor in enumerate(self.descrpt_list)
+            for pattern in descriptor.adam_route_patterns()
+        ]
+
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
         return np.sum([descrpt.get_dim_out() for descrpt in self.descrpt_list]).item()

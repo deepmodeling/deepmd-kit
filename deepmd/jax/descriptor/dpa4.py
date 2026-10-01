@@ -245,8 +245,7 @@ def _promote_parameter_lists(
 def _promote_trainable_tree(module: Any) -> Any:
     root_trainable = bool(getattr(module, "trainable", True))
     for submodule in _iter_object_tree(module):
-        # A frozen descriptor freezes every descendant, including helper
-        # modules such as RadialBasis that do not carry a local flag.
+        # A frozen descriptor freezes every descendant regardless of its local flag.
         trainable = root_trainable and bool(getattr(submodule, "trainable", True))
         names = _TRAINABLE_ATTRS.get(type(submodule).__name__)
         if names is not None:

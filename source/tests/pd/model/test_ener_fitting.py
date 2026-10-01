@@ -148,3 +148,14 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             np.testing.assert_allclose(
                 foo, np.reshape(ifn0[ii].detach().cpu().numpy(), foo.shape)
             )
+
+    def test_vacuum_ref_is_rejected(self):
+        """A serialized ``vacuum_ref`` is rejected; a version-4 dictionary loads."""
+        data = InvarFitting("energy", self.nt, 3, 1, seed=GLOBAL_SEED).serialize()
+        self.assertFalse(data["vacuum_ref"])
+        with self.assertRaises(NotImplementedError):
+            InvarFitting.deserialize({**data, "vacuum_ref": True})
+        older = {k: v for k, v in data.items() if k != "vacuum_ref"}
+        self.assertIsInstance(
+            InvarFitting.deserialize({**older, "@version": 4}), InvarFitting
+        )

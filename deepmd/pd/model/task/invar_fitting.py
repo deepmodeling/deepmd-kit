@@ -146,7 +146,12 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = copy.deepcopy(data)
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        version = data.pop("@version", 1)
+        check_version_compatibility(version, 5, 1)
+        if version >= 5 and data.pop("vacuum_ref"):
+            raise NotImplementedError(
+                "vacuum_ref is not supported by the Paddle backend"
+            )
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:

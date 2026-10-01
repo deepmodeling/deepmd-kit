@@ -121,7 +121,16 @@ carry the accuracy–cost trade-off:
 - **Radial basis** —
   {ref}`basis_type <model[standard]/descriptor[dpa4c]/basis_type>` and
   {ref}`n_radial <model[standard]/descriptor[dpa4c]/n_radial>` select the
-  analytic basis that feeds the radial network.
+  analytic basis that feeds the radial network; the `bessel/fix` and
+  `gaussian/fix` forms keep the frequencies or centres at their initial
+  values instead of training them.
+
+The fitting network is sized against the descriptor because the invariant
+output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
+trade against memory: it adds per-atom activations and the derivatives saved for
+the force backward pass, so widening or deepening it costs throughput and
+capacity together. Widen it only when validation error is limited by fitting
+capacity rather than by the descriptor.
 
 > [!IMPORTANT]
 > The compressed CUDA path is compiled for `channels` in `{8, 16, 32, 64, 128}`,
@@ -130,30 +139,40 @@ carry the accuracy–cost trade-off:
 > `dp --pt-expt compress` rejects it. Choose these values with deployment in
 > mind.
 
-### Recommended configurations
+### Presets
 
-The released grades pair each descriptor width with a fitting width sized
-against it, in ascending cost. They are good starting points; `Neo` is the
-general-purpose default.
+DPA4C preset names use `dpa4c-<size>-<version>`. Available sizes are listed in
+ascending computational cost; `neo` is the general-purpose starting point:
 
-| Grade | `channels` | `lmax` | `radial_modes` | Fitting hidden width |
-| ----- | ---------: | -----: | -------------: | -------------------: |
-| Nano  |          8 |      2 |              0 |                   96 |
-| Mini  |         32 |      2 |              0 |                  192 |
-| Neo   |         32 |      2 |              4 |                  192 |
-| Air   |         64 |      3 |              4 |                  256 |
-| Plus  |        128 |      3 |              4 |                  384 |
+| Version     | Available sizes                      |
+| ----------- | ------------------------------------ |
+| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus` |
+| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus` |
 
-`Mini` and `Neo` share a descriptor width and differ only in the radial modes,
-which buys accuracy at a per-edge cost while leaving the largest tractable
-system unchanged. `Air` and `Plus` additionally raise the angular degree.
+Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
+and `fitting_net`. Run-specific settings are written alongside the preset:
 
-The fitting network is sized against the descriptor because the invariant
-output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
-trade against memory: it adds per-atom activations and the derivatives saved for
-the force backward pass, so widening or deepening it costs throughput and
-capacity together. Widen it only when validation error is limited by fitting
-capacity rather than by the descriptor.
+```json
+{
+  "model": {
+    "preset": "dpa4c-neo-v20260911",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    }
+  }
+}
+```
+
+Explicit settings override the preset: `type_map` is replaced as a whole,
+while `descriptor` and `fitting_net` are merged key by key. See the
+[DPA4 preset rules](dpa4.md#presets) for expansion details and multi-task use.
 
 ## Training
 
@@ -301,21 +320,6 @@ Two settings are worth knowing:
   says. The symptom is a low `CPU use` percentage in the LAMMPS timing summary
   next to a high thread count. Launch LAMMPS directly, or reset the mask in the
   child.
-
-Whole-step throughput of the released grades on a fully periodic 8000-atom
-diamond supercell, 158 neighbours per atom, on two 45-core Xeon Platinum 8457C
-sockets using 83 physical cores:
-
-| Grade | ms per step | atoms per ms |
-| ----- | ----------: | -----------: |
-| Nano  |         7.1 |         1126 |
-| Mini  |         9.7 |          828 |
-| Neo   |        10.1 |          794 |
-| Air   |        12.5 |          639 |
-| Plus  |        18.4 |          435 |
-
-Throughput peaks between roughly 16 000 and 66 000 atoms and declines beyond it
-as the step's working set leaves the last-level cache.
 
 Resident memory is roughly 16 to 31 KB per atom depending on the grade, so a 4
 GiB budget holds between 124 000 atoms (Plus) and 230 000 atoms (Nano). Most of

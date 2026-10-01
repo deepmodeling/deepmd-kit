@@ -148,9 +148,15 @@ def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
     than the ``G``-point grid.
     """
     xp = array_api_compat.array_namespace(coeff)
-    n_batch, coeff_dim, n_focus, _ = coeff.shape
-    projected = proj(xp.reshape(coeff, (n_batch, coeff_dim, n_focus, n_frames, -1)))
-    return xp.reshape(projected, (n_batch, coeff_dim, n_focus, -1))
+    n_batch, coeff_dim, n_focus, n_channels = coeff.shape
+    projected = proj(
+        xp.reshape(
+            coeff, (n_batch, coeff_dim, n_focus, n_frames, n_channels // n_frames)
+        )
+    )
+    return xp.reshape(
+        projected, (n_batch, coeff_dim, n_focus, n_frames * projected.shape[-1])
+    )
 
 
 def _project_pair_in_one_transform(
@@ -162,14 +168,14 @@ def _project_pair_in_one_transform(
 ) -> tuple[Any, Any]:
     """Project two equally shaped coefficient operands in one linear transform."""
     xp = array_api_compat.array_namespace(left, right)
-    n_batch, coeff_dim, n_focus, _ = left.shape
-    frame_shape = (n_batch, coeff_dim, n_focus, n_frames, -1)
+    n_batch, coeff_dim, n_focus, n_channels = left.shape
+    frame_shape = (n_batch, coeff_dim, n_focus, n_frames, n_channels // n_frames)
     pair = xp.reshape(
         xp.concat(
             [xp.reshape(left, frame_shape), xp.reshape(right, frame_shape)],
             axis=-1,
         ),
-        (n_batch, coeff_dim, n_focus, -1),
+        (n_batch, coeff_dim, n_focus, 2 * n_channels),
     )
     pair_grid = to_grid(pair)
     split = pair_grid.shape[-1] // 2
@@ -354,10 +360,11 @@ class GridMLP(NativeOP):
         """Apply the two coefficient-space channel projections."""
         xp = array_api_compat.array_namespace(left)
         if self.mode == "self":
-            shape = (*left.shape[:-1], self.n_frames, -1)
+            n_channels = left.shape[-1]
+            shape = (*left.shape[:-1], self.n_frames, n_channels // self.n_frames)
             fused = xp.reshape(
                 xp.concat([xp.reshape(left, shape), xp.reshape(right, shape)], axis=-1),
-                (*left.shape[:-1], -1),
+                (*left.shape[:-1], 2 * n_channels),
             )  # per-frame concat -> (N, D, F, K*2C)
             left = _project_frames(fused, self.left_proj, self.n_frames)
             right = _project_frames(fused, self.right_proj, self.n_frames)
@@ -1254,11 +1261,14 @@ class BaseGridNet(NativeOP):
         )
 
     def _to_grid(self, coeff: Any) -> Any:
-        # The per-frame channel width is inferred so the projector also serves
-        # widened operands (e.g. a branch hidden width ``n_branches * C``).
+        # Derive the per-frame width from the channel axis so empty batches
+        # and widened operands (e.g. ``n_branches * C``) are both valid.
         xp = array_api_compat.array_namespace(coeff)
-        n_batch, coeff_dim, n_focus, _ = coeff.shape
-        coeff_view = xp.reshape(coeff, (n_batch, coeff_dim, n_focus, self.n_frames, -1))
+        n_batch, coeff_dim, n_focus, n_channels = coeff.shape
+        n_channels //= self.n_frames
+        coeff_view = xp.reshape(
+            coeff, (n_batch, coeff_dim, n_focus, self.n_frames, n_channels)
+        )
         to_grid = xp_asarray_nodetach(
             xp, self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
         )
@@ -1274,7 +1284,6 @@ class BaseGridNet(NativeOP):
         # (`xp_einsum("gdk,ndfkc->ngfc")`) costs 3.6 ms. The same contraction
         # is faster there and slower here, so the choice belongs to the graph
         # around it rather than to the contraction itself.
-        n_channels = coeff_view.shape[-1]
         coeff_dk = xp.permute_dims(coeff_view, (0, 1, 3, 2, 4))  # (N, D, K, F, C)
         coeff_flat = xp.reshape(
             coeff_dk, (n_batch, coeff_dim * self.n_frames, n_focus * n_channels)
@@ -1285,7 +1294,7 @@ class BaseGridNet(NativeOP):
     def _from_grid(self, grid: Any) -> Any:
         # Channel width is inferred to match the (possibly widened) grid field.
         xp = array_api_compat.array_namespace(grid)
-        n_batch, _, n_focus, _ = grid.shape
+        n_batch, _, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = xp_asarray_nodetach(
             xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
@@ -1294,7 +1303,6 @@ class BaseGridNet(NativeOP):
         # einsum "dkg,ngfc->ndfkc" (with from_grid reshaped (D, K, G)) as a
         # broadcast batched matmul, then a reshape to (N, D, F, K*C). from_grid
         # is already stored as (D*K, G); the matmul output is reshaped/permuted.
-        n_channels = grid.shape[-1]
         grid_flat = xp.reshape(
             grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
         )
@@ -1310,12 +1318,11 @@ class BaseGridNet(NativeOP):
     def _from_grid_scalar(self, grid: Any) -> Any:
         """Project a grid field to the ``l=0`` coefficient only."""
         xp = array_api_compat.array_namespace(grid)
-        n_batch, _, n_focus, _ = grid.shape
+        n_batch, _, n_focus, n_channels = grid.shape
         from_grid = xp_asarray_nodetach(
             xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
         )
         from_grid = xp.astype(from_grid[: self.n_frames], grid.dtype)
-        n_channels = grid.shape[-1]
         grid_flat = xp.reshape(
             grid, (n_batch, self.projector.grid_size, n_focus * n_channels)
         )
@@ -1334,9 +1341,16 @@ class BaseGridNet(NativeOP):
             xp, weight[...], device=array_api_compat.device(left)
         )
         weight = xp.astype(weight, left.dtype)
-        n_batch, coeff_dim, n_focus, _ = left.shape
-        left_view = xp.reshape(left, (n_batch, coeff_dim, n_focus, self.n_frames, -1))
-        right_view = xp.reshape(right, (n_batch, coeff_dim, n_focus, self.n_frames, -1))
+        n_batch, coeff_dim, n_focus, n_channels = left.shape
+        frame_shape = (
+            n_batch,
+            coeff_dim,
+            n_focus,
+            self.n_frames,
+            n_channels // self.n_frames,
+        )
+        left_view = xp.reshape(left, frame_shape)
+        right_view = xp.reshape(right, frame_shape)
         scalar = xp.sum(
             left_view * weight[None, :, None, :, None] * right_view,
             axis=(1, 3),
@@ -1355,9 +1369,11 @@ class BaseGridNet(NativeOP):
             return xp.permute_dims(value, (0, 2, 1, 3)), tuple(value.shape)
         if self.layout == "fndc":
             return xp.permute_dims(value, (1, 2, 0, 3)), tuple(value.shape)
-        n_batch, coeff_dim, _ = value.shape
+        n_batch, coeff_dim, n_channels = value.shape
         return (
-            xp.reshape(value, (n_batch, coeff_dim, self.n_focus, -1)),
+            xp.reshape(
+                value, (n_batch, coeff_dim, self.n_focus, n_channels // self.n_focus)
+            ),
             tuple(value.shape),
         )
 
@@ -1377,7 +1393,7 @@ class BaseGridNet(NativeOP):
             return xp.permute_dims(value, (2, 0, 1, 3))
         n_batch, input_coeff_dim, _ = shape_info
         coeff_dim = 1 if scalar_only else input_coeff_dim
-        return xp.reshape(value, (n_batch, coeff_dim, -1))
+        return xp.reshape(value, (n_batch, coeff_dim, value.shape[2] * value.shape[3]))
 
     def _slice_scalar_layout(self, value: Any) -> Any:
         """Select the degree axis from a restored full-layout tensor."""

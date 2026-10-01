@@ -25,6 +25,9 @@ reference:
 import math
 import typing
 import unittest
+from unittest import (
+    mock,
+)
 
 import torch
 from torch.fx.experimental.proxy_tensor import (
@@ -659,7 +662,17 @@ class TestSeZMTritonValuePath(unittest.TestCase):
     N_NODE = 512
     N_EDGE = 20000
 
+    @mock.patch.dict(
+        "os.environ",
+        {
+            "DP_TRITON_INFER": "0",
+            "DP_CUDA_INFER": "0",
+            "DP_TRITON_TRAIN": "0",
+            "DP_CUDA_TRAIN": "0",
+        },
+    )
     def _build_conv(self, lmax, channels, n_focus, focus_dim, layers, mode, rank):
+        """Build the dense reference independently of ambient acceleration gates."""
         from deepmd.pt.model.descriptor.sezm_nn.so2 import (
             SO2Convolution,
         )
@@ -849,6 +862,30 @@ class TestSeZMTritonValuePath(unittest.TestCase):
         )
         (grad_reference,) = torch.autograd.grad(reference, basis_reference, grad_out)
         torch.testing.assert_close(grad_fused, grad_reference, atol=1e-12, rtol=1e-12)
+
+    def test_float64_gated_activation_derivatives(self) -> None:
+        """The fp64 fallback preserves first and second finite-difference derivatives."""
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            fused_gated_activation,
+        )
+
+        generator = torch.Generator(device="cpu").manual_seed(41)
+        z = torch.randn(
+            1, 2, 14, dtype=torch.float64, device="cpu", generator=generator
+        ).requires_grad_(True)
+        weight = torch.randn(
+            1, 2, 4, dtype=torch.float64, device="cpu", generator=generator
+        ).requires_grad_(True)
+
+        def activate(z: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+            return fused_gated_activation(
+                z, weight, weight.transpose(1, 2).contiguous(), 2, 2
+            )
+
+        for check in (torch.autograd.gradcheck, torch.autograd.gradgradcheck):
+            self.assertTrue(
+                check(activate, (z, weight), atol=1e-8, rtol=1e-6, fast_mode=True)
+            )
 
     @_GPU_KERNELS
     def test_competition_gradient_preserves_small_positive_scale(self) -> None:
@@ -1969,6 +2006,49 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
                 {},
             )
         self.assertEqual(calls, [])
+
+    def test_tune_missing_configs_runs_the_real_flash_bwd_sweep(self):
+        """The flash-backward sweep launches the kernels it tunes.
+
+        The other tuning tests replace every sweep with a fake, so a sweep
+        launch that drifts from its kernel signature (as happened when the
+        ``PACKED`` layout flag and the Wigner strides were added to the
+        flash-attention backward kernels) is only caught by running the real
+        sweep once.  The built-in tables are hidden so the key is uncovered on
+        every GPU, and the edge count is kept tiny because the launch contract,
+        not the timing, is under test; the winners are therefore only checked
+        for membership in the candidate sets.
+        """
+        import itertools
+        from unittest import (
+            mock,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            sweep_tile_configs,
+        )
+
+        tc = self.tile_configs
+        specs = {"flash_bwd": sweep_tile_configs._SWEEP_SPECS["flash_bwd"]}
+        with (
+            mock.patch.object(tc, "_builtin_tables", return_value={}),
+            mock.patch.dict(sweep_tile_configs._SWEEP_SPECS, specs, clear=True),
+        ):
+            registered = sweep_tile_configs.tune_missing_configs(
+                [(32, 2, 1, 1)], level=2, device="cuda", n_edge=4096
+            )
+        key = (32, 2)
+        self.assertEqual(sorted(registered), ["flash_bwd_block", "flash_bwd_edge"])
+        self.assertIn(
+            registered["flash_bwd_edge"][key],
+            set(itertools.product((1, 2, 4), (1, 2))),
+        )
+        block = registered["flash_bwd_block"][key]
+        self.assertTrue(
+            block is None or block in set(sweep_tile_configs._EDGE_BLOCK_CANDIDATES)
+        )
+        self.assertTrue(tc.has_tile_config("flash_bwd_edge", key))
+        self.assertTrue(tc.has_tile_config("flash_bwd_block", key))
 
 
 if __name__ == "__main__":

@@ -52,6 +52,7 @@ from deepmd.dpmodel.train import (
     RankContext,
     ShardingPolicy,
     TrainerConfig,
+    TrainingMetricAccumulator,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
@@ -70,11 +71,17 @@ from deepmd.dpmodel.utils.learning_rate import (
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 from deepmd.loggers.training import (
     log_parameter_counts,
 )
 from deepmd.pt.optimizer import (
     HybridMuonOptimizer,
+)
+from deepmd.pt.optimizer.hybrid_muon import (
+    adam_route_patterns,
 )
 from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
@@ -279,6 +286,11 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     per-node moment input and return additional magnetic outputs. A spin task
     must therefore never reuse a spin-free task's compiled graph even when the
     descriptor and fitting parameters are shared.
+
+    The fitting's vacuum-reference state selects static branches in the
+    atomic model and fitting. Shared weights do not make those branches
+    interchangeable: tasks without a preset bias disable the reference,
+    while a folded reference no longer appends isolated atoms to the graph.
     """
     descriptor_id: int = 0
     try:
@@ -292,14 +304,19 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
         pass
 
     fitting_id: int = id(model)
+    vacuum_state = (0, 0)
     try:
         fitting = model.get_fitting_net()
+        vacuum_state = (
+            int(fitting.vacuum_ref),
+            int(fitting.needs_vacuum_descriptor()),
+        )
         for _, child in fitting.named_children():
             fitting_id = id(child)
             break
     except AttributeError:
         pass
-    return (int(model.has_spin()), descriptor_id, fitting_id)
+    return (int(model.has_spin()), descriptor_id, fitting_id, *vacuum_state)
 
 
 # ---------------------------------------------------------------------------
@@ -810,9 +827,9 @@ def _trace_and_compile_graph(
         nloc_trace += 1
     trace_N = trace_nf * nloc_trace
 
-    # Shared with the .pt2 export trace (serialization.py) so the two graph
-    # traces can never desync on the input schema.  Training uses the run-time
-    # float precision and device; optional tensors match the actual call.
+    # The positional input order is shared with .pt2 export (serialization.py).
+    # Training uses the runtime precision, device, and optional-input presence;
+    # its graph builders omit the CSR metadata carried by deployment inputs.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
         check_graph_trace_torch_version,
@@ -853,6 +870,7 @@ def _trace_and_compile_graph(
         want_aparam=aparam is not None,
         want_charge_spin=charge_spin is not None,
         want_spin=spin is not None,
+        canonicalize=False,
     )
     (
         s_atype,
@@ -879,10 +897,10 @@ def _trace_and_compile_graph(
         edge_index: torch.Tensor,
         edge_vec: torch.Tensor,
         edge_mask: torch.Tensor,
-        destination_order: torch.Tensor,
-        destination_row_ptr: torch.Tensor,
-        source_order: torch.Tensor,
-        source_row_ptr: torch.Tensor,
+        destination_order: torch.Tensor | None,
+        destination_row_ptr: torch.Tensor | None,
+        source_order: torch.Tensor | None,
+        source_row_ptr: torch.Tensor | None,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
@@ -1073,9 +1091,15 @@ class _CompiledModel(torch.nn.Module):
         cache_key = (*self._structure_key, self.training)
         cached = self._compiled_by_structure.get(cache_key)
         if cached is not None:
-            log.info("Reusing the graph compiled for an earlier task (%s).", attributes)
+            log.debug(
+                "Reusing the graph compiled for an earlier task (%s).", attributes
+            )
             return cached
-        log.info("Tracing and compiling the model (%s).", attributes)
+        log.info(
+            "Tracing and compiling the model (%s).",
+            attributes,
+            extra={"rank_scope": "all"},
+        )
         started = time.perf_counter()
         compiled = trace()
         # ``torch.compile`` only schedules the Inductor compile; it runs on the
@@ -1104,6 +1128,7 @@ class _CompiledModel(torch.nn.Module):
             "Finished compiling (%s) in %.1f s.",
             attributes,
             time.perf_counter() - started,
+            extra={"rank_scope": "all"},
         )
 
     def __getattr__(self, name: str) -> Any:
@@ -2255,6 +2280,7 @@ class Trainer(AbstractTrainer):
                 weight_decay=weight_decay,
             )
         else:
+            adam_patterns = adam_route_patterns(self.models.values())
             self.optimizer = self._create_optimizer(
                 HybridMuonOptimizer,
                 lr=initial_lr,
@@ -2267,6 +2293,7 @@ class Trainer(AbstractTrainer):
                 enable_gram=bool(optimizer_params["enable_gram"]),
                 flash_muon=bool(optimizer_params["flash_muon"]),
                 magma_muon=bool(optimizer_params["magma_muon"]),
+                adam_patterns=adam_patterns,
                 # Sharded parameters are DTensors, and several torch._foreach_*
                 # ops lack sharding propagation, so the per-tensor path applies.
                 use_foreach=False if self.sharding.shards_parameters else None,
@@ -2323,13 +2350,23 @@ class Trainer(AbstractTrainer):
                 restart_training=self.restart_training,
             ),
             rank_context=RankContext(rank=self.rank, world_size=self.world_size),
+            metric_accumulator=(
+                TrainingMetricAccumulator(
+                    {
+                        key: loss.training_metric_names
+                        for key, loss in self.losses.items()
+                    }
+                )
+                if training_params.get("disp_avg", False)
+                else None
+            ),
         )
         self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
             validation_data=self.validation_data if not self.multi_task else None,
         )
 
-        if self.rank == 0:
+        if is_node_main_process(self.rank):
             log_parameter_counts(
                 {key: count_parameters(self.models[key]) for key in self.model_keys},
                 multi_task=self.multi_task,
@@ -2744,7 +2781,7 @@ class Trainer(AbstractTrainer):
 
     def _log_sharding_strategy(self) -> None:
         """Report the distribution strategy once the wrapper is in place."""
-        if self.sharding.enabled and self.rank == 0:
+        if self.sharding.enabled:
             log.info(self.sharding.describe())
 
     def _load_optimizer_state(self, optimizer_state_dict: dict[str, Any]) -> None:
@@ -3085,7 +3122,10 @@ class Trainer(AbstractTrainer):
             return
         if self.opt_type not in ("Adam", "AdamW", "HybridMuon"):
             return
-        log.info("Compiling training graphs before the first collective.")
+        log.info(
+            "Compiling training graphs before the first collective.",
+            extra={"rank_scope": "all"},
+        )
         start = time.time()
         inner = self._unwrapped
         trainable_parameters = tuple(
@@ -3105,6 +3145,7 @@ class Trainer(AbstractTrainer):
         log.info(
             "Training graphs ready in %.1f s; waiting for the other ranks.",
             time.time() - start,
+            extra={"rank_scope": "all"},
         )
         store = dist.distributed_c10d._get_default_store()
         key = "deepmd/precompile_ready"
@@ -3250,6 +3291,15 @@ class Trainer(AbstractTrainer):
         return TrainStepResult(
             task_key=task_key,
             step=step,
+            train_results=(
+                {
+                    key: value.detach() if torch.is_tensor(value) else value
+                    for key, value in more_loss.items()
+                    if "l2_" not in key
+                }
+                if self.metric_accumulator is not None
+                else None
+            ),
             payload={
                 "loss": loss,
                 "more_loss": more_loss,

@@ -150,7 +150,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     lmax
         Maximum angular degree. Supported values are 2, 3, and 4.
     basis_type
-        DPA4 radial basis type: ``"bessel"`` or ``"gaussian"``.
+        DPA4 radial basis type: ``"bessel"``, ``"gaussian"`` or their ``/fix``
+        forms, which keep the basis parameters fixed during training.
     n_radial
         Number of DPA4 radial basis functions forming the fixed analytic
         radial input.
@@ -322,8 +323,7 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             basis_type=self.basis_type,
             n_radial=self.n_radial,
             precision=self.precision,
-            exponent=self._ENVELOPE_EXPONENT,
-            apply_envelope=False,
+            exponent=0,
         )
         self.radial_embedding = SwiGLUMLP(
             [self.n_radial, radial_hidden, self.channels],

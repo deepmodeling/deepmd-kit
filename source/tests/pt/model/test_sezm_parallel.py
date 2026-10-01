@@ -336,14 +336,15 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
         sysm = _build_extended_system(model, device)
         comm = _self_comm_dict(sysm["mapping"], sysm["nloc"], sysm["nall"])
 
-        ref, _ = descriptor.forward_with_edges(
+        ref, _, ref_vacuum = descriptor.forward_with_edges(
             extended_coord=sysm["coord"][:, : sysm["nloc"], :],
             extended_atype=sysm["atype"],
             edge_index=sysm["edge_index"],
             edge_vec=sysm["edge_vec"],
             edge_mask=sysm["edge_mask"],
+            vacuum_conditions={},
         )
-        par, _ = descriptor.forward_with_edges(
+        par, _, par_vacuum = descriptor.forward_with_edges(
             extended_coord=sysm["coord"],
             extended_atype=sysm["extended_atype"],
             edge_index=sysm["edge_scatter_index"],
@@ -351,8 +352,15 @@ class TestSeZMDescriptorSelfCommParity(unittest.TestCase):
             edge_mask=sysm["edge_mask"],
             comm_dict=comm,
             nloc=sysm["nloc"],
+            vacuum_conditions={},
         )
         torch.testing.assert_close(par, ref, rtol=1e-8, atol=1e-9)
+        # the vacuum reference rows trail the ghost rows and stay untouched
+        # by the border exchange
+        self.assertEqual(
+            tuple(par_vacuum.shape), (descriptor.ntypes, descriptor.channels)
+        )
+        torch.testing.assert_close(par_vacuum, ref_vacuum, rtol=1e-8, atol=1e-9)
 
 
 class TestSeZMNativeSpinParallelParity(unittest.TestCase):

@@ -98,6 +98,15 @@ def make_base_model() -> type[object]:
         def model_output_type(self) -> list[str]:
             """Get the output type for the model."""
 
+        def adam_route_patterns(self) -> list[str]:
+            """Return model-relative parameter name patterns for HybridMuon's AdamW path.
+
+            Each pattern is a substring of a parameter name. Compositions
+            prefix their children's patterns with the corresponding attribute
+            names and indices.
+            """
+            return []
+
         def has_spin(self) -> bool:
             """Returns whether the model has spin input and output.
 
