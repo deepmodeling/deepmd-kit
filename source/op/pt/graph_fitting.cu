@@ -36,6 +36,7 @@
 #include <utility>
 #include <vector>
 
+#include "graph_fitting_gemm.h"
 #include "graph_ops.h"
 
 namespace {
@@ -48,8 +49,9 @@ namespace {
 
 cublasHandle_t cublas_handle() {
   // A cuBLAS handle is device-bound and unsafe to share across threads, so
-  // cache one per device in thread-local storage. Pedantic math keeps the fp32
-  // potential-energy surface exact (no TF32, no split-K reordering) for MD.
+  // cache one per device in thread-local storage. Pedantic math disables TF32,
+  // but does not guarantee identical reductions across different node counts.
+  // The optional shape-stable path fixes its full-matrix configuration.
   thread_local std::unordered_map<int, cublasHandle_t> handles;
   int device = 0;
   cudaGetDevice(&device);
@@ -70,6 +72,10 @@ void gemm_nn(cudaStream_t stream,
              int n,
              int k,
              float beta = 0.f) {
+  if (deepmd_fitting::shape_stable_enabled()) {
+    deepmd_fitting::context(stream).run(stream, a, b, c, m, n, k, false, beta);
+    return;
+  }
   cublasSetStream(cublas_handle(), stream);
   const float alpha = 1.f;
   cublasSgemm(cublas_handle(), CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, &alpha, b, n,
@@ -85,6 +91,10 @@ void gemm_nt(cudaStream_t stream,
              int n,
              int k,
              float beta = 0.f) {
+  if (deepmd_fitting::shape_stable_enabled()) {
+    deepmd_fitting::context(stream).run(stream, a, b, c, m, n, k, true, beta);
+    return;
+  }
   cublasSetStream(cublas_handle(), stream);
   const float alpha = 1.f;
   cublasSgemm(cublas_handle(), CUBLAS_OP_T, CUBLAS_OP_N, n, m, k, &alpha, b, k,
