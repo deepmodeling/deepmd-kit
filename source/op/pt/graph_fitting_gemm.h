@@ -147,6 +147,10 @@ class Plan {
            int nodes,
            float beta) {
     if (nodes != last_nodes_) {
+      // Invalidate before mutating either descriptor. If a layout update or
+      // support check throws, the next call must restore and revalidate its
+      // requested node count instead of trusting stale descriptor state.
+      last_nodes_ = -1;
       features_.columns(nodes);
       output_.columns(nodes);
       cublasLtMatmulHeuristicResult_t support{};
