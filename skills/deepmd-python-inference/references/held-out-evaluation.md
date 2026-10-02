@@ -21,14 +21,18 @@ held-out evaluation.
 ## Run every system
 
 Use the backend required by the exact candidate artifact. For a DPA4/SeZM native
-checkpoint, run one command per held-out system:
+checkpoint, run one command per held-out system. Use a unique, suffix-free
+detail prefix such as `system_000` or `system_001`; the energy detail writer
+replaces a path suffix with `.e.out`, `.e_peratom.out`, and `.f.out`. A dotted
+identifier such as `system.000` would therefore collide with another system
+after suffix replacement:
 
 ```bash
 detail_root="details/selected-SHA256"
 test ! -e "$detail_root" || exit 1
 mkdir -p "$detail_root"
-detail_prefix="$detail_root/system.000"
-dp --pt test -m selected.pt -s held_out/system.000 -n 0 -d "$detail_prefix"
+detail_prefix="$detail_root/system_000"
+dp --pt test -m selected.pt -s held_out/system_000 -n 0 -d "$detail_prefix"
 ```
 
 `-n 0` evaluates all frames. Require explicit `-m`, `-s`, and a unique `-d`
@@ -40,7 +44,7 @@ branch during evaluation:
 
 ```bash
 dp --pt show selected.pt model-branch
-dp --pt test -m selected.pt -s held_out/system.000 -n 0 \
+dp --pt test -m selected.pt -s held_out/system_000 -n 0 \
     -d "$detail_prefix" --head SELECTED_BRANCH
 ```
 

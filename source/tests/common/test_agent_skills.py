@@ -8,6 +8,7 @@ from pathlib import (
     Path,
 )
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -185,7 +186,38 @@ touch "${detail_prefix}.e.out" "${detail_prefix}.e_peratom.out" \
 
     assert first.returncode == 0
     assert second.returncode != 0
-    assert (tmp_path / "details" / "selected-SHA256" / "system.000.e.out").is_file()
+    assert (tmp_path / "details" / "selected-SHA256" / "system_000.e.out").is_file()
+
+
+def test_real_detail_writer_keeps_two_system_outputs(tmp_path: Path) -> None:
+    pytest.importorskip("deepmd.lib", reason="requires a built DeePMD checkout")
+    from deepmd.infer.model_test.ener import (
+        _write_energy_test_details,
+    )
+
+    for index, energy in enumerate((10.0, 11.0)):
+        detail_path = tmp_path / f"system_{index:03d}"
+        _write_energy_test_details(
+            detail_path=detail_path,
+            system=detail_path.name,
+            natoms=1,
+            append_detail=False,
+            reference_energy=np.array([energy]),
+            prediction_energy=np.array([energy + 0.5]),
+            reference_force=np.zeros((1, 3)),
+            prediction_force=np.zeros((1, 3)),
+            reference_virial=None,
+            prediction_virial=None,
+            out_put_spin=False,
+        )
+
+    outputs = sorted(tmp_path.glob("system_*.e.out"))
+    assert [path.name for path in outputs] == [
+        "system_000.e.out",
+        "system_001.e.out",
+    ]
+    assert np.loadtxt(outputs[0], ndmin=2)[0, 0] == pytest.approx(10.0)
+    assert np.loadtxt(outputs[1], ndmin=2)[0, 0] == pytest.approx(11.0)
 
 
 def test_dpa4_minimal_model_configuration_normalizes() -> None:
@@ -229,6 +261,37 @@ def test_dpa4c_skill_routes_backend_specific_compile_options() -> None:
     assert "training.enable_tf32" in reference
     assert "model.use_compile" in reference
     assert "Do not put `use_compile` under `model` for DPA4C" in reference
+
+
+def test_dpa4c_reference_configuration_initializes_trainer(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("deepmd.lib", reason="requires a built DeePMD checkout")
+    from deepmd.pt_expt.entrypoints.main import (
+        get_trainer,
+    )
+    from deepmd.utils.argcheck import (
+        normalize,
+    )
+    from deepmd.utils.compat import (
+        update_deepmd_input,
+    )
+
+    text = DPA4C_TRAIN_REFERENCE.read_text(encoding="utf-8")
+    fence = chr(96) * 3
+    fenced_json = text.split(fence + "json", 1)[1].split(fence, 1)[0]
+    config = json.loads(fenced_json)
+    config["training"]["training_data"]["systems"] = [
+        str(ROOT / "examples" / "water" / "data" / "data_0")
+    ]
+    config["training"]["numb_steps"] = 1
+    config["training"]["enable_compile"] = False
+    config["training"]["stat_file"] = str(tmp_path / "dpa4c.hdf5")
+
+    config = normalize(update_deepmd_input(config, warning=False))
+    trainer = get_trainer(config)
+
+    assert trainer.lr_schedule is not None
 
 
 def test_dpa4c_export_policy_matches_model_documentation() -> None:

@@ -45,6 +45,10 @@ not as a separate model scaffold:
       "precision": "float32"
     }
   },
+  "learning_rate": {
+    "type": "exp",
+    "start_lr": 1e-3
+  },
   "training": {
     "training_data": {
       "systems": [
