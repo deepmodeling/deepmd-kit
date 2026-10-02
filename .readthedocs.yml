@@ -7,8 +7,8 @@ build:
     post_create_environment:
       - pip install uv
     post_install:
-      # RTD's current PyTorch headers require C++20 on Ubuntu 26.04.
-      - VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -Ccmake.define.CMAKE_CXX_STANDARD=20 -r doc/requirements.txt
+      # RTD renders documentation without executing custom PyTorch operators.
+      - DP_ENABLE_PYTORCH=0 VIRTUAL_ENV=$READTHEDOCS_VIRTUALENV_PATH uv pip install -r doc/requirements.txt
   apt_packages:
     - inkscape
 sphinx:
