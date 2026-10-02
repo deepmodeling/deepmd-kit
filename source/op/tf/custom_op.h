@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -50,6 +51,48 @@ inline Status InvalidArgument(Args&&... args) {
 #else
   return tensorflow::errors::InvalidArgument(std::forward<Args>(args)...);
 #endif
+}
+
+/**
+ * @brief Derive a dense tensor's per-atom width without truncating division.
+ *
+ * Several low-level TensorFlow ops flatten atom and feature dimensions into a
+ * single axis.  Validate the flattened width before dividing by `nloc`; raw
+ * CPU/GPU kernels cannot safely consume a leftover partial atom row.
+ *
+ * @param per_atom_width Receives the validated feature width for one atom.
+ * @param shape Rank-two tensor shape whose second dimension is flattened.
+ * @param nloc Number of local atoms encoded in the flattened dimension.
+ * @param tensor_name Human-readable input name used in validation errors.
+ * @return An OK status, or InvalidArgument when the width is incompatible.
+ */
+inline Status GetPerAtomWidth(int* per_atom_width,
+                              const TensorShape& shape,
+                              const int nloc,
+                              const char* tensor_name) {
+  const int64_t flattened_width = shape.dim_size(1);
+  if (nloc < 0) {
+    return InvalidArgument("number of local atoms should be non-negative");
+  }
+  if (nloc == 0) {
+    if (flattened_width != 0) {
+      return InvalidArgument(tensor_name,
+                             " width should be zero when nloc is zero");
+    }
+    *per_atom_width = 0;
+    return Status();
+  }
+  if (flattened_width % nloc != 0) {
+    return InvalidArgument(tensor_name, " width ", flattened_width,
+                           " should be divisible by nloc ", nloc);
+  }
+  const int64_t width = flattened_width / nloc;
+  if (width > std::numeric_limits<int>::max()) {
+    return InvalidArgument(tensor_name,
+                           " width per atom exceeds the supported int range");
+  }
+  *per_atom_width = static_cast<int>(width);
+  return Status();
 }
 }  // namespace tf_compat
 }  // namespace deepmd
