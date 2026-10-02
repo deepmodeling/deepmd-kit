@@ -47,7 +47,7 @@ not as a separate model scaffold:
   },
   "learning_rate": {
     "type": "exp",
-    "start_lr": 1e-3
+    "start_lr": 0.001
   },
   "training": {
     "training_data": {
