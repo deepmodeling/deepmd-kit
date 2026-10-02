@@ -278,8 +278,8 @@ TEST(TestEdgeTensorPack, DeviceConstructionRejectsInvalidOwnerMapping) {
       torch::tensor({0, 3, 2}, torch::kInt64).reshape({1, 3});
 
   EXPECT_THROW(
-      createEdgeTensorsDevice(nlist_tensor, coord_tensor, invalid_mapping, 3,
-                              3, /*fold_to_local=*/true,
+      createEdgeTensorsDevice(nlist_tensor, coord_tensor, invalid_mapping, 3, 3,
+                              /*fold_to_local=*/true,
                               /*with_geometry=*/false),
       deepmd::deepmd_exception);
 }
