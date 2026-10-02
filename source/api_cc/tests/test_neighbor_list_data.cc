@@ -307,15 +307,14 @@ TEST(TestEdgeTensorPack, DeviceConstructionMatchesHostOnCudaForGhostRows) {
       torch::tensor(coord, torch::TensorOptions().dtype(torch::kFloat64))
           .reshape({1, 5, 3})
           .to(device);
-  const auto mapping_tensor = torch::tensor(mapping, torch::kInt64)
-                                  .reshape({1, 5})
-                                  .to(device);
+  const auto mapping_tensor =
+      torch::tensor(mapping, torch::kInt64).reshape({1, 5}).to(device);
   const auto centers_tensor = torch::tensor(centers, torch::kInt64).to(device);
 
   for (const bool fold_to_local : {true, false}) {
-    const auto host = createEdgeTensors(
-        nlist, coord, mapping, 3, 5, device, /*with_geometry=*/false,
-        &centers, fold_to_local);
+    const auto host =
+        createEdgeTensors(nlist, coord, mapping, 3, 5, device,
+                          /*with_geometry=*/false, &centers, fold_to_local);
     const auto actual = createEdgeTensorsDevice(
         nlist_tensor, coord_tensor, mapping_tensor, 3, 5, fold_to_local,
         /*with_geometry=*/false, centers_tensor);
@@ -330,10 +329,12 @@ TEST(TestEdgeTensorPack, DeviceConstructionMatchesHostOnCudaForGhostRows) {
   const auto actual_geometry = createEdgeTensorsDevice(
       nlist_tensor, coord_tensor, mapping_tensor, 3, 5,
       /*fold_to_local=*/true, /*with_geometry=*/true, centers_tensor);
-  EXPECT_TRUE(torch::equal(actual_geometry.edge_index, host_geometry.edge_index));
   EXPECT_TRUE(
-      torch::equal(actual_geometry.edge_index_ext, host_geometry.edge_index_ext));
-  EXPECT_TRUE(torch::allclose(actual_geometry.edge_vec, host_geometry.edge_vec));
+      torch::equal(actual_geometry.edge_index, host_geometry.edge_index));
+  EXPECT_TRUE(torch::equal(actual_geometry.edge_index_ext,
+                           host_geometry.edge_index_ext));
+  EXPECT_TRUE(
+      torch::allclose(actual_geometry.edge_vec, host_geometry.edge_vec));
   EXPECT_TRUE(torch::equal(actual_geometry.edge_mask, host_geometry.edge_mask));
 }
 
