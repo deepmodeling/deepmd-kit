@@ -573,6 +573,12 @@ class TestDpa4GraphLower:
         one it was traced/exported on -- proving the dynamism is real, not
         an artifact baked to the trace-time shapes.
         """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            attach_edge_csr,
+        )
+        from deepmd.pt_expt.utils.graph_builder import (
+            build_ragged_neighbor_graph,
+        )
         from deepmd.pt_expt.utils.serialization import (
             _build_graph_dynamic_shapes,
             build_synthetic_graph_inputs,
@@ -593,6 +599,8 @@ class TestDpa4GraphLower:
             device=torch.device("cpu"),
         )
         atype, n_node, n_local, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+        if add_chg_spin_ebd:
+            cs = torch.arange(1, 11, dtype=torch.float64).reshape(5, 2) / 4
         traced = model.forward_lower_graph_exportable(
             atype,
             n_node,
@@ -692,6 +700,67 @@ class TestDpa4GraphLower:
         torch.testing.assert_close(
             out["virial"], ref["energy_derv_c_redu"].reshape(out["virial"].shape), **tol
         )
+
+        if add_chg_spin_ebd:
+            # Reuse the SAME export on ragged batches, with frame conditions
+            # that differ from tracing and change again between replays.
+            # [1, 3] catches an equal-count mapping that silently assigns the
+            # first frame's condition to an atom of the second frame.
+            model.neighbor_graph_method = "ase"
+            conditions = torch.tensor([[0.5, 1.5], [-1.5, 2.5]], dtype=torch.float64)
+            for counts in ((1, 2), (1, 3), (2, 2)):
+                frames = [
+                    torch.tensor(
+                        [[0.6 * j, 0.1 * j, 0.0] for j in range(n)],
+                        dtype=torch.float64,
+                    )
+                    for n in counts
+                ]
+                coord = torch.cat(frames)
+                types = torch.zeros(sum(counts), dtype=torch.int64)
+                frame_counts = torch.tensor(counts, dtype=torch.int64)
+                graph = build_ragged_neighbor_graph(
+                    "ase", coord, types, frame_counts, None, model.get_rcut(), None
+                )
+                graph = attach_edge_csr(graph, sum(counts), canonicalize=True)
+                graph_args = (
+                    types,
+                    graph.n_node,
+                    graph.n_node,
+                    graph.edge_index,
+                    graph.edge_vec,
+                    graph.edge_mask,
+                    graph.destination_order,
+                    graph.destination_row_ptr,
+                    graph.source_order,
+                    graph.source_row_ptr,
+                    None,
+                    None,
+                )
+                previous = None
+                for charge_spin in (conditions, conditions.flip(0)):
+                    out = loaded(*graph_args, charge_spin)
+                    # Independent one-frame eager calls are the oracle, so
+                    # export and eager cannot share a ragged mapping mistake.
+                    singles = [
+                        model.forward_ragged(
+                            frame,
+                            torch.zeros(n, dtype=torch.int64),
+                            torch.tensor([n], dtype=torch.int64),
+                            charge_spin=charge_spin[i : i + 1],
+                            do_atomic_virial=True,
+                        )
+                        for i, (n, frame) in enumerate(zip(counts, frames, strict=True))
+                    ]
+                    for key in ("energy", "force", "virial"):
+                        expected = torch.cat([single[key] for single in singles])
+                        assert torch.isfinite(out[key]).all()
+                        torch.testing.assert_close(out[key], expected, **tol)
+                        if previous is not None:
+                            assert (out[key] - previous[key]).abs().max() > 1e-8, (
+                                f"exported {key} must respond to charge/spin"
+                            )
+                    previous = out
 
     def test_graph_lower_do_atomic_virial_filtering(self) -> None:
         """``do_atomic_virial`` is a pure output filter, not a compute switch.
