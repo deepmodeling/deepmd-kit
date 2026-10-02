@@ -261,6 +261,9 @@ TEST(TestEdgeTensorPack, DeviceConstructionHandlesPaddingAndDummyEdges) {
   ASSERT_EQ(pack.edge_vec.size(0), 3);
   ASSERT_EQ(pack.edge_mask.size(0), 3);
   EXPECT_EQ(pack.edge_mask.sum().item<int64_t>(), 1);
+  EXPECT_TRUE(torch::equal(
+      pack.edge_vec.select(0, 0),
+      torch::tensor({1.0, 0.0, 0.0}, coord_tensor.options())));
   EXPECT_FALSE(pack.edge_mask.select(0, 1).item<bool>());
   EXPECT_FALSE(pack.edge_mask.select(0, 2).item<bool>());
 }
