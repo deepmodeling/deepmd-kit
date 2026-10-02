@@ -221,8 +221,8 @@ TEST(TestEdgeTensorPack, DeviceConstructionMatchesHostWithRowCenters) {
   };
   const std::vector<std::int64_t> mapping = {0, 1, 2};
 
-  const auto host = createEdgeTensors(
-      nlist, coord, mapping, 3, 3, device, /*with_geometry=*/false, &centers);
+  const auto host = createEdgeTensors(nlist, coord, mapping, 3, 3, device,
+                                      /*with_geometry=*/false, &centers);
   const auto nlist_tensor =
       torch::tensor({{0, -1}, {1, 2}}, torch::kInt64).reshape({1, 2, 2});
   const auto coord_tensor =
@@ -237,8 +237,7 @@ TEST(TestEdgeTensorPack, DeviceConstructionMatchesHostWithRowCenters) {
       /*fold_to_local=*/true, /*with_geometry=*/false, centers_tensor);
 
   EXPECT_TRUE(torch::equal(device_pack.edge_index, host.edge_index));
-  EXPECT_TRUE(
-      torch::equal(device_pack.edge_index_ext, host.edge_index_ext));
+  EXPECT_TRUE(torch::equal(device_pack.edge_index_ext, host.edge_index_ext));
   EXPECT_FALSE(device_pack.edge_vec.defined());
   EXPECT_FALSE(device_pack.edge_mask.defined());
 }
@@ -250,12 +249,12 @@ TEST(TestEdgeTensorPack, DeviceConstructionHandlesPaddingAndDummyEdges) {
       torch::tensor({0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0},
                     torch::TensorOptions().dtype(torch::kFloat64))
           .reshape({1, 3, 3});
-  const auto mapping_tensor = torch::tensor({0, 1, 2}, torch::kInt64)
-                                  .reshape({1, 3});
+  const auto mapping_tensor =
+      torch::tensor({0, 1, 2}, torch::kInt64).reshape({1, 3});
 
-  const auto pack = createEdgeTensorsDevice(
-      nlist_tensor, coord_tensor, mapping_tensor, 3, 3,
-      /*fold_to_local=*/true, /*with_geometry=*/true);
+  const auto pack =
+      createEdgeTensorsDevice(nlist_tensor, coord_tensor, mapping_tensor, 3, 3,
+                              /*fold_to_local=*/true, /*with_geometry=*/true);
 
   ASSERT_EQ(pack.edge_index.size(1), 3);
   ASSERT_EQ(pack.edge_vec.size(0), 3);
