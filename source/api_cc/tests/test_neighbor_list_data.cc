@@ -210,6 +210,61 @@ TEST(TestEdgeTensorPack, CreateEdgeTensorsUsesRowCenters) {
                            torch::tensor({0, 2, 0, 0}, torch::kInt64)));
 }
 
+TEST(TestEdgeTensorPack, DeviceConstructionMatchesHostWithRowCenters) {
+  const torch::Device device(torch::kCPU);
+  const std::vector<std::vector<int>> nlist = {{0}, {1, 2}};
+  const std::vector<int> centers = {2, 0};
+  const std::vector<double> coord = {
+      0.0, 0.0, 0.0,  // atom 0
+      1.0, 0.0, 0.0,  // atom 1
+      2.0, 0.0, 0.0,  // atom 2
+  };
+  const std::vector<std::int64_t> mapping = {0, 1, 2};
+
+  const auto host = createEdgeTensors(
+      nlist, coord, mapping, 3, 3, device, /*with_geometry=*/false, &centers);
+  const auto nlist_tensor =
+      torch::tensor({{0, -1}, {1, 2}}, torch::kInt64).reshape({1, 2, 2});
+  const auto coord_tensor =
+      torch::tensor(coord, torch::TensorOptions().dtype(torch::kFloat64))
+          .reshape({1, 3, 3});
+  const auto mapping_tensor =
+      torch::tensor(mapping, torch::kInt64).reshape({1, 3});
+  const auto centers_tensor = torch::tensor(centers, torch::kInt64);
+
+  const auto device_pack = createEdgeTensorsDevice(
+      nlist_tensor, coord_tensor, mapping_tensor, 3, 3,
+      /*fold_to_local=*/true, /*with_geometry=*/false, centers_tensor);
+
+  EXPECT_TRUE(torch::equal(device_pack.edge_index, host.edge_index));
+  EXPECT_TRUE(
+      torch::equal(device_pack.edge_index_ext, host.edge_index_ext));
+  EXPECT_FALSE(device_pack.edge_vec.defined());
+  EXPECT_FALSE(device_pack.edge_mask.defined());
+}
+
+TEST(TestEdgeTensorPack, DeviceConstructionHandlesPaddingAndDummyEdges) {
+  const auto nlist_tensor =
+      torch::tensor({{0, -1}, {1, 2}}, torch::kInt64).reshape({1, 2, 2});
+  const auto coord_tensor =
+      torch::tensor({0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0},
+                    torch::TensorOptions().dtype(torch::kFloat64))
+          .reshape({1, 3, 3});
+  const auto mapping_tensor = torch::tensor({0, 1, 2}, torch::kInt64)
+                                  .reshape({1, 3});
+
+  const auto pack = createEdgeTensorsDevice(
+      nlist_tensor, coord_tensor, mapping_tensor, 3, 3,
+      /*fold_to_local=*/true, /*with_geometry=*/true);
+
+  ASSERT_EQ(pack.edge_index.size(1), 3);
+  ASSERT_EQ(pack.edge_vec.size(0), 3);
+  ASSERT_EQ(pack.edge_mask.size(0), 3);
+  EXPECT_EQ(pack.edge_mask.sum().item<int64_t>(), 1);
+  EXPECT_FALSE(pack.edge_mask.select(0, 1).item<bool>());
+  EXPECT_FALSE(pack.edge_mask.select(0, 2).item<bool>());
+}
+
 TEST(TestEdgeTensorPack, CompactFiltersSkinTopologyAndAppendsDummies) {
   const torch::Device device(torch::kCPU);
   const std::vector<std::vector<int>> nlist = {{1, 2}, {0}};
