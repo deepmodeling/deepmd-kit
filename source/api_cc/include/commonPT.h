@@ -415,8 +415,24 @@ inline EdgeTensorPack createEdgeTensorsDevice(
       torch::where(valid, nlist_flat, torch::zeros_like(nlist_flat));
 
   // src_local: map extended neighbor to local owner via mapping
-  // mapping is [1, nall], flatten to [nall]
+  // mapping is [1, nall], flatten to [nall].  Folding requires a complete
+  // owner table and every owner must identify a local atom; silently filtering
+  // invalid owners would drop halo edges and produce an incomplete graph.
   auto mapping_flat = mapping.reshape({-1});  // [nall]
+  if (fold_to_local) {
+    if (mapping_flat.numel() < nall) {
+      throw deepmd::deepmd_exception(
+          "folding ghost neighbours onto their local owners needs an owner for "
+          "each extended atom, but the device mapping is shorter than nall");
+    }
+    auto owner_prefix = mapping_flat.narrow(0, 0, nall);
+    auto invalid_owner = (owner_prefix < 0) | (owner_prefix >= nloc);
+    if (torch::any(invalid_owner).item<bool>()) {
+      throw deepmd::deepmd_exception(
+          "an extended atom maps to an owner outside the local atom range; "
+          "under LAMMPS this requires `atom_modify map yes`");
+    }
+  }
   auto src_local =
       mapping_flat.index_select(0, neighbor_safe);  // [nloc * nnei]
 

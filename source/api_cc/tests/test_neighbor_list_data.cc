@@ -267,6 +267,23 @@ TEST(TestEdgeTensorPack, DeviceConstructionHandlesPaddingAndDummyEdges) {
   EXPECT_FALSE(pack.edge_mask.select(0, 2).item<bool>());
 }
 
+TEST(TestEdgeTensorPack, DeviceConstructionRejectsInvalidOwnerMapping) {
+  const auto nlist_tensor =
+      torch::tensor({{0, -1}, {1, 2}}, torch::kInt64).reshape({1, 2, 2});
+  const auto coord_tensor =
+      torch::tensor({0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0},
+                    torch::TensorOptions().dtype(torch::kFloat64))
+          .reshape({1, 3, 3});
+  const auto invalid_mapping =
+      torch::tensor({0, 3, 2}, torch::kInt64).reshape({1, 3});
+
+  EXPECT_THROW(
+      createEdgeTensorsDevice(nlist_tensor, coord_tensor, invalid_mapping, 3,
+                              3, /*fold_to_local=*/true,
+                              /*with_geometry=*/false),
+      deepmd::deepmd_exception);
+}
+
 TEST(TestEdgeTensorPack, CompactFiltersSkinTopologyAndAppendsDummies) {
   const torch::Device device(torch::kCPU);
   const std::vector<std::vector<int>> nlist = {{1, 2}, {0}};

@@ -1591,6 +1591,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     edge_tensors = createEdgeTensorsDevice(
         nlist_tensor, coord_Tensor, mapping_tensor, nloc, nall,
         /*fold_to_local=*/true, /*with_geometry=*/true);
+  } else if (lower_input_is_graph_ || lower_input_is_canonical_) {
+    // Standalone graph/canonical schemas still need their graph payload.  The
+    // GPU edge helper is specific to the edge lower; graph routes use the
+    // existing host topology builder and compact geometry path.
+    graph_tensors =
+        buildGraphTensors(nlist_raw, coord_cpy_d, atype_cpy, mapping_64, nloc,
+                          nall, static_cast<double>(rcut), device);
   } else {
     nlist_tensor =
         createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
