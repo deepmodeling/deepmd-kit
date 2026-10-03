@@ -811,6 +811,28 @@ class DeepmdData:
                     np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis=1
                 )
 
+        # frame-major keys that share the same extent must agree on it:
+        # a grid/density pair with different npoints would only fail far
+        # downstream when the residual is formed
+        frame_major_extents = {}
+        for kk, vv in self.data_dict.items():
+            if (
+                vv.get("special_shape") == "frame_major"
+                and kk in data
+                and float(data.get("find_" + kk, 0.0)) == 1.0
+            ):
+                arr = data[kk]
+                extent = arr.shape[-2] if arr.ndim >= 3 else arr.shape[-1] // vv["ndof"]
+                frame_major_extents[kk] = extent
+        if frame_major_extents:
+            extents = set(frame_major_extents.values())
+            if len(extents) > 1:
+                raise ValueError(
+                    f"The frame-major data in {set_name} have inconsistent "
+                    f"extents {frame_major_extents}; grid and density labels "
+                    "must share the same number of points"
+                )
+
         if self.mixed_type:
             # nframes x natoms
             atom_type_mix = self._load_type_mix(set_name)

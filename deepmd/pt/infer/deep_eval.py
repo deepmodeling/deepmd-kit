@@ -589,6 +589,10 @@ class DeepEval(DeepEvalBackend):
             # _eval_model_density returns a 1-element tuple; execute_all unwraps
             # it when auto batching is enabled, but with auto_batch_size=False
             # the inner function is called directly and the tuple survives.
+            # request_defs is ignored on this path: the density output is a
+            # single fixed variable, so atomic=True returns the same dict as
+            # atomic=False. Kept for signature parity with the other
+            # _eval_model_* paths.
             if isinstance(out, tuple):
                 (out,) = out
             return {"density": out}

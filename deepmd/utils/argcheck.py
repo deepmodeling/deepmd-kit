@@ -6660,7 +6660,9 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
     environment matrix produce NaN densities. 1e-6 is chosen as the minimal
     perturbation that keeps those terms finite (order 1e6 at exact
     coincidence) without shifting normal environments measurably; users can
-    still set any positive value (e.g. 0.1) explicitly.
+    still set any positive value (e.g. 0.1) explicitly. An explicit
+    ``env_protection: 0.0`` cannot be distinguished from the schema default
+    (which normalizes to 0.0) and receives the same override with a warning.
     """
 
     def _fix(model: dict[str, Any]) -> None:

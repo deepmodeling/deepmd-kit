@@ -22,9 +22,6 @@ from deepmd.pt.model.descriptor.descriptor import (
 from deepmd.pt.model.task.density import (
     DensityFittingNet,
 )
-from deepmd.pt.utils import (
-    env,
-)
 from deepmd.pt.utils.nlist import (
     build_directional_neighbor_list,
     extend_input_and_build_neighbor_list,
@@ -74,16 +71,6 @@ class DPDensityAtomicModel(DPAtomicModel):
         self.sel = self.descriptor.get_sel()
         self.nnei = self.descriptor.get_nsel()
 
-        wanted_shape = (1, self.nnei, 4)
-        mean = torch.zeros(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
-        stddev = torch.ones(
-            wanted_shape, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE
-        )
-        self.register_buffer("mean", mean)
-        self.register_buffer("stddev", stddev)
-
     def forward_atomic(
         self,
         extended_coord: torch.Tensor,
@@ -122,7 +109,7 @@ class DPDensityAtomicModel(DPAtomicModel):
             the result dict, defined by the `FittingOutputDef`.
 
         """
-        del charge_spin, return_atomic_feature
+        del return_atomic_feature
         nframes, _, _ = nlist.shape
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
@@ -166,6 +153,7 @@ class DPDensityAtomicModel(DPAtomicModel):
             merged_nlist,
             mapping=merged_mapping,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
         assert descriptor is not None
 
@@ -234,7 +222,6 @@ class DPDensityAtomicModel(DPAtomicModel):
         assert grid is not None
         assert grid_type is not None
         assert grid_nlist is not None
-        del charge_spin
         nframes, _, _ = nlist.shape
         _, ngrid, _ = grid_nlist.shape
 
@@ -276,6 +263,7 @@ class DPDensityAtomicModel(DPAtomicModel):
             grid=grid,
             grid_type=grid_type,
             grid_nlist=grid_nlist,
+            charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, grid_type)
 
@@ -330,7 +318,7 @@ class DPDensityAtomicModel(DPAtomicModel):
             spin: torch.Tensor | None = None,
             grid: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
-            del charge_spin, spin
+            del spin
             with torch.no_grad():
                 (
                     extended_coord,
@@ -377,6 +365,7 @@ class DPDensityAtomicModel(DPAtomicModel):
                     grid=grid,
                     grid_type=grid_type,
                     grid_nlist=grid_nlist,
+                    charge_spin=charge_spin,
                 )
                 return {kk: vv.detach() for kk, vv in atomic_ret.items()}
 

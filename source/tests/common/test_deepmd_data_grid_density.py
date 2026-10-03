@@ -187,6 +187,12 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "extent"):
             StubDS.__new__(StubDS)._merge_batch_data(batch_data)
 
+    def test_grid_density_extent_mismatch(self) -> None:
+        # grid and density must carry the same number of points per frame
+        self.set_data("density", np.zeros((NFRAMES, NGRID + 2, 1), dtype=np.float32))
+        with self.assertRaisesRegex(ValueError, "extents"):
+            self.build_data()._load_set(self.set_dir)
+
     def test_property_named_density_not_hijacked(self) -> None:
         # a user property named "density" without a special_shape declaration
         # must load through the ordinary path, not the frame-major branch

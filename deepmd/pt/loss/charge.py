@@ -67,7 +67,7 @@ class GridDensityLoss(TaskLoss):
         learning_rate: float,
         mae: bool = False,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
-        """Return loss on energy and force.
+        """Return loss on grid density.
 
         Parameters
         ----------
