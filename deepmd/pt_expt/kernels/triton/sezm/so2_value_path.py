@@ -2949,7 +2949,7 @@ def _mixing_stack_impl(
     )
     x_local = torch.empty((n_edge, n_focus, row), device=u0.device, dtype=u0.dtype)
     if _has_no_edges(n_edge):
-        return x_local, z_all, u0
+        return x_local, z_all, u0.clone()
 
     m0_config, m1_config, _ = stack_fp32_configs(focus_dim, lmax)
     m0_bm, m0_bn, m0_bk, m0_warps, m0_stages = m0_config

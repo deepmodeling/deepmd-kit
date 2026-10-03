@@ -229,8 +229,8 @@ def load_output_stat_full_scan(path: DPPath | None) -> bool:
 def save_output_stat_full_scan(path: DPPath | None, full_scan: bool) -> None:
     """Record how the output statistics now in the cache were produced.
 
-    A cache that never held full-scan statistics keeps the legacy layout: the
-    absence of the item already means that its values were sampled. The item is
+    A cache that never held full-scan statistics omits this flag: the absence
+    of the item means that its values were sampled. The item is
     written only to claim a full scan, or to withdraw a claim that a sampled
     recomputation has just invalidated.
 
@@ -348,6 +348,126 @@ def load_paired_items(
     return {name: (path / name).load_numpy() for pair in represented for name in pair}
 
 
+def _output_stat_preset(assigned_bias: np.ndarray | None) -> np.ndarray:
+    """Canonical per-type constraints; an empty array denotes no assignment."""
+    if assigned_bias is None or np.isnan(assigned_bias).all():
+        return np.empty(0, dtype=np.float64)
+    values = np.asarray(assigned_bias, dtype=np.float64)
+    return values.reshape(values.shape[0], -1)
+
+
+def load_output_stats(
+    path: DPPath | None,
+    keys: Sequence[str],
+    assigned_bias: Mapping[str, np.ndarray | None],
+) -> tuple[dict[str, np.ndarray] | None, dict[str, np.ndarray] | None]:
+    """Load output statistics computed with the same preset constraints.
+
+    A changed constraint requires refitting the whole output: the unassigned
+    types and the residual standard deviation depend on the assigned values.
+    Cache reuse therefore requires a matching preset record for every stored
+    output, including an explicit empty record for unconstrained statistics.
+
+    Parameters
+    ----------
+    path
+        Statistics-cache root, or None when caching is disabled.
+    keys
+        Requested output names.
+    assigned_bias
+        Per-output constraints with shape (ntypes, ...), NaN for unassigned
+        types, or None for an unconstrained output.
+
+    Returns
+    -------
+    tuple[dict[str, numpy.ndarray] or None, dict[str, numpy.ndarray] or None]
+        Bias and standard deviation, or (None, None) when recomputation is needed.
+
+    Raises
+    ------
+    FileNotFoundError
+        If a read-only cache is incomplete or lacks preset records.
+    ValueError
+        If a read-only cache was computed with different preset constraints.
+    """
+    pairs = [(f"bias_atom_{key}", f"std_atom_{key}") for key in keys]
+    items = load_paired_items(path, pairs)
+    if items is None:
+        return None, None
+    cached_keys = [key for key in keys if f"bias_atom_{key}" in items]
+    presets = load_required_items(path, [f"preset_bias_{key}" for key in cached_keys])
+    if presets is None:
+        return None, None
+    for key in cached_keys:
+        if not np.array_equal(
+            presets[f"preset_bias_{key}"],
+            _output_stat_preset(assigned_bias[key]),
+            equal_nan=True,
+        ):
+            if getattr(path, "mode", None) == "r":
+                raise ValueError(
+                    f"Read-only statistics cache {path} has different preset "
+                    f"constraints for output {key!r}; recompute with "
+                    "stat_file_mode='update'."
+                )
+            return None, None
+    return (
+        {key: items[f"bias_atom_{key}"] for key in cached_keys},
+        {key: items[f"std_atom_{key}"] for key in cached_keys},
+    )
+
+
+def save_output_stats(
+    path: DPPath,
+    keys: Sequence[str],
+    bias: Mapping[str, np.ndarray],
+    std: Mapping[str, np.ndarray],
+    assigned_bias: Mapping[str, np.ndarray | None],
+) -> None:
+    """Replace output statistics and their preset records in one transaction.
+
+    Parameters
+    ----------
+    path
+        Writable statistics-cache root.
+    keys
+        Requested output names, including outputs without available labels.
+    bias
+        Computed per-type biases for the outputs with available labels.
+    std
+        Standard deviations for the same outputs as bias.
+    assigned_bias
+        Per-output constraints with shape (ntypes, ...), NaN for unassigned
+        types, or None for an unconstrained output.
+
+    Raises
+    ------
+    ValueError
+        If keys are duplicated, bias and std have different or unrequested
+        outputs, or the cache is read-only.
+    """
+    if (
+        len(keys) != len(set(keys))
+        or set(bias) != set(std)
+        or not set(bias) <= set(keys)
+    ):
+        raise ValueError(
+            "Output statistics require unique requested keys and matching "
+            "bias/std outputs drawn from those keys."
+        )
+    prefixes = ("bias_atom", "std_atom", "preset_bias")
+    names = [f"{prefix}_{key}" for prefix in prefixes for key in keys]
+    items = {
+        **{f"bias_atom_{key}": value for key, value in bias.items()},
+        **{f"std_atom_{key}": value for key, value in std.items()},
+        **{
+            f"preset_bias_{key}": _output_stat_preset(assigned_bias[key])
+            for key in bias
+        },
+    }
+    _replace_items(path, names, list(items.items()))
+
+
 def replace_paired_items(
     path: DPPath,
     pairs: Sequence[tuple[str, str]],
@@ -411,12 +531,22 @@ def replace_paired_items(
         if first_present:
             complete_pairs.append((first, second))
 
-    if getattr(path, "mode", None) == "r":
-        raise ValueError("Cannot write to a read-only statistics cache.")
-
     ordered_names = [pair[0] for pair in complete_pairs] + [
         pair[1] for pair in complete_pairs
     ]
+    _replace_items(
+        path, requested_names, [(name, items[name]) for name in ordered_names]
+    )
+
+
+def _replace_items(
+    path: DPPath,
+    requested_names: Sequence[str],
+    ordered_items: Sequence[tuple[str, np.ndarray]],
+) -> None:
+    """Replace validated datasets using the cache's recoverable transaction."""
+    if getattr(path, "mode", None) == "r":
+        raise ValueError("Cannot write to a read-only statistics cache.")
     path.mkdir(parents=True, exist_ok=True)
     if isinstance(path, _H5StatPath):
         file = path._owner.file(write=True)
@@ -424,7 +554,7 @@ def replace_paired_items(
             file,
             path._connect_path,
             requested_names,
-            [(name, items[name]) for name in ordered_names],
+            ordered_items,
         )
         return
     if isinstance(path, DPH5Path):
@@ -433,7 +563,7 @@ def replace_paired_items(
                 path.root,
                 path._connect_path,
                 requested_names,
-                [(name, items[name]) for name in ordered_names],
+                ordered_items,
             )
         finally:
             DPH5Path._file_keys.cache_clear()
@@ -443,7 +573,7 @@ def replace_paired_items(
         _replace_os_items(
             path,
             requested_names,
-            [(name, items[name]) for name in ordered_names],
+            ordered_items,
         )
         return
     raise TypeError(f"Unsupported statistics-cache path type: {type(path).__name__}.")
