@@ -61,7 +61,7 @@ The grid density model is trained with the `grid_density` loss, which minimises 
 ```
 
 - {ref}`type <loss/type>` should be written as `grid_density`.
-- `start_pref_d` and `limit_pref_d` specify the weight of the density loss at the start and at the end of the training. If both are set to 0, the density label is not required and the term is skipped. Systems without a `density.npy` file are also skipped (with `find_density = 0`) when the label is optional.
+- `start_pref_d` and `limit_pref_d` specify the weight of the density loss at the start and at the end of the training. If both are set to 0, the density term is skipped (and the graph is kept connected). Note that `density.npy` is **required** in every training and validation system — it is the model's only supervision signal, and a missing file aborts training at load time.
 
 ## Evaluation
 

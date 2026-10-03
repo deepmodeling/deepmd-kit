@@ -695,6 +695,26 @@ class DeepmdData:
             if "find_" in kk:
                 self.test_set[kk] = test_sets[0][kk]
             else:
+                vv = self.data_dict.get(kk, {})
+                if vv.get("special_shape") == "frame_major":
+                    # sets of one system must agree on the frame-major extent:
+                    # numpy would otherwise fail with a raw shape error
+                    extents = {
+                        (
+                            ss[kk].shape[-2]
+                            if ss[kk].ndim >= 3
+                            else ss[kk].shape[-1] // vv["ndof"]
+                        )
+                        for ss in test_sets
+                        if float(ss.get("find_" + kk, 0.0)) == 1.0
+                    }
+                    if len(extents) > 1:
+                        raise ValueError(
+                            f"The frame-major data {kk} has inconsistent "
+                            f"extents {sorted(extents)} across the sets of "
+                            "this system; every set must carry the same "
+                            "number of points"
+                        )
                 self.test_set[kk] = np.concatenate(
                     [test_set[kk] for test_set in test_sets], axis=0
                 )

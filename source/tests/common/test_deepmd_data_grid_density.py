@@ -193,6 +193,27 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "extents"):
             self.build_data()._load_set(self.set_dir)
 
+    def test_cross_set_extent_mismatch(self) -> None:
+        # two sets of one system must agree on the frame-major extent;
+        # numpy would otherwise fail with a raw shape error in get_test
+        set1 = self.root / "set.001"
+        set1.mkdir()
+        rng = np.random.default_rng(1)
+        np.save(set1 / "coord.npy", rng.random((NFRAMES, NATOMS * 3), dtype=np.float32))
+        np.save(
+            set1 / "box.npy",
+            np.eye(3, dtype=np.float32).reshape(1, 9).repeat(NFRAMES, axis=0),
+        )
+        np.save(set1 / "type.npy", np.zeros((NFRAMES, NATOMS), dtype=np.int32))
+        np.save(
+            set1 / "grid.npy", rng.random((NFRAMES, NGRID + 3, 3), dtype=np.float32)
+        )
+        np.save(
+            set1 / "density.npy", rng.random((NFRAMES, NGRID + 3, 1), dtype=np.float32)
+        )
+        with self.assertRaisesRegex(ValueError, "extents"):
+            self.build_data().get_test()
+
     def test_property_named_density_not_hijacked(self) -> None:
         # a user property named "density" without a special_shape declaration
         # must load through the ordinary path, not the frame-major branch
