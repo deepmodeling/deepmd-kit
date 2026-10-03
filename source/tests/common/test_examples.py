@@ -77,6 +77,8 @@ input_files = (
     p_examples / "hessian" / "single_task" / "input.json",
     p_examples / "water" / "se_e2_a" / "input_torch_num_epoch.json",
     p_examples / "lmdb_downsample_data" / "input_lmdb.json",
+    p_examples / "density" / "dpa2" / "input.json",
+    p_examples / "density" / "dpa3" / "input.json",
 )
 
 input_files_multi = (

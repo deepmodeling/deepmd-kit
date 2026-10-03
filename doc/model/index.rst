@@ -21,6 +21,7 @@ Model
    train-fitting-tensor
    train-fitting-dos
    train-fitting-property
+   train-fitting-density
    train-se-e2-a-tebd
    train-se-a-mask
    train-se-e3-tebd

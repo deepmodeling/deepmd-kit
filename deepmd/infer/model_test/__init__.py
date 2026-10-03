@@ -14,6 +14,9 @@ from typing import (
     Any,
 )
 
+from deepmd.infer.deep_density import (
+    DeepDensity,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -36,6 +39,9 @@ from deepmd.infer.model_test.base import (
     save_txt_file,
     test_chunk_atoms,
 )
+from deepmd.infer.model_test.density import (
+    DensityTester,
+)
 from deepmd.infer.model_test.dos import (
     DosTester,
 )
@@ -56,6 +62,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "ChunkContext",
+    "DensityTester",
     "DipoleTester",
     "DosTester",
     "EnerTester",
@@ -96,6 +103,8 @@ def build_tester(dp: Any, *, atomic: bool) -> ModelTester:
         return tester(dp, atomic=atomic)
     if isinstance(dp, DeepDOS):
         return DosTester(dp, atomic=atomic)
+    if isinstance(dp, DeepDensity):
+        return DensityTester(dp, atomic=atomic)
     if isinstance(dp, DeepProperty):
         return PropertyTester(dp, atomic=atomic)
     if isinstance(dp, DeepGlobalPolar):
