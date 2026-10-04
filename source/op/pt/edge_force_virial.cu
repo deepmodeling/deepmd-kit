@@ -603,40 +603,9 @@ torch::Tensor frame_scalar_sum(torch::Tensor node_scalar,
 }
 
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
-  library.def(
-      "build_graph_csr(Tensor edge_index, SymInt node_count, "
-      "SymInt valid_edge_count) -> "
-      "(Tensor destination_order, Tensor destination_row_ptr, "
-      "Tensor source_order, Tensor source_row_ptr)");
   library.impl("build_graph_csr", torch::kCUDA, &build_graph_csr);
-  library.def(
-      "edge_force_virial(Tensor edge_gradient, Tensor edge_vec, "
-      "Tensor edge_index, Tensor edge_mask, Tensor destination_order, "
-      "Tensor destination_row_ptr, Tensor source_order, Tensor source_row_ptr, "
-      "Tensor n_node_per_frame, Tensor edge_spin_gradient, "
-      "SymInt node_capacity, bool want_atom_virial) -> "
-      "(Tensor force, Tensor atom_virial, Tensor virial, "
-      "Tensor magnetic_force)");
   library.impl("edge_force_virial", torch::kCUDA, &edge_force_virial);
-  library.def(
-      "canonical_edge_force_virial(Tensor edge_gradient, Tensor edge_vec, "
-      "Tensor destination_row_ptr, Tensor source_row_ptr, "
-      "Tensor source_order, Tensor n_node_per_frame, "
-      "Tensor edge_spin_gradient, SymInt node_capacity, "
-      "bool want_atom_virial) -> "
-      "(Tensor force, Tensor atom_virial, Tensor virial, "
-      "Tensor magnetic_force)");
   library.impl("canonical_edge_force_virial", torch::kCUDA,
                &canonical_edge_force_virial);
-  library.def(
-      "frame_scalar_sum(Tensor node_scalar, Tensor n_node_per_frame) "
-      "-> Tensor");
   library.impl("frame_scalar_sum", torch::kCUDA, &frame_scalar_sum);
-}
-
-TORCH_LIBRARY_IMPL(deepmd, Autograd, library) {
-  library.impl("edge_force_virial", torch::CppFunction::makeFallthrough());
-  library.impl("canonical_edge_force_virial",
-               torch::CppFunction::makeFallthrough());
-  library.impl("frame_scalar_sum", torch::CppFunction::makeFallthrough());
 }

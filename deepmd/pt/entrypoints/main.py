@@ -29,6 +29,7 @@ from deepmd.env import (
     GLOBAL_CONFIG,
 )
 from deepmd.loggers.loggers import (
+    is_node_main_process,
     set_log_handles,
 )
 from deepmd.main import (
@@ -63,7 +64,6 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
-    LOCAL_RANK,
 )
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
@@ -90,6 +90,9 @@ from deepmd.utils.compat import (
 from deepmd.utils.data_system import (
     get_data,
     process_systems,
+)
+from deepmd.utils.model_preset import (
+    expand_model_preset,
 )
 from deepmd.utils.stat_file import (
     StatFileSpec,
@@ -335,9 +338,10 @@ def train(
 ) -> None:
     log.info("Configuration path: %s", input_file)
     env.CUSTOM_OP_USE_JIT = True
-    if LOCAL_RANK == 0:
+    if is_node_main_process():
         SummaryPrinter()()
     config = j_loader(input_file)
+    config["model"] = expand_model_preset(config["model"])
     # ensure suffix, as in the command line help, we say "path prefix of checkpoint files"
     if init_model is not None and not init_model.endswith(".pt"):
         init_model += ".pt"

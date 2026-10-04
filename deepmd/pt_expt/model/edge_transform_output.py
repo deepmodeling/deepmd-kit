@@ -24,17 +24,23 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     frame_id_from_n_node,
     segment_sum,
 )
-from deepmd.kernels.cuda.edge_force_virial import (
-    edge_force_virial as fused_edge_force_virial,
-)
-from deepmd.kernels.cuda.edge_force_virial import (
-    op_available as fused_scatter_available,
-)
-from deepmd.kernels.utils import (
-    cuda_infer_level,
-)
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt_expt.kernels.edge_force_virial import (
+    edge_force_virial as fused_edge_force_virial,
+)
+from deepmd.pt_expt.kernels.edge_force_virial import (
+    frame_scalar_sum,
+    frame_scalar_sum_available,
+)
+from deepmd.pt_expt.kernels.edge_force_virial import (
+    op_available as fused_scatter_available,
+)
+from deepmd.pt_expt.kernels.utils import (
+    fused_operators_enabled,
+    triton_infer_level,
+    use_cutile_infer,
 )
 
 
@@ -50,6 +56,7 @@ def edge_energy_deriv(
     source_row_ptr: torch.Tensor | None = None,
     node_capacity: int | None = None,
     *,
+    destination_sorted: bool = False,
     do_atomic_virial: bool = False,
     create_graph: bool = False,
     force_precision: torch.dtype | None = None,
@@ -88,6 +95,12 @@ def edge_energy_deriv(
         (E,) destination/source-grouped edge permutations.
     destination_row_ptr, source_row_ptr
         (N + 1,) destination/source CSR offsets.
+    destination_sorted
+        Whether the payload is already destination-major, which makes
+        ``destination_order`` the identity. The fused operator then receives an
+        empty permutation and indexes the rows directly, so a producer never
+        has to materialize it: at a production system size it is eight bytes
+        per edge of pure redundancy.
     node_capacity
         Static node-axis size ``N``.  ``None`` (eager default) falls back to
         ``int(n_node.sum())``.  Pass a static value (e.g. ``atype.shape[0]``)
@@ -119,14 +132,18 @@ def edge_energy_deriv(
     ):
         g_e = g_e.to(force_precision)
         edge_vec = edge_vec.to(force_precision)
-    if (
-        cuda_infer_level() >= 1
-        and not create_graph
-        and fused_scatter_available()
-        and destination_order is not None
+    has_csr = (
+        (destination_order is not None or destination_sorted)
         and destination_row_ptr is not None
         and source_order is not None
         and source_row_ptr is not None
+    )
+    use_cutile_assembly = use_cutile_infer() and g_e.is_cuda
+    if (
+        fused_operators_enabled()
+        and not create_graph
+        and fused_scatter_available()
+        and has_csr
     ):
         n_cap = node_capacity if node_capacity is not None else int(n_node.sum())
         force, atom_virial, virial, _ = fused_edge_force_virial(
@@ -134,7 +151,7 @@ def edge_energy_deriv(
             edge_vec,
             edge_index,
             edge_mask,
-            destination_order,
+            edge_index.new_empty(0) if destination_sorted else destination_order,
             destination_row_ptr,
             source_order,
             source_row_ptr,
@@ -143,6 +160,39 @@ def edge_energy_deriv(
             n_cap,
             do_atomic_virial,
         )
+    elif (
+        (triton_infer_level() >= 1 or use_cutile_assembly)
+        and not create_graph
+        and has_csr
+        and destination_order is not None
+    ):
+        # Inference: assemble force and per-atom virial with two CSR segment
+        # reductions instead of three ``index_add`` scatters (which serialize
+        # on colliding edges) and a materialized ``(E, 9)`` outer product. The
+        # graph already owns both stable endpoint views, so no topology sort is
+        # repeated here.
+        if use_cutile_assembly:
+            from deepmd.pt_expt.kernels.cutile.sezm.force_assembly import (
+                edge_force_assembly,
+            )
+        else:
+            from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
+                edge_force_assembly,
+            )
+
+        g = torch.where(edge_mask[:, None], g_e, torch.zeros_like(g_e))
+        force, atom_virial_flat = edge_force_assembly(
+            g.contiguous(),
+            edge_vec.detach().contiguous(),
+            destination_order,
+            destination_row_ptr,
+            source_order,
+            source_row_ptr,
+        )
+        atom_virial = atom_virial_flat.reshape(-1, 3, 3)
+        n_cap = node_capacity if node_capacity is not None else force.shape[0]
+        frame_id = frame_id_from_n_node(n_node, n_cap)
+        virial = segment_sum(atom_virial, frame_id, n_node.shape[0])
     else:
         force, atom_virial, virial = edge_force_virial(
             g_e, edge_vec, edge_index, edge_mask, n_node, node_capacity=node_capacity
@@ -261,9 +311,26 @@ def fit_output_to_model_output_graph(
         if node_capacity is not None
         else next(iter(fit_ret.values())).shape[0]
     )
-    frame_id = frame_id_from_n_node(
-        n_node, n_total=N
-    )  # (N,) int64 frame index per atom
+    # A scalar frame reduction has a native segmented implementation on both
+    # CPU and CUDA. It avoids the fully contended single-slot ``index_add``
+    # that Torch 2.11 cannot lower for a dynamic node axis. The registered
+    # autograd rule broadcasts each frame cotangent back to its node span, so
+    # the subsequent energy-to-edge differentiation remains unchanged.
+    use_frame_scalar_sum = (
+        not create_graph and fused_operators_enabled() and frame_scalar_sum_available()
+    )
+    frame_id: torch.Tensor | None = None
+
+    def reduce_by_frame(data: torch.Tensor) -> torch.Tensor:
+        nonlocal frame_id
+        scalar = data.ndim == 1 or (data.ndim == 2 and data.shape[1] == 1)
+        if use_frame_scalar_sum and scalar:
+            reduced = frame_scalar_sum(data.reshape(N, 1).contiguous(), n_node)
+            return reduced.reshape(nf, *data.shape[1:])
+        if frame_id is None:
+            frame_id = frame_id_from_n_node(n_node, n_total=N)
+        return segment_sum(data, frame_id, nf)
+
     # owned-node (multi-rank ghost) mask: (N,) bool, True for owned rows.
     # Computed once (array-API pure, works directly on torch tensors) and
     # applied to every reducible per-node value BEFORE its segment_sum, so
@@ -278,24 +345,22 @@ def fit_output_to_model_output_graph(
         if not vdef.reducible:
             continue
         kk_redu = get_reduce_name(kk)
-        # segment_sum reduces axis 0 (the flat atom axis) per frame
+        # Reduce axis 0 (the flat atom axis) per frame.
         vv_e = vv.to(redu_prec)  # (N, *shape)
         if owned_e is not None:
             vv_e = vv_e * owned_e.reshape(N, *([1] * (vv_e.ndim - 1)))
-        redu = segment_sum(vv_e, frame_id, nf)  # (nf, *shape)
+        redu = reduce_by_frame(vv_e)  # (nf, *shape)
         if vdef.intensive:
             if mask is not None:
-                # real-atom count per frame: segment_sum of the mask
+                # Real-atom count per frame.
                 cnt_mask = mask.to(redu_prec)
                 if owned_e is not None:
                     cnt_mask = cnt_mask * owned_e
-                cnt = segment_sum(cnt_mask, frame_id, nf)  # (nf,)
+                cnt = reduce_by_frame(cnt_mask)  # (nf,)
                 # broadcast cnt to (nf, 1, ..., 1) to match redu shape
                 cnt = cnt.reshape(nf, *([1] * (redu.ndim - 1)))
             elif owned_e is not None:
-                cnt = segment_sum(owned_e, frame_id, nf).reshape(
-                    nf, *([1] * (redu.ndim - 1))
-                )
+                cnt = reduce_by_frame(owned_e).reshape(nf, *([1] * (redu.ndim - 1)))
             else:
                 cnt = n_node.to(redu_prec).reshape(nf, *([1] * (redu.ndim - 1)))
             redu = redu / cnt
@@ -324,6 +389,7 @@ def fit_output_to_model_output_graph(
                 graph.source_order,
                 graph.source_row_ptr,
                 node_capacity=N,
+                destination_sorted=graph.destination_sorted,
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,
                 force_precision=force_precision if not create_graph else None,

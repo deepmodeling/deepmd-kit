@@ -16,6 +16,9 @@ from .entrypoint import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
 )
+from .metrics import (
+    TrainingMetricAccumulator,
+)
 from .schedule import (
     StepSchedule,
     resolve_step_schedule,
@@ -53,6 +56,7 @@ __all__ = [
     "TrainEntrypointOptions",
     "TrainStepResult",
     "TrainerConfig",
+    "TrainingMetricAccumulator",
     "TrainingTask",
     "TrainingTaskCollection",
     "TrainingTaskConfig",

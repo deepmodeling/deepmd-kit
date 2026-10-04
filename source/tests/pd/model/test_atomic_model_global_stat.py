@@ -289,9 +289,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         ft = FooFitting().to(env.DEVICE)
         type_map = ["foo", "bar"]
+        # both types occur in the data, so an assigned output assigns both
         preset_out_bias = {
-            # "foo": np.array(3.0, 2.0]).reshape(2, 1),
-            "foo": [None, 2],
+            "foo": [3, 2],
             "bar": np.array([7.0, 5.0, 13.0, 11.0]).reshape(2, 1, 2),
         }
         md0 = DPAtomicModel(
@@ -335,16 +335,13 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret0[kk], expected_ret0[kk])
 
-        # 2. test bias is applied
+        # 2. the preset fixes foo and bar; pix has no label and keeps a zero bias
         md0.compute_or_load_out_stat(
             self.merged_output_stat, stat_file_path=self.stat_file_path
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        # foo sums: [5, 7],
-        # given bias of type 1 being 2, the bias left for type 0 is [5-2*1, 7-2*2] = [3,3]
-        # the solution of type 0 is 1.8
-        foo_bias = np.array([1.8, preset_out_bias["foo"][1]]).reshape(2, 1)
+        foo_bias = np.array(preset_out_bias["foo"], dtype=np.float64).reshape(2, 1)
         bar_bias = preset_out_bias["bar"]
         expected_ret1 = {}
         expected_ret1["foo"] = ret0["foo"] + foo_bias[at]
@@ -352,44 +349,26 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
-
-        # 3. test bias load from file
-        def raise_error():
-            raise RuntimeError
-
-        md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
-        ret2 = md0.forward_common_atomic(*args)
-        ret2 = cvt_ret(ret2)
-        for kk in ["foo", "pix", "bar"]:
-            np.testing.assert_almost_equal(ret1[kk], ret2[kk])
-
-        # 4. test change bias
+        # 3. change-by-statistic keeps every assigned type at its preset
         BaseAtomicModel.change_out_bias(
             md0, self.merged_output_stat, bias_adjust_mode="change-by-statistic"
         )
-        args = [
-            to_paddle_tensor(ii)
-            for ii in [
-                self.coord_ext,
-                to_numpy_array(self.merged_output_stat[0]["atype_ext"]),
-                self.nlist,
-            ]
-        ]
         ret3 = md0.forward_common_atomic(*args)
         ret3 = cvt_ret(ret3)
-        ## model output on foo: [[2.8, 3.8, 5], [5.8, 7., 8.]] given bias [1.8, 2]
-        ## foo sumed: [11.6, 20.8] compared with [5, 7], fit target is [-6.6, -13.8]
-        ## fit bias is [-7, 2] (2 is assigned. -7 is fit to [-8.6, -17.8])
-        ## old bias[1.8,2] + fit bias[-7, 2] = [-5.2, 4]
-        ## new model output is [[-4.2, -3.2, 7], [-1.2, 9, 10]]
-        expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[-4.2, -3.2, 7.0], [-1.2, 9.0, 10.0]]).reshape(
-            2, 3, 1
-        )
-        expected_ret3["pix"] = ret0["pix"]
-        for kk in ["foo", "pix"]:
-            np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
-        # bar is too complicated to be manually computed.
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(ret3[kk], ret1[kk])
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["foo"]), foo_bias)
+        np.testing.assert_almost_equal(to_numpy_array(out_bias["bar"]), bar_bias)
+        # 4. a preset that leaves an observed type unassigned is rejected
+        md1 = DPAtomicModel(
+            ds,
+            FooFitting().to(env.DEVICE),
+            type_map=type_map,
+            preset_out_bias={"foo": [None, 2]},
+        ).to(env.DEVICE)
+        with self.assertRaisesRegex(ValueError, "foo"):
+            md1.compute_or_load_out_stat(self.merged_output_stat)
 
     def test_preset_bias_all_none(self):
         nf, nloc, nnei = self.nlist.shape

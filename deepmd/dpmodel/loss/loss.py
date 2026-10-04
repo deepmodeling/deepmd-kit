@@ -47,6 +47,17 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Display columns for the default training call, excluding l2 terms.
+
+        The names depend on the loss configuration, not on whether a task or
+        label has been sampled. Averaged logging uses them without a forward.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} must define training_metric_names for disp_avg."
+        )
+
+    @property
     @abstractmethod
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
@@ -74,10 +85,14 @@ class Loss(NativeOP, ABC, make_plugin_registry("loss")):
         """
         xp = array_api_compat.array_namespace(loss)
         dev = array_api_compat.device(loss)
+        # ``full_like`` passes NaN as a scalar kernel argument, where
+        # ``asarray(xp.nan, device=dev)`` would copy it from the host: a
+        # synchronizing transfer, once per reported quantity per step, on a
+        # value that never changes.
         return xp.where(
             xp.asarray(find_property, dtype=xp.bool, device=dev),
             loss,
-            xp.asarray(xp.nan, device=dev),
+            xp.full_like(loss, xp.nan),
         )
 
     @classmethod

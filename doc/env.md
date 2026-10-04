@@ -57,9 +57,17 @@ Control high (double) or low (float) precision of training.
 
 :::{envvar} DP_INFER_BATCH_SIZE
 
-**Default**: `1024` on CPUs and as maximum as possible until out-of-memory on GPUs
+**Default**: `1024` on CPUs; automatically sized on GPUs
 
 Inference batch size, calculated by multiplying the number of frames with the number of atoms.
+Setting this variable disables automatic growth; out-of-memory errors can still
+reduce the batch size.
+
+With the native PyTorch CUDA allocator, automatic multi-frame evaluation starts
+with one calibration frame and limits growth using the observed workspace and
+available device memory, leaving a 10% margin. This policy applies to both
+`dp test` and full validation in the PyTorch and PyTorch Exportable backends.
+Other GPU allocators and backends grow batches until an out-of-memory error.
 :::
 
 :::{envvar} DP_BACKEND

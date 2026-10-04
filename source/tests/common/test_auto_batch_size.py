@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
 import unittest
+from typing import (
+    Any,
+)
 from unittest.mock import (
     patch,
 )
@@ -138,3 +141,32 @@ class TestAutoBatchSize(unittest.TestCase):
         dd2 = auto_batch_size.execute_all(func, 10, 2, dd1)
         assert xp.all(dd0 == dd2["foo"])
         assert xp.all(dd1 == dd2["bar"])
+
+    def test_backoff_uses_the_attempted_frames(self) -> None:
+        for natoms in (0, 2):
+            with self.subTest(natoms=natoms):
+                attempts = []
+                data = xp.zeros((64, 2))
+
+                def evaluate(batch: Any) -> Any:
+                    attempts.append(batch.shape[0])
+                    if batch.shape[0] > 8:
+                        raise OutOfMemoryError
+                    return batch
+
+                auto = CustomizedAutoBatchSizeGPU(1024)
+                result = auto.execute_all(evaluate, 64, natoms, data)
+                self.assertEqual(attempts[:4], [64, 32, 16, 8])
+                assert xp.all(result == data)
+
+    def test_single_remaining_frame_oom_is_fatal(self) -> None:
+        attempts = []
+
+        def evaluate(batch: Any) -> Any:
+            attempts.append(batch.shape[0])
+            raise OutOfMemoryError
+
+        auto = CustomizedAutoBatchSizeGPU(1024)
+        with self.assertRaises(OutOfMemoryError):
+            auto.execute_all(evaluate, 1, 2, xp.zeros((1, 2)))
+        self.assertEqual(attempts, [1])

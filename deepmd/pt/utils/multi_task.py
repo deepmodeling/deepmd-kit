@@ -1,37 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from copy import (
-    deepcopy,
-)
 from typing import (
     Any,
 )
 
+from deepmd.dpmodel.utils.multi_task import (
+    preprocess_shared_params as preprocess_shared_params_common,
+)
 from deepmd.pt.model.descriptor import (
     BaseDescriptor,
 )
 from deepmd.pt.model.task import (
     BaseFitting,
 )
-
-
-def _cascade_top_level_defaults(model_config: dict[str, Any]) -> None:
-    """In-place: lower model-wide ``model.<key>`` entries into each branch.
-
-    Any key at the top of ``model`` other than ``model_dict`` / ``shared_dict``
-    is ``setdefault``-copied into every ``model_dict`` entry (explicit branch
-    values win) and then removed from the top level so the multi-task
-    argcheck, which only accepts ``model_dict`` / ``shared_dict`` there,
-    does not reject it as an unknown field.
-    """
-    _RESERVED_TOP_LEVEL = ("model_dict", "shared_dict")
-    top_level_defaults = {
-        k: deepcopy(v) for k, v in model_config.items() if k not in _RESERVED_TOP_LEVEL
-    }
-    for branch in model_config["model_dict"].values():
-        for k, v in top_level_defaults.items():
-            branch.setdefault(k, deepcopy(v))
-    for k in top_level_defaults:
-        model_config.pop(k, None)
 
 
 def preprocess_shared_params(
@@ -43,10 +23,10 @@ def preprocess_shared_params(
     Args:
         model_config: Model params containing ``model_dict`` and optional
             ``shared_dict``.
-        require_shared_type_map: Whether exactly one ``type_map`` entry must be
-            referenced from ``shared_dict``. Multi-task training keeps this
-            requirement; linear models may inherit an explicit top-level
-            ``type_map`` instead.
+        require_shared_type_map: Whether every branch must define the same
+            ordered ``type_map`` after resolving shared references. Linear
+            models set this to false and validate their sub-model type maps
+            independently.
 
     Returns
     -------
@@ -120,87 +100,16 @@ def preprocess_shared_params(
         }
     }
     Any key placed directly under ``model`` other than ``model_dict`` /
-    ``shared_dict`` is lowered into every branch via ``_cascade_top_level_defaults``
-    (explicit branch values win), so model-wide switches can be written
-    once at the top level.
+    ``shared_dict`` is lowered into every branch before shared references are
+    resolved (explicit branch values win), so model-wide switches can be
+    written once at the top level.
     """
-    assert "model_dict" in model_config, "only multi-task model can use this method!"
-    _cascade_top_level_defaults(model_config)
-
-    supported_types = ["type_map", "descriptor", "fitting_net"]
-    shared_dict = model_config.get("shared_dict", {})
-    shared_links = {}
-    type_map_keys = []
-
-    def replace_one_item(
-        params_dict: dict[str, Any],
-        key_type: str,
-        key_in_dict: str,
-        suffix: str = "",
-        index: int | None = None,
-    ) -> None:
-        shared_type = key_type
-        shared_key = key_in_dict
-        shared_level = 0
-        if ":" in key_in_dict:
-            shared_key = key_in_dict.split(":")[0]
-            shared_level = int(key_in_dict.split(":")[1])
-        assert shared_key in shared_dict, (
-            f"Appointed {shared_type} {shared_key} are not in the shared_dict! Please check the input params."
-        )
-        if index is None:
-            params_dict[shared_type] = deepcopy(shared_dict[shared_key])
-        else:
-            params_dict[index] = deepcopy(shared_dict[shared_key])
-        if shared_type == "type_map":
-            if key_in_dict not in type_map_keys:
-                type_map_keys.append(key_in_dict)
-        else:
-            if shared_key not in shared_links:
-                class_name = get_class_name(shared_type, shared_dict[shared_key])
-                shared_links[shared_key] = {"type": class_name, "links": []}
-            link_item = {
-                "model_key": model_key,
-                "shared_type": shared_type + suffix,
-                "shared_level": shared_level,
-            }
-            shared_links[shared_key]["links"].append(link_item)
-
-    for model_key in model_config["model_dict"]:
-        model_params_item = model_config["model_dict"][model_key]
-        for item_key in model_params_item:
-            if item_key in supported_types:
-                item_params = model_params_item[item_key]
-                if isinstance(item_params, str):
-                    replace_one_item(model_params_item, item_key, item_params)
-                elif (
-                    isinstance(item_params, dict)
-                    and item_params.get("type", "") == "hybrid"
-                ):
-                    for ii, hybrid_item in enumerate(item_params["list"]):
-                        if isinstance(hybrid_item, str):
-                            replace_one_item(
-                                model_params_item[item_key]["list"],
-                                item_key,
-                                hybrid_item,
-                                suffix=f"_hybrid_{ii}",
-                                index=ii,
-                            )
-    for shared_key in shared_links:
-        shared_links[shared_key]["links"] = sorted(
-            shared_links[shared_key]["links"],
-            key=lambda x: (
-                x["shared_level"]
-                - ("spin" in model_config["model_dict"][x["model_key"]]) * 100
-            ),
-        )
-        # little trick to make spin models in the front to be the base models,
-        # because its type embeddings are more general.
-    if require_shared_type_map:
-        assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
-    else:
-        assert len(type_map_keys) <= 1, "Shared params must have at most one type_map!"
-    return model_config, shared_links
+    return preprocess_shared_params_common(
+        model_config,
+        get_class_name,
+        require_shared_type_map=require_shared_type_map,
+        cascade_defaults=True,
+    )
 
 
 def get_class_name(item_key: str, item_params: dict[str, Any]) -> type:

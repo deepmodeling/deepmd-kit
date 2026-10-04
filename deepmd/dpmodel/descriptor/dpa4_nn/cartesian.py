@@ -509,8 +509,8 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
         # (k, j) entries against ``proj`` reshaped to ``(D * D, 3 * 3)``.
         k_op = xp.reshape(
             xp.matmul(
-                xp.reshape(a_hat, (a_hat.shape[0], -1)),
-                xp.permute_dims(xp.reshape(proj, (d * d, -1)), (1, 0)),
+                xp.reshape(a_hat, (a_hat.shape[0], 9)),
+                xp.permute_dims(xp.reshape(proj, (d * d, 9)), (1, 0)),
             ),
             (a_hat.shape[0], d, d),
         )  # (E, D, D)
@@ -518,8 +518,8 @@ class EdgeCartesianTensorProduct(_CartesianTensorProduct):
             s_hat = s0 / math.sqrt(2.0 / 3.0)
             k_sym = xp.reshape(
                 xp.matmul(
-                    xp.reshape(s_hat, (s_hat.shape[0], -1)),
-                    xp.permute_dims(xp.reshape(proj, (d * d, -1)), (1, 0)),
+                    xp.reshape(s_hat, (s_hat.shape[0], 9)),
+                    xp.permute_dims(xp.reshape(proj, (d * d, 9)), (1, 0)),
                 ),
                 (s_hat.shape[0], d, d),
             )  # (E, D, D)

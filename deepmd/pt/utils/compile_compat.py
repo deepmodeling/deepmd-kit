@@ -23,6 +23,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 import os
 from typing import (
     Any,
@@ -32,6 +33,8 @@ import torch
 from packaging.version import (
     Version,
 )
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "AM_PREFIX",
@@ -44,12 +47,14 @@ __all__ = [
     "get_task_buffer_values",
     "is_prime",
     "next_safe_prime",
+    "patch_inductor_autotune_benchmark_tolerance",
     "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
     "relax_views_to_reshapes",
     "strip_saved_tensor_detach",
     "trace_pad_dim",
+    "traced_output_keys",
 ]
 
 
@@ -81,6 +86,29 @@ def _torch_release() -> tuple[int, int]:
 # =============================================================================
 # Common workarounds (every supported release)
 # =============================================================================
+def _inductor_autotune_log_options() -> dict[str, Any]:
+    """Return the Inductor keys that gate GEMM autotune stderr dumps.
+
+    The two streams are independent: ``Autotune Choices Stats`` follows
+    ``max_autotune_report_choices_stats``, and the per-GEMM
+    ``AUTOTUNE mm(...)`` table follows ``autotune_num_choices_displayed``.
+    Both default off.  An explicit ``TORCHINDUCTOR_*`` export is honoured
+    so a debug session can restore the dumps without a code change.
+    """
+    displayed = os.environ.get("TORCHINDUCTOR_AUTOTUNE_NUM_CHOICES_DISPLAYED", "0")
+    if displayed.lower() in ("none", "all"):
+        n_displayed: int | None = None
+    else:
+        n_displayed = int(displayed)
+    return {
+        "max_autotune_report_choices_stats": (
+            os.environ.get("TORCHINDUCTOR_MAX_AUTOTUNE_REPORT_CHOICES_STATS", "0")
+            == "1"
+        ),
+        "autotune_num_choices_displayed": n_displayed,
+    }
+
+
 def apply_global_compile_patches() -> None:
     """Apply every process-global PyTorch adjustment the compile path needs.
 
@@ -90,13 +118,22 @@ def apply_global_compile_patches() -> None:
     The symbolic-divisibility repair is applied only on releases where the
     regression exists.
     """
-    # Silence Inductor / Triton autotune console dumps.  ``torch.compile``
-    # reads these environment variables once, when its backend is first
-    # initialised, so they must be set before the first compilation; setting
-    # them afterwards has no effect in the current run.  ``setdefault``
-    # preserves any explicit user-level override.
+    # Silence Inductor / Triton autotune console dumps.  GEMM autotune
+    # writes two independent streams to stderr: ``Autotune Choices Stats``
+    # (``max_autotune_report_choices_stats``) and the per-GEMM
+    # ``AUTOTUNE mm(...)`` table (``autotune_num_choices_displayed``).
+    # Both fields are bound when ``torch._inductor.config`` is first
+    # imported, so an environment-only assignment after that import is
+    # ignored.  ``setdefault`` covers a later first import and preserves
+    # an explicit user override; the live-object write covers the
+    # already-imported case that training actually hits.
     os.environ.setdefault("TORCHINDUCTOR_MAX_AUTOTUNE_REPORT_CHOICES_STATS", "0")
+    os.environ.setdefault("TORCHINDUCTOR_AUTOTUNE_NUM_CHOICES_DISPLAYED", "0")
     os.environ.setdefault("TRITON_PRINT_AUTOTUNING", "0")
+    from torch._inductor import config as inductor_config
+
+    for key, value in _inductor_autotune_log_options().items():
+        setattr(inductor_config, key, value)
 
     # Disable DDPOptimizer graph splitting globally.  The inner
     # ``torch.compile`` calls sit *inside* a DDP-wrapped model; DDPOptimizer
@@ -115,6 +152,12 @@ def apply_global_compile_patches() -> None:
     # Force int64 tensor indexing in every compiled kernel.  Applies on all
     # supported PyTorch versions and is independent of runtime shapes.
     patch_inductor_force_int64_indexing()
+
+    # Let GEMM autotuning survive a candidate whose benchmark harness is
+    # broken; only the opt-in ``max_autotune_gemm`` (``DP_TUNE_TRAIN=2``)
+    # runs those benchmarks.
+    if int(os.environ.get("DP_TUNE_TRAIN", "0") or "0") >= 2:
+        patch_inductor_autotune_benchmark_tolerance()
 
     # The symbolic-divisibility regression was introduced in PyTorch 2.12; the
     # 2.11 backend evaluates the same predicate correctly and must not be
@@ -151,6 +194,47 @@ def patch_inductor_force_int64_indexing() -> None:
     # forces int64 indexing in every generated kernel.
     SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
     SIMDScheduling._dp_force_int64_patched = True
+
+
+def patch_inductor_autotune_benchmark_tolerance() -> None:
+    """Treat a ``TypeError`` from a GEMM autotune benchmark as a lost choice.
+
+    ``AlgorithmSelectorCache.benchmark_choices`` already skips candidates that
+    fail with compile or runtime errors, but a ``TypeError`` escapes and aborts
+    the whole compilation.  On PyTorch 2.13 with ``cpp_wrapper`` enabled, the
+    in-process benchmark of some Triton matmul templates assembles one more
+    positional argument than the generated launcher accepts
+    (``'stream' must be passed as a keyword argument``), which is exactly such
+    a ``TypeError``.  The candidate is unusable either way; scoring it as
+    infinitely slow lets autotuning proceed with the remaining choices
+    (including the cuBLAS fallback) instead of failing the step.
+    """
+    try:
+        from torch._inductor.select_algorithm import (
+            AlgorithmSelectorCache,
+        )
+    except Exception:
+        return
+
+    if getattr(AlgorithmSelectorCache, "_dp_benchmark_tolerance_patched", False):
+        return
+
+    original = AlgorithmSelectorCache.benchmark_choice.__func__
+
+    @classmethod  # type: ignore[misc]
+    def tolerant_benchmark_choice(cls, choice, autotune_args) -> float:  # noqa: ANN001
+        try:
+            return original(cls, choice, autotune_args)
+        except TypeError as err:
+            log.warning(
+                "Skipping autotune choice %s: benchmark harness raised %s",
+                getattr(choice, "name", choice),
+                err,
+            )
+            return float("inf")
+
+    AlgorithmSelectorCache.benchmark_choice = tolerant_benchmark_choice
+    AlgorithmSelectorCache._dp_benchmark_tolerance_patched = True
 
 
 def check_compile_torch_version() -> None:
@@ -293,6 +377,41 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     last = t[tuple(sl)]
     repeats = target - cur
     return torch.cat([t, *([last] * repeats)], dim=dim)
+
+
+def traced_output_keys(traced: torch.fx.GraphModule) -> list[str]:
+    """Read dictionary output keys from the static FX graph structure.
+
+    Replaying a CPU-traced graph is not a valid way to inspect its output when
+    the target archive contains CUDA-only custom operators. Their fake kernels
+    make tracing and export device-independent, but their real dispatch remains
+    CUDA-only. The output dictionary itself is static and preserved on the FX
+    ``output`` node, so no execution is required.
+
+    Parameters
+    ----------
+    traced : torch.fx.GraphModule
+        The traced module whose output node carries the static dictionary.
+
+    Returns
+    -------
+    list[str]
+        Output keys in the insertion order recorded by FX.
+
+    Raises
+    ------
+    RuntimeError
+        If the graph does not contain exactly one output node.
+    TypeError
+        If the graph output is not a dictionary with string keys.
+    """
+    output_nodes = [node for node in traced.graph.nodes if node.op == "output"]
+    if len(output_nodes) != 1:
+        raise RuntimeError(f"Expected one FX output node, found {len(output_nodes)}")
+    output = output_nodes[0].args[0]
+    if not isinstance(output, dict) or not all(isinstance(key, str) for key in output):
+        raise TypeError("The traced model must return a dictionary with string keys")
+    return list(output)
 
 
 def strip_saved_tensor_detach(
@@ -445,12 +564,25 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         Keyword options accepted by ``torch.compile(options=...)`` and by
         ``torch._inductor.config.patch``.
     """
+    fusion_size_value = os.environ.get("DP_FUSION_SIZE", "8")
+    try:
+        fusion_size = int(fusion_size_value)
+    except ValueError as exc:
+        raise ValueError(
+            f"DP_FUSION_SIZE must be a positive integer, got {fusion_size_value!r}"
+        ) from exc
+    if fusion_size < 1:
+        raise ValueError(
+            f"DP_FUSION_SIZE must be a positive integer, got {fusion_size_value!r}"
+        )
+
     compile_options: dict[str, Any] = {
         "max_autotune": False,
+        **_inductor_autotune_log_options(),
         "shape_padding": True,
         "epilogue_fusion": False,
         "triton.cudagraphs": False,
-        "max_fusion_size": 8,
+        "max_fusion_size": fusion_size,
         "triton.persistent_reductions": False,
         # ``mix_order_reduction`` is defective under data-dependent symbolic
         # shapes on PyTorch 2.11 and earlier (pytorch/pytorch#174379, #178080,
@@ -464,6 +596,43 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # The option is shared by the training and evaluation graphs.
         "triton.max_tiles": 1,
     }
+    # ``DP_TUNE_TRAIN`` grades the compile-time investment of the training
+    # graphs (cumulative levels; inference graphs ignore it, the AOTI export
+    # path forces its own C++ wrapper):
+    #   0  fast compilation, the default.
+    #   1  ``cpp_wrapper``: replaces the generated Python wrapper that
+    #      launches the compiled graph's kernels with a compiled C++ wrapper.
+    #      A step launches thousands of kernels, and the Python dispatch
+    #      overhead leaves the GPU idle most of the step on small
+    #      configurations (8-15% of the training step there, ~1% on the wide
+    #      shapes).  Validated for numerical parity and under multi-batch
+    #      dynamic shapes; it does not widen kernel fusion.
+    #   2  additionally ``max_autotune_gemm``: benchmarks Triton matmul
+    #      templates against the cuBLAS call for every GEMM in the graph.
+    #      The benchmarking dominates compile time (tens of minutes on the
+    #      large configurations), while its historical gains -- the batched
+    #      weight-gradient contractions that an old cuBLAS served at
+    #      percent-level efficiency -- are now covered by the split-K
+    #      algorithms of cuBLAS >= 13.6 and by the dedicated cublasLt path
+    #      of the CUDA value-path operators, leaving single-digit percent on
+    #      the narrow shapes.  A defective candidate raised during
+    #      benchmarking is skipped, not fatal (see
+    #      ``patch_inductor_autotune_benchmark_tolerance``); on a distributed
+    #      job the trainer compiles before the first collective (see
+    #      ``_precompile_outside_collectives``), so the benchmarking variance
+    #      cannot trip the NCCL watchdog.
+    tune_train = 0
+    if not inference:
+        tune_train = int(os.environ.get("DP_TUNE_TRAIN", "0") or "0")
+    if tune_train >= 1:
+        compile_options["cpp_wrapper"] = True
+        # Compile the entry (the tens-of-thousands-of-lines launch sequence)
+        # and the kernels as separate translation units, the entry at O1:
+        # measured 18 -> 11 minutes of compile time on the two-layer Pro
+        # graph with a step-time difference inside noise (99.19 vs 99.22 ms).
+        compile_options["cpp_wrapper_build_separate"] = True
+    if tune_train >= 2:
+        compile_options["max_autotune_gemm"] = True
     if inference:
         # The peak-memory reordering pass sizes buffers through
         # ``sizevars.size_hint(numel, fallback=0)``.  The inference graph is
@@ -477,6 +646,33 @@ def build_inductor_compile_options(*, inference: bool = False) -> dict[str, Any]
         # Dynamo with real hints from the first call and measurably benefits
         # from the pass, so it keeps the upstream default.
         compile_options["reorder_for_peak_memory"] = False
+        # The C++ backend parallelizes a loop only when its size hint reaches
+        # ``cpp.min_chunk_size`` elements per thread. An inference graph is
+        # traced on a synthetic system of a few dozen atoms, so every loop over
+        # the node or edge axis carries that hint no matter how large the
+        # deployed system is, and the default threshold leaves the whole graph
+        # serial: a 4096-atom DPA4C step measures 1.27 s against 0.11 s once
+        # the loops are parallel. The axes this threshold guards are always
+        # system sized at run time, so the guard is removed rather than
+        # retuned.
+        under_lsan = os.environ.get("DP_GEN_UNDER_SANITIZER") == "lsan"
+        # PyTorch 2.11 corrupts the process heap when its CPU backend lowers
+        # the dynamic SeZM inference graph with forced parallel loops. Keeping
+        # its default threshold and thread policy preserves the same graph
+        # semantics without activating the defective codegen path.
+        if under_lsan:
+            # LeakSanitizer fails on the generated OpenMP force/virial
+            # reductions, so its memory-safety fixtures use serial codegen.
+            compile_options["cpp.dynamic_threads"] = False
+            compile_options["cpp.threads"] = 1
+        elif _torch_release() != (2, 11):
+            compile_options["cpp.min_chunk_size"] = 1
+            # Resolve the thread count at run time instead of baking the
+            # freezing host's into the generated code. A deployed artifact is
+            # routinely loaded on a machine with a different core count, and
+            # an artifact frozen under the DeePMD-kit thread defaults would
+            # otherwise pin every parallel region to those.
+            compile_options["cpp.dynamic_threads"] = True
     try:
         from torch._inductor import config as inductor_config
 

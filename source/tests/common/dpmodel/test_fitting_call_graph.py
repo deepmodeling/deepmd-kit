@@ -13,16 +13,28 @@ from deepmd.dpmodel.fitting import (
 )
 
 
+@pytest.mark.parametrize("vacuum_ref", [False, True])  # vacuum references per type
 @pytest.mark.parametrize("ndf", [0, 3])  # numb_fparam: no-fparam AND fparam
-def test_call_graph_matches_dense_raveled(ndf):
+def test_call_graph_matches_dense_raveled(ndf, vacuum_ref):
     rng = np.random.default_rng(0)
     nf, nloc, nd, ntypes, ng = 2, 4, 8, 2, 5
-    ft = InvarFitting("energy", ntypes, nd, 1, mixed_types=True, numb_fparam=ndf)
+    ft = InvarFitting(
+        "energy",
+        ntypes,
+        nd,
+        1,
+        mixed_types=True,
+        numb_fparam=ndf,
+        vacuum_ref=vacuum_ref,
+    )
     desc = rng.normal(size=(nf, nloc, nd))
     atype = rng.integers(0, ntypes, size=(nf, nloc))
     gr = rng.normal(size=(nf, nloc, ng, 3))
     fparam = rng.normal(size=(nf, ndf)) if ndf else None
-    dense = ft(desc, atype, gr=gr, fparam=fparam)["energy"]  # (nf, nloc, 1)
+    vacuum = rng.normal(size=(ntypes, nd)) if vacuum_ref else None
+    dense = ft(desc, atype, gr=gr, fparam=fparam, vacuum_descriptor=vacuum)[
+        "energy"
+    ]  # (nf, nloc, 1)
     N = nf * nloc
     frame_id = np.repeat(np.arange(nf), nloc)
     fparam_node = fparam[frame_id] if ndf else None  # (N, ndf)
@@ -31,6 +43,7 @@ def test_call_graph_matches_dense_raveled(ndf):
         atype.reshape(N),
         gr=gr.reshape(N, ng, 3),
         fparam=fparam_node,
+        vacuum_descriptor=vacuum,
     )["energy"]  # (N, 1)
     assert flat.shape == (N, 1)
     np.testing.assert_allclose(flat, dense.reshape(N, 1), rtol=1e-12, atol=1e-12)

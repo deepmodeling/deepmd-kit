@@ -348,7 +348,12 @@ void DeepPotPTExpt::init(const std::string& model,
                            torch::TensorOptions().dtype(torch::kInt32))
               .clone()
               .to(device);
+      pair_exclude_host_ = std::move(tbl);
     }
+  }
+
+  if (metadata.obj_val.count("graph_source_csr")) {
+    graph_reads_source_csr_ = metadata["graph_source_csr"].as_bool();
   }
   if (has_comm_artifact_) {
     try {
@@ -924,15 +929,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else if (lower_input_is_graph_ || lower_input_is_canonical_) {
-      // Cache the skin topology. Single-rank folds ghosts onto local owners;
-      // non-message-passing multi-rank keeps the extended region so ghost
-      // forces reverse-comm to their owners.
-      const auto edge_tensors = createEdgeTensors(
-          nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
-          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
-          fold_to_local);
-      edge_index_tensor = edge_tensors.edge_index;
-      edge_index_ext_tensor = edge_tensors.edge_index_ext;
+      // Cache the skin topology destination-grouped. Single-rank folds ghosts
+      // onto local owners; non-message-passing multi-rank keeps the extended
+      // region so ghost forces reverse-comm to their owners.
+      skin_topology_ = deepmd::buildSkinTopology(
+          nlist_data.jlist, mapping_, nloc, nall_real,
+          /*node_count=*/multi_rank ? nall_real : nloc,
+          /*row_centers=*/&nlist_data.ilist, fold_to_local);
     } else {
       nlist_data.padding();
       firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
@@ -1159,9 +1162,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         }
         graph_comm_preflight_done_ = true;
       }
-      const auto edge_tensors =
-          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
-                             coord_Tensor, static_cast<double>(rcut));
       const std::int64_t n_node_count = nall_real;
       at::Tensor n_node_tensor =
           torch::full({1}, n_node_count, int_option).to(device);
@@ -1172,21 +1172,21 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               .to(device);
       at::Tensor node_atype =
           atype_Tensor.slice(1, 0, n_node_count).reshape({n_node_count});
-      GraphTensorPack graph_pack;
+      // Model-level pair exclusion is a BUILD-time transform (decision
+      // #18/A4): the exported graph lower consumes a pre-excluded payload and
+      // never re-applies it -- same seam as the non-comm graph route, folded
+      // into the assembly predicate so an excluded edge is never allocated.
+      const at::Tensor host_atype =
+          node_atype.to(torch::kCPU).to(torch::kInt64).contiguous();
+      GraphTensorPack graph_pack = deepmd::assembleGraph(
+          skin_topology_, dcoord.data(),
+          host_atype.const_data_ptr<std::int64_t>(),
+          pair_exclude_host_.empty() ? nullptr : pair_exclude_host_.data(),
+          ntypes, static_cast<double>(rcut), graph_edge_fp32_,
+          /*with_source_csr=*/true, device, graph_scratch_);
       graph_pack.atype = node_atype;
       graph_pack.n_node = n_node_tensor;
       graph_pack.n_local = n_local_tensor;
-      graph_pack.edge_index = edge_tensors.edge_index;
-      graph_pack.edge_vec = graph_edge_fp32_
-                                ? edge_tensors.edge_vec.to(torch::kFloat32)
-                                : edge_tensors.edge_vec;
-      // Model-level pair exclusion is a BUILD-time transform (decision
-      // #18/A4): the exported graph lower consumes a pre-excluded edge_mask
-      // and never re-applies it -- same seam as the non-comm graph route.
-      graph_pack.edge_mask = deepmd::applyPairExclusion(
-          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
-          pair_exclude_table_, ntypes);
-      canonicalizeGraphPayload(graph_pack, n_node_count);
       flat_outputs = run_model_graph_with_comm(
           node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
           graph_pack.edge_vec, graph_pack.edge_mask,
@@ -1241,13 +1241,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         }
         return;
       }
-      // Compact the cached skin topology to the current model cutoff.
-      // Single-rank folds ghosts onto local owners (N == nloc);
+      // Assemble the graph for the current geometry from the cached skin
+      // topology. Single-rank folds ghosts onto local owners (N == nloc);
       // non-message-passing multi-rank keeps the extended region
       // (N == nall_real) so reverse communication folds ghost forces back.
-      const auto edge_tensors =
-          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
-                             coord_Tensor, static_cast<double>(rcut));
       const std::int64_t n_node_count = multi_rank ? nall_real : nloc;
       at::Tensor n_node_tensor =
           torch::full({1}, n_node_count, int_option).to(device);
@@ -1259,18 +1256,18 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // extend_graph_aparam).
       at::Tensor graph_aparam =
           extend_graph_aparam(aparam_tensor, n_node_count, nloc, daparam);
-      GraphTensorPack graph_pack;
+      const at::Tensor host_atype =
+          node_atype.to(torch::kCPU).to(torch::kInt64).contiguous();
+      GraphTensorPack graph_pack = deepmd::assembleGraph(
+          skin_topology_, dcoord.data(),
+          host_atype.const_data_ptr<std::int64_t>(),
+          pair_exclude_host_.empty() ? nullptr : pair_exclude_host_.data(),
+          ntypes, static_cast<double>(rcut), graph_edge_fp32_,
+          graph_reads_source_csr_ || lower_input_is_canonical_, device,
+          graph_scratch_);
       graph_pack.atype = node_atype;
       graph_pack.n_node = n_node_tensor;
       graph_pack.n_local = n_local_tensor;
-      graph_pack.edge_index = edge_tensors.edge_index;
-      graph_pack.edge_vec = graph_edge_fp32_
-                                ? edge_tensors.edge_vec.to(torch::kFloat32)
-                                : edge_tensors.edge_vec;
-      graph_pack.edge_mask = deepmd::applyPairExclusion(
-          edge_tensors.edge_index, edge_tensors.edge_mask, node_atype,
-          pair_exclude_table_, ntypes);
-      canonicalizeGraphPayload(graph_pack, n_node_count);
       if (lower_input_is_canonical_) {
         const auto compact = compactCanonicalGraph(graph_pack);
         flat_outputs = run_model_canonical_graph(

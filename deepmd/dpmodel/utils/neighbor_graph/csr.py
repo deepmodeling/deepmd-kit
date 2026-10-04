@@ -30,6 +30,7 @@ def build_edge_csr(
     edge_mask: Array,
     n_nodes: int,
     canonicalize: bool = False,
+    destination_sorted: bool = False,
 ) -> tuple[Array, Array, Array, Array, Array, Array, Array]:
     """Build destination/source CSR views of an edge payload.
 
@@ -38,6 +39,12 @@ def build_edge_csr(
     every edge field, masked entries move to the suffix, and
     ``destination_order`` becomes the identity. Stable ordering preserves the
     incoming order within each destination segment.
+
+    ``destination_sorted`` declares that the payload already satisfies that
+    layout, which a search emitting its pairs grouped by center does for free.
+    The destination permutation is then the identity and the row pointers
+    follow from one search over the destination column, so the sort and the
+    reordering of every edge field are both skipped.
 
     Parameters
     ----------
@@ -51,6 +58,9 @@ def build_edge_csr(
         Number of nodes in the flat graph.
     canonicalize : bool, default: False
         Whether to reorder the payload into destination-major form.
+    destination_sorted : bool, default: False
+        Whether the real edges are already grouped by destination in ascending
+        order with masked entries confined to the suffix.
 
     Returns
     -------
@@ -91,17 +101,21 @@ def build_edge_csr(
     padding_node = xp.asarray(n_nodes, dtype=edge_index.dtype, device=device)
 
     destination_key = xp.where(edge_mask, edge_index[1], padding_node)
-    destination_order = xp.argsort(destination_key, stable=True)
-    ordered_destination = xp.take(destination_key, destination_order, axis=0)
-    if canonicalize:
-        edge_index = xp.take(edge_index, destination_order, axis=1)
-        edge_vec = xp.take(edge_vec, destination_order, axis=0)
-        edge_mask = xp.take(edge_mask, destination_order, axis=0)
-        destination_order = xp.arange(
-            edge_index.shape[1], dtype=edge_index.dtype, device=device
-        )
+    if destination_sorted:
+        ordered_destination = destination_key
+        destination_order = xp.arange(edge_count, dtype=edge_index.dtype, device=device)
     else:
-        destination_order = xp.astype(destination_order, edge_index.dtype)
+        destination_order = xp.argsort(destination_key, stable=True)
+        ordered_destination = xp.take(destination_key, destination_order, axis=0)
+        if canonicalize:
+            edge_index = xp.take(edge_index, destination_order, axis=1)
+            edge_vec = xp.take(edge_vec, destination_order, axis=0)
+            edge_mask = xp.take(edge_mask, destination_order, axis=0)
+            destination_order = xp.arange(
+                edge_count, dtype=edge_index.dtype, device=device
+            )
+        else:
+            destination_order = xp.astype(destination_order, edge_index.dtype)
     node_boundaries = xp.arange(
         n_nodes + 1,
         dtype=edge_index.dtype,
@@ -135,6 +149,7 @@ def attach_edge_csr(
     graph: NeighborGraph,
     n_nodes: int,
     canonicalize: bool = False,
+    destination_sorted: bool = False,
 ) -> NeighborGraph:
     """Attach destination/source CSR views to an edge graph.
 
@@ -146,6 +161,9 @@ def attach_edge_csr(
         Number of nodes on the flat graph axis.
     canonicalize : bool, default: False
         Whether to reorder the payload into destination-major form.
+    destination_sorted : bool, default: False
+        Whether the payload already carries that layout, in which case the
+        reordering is skipped.
 
     Returns
     -------
@@ -173,6 +191,7 @@ def attach_edge_csr(
         graph.edge_mask,
         n_nodes,
         canonicalize=canonicalize,
+        destination_sorted=destination_sorted,
     )
     return replace(
         graph,
@@ -183,7 +202,7 @@ def attach_edge_csr(
         destination_row_ptr=destination_row_ptr,
         source_order=source_order,
         source_row_ptr=source_row_ptr,
-        destination_sorted=canonicalize,
+        destination_sorted=canonicalize or destination_sorted,
     )
 
 

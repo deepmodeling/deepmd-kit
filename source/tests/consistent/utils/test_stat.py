@@ -4,7 +4,14 @@
 from collections import (
     defaultdict,
 )
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
+import h5py
 import numpy as np
 import pytest
 
@@ -15,6 +22,9 @@ from deepmd.dpmodel.utils.stat import (
     _compute_output_stats_global as compute_output_stats_global_dp,
 )
 from deepmd.dpmodel.utils.stat import compute_output_stats as compute_output_stats_dp
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from ..common import (
     INSTALLED_PD,
@@ -47,6 +57,98 @@ if INSTALLED_PD:
 NTYPES = 2
 NFRAMES = 2
 NLOC = 4
+
+
+@pytest.mark.parametrize("backend", ["dp", "pt", "pd"])  # statistics implementation
+def test_output_stats_cache_depends_on_model_predictions(
+    tmp_path: Path, backend: str
+) -> None:
+    """Absolute constrained statistics are reusable; model-dependent shifts are not."""
+    if backend == "pt" and not INSTALLED_PT:
+        pytest.skip("PyTorch is not installed")
+    if backend == "pd" and not INSTALLED_PD:
+        pytest.skip("PaddlePaddle is not installed")
+    sampled, _, _ = _make_data(True, False, True, [])
+    sampled[0]["coord"] = np.zeros((NFRAMES, NLOC, 3))
+    sampled[0]["box"] = None
+    if backend == "pt":
+        sampled = _np_to_torch(sampled)
+        compute = compute_output_stats_pt
+        as_numpy = to_numpy_array_pt
+    elif backend == "pd":
+        sampled = _np_to_paddle(sampled)
+        compute = compute_output_stats_pd
+        as_numpy = to_numpy_array_pd
+    else:
+        compute = compute_output_stats_dp
+        as_numpy = np.asarray
+    filename = str(tmp_path / "stat.h5")
+    with h5py.File(filename, "w"):
+        pass
+    path = DPPath(filename, "a")
+    preset_bias = {"energy": [None, [0.25]]}
+    original, _ = compute(
+        sampled, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset_bias
+    )
+
+    def no_sampling() -> list[dict]:
+        pytest.fail("Absolute output statistics must remain reusable")
+
+    restored, _ = compute(
+        no_sampling, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset_bias
+    )
+    np.testing.assert_array_equal(
+        as_numpy(restored["energy"]), as_numpy(original["energy"])
+    )
+
+    for value in (0.25, 1.5):
+
+        def predict(coord: Any, atype: Any, box: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"energy": atype[..., None] * 0 + value, "mask": atype * 0 + 1}
+
+        kwargs = {"model_forward": predict, "preset_bias": preset_bias}
+        expected, _ = compute(sampled, NTYPES, ["energy"], **kwargs)
+        actual, _ = compute(sampled, NTYPES, ["energy"], stat_file_path=path, **kwargs)
+        np.testing.assert_allclose(
+            as_numpy(actual["energy"]), as_numpy(expected["energy"])
+        )
+        fresh_dir = tmp_path / f"delta-{value}"
+        fresh_dir.mkdir()
+        fresh_path = DPPath(str(fresh_dir), "a")
+        compute(sampled, NTYPES, ["energy"], stat_file_path=fresh_path, **kwargs)
+        assert not list(fresh_dir.iterdir())
+
+    restored, _ = compute(
+        no_sampling, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset_bias
+    )
+    np.testing.assert_array_equal(
+        as_numpy(restored["energy"]), as_numpy(original["energy"])
+    )
+
+    # Removing, adding or changing a constraint also changes the fitted free rows.
+    for preset in (
+        None,
+        {"energy": [None, [1.5]]},
+        {"energy": [[-0.5], None]},
+        {"energy": [None, 2.0]},
+        {"energy": [None, [2.0]]},
+        {"energy": [None, None]},
+        None,
+    ):
+        expected = compute(sampled, NTYPES, ["energy"], preset_bias=preset)
+        actual = compute(
+            sampled, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset
+        )
+        restored = compute(
+            no_sampling, NTYPES, ["energy"], stat_file_path=path, preset_bias=preset
+        )
+        for reference, computed, cached in zip(expected, actual, restored, strict=True):
+            np.testing.assert_allclose(
+                as_numpy(computed["energy"]), as_numpy(reference["energy"])
+            )
+            np.testing.assert_array_equal(
+                as_numpy(cached["energy"]), as_numpy(computed["energy"])
+            )
 
 
 def _make_data(

@@ -30,6 +30,14 @@ def convert_backend(
         If True, export .pt2/.pte models with per-atom virial correction.
         This adds ~2.5x inference cost.  Default False.  Silently ignored
         (with a warning) for backends that don't support the flag.
+
+    Notes
+    -----
+    Backend conversion preserves an explicit ``lower_input_kind`` reported by
+    the source serializer. Sources without this metadata retain the target's
+    automatic lower selection for backward compatibility. A target backend
+    that cannot represent an explicit non-dense lower is rejected rather than
+    silently changing the model function.
     """
     inp_backend: Backend = Backend.detect_backend_by_model(INPUT)()
     out_backend: Backend = Backend.detect_backend_by_model(OUTPUT)()
@@ -40,8 +48,21 @@ def convert_backend(
 
     sig = inspect.signature(out_hook)
     hook_kwargs: dict[str, Any] = {}
+    lower_input_kind = data.get("lower_input_kind")
     if "lower_kind" in sig.parameters:
-        hook_kwargs["lower_kind"] = "auto"
+        hook_kwargs["lower_kind"] = (
+            lower_input_kind if lower_input_kind is not None else "auto"
+        )
+    elif (
+        lower_input_kind not in (None, "auto", "nlist")
+        and not out_backend.preserves_lower_input_kind
+    ):
+        raise ValueError(
+            f"Cannot preserve lower_input_kind {lower_input_kind!r} when "
+            f"converting to output backend {out_backend.name!r}: its "
+            "deserializer does not accept a lower_kind. Retrain or freeze the "
+            "model with that backend instead of converting this artifact."
+        )
     if "do_atomic_virial" in sig.parameters:
         hook_kwargs["do_atomic_virial"] = atomic_virial
     elif atomic_virial:

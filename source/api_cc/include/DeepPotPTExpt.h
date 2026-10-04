@@ -15,6 +15,7 @@
 #include <torch/torch.h>
 
 #include "DeepPot.h"
+#include "graph_assembly.h"
 
 // Forward-declare to keep these out of the public header. Defined in
 // commonPTExpt.h.
@@ -510,6 +511,18 @@ class DeepPotPTExpt : public DeepPotBackend {
   // (``applyPairExclusion`` graph / ``applyPairExclusionNlist`` dense); the
   // exported .pt2 lowers consume pre-excluded inputs and never re-apply it.
   torch::Tensor pair_exclude_table_;
+  // Host copy of the same table. The graph route folds the exclusion into the
+  // per-edge assembly predicate, so an excluded edge is never allocated; that
+  // predicate runs on the host, before the payload reaches the model device.
+  std::vector<int> pair_exclude_host_;
+  // Destination-grouped skin topology, rebuilt only when the host rebuilds its
+  // neighbor list, and the row-pointer scratch the per-step assembly reuses.
+  deepmd::SkinTopology skin_topology_;
+  deepmd::GraphAssemblyScratch graph_scratch_;
+  // Whether the compiled graph lower reads the source-major permutation.
+  // Recorded by the artifact (``graph_source_csr``); absent metadata means the
+  // permutation is built, which is always correct.
+  bool graph_reads_source_csr_ = true;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
   // The charge/spin condition a compressed descriptor folded into the

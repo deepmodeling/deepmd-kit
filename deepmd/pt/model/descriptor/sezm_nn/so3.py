@@ -387,6 +387,37 @@ class SO3Linear(nn.Module):
 
         return out
 
+    def forward_scalar(self, x: torch.Tensor) -> torch.Tensor:
+        """Project only the ``l=0`` coefficient.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input features with shape ``(N, D, F, C_in)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar output with shape ``(N, 1, F, C_out)``.
+
+        Notes
+        -----
+        Degree-wise weights never mix distinct ``(l, m)`` coefficients. A
+        scalar-only consumer can therefore select the input and weight before
+        the contraction instead of computing and discarding all ``l > 0``
+        outputs.
+        """
+        weight = self.weight[0].view(
+            self.in_channels,
+            self.n_focus,
+            self.out_channels,
+        )
+        out = torch.einsum("ndfi,ifo->ndfo", x[:, 0:1, :, :], weight)
+        if self.mlp_bias:
+            bias = self.bias.view(self.n_focus, self.out_channels)
+            out = out + bias.unsqueeze(0)
+        return out
+
     def serialize(self) -> dict[str, Any]:
         trainable = all(p.requires_grad for p in self.parameters())
         state = self.state_dict()

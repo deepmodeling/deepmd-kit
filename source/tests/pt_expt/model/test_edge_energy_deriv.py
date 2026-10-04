@@ -1,10 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 import unittest
+from unittest import (
+    mock,
+)
 
 import torch
 
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt_expt.kernels.cutile import (
+    CUTILE_AVAILABLE,
+)
+from deepmd.pt_expt.kernels.edge_force_virial import (
+    frame_scalar_sum,
+    frame_scalar_sum_available,
+)
+from deepmd.pt_expt.kernels.triton.sezm.force_assembly import (
+    FORCE_ASSEMBLY_TRITON_AVAILABLE,
 )
 from deepmd.pt_expt.model.edge_transform_output import (
     edge_energy_deriv,
@@ -12,6 +26,47 @@ from deepmd.pt_expt.model.edge_transform_output import (
 
 
 class TestEdgeEnergyDeriv(unittest.TestCase):
+    @unittest.skipUnless(
+        frame_scalar_sum_available(),
+        "the native frame scalar reduction is unavailable",
+    )
+    def test_frame_scalar_sum_ignores_padding_and_preserves_autograd(self) -> None:
+        """The native frame reduction differentiates only its real node spans."""
+        for counts in ([3], [2, 1]):
+            with self.subTest(counts=counts):
+                node_scalar = torch.arange(
+                    5,
+                    dtype=torch.float64,
+                    device="cpu",
+                    requires_grad=True,
+                ).reshape(5, 1)
+                n_node = torch.tensor(counts, dtype=torch.int64, device="cpu")
+                reduced = frame_scalar_sum(node_scalar, n_node)
+
+                offset = 0
+                expected_values = []
+                for count in counts:
+                    expected_values.append(node_scalar[offset : offset + count].sum())
+                    offset += count
+                expected = torch.stack(expected_values).reshape(-1, 1)
+                torch.testing.assert_close(reduced, expected)
+
+                frame_weight = torch.arange(
+                    1,
+                    len(counts) + 1,
+                    dtype=node_scalar.dtype,
+                    device=node_scalar.device,
+                ).reshape(-1, 1)
+                (gradient,) = torch.autograd.grad(
+                    (reduced * frame_weight).sum(), node_scalar
+                )
+                expected_gradient = torch.zeros_like(node_scalar)
+                offset = 0
+                for frame, count in enumerate(counts):
+                    expected_gradient[offset : offset + count] = frame + 1
+                    offset += count
+                torch.testing.assert_close(gradient, expected_gradient)
+
     def test_force_matches_autograd_wrt_node_coords(self) -> None:
         """The graph force equals -dE/d(node coord): build edge_vec from node
         coords, so force from edge_energy_deriv == -autograd.grad(E, coords).
@@ -130,6 +185,181 @@ class TestEdgeEnergyDeriv(unittest.TestCase):
         self.assertIsNone(av)
         self.assertEqual(force.shape, (N, 3))
         self.assertEqual(gv.shape, (1, 3, 3))
+
+    def test_cpu_does_not_select_cutile_force_assembly(self) -> None:
+        """A global cuTile level must not route CPU tensors to a CUDA kernel."""
+        device = torch.device("cpu")
+        n_node = torch.tensor([3], dtype=torch.int64, device=device)
+        src = torch.tensor([0, 1, 2], dtype=torch.int64, device=device)
+        dst = torch.tensor([1, 2, 0], dtype=torch.int64, device=device)
+        edge_index = torch.stack([src, dst])
+        edge_mask = torch.ones(src.shape[0], dtype=torch.bool, device=device)
+        destination_order = torch.argsort(dst, stable=True)
+        source_order = torch.argsort(src, stable=True)
+        boundaries = torch.arange(4, dtype=torch.int64, device=device)
+        destination_row_ptr = torch.searchsorted(
+            dst.index_select(0, destination_order), boundaries
+        )
+        source_row_ptr = torch.searchsorted(
+            src.index_select(0, source_order), boundaries
+        )
+        edge_value = torch.tensor(
+            [[0.3, -0.2, 0.7], [-0.5, 0.4, 0.1], [0.8, -0.6, 0.2]],
+            dtype=torch.float64,
+            device=device,
+        )
+
+        def run(
+            triton_level: int, cutile_enabled: bool
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+            edge_vec = edge_value.clone().requires_grad_(True)
+            energy = (edge_vec**2).sum()
+            with (
+                mock.patch(
+                    "deepmd.pt_expt.model.edge_transform_output."
+                    "fused_operators_enabled",
+                    return_value=False,
+                ),
+                mock.patch(
+                    "deepmd.pt_expt.model.edge_transform_output.triton_infer_level",
+                    return_value=triton_level,
+                ),
+                mock.patch(
+                    "deepmd.pt_expt.model.edge_transform_output.use_cutile_infer",
+                    return_value=cutile_enabled,
+                ),
+            ):
+                force, atom_virial, virial = edge_energy_deriv(
+                    energy,
+                    edge_vec,
+                    edge_index,
+                    edge_mask,
+                    n_node,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    do_atomic_virial=True,
+                    create_graph=False,
+                )
+            assert atom_virial is not None
+            return force, atom_virial, virial
+
+        reference = run(0, False)
+        accelerated = run(1, True)
+        for actual, expected in zip(accelerated, reference, strict=True):
+            torch.testing.assert_close(actual, expected)
+
+    @unittest.skipUnless(
+        torch.cuda.is_available()
+        and (FORCE_ASSEMBLY_TRITON_AVAILABLE or CUTILE_AVAILABLE),
+        "an accelerated force-assembly backend and a CUDA device are required",
+    )
+    def test_accelerated_csr_paths_preserve_full_source_atom_virial(self) -> None:
+        """The accelerated graph assembly matches the canonical CSR scatter."""
+        device = torch.device("cuda")
+        n_node = torch.tensor([3, 4], dtype=torch.int64, device=device)
+        src = torch.tensor(
+            [0, 1, 2, 1, 3, 4, 5, 6, 4, 3, 0],
+            dtype=torch.int64,
+            device=device,
+        )
+        dst = torch.tensor(
+            [1, 2, 0, 0, 4, 5, 6, 3, 6, 5, 0],
+            dtype=torch.int64,
+            device=device,
+        )
+        edge_index = torch.stack([src, dst])
+        edge_mask = torch.tensor([True] * 10 + [False], dtype=torch.bool, device=device)
+        generator = torch.Generator(device=device).manual_seed(20260820)
+        edge_value = torch.randn(
+            src.shape[0], 3, dtype=torch.float32, device=device, generator=generator
+        )
+        edge_value[-1] = 100.0
+        n_nodes = 9
+        boundaries = torch.arange(n_nodes + 1, dtype=src.dtype, device=device)
+        destination_order = torch.argsort(dst, stable=True)
+        source_order = torch.argsort(src, stable=True)
+        destination_row_ptr = torch.searchsorted(
+            dst.index_select(0, destination_order), boundaries
+        )
+        source_row_ptr = torch.searchsorted(
+            src.index_select(0, source_order), boundaries
+        )
+
+        def run(
+            triton_level: str,
+            cutile_level: str,
+            *,
+            do_atomic_virial: bool = True,
+        ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
+            edge_vec = edge_value.detach().clone().requires_grad_(True)
+            energy = (edge_vec**3).sum()
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "DP_TRITON_INFER": triton_level,
+                    "DP_CUDA_INFER": "0",
+                    "DP_CUTILE_INFER": cutile_level,
+                },
+            ):
+                return edge_energy_deriv(
+                    energy,
+                    edge_vec,
+                    edge_index,
+                    edge_mask,
+                    n_node,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    node_capacity=n_nodes,
+                    do_atomic_virial=do_atomic_virial,
+                )
+
+        force_ref, atom_virial_ref, virial_ref = run("0", "0")
+        edge_grad = torch.where(
+            edge_mask[:, None], 3.0 * edge_value**2, torch.zeros_like(edge_value)
+        )
+        edge_virial = -torch.einsum("ek,ej->ekj", edge_grad, edge_value)
+        expected_atom_virial = torch.zeros(
+            n_nodes, 3, 3, dtype=edge_value.dtype, device=device
+        )
+        expected_atom_virial.index_add_(0, src, edge_virial)
+        backends = []
+        if FORCE_ASSEMBLY_TRITON_AVAILABLE:
+            backends.append(("triton", "1", "0"))
+        if CUTILE_AVAILABLE:
+            backends.append(("cutile", "0", "1"))
+        for backend, triton_level, cutile_level in backends:
+            with self.subTest(backend=backend):
+                force, atom_virial, virial = run(triton_level, cutile_level)
+
+                torch.testing.assert_close(force, force_ref, rtol=1e-5, atol=1e-5)
+                torch.testing.assert_close(
+                    atom_virial, atom_virial_ref, rtol=1e-5, atol=1e-5
+                )
+                torch.testing.assert_close(virial, virial_ref, rtol=1e-5, atol=1e-5)
+                torch.testing.assert_close(
+                    atom_virial, expected_atom_virial, rtol=1e-5, atol=1e-5
+                )
+                torch.testing.assert_close(force[7:], torch.zeros_like(force[7:]))
+                torch.testing.assert_close(
+                    atom_virial[7:], torch.zeros_like(atom_virial[7:])
+                )
+
+                force_without_atomic, atom_virial_none, virial_without_atomic = run(
+                    triton_level,
+                    cutile_level,
+                    do_atomic_virial=False,
+                )
+                self.assertIsNone(atom_virial_none)
+                torch.testing.assert_close(
+                    force_without_atomic, force, rtol=1e-5, atol=1e-5
+                )
+                torch.testing.assert_close(
+                    virial_without_atomic, virial, rtol=1e-5, atol=1e-5
+                )
 
 
 if __name__ == "__main__":

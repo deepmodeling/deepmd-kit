@@ -317,6 +317,18 @@ class GeometricInitialEmbedding(NativeOP):
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
+        # The fused operator spans this broadcast and the scatter of Step 5, so
+        # it takes over whenever nothing else joins the message in between.
+        if (
+            self._can_fuse_scatter(zonal_coupling)
+            and spin_l1_message is None
+            and edge_cache.edge_src_gate is None
+            and edge_cache.csr_cache is not None
+        ):
+            return self.forward_fused_scatter(
+                n_nodes, edge_cache, radial_feat, zonal_coupling
+            )
+
         radial_slot_index = xp_asarray_nodetach(
             xp, self.radial_slot_index_for_row, device=device
         )
@@ -386,6 +398,22 @@ class GeometricInitialEmbedding(NativeOP):
         )  # (N, D, C)
         out = out * xp.astype(edge_cache.inv_sqrt_deg, out.dtype)
         return xp.astype(out, dtype)
+
+    def _can_fuse_scatter(self, zonal_coupling: Any) -> bool:
+        """Return whether a backend can run the fused scatter for this input."""
+        return False
+
+    def forward_fused_scatter(
+        self,
+        n_nodes: int,
+        edge_cache: EdgeCache,
+        radial_feat: Any,
+        zonal_coupling: Any,
+    ) -> Any:
+        """Build and reduce the geometric message with a backend operator."""
+        raise NotImplementedError(
+            "The fused GIE scatter is unavailable in the dpmodel reference"
+        )
 
     def serialize(self) -> dict[str, Any]:
         return {

@@ -397,6 +397,10 @@ class FullValidator:
                 metrics = self.evaluate_all_systems()
         finally:
             self.model.train(was_training)
+            if torch.cuda.is_available():
+                # Release unused validation workspace before training resumes
+                # or checkpoint assembly requests additional device memory.
+                torch.cuda.empty_cache()
 
         if self.metric_key not in metrics or np.isnan(metrics[self.metric_key]):
             raise RuntimeError(

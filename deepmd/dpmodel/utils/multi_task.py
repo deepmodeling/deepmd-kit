@@ -47,8 +47,9 @@ def preprocess_shared_params(
         Backend-specific callback that resolves the class for a shared
         descriptor or fitting-network configuration.
     require_shared_type_map : bool, default=True
-        Whether exactly one shared type-map reference is required. If false, at
-        most one shared type-map reference is allowed.
+        Whether every branch must define the same ordered type map after
+        resolving shared references. If false, branch-specific or missing
+        inline type maps are allowed, with at most one shared type-map reference.
     cascade_defaults : bool, default=False
         Whether to copy non-reserved top-level model options into each model
         branch that does not define them, then remove those options from the top
@@ -62,6 +63,12 @@ def preprocess_shared_params(
         Sharing metadata keyed by entries in ``shared_dict``. Each entry records
         the resolved class and the model components linked to it, sorted by
         sharing level.
+
+    Raises
+    ------
+    ValueError
+        If ``require_shared_type_map`` is true and branches do not all define
+        the same type map, including element order.
     """
     assert "model_dict" in model_config, "only multi-task model can use this method!"
     if cascade_defaults:
@@ -135,6 +142,8 @@ def preprocess_shared_params(
                             index=ii,
                         )
 
+    # Spin models provide more general type embeddings and precede other
+    # branches when selecting the base for parameter sharing.
     for shared_key in shared_links:
         shared_links[shared_key]["links"] = sorted(
             shared_links[shared_key]["links"],
@@ -144,7 +153,17 @@ def preprocess_shared_params(
             ),
         )
     if require_shared_type_map:
-        assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
+        type_maps = [
+            params.get("type_map") for params in model_config["model_dict"].values()
+        ]
+        if (
+            not type_maps
+            or type_maps[0] is None
+            or any(type_map != type_maps[0] for type_map in type_maps[1:])
+        ):
+            raise ValueError(
+                "Multitask models must define the same type_map, including element order."
+            )
     else:
         assert len(type_map_keys) <= 1, "Shared params must have at most one type_map!"
     return model_config, shared_links

@@ -19,11 +19,6 @@ from typing import (
 
 import torch
 import torch.nn as nn
-from e3nn.o3 import (
-    FromS2Grid,
-    ToS2Grid,
-    spherical_harmonics,
-)
 
 from deepmd.pt.utils.env import (
     PRECISION_DICT,
@@ -48,6 +43,37 @@ from .wignerd import (
     quaternion_multiply,
     quaternion_z_rotation,
 )
+
+
+def _import_e3nn_o3() -> Any:
+    """Import :mod:`e3nn.o3` on first use, naming the extra that ships it.
+
+    ``e3nn`` is optional: it ships with the ``torch`` and ``dpa-adapt``
+    extras, so most installations have it. It was imported at module scope,
+    though, which made it a hard requirement for importing
+    ``deepmd.pt.model.model`` at all -- so an installation that uses neither
+    extra, such as the PyTorch CPU install in ``doc/install/easy-install.md``,
+    could not use the PyTorch backend, even when no SeZM projector was ever
+    built. Only the two projection builders below need it.
+    """
+    try:
+        from e3nn import (
+            o3,
+        )
+    except ModuleNotFoundError as e:
+        if e.name != "e3nn":
+            # ``e3nn`` itself is present; something it imports is not. That is
+            # a broken environment rather than a missing optional dependency,
+            # and reporting it as "e3nn is not installed" would send the user
+            # to reinstall a package they already have. Its own traceback
+            # names the module that is actually missing, so let it through.
+            raise
+        raise ImportError(
+            "The SeZM function-space nonlinearities require the optional "
+            "'e3nn' package, which is not installed. Install it with "
+            "'pip install e3nn', or 'pip install deepmd-kit[dpa-adapt]'."
+        ) from e
+    return o3
 
 
 class BaseGridProjector(nn.Module):
@@ -239,8 +265,9 @@ class S2GridProjector(BaseGridProjector):
         self,
         coeff_index: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        o3 = _import_e3nn_o3()
         with torch.device("cpu"):
-            to_grid = ToS2Grid(
+            to_grid = o3.ToS2Grid(
                 self.lmax,
                 (self.theta_resolution, self.phi_resolution),
                 normalization="component",
@@ -249,7 +276,7 @@ class S2GridProjector(BaseGridProjector):
             to_grid_mat = torch.einsum("mbi,am->bai", to_grid.shb, to_grid.sha).detach()
             self._rescale_truncated_orders(to_grid_mat)
 
-            from_grid = FromS2Grid(
+            from_grid = o3.FromS2Grid(
                 (self.theta_resolution, self.phi_resolution),
                 self.lmax,
                 normalization="component",
@@ -270,13 +297,14 @@ class S2GridProjector(BaseGridProjector):
         self,
         coeff_index: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        o3 = _import_e3nn_o3()
         with torch.device("cpu"):
             points, weights = load_lebedev_rule(
                 self.lebedev_precision,
                 dtype=torch.float64,
                 device=torch.device("cpu"),
             )
-            harmonics = spherical_harmonics(
+            harmonics = o3.spherical_harmonics(
                 list(range(self.lmax + 1)),
                 points,
                 normalize=True,

@@ -27,6 +27,9 @@ from deepmd.utils.argcheck import (
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
+from deepmd.utils.model_preset import (
+    expand_model_preset,
+)
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +62,9 @@ class AbstractTrainEntrypoint(ABC):
         log.info("Configuration path: %s", options.input_file)
         options = self.prepare_options(options)
         config = self.load_config(options.input_file)
+        if "model" in config:
+            # Version-0 inputs gain their model section only in update_input.
+            config["model"] = expand_model_preset(config["model"])
         self.validate_options(config, options)
 
         config = self.preprocess_config(config, options)

@@ -488,6 +488,7 @@ class DescrptSeR(BaseDescriptor, torch.nn.Module):
             self.rcut_smth,
             True,
             protection=self.env_protection,
+            training=self.training,
         )
 
         assert self.filter_layers is not None
