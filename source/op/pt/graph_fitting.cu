@@ -28,7 +28,8 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
+#include <torch/library.h>
+#include <torch/types.h>
 
 #include <algorithm>
 #include <tuple>

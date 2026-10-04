@@ -38,7 +38,6 @@
 #include <cublasLt.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
 
 #include <mutex>
 #include <tuple>
@@ -57,16 +56,30 @@ constexpr int kThreads = 256;
     TORCH_CHECK(err == cudaSuccess, what, ": ", cudaGetErrorString(err)); \
   } while (0)
 
-__device__ __forceinline__ float sigmoid_f(float x) {
-  return 1.0f / (1.0f + __expf(-x));
+// Pointwise math in the accumulator type ``acc_type<scalar_t>``: float for the
+// float and bfloat16 storage types, double for the optional float64 build.
+template <typename acc_t>
+__device__ __forceinline__ acc_t exp_a(acc_t x) {
+  return exp(x);
+}
+template <>
+__device__ __forceinline__ float exp_a<float>(float x) {
+  return __expf(x);
 }
 
-__device__ __forceinline__ float silu_grad_f(float s, float sig) {
-  return sig * (1.0f + s * (1.0f - sig));
+template <typename acc_t>
+__device__ __forceinline__ acc_t sigmoid_a(acc_t x) {
+  return acc_t(1) / (acc_t(1) + exp_a(-x));
 }
 
-__device__ __forceinline__ float silu_grad2_f(float s, float sig) {
-  return sig * (1.0f - sig) * (2.0f + s * (1.0f - 2.0f * sig));
+template <typename acc_t>
+__device__ __forceinline__ acc_t silu_grad_a(acc_t s, acc_t sig) {
+  return sig * (acc_t(1) + s * (acc_t(1) - sig));
+}
+
+template <typename acc_t>
+__device__ __forceinline__ acc_t silu_grad2_a(acc_t s, acc_t sig) {
+  return sig * (acc_t(1) - sig) * (acc_t(2) + s * (acc_t(1) - acc_t(2) * sig));
 }
 
 // ---------------------------------------------------------------------------
@@ -84,6 +97,7 @@ __global__ void mixing_gate_fwd_kernel(const scalar_t* __restrict__ u,
                                        long total,
                                        int lmax,
                                        int cf) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long tid = blockIdx.x * (long)blockDim.x + threadIdx.x;
   if (tid >= total) {
     return;
@@ -96,19 +110,19 @@ __global__ void mixing_gate_fwd_kernel(const scalar_t* __restrict__ u,
   const int row_w = (3 * lmax + 1) * cf;
   const long base = fe * row_w;
   if (slot == 0) {
-    const float zs = (float)z[base + c];
-    u_next[base + c] = (scalar_t)((float)u[base + c] + zs * sigmoid_f(zs));
+    const acc_t zs = (acc_t)z[base + c];
+    u_next[base + c] = (scalar_t)((acc_t)u[base + c] + zs * sigmoid_a(zs));
     return;
   }
   const int g = slot - 1;
-  const float sg =
-      sigmoid_f((float)gate_logit[fe * (long)(lmax * cf) + g * cf + c]);
+  const acc_t sg =
+      sigmoid_a((acc_t)gate_logit[fe * (long)(lmax * cf) + g * cf + c]);
   const long r0 = base + (long)(1 + g) * cf + c;
   const long rn = base + (long)(lmax + 1 + g) * cf + c;
   const long rp = base + (long)(2 * lmax + 1 + g) * cf + c;
-  u_next[r0] = (scalar_t)((float)u[r0] + (float)z[r0] * sg);
-  u_next[rn] = (scalar_t)((float)u[rn] + (float)z[rn] * sg);
-  u_next[rp] = (scalar_t)((float)u[rp] + (float)z[rp] * sg);
+  u_next[r0] = (scalar_t)((acc_t)u[r0] + (acc_t)z[r0] * sg);
+  u_next[rn] = (scalar_t)((acc_t)u[rn] + (acc_t)z[rn] * sg);
+  u_next[rp] = (scalar_t)((acc_t)u[rp] + (acc_t)z[rp] * sg);
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +140,7 @@ __global__ void mixing_final_kernel(
     int n_focus,
     int row_w,
     bool apply_alpha) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long tid = blockIdx.x * (long)blockDim.x + threadIdx.x;
   if (tid >= total) {
     return;
@@ -136,9 +151,9 @@ __global__ void mixing_final_kernel(
   const int f = rest / n_edge;
 
   const long src = ((long)f * n_edge + e) * row_w + r;
-  float v = (float)u[src] + (float)z_id[src];
+  acc_t v = (acc_t)u[src] + (acc_t)z_id[src];
   if (apply_alpha) {
-    v *= (float)alpha[e * n_focus + f];
+    v *= (acc_t)alpha[e * n_focus + f];
   }
   out[(e * n_focus + f) * (long)row_w + r] = (scalar_t)v;
 }
@@ -164,6 +179,7 @@ __global__ void mixing_gate_bwd_kernel(scalar_t* __restrict__ g,
                                        long total,
                                        int lmax,
                                        int cf) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long tid = blockIdx.x * (long)blockDim.x + threadIdx.x;
   if (tid >= total) {
     return;
@@ -176,63 +192,63 @@ __global__ void mixing_gate_bwd_kernel(scalar_t* __restrict__ g,
   const int row_w = (3 * lmax + 1) * cf;
   const long base = fe * row_w;
   if (slot == 0) {
-    const float zs = (float)z[base + c];
-    float gs = (float)g[base + c];
+    const acc_t zs = (acc_t)z[base + c];
+    acc_t gs = (acc_t)g[base + c];
     if (grad_u_up != nullptr) {
-      const scalar_t merged = (scalar_t)(gs + (float)grad_u_up[base + c]);
+      const scalar_t merged = (scalar_t)(gs + (acc_t)grad_u_up[base + c]);
       g[base + c] = merged;
-      gs = (float)merged;
+      gs = (acc_t)merged;
     }
-    const float s0 = sigmoid_f(zs);
-    scalar_t gzs = (scalar_t)(gs * silu_grad_f(zs, s0));
+    const acc_t s0 = sigmoid_a(zs);
+    scalar_t gzs = (scalar_t)(gs * silu_grad_a(zs, s0));
     if (grad_z_up != nullptr) {
-      gzs = (scalar_t)((float)gzs + (float)grad_z_up[base + c]);
+      gzs = (scalar_t)((acc_t)gzs + (acc_t)grad_z_up[base + c]);
     }
     gz[base + c] = gzs;
     if (u_prev != nullptr) {
-      u_prev[base + c] = (scalar_t)((float)u_next[base + c] - zs * s0);
+      u_prev[base + c] = (scalar_t)((acc_t)u_next[base + c] - zs * s0);
     }
     return;
   }
   const int gi = slot - 1;
   const long q_idx = fe * (long)(lmax * cf) + gi * cf + c;
-  const float sg = sigmoid_f((float)gate_logit[q_idx]);
+  const acc_t sg = sigmoid_a((acc_t)gate_logit[q_idx]);
   const long r0 = base + (long)(1 + gi) * cf + c;
   const long rn = base + (long)(lmax + 1 + gi) * cf + c;
   const long rp = base + (long)(2 * lmax + 1 + gi) * cf + c;
-  float g0 = (float)g[r0], gn = (float)g[rn], gp = (float)g[rp];
+  acc_t g0 = (acc_t)g[r0], gn = (acc_t)g[rn], gp = (acc_t)g[rp];
   if (grad_u_up != nullptr) {
-    const scalar_t merged0 = (scalar_t)(g0 + (float)grad_u_up[r0]);
-    const scalar_t mergedn = (scalar_t)(gn + (float)grad_u_up[rn]);
-    const scalar_t mergedp = (scalar_t)(gp + (float)grad_u_up[rp]);
+    const scalar_t merged0 = (scalar_t)(g0 + (acc_t)grad_u_up[r0]);
+    const scalar_t mergedn = (scalar_t)(gn + (acc_t)grad_u_up[rn]);
+    const scalar_t mergedp = (scalar_t)(gp + (acc_t)grad_u_up[rp]);
     g[r0] = merged0;
     g[rn] = mergedn;
     g[rp] = mergedp;
-    g0 = (float)merged0;
-    gn = (float)mergedn;
-    gp = (float)mergedp;
+    g0 = (acc_t)merged0;
+    gn = (acc_t)mergedn;
+    gp = (acc_t)mergedp;
   }
-  const float z0 = (float)z[r0], zn = (float)z[rn], zp = (float)z[rp];
+  const acc_t z0 = (acc_t)z[r0], zn = (acc_t)z[rn], zp = (acc_t)z[rp];
   scalar_t gz0 = (scalar_t)(g0 * sg);
   scalar_t gzn = (scalar_t)(gn * sg);
   scalar_t gzp = (scalar_t)(gp * sg);
   if (grad_z_up != nullptr) {
-    gz0 = (scalar_t)((float)gz0 + (float)grad_z_up[r0]);
-    gzn = (scalar_t)((float)gzn + (float)grad_z_up[rn]);
-    gzp = (scalar_t)((float)gzp + (float)grad_z_up[rp]);
+    gz0 = (scalar_t)((acc_t)gz0 + (acc_t)grad_z_up[r0]);
+    gzn = (scalar_t)((acc_t)gzn + (acc_t)grad_z_up[rn]);
+    gzp = (scalar_t)((acc_t)gzp + (acc_t)grad_z_up[rp]);
   }
   gz[r0] = gz0;
   gz[rn] = gzn;
   gz[rp] = gzp;
   if (u_prev != nullptr) {
-    u_prev[r0] = (scalar_t)((float)u_next[r0] - z0 * sg);
-    u_prev[rn] = (scalar_t)((float)u_next[rn] - zn * sg);
-    u_prev[rp] = (scalar_t)((float)u_next[rp] - zp * sg);
+    u_prev[r0] = (scalar_t)((acc_t)u_next[r0] - z0 * sg);
+    u_prev[rn] = (scalar_t)((acc_t)u_next[rn] - zn * sg);
+    u_prev[rp] = (scalar_t)((acc_t)u_next[rp] - zp * sg);
   }
-  const float grad_sig = g0 * z0 + gn * zn + gp * zp;
+  const acc_t grad_sig = g0 * z0 + gn * zn + gp * zp;
   // Stored in the working precision: both consumers are batched matmuls whose
   // inputs are in the working precision anyway.
-  const scalar_t grad_logit = (scalar_t)(grad_sig * sg * (1.0f - sg));
+  const scalar_t grad_logit = (scalar_t)(grad_sig * sg * (acc_t(1) - sg));
   if constexpr (preserve_gate_logit) {
     glogit[q_idx] = grad_logit;
   } else {
@@ -262,6 +278,7 @@ __global__ void mixing_2nd_gate_kernel(const scalar_t* __restrict__ hz,
                                        long total,
                                        int lmax,
                                        int cf) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long tid = blockIdx.x * (long)blockDim.x + threadIdx.x;
   if (tid >= total) {
     return;
@@ -274,32 +291,32 @@ __global__ void mixing_2nd_gate_kernel(const scalar_t* __restrict__ hz,
   const int row_w = (3 * lmax + 1) * cf;
   const long base = fe * row_w;
   if (slot == 0) {
-    const float zs = (float)z[base + c];
-    const float gs = (float)g[base + c];
-    const float hzs = (float)hz[base + c];
-    const float s0 = sigmoid_f(zs);
+    const acc_t zs = (acc_t)z[base + c];
+    const acc_t gs = (acc_t)g[base + c];
+    const acc_t hzs = (acc_t)hz[base + c];
+    const acc_t s0 = sigmoid_a(zs);
     if (grad_gz_up != nullptr) {
       grad_gz_up[base + c] = hz[base + c];
     }
     head[base + c] =
-        (scalar_t)((float)head[base + c] + hzs * silu_grad_f(zs, s0));
-    dz[base + c] = (scalar_t)(hzs * gs * silu_grad2_f(zs, s0));
+        (scalar_t)((acc_t)head[base + c] + hzs * silu_grad_a(zs, s0));
+    dz[base + c] = (scalar_t)(hzs * gs * silu_grad2_a(zs, s0));
     return;
   }
   const int gi = slot - 1;
   const long q_idx = fe * (long)(lmax * cf) + gi * cf + c;
-  const float sg = sigmoid_f((float)gate_logit[q_idx]);
-  const float d_sig = sg * (1.0f - sg);
-  const float dd_sig = d_sig * (1.0f - 2.0f * sg);
-  const float hq = (float)hq_eff[q_idx];
-  const float w = hq * d_sig;
+  const acc_t sg = sigmoid_a((acc_t)gate_logit[q_idx]);
+  const acc_t d_sig = sg * (acc_t(1) - sg);
+  const acc_t dd_sig = d_sig * (acc_t(1) - acc_t(2) * sg);
+  const acc_t hq = (acc_t)hq_eff[q_idx];
+  const acc_t w = hq * d_sig;
 
   const long r0 = base + (long)(1 + gi) * cf + c;
   const long rn = base + (long)(lmax + 1 + gi) * cf + c;
   const long rp = base + (long)(2 * lmax + 1 + gi) * cf + c;
-  const float g0 = (float)g[r0], gn = (float)g[rn], gp = (float)g[rp];
-  const float z0 = (float)z[r0], zn = (float)z[rn], zp = (float)z[rp];
-  const float h0 = (float)hz[r0], hn = (float)hz[rn], hp = (float)hz[rp];
+  const acc_t g0 = (acc_t)g[r0], gn = (acc_t)g[rn], gp = (acc_t)g[rp];
+  const acc_t z0 = (acc_t)z[r0], zn = (acc_t)z[rn], zp = (acc_t)z[rp];
+  const acc_t h0 = (acc_t)hz[r0], hn = (acc_t)hz[rn], hp = (acc_t)hz[rp];
 
   if (grad_gz_up != nullptr) {
     grad_gz_up[r0] = hz[r0];
@@ -307,18 +324,18 @@ __global__ void mixing_2nd_gate_kernel(const scalar_t* __restrict__ hz,
     grad_gz_up[rp] = hz[rp];
   }
 
-  const float sum_gz = g0 * z0 + gn * zn + gp * zp;
-  const float sum_hg = h0 * g0 + hn * gn + hp * gp;
+  const acc_t sum_gz = g0 * z0 + gn * zn + gp * zp;
+  const acc_t sum_hg = h0 * g0 + hn * gn + hp * gp;
   // The first-order logit gradient is reconstructed from its retained
   // linearization points. Retaining the logits instead of this derivative
   // lets the second order reuse the first traversal's projection without
   // increasing the saved-state footprint.
-  hq_eff[q_idx] = (scalar_t)((sum_gz * sg) * (1.0f - sg));
+  hq_eff[q_idx] = (scalar_t)((sum_gz * sg) * (acc_t(1) - sg));
   dq[q_idx] = (scalar_t)(sum_hg * d_sig + hq * sum_gz * dd_sig);
 
-  head[r0] = (scalar_t)((float)head[r0] + h0 * sg + w * z0);
-  head[rn] = (scalar_t)((float)head[rn] + hn * sg + w * zn);
-  head[rp] = (scalar_t)((float)head[rp] + hp * sg + w * zp);
+  head[r0] = (scalar_t)((acc_t)head[r0] + h0 * sg + w * z0);
+  head[rn] = (scalar_t)((acc_t)head[rn] + hn * sg + w * zn);
+  head[rp] = (scalar_t)((acc_t)head[rp] + hp * sg + w * zp);
   dz[r0] = (scalar_t)(w * g0);
   dz[rn] = (scalar_t)(w * gn);
   dz[rp] = (scalar_t)(w * gp);
@@ -347,6 +364,7 @@ __global__ void mixing_2nd_final_kernel(
     int n_focus,
     int row_w,
     bool apply_alpha) {
+  using acc_t = typename acc_type<scalar_t>::type;
   const long row = blockIdx.x;
   if (row >= n_edge * (long)n_focus) {
     return;
@@ -355,11 +373,11 @@ __global__ void mixing_2nd_final_kernel(
   const int f = row % n_focus;
   const long fm = ((long)f * n_edge + e) * row_w;
   const long em = row * (long)row_w;
-  const float a = apply_alpha ? (float)alpha[row] : 1.0f;
-  float acc = 0.0f;
+  const acc_t a = apply_alpha ? (acc_t)alpha[row] : acc_t(1);
+  acc_t acc = acc_t(0);
   for (int r = threadIdx.x; r < row_w; r += blockDim.x) {
-    const float hb = (float)h[fm + r] + (float)final_buf[fm + r];
-    const float go = (float)grad_out[em + r];
+    const acc_t hb = (acc_t)h[fm + r] + (acc_t)final_buf[fm + r];
+    const acc_t go = (acc_t)grad_out[em + r];
     acc += hb * go;
     // The h_gbar_w surface dies after this load. Its storage becomes the
     // focus-major grad_final consumed by the following weight contractions.
@@ -367,8 +385,8 @@ __global__ void mixing_2nd_final_kernel(
     // The competition head's curvature on the upstream gradient is a row
     // scale of x_local. The consumer evaluates it here so the wide initializer
     // surface never exists.
-    const float scale = gg_scale != nullptr ? (float)gg_scale[row] : 0.0f;
-    const float init = (float)(scalar_t)(scale * (float)x_local[em + r]);
+    const acc_t scale = gg_scale != nullptr ? (acc_t)gg_scale[row] : acc_t(0);
+    const acc_t init = (acc_t)(scalar_t)(scale * (acc_t)x_local[em + r]);
     grad_grad_out[em + r] = (scalar_t)(hb * a + init);
     if (grad_x_local_out != nullptr) {
       grad_x_local_out[em + r] = (scalar_t)(scale * go);
@@ -377,7 +395,7 @@ __global__ void mixing_2nd_final_kernel(
   if (!apply_alpha) {
     return;
   }
-  __shared__ float warp_sums[32];
+  __shared__ acc_t warp_sums[32];
   for (int off = 16; off > 0; off >>= 1) {
     acc += __shfl_down_sync(0xffffffff, acc, off);
   }
@@ -387,7 +405,7 @@ __global__ void mixing_2nd_final_kernel(
   __syncthreads();
   if (threadIdx.x < 32) {
     acc = (threadIdx.x < (int)((blockDim.x + 31) >> 5)) ? warp_sums[threadIdx.x]
-                                                        : 0.0f;
+                                                        : acc_t(0);
     for (int off = 16; off > 0; off >>= 1) {
       acc += __shfl_down_sync(0xffffffff, acc, off);
     }
@@ -424,19 +442,19 @@ __global__ void mixing_entry_bwd_kernel(
   const int f = row % n_focus;
   const long em = row * (long)row_w;
   const long fm = ((long)f * n_edge + e) * row_w;
-  const float a = apply_alpha ? (float)alpha[row] : 1.0f;
-  float acc = 0.0f;
+  const acc_t a = apply_alpha ? (acc_t)alpha[row] : acc_t(1);
+  acc_t acc = acc_t(0);
   for (int r = threadIdx.x; r < row_w; r += blockDim.x) {
-    const float go = (float)grad_out[em + r];
+    const acc_t go = (acc_t)grad_out[em + r];
     g_focus[fm + r] = (scalar_t)(go * a);
     if (apply_alpha) {
-      acc += go * (float)x_local[em + r];
+      acc += go * (acc_t)x_local[em + r];
     }
   }
   if (!apply_alpha) {
     return;
   }
-  __shared__ float warp_sums[32];
+  __shared__ acc_t warp_sums[32];
   for (int off = 16; off > 0; off >>= 1) {
     acc += __shfl_down_sync(0xffffffff, acc, off);
   }
@@ -446,13 +464,12 @@ __global__ void mixing_entry_bwd_kernel(
   __syncthreads();
   if (threadIdx.x < 32) {
     acc = (threadIdx.x < (int)((blockDim.x + 31) >> 5)) ? warp_sums[threadIdx.x]
-                                                        : 0.0f;
+                                                        : acc_t(0);
     for (int off = 16; off > 0; off >>= 1) {
       acc += __shfl_down_sync(0xffffffff, acc, off);
     }
     if (threadIdx.x == 0) {
-      const acc_t a = alpha[row];
-      grad_alpha[row] = (acc_t)acc / a;
+      grad_alpha[row] = acc / a;
     }
   }
 }
@@ -579,9 +596,7 @@ void lt_block_bmm(const at::Tensor& A,
                      add};
 
   const cudaDataType_t data_type =
-      A.scalar_type() == at::kBFloat16
-          ? CUDA_R_16BF
-          : (A.scalar_type() == at::kHalf ? CUDA_R_16F : CUDA_R_32F);
+      A.scalar_type() == at::kBFloat16 ? CUDA_R_16BF : CUDA_R_32F;
   cublasLtMatmulDesc_t op;
   TORCH_CHECK(cublasLtMatmulDescCreate(&op, CUBLAS_COMPUTE_32F, CUDA_R_32F) ==
                   CUBLAS_STATUS_SUCCESS,
@@ -774,9 +789,7 @@ void lt_weight_grad(const at::Tensor& A,
       K, A.stride(0), B.stride(0),      (int)A.scalar_type(), accumulate};
 
   const cudaDataType_t ab_type =
-      A.scalar_type() == at::kBFloat16
-          ? CUDA_R_16BF
-          : (A.scalar_type() == at::kHalf ? CUDA_R_16F : CUDA_R_32F);
+      A.scalar_type() == at::kBFloat16 ? CUDA_R_16BF : CUDA_R_32F;
   cublasLtMatmulDesc_t op;
   TORCH_CHECK(cublasLtMatmulDescCreate(&op, CUBLAS_COMPUTE_32F, CUDA_R_32F) ==
                   CUBLAS_STATUS_SUCCESS,
@@ -978,14 +991,12 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> mixing_fwd(
     // registers, so the projection writes its final temporary directly.
     gate_project(z.slice(2, 0, focus_dim), gw_all[layer], gate_logit,
                  lt_workspace, stream);
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-        at::kBFloat16, at::kHalf, u0.scalar_type(), "mixing_gate_fwd", [&] {
-          mixing_gate_fwd_kernel<scalar_t>
-              <<<gate_blocks, kThreads, 0, stream>>>(
-                  u.data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
-                  gate_logit.data_ptr<scalar_t>(), u_next.data_ptr<scalar_t>(),
-                  gate_total, (int)lmax, (int)focus_dim);
-        });
+    DPA4_SEZM_DISPATCH_TYPES(u0.scalar_type(), "mixing_gate_fwd", [&] {
+      mixing_gate_fwd_kernel<scalar_t><<<gate_blocks, kThreads, 0, stream>>>(
+          u.data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
+          gate_logit.data_ptr<scalar_t>(), u_next.data_ptr<scalar_t>(),
+          gate_total, (int)lmax, (int)focus_dim);
+    });
     DPA4_CHECK_LAUNCH("sezm_mixing_fwd gate");
     u = u_next;
   }
@@ -1004,14 +1015,13 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> mixing_fwd(
   }
   const long fin_total = n_focus * n_edge * row_w;
   const long fin_blocks = (fin_total + kThreads - 1) / kThreads;
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::kBFloat16, at::kHalf, u0.scalar_type(), "mixing_final", [&] {
-        using acc_t = typename acc_type<scalar_t>::type;
-        mixing_final_kernel<scalar_t><<<fin_blocks, kThreads, 0, stream>>>(
-            u_final.data_ptr<scalar_t>(), z_id.data_ptr<scalar_t>(),
-            alpha.data_ptr<acc_t>(), x_local.data_ptr<scalar_t>(), fin_total,
-            n_edge, (int)n_focus, (int)row_w, apply_alpha);
-      });
+  DPA4_SEZM_DISPATCH_TYPES(u0.scalar_type(), "mixing_final", [&] {
+    using acc_t = typename acc_type<scalar_t>::type;
+    mixing_final_kernel<scalar_t><<<fin_blocks, kThreads, 0, stream>>>(
+        u_final.data_ptr<scalar_t>(), z_id.data_ptr<scalar_t>(),
+        alpha.data_ptr<acc_t>(), x_local.data_ptr<scalar_t>(), fin_total,
+        n_edge, (int)n_focus, (int)row_w, apply_alpha);
+  });
   DPA4_CHECK_LAUNCH("sezm_mixing_fwd final");
   return {x_local, z_all, u_final};
 }
@@ -1148,17 +1158,15 @@ mixing_bwd(const at::Tensor& grad_out_in,
   // === Entry: undo the competition scale and the edge-major store ===
   auto g_focus = at::empty({n_focus, n_edge, row_w}, u_final.options());
   {
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-        at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_entry_bwd",
-        [&] {
-          using acc_t = typename acc_type<scalar_t>::type;
-          mixing_entry_bwd_kernel<scalar_t>
-              <<<n_edge * n_focus, kThreads, 0, stream>>>(
-                  grad_out.data_ptr<scalar_t>(), x_local.data_ptr<scalar_t>(),
-                  alpha.data_ptr<acc_t>(), g_focus.data_ptr<scalar_t>(),
-                  grad_alpha.data_ptr<acc_t>(), n_edge, (int)n_focus,
-                  (int)row_w, apply_alpha);
-        });
+    DPA4_SEZM_DISPATCH_TYPES(u_final.scalar_type(), "mixing_entry_bwd", [&] {
+      using acc_t = typename acc_type<scalar_t>::type;
+      mixing_entry_bwd_kernel<scalar_t>
+          <<<n_edge * n_focus, kThreads, 0, stream>>>(
+              grad_out.data_ptr<scalar_t>(), x_local.data_ptr<scalar_t>(),
+              alpha.data_ptr<acc_t>(), g_focus.data_ptr<scalar_t>(),
+              grad_alpha.data_ptr<acc_t>(), n_edge, (int)n_focus, (int)row_w,
+              apply_alpha);
+    });
     DPA4_CHECK_LAUNCH("sezm_mixing_bwd entry");
   }
 
@@ -1223,37 +1231,33 @@ mixing_bwd(const at::Tensor& grad_out_in,
     at::Tensor u_prev =
         exact_bottom ? at::Tensor()
                      : (((n_gated - 1 - layer) % 2 == 0) ? u_ping : u_pong);
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-        at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_gate_bwd",
-        [&] {
-          const scalar_t* grad_u_up_ptr =
-              grad_u_up.has_value() && layer == n_gated - 1
-                  ? grad_u_up.value().data_ptr<scalar_t>()
-                  : nullptr;
-          const scalar_t* grad_z_up_ptr =
-              grad_z_up.has_value()
-                  ? grad_z_up.value()[layer].data_ptr<scalar_t>()
-                  : nullptr;
-          scalar_t* u_prev_ptr =
-              exact_bottom ? nullptr : u_prev.data_ptr<scalar_t>();
-          if (keep_state) {
-            mixing_gate_bwd_kernel<scalar_t, true>
-                <<<gate_blocks, kThreads, 0, stream>>>(
-                    g_cur.data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
-                    gate_logit.data_ptr<scalar_t>(),
-                    u_next.data_ptr<scalar_t>(), grad_u_up_ptr, grad_z_up_ptr,
-                    gz.data_ptr<scalar_t>(), glogit.data_ptr<scalar_t>(),
-                    u_prev_ptr, gate_total, (int)lmax, (int)focus_dim);
-          } else {
-            mixing_gate_bwd_kernel<scalar_t, false>
-                <<<gate_blocks, kThreads, 0, stream>>>(
-                    g_cur.data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
-                    gate_logit.data_ptr<scalar_t>(),
-                    u_next.data_ptr<scalar_t>(), grad_u_up_ptr, grad_z_up_ptr,
-                    gz.data_ptr<scalar_t>(), nullptr, u_prev_ptr, gate_total,
-                    (int)lmax, (int)focus_dim);
-          }
-        });
+    DPA4_SEZM_DISPATCH_TYPES(u_final.scalar_type(), "mixing_gate_bwd", [&] {
+      const scalar_t* grad_u_up_ptr =
+          grad_u_up.has_value() && layer == n_gated - 1
+              ? grad_u_up.value().data_ptr<scalar_t>()
+              : nullptr;
+      const scalar_t* grad_z_up_ptr =
+          grad_z_up.has_value() ? grad_z_up.value()[layer].data_ptr<scalar_t>()
+                                : nullptr;
+      scalar_t* u_prev_ptr =
+          exact_bottom ? nullptr : u_prev.data_ptr<scalar_t>();
+      if (keep_state) {
+        mixing_gate_bwd_kernel<scalar_t, true>
+            <<<gate_blocks, kThreads, 0, stream>>>(
+                g_cur.data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
+                gate_logit.data_ptr<scalar_t>(), u_next.data_ptr<scalar_t>(),
+                grad_u_up_ptr, grad_z_up_ptr, gz.data_ptr<scalar_t>(),
+                glogit.data_ptr<scalar_t>(), u_prev_ptr, gate_total, (int)lmax,
+                (int)focus_dim);
+      } else {
+        mixing_gate_bwd_kernel<scalar_t, false>
+            <<<gate_blocks, kThreads, 0, stream>>>(
+                g_cur.data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
+                gate_logit.data_ptr<scalar_t>(), u_next.data_ptr<scalar_t>(),
+                grad_u_up_ptr, grad_z_up_ptr, gz.data_ptr<scalar_t>(), nullptr,
+                u_prev_ptr, gate_total, (int)lmax, (int)focus_dim);
+      }
+    });
     DPA4_CHECK_LAUNCH("sezm_mixing_bwd gate");
     // Fold the gate-logit contraction back onto the scalar rows.
     {
@@ -1488,22 +1492,17 @@ mixing_bwd2(const at::Tensor& grad_out_in,
     }
 
     // Pointwise second order; the head update runs in place.
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-        at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_2nd_gate",
-        [&] {
-          scalar_t* grad_gz_up_ptr =
-              grad_z_up.has_value() ? grad_gz_up[layer].data_ptr<scalar_t>()
-                                    : nullptr;
-          mixing_2nd_gate_kernel<scalar_t>
-              <<<gate_blocks, kThreads, 0, stream>>>(
-                  hgz.data_ptr<scalar_t>(), hq_eff.data_ptr<scalar_t>(),
-                  upstream_all[layer].data_ptr<scalar_t>(),
-                  z.data_ptr<scalar_t>(), gate_logit.data_ptr<scalar_t>(),
-                  grad_gz_up_ptr, h.data_ptr<scalar_t>(),
-                  grad_z_out[layer].data_ptr<scalar_t>(),
-                  dq.data_ptr<scalar_t>(), gate_total, (int)lmax,
-                  (int)focus_dim);
-        });
+    DPA4_SEZM_DISPATCH_TYPES(u_final.scalar_type(), "mixing_2nd_gate", [&] {
+      scalar_t* grad_gz_up_ptr = grad_z_up.has_value()
+                                     ? grad_gz_up[layer].data_ptr<scalar_t>()
+                                     : nullptr;
+      mixing_2nd_gate_kernel<scalar_t><<<gate_blocks, kThreads, 0, stream>>>(
+          hgz.data_ptr<scalar_t>(), hq_eff.data_ptr<scalar_t>(),
+          upstream_all[layer].data_ptr<scalar_t>(), z.data_ptr<scalar_t>(),
+          gate_logit.data_ptr<scalar_t>(), grad_gz_up_ptr,
+          h.data_ptr<scalar_t>(), grad_z_out[layer].data_ptr<scalar_t>(),
+          dq.data_ptr<scalar_t>(), gate_total, (int)lmax, (int)focus_dim);
+    });
     DPA4_CHECK_LAUNCH("sezm_mixing_bwd2 gate");
 
     // Trailing contractions of the pointwise second order.
@@ -1550,23 +1549,21 @@ mixing_bwd2(const at::Tensor& grad_out_in,
   {
     const at::Tensor gg_scale =
         ggout_scale.has_value() ? ggout_scale->contiguous() : at::Tensor();
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-        at::kBFloat16, at::kHalf, u_final.scalar_type(), "mixing_2nd_final",
-        [&] {
-          using acc_t = typename acc_type<scalar_t>::type;
-          mixing_2nd_final_kernel<scalar_t>
-              <<<n_edge * n_focus, kThreads, 0, stream>>>(
-                  h.data_ptr<scalar_t>(), final_buf.data_ptr<scalar_t>(),
-                  grad_out.data_ptr<scalar_t>(), x_local.data_ptr<scalar_t>(),
-                  alpha.data_ptr<acc_t>(),
-                  gg_scale.defined() ? gg_scale.data_ptr<scalar_t>() : nullptr,
-                  grad_grad_out.data_ptr<scalar_t>(),
-                  grad_x_local_out.numel() > 0
-                      ? grad_x_local_out.data_ptr<scalar_t>()
-                      : nullptr,
-                  grad_alpha_in.data_ptr<acc_t>(), n_edge, (int)n_focus,
-                  (int)row_w, apply_alpha);
-        });
+    DPA4_SEZM_DISPATCH_TYPES(u_final.scalar_type(), "mixing_2nd_final", [&] {
+      using acc_t = typename acc_type<scalar_t>::type;
+      mixing_2nd_final_kernel<scalar_t>
+          <<<n_edge * n_focus, kThreads, 0, stream>>>(
+              h.data_ptr<scalar_t>(), final_buf.data_ptr<scalar_t>(),
+              grad_out.data_ptr<scalar_t>(), x_local.data_ptr<scalar_t>(),
+              alpha.data_ptr<acc_t>(),
+              gg_scale.defined() ? gg_scale.data_ptr<scalar_t>() : nullptr,
+              grad_grad_out.data_ptr<scalar_t>(),
+              grad_x_local_out.numel() > 0
+                  ? grad_x_local_out.data_ptr<scalar_t>()
+                  : nullptr,
+              grad_alpha_in.data_ptr<acc_t>(), n_edge, (int)n_focus, (int)row_w,
+              apply_alpha);
+    });
     DPA4_CHECK_LAUNCH("sezm_mixing_bwd2 final");
   }
   {

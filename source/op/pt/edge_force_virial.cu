@@ -15,7 +15,8 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
+#include <torch/library.h>
+#include <torch/types.h>
 
 #include <algorithm>
 #include <cstdint>

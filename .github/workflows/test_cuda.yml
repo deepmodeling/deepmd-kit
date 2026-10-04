@@ -65,6 +65,8 @@ jobs:
           DP_VARIANT: cuda
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
+          # The float64 DPA4 training kernels serve the consistency tests only.
+          CMAKE_ARGS: -DDEEPMD_ENABLE_DPA4_FP64=ON
       - run: dp --version
       - run: python -m pytest source/tests --ignore=source/tests/pd
         env:
