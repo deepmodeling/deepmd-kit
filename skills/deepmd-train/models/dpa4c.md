@@ -15,10 +15,66 @@ dp --pt-expt train input.json
 Do not substitute `dp --pt`. DPA4/SeZM uses the conventional PyTorch backend,
 whereas DPA4C is implemented for `--pt-expt`.
 
-## Start from the maintained example
 
-Start from `examples/water/dpa4c/input.json`. DPA4C is selected as a descriptor,
-not as a separate model scaffold:
+## Recommended preset workflow
+
+For a new DPA4C configuration, choose the family and grade first, then use a
+v20260911 preset. Available grades are nano, mini, neo, air, and plus; the name
+format is dpa4c-<grade>-v20260911. The maintained
+examples/water/dpa4c/input.json uses dpa4c-nano-v20260911.
+
+The model section of a new energy input should contain the preset, the dataset's
+type_map, and task-specific additions only:
+
+```json
+{
+  "model": {
+    "preset": "dpa4c-nano-v20260911",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "use_amp": false,
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    }
+  }
+}
+```
+
+The preset supplies type_map, descriptor, and fitting_net. An explicit type_map
+replaces the preset's 118-element map as a whole. Explicit descriptor and
+fitting_net keys merge over the preset and take precedence. Do not leave the old
+full architecture blocks beside preset, because those keys would override the
+selected grade.
+
+Keep learning_rate, loss, and training outside the architecture simplification.
+DPA4C uses dp --pt-expt train; execution controls training.enable_compile and
+training.enable_tf32 stay in training and are independent of model conditioning.
+Do not put `use_compile` under `model` for DPA4C.
+
+### Vacuum reference and charge/spin conditioning
+
+fitting_net.vacuum_ref is an explicit modeling choice. It requires an assigned
+energy bias through model.preset_out_bias.energy, with isolated-atom energies
+from the same reference calculation and entries aligned with the configured
+type_map. Without an assigned bias, DeePMD-kit disables vacuum_ref. The
+maintained isolated-atom examples show the preset_out_bias shape and reference
+data contract.
+
+If the task needs charge/spin conditioning, add descriptor.add_chg_spin_ebd and,
+when a default state is required, descriptor.default_chg_spin. These are
+model-input choices and are not interchangeable with compile, TF32, AMP, or
+other execution flags.
+
+### Advanced architecture overrides
+
+Use explicit descriptor and fitting-network architecture blocks only when
+reproducing a compatible checkpoint or intentionally designing a configuration
+outside the released presets:
 
 ```json
 {
@@ -32,55 +88,23 @@ not as a separate model scaffold:
       "rcut": 6.0,
       "channels": 32,
       "lmax": 2,
-      "radial_modes": 4,
-      "precision": "float32"
+      "radial_modes": 0
     },
     "fitting_net": {
+      "type": "ener",
       "neuron": [
         192,
         192,
         192
-      ],
-      "activation_function": "silu",
-      "precision": "float32"
+      ]
     }
-  },
-  "learning_rate": {
-    "type": "exp",
-    "start_lr": 0.001
-  },
-  "training": {
-    "training_data": {
-      "systems": [
-        "../data/data_0"
-      ],
-      "batch_size": 1
-    },
-    "numb_steps": 1000000,
-    "enable_compile": true,
-    "enable_tf32": true
   }
 }
 ```
 
-The acceleration controls are backend-specific and their location is part of
-the input contract:
-
-- DPA4C / `--pt-expt`: `training.enable_compile` and
-  `training.enable_tf32`.
-- DPA4 / `--pt`: `model.use_compile` and `model.enable_tf32`.
-
-Do not put `use_compile` under `model` for DPA4C. Strict argument validation
-rejects `model.use_compile`, and copying DPA4's key placement silently defeats
-the intended workflow until validation fails. Before launching a long job,
-normalize or run a bounded smoke test and confirm that the generated training
-input still contains both DPA4C keys under `training`.
-
-`training.enable_compile=true` uses `make_fx` plus `torch.compile`/Inductor for
-training. The first step is slower because compilation is one-time work.
-`training.enable_tf32=true` controls CUDA training matmuls independently of the
-compiled path. Both choices affect numerical policy and should be recorded with
-the run configuration.
+Do not combine this full architecture form with a preset. During fine-tuning,
+preserve the checkpoint's architecture and task-specific fields instead of
+blindly replacing them with a newer preset.
 
 ## Parameters to choose deliberately
 

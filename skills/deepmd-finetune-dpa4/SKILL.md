@@ -57,9 +57,12 @@ architecture, and `type_map` before use.
 1. Validate each DeePMD system before training: `natoms` is the number of tokens
    in `type.raw`, coordinate and force widths are `3 * natoms`, and every used
    label is finite and frame-aligned.
-1. Start from the exact checkpoint architecture. Introducing new element types,
-   changing architecture, or combining specialized spin/property/multi-task
-   configurations requires separate compatibility validation.
+1. Start from the exact checkpoint architecture. A v20260911 preset is a
+   new-training workflow; do not replace a checkpoint's stored descriptor or
+   fitting network with a newer preset during fine-tuning. Introducing new
+   element types, changing architecture, or combining specialized
+   spin/property/multi-task configurations requires separate compatibility
+   validation.
 1. Choose standard fine-tuning or LoRA. Do not assume a built-in DPA4 model name;
    check `dp pretrained download -h` for the installed version.
 
@@ -76,6 +79,8 @@ checkpoints may merge the adapters into ordinary DPA4 weights, so absence of
 LoRA metadata does not prove LoRA was never used.
 
 ## Standard fine-tuning
+
+Do not add a v20260911 preset merely because it is the recommended path for new training; preserve the checkpoint's serialized architecture and task-specific fields first.
 
 The model section in `input.json` must match the checkpoint unless the standard
 pretrained-script mechanism is deliberately used:

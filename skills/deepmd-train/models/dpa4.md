@@ -18,10 +18,74 @@ existing checkpoint with:
 dp --pt show model.pt descriptor fitting-net type-map
 ```
 
-## Minimal model configuration
 
-Start from the maintained example at `examples/water/dpa4/input.json`. A minimal
-model section is:
+## Recommended preset workflow
+
+For a new DPA4/SeZM configuration, choose the family and grade first, then use
+the v20260911 preset for that grade. Available DPA4 grades are nano, mini, neo,
+air, plus, pro, max, and ultra; the name format is
+dpa4-<grade>-v20260911. The compact nano starting point is used by
+examples/water/dpa4/input_preset.json.
+
+The model section of a new energy input should stay small:
+
+```json
+{
+  "model": {
+    "preset": "dpa4-nano-v20260911",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "use_amp": true,
+      "seed": 42
+    },
+    "fitting_net": {
+      "seed": 42
+    }
+  }
+}
+```
+
+The preset supplies type, type_map, descriptor, and fitting_net. An explicit
+type_map replaces the preset's 118-element map as a whole. Explicit keys inside
+descriptor or fitting_net merge over the preset and take precedence; use them
+for run-specific settings such as seeds, use_amp, add_chg_spin_ebd,
+default_chg_spin, or vacuum_ref. Do not retain a full manual descriptor and
+fitting-network block beside preset, because those blocks would override the
+architecture the preset is meant to select.
+
+Keep learning_rate, loss, and the complete training section outside this model
+simplification. Start from examples/water/dpa4/input_preset.json and run:
+
+```bash
+cd examples/water/dpa4
+dp --pt train input_preset.json
+```
+
+model.preset expands before argument validation and fine-tuning rules. The
+expanded configuration is the one recorded in out.json.
+
+### Vacuum reference and charge/spin conditioning
+
+fitting_net.vacuum_ref is an explicit modeling choice. It only remains enabled
+when the model has an assigned energy bias through model.preset_out_bias.energy.
+The entries must be isolated-atom energies from the same reference calculation
+and must follow the configured type_map; use the maintained
+examples/water/dpa4/input_e0.json as the shape of this workflow. If no bias is
+assigned, DeePMD-kit disables vacuum_ref.
+
+descriptor.add_chg_spin_ebd and descriptor.default_chg_spin are also explicit
+conditioning choices. They describe charge/spin inputs and defaults; they are
+independent of execution controls such as model.use_compile, model.enable_tf32,
+and freeze-time inference environment variables.
+
+### Advanced architecture overrides
+
+Use manual descriptor and fitting_net architecture blocks only when designing
+an architecture outside the released presets or reproducing an existing
+checkpoint exactly:
 
 ```json
 {
@@ -32,18 +96,26 @@ model section is:
       "H"
     ],
     "descriptor": {
-      "rcut": 6.0
+      "type": "dpa4",
+      "rcut": 6.0,
+      "channels": 32,
+      "lmax": 2
     },
     "fitting_net": {
-      "type": "dpa4_ener"
+      "type": "dpa4_ener",
+      "neuron": [
+        192,
+        192,
+        192
+      ]
     }
   }
 }
 ```
 
-Both `model.descriptor` and `model.fitting_net` are required. DPA4 defaults to
-`float32`; double precision is unnecessary and not recommended for the normal
-workflow.
+Do not combine this full architecture form with a preset. For fine-tuning,
+preserve the checkpoint's stored descriptor and fitting-network structure;
+do not replace it blindly with a newer v20260911 preset.
 
 ## Parameters to choose deliberately
 
@@ -111,5 +183,5 @@ The frozen `.pt2` is a selected single-head artifact.
 ## References
 
 - [DPA4 model documentation](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/dpa4.html)
-- [DPA4 training example](../../../examples/water/dpa4/input.json)
+- [DPA4 training example](../../../examples/water/dpa4/input_preset.json)
 - [Energy model training](https://docs.deepmodeling.com/projects/deepmd/en/latest/model/train-energy.html)

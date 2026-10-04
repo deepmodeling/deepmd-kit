@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import os
-import re
 import shutil
 import subprocess
 from pathlib import (
@@ -220,7 +219,7 @@ def test_real_detail_writer_keeps_two_system_outputs(tmp_path: Path) -> None:
     assert np.loadtxt(outputs[1], ndmin=2)[0, 0] == pytest.approx(11.0)
 
 
-def test_dpa4_minimal_model_configuration_normalizes() -> None:
+def test_dpa4_and_dpa4c_preset_examples_expand_and_validate() -> None:
     pytest.importorskip("deepmd.lib", reason="requires a built DeePMD checkout")
     from deepmd.utils.argcheck import (
         normalize,
@@ -228,25 +227,31 @@ def test_dpa4_minimal_model_configuration_normalizes() -> None:
     from deepmd.utils.compat import (
         update_deepmd_input,
     )
+    from deepmd.utils.model_preset import (
+        expand_model_preset,
+    )
 
-    text = DPA4_TRAIN_REFERENCE.read_text(encoding="utf-8")
-    section = text.split("## Minimal model configuration", 1)[1]
-    fenced_json = re.search(r"```json\n(.*?)\n```", section, flags=re.DOTALL)
-    assert fenced_json is not None
-    model_fragment = json.loads(fenced_json.group(1))
-    config = {
-        **model_fragment,
-        "training": {
-            "training_data": {"systems": ["dummy"]},
-            "numb_steps": 1,
-        },
-        "loss": {"type": "ener"},
-        "learning_rate": {"type": "exp", "start_lr": 1e-3},
-    }
+    examples = (
+        (
+            ROOT / "examples" / "water" / "dpa4" / "input_preset.json",
+            "dpa4",
+            "dpa4_ener",
+        ),
+        (
+            ROOT / "examples" / "water" / "dpa4c" / "input.json",
+            "standard",
+            "ener",
+        ),
+    )
+    for path, expected_model_type, expected_fitting_type in examples:
+        with path.open(encoding="utf-8") as handle:
+            config = json.load(handle)
+        config["model"] = expand_model_preset(config["model"])
+        normalized = normalize(update_deepmd_input(config, warning=False))
 
-    normalized = normalize(update_deepmd_input(config, warning=False))
-
-    assert normalized["model"]["fitting_net"]["type"] == "dpa4_ener"
+        assert "preset" not in normalized["model"]
+        assert normalized["model"]["type"] == expected_model_type
+        assert normalized["model"]["fitting_net"]["type"] == expected_fitting_type
 
 
 def test_dpa4c_skill_routes_backend_specific_compile_options() -> None:
@@ -261,6 +266,9 @@ def test_dpa4c_skill_routes_backend_specific_compile_options() -> None:
     assert "training.enable_tf32" in reference
     assert "model.use_compile" in reference
     assert "Do not put `use_compile` under `model` for DPA4C" in reference
+    assert "preset_out_bias" in reference
+    assert "vacuum_ref" in reference
+    assert "disables" in reference
 
 
 def test_dpa4c_reference_configuration_initializes_trainer(
@@ -277,13 +285,12 @@ def test_dpa4c_reference_configuration_initializes_trainer(
         update_deepmd_input,
     )
 
-    text = DPA4C_TRAIN_REFERENCE.read_text(encoding="utf-8")
-    fence = chr(96) * 3
-    fenced_json = text.split(fence + "json", 1)[1].split(fence, 1)[0]
-    config = json.loads(fenced_json)
-    config["training"]["training_data"]["systems"] = [
-        str(ROOT / "examples" / "water" / "data" / "data_0")
-    ]
+    example = ROOT / "examples" / "water" / "dpa4c" / "input.json"
+    with example.open(encoding="utf-8") as handle:
+        config = json.load(handle)
+    data_root = ROOT / "examples" / "water" / "data"
+    config["training"]["training_data"]["systems"] = [str(data_root / "data_0")]
+    config["training"].pop("validation_data", None)
     config["training"]["numb_steps"] = 1
     config["training"]["enable_compile"] = False
     config["training"]["stat_file"] = str(tmp_path / "dpa4c.hdf5")
@@ -291,6 +298,8 @@ def test_dpa4c_reference_configuration_initializes_trainer(
     config = normalize(update_deepmd_input(config, warning=False))
     trainer = get_trainer(config)
 
+    assert "preset" not in config["model"]
+    assert config["model"]["descriptor"]["type"] == "dpa4c"
     assert trainer.lr_schedule is not None
 
 

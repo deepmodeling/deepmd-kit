@@ -53,8 +53,8 @@ Recommended defaults:
 
 - Choose **se_e2_a** for a robust baseline, small to medium systems, compatibility-focused workflows, or when compute is limited.
 - Choose **DPA3** for high accuracy on diverse datasets, LAM-style training, or when the user explicitly asks for DPA3, DPA-3, LiGS, dynamic neighbor selection, or pretrained DPA3 variants.
-- Choose **DPA4/SeZM** when the user explicitly requests it or wants its SO(3)-equivariant message-passing architecture and accepts a GPU-oriented, PyTorch-only workflow.
-- Choose **DPA4C** when the user explicitly requests it or prioritizes compact, high-throughput deployment, including distillation from a DPA4 teacher.
+- Choose **DPA4/SeZM** when the user explicitly requests it or wants its SO(3)-equivariant message-passing architecture and accepts a GPU-oriented, PyTorch-only workflow. For a new configuration, choose a grade and use a dpa4-<grade>-v20260911 preset.
+- Choose **DPA4C** when the user explicitly requests it or prioritizes compact, high-throughput deployment, including distillation from a DPA4 teacher. For a new configuration, choose a grade and use a dpa4c-<grade>-v20260911 preset.
 
 ## Common workflow
 
@@ -82,6 +82,8 @@ Minimum information needed to build `input.json`:
 - model choice
 
 ### 3. Read the selected model reference
+
+For new DPA4 and DPA4C inputs, follow the preset workflow first and reserve manual architecture blocks for the advanced path.
 
 After selecting a model, read the corresponding file under [`models/`](models/) and apply its model-specific configuration, hyperparameters, and caveats.
 
