@@ -15,7 +15,6 @@ dp --pt-expt train input.json
 Do not substitute `dp --pt`. DPA4/SeZM uses the conventional PyTorch backend,
 whereas DPA4C is implemented for `--pt-expt`.
 
-
 ## Recommended preset workflow
 
 For a new DPA4C configuration, choose the family and grade first, then use a

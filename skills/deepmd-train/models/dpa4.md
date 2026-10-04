@@ -18,7 +18,6 @@ existing checkpoint with:
 dp --pt show model.pt descriptor fitting-net type-map
 ```
 
-
 ## Recommended preset workflow
 
 For a new DPA4/SeZM configuration, choose the family and grade first, then use
