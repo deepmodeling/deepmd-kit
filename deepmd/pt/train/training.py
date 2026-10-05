@@ -101,6 +101,9 @@ from deepmd.pt.utils.lmdb_dataset import (
     LmdbBatchDataLoader,
     LmdbDataset,
 )
+from deepmd.pt.utils.spin_finetune import (
+    get_native_spin_finetune_state,
+)
 from deepmd.pt.utils.stat import (
     make_stat_input,
     pair_margin_frame_mask,
@@ -874,6 +877,24 @@ class Trainer:
                                 _pretrained_model_params["descriptor"],
                                 _model_key_from,
                             )
+                        if _finetune_rule_single.convert_to_native_spin:
+                            log.info(
+                                "Initialize native-spin branch '%s' from spin-free branch '%s'.",
+                                _model_key,
+                                _model_key_from,
+                            )
+                            converted = get_native_spin_finetune_state(
+                                self.wrapper.model[_model_key],
+                                pretrained_model_wrapper.model[_model_key_from],
+                                random_fitting=_new_fitting,
+                            )
+                            _new_state_dict.update(
+                                {
+                                    f"model.{_model_key}.{key}": value
+                                    for key, value in converted.items()
+                                }
+                            )
+                            return
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()

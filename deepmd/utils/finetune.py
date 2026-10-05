@@ -221,17 +221,19 @@ def _native_spin_types(
 def _validate_native_spin_finetune(
     target_config: Mapping[str, Any],
     pretrained_config: Mapping[str, Any],
-) -> None:
-    """Validate the native-spin transfer contract before model construction."""
+) -> bool:
+    """Validate spin transfer and report whether a spin-free source needs conversion."""
     target_types = _native_spin_types(target_config)
     if target_types is None:
-        return
+        return False
 
     pretrained_types = _native_spin_types(pretrained_config)
     if pretrained_types is None:
+        if pretrained_config.get("spin") is None:
+            return True
         raise ValueError(
-            "Native-spin fine-tuning requires a native-spin pretrained model; "
-            "automatic conversion from a spin-free model is not supported."
+            "Native-spin fine-tuning requires a spin-free or native-spin "
+            "pretrained model."
         )
     if pretrained_types and pretrained_types != target_types:
         raise ValueError(
@@ -239,6 +241,7 @@ def _validate_native_spin_finetune(
             f"fine-tuning is not supported: pretrained={sorted(pretrained_types)}, "
             f"target={sorted(target_types)}."
         )
+    return False
 
 
 class FinetuneRuleItem:
@@ -249,6 +252,7 @@ class FinetuneRuleItem:
         model_branch: str = "Default",
         random_fitting: bool = False,
         resuming: bool = False,
+        convert_to_native_spin: bool = False,
     ) -> None:
         """
         The rules for fine-tuning the model from pretrained model.
@@ -265,12 +269,15 @@ class FinetuneRuleItem:
             If true, the fitting net will be randomly initialized instead of inherit from the pretrained model.
         resuming
             If true, the model will just resume from model_branch without fine-tuning.
+        convert_to_native_spin
+            If true, initialize the native-spin model from a spin-free branch.
         """
         self.p_type_map = p_type_map
         self.type_map = type_map
         self.model_branch = model_branch
         self.random_fitting = random_fitting
         self.resuming = resuming
+        self.convert_to_native_spin = convert_to_native_spin
         self.update_type = self.p_type_map != self.type_map
 
     def get_index_mapping(self) -> list[int]:
@@ -398,7 +405,9 @@ class FinetuneRuleBuilder:
                     model_branch_from=model_branch_from,
                 )
             )
-            finetune_rule.resuming = resuming
+            finetune_rule.resuming = (
+                resuming and not finetune_rule.convert_to_native_spin
+            )
             finetune_links[model_key] = finetune_rule
         return model_config, finetune_links
 
@@ -444,7 +453,9 @@ class FinetuneRuleBuilder:
             model_branch_chosen = model_alias_dict[model_branch_chosen]
             single_config_chosen = deepcopy(model_dict_params[model_branch_chosen])
 
-        _validate_native_spin_finetune(single_config, single_config_chosen)
+        convert_to_native_spin = _validate_native_spin_finetune(
+            single_config, single_config_chosen
+        )
 
         old_type_map = single_config_chosen["type_map"]
         new_type_map = single_config["type_map"]
@@ -453,6 +464,7 @@ class FinetuneRuleBuilder:
             type_map=new_type_map,
             model_branch=model_branch_chosen,
             random_fitting=new_fitting,
+            convert_to_native_spin=convert_to_native_spin,
         )
         if self.change_model_params:
             self._apply_pretrained_model_params(

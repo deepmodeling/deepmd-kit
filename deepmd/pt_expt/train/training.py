@@ -101,6 +101,13 @@ from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
 from deepmd.pt.utils.compile_compat import trace_pad_dim as _trace_pad_dim
+from deepmd.pt.utils.finetune import (
+    _learned_part_path,
+    _move_learned_key,
+)
+from deepmd.pt.utils.spin_finetune import (
+    get_native_spin_finetune_state,
+)
 from deepmd.pt_expt.loss import (
     DOSLoss,
     EnergyLoss,
@@ -2243,34 +2250,42 @@ class Trainer(AbstractTrainer):
                 # Selective weight copy (per-branch key remapping)
                 pretrained_state = pretrained_wrapper.state_dict()
                 target_state = self._unwrapped.state_dict()
-                # A plain model and its zone-bridging composition hold the same
-                # learned descriptor and fitting net at different paths.
-                learned_paths = {
-                    model_key: (
-                        _learned_part_path(self._unwrapped.model[model_key]),
-                        _learned_part_path(
-                            pretrained_wrapper.model[
-                                finetune_links[model_key].get_model_branch()
-                            ]
-                        ),
-                    )
-                    for model_key in self.model_keys
-                }
-                new_state = {}
-                for key in target_state:
-                    if key == "_extra_state":
-                        new_state[key] = target_state[key]
+                new_state = target_state.copy()
+                for model_key in self.model_keys:
+                    finetune_rule = finetune_links[model_key]
+                    source_key = finetune_rule.get_model_branch()
+                    model = self._unwrapped.model[model_key]
+                    source_model = pretrained_wrapper.model[source_key]
+                    prefix = f"model.{model_key}."
+                    if finetune_rule.convert_to_native_spin:
+                        log.info(
+                            "Initialize native-spin branch '%s' from spin-free branch '%s'.",
+                            model_key,
+                            source_key,
+                        )
+                        converted = get_native_spin_finetune_state(
+                            model,
+                            source_model,
+                            random_fitting=finetune_rule.get_random_fitting(),
+                        )
+                        new_state.update(
+                            {prefix + key: value for key, value in converted.items()}
+                        )
                         continue
-                    # Find which model_key this key belongs to
-                    matched = False
-                    for model_key in self.model_keys:
-                        if f".{model_key}." not in key:
+
+                    # Plain and bridged models store their learned part at
+                    # different paths; the analytical part keeps target state.
+                    path = _learned_part_path(model)
+                    source_path = _learned_part_path(source_model)
+                    for key in target_state:
+                        if not key.startswith(prefix):
                             continue
-                        matched = True
-                        finetune_rule = finetune_links[model_key]
-                        _key_from = finetune_rule.get_model_branch()
-                        pretrained_key = key.replace(f".{model_key}.", f".{_key_from}.")
-                        path, source_path = learned_paths[model_key]
+                        if (
+                            finetune_rule.get_random_fitting()
+                            and ".descriptor." not in key
+                        ):
+                            continue
+                        pretrained_key = f"model.{source_key}." + key[len(prefix) :]
                         if (
                             pretrained_key not in pretrained_state
                             and path is not None
@@ -2279,19 +2294,8 @@ class Trainer(AbstractTrainer):
                             pretrained_key = _move_learned_key(
                                 pretrained_key, path, source_path
                             )
-                        use_random = (
-                            finetune_rule.get_random_fitting()
-                            and ".descriptor." not in key
-                        )
-                        if use_random:
-                            new_state[key] = target_state[key]
-                        elif pretrained_key in pretrained_state:
+                        if pretrained_key in pretrained_state:
                             new_state[key] = pretrained_state[pretrained_key]
-                        else:
-                            new_state[key] = target_state[key]
-                        break
-                    if not matched:
-                        new_state[key] = target_state[key]
                 self._unwrapped.load_state_dict(new_state)
 
                 # Per-branch bias adjustment (rank 0 only, then broadcast)
@@ -3538,33 +3542,6 @@ class Trainer(AbstractTrainer):
             for key, value in more_loss.items()
             if "l2_" not in key
         }
-
-
-def _learned_part_path(model: torch.nn.Module) -> str | None:
-    """Return the state-dict path of the learned descriptor-fitting part of a model.
-
-    A plain model holds that part as its atomic model and a composition with
-    one learned sub-model, such as a zone-bridging one, as that sub-model, so
-    fine-tuning between the two transfers the part across the paths. A model
-    without a single learned part returns ``None``.
-    """
-    atomic_model = model.atomic_model
-    if getattr(atomic_model, "descriptor", None) is not None:
-        return "atomic_model."
-    learned = [
-        index
-        for index, child in enumerate(getattr(atomic_model, "models", ()))
-        if getattr(child, "descriptor", None) is not None
-    ]
-    return f"atomic_model.models.{learned[0]}." if len(learned) == 1 else None
-
-
-def _move_learned_key(key: str, path: str, source_path: str) -> str:
-    """Rewrite a descriptor or fitting-net key from one learned-part path to another."""
-    for part in ("descriptor.", "fitting_net."):
-        if f".{path}{part}" in key:
-            return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
-    return key
 
 
 def model_change_out_bias(
