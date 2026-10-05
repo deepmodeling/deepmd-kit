@@ -369,6 +369,13 @@ def main_parser() -> argparse.ArgumentParser:
         "always freezes to 'graph', since the dense lower is deprecated in this "
         "backend -- requesting 'nlist' for one logs a warning and is overridden.",
     )
+    parser_frz.add_argument(
+        "--compress",
+        action="store_true",
+        help="(Supported backend: PyTorch Exportable) Compress the model before "
+        "export using the default compression settings. Eligible .pt2 models "
+        "use the accelerated compressed graph without an intermediate export.",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(

@@ -1,12 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Compress a pt_expt model (.pte) by tabulating embedding nets."""
+"""Build and export compressed pt_expt inference models."""
 
 import logging
+from typing import (
+    TYPE_CHECKING,
+)
 
 from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
     serialize_from_file,
 )
+
+if TYPE_CHECKING:
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -19,14 +27,14 @@ def enable_compression(
     check_frequency: int = -1,
     training_script: str | None = None,
 ) -> None:
-    """Compress a .pte model by tabulating embedding nets.
+    """Compress a .pte or .pt2 model by tabulating embedding nets.
 
     Parameters
     ----------
     input_file : str
-        Path to the input .pte model file.
+        Path to the input .pte or .pt2 model file.
     output : str
-        Path to the output compressed .pte model file.
+        Path to the output compressed .pte or .pt2 model file.
     stride : float
         The uniform stride of the first table.
     extrapolate : int
@@ -41,16 +49,60 @@ def enable_compression(
         BaseModel,
     )
 
-    # 1. Load the .pte model
     model_dict = serialize_from_file(input_file)
     model = BaseModel.deserialize(model_dict["model"])
+    compress_model(
+        model,
+        output,
+        stride=stride,
+        extrapolate=extrapolate,
+        check_frequency=check_frequency,
+        training_script=training_script,
+        min_nbor_dist=model_dict.get("min_nbor_dist"),
+        model_def_script=model_dict.get("model_def_script"),
+    )
 
-    # 2. Get or compute min_nbor_dist. Measuring it is a dense all-pairs pass
-    #    over the training data, so it is only run for models that tabulate
-    #    from the shortest observed distance.
-    min_nbor_dist = model.get_min_nbor_dist()
-    if min_nbor_dist is None:
-        min_nbor_dist = model_dict.get("min_nbor_dist")
+
+def compress_model(
+    model: "BaseModel",
+    output: str,
+    *,
+    stride: float = 0.01,
+    extrapolate: int = 5,
+    check_frequency: int = -1,
+    training_script: str | None = None,
+    min_nbor_dist: float | None = None,
+    model_def_script: dict | None = None,
+    with_comm: bool = True,
+) -> None:
+    """Compress a loaded model and export its inference artifact.
+
+    Parameters
+    ----------
+    model
+        Model whose parameters and output statistics are loaded.
+    output
+        Destination ``.pte`` or ``.pt2`` file.
+    stride
+        Uniform spacing of the first compression table.
+    extrapolate
+        Scale of the extrapolation region for models that require it.
+    check_frequency
+        Frequency of table overflow checks.
+    training_script
+        Training configuration used when neighbor statistics are required
+        but absent from the model and ``min_nbor_dist``.
+    min_nbor_dist
+        Fallback minimum neighbor distance from artifact metadata.
+    model_def_script
+        Training model configuration to preserve in the exported artifact.
+    with_comm
+        Whether to include a communication artifact for cross-rank models.
+    """
+    # === Step 1. Resolve the domain required by the compression tables. ===
+    model_min_nbor_dist = model.get_min_nbor_dist()
+    if model_min_nbor_dist is not None:
+        min_nbor_dist = model_min_nbor_dist
     if min_nbor_dist is None and not model.compression_needs_min_nbor_dist():
         log.info(
             "The model tabulates over an analytically bounded domain; "
@@ -95,8 +147,12 @@ def enable_compression(
 
     model.min_nbor_dist = min_nbor_dist
 
-    # 3. Enable compression (also ensures fake ops are registered now that
-    #    the C++ custom op library is loaded via enable_compression imports)
+    # === Step 2. Fold deployment constants and build the compressed snapshot. ===
+    # The neutral vacuum reference must be resolved before a charge-conditioned
+    # descriptor specializes its tables to the deployment charge state.
+    model.eval()
+    model.fold_vacuum_reference()
+    uncompressed_model_dict = model.serialize()
     from deepmd.pt_expt.utils.tabulate_ops import (
         ensure_fake_registered,
     )
@@ -111,16 +167,14 @@ def enable_compression(
         check_frequency,
     )
 
-    # 4. Serialize the compressed model dict (includes tabulated data)
     compressed_model_dict = model.serialize()
 
-    # 5. Re-export the compressed model.
+    # === Step 3. Export the graph supported by the compressed model. ===
     #
-    # A geometrically compressed graph-lower descriptor (DPA1 / se_atten strip,
-    # attn_layer == 0) evaluates its tabulated embedding through fused CUDA
-    # operators that make_fx can trace, so its compressed graph exports directly
-    # to a graph-lower ``.pt2``: ``deserialize_to_file`` bakes the end-to-end
-    # fused table operator and the mandatory per-atom virial (see its docstring).
+    # Compressed graph descriptors use fused operators with traceable fake
+    # implementations. Their graphs export directly to ``.pt2``; the exporter
+    # selects a compact canonical schema when the target supports it and
+    # preserves the per-atom virial alongside the total energy and forces.
     # Every other compressed descriptor keeps tabulated operators make_fx cannot
     # trace: those export the UNCOMPRESSED graph and carry the compressed dict in
     # ``model.json`` so ``deserialize()`` restores the compression state for the
@@ -129,23 +183,24 @@ def enable_compression(
         model_uses_graph_lower,
     )
 
-    model_def_script = model_dict.get("model_def_script")
     if output.endswith(".pt2") and model_uses_graph_lower(model):
         log.info("Re-exporting compressed graph...")
         deserialize_to_file(
             output,
             {"model": compressed_model_dict, "model_def_script": model_def_script},
             lower_kind="auto",
+            with_comm=with_comm,
         )
     else:
         log.info("Re-exporting compressed model...")
         deserialize_to_file(
             output,
-            {"model": model_dict["model"], "model_def_script": model_def_script},
+            {"model": uncompressed_model_dict, "model_def_script": model_def_script},
             model_json_override={
                 "model": compressed_model_dict,
                 "model_def_script": model_def_script,
                 "min_nbor_dist": float(min_nbor_dist),
             },
+            with_comm=with_comm,
         )
     log.info("Compressed model saved to %s", output)

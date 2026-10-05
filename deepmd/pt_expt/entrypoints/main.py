@@ -528,6 +528,9 @@ def freeze(
     output: str = "frozen_model",
     head: str | None = None,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
+    compress: bool = False,
 ) -> None:
     """Freeze a pt_expt checkpoint into a .pte/.pt2 exported model.
 
@@ -558,6 +561,14 @@ def freeze(
         graph lower, so ``lower_kind`` is resolved to ``"graph"`` for it
         regardless of the requested value -- before the export ABI and the
         default output suffix are selected.
+    with_comm : bool, optional
+        Include a communication artifact for models with cross-rank message
+        passing, by default True. Disable for single-process inference.
+    compress : bool, optional
+        Compress the loaded model before export, by default False. Uses the
+        default settings of ``dp compress`` and selects the accelerated graph
+        schema for eligible ``.pt2`` models without compiling an intermediate
+        artifact.
     """
     import torch
 
@@ -668,12 +679,26 @@ def freeze(
             )
         do_atomic_virial = True
 
+    if compress:
+        from deepmd.pt_expt.entrypoints.compress import (
+            compress_model,
+        )
+
+        compress_model(
+            m,
+            output,
+            model_def_script=single_model_params,
+            with_comm=with_comm,
+        )
+        return
+
     model_dict_serialized = m.serialize()
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
         do_atomic_virial=do_atomic_virial,
         lower_kind=lower_kind,
+        with_comm=with_comm,
     )
     log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
 
@@ -942,6 +967,7 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             output=FLAGS.output,
             head=FLAGS.head,
             lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+            compress=getattr(FLAGS, "compress", False),
         )
     elif FLAGS.command == "change-bias":
         change_bias(

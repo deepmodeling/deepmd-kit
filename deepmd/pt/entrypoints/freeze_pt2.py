@@ -917,6 +917,7 @@ def freeze_sezm_to_pt2(
     device: torch.device | None = None,
     head: str | None = None,
     atomic_virial: bool = True,
+    with_comm: bool = True,
 ) -> None:
     """Freeze a SeZM checkpoint into an AOTInductor ``.pt2`` archive.
 
@@ -938,6 +939,9 @@ def freeze_sezm_to_pt2(
         default: the edge-force scatter assembles the per-atom virial as a
         free by-product of the single backward, so exporting it carries no
         compute cost.
+    with_comm
+        Whether to include a communication artifact when the model supports
+        cross-rank message passing. Disable for single-process inference.
 
     Notes
     -----
@@ -955,6 +959,7 @@ def freeze_sezm_to_pt2(
             target_device=target_device,
             head=head,
             atomic_virial=atomic_virial,
+            with_comm=with_comm,
         )
 
 
@@ -965,6 +970,7 @@ def _freeze_sezm_to_pt2(
     target_device: torch.device,
     head: str | None,
     atomic_virial: bool,
+    with_comm: bool,
 ) -> None:
     """Build one AOTInductor archive under an established kernel policy."""
     from torch._inductor import (
@@ -1086,11 +1092,13 @@ def _freeze_sezm_to_pt2(
     # report supports_edge_parallel()=True since the Source Freeze Propagation
     # gate's per-node partials are completed across ranks by
     # DescrptSeZM._gate_partial_exchange (issue #5906).
-    with_comm = (
-        model.export_lower_input_kind() == "edge_vec" and model.supports_edge_parallel()
+    has_comm_artifact = (
+        with_comm
+        and model.export_lower_input_kind() == "edge_vec"
+        and model.supports_edge_parallel()
     )
     with_comm_bytes: bytes | None = None
-    if with_comm:
+    if has_comm_artifact:
         log.info(
             "Compiling the parallel with-comm artifact (second AOTInductor "
             "compilation)..."
@@ -1106,7 +1114,7 @@ def _freeze_sezm_to_pt2(
         output_keys=output_keys,
         is_spin=is_spin,
         do_atomic_virial=atomic_virial,
-        has_comm_artifact=with_comm,
+        has_comm_artifact=has_comm_artifact,
     )
     with zipfile.ZipFile(out_path_str, "a") as zf:
         zf.writestr("model/extra/metadata.json", json.dumps(metadata))
