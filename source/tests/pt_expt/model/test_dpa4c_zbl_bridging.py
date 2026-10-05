@@ -218,8 +218,11 @@ class TestDPA4CZBLBridging:
                 )["energy"].item()
             )
         # Neither model has computed its statistics, so the reference leaves
-        # an isolated atom exactly the zero output bias.
-        assert energies == [0.0, 0.0]
+        # an isolated atom at the zero output bias, up to float64 roundoff
+        # from the separately evaluated network and vacuum reference.
+        np.testing.assert_allclose(
+            energies, [0.0, 0.0], rtol=0.0, atol=8 * np.finfo(np.float64).eps
+        )
 
     def test_declared_tensors_keep_the_adamw_route(self) -> None:
         """HybridMuon routes the same descriptor tensors as in the plain model.

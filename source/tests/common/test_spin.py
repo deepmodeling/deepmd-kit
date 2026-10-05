@@ -6,10 +6,43 @@ import numpy as np
 
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
     normalize_spin_use_spin,
 )
 
 CUR_DIR = os.path.dirname(__file__)
+
+
+class EnvProtectionDescriptorsTest(unittest.TestCase):
+    def test_hybrid_only_configures_environment_matrix_children(self) -> None:
+        environment = {"type": "se_e2_a", "env_protection": 0.02}
+        dpa4 = {"type": "DPA4", "eps": 1e-7}
+        nested_environment = {"type": "se_atten"}
+        descriptor = {
+            "type": "hybrid",
+            "env_protection": 0.03,
+            "list": [
+                environment,
+                dpa4,
+                {
+                    "type": "hybrid",
+                    "env_protection": 0.04,
+                    "list": [nested_environment, {"type": "dpa4c"}],
+                },
+            ],
+        }
+        selected = list(env_protection_descriptors(descriptor))
+        self.assertEqual(len(selected), 2)
+        self.assertIs(selected[0], environment)
+        self.assertIs(selected[1], nested_environment)
+        for child in selected:
+            child.setdefault("env_protection", 0.01)
+        self.assertEqual(environment["env_protection"], 0.02)
+        self.assertEqual(nested_environment["env_protection"], 0.04)
+        self.assertNotIn("env_protection", descriptor)
+        self.assertNotIn("env_protection", descriptor["list"][2])
+        self.assertEqual(dpa4, {"type": "DPA4", "eps": 1e-7})
+        self.assertEqual(list(env_protection_descriptors({"type": "SeZM"})), [])
 
 
 class NormalizeUseSpinTest(unittest.TestCase):

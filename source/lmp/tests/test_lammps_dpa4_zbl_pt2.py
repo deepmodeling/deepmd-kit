@@ -43,7 +43,6 @@ the reasoning in full).  Two reasons, both load-bearing here:
 """
 
 import importlib.util
-import json
 import os
 import shutil
 import signal
@@ -59,6 +58,9 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from python_reference import (
+    run_python_reference,
 )
 from write_lmp_data import (
     write_lmp_data,
@@ -164,7 +166,7 @@ def _compute_expected() -> None:
     # from SHARED_LIB_DIR, which the build-test env does not populate.
     infer_dir = str(pb_file.resolve().parent)
     script = (
-        "import json, sys\n"
+        "import sys\n"
         "import numpy as np\n"
         f"sys.path.insert(0, {infer_dir!r})\n"
         "import deepmd.pt  # noqa: F401  (triggers the base op-library load)\n"
@@ -178,17 +180,14 @@ def _compute_expected() -> None:
         f"    {atype!r},\n"
         "    atomic=True,\n"
         ")\n"
-        "print(json.dumps({\n"
+        "result = {\n"
         '    "e": float(e[0, 0]),\n'
         '    "ae": np.asarray(ae[0]).reshape(-1).tolist(),\n'
         '    "f": np.asarray(f[0]).tolist(),\n'
         '    "av": np.asarray(av[0]).tolist(),\n'
-        "}))\n"
+        "}\n"
     )
-    proc = sp.run([sys.executable, "-c", script], capture_output=True, text=True)
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
-    result = json.loads(proc.stdout.strip())
+    result = run_python_reference(script)
 
     expected_e = result["e"]
     expected_ae = np.array(result["ae"])

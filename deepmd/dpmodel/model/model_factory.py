@@ -16,6 +16,7 @@ from deepmd.utils.bridging import (
 )
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
 )
 
 ModelBuilder = Callable[[dict], Any]
@@ -381,7 +382,8 @@ def get_spin_model(
     data["atom_exclude_types"] = spin.get_atom_exclude_types(
         exclude_types=data.get("atom_exclude_types")
     )
-    data["descriptor"].setdefault("env_protection", 1e-6)
+    for descriptor in env_protection_descriptors(data["descriptor"]):
+        descriptor.setdefault("env_protection", 1e-6)
     if data["descriptor"]["type"] == "se_e2_a":
         data["descriptor"]["sel"] += data["descriptor"]["sel"]
     backbone_model = standard_model_factory(data)

@@ -46,6 +46,7 @@ from deepmd.utils.bridging import (
 )
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
 )
 
 from .dipole_model import (
@@ -189,11 +190,9 @@ def get_spin_model(model_params: dict) -> SpinModel:
         exclude_types=model_params.get("atom_exclude_types", None)
     )
     model_params["atom_exclude_types"] = atom_exclude_types
-    if (
-        "env_protection" not in model_params["descriptor"]
-        or model_params["descriptor"]["env_protection"] == 0.0
-    ):
-        model_params["descriptor"]["env_protection"] = 0.01
+    for descriptor in env_protection_descriptors(model_params["descriptor"]):
+        if "env_protection" not in descriptor or descriptor["env_protection"] == 0.0:
+            descriptor["env_protection"] = 0.01
     if model_params["descriptor"]["type"] in ["se_e2_a"]:
         # only expand sel for se_e2_a
         model_params["descriptor"]["sel"] += model_params["descriptor"]["sel"]
