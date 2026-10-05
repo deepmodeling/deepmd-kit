@@ -372,9 +372,6 @@ class TestHessianHvpBatch:
             f"an identity of size {NDOF} was built; sizes seen: {seen}"
         )
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="the automatic choice needs CUDA"
-    )
     @pytest.mark.parametrize("wrapped", [False, True])
     def test_an_out_of_memory_probe_falls_back_instead_of_escaping(
         self, wrapped, monkeypatch
