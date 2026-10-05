@@ -7,6 +7,9 @@ import shutil
 import tempfile
 import unittest
 import unittest.mock
+from importlib.util import (
+    find_spec,
+)
 
 import numpy as np
 
@@ -376,6 +379,48 @@ class TestUniMolDataConversion(unittest.TestCase):
         )
         self.assertEqual(counts["molecules"], 1)
         self.assertEqual(counts["frames"], 2)
+
+    @unittest.skipUnless(find_spec("rdkit"), "RDKit is not installed")
+    def test_an_unparsable_smiles_only_loses_its_2d_conformer(self) -> None:
+        """RDKit returns None for a SMILES it cannot parse.
+
+        Handing that to AddHs raised inside the conversion, so one such record
+        threw away the whole dataset. The 3D conformers do not depend on the
+        SMILES, so the molecule keeps them.
+        """
+        rng = np.random.default_rng(1)
+        src = os.path.join(self.tmp, "bad_smiles.lmdb")
+        _write_unimol_lmdb(
+            src,
+            [
+                {
+                    "atoms": ["C", "C", "O"],
+                    "coordinates": [
+                        rng.normal(size=(3, 3)).astype(np.float32) for _ in range(2)
+                    ],
+                    "smi": "CCO",
+                },
+                {
+                    "atoms": ["C", "C", "C", "C"],
+                    "coordinates": [
+                        rng.normal(size=(4, 3)).astype(np.float32) for _ in range(2)
+                    ],
+                    # an unclosed ring
+                    "smi": "C1CCC",
+                },
+            ],
+        )
+        dst = os.path.join(self.tmp, "bad_smiles")
+        counts = convert_unimol_lmdb(src, dst, add_2d_conformer=True, map_size=1 << 24)
+        self.assertEqual(counts["molecules"], 2)
+        self.assertEqual(counts["skipped"], 0)
+        reader = LmdbDataReader(dst, list(UNIMOL_ELEMENTS))
+        nlocs = sorted(
+            int(np.asarray(reader[i]["atype"]).size) for i in range(len(reader))
+        )
+        # three frames of the parsable molecule, its 2D conformer included, and
+        # the two 3D ones of the other
+        self.assertEqual(nlocs, [3, 3, 3, 4, 4])
 
 
 if __name__ == "__main__":
