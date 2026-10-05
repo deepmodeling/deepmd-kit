@@ -227,9 +227,6 @@ class TestHessianHvpBatch:
         assert probe_max_rows == 1
         assert probe_rows == 1, "the probe computed more than one row"
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="the automatic choice needs CUDA"
-    )
     def test_the_batch_is_repriced_for_each_frame(self, monkeypatch) -> None:
         """One price does not fit all frames: neighbour counts differ per frame.
 
