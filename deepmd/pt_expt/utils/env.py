@@ -35,7 +35,7 @@ DP_DTYPE_PROMOTION_STRICT = os.environ.get("DP_DTYPE_PROMOTION_STRICT", "0") == 
 # trades memory for far fewer kernel launches. 1 keeps the one-row-at-a-time
 # path and reproduces the pre-batching behaviour exactly.
 #
-# Left unset, the batch is chosen per call: one Hessian-vector product is run to
+# Left unset, the batch is chosen per frame: one Hessian-vector product is run to
 # measure what a replica costs, and the batch is what the free memory affords,
 # clamped to [1, DP_HESSIAN_HVP_BATCH_CAP]. That is not a tuning preference but
 # a correctness matter, because peak memory is linear in this value while the

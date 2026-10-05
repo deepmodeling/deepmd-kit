@@ -564,6 +564,122 @@ class TestHessianHvpBatch:
             recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
         )
 
+    @pytest.mark.parametrize(
+        ("prices", "fits", "virtual", "expected"),
+        [
+            ([8, 8], {5: 2}, False, [8, 4, 2, 2]),  # overpriced twice: one descent
+            ([8, 1], {5: 2}, False, [8, 4, 2]),  # a lower price still wins
+            ([2, 8], {5: 8}, False, [2, 8]),  # nothing refused, nothing capped
+            ([8, 8], {5: 2, 4: 8}, True, [8, 4, 2, 8]),  # another size, own price
+        ],
+    )
+    def test_a_refused_batch_is_not_priced_again(
+        self, prices, fits, virtual, expected, monkeypatch
+    ) -> None:
+        """In automatic mode a batch the device refused caps later prices.
+
+        Each frame is priced afresh, and a price is an estimate that can sit
+        above what the device actually holds.  Taking every fresh price as
+        given sends each frame back down the ladder, paying the failed
+        attempts and printing the warnings again.  Once the ladder has cut a
+        batch, later frames with as many real atoms are priced no higher than
+        the batch that survived; the cap only ever lowers a price, a call
+        that never ran out of memory caps nothing, and a frame with another
+        real-atom count keeps its own price instead of idling at a batch
+        learned on a different size.
+        """
+        model = self._make_model()
+        coord = torch.cat([self.coord, self.coord * 1.01], dim=0)
+        atype = torch.cat([self.atype, self.atype], dim=0)
+        if virtual:
+            atype[1, -1] = -1  # 4 real atoms in the second frame
+        box = torch.cat([self.box, self.box], dim=0)
+
+        def hessian2() -> torch.Tensor:
+            out = model.forward(coord.clone().requires_grad_(True), atype, box=box)
+            return out["hessian"].reshape(2, NDOF, NDOF)
+
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 1)
+        reference = hessian2()
+
+        # The price stands in for the probe so that the test runs on any
+        # device: on CUDA the probe would price from the real free memory.
+        quoted = iter(prices)
+        attempted = []
+        real = mm._hessian_graph_batched_hvp
+
+        def refuse_above_fits(*args, **kwargs):
+            attempted.append(kwargs["batch"])
+            if kwargs["batch"] > fits[kwargs["nloc"]]:
+                raise torch.OutOfMemoryError("simulated")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(mm, "_auto_hvp_batch", lambda device, probe: next(quoted))
+        monkeypatch.setattr(mm, "_hessian_graph_batched_hvp", refuse_above_fits)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", None)
+        recovered = hessian2()
+
+        assert next(quoted, None) is None, "each frame must still be priced"
+        assert attempted == expected, attempted
+        scale = reference.abs().max()
+        torch.testing.assert_close(
+            recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
+        )
+
+    @pytest.mark.parametrize(
+        ("refused", "expected"),
+        [
+            ("probe", [None]),  # the measurement itself did not fit
+            ("ladder", [8]),  # every batch above one was refused
+        ],
+    )
+    def test_nothing_is_priced_after_only_one_row_fit(
+        self, refused, expected, monkeypatch
+    ) -> None:
+        """Once only a single row has fit, later frames skip the probe.
+
+        A price can only be capped down to the batch that survived, so after
+        that batch reaches one the probe can no longer change the answer; it
+        would spend a forward and a first-order backward per frame for
+        nothing, and in this state that forward is what ran the device out of
+        memory -- each time printing the warning again.  Three frames: the
+        first refuses, the other two must neither be priced nor batched.
+        """
+        model = self._make_model()
+        coord = torch.cat([self.coord, self.coord * 1.01, self.coord * 0.99], dim=0)
+        atype = torch.cat([self.atype] * 3, dim=0)
+        box = torch.cat([self.box] * 3, dim=0)
+
+        def hessian3() -> torch.Tensor:
+            out = model.forward(coord.clone().requires_grad_(True), atype, box=box)
+            return out["hessian"].reshape(3, NDOF, NDOF)
+
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 1)
+        reference = hessian3()
+
+        priced = []
+
+        def price(device, probe):
+            if refused == "probe":
+                priced.append(None)
+                raise torch.OutOfMemoryError("simulated")
+            priced.append(8)
+            return 8
+
+        def refuse_batches(*args, **kwargs):
+            raise torch.OutOfMemoryError("simulated")
+
+        monkeypatch.setattr(mm, "_auto_hvp_batch", price)
+        monkeypatch.setattr(mm, "_hessian_graph_batched_hvp", refuse_batches)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", None)
+        recovered = hessian3()
+
+        assert priced == expected, priced
+        scale = reference.abs().max()
+        torch.testing.assert_close(
+            recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
+        )
+
     def test_hessian_is_symmetric(self, monkeypatch) -> None:
         """Batching changes the summation order; it must not break symmetry."""
         model = self._make_model()

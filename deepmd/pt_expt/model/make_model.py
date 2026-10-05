@@ -644,9 +644,17 @@ def _cal_hessian_ext_graph(
     )
     # Priced per frame: within one frame every output component shares the
     # neighbour count, but each frame has its own, so a batch priced on one
-    # frame does not price another.
+    # frame does not price another. A price is an estimate, though, and an
+    # out-of-memory error is a measurement: once a batch has been refused,
+    # later frames of the same size are priced no higher than the batch that
+    # survived, rather than walking down again from a price the device has
+    # already refused -- and once a single row is all that survived, they are
+    # not priced at all. The size is the real-atom count, the only one known
+    # before the graph is built; frames of another size keep their own price,
+    # so one frame's batch is still not spent on another.
     hvp_batch = DP_HESSIAN_HVP_BATCH
     auto_batch = hvp_batch is None
+    ceilings: dict[int, int] = {}
     hessians = []
     for ii in range(nf):
         node_index = torch.nonzero(atype[ii] >= 0, as_tuple=False).reshape(-1)
@@ -675,7 +683,11 @@ def _cal_hessian_ext_graph(
             "spin": spin_frame,
             "charge_spin": charge_spin_frame,
         }
-        if auto_batch and n_real:
+        ceiling = ceilings.get(n_real)
+        if auto_batch and n_real and ceiling == 1:
+            # One row is all that fit at this size; no price can change that.
+            hvp_batch = 1
+        elif auto_batch and n_real:
             # Which component the probe differentiates does not change the
             # graph, so the pricing probe fixes ci=0.
             try:
@@ -702,7 +714,9 @@ def _cal_hessian_ext_graph(
                     "product; falling back to one row at a time. Set "
                     "DP_HESSIAN_HVP_BATCH to choose the batch yourself."
                 )
-                hvp_batch = 1
+                hvp_batch = ceilings[n_real] = 1
+            if ceiling is not None:
+                hvp_batch = min(hvp_batch, ceiling)
             log.debug("Hessian-vector products batched %d rows at a time", hvp_batch)
         for ci in range(vsize):
             wrapper = _WrapperForwardEnergyGraph(
@@ -720,14 +734,17 @@ def _cal_hessian_ext_graph(
                 spin=spin_frame,
                 charge_spin=charge_spin_frame,
             )
+            batch = hvp_batch if hvp_batch is not None else 1
             hess, hvp_batch = _hessian_graph_row_block(
-                batch=hvp_batch if hvp_batch is not None else 1,
+                batch=batch,
                 wrapper=wrapper,
                 coord_flat=coord_flat,
                 create_graph=create_graph,
                 ci=ci,
                 **hvp_kwargs,
             )  # (n_real*3, n_real*3)
+            if hvp_batch < batch:
+                ceilings[n_real] = hvp_batch
             if n_real != nloc:
                 component_index = (
                     node_index[:, None] * 3

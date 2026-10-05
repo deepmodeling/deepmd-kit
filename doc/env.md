@@ -84,7 +84,10 @@ computed before batching existed.
 Automatic sizing runs one Hessian-vector product per frame to measure what a
 replica costs there -- neighbour counts differ between frames, so one
 measurement does not price them all -- then takes the batch the free memory
-affords, capped at 8. Peak memory
+affords, capped at 8. If a batch -- or the measurement itself -- then runs out
+of memory, the batch that survived caps every later frame with as many real atoms
+in the same call, so a device that is fuller than the measurement suggested is
+not run out of memory again frame after frame. Peak memory
 is linear in the batch while the speedup is not: batching recovers
 kernel-launch overhead, which stops mattering once a single Hessian-vector
 product already saturates the device. On one H20 with DPA-4, batching is worth
