@@ -589,7 +589,9 @@ def _hessian_graph_row_block(
         except Exception as e:
             if not AutoBatchSize(silent=True).is_oom_error(e):
                 raise
-            batch //= 2
+            # Round up, so 1 is reached only from 2: rounding down drops 3
+            # straight to 1 and skips the batch of two that may well fit.
+            batch = (batch + 1) // 2
             log.warning(
                 "Hessian-vector product batch did not fit in memory; retrying "
                 "with %d. Set DP_HESSIAN_HVP_BATCH to choose it yourself.",

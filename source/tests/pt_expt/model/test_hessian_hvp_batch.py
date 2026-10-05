@@ -443,6 +443,47 @@ class TestHessianHvpBatch:
             recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
         )
 
+    @pytest.mark.parametrize(
+        ("start", "fits", "expected"),
+        [
+            (7, 2, [7, 4, 2]),  # rounding down would go 7, 3 and then give up
+            (3, 2, [3, 2]),  # rounding down would drop 3 straight to 1
+            (5, 3, [5, 3]),  # 5 halves to 3, not 2
+        ],
+    )
+    def test_halving_rounds_up_so_two_is_tried_before_one(
+        self, start, fits, expected, monkeypatch
+    ) -> None:
+        """An odd batch that does not fit must not skip the batch below it.
+
+        Rounding down sends 3 straight to the one-row-at-a-time path, so a
+        batch of 2 that would have fit is never tried -- measured on DPA-4,
+        the call then takes about twice as long as it does at 2.
+        """
+        model = self._make_model()
+
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", 1)
+        reference = self._hessian(model)
+
+        attempted = []
+        real = mm._hessian_graph_batched_hvp
+
+        def refuse_above_fits(*args, **kwargs):
+            attempted.append(kwargs["batch"])
+            if kwargs["batch"] > fits:
+                raise torch.OutOfMemoryError("simulated")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(mm, "_hessian_graph_batched_hvp", refuse_above_fits)
+        monkeypatch.setattr(mm, "DP_HESSIAN_HVP_BATCH", start)
+        recovered = self._hessian(model)
+
+        assert attempted == expected, attempted
+        scale = reference.abs().max()
+        torch.testing.assert_close(
+            recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
+        )
+
     @pytest.mark.parametrize("wrapped", ["message", "cause", "aoti"])
     def test_a_wrapped_out_of_memory_still_falls_back(
         self, wrapped, monkeypatch

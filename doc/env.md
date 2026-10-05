@@ -96,7 +96,8 @@ costs six times the memory -- so a large fixed batch lowers the system size that
 fits and buys little on the systems that need it.
 
 Setting this variable disables automatic sizing and uses the value given;
-out-of-memory errors can still reduce the batch, halving it, warning which
+out-of-memory errors can still reduce the batch, halving it (rounding up, so 2
+is always tried before 1), warning which
 batch was used, and keeping the surviving batch for the rest of the call. The
 result does not depend on the batch: it changes how the Hessian is computed,
 not what it is.
