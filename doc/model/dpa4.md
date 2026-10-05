@@ -499,8 +499,8 @@ form above expands to exactly this equivalent explicit form:
       {
         "type": "inner_potential",
         "mode": "zbl",
-        "r_inner": 0.5,
-        "r_outer": 0.8
+        "fraction_inner": 0.26,
+        "fraction_outer": 0.8
       }
     ]
   }

@@ -359,9 +359,11 @@ struct EdgeGeometry {
 // per edge; `EdgeGeometry` keeps the source type, from which the backward
 // recovers the same sum, given that constant, at the cost of one further load
 // and one add.
-template <bool Canonical, bool Bridged, typename index_t>
+template <bool Bridged>
 __device__ __forceinline__ EdgeGeometry
 load_geometry(long edge,
+              long source,
+              int source_type,
               float rcut,
               float f_inner,
               float f_outer,
@@ -369,13 +371,10 @@ load_geometry(long edge,
               float center_radius,
               const float* contact_radius,
               float eps,
-              const float* edge_vec,
-              const index_t* edge_index,
-              const long* atype) {
+              const float* edge_vec) {
   EdgeGeometry geometry;
-  const long source = static_cast<long>(edge_index[edge]);
   geometry.source = source;
-  geometry.source_type = static_cast<int>(atype[source]);
+  geometry.source_type = source_type;
   const float x = edge_vec[edge * 3 + 0];
   const float y = edge_vec[edge * 3 + 1];
   const float z = edge_vec[edge * 3 + 2];

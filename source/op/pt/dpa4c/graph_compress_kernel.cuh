@@ -151,18 +151,20 @@ __global__ __launch_bounds__(
     // broadcasting it from a leader. The addresses are identical inside the
     // group, so the memory system serves one transaction either way, whereas
     // a leader-only branch pays the same issue slots and adds ten shuffles.
-    const EdgeGeometry geometry = load_geometry<Canonical, Bridged, index_t>(
-        edge, args.rcut, args.f_inner, args.f_outer, args.inverse_f_width,
-        center_radius, args.contact_radius, args.eps, args.edge_vec, edge_index,
-        args.atype);
-    const TableLocation location = locate_table<Canonical>(
-        geometry.seen, args.table_stride, args.table_max, args.interval_count);
+    const long source = static_cast<long>(edge_index[edge]);
+    const int source_type = static_cast<int>(args.atype[source]);
     if constexpr (!Canonical) {
       if (center_type >= args.type_count - 1 ||
-          geometry.source_type >= args.type_count - 1) {
+          source_type >= args.type_count - 1) {
         continue;
       }
     }
+    const EdgeGeometry geometry = load_geometry<Bridged>(
+        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
+        args.inverse_f_width, center_radius, args.contact_radius, args.eps,
+        args.edge_vec);
+    const TableLocation location = locate_table<Canonical>(
+        geometry.seen, args.table_stride, args.table_max, args.interval_count);
     const TableRow row = table_row(args.table, location, args.table_width);
     const float coordinate = location.coordinate;
     if constexpr (HasModes) {
@@ -1609,15 +1611,11 @@ __global__ __launch_bounds__(
       }
       continue;
     }
-    const EdgeGeometry geometry = load_geometry<Canonical, Bridged, index_t>(
-        edge, args.rcut, args.f_inner, args.f_outer, args.inverse_f_width,
-        center_radius, args.contact_radius, args.eps, args.edge_vec, edge_index,
-        args.atype);
-    const TableLocation location = locate_table<Canonical>(
-        geometry.seen, args.table_stride, args.table_max, args.interval_count);
+    const long source = static_cast<long>(edge_index[edge]);
+    const int source_type = static_cast<int>(args.atype[source]);
     if constexpr (!Canonical) {
       if (center_type >= args.type_count - 1 ||
-          geometry.source_type >= args.type_count - 1) {
+          source_type >= args.type_count - 1) {
         if (thread == leader) {
           args.edge_gradient[edge * 3 + 0] = 0.0f;
           args.edge_gradient[edge * 3 + 1] = 0.0f;
@@ -1631,6 +1629,12 @@ __global__ __launch_bounds__(
         continue;
       }
     }
+    const EdgeGeometry geometry = load_geometry<Bridged>(
+        edge, source, source_type, args.rcut, args.f_inner, args.f_outer,
+        args.inverse_f_width, center_radius, args.contact_radius, args.eps,
+        args.edge_vec);
+    const TableLocation location = locate_table<Canonical>(
+        geometry.seen, args.table_stride, args.table_max, args.interval_count);
     // The pair term depends on the geometry alone, so it starts here and runs
     // alongside the channel scan; its slope joins the radial cotangent at the
     // tail, which keeps the exponentials off the dependency chain of the scan.

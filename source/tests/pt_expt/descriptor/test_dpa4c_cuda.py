@@ -1028,8 +1028,9 @@ def test_pair_potential_matches_the_portable_term(
 
 @_GPU
 @pytest.mark.parametrize("channels", [8, 32])
-def test_padding_type_edge_has_zero_gradient(channels: int) -> None:
-    descriptor = _build_descriptor(channels)
+@pytest.mark.parametrize("bridged", [False, True])
+def test_padding_type_edge_has_zero_gradient(channels: int, bridged: bool) -> None:
+    descriptor = _build_descriptor(channels, **(_WINDOW if bridged else {}))
     edge_vec = torch.tensor(
         [[1.0, 0.2, -0.1]],
         dtype=torch.float32,
@@ -1383,7 +1384,7 @@ def test_compact_canonical_tiling_is_equivalent(
             torch.testing.assert_close(actual, expected, atol=2e-6, rtol=2e-6)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
+@_GPU
 @pytest.mark.parametrize("bridged", [False, True])
 def test_fused_canonical_cpu_reference_matches_the_kernel(
     bridged: bool,
