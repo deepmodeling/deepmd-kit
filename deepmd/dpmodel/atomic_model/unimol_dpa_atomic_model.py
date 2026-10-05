@@ -67,15 +67,18 @@ class DPUniMolDPAAtomicModel(DPAtomicModel):
             distance head covers.
         mapping
             Extended-to-local mapping, passed through to the backbone.
-        fparam, aparam, comm_dict, charge_spin
+        fparam, aparam, comm_dict
             Unused by this model.
+        charge_spin
+            nf x 2 frame charge and spin, passed through to the backbone,
+            which fills in its ``default_chg_spin`` when this is None.
 
         Returns
         -------
         dict
             The head outputs, plus the mask saying which pairs are covered.
         """
-        del fparam, aparam, comm_dict, charge_spin
+        del fparam, aparam, comm_dict
         # Every path reaches the objective here, including the lower one that
         # evaluation and export drive, so this is where a periodic frame has to
         # be refused: ghosts are the shape a cell takes by the time it arrives.
@@ -93,7 +96,11 @@ class DPUniMolDPAAtomicModel(DPAtomicModel):
                 "neighbours, so a cell would quietly mistrain rather than fail"
             )
         node_ebd, latent = self.descriptor.call_with_latent(
-            extended_coord, extended_atype, nlist, mapping=mapping
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping=mapping,
+            charge_spin=charge_spin,
         )
         return self.fitting_net.call_atoms(node_ebd, latent, nlist)
 

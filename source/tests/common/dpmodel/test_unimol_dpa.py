@@ -410,6 +410,102 @@ class TestUniMolDPAAtomicModel(unittest.TestCase):
         self.assertTrue(bool(np.isfinite(float(total))))
 
 
+class TestUniMolDPAChargeSpin(unittest.TestCase):
+    """A backbone with a charge/spin condition hears it through this model."""
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(0)
+        self.nloc, nnei, self.ntypes = 6, 5, 3
+        self.type_map = ["C", "N", "[MASK]"]
+        self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
+        self.atype = rng.integers(0, self.ntypes, size=(1, self.nloc))
+        self.nlist = np.stack(
+            [
+                np.stack(
+                    [
+                        np.array([j for j in range(self.nloc) if j != i][:nnei])
+                        for i in range(self.nloc)
+                    ]
+                )
+            ]
+        )
+        self.mapping = np.tile(np.arange(self.nloc), (1, 1))
+
+    def _model(self, **descriptor_kwargs):
+        desc = DescrptDPA4(
+            rcut=6.0,
+            rcut_smth=5.0,
+            sel=self.nlist.shape[-1],
+            ntypes=self.ntypes,
+            seed=0,
+            precision="float64",
+            **descriptor_kwargs,
+        )
+        fitting = UniMolDPAPretrainFitting(
+            ntypes=self.ntypes,
+            dim_descrpt=desc.channels,
+            node_readout_lmax=desc.node_readout_lmax,
+            max_atoms=self.nloc,
+            dist_hidden=16,
+            precision="float64",
+            seed=1,
+            type_map=self.type_map,
+        )
+        return DPUniMolDPAAtomicModel(desc, fitting, self.type_map)
+
+    def _run(self, model, charge_spin=None):
+        return model.forward_common_atomic(
+            self.coord,
+            self.atype,
+            self.nlist,
+            mapping=self.mapping,
+            charge_spin=charge_spin,
+        )
+
+    def test_the_condition_reaches_the_outputs(self) -> None:
+        """The model advertises a charge/spin input, so it has to reach the heads.
+
+        The coordinate head is left out: it reads the degree-one state, and an
+        untrained DPA4 cannot couple the scalar the condition enters into that
+        state yet, so it is unchanged until training moves the zero-initialised
+        mixing weights. It does not tell a dropped condition from a heard one.
+        """
+        model = self._model(add_chg_spin_ebd=True, default_chg_spin=[0.0, 1.0])
+        self.assertTrue(model.has_chg_spin_ebd())
+        default = self._run(model)
+        other = self._run(model, np.array([[2.0, 3.0]]))
+        for name in ("token_logits", "pair_dist"):
+            with self.subTest(output=name):
+                self.assertGreater(
+                    float(np.max(np.abs(np.asarray(default[name]) - other[name]))),
+                    1e-3,
+                )
+
+    def test_an_omitted_condition_means_the_default(self) -> None:
+        model = self._model(add_chg_spin_ebd=True, default_chg_spin=[0.0, 1.0])
+        omitted = self._run(model)
+        explicit = self._run(model, np.array([[0.0, 1.0]]))
+        for name in ("token_logits", "coord_update", "pair_dist"):
+            with self.subTest(output=name):
+                np.testing.assert_allclose(omitted[name], explicit[name], atol=0)
+
+    def test_a_backbone_without_the_condition_ignores_it(self) -> None:
+        model = self._model()
+        self.assertFalse(model.has_chg_spin_ebd())
+        omitted = self._run(model)
+        given = self._run(model, np.array([[2.0, 3.0]]))
+        for name in ("token_logits", "coord_update", "pair_dist"):
+            with self.subTest(output=name):
+                np.testing.assert_allclose(omitted[name], given[name], atol=0)
+
+    def test_a_condition_with_no_default_must_be_given(self) -> None:
+        model = self._model(add_chg_spin_ebd=True)
+        with self.assertRaisesRegex(ValueError, "charge_spin"):
+            self._run(model)
+        out = self._run(model, np.array([[2.0, 3.0]]))
+        self.assertTrue(bool(np.isfinite(np.asarray(out["token_logits"])).all()))
+
+
 class TestUniMolDPAExample(unittest.TestCase):
     """The shipped example must stay valid as the arguments evolve.
 
