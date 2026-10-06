@@ -46,3 +46,13 @@ The client accepts the standard i-PI `INIT` message (replica ID, payload length,
 and payload). Its model and atom types remain configured by the JSON input;
 initialization payloads are consumed without a fixed size limit. Negative
 payload lengths are rejected with an error.
+
+The socket protocol uses atomic units: bohr for positions and cell vectors,
+Hartree for energy and virial, and Hartree/bohr for forces. The driver converts
+these to the model units internally. Forces are returned in the atom order
+defined by the coordinate file, including when the model groups atoms by type.
+
+The native `source/ipi/tests/test_driver_numeric.py` regression compares the
+PyTorch inference API with `dp_ipi` over Unix and TCP sockets, including atom
+permutations, periodic images and changing triclinic cells. Run it with a
+PyTorch-enabled `dp_ipi` on `PATH` and the matching Python inference package.
