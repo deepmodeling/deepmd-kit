@@ -73,9 +73,11 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         cmake_args.append("-DENABLE_NATIVE_OPTIMIZATION:BOOL=TRUE")
     dp_lammps_version = os.environ.get("DP_LAMMPS_VERSION", "")
     dp_ipi = os.environ.get("DP_ENABLE_IPI", "0")
+    enable_tensorflow = os.environ.get("DP_ENABLE_TENSORFLOW", "1") == "1"
     if dp_lammps_version != "" or dp_ipi == "1":
         cmake_args.append("-DBUILD_CPP_IF:BOOL=TRUE")
-        cmake_args.append("-DUSE_TF_PYTHON_LIBS:BOOL=TRUE")
+        use_tf_python_libs = "TRUE" if enable_tensorflow else "FALSE"
+        cmake_args.append(f"-DUSE_TF_PYTHON_LIBS:BOOL={use_tf_python_libs}")
     else:
         cmake_args.append("-DBUILD_CPP_IF:BOOL=FALSE")
 
@@ -85,7 +87,7 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         cmake_args.append("-DENABLE_IPI:BOOL=TRUE")
         extra_scripts["dp_ipi"] = "deepmd.entrypoints.ipi:dp_ipi"
 
-    if os.environ.get("DP_ENABLE_TENSORFLOW", "1") == "1":
+    if enable_tensorflow:
         tf_install_dir, _ = find_tensorflow()
         tf_version = get_tf_version(tf_install_dir)
         if tf_version == "" or Version(tf_version) >= Version("2.12"):
