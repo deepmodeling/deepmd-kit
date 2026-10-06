@@ -211,6 +211,10 @@ class LmdbDataSystem:
         self._reader.add_data_requirement(data_requirement)
         self._refresh_stat_groups()
 
+    def set_frame_transform(self, transform) -> None:  # noqa: ANN001
+        """Install a per-frame transform on the underlying reader."""
+        self._reader.set_frame_transform(transform)
+
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
         iterator = getattr(self, "_batch_iterator", None)
