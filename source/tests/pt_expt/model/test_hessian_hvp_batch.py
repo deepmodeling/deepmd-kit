@@ -745,15 +745,31 @@ class TestHvpBatchPolicy:
 
         return probe
 
+    def _free(self, monkeypatch, free_mib: int) -> None:
+        """Make ``free_mib`` the only memory the automatic choice can see.
+
+        The budget also counts what the caching allocator holds but is not
+        using, and late in a long test session that cache can dwarf the free
+        memory being simulated.  Reporting the reservation as exactly what is
+        allocated makes that cache zero and keeps the device's real state out
+        of the arithmetic under test.
+        """
+        monkeypatch.setattr(
+            torch.cuda, "mem_get_info", lambda *a, **k: (free_mib * self.MIB, 0)
+        )
+        monkeypatch.setattr(
+            torch.cuda,
+            "memory_reserved",
+            lambda *a, **k: torch.cuda.memory_allocated(*a, **k),
+        )
+
     @pytest.mark.skipif(
         not torch.cuda.is_available(), reason="the automatic batch needs CUDA"
     )
     @pytest.mark.parametrize("free_mib", [8, 64, 256, 1024, 4096, 16384, 65536])
     def test_auto_batch_is_bounded(self, free_mib, monkeypatch) -> None:
         """Whatever the free memory, the batch stays within [1, cap]."""
-        monkeypatch.setattr(
-            torch.cuda, "mem_get_info", lambda *a, **k: (free_mib * self.MIB, 0)
-        )
+        self._free(monkeypatch, free_mib)
         batch = mm._auto_hvp_batch(env.DEVICE, self._probe(32 * self.MIB))
         assert 1 <= batch <= mm.DP_HESSIAN_HVP_BATCH_CAP
 
@@ -764,16 +780,33 @@ class TestHvpBatchPolicy:
         """More memory must never buy a smaller batch."""
         chosen = []
         for free_mib in (8, 32, 128, 512, 2048, 8192):
-            monkeypatch.setattr(
-                torch.cuda,
-                "mem_get_info",
-                lambda *a, _f=free_mib, **k: (_f * self.MIB, 0),
-            )
+            self._free(monkeypatch, free_mib)
             chosen.append(mm._auto_hvp_batch(env.DEVICE, self._probe(32 * self.MIB)))
         assert chosen == sorted(chosen), chosen
         # The ends must actually differ, or monotonicity is vacuous.
         assert chosen[0] == 1
         assert chosen[-1] == mm.DP_HESSIAN_HVP_BATCH_CAP
+
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="the automatic batch needs CUDA"
+    )
+    def test_cached_memory_counts_as_free(self, monkeypatch) -> None:
+        """Memory the caching allocator holds but is not using is usable.
+
+        The driver reports it as taken, so pricing on ``mem_get_info`` alone
+        would starve the batch on a device whose memory sits in PyTorch's own
+        cache.  With no free memory and 1 GiB cached, a 32 MiB product must
+        still be batched.
+        """
+        self._free(monkeypatch, 0)
+        cached = 1024 * self.MIB
+        monkeypatch.setattr(
+            torch.cuda,
+            "memory_reserved",
+            lambda *a, **k: torch.cuda.memory_allocated(*a, **k) + cached,
+        )
+        batch = mm._auto_hvp_batch(env.DEVICE, self._probe(32 * self.MIB))
+        assert batch == mm.DP_HESSIAN_HVP_BATCH_CAP
 
     def test_auto_batch_is_one_without_cuda(self) -> None:
         """No allocator introspection and no recoverable OOM: stay unbatched."""
