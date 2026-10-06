@@ -218,7 +218,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   if(NOT Torch_VERSION VERSION_LESS "2.14.0")
     set_if_higher(DEEPMD_PT_CUDA_STANDARD 20)
   endif()
-  if(DEFINED CMAKE_CUDA_STANDARD)
+  if(CMAKE_CUDA_STANDARD)
     set_if_higher(DEEPMD_PT_CUDA_STANDARD ${CMAKE_CUDA_STANDARD})
   endif()
   set_target_properties(
