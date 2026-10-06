@@ -149,6 +149,11 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # makes the macOS x86_64 wheel build's dependency resolution
             # unsatisfiable.
             "nvalchemi-toolkit-ops>=0.3.1; python_version >= '3.11' and platform_system == 'Linux'",
+            # warp-lang 1.18.0 needs a CUDA 13.4 driver to see a GPU, and it
+            # replaced the config.quiet that nvalchemi-toolkit-ops sets, so it
+            # prints a banner on stdout and breaks tests that parse the stdout
+            # of a subprocess. Unpin once both are resolved.
+            "warp-lang<1.18; python_version >= '3.11' and platform_system == 'Linux'",
             *mpi_requirement,
             *cibw_requirement,
         ],
