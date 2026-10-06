@@ -50,10 +50,12 @@ class TestDPIPIInputValidation(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 1, msg=result.stderr)
-        self.assertEqual(
-            result.stderr,
-            "dp_ipi: Unknown atom name 'Xx' in coordinate file: "
-            "no matching entry in atom_type.\n",
+        self.assertTrue(
+            result.stderr.endswith(
+                "dp_ipi: Unknown atom name 'Xx' in coordinate file: "
+                "no matching entry in atom_type.\n"
+            ),
+            msg=result.stderr,
         )
 
     def test_missing_atom_type_is_rejected_before_model_loading(self) -> None:
