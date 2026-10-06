@@ -37,6 +37,7 @@ from deepmd.pt_expt.utils import (
 
 from ..pt.model.test_sezm_export import (
     _tiny_sezm_model_params,
+    _tiny_sezm_native_spin_model_params,
 )
 from .model.test_dpa4_export import (
     _DPA4_CONFIG,
@@ -150,6 +151,119 @@ def _write_checkpoint(
     return path
 
 
+@pytest.mark.parametrize("skin", [None, 0.75])
+def test_graph_neighbor_options_reach_evaluator(
+    tmp_path: Path, skin: float | None
+) -> None:
+    checkpoint = _write_checkpoint(tmp_path / "model.pt", "dpa4")
+    options = {"neighbor_skin": skin} if skin is not None else {}
+    with mock.patch("deepmd.calculator.DeepPot", wraps=DeepPot) as deep_pot:
+        DP(checkpoint, neighbor_graph_method="vesin", **options)
+    deep_pot.assert_called_once_with(
+        str(checkpoint.resolve()),
+        neighbor_list=None,
+        head=None,
+        nlist_backend="auto",
+        neighbor_graph_method="vesin",
+        neighbor_skin=1.0 if skin is None else skin,
+    )
+
+
+def test_native_spin_edge_freeze_preserves_neighbor_options(tmp_path: Path) -> None:
+    config = _tiny_sezm_native_spin_model_params()
+    # Edge inputs retain all cutoff neighbors independently of dense capacity.
+    config["descriptor"]["sel"] = [1, 0]
+    checkpoint = _write_checkpoint(tmp_path / "native.pt", "pt", config=config)
+    original = DeepPot(
+        str(checkpoint), neighbor_graph_method="vesin", neighbor_skin=1.0
+    )
+    frozen = tmp_path / "native.pt2"
+    freeze_pt2.freeze_sezm_to_pt2(str(checkpoint), str(frozen), with_comm=False)
+    coords = np.array([[[0.0, 0.0, 0.0], [0.9, 0.0, 0.0], [-0.3, 0.8, 0.0]]])
+    cells = np.eye(3).reshape(1, 9) * 8.0
+    types = np.array([0, 1, 0])
+    spins = np.array([[[0.2, 0.3, 0.9], [0.0, 0.0, 0.0], [-0.1, 0.6, 0.7]]])
+    for method in ("vesin", "auto"):
+        exported = DeepPot(str(frozen), neighbor_graph_method=method, neighbor_skin=1.0)
+        for displacement in (0.0, 0.1, 0.7):
+            moved = coords.copy()
+            moved[0, 1, 0] += displacement
+            expected = original.eval(moved, cells, types, spin=spins, atomic=True)
+            actual = exported.eval(moved, cells, types, spin=spins, atomic=True)
+            for value, reference in zip(actual, expected, strict=True):
+                np.testing.assert_allclose(value, reference, rtol=1e-6, atol=1e-8)
+
+    native = DeepPot(str(frozen), nlist_backend="native", auto_batch_size=False)
+    batch_coords = np.repeat(coords, 2, axis=0)
+    batch_cells = np.repeat(cells, 2, axis=0)
+    batch_types = np.array([[0, 1, 0], [1, 0, 0]])
+    batch_spins = np.repeat(spins, 2, axis=0)
+    actual = native.eval(
+        batch_coords,
+        batch_cells,
+        batch_types,
+        spin=batch_spins,
+        atomic=True,
+        mixed_type=True,
+    )
+    frames = [
+        native.eval(
+            batch_coords[frame : frame + 1],
+            batch_cells[frame : frame + 1],
+            batch_types[frame],
+            spin=batch_spins[frame : frame + 1],
+            atomic=True,
+        )
+        for frame in range(2)
+    ]
+    for value, first, second in zip(actual, *frames, strict=True):
+        np.testing.assert_allclose(
+            value, np.concatenate((first, second), axis=0), rtol=1e-6, atol=1e-8
+        )
+
+
+@pytest.mark.parametrize("skin", [-1.0, float("inf"), float("nan")])
+def test_invalid_neighbor_skin_rejected(skin: float) -> None:
+    with pytest.raises(ValueError, match="neighbor_skin"):
+        DP("unused.pt", neighbor_skin=skin)
+
+
+@pytest.mark.parametrize(
+    "kind", ["pt", "pt-dpa4", "dpa4", "dpa4c", "dpa1", "dpa2", "pt-dense", "dense"]
+)
+@pytest.mark.parametrize("inference_device", ["cpu", "cuda"], indirect=True)
+def test_cached_neighbors_and_types_match_fresh_evaluation(
+    tmp_path: Path, kind: str, inference_device: str
+) -> None:
+    checkpoint = _write_checkpoint(tmp_path / "model.pt", kind)
+    options = (
+        {"nlist_backend": "vesin"}
+        if kind in ("pt-dense", "dense")
+        else {"neighbor_graph_method": "vesin"}
+    )
+    cached = DP(checkpoint, **options)
+    fresh = DP(checkpoint, neighbor_skin=0.0, **options)
+    positions = np.array([[0.0, 0.0, 0.0], [0.9, 0.0, 0.0], [-0.3, 0.8, 0.0]])
+    for step in range(5):
+        points = positions.copy()
+        points[1, 0] += 0.1 * step
+        symbols = "OH2" if step < 2 else "HOH"
+        cell = [8.0, 8.0, 8.0] if step < 3 else [7.5, 8.0, 8.0]
+        if step == 4:
+            cached.type_dict = fresh.type_dict = {"O": 1, "H": 0}
+        atoms = Atoms(symbols, positions=points, cell=cell, pbc=True)
+        results = []
+        for calculator in (cached, fresh):
+            atoms.calc = calculator
+            results.append(
+                (atoms.get_potential_energy(), atoms.get_forces(), atoms.get_stress())
+            )
+        fp32 = kind == "dpa4c" or inference_device == "cuda"
+        rtol, atol = (1e-4, 1e-5) if fp32 else (1e-7, 1e-8)
+        for actual, expected in zip(*results, strict=True):
+            np.testing.assert_allclose(actual, expected, rtol=rtol, atol=atol)
+
+
 @pytest.mark.parametrize("kind", ["pt", "pt-dpa4", "dpa4", "dpa4c", "dpa1", "dpa2"])
 def test_checkpoint_default_warns_without_export(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, kind: str
@@ -212,7 +326,13 @@ def test_automatic_freeze_reuses_kernel_policy(
         return result
 
     with mock.patch("deepmd.calculator.DeepPot", side_effect=load) as deep_pot:
-        DP(checkpoint, freeze=True, head=head)
+        DP(
+            checkpoint,
+            freeze=True,
+            head=head,
+            neighbor_graph_method="vesin",
+            neighbor_skin=0.75,
+        )
 
     expected = override or ("1", "2")
     if kind == "dpa4c":
@@ -226,6 +346,8 @@ def test_automatic_freeze_reuses_kernel_policy(
         str(tmp_path / "model-ase_single.pt2"),
         neighbor_list=None,
         nlist_backend="auto",
+        neighbor_graph_method="vesin",
+        neighbor_skin=0.75,
     )
 
 

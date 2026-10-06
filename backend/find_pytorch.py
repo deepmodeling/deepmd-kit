@@ -126,6 +126,19 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     else:
         mpi_requirement = []
 
+    # Vesin's torch bindings require PyTorch 2.3. Older PyTorch targets and
+    # macOS x86_64, whose last PyTorch wheels are 2.2, use native neighbors.
+    vesin_requirement = []
+    if pt_version == "" or Version(pt_version) >= Version("2.3"):
+        supported_platform = (
+            "platform_system != 'Darwin' or platform_machine != 'x86_64'"
+        )
+        vesin_requirement = [
+            f"vesin[torch]>=0.6; {supported_platform}",
+            # The extra does not constrain the independently versioned bindings.
+            f"vesin-torch>=0.6; {supported_platform}",
+        ]
+
     return {
         "torch": [
             # uv has different local version behaviors, i.e. `==2.3.1` cannot match `==2.3.1+cpu`
@@ -137,11 +150,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
             else "torch>=2.1.0",
             "e3nn>=0.5.9",
-            # O(N) cell-list neighbor list for fast Python/ASE inference; the
-            # torch bindings (vesin-torch) ship only as a PyPI extra, so keep it
-            # under the torch extra rather than the core deps (conda-forge has
-            # vesin but not vesin-torch).
-            "vesin[torch]",
+            *vesin_requirement,
             # GPU O(N) cell-list neighbor list for large systems. Restricted to
             # Python >= 3.11 (the package requires it while deepmd-kit still
             # supports 3.10) and to Linux: it is a CUDA package, and its

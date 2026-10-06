@@ -1320,7 +1320,10 @@ def _serialize_from_file_pte(model_file: str) -> dict:
         "model_def_script.json": "",
         "metadata.json": "",
     }
-    torch.export.load(model_file, extra_files=extra_files)
+    # Storage reconstruction requires CPU staging independently of the caller's
+    # default device; tensor placement is restored from the archive metadata.
+    with torch.device("cpu"):
+        torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
     metadata = (

@@ -719,6 +719,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self.redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
         self.use_compile = bool(use_compile)
         self.enable_tf32 = bool(enable_tf32)
+        self._inference_neighbor_list: NeighborList | None = None
         # LoRA injection happens in Trainer.__init__ after pre-trained state is loaded.
         self.lora_config: dict[str, Any] | None = None if lora is None else dict(lora)
         self._dens_compiled = False
@@ -2764,6 +2765,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         """
         return True
 
+    def set_inference_neighbor_list(self, neighbor_list: NeighborList | None) -> None:
+        """Select inference geometry construction while retaining native forward.
+
+        The strategy is runtime state, independent of model parameters and
+        serialization. Training retains its own batch-aware builder policy.
+        """
+        self._inference_neighbor_list = neighbor_list
+
+    def _get_neighbor_builder(self, nf: int, device: torch.device) -> NeighborList:
+        if not self.training and self._inference_neighbor_list is not None:
+            return self._inference_neighbor_list
+        return _select_neighbor_builder(nf, device)
+
     def build_neighbor_list(
         self,
         coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
@@ -2772,7 +2786,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     ) -> EdgeNeighborList:
         """Build the unified edge-vector schema for the ``forward`` entry."""
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
+        return self._get_neighbor_builder(nf, coord.device).build(
             coord.view(nf, nloc, 3),
             atype,
             box,
@@ -2799,7 +2813,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         contract order ``(extended_coord, extended_atype, nlist, mapping)``.
         """
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
+        return self._get_neighbor_builder(nf, coord.device).build(
             coord.view(nf, nloc, 3),
             atype,
             box,

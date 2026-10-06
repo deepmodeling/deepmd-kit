@@ -2,6 +2,7 @@
 """ASE calculator interface module."""
 
 import logging
+import math
 from functools import (
     partial,
 )
@@ -16,6 +17,7 @@ from typing import (
     Union,
 )
 
+import numpy as np
 from ase.calculators.calculator import (
     Calculator,
     PropertyNotImplementedError,
@@ -135,6 +137,19 @@ class DP(Calculator):
         The neighbor list object. If None, then build the native neighbor list.
     head : Union[str, None], optional
         a specific model branch choosing from pretrained model, by default None
+    nlist_backend : str, optional
+        Neighbor search for models using the extended-coordinate input schema.
+        The default ``"auto"`` selects an available accelerated search.
+    neighbor_graph_method : str, optional
+        Graph search for PT-expt graph models or PT SeZM/DPA4, by default
+        ``"auto"``. Single-frame CUDA inference prefers Vesin. PT-expt graph
+        models also accept ``"dense"``, ``"ase"``, ``"cell"``, ``"vesin"``,
+        and ``"nv"``; SeZM edge-vector inputs accept ``"vesin"`` and ``"nv"``.
+    neighbor_skin : float, optional
+        Vesin candidate-search skin in angstrom, by default 1.0. Set to zero
+        to rebuild candidates every step. All searches still use the model's
+        exact cutoff for the returned neighbors. Applies to both graph and
+        extended-coordinate inference, independently of checkpoint freezing.
     freeze : bool, optional
         Export an eligible ``.pt`` checkpoint to ``.pt2`` for inference,
         by default False.
@@ -189,15 +204,23 @@ class DP(Calculator):
         head: str | None = None,
         nlist_backend: str = "auto",
         freeze: bool = False,
+        neighbor_graph_method: str = "auto",
+        neighbor_skin: float = 1.0,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
+        if not math.isfinite(neighbor_skin) or neighbor_skin < 0:
+            raise ValueError(
+                f"neighbor_skin must be finite and non-negative, got {neighbor_skin}"
+            )
         model_path = Path(model).resolve()
         self.dp = DeepPot(
             str(model_path),
             neighbor_list=neighbor_list,
             head=head,
             nlist_backend=nlist_backend,
+            neighbor_graph_method=neighbor_graph_method,
+            neighbor_skin=neighbor_skin,
         )
         freezer = (
             _checkpoint_freezer(self.dp.deep_eval, head, freeze_requested=freeze)
@@ -212,7 +235,11 @@ class DP(Calculator):
             log.info("Freezing ASE checkpoint %s to %s", model_path, output)
             freezer(str(model_path), str(output))
             self.dp = DeepPot(
-                str(output), neighbor_list=neighbor_list, nlist_backend=nlist_backend
+                str(output),
+                neighbor_list=neighbor_list,
+                nlist_backend=nlist_backend,
+                neighbor_graph_method=neighbor_graph_method,
+                neighbor_skin=neighbor_skin,
             )
         elif freezer is not None:
             log.warning(
@@ -228,6 +255,9 @@ class DP(Calculator):
             self.type_dict = dict(
                 zip(self.dp.get_type_map(), range(self.dp.get_ntypes()), strict=True)
             )
+        self._cached_numbers: np.ndarray | None = None
+        self._cached_types: np.ndarray | None = None
+        self._cached_type_dict: dict[str, int] = {}
 
     def calculate(
         self,
@@ -255,8 +285,22 @@ class DP(Calculator):
             cell = self.atoms.get_cell().reshape([1, -1])
         else:
             cell = None
-        symbols = self.atoms.get_chemical_symbols()
-        atype = [self.type_dict[k] for k in symbols]
+        numbers = self.atoms.numbers
+        if (
+            not np.array_equal(numbers, self._cached_numbers)
+            or self.type_dict != self._cached_type_dict
+        ):
+            self._cached_types = np.fromiter(
+                (
+                    self.type_dict[symbol]
+                    for symbol in self.atoms.get_chemical_symbols()
+                ),
+                dtype=np.int32,
+                count=len(numbers),
+            )
+            self._cached_numbers = numbers.copy()
+            self._cached_type_dict = self.type_dict.copy()
+        atype = self._cached_types
 
         fparam = self.atoms.info.get("fparam", None)
         aparam = self.atoms.info.get("aparam", None)

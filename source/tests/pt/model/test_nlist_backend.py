@@ -10,6 +10,9 @@ unavailable.
 """
 
 import copy
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import pytest
@@ -23,6 +26,9 @@ from deepmd.pt.model.model import (
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
+)
+from deepmd.pt.utils.env import (
+    DEVICE,
 )
 from deepmd.pt.utils.nv_nlist import (
     NvNeighborList,
@@ -155,10 +161,31 @@ def test_explicit_backend_selects_builder(pt_files, backend: str) -> None:
 
 
 @_BACKEND_MARKS["vesin"]
-def test_auto_prefers_vesin(pt_files) -> None:
-    # auto picks the first available O(N) builder; vesin is preferred.
-    builder = DeepPot(pt_files["se_e2_a"]).deep_eval._nlist_builder
-    assert isinstance(builder, VesinNeighborList)
+@pytest.mark.parametrize("nframes", [1, 3])
+def test_auto_selects_backend_from_frame_count(
+    pt_files: dict[str, str], nframes: int
+) -> None:
+    coords, atype, boxes = _multiframe_system(nframes)
+    dp = DeepPot(pt_files["se_e2_a"], auto_batch_size=False)
+    with (
+        mock.patch.object(
+            VesinNeighborList,
+            "build",
+            autospec=True,
+            side_effect=VesinNeighborList.build,
+        ) as vesin_build,
+        mock.patch.object(
+            NvNeighborList, "build", autospec=True, side_effect=NvNeighborList.build
+        ) as nv_build,
+    ):
+        dp.eval(coords, boxes, atype)
+
+    if DEVICE.type == "cuda" and nframes > 1 and is_nv_available():
+        nv_build.assert_called_once()
+        vesin_build.assert_not_called()
+    else:
+        vesin_build.assert_called_once()
+        nv_build.assert_not_called()
 
 
 def test_self_built_model_forces_native(pt_files, monkeypatch) -> None:

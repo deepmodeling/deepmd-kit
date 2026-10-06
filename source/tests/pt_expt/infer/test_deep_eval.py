@@ -229,6 +229,23 @@ class TestDeepEvalEner(unittest.TestCase):
         # single bool and fail with an ambiguous truth-value error.
         np.testing.assert_equal(data, serialize_from_file(self.tmpfile.name)["model"])
 
+    def test_pte_load_is_independent_of_default_device(self) -> None:
+        """Archive loading and inference retain the recorded tensor devices."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coords = rng.random((1, 5, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        expected = self.dp.eval(coords, cells, atom_types, atomic=True)
+        for default_device in ("meta", "cuda:9999999"):
+            with self.subTest(default_device=default_device):
+                with torch.device(default_device):
+                    dp = DeepPot(self.tmpfile.name)
+                    data = serialize_from_file(self.tmpfile.name)
+                    actual = dp.eval(coords, cells, atom_types, atomic=True)
+                np.testing.assert_equal(data["model"], self.model_data["model"])
+                for value, reference in zip(actual, expected, strict=True):
+                    np.testing.assert_allclose(value, reference, rtol=1e-10, atol=1e-10)
+
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -2343,11 +2360,13 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
 
     def test_default_is_auto(self) -> None:
         dp = DeepPot(self.tmpfile.name)
-        self.assertEqual(dp.deep_eval._use_vesin, self._vesin_available())
+        self.assertEqual(
+            dp.deep_eval._nlist_builder is not None, self._vesin_available()
+        )
 
     def test_native_disables_vesin(self) -> None:
         dp = DeepPot(self.tmpfile.name, nlist_backend="native")
-        self.assertFalse(dp.deep_eval._use_vesin)
+        self.assertIsNone(dp.deep_eval._nlist_builder)
 
     def test_invalid_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -2375,6 +2394,25 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
                 np.testing.assert_allclose(
                     a, b, rtol=1e-10, atol=1e-10, err_msg=f"vesin vs native: {name}"
                 )
+
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA is required")
+    def test_nv_matches_native_multiframe(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+
+        if not is_nv_available():
+            self.skipTest("nvalchemi-toolkit-ops is required")
+        rng = np.random.default_rng(GLOBAL_SEED + 21)
+        coords = rng.random((3, 6, 3)) * 8.0
+        atom_types = np.arange(6, dtype=np.int32) % self.nt
+        cells = np.tile(np.eye(3).reshape(1, 9) * 10.0, (3, 1))
+        native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        accelerated = DeepPot(self.tmpfile.name, nlist_backend="nv")
+        expected = native.eval(coords, cells, atom_types, atomic=True)
+        actual = accelerated.eval(coords, cells, atom_types, atomic=True)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-9, atol=1e-9)
 
     def test_eval_descriptor_vesin_matches_native(self) -> None:
         """eval_descriptor bypasses forward_common_lower's format_nlist, so the

@@ -69,17 +69,12 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
 )
-from deepmd.pt.utils.nv_nlist import (
-    NvNeighborList,
-    is_nv_available,
-)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
-from deepmd.pt_expt.utils.vesin_neighbor_list import (
-    VesinNeighborList,
-    is_vesin_torch_available,
+from deepmd.pt_expt.utils.auto_neighbor_list import (
+    make_neighbor_list,
 )
 from deepmd.utils.batch_size import (
     RetrySignal,
@@ -143,6 +138,15 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
+    nlist_backend : str, default: "auto"
+        Extended-coordinate neighbor search: ``"auto"``, ``"native"``,
+        ``"vesin"``, or ``"nv"``. Auto prefers Vesin for a single frame and
+        Toolkit-Ops for CUDA batches when available.
+    neighbor_graph_method : str, default: "auto"
+        SeZM/DPA4 inference search: ``"auto"``, ``"vesin"``, or ``"nv"``.
+        The strategy runs inside the model's native forward geometry stage.
+    neighbor_skin : float, default: 0.0
+        Vesin candidate-search skin in angstrom. Zero disables Verlet caching.
     **kwargs : dict
         Keyword arguments.
     """
@@ -157,11 +161,15 @@ class DeepEval(DeepEvalBackend):
         head: str | int | None = None,
         no_jit: bool = False,
         nlist_backend: str = "auto",
+        neighbor_graph_method: str = "auto",
+        neighbor_skin: float = 0.0,
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
+        self._neighbor_graph_method = neighbor_graph_method
+        self._neighbor_skin = neighbor_skin
         # data modifier, populated only for frozen .pth models that carry one
         self.modifier = None
         if str(self.model_path).endswith(".pt"):
@@ -282,22 +290,38 @@ class DeepEval(DeepEvalBackend):
         ``"native"`` uses the dense all-pairs builder; ``"vesin"`` / ``"nv"``
         force the O(N) ``vesin.torch`` / ``nvalchemiops`` cell list (raising if
         unavailable or the model/inputs are unsupported); ``"auto"`` picks the
-        first available O(N) builder (vesin, then nv) and otherwise falls back to
-        the native builder.  Results are unchanged either way -- only the
+        available O(N) builder by frame count and otherwise falls back to the
+        native builder. Results are unchanged either way -- only the
         neighbor-search cost differs.
         """
         inner = self.dp.model["Default"]
         self_built = getattr(inner, "use_self_built_nlist", None)
         if callable(self_built) and self_built():
-            # The model builds its own neighbor list and runs the native path;
-            # an external strategy would bypass it, so always use native.
-            log.debug(
-                "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
-                nlist_backend,
-                type(inner).__name__,
-            )
+            # The strategy belongs to the model's geometry stage. Keeping the
+            # native forward entry preserves its compiled core computation.
+            configure = getattr(inner, "set_inference_neighbor_list", None)
             self._nlist_builder = None
+            if not callable(configure):
+                return
+            method = self._neighbor_graph_method
+            if method not in ("auto", "vesin", "nv"):
+                raise ValueError(
+                    "PT SeZM/DPA4 supports neighbor_graph_method 'auto', "
+                    f"'vesin', or 'nv'; got {method!r}."
+                )
+            if method != "auto" and nlist_backend != "auto":
+                raise ValueError(
+                    "Select only one of neighbor_graph_method and nlist_backend."
+                )
+            if method == "auto":
+                method = nlist_backend
+            configure(make_neighbor_list(method, DEVICE, self._neighbor_skin))
             return
+        if self._neighbor_graph_method != "auto":
+            raise ValueError(
+                "neighbor_graph_method applies to PT SeZM/DPA4 models; "
+                "use nlist_backend for this model."
+            )
         if nlist_backend not in ("auto", "vesin", "nv", "native"):
             raise ValueError(
                 f"Unknown nlist_backend '{nlist_backend}'; "
@@ -325,7 +349,6 @@ class DeepEval(DeepEvalBackend):
             unsupported = "non-energy models"
         ase_provided = self.neighbor_list is not None
 
-        builder = None
         if nlist_backend in ("vesin", "nv"):
             if unsupported is not None:
                 raise ValueError(
@@ -337,36 +360,11 @@ class DeepEval(DeepEvalBackend):
                     f"nlist_backend='{nlist_backend}' conflicts with an "
                     "explicitly supplied ASE neighbor_list; pass only one."
                 )
-            if nlist_backend == "vesin":
-                if not is_vesin_torch_available():
-                    raise ImportError(
-                        "nlist_backend='vesin' was requested but 'vesin.torch' "
-                        "is not installed. Install it (`pip install "
-                        "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
-                    )
-                builder = VesinNeighborList()
-            elif DEVICE.type != "cuda":
-                raise ValueError(
-                    "nlist_backend='nv' requires CUDA inference tensors; "
-                    f"current DEVICE is {DEVICE!s}. Use nlist_backend='native' "
-                    "(or 'auto') for CPU inference."
-                )
-            elif not is_nv_available():
-                raise ImportError(
-                    "nlist_backend='nv' was requested but 'nvalchemi-toolkit-ops'"
-                    " is not installed. Install it (`pip install "
-                    "nvalchemi-toolkit-ops`) or use nlist_backend='native' "
-                    "(or 'auto')."
-                )
-            else:
-                builder = NvNeighborList()
-        elif nlist_backend == "auto" and unsupported is None and not ase_provided:
-            # Pick the first available O(N) builder; nv is GPU-only.
-            if is_vesin_torch_available():
-                builder = VesinNeighborList()
-            elif is_nv_available() and DEVICE.type == "cuda":
-                builder = NvNeighborList()
-        self._nlist_builder = builder
+        self._nlist_builder = (
+            make_neighbor_list(nlist_backend, DEVICE, self._neighbor_skin)
+            if unsupported is None and not ase_provided
+            else None
+        )
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""

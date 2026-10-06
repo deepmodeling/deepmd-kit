@@ -60,6 +60,35 @@ print(water.get_forces())
 
 ::::
 
+Neighbor construction can be configured independently of checkpoint freezing:
+
+```python
+calculator = DP(
+    model="model.pt",
+    neighbor_graph_method="auto",
+    neighbor_skin=1.0,
+)
+```
+
+For PT-expt graph models, `neighbor_graph_method` accepts `auto`, `dense`, `ase`,
+`cell`, `vesin`, and `nv`. On a GPU, `auto` prefers Vesin for the single frame
+evaluated by ASE; batched `DeepPot` inference prefers NV when available. CPU
+graph inference retains the native `cell` search. PT SeZM/DPA4 checkpoints and
+their edge-vector exports support `auto`, `vesin`, and `nv`. Models with the
+traditional extended-coordinate input use `nlist_backend` instead.
+
+The default `neighbor_skin=1.0`, in angstrom, enables candidate reuse for Vesin
+searches across all these input formats and requires Vesin and its torch
+bindings at version 0.6 or later (PyTorch 2.3 or later).
+Older PyTorch targets and macOS Intel installations retain native neighbor
+construction without requiring these bindings.
+Candidates extend to the model cutoff plus the skin and are rebuilt when an
+atom moves more than half the skin, or when the cell or atom count changes.
+Each evaluation still updates geometry and selects neighbors at the model's
+exact cutoff. Set `neighbor_skin=0.0` to disable candidate reuse. Other search
+backends retain their own rebuild behavior. Element-to-model type mappings
+are reused until atomic numbers, atom order, or the supplied `type_dict` changes.
+
 For PT DPA4/SeZM checkpoints and graph-eligible PT-expt checkpoints, enable
 automatic freezing for production inference:
 

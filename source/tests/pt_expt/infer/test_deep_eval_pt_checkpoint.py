@@ -357,7 +357,7 @@ class TestPtExptLoadPt(unittest.TestCase):
             output_def,
             nlist_backend="native",
         )
-        with self.assertRaisesRegex(ValueError, "only applies to graph-routed"):
+        with self.assertRaisesRegex(ValueError, "only applies to graph or edge-vector"):
             PtExptDeepEval(
                 self.pt_path,
                 output_def,
@@ -422,6 +422,38 @@ class TestPtExptLoadPt(unittest.TestCase):
 class TestNeighborGraphMethodResolution(unittest.TestCase):
     """Auto graph-builder selection must cover each host policy explicitly."""
 
+    def test_auto_nlist_strategy_uses_frame_count(self) -> None:
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        cases = (
+            ("cuda", 1, True, True, "vesin"),
+            ("cuda", 4, True, True, "nv"),
+            ("cuda", 1, True, False, "nv"),
+            ("cuda", 4, False, True, "vesin"),
+            ("cpu", 1, True, True, "vesin"),
+        )
+        for device, nf, nv_available, vesin_available, expected in cases:
+            with self.subTest(device=device, nf=nf, expected=expected):
+                builder = auto_neighbor_list.AutoNeighborList(skin=1.0)
+                coord = mock.Mock(device=torch.device(device))
+                atype = np.zeros((nf, 2), dtype=np.int64)
+                with (
+                    mock.patch.object(
+                        auto_neighbor_list, "is_nv_available", return_value=nv_available
+                    ),
+                    mock.patch.object(
+                        auto_neighbor_list,
+                        "is_vesin_torch_available",
+                        return_value=vesin_available,
+                    ),
+                    mock.patch.object(builder._vesin, "build", return_value="vesin"),
+                    mock.patch.object(builder._nv, "build", return_value="nv"),
+                ):
+                    actual = builder.build(coord, atype, None, 3.0, [4])
+                self.assertEqual(actual, expected)
+
     def test_explicit_resolution(self) -> None:
         """Every implemented graph builder is accepted without rewriting."""
         for method in ("dense", "ase", "cell", "vesin", "nv"):
@@ -450,7 +482,8 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
             ("cpu", False, False, True, 1, "vesin", False),
             ("cpu", False, False, True, 4, "dense", False),
             ("cpu", False, False, False, 1, "dense", False),
-            ("cuda", True, True, True, 1, "nv", False),
+            ("cuda", True, True, True, 1, "vesin", False),
+            ("cuda", True, True, False, 1, "nv", False),
             ("cuda", True, True, True, 4, "nv", False),
             ("cuda", False, True, True, 1, "vesin", False),
             ("cuda", False, True, True, 4, "dense", True),

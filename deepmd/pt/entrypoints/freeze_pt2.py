@@ -531,6 +531,7 @@ def _make_sample_inputs(
         mapping_t,
     )
     if has_spin:
+        # Local spins have a frame stride independent of ghost storage.
         return (
             edge_schema.coord,
             edge_schema.atype,
@@ -538,7 +539,7 @@ def _make_sample_inputs(
             edge_schema.edge_vec,
             edge_schema.edge_scatter_index,
             edge_schema.edge_mask,
-            ext_spin[:, :nloc],
+            ext_spin[:, :nloc].contiguous(),
             fparam,
             aparam,
             charge_spin,
