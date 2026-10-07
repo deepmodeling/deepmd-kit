@@ -693,6 +693,12 @@ class LmdbDecodeConfig:
     type_map
         Element symbols of the model types, from which a derived field sizes
         the per-type length scale it measures against.
+    frame_transform
+        Optional callable applied to every decoded frame, as
+        ``transform(frame, frame_index)``. Self-supervised objectives corrupt
+        their inputs and derive their labels here, before the model runs, which
+        is the only place that works for a backend whose loss never sees the
+        model. ``None``, the default, leaves decoding unchanged.
     """
 
     ntypes: int
@@ -701,6 +707,7 @@ class LmdbDecodeConfig:
     data_requirements: dict[str, Any]
     dataset: str = "<unknown LMDB>"
     type_map: list[str] | None = None
+    frame_transform: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -1070,6 +1077,12 @@ def decode_lmdb_frame(
             "fid",
         }
     )
+    if config.frame_transform is not None:
+        # Ahead of the requirement checks below: a self-supervised transform is
+        # what produces the fields those checks look for, by corrupting the
+        # input it was handed.
+        frame = config.frame_transform(frame, original_key)
+
     for key in list(frame):
         if key.startswith("find_") or key in structural_keys or key in requirements:
             continue
@@ -1697,7 +1710,7 @@ class LmdbBatchIterator:
     reader
         LMDB reader that owns metadata and the synchronous transaction.
     sampler
-        Finite iterator yielding same-nloc dataset-index batches.
+        Finite sized iterable yielding dataset-index batches.
     num_workers
         Decoder process count. Zero or one selects synchronous decoding.
     """
@@ -1713,6 +1726,8 @@ class LmdbBatchIterator:
         self._reader = reader
         self._sampler = sampler
         self._epoch = 0
+        self._queued_pass_length = 0
+        self._last_pass_length: int | None = None
         self._iterator = self._iter_epoch()
         self._num_workers = num_workers
         self._pool: _LmdbPoolEntry | None = None
@@ -1734,9 +1749,12 @@ class LmdbBatchIterator:
             indices, self._deferred_indices = self._deferred_indices, None
             batch = self._reader.decode_batch(indices)
         else:
-            batch = self._decode(self._next_indices())
+            indices, self._queued_pass_length = self._next_indices()
+            batch = self._decode(indices)
 
-        self._schedule(self._next_indices())
+        self._last_pass_length = self._queued_pass_length
+        indices, self._queued_pass_length = self._next_indices()
+        self._schedule(indices)
         return batch
 
     def _decode(self, indices: list[int]) -> dict[str, Any]:
@@ -1815,7 +1833,7 @@ class LmdbBatchIterator:
             "decoders outlive the session that started it."
         )
 
-    def _next_indices(self) -> list[int]:
+    def _next_indices(self) -> tuple[list[int], int]:
         """Return the next sampler batch and restart after exhaustion."""
         try:
             return next(self._iterator)
@@ -1824,12 +1842,17 @@ class LmdbBatchIterator:
             self._iterator = self._iter_epoch()
             return next(self._iterator)
 
-    def _iter_epoch(self) -> Iterator[list[int]]:
-        """Create a sampler iterator for the current epoch."""
+    def _iter_epoch(self) -> Iterator[tuple[list[int], int]]:
+        """Tag batches with the length of the sampler pass that owns them."""
         set_epoch = getattr(self._sampler, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self._epoch)
-        return iter(self._sampler)
+        # Samplers can advance before their first yield, and prefetch can
+        # enter another pass before the current batch reaches its consumer.
+        # Snapshot the length lazily, after data requirements and layout are set.
+        pass_length = len(self._sampler)
+        for indices in self._sampler:
+            yield indices, pass_length
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
         """Submit one batch as balanced contiguous chunks.
@@ -1869,6 +1892,13 @@ class LmdbBatchIterator:
         futures = self._offer(indices)
         self._pending = _PendingBatch(indices, futures) if futures else None
         self._deferred_indices = None if futures else indices
+
+    @property
+    def batch_pass_length(self) -> int:
+        """Length of the last returned batch's pass, or the first pending pass."""
+        if self._last_pass_length is None:
+            return len(self._sampler)
+        return self._last_pass_length
 
     @property
     def started(self) -> bool:
@@ -2717,6 +2747,17 @@ class LmdbDataReader:
             DeprecationWarning,
             stacklevel=2,
         )
+
+    def set_frame_transform(
+        self, transform: Callable[[dict[str, Any], int], dict[str, Any]] | None
+    ) -> None:
+        """Install a per-frame transform, or remove it with ``None``.
+
+        The transform runs on every decoded frame, in whichever process decodes
+        it, and receives ``(frame, frame_index)``. Self-supervised training uses
+        it to corrupt inputs and derive labels before the model runs.
+        """
+        self._decode_config.frame_transform = transform
 
     # --- Properties ---
 

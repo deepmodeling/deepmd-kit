@@ -129,6 +129,9 @@ class DeepmdData:
                 self.type_idx_map = np.append(
                     self.type_idx_map, np.array([-1], dtype=np.int32)
                 )
+        if type_map:
+            # Without a dataset map, stored type indices already refer to the
+            # model map; element-dependent derived fields still need its names.
             self.type_map = type_map
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError("mixed_type format must have type_map!")

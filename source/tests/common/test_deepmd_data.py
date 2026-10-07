@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import (
@@ -7,6 +9,10 @@ from pathlib import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_margin_single,
+    pair_half_thresholds,
+)
 from deepmd.utils.data import (
     DeepmdData,
 )
@@ -46,6 +52,51 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         loaded = data._load_set(self.set_dir)
         expected_sorted = expected_atom_types[data.idx_map]
         np.testing.assert_array_equal(loaded["type"], np.tile(expected_sorted, (1, 1)))
+
+    def test_covalent_margin_without_dataset_type_map(self) -> None:
+        """Model type indices retain their element names without a dataset map."""
+        (self.root / "type_map.raw").unlink()
+        coord = np.array(
+            [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
+        )
+        box = 6.0 * np.eye(3)
+        np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
+        np.save(self.set_dir / "box.npy", box.reshape(1, 9))
+        type_map = ["O", "H", "Si"]
+        data = DeepmdData(str(self.root), type_map=type_map)
+        data.add("pair_margin", 1, default=0.5, length_scale="covalent")
+        expected = compute_min_pair_margin_single(
+            coord,
+            box,
+            np.array([0, 1, 0, 1]),
+            pair_half_thresholds(0.5, "covalent", type_map),
+            screened=True,
+        )
+        for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
+            self.assertEqual(float(loaded["find_pair_margin"]), 1.0)
+            np.testing.assert_allclose(loaded["pair_margin"], expected)
+        self.assertEqual(data.get_type_map(), type_map)
+        np.testing.assert_array_equal(data.atom_type, [0, 1, 0, 1])
+
+    def test_required_dataset_type_map_cannot_be_replaced(self) -> None:
+        """A supplied model map does not make a required dataset map optional."""
+        (self.root / "type_map.raw").unlink()
+        with self.assertRaisesRegex(AssertionError, "must have type_map.raw"):
+            DeepmdData(str(self.root), type_map=["O", "H"], optional_type_map=False)
+
+    def test_data_system_imports_without_preloading_dpmodel(self) -> None:
+        """The generic reader imports independently of backend initialization."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from deepmd.utils.data_system import DeepmdDataSystem",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class _RaisingModifier:

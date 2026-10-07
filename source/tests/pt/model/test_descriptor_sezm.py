@@ -1427,8 +1427,8 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
             model.env_seed_embedding.spin_scale.detach(),
             torch.full_like(model.env_seed_embedding.spin_scale, 4.0),
         )
-        self.assertEqual(model.version, 1.2)
-        self.assertEqual(float(model.version_tensor.item()), 1.2)
+        self.assertEqual(model.version, 1.3)
+        self.assertEqual(float(model.version_tensor.item()), 1.3)
 
     def test_loading_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
         kwargs = {**self._kwargs(), "use_spin": [False, False]}
@@ -1456,10 +1456,10 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
             migrated["spin_embedding.mag_layer1.matrix"],
             torch.full_like(migrated["spin_embedding.mag_layer1.matrix"], 5.0),
         )
-        self.assertEqual(model.version, 1.2)
+        self.assertEqual(model.version, 1.3)
 
     def test_a_migrated_state_is_migrated_only_once(self) -> None:
-        """Re-saving a migrated descriptor advertises 1.2, so a reload is inert."""
+        """A migrated descriptor advertises its current format; a reload is inert."""
         state = self._descriptor().state_dict()
         state["version_tensor"] = torch.full_like(state["version_tensor"], 1.1)
         state["env_seed_embedding.spin_scale"] = torch.full_like(
@@ -1473,7 +1473,7 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
             reloaded.env_seed_embedding.spin_scale.detach(),
             torch.full_like(reloaded.env_seed_embedding.spin_scale, 4.0),
         )
-        self.assertEqual(reloaded.version, 1.2)
+        self.assertEqual(reloaded.version, 1.3)
 
     def test_serialize_roundtrip_migrates_a_legacy_payload(self) -> None:
         """The dp-format path shares the rule with the state-dict path."""
@@ -1487,7 +1487,7 @@ class TestSeZMEnvSeedSpinGate(_SeZMTestCase):
             model.env_seed_embedding.spin_scale.detach(),
             torch.full_like(model.env_seed_embedding.spin_scale, 9.0),
         )
-        self.assertEqual(model.version, 1.2)
+        self.assertEqual(model.version, 1.3)
 
 
 class TestBuildEdgeQuaternion(_SeZMTestCase):

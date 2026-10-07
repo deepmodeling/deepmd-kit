@@ -403,11 +403,11 @@ class TestDescrptDPA4:
 
         migrated = DescrptDPA4.deserialize(data)
         np.testing.assert_allclose(migrated.env_seed_embedding.spin_scale, 9.0)
-        assert migrated.version == 1.2
+        assert migrated.version == 1.3
 
         reloaded = DescrptDPA4.deserialize(migrated.serialize())
         np.testing.assert_allclose(reloaded.env_seed_embedding.spin_scale, 9.0)
-        assert reloaded.version == 1.2
+        assert reloaded.version == 1.3
 
     def test_legacy_spin_free_routes_are_zeroed_on_deserialize(self) -> None:
         data = make_descriptor(use_spin=[False, False, False]).serialize()
@@ -433,7 +433,7 @@ class TestDescrptDPA4:
         np.testing.assert_array_equal(
             variables[mag_layer1_key], np.full_like(variables[mag_layer1_key], 5.0)
         )
-        assert migrated.version == 1.2
+        assert migrated.version == 1.3
 
     def test_bridged_records_before_the_window_are_refused(self) -> None:
         """A bridged record below 1.3 was trained under other window mechanics.
@@ -455,7 +455,20 @@ class TestDescrptDPA4:
 
         plain = make_descriptor().serialize()
         plain["@version"] = 1.2
-        assert DescrptDPA4.deserialize(plain).version == 1.2
+        assert DescrptDPA4.deserialize(plain).version == 1.3
+
+    def test_legacy_plain_upgrade_preserves_the_descriptor(self) -> None:
+        """The 1.3 format transition is inert without a bridging window."""
+        descriptor = make_descriptor()
+        data = descriptor.serialize()
+        data["@version"] = 1.2
+        restored = DescrptDPA4.deserialize(data)
+        coord, atype, nlist = make_inputs()
+        nf = atype.shape[0]
+        expected = descriptor.call(coord.reshape(nf, -1), atype, nlist)[0]
+        actual = restored.call(coord.reshape(nf, -1), atype, nlist)[0]
+        np.testing.assert_array_equal(actual, expected)
+        assert restored.serialize()["@version"] == 1.3
 
     def test_pre_spin_versions_keep_their_own_tag(self) -> None:
         """Version 1.0 predates the spin route and the 1.1 forward math.

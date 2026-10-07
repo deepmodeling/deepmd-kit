@@ -192,10 +192,6 @@ pin_pytorch_cpu = [
 pin_pytorch_gpu = [
   "torch==2.10.0",
 ]
-pin_warp_cuda12 = [
-  # GPU CI uses CUDA 12 drivers; the default Warp wheel requires CUDA 13.
-  "warp-lang @ https://github.com/NVIDIA/warp/releases/download/v1.18.0/warp_lang-1.18.0%2Bcu12-py3-none-manylinux_2_28_x86_64.whl ; platform_system == 'Linux' and platform_machine == 'x86_64'",
-]
 pin_jax_cpu = [
   "jax==0.6.2; python_version=='3.10'",
   "jax==0.10.0; python_version>='3.11'",

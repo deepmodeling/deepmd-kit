@@ -211,6 +211,10 @@ class LmdbDataSystem:
         self._reader.add_data_requirement(data_requirement)
         self._refresh_stat_groups()
 
+    def set_frame_transform(self, transform) -> None:  # noqa: ANN001
+        """Install a per-frame transform on the underlying reader."""
+        self._reader.set_frame_transform(transform)
+
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
         iterator = getattr(self, "_batch_iterator", None)
@@ -227,6 +231,10 @@ class LmdbDataSystem:
     def get_nsystems(self) -> int:
         """Return one logical LMDB training dataset."""
         return 1
+
+    def get_batch_pass_length(self) -> int:
+        """Return the local pass length belonging to the last returned batch."""
+        return self._batch_iterator.batch_pass_length
 
     @property
     def nbatches(self) -> list[int]:

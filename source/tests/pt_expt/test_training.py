@@ -53,6 +53,9 @@ from deepmd.utils.compat import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
+)
 
 from ..common.stat_file import (
     assert_energy_stat_cache_round_trip,
@@ -1076,6 +1079,51 @@ class TestGetData(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@pytest.mark.parametrize("world_size", [1, 2, 4])
+@pytest.mark.parametrize("has_valid_frame", [False, True])
+def test_replicated_numpy_filter_reads_a_complete_local_pass(
+    tmp_path: Path,
+    world_size: int,
+    has_valid_frame: bool,
+) -> None:
+    """A replicated NumPy reader scans both frames independently of rank count."""
+    set_dir = tmp_path / "set.000"
+    set_dir.mkdir()
+    np.savetxt(tmp_path / "type.raw", [0, 1], fmt="%d")
+    np.save(
+        set_dir / "coord.npy",
+        np.array(
+            [
+                [0.0, 0.0, 0.0, distance, 0.0, 0.0]
+                for distance in (0.1, 2.0 if has_valid_frame else 0.2)
+            ]
+        ),
+    )
+    np.save(set_dir / "box.npy", np.tile((6.0 * np.eye(3)).reshape(1, 9), (2, 1)))
+    data = DeepmdDataSystem(
+        [str(tmp_path)], batch_size=1, test_size=1, type_map=["O", "H"]
+    )
+    data.add_data_requirements(
+        [DataRequirementItem("pair_margin", 1, default=0.5, source_policy="derived")]
+    )
+    trainer = training_module.Trainer.__new__(training_module.Trainer)
+    trainer.multi_task = False
+    trainer.world_size = world_size
+    trainer.training_data_by_task = {"Default": data}
+    trainer.min_pair_dist_by_task = {"Default": 0.5}
+    with (
+        patch("deepmd.utils.data.dp_random.shuffle"),
+        patch.object(data, "get_batch", wraps=data.get_batch) as get_batch,
+    ):
+        if has_valid_frame:
+            _, labels = trainer.get_data(is_train=True)
+            assert float(labels["pair_margin"].reshape(-1)[0]) >= 1.0
+        else:
+            with pytest.raises(RuntimeError, match="2 consecutive batches"):
+                trainer.get_data(is_train=True)
+        assert get_batch.call_count == 2
 
 
 class TestMinPairDistFilter(unittest.TestCase):

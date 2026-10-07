@@ -656,6 +656,18 @@ class DeepmdDataSystem:
         """Get the batch size."""
         return self.batch_size
 
+    def get_batch_pass_length(self) -> int:
+        """Return the local sampling-pass length, including system probabilities.
+
+        NumPy data systems are replicated across ranks, so a reader's pass
+        length is independent of the distributed optimizer's world size.
+        """
+        from deepmd.dpmodel.utils.training_utils import (
+            compute_total_numb_batch,
+        )
+
+        return compute_total_numb_batch(self.nbatches, self.sys_probs)
+
     def print_summary(self, name: str) -> None:
         print_summary(
             name,

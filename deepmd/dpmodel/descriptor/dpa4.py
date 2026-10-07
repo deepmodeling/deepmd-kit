@@ -75,6 +75,7 @@ from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.utils.bridging import (
+    BRIDGING_RECORD_VERSION,
     check_bridging_record_version,
     check_window_inside_cutoff,
     migrate_inner_clamp_keys,
@@ -2872,6 +2873,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         be activated by fine-tuning. Versions below 1.1 predate the
         native-spin route and retain their original forward semantics.
 
+        Version 1.3 changes only bridging. An unbridged state at version 1.2
+        therefore adopts the current record version without changing its
+        function, so later fine-tuning can enable the current window. An older
+        bridged state cannot be upgraded this way.
+
         Parameters
         ----------
         variables
@@ -2886,28 +2892,30 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         float
             Version the variables express after migration.
         """
-        if not 1.1 <= version < 1.2:
-            return version
+        if 1.1 <= version < 1.2:
+            gate_key = prefix + "env_seed_embedding.spin_scale"
+            if self.use_spin is not None and not any(self.use_spin):
+                # dpmodel serialization names NativeLayer weights ``matrix``;
+                # pt_expt state dictionaries expose the wrapped attribute as ``w``.
+                dormant_keys = (
+                    "spin_embedding.mag_layer2.matrix",
+                    "spin_embedding.mag_layer2.w",
+                    "spin_embedding.adam_spin_vec_weight",
+                    "spin_embedding.adam_spin_nbr_weight",
+                    "env_seed_embedding.spin_scale",
+                )
+                for name in dormant_keys:
+                    key = prefix + name
+                    if key in variables:
+                        xp = array_api_compat.array_namespace(variables[key])
+                        variables[key] = xp.zeros_like(variables[key])
+            elif gate_key in variables:
+                variables[gate_key] = variables[gate_key] ** 2
+            version = 1.2
 
-        gate_key = prefix + "env_seed_embedding.spin_scale"
-        if self.use_spin is not None and not any(self.use_spin):
-            # dpmodel serialization names NativeLayer weights ``matrix``;
-            # pt_expt state dictionaries expose the wrapped attribute as ``w``.
-            dormant_keys = (
-                "spin_embedding.mag_layer2.matrix",
-                "spin_embedding.mag_layer2.w",
-                "spin_embedding.adam_spin_vec_weight",
-                "spin_embedding.adam_spin_nbr_weight",
-                "env_seed_embedding.spin_scale",
-            )
-            for name in dormant_keys:
-                key = prefix + name
-                if key in variables:
-                    xp = array_api_compat.array_namespace(variables[key])
-                    variables[key] = xp.zeros_like(variables[key])
-        elif gate_key in variables:
-            variables[gate_key] = variables[gate_key] ** 2
-        return 1.2
+        if 1.2 <= version < BRIDGING_RECORD_VERSION and self.bridging_f_inner is None:
+            return BRIDGING_RECORD_VERSION
+        return version
 
     def serialize(self) -> dict[str, Any]:
         return {

@@ -416,9 +416,15 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
         config["model"] = deepcopy(model)
         return config
 
-    def _finetune_across_bridging(self, source: dict, target: dict) -> None:
+    def _finetune_across_bridging(
+        self, source: dict, target: dict, source_version: float | None = None
+    ) -> torch.nn.Module:
         config = self._config(source)
         trainer = get_trainer(config)
+        if source_version is not None:
+            descriptor = trainer.model.get_descriptor()
+            descriptor.version = source_version
+            descriptor.version_tensor.fill_(source_version)
         trainer.run()
         checkpoint = config["training"].get("save_ckpt", "model.ckpt") + ".pt"
 
@@ -441,11 +447,14 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
         ]
         self.assertTrue(learned)
         for key in learned:
+            if source_version is not None and key.endswith(".version_tensor"):
+                continue
             torch.testing.assert_close(
                 state[key],
                 pretrained[key],
                 msg=f"{key} should come from the checkpoint",
             )
+        return trainer_finetune.model
 
     def test_finetune_plain_into_bridged(self) -> None:
         bridged = deepcopy(model_sezm)
@@ -460,6 +469,43 @@ class TestSeZMBridgingFinetune(unittest.TestCase):
             bridging_method="ZBL", bridging_r_inner=0.5, bridging_r_outer=0.8
         )
         self._finetune_across_bridging(bridged, model_sezm)
+
+    def test_legacy_plain_finetune_has_a_portable_bridged_record(self) -> None:
+        """A version-1.2 plain checkpoint acquires the current bridging semantics."""
+        from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
+        from deepmd.pt_expt.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4PTExpt
+
+        bridged = deepcopy(model_sezm)
+        bridged.update(
+            bridging_method="ZBL", bridging_r_inner=0.5, bridging_r_outer=0.8
+        )
+        model = self._finetune_across_bridging(model_sezm, bridged, source_version=1.2)
+        model.eval()
+        restored = type(model).deserialize(model.serialize()).to(env.DEVICE).eval()
+        self.assertEqual(
+            restored.get_descriptor().version, model.get_descriptor().LATEST_VERSION
+        )
+        descriptor_record = model.get_descriptor().serialize()
+        for descriptor_cls in (DescrptDPA4DP, DescrptDPA4PTExpt):
+            converted = descriptor_cls.deserialize(deepcopy(descriptor_record))
+            self.assertEqual(converted.serialize()["@version"], 1.3)
+        inputs = {
+            "coord": torch.tensor(
+                [[[0.0, 0.0, 0.0], [0.6, 0.0, 0.0], [2.0, 0.7, 0.0]]],
+                dtype=torch.float64,
+                device=env.DEVICE,
+            ),
+            "atype": torch.tensor([[0, 1, 1]], device=env.DEVICE),
+            "box": (6.0 * torch.eye(3, dtype=torch.float64, device=env.DEVICE)).reshape(
+                1, 9
+            ),
+        }
+        expected = model(**inputs)
+        actual = restored(**inputs)
+        for key in ("energy", "force", "virial"):
+            torch.testing.assert_close(
+                actual[key], expected[key], rtol=1e-12, atol=1e-12
+            )
 
 
 if __name__ == "__main__":

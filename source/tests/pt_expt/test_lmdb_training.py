@@ -396,6 +396,9 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
         try:
             self.assertEqual([system.nbatches for system in systems], [[3], [3]])
             self.assertEqual([len(system._sampler) for system in systems], [2, 2])
+            self.assertEqual(
+                [system.get_batch_pass_length() for system in systems], [2, 2]
+            )
             batches = [
                 [system.get_batch()["fid"] for _ in range(len(system._sampler))]
                 for system in systems
@@ -412,6 +415,62 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             for frame_id in batch
         }
         self.assertEqual(observed, set(range(8)))
+
+    def test_ragged_filter_uses_the_consumed_pass_length(self) -> None:
+        """Prefetching a shorter pass does not hide the current pass's last frame."""
+        from ..common.dpmodel.test_lmdb_data import (
+            _create_mixed_nloc_lmdb,
+        )
+
+        path = _create_mixed_nloc_lmdb(os.path.join(self.tmpdir, "filter-pass.lmdb"))
+        with lmdb.open(path) as database, database.begin(write=True) as txn:
+            for index in range(10):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(txn.get(key), raw=False)
+                natoms = frame["coords"]["shape"][0]
+                coord = np.zeros((natoms, 3))
+                if index == 3:
+                    coord[:, 0] = np.arange(natoms)
+                frame["coords"] = _encode_array(coord)
+                frame["cells"] = _encode_array(20.0 * np.eye(3))
+                txn.put(key, msgpack.packb(frame, use_bin_type=True))
+
+        for num_workers in (0, 2):
+            with self.subTest(num_workers=num_workers):
+                data = LmdbDataSystem(
+                    path, ["O", "H"], "mix:24", seed=1, num_workers=num_workers
+                )
+                data.use_ragged_batches(True)
+                data.add_data_requirements(
+                    [
+                        DataRequirementItem(
+                            "pair_margin", 1, default=0.5, source_policy="derived"
+                        )
+                    ]
+                )
+                trainer = Trainer.__new__(Trainer)
+                trainer.multi_task = False
+                trainer.world_size = 1
+                trainer.training_data_by_task = {"Default": data}
+                trainer.min_pair_dist_by_task = {"Default": 0.5}
+                try:
+                    # This shuffle packs five batches and leaves frame 3 last;
+                    # the following shuffle packs four batches.
+                    self.assertEqual(data.get_batch_pass_length(), 5)
+                    with patch.object(
+                        data, "get_batch", wraps=data.get_batch
+                    ) as get_batch:
+                        _, labels = trainer.get_data(is_train=True)
+                    self.assertEqual(get_batch.call_count, 5)
+                    self.assertEqual(labels["pair_margin"].numel(), 1)
+                    self.assertGreaterEqual(float(labels["pair_margin"].item()), 1.0)
+                    self.assertEqual(data.get_batch_pass_length(), 5)
+                    data.get_batch()
+                    self.assertEqual(data.get_batch_pass_length(), 4)
+                    if num_workers > 1:
+                        self.assertTrue(data._batch_iterator.started)
+                finally:
+                    data.close()
 
     def test_add_data_requirements_passthrough(self) -> None:
         ds = LmdbDataSystem(
