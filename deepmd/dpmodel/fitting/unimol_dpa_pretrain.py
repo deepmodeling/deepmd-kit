@@ -241,7 +241,9 @@ class UniMolDPAPretrainFitting(NativeOP, BaseFitting):
                 )
         return FittingOutputDef(variables)
 
-    def call_atoms(self, node_ebd: Array, latent: Array, nlist: Array) -> dict:
+    def call_atoms(
+        self, node_ebd: Array, latent: Array, nlist: Array, coord: Array
+    ) -> dict:
         """Run the heads on one frame's worth of backbone output.
 
         Parameters
@@ -253,6 +255,11 @@ class UniMolDPAPretrainFitting(NativeOP, BaseFitting):
             ``(nf * nloc, (lmax + 1) ** 2, 1, dim_descrpt)``.
         nlist : Array
             Neighbour list, shape ``(nf, nloc, nnei)``.
+        coord : Array
+            The input coordinates, shape ``(nf, nall, 3)`` or flattened. The
+            coordinate head predicts a displacement; adding these local input
+            coordinates gives the clean-coordinate prediction compared by the
+            loss, matching Uni-Mol's ``coord + update`` head.
 
         Returns
         -------
@@ -262,13 +269,16 @@ class UniMolDPAPretrainFitting(NativeOP, BaseFitting):
         """
         node_ebd = safe_cast_array(node_ebd, "global", self.precision)
         latent = safe_cast_array(latent, "global", self.precision)
+        coord = safe_cast_array(coord, "global", self.precision)
         xp = array_api_compat.array_namespace(node_ebd)
         nf, nloc = node_ebd.shape[0], node_ebd.shape[1]
+        local_coord = xp.reshape(coord, (nf, -1, 3))[:, :nloc, :]
         out = {}
         if self.lm_head is not None:
             out["token_logits"] = self.lm_head(node_ebd)
         if self.coord_head is not None:
-            out["coord_update"] = xp.reshape(self.coord_head(latent), (nf, nloc, 3))
+            displacement = xp.reshape(self.coord_head(latent), (nf, nloc, 3))
+            out["coord_update"] = local_coord + displacement
         if self.dist_head is not None:
             if nloc > self.max_atoms:
                 raise ValueError(

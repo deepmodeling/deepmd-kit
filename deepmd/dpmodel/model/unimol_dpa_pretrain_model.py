@@ -85,6 +85,28 @@ class UniMolDPAPretrainModel(DPModelCommon, DPUniMolDPAPretrainModel_):
         ------
         ValueError
             If a periodic cell is supplied; see the class docstring.
+
+        Parameters
+        ----------
+        coord : Array
+            Atomic coordinates, flattened per frame or shaped as ``(nf, nall, 3)``.
+        atype : Array
+            Atomic type indices.
+        box : Array, optional
+            Periodic cell, which must be absent or all zero for this objective.
+        fparam, aparam : Array, optional
+            Unused frame and atomic parameters.
+        do_atomic_virial : bool
+            Whether to request atomic virials; this objective does not expose
+            coordinate derivatives.
+        charge_spin : Array, optional
+            Optional charge/spin conditioning passed to the DPA backbone.
+
+        Returns
+        -------
+        dict[str, Array]
+            Element logits, clean-coordinate predictions, pair distances and
+            pair coverage, with absent optional heads omitted.
         """
         _reject_periodic(box)
         model_ret = self.call_common(

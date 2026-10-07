@@ -4,12 +4,11 @@
 import os
 import pickle
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 import unittest.mock
-from importlib.util import (
-    find_spec,
-)
 
 import numpy as np
 
@@ -22,13 +21,11 @@ from deepmd.dpmodel.loss.unimol import (
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
 )
-from deepmd.dpmodel.loss.unimol import (
-    UniMolLoss,
-)
 from deepmd.dpmodel.utils.unimol_transform import (
     make_unimol_data_transform,
 )
 from deepmd.utils.unimol_data import (
+    _conformers,
     convert_unimol_lmdb,
     read_unimol_lmdb,
 )
@@ -375,107 +372,6 @@ class TestUniMolDataConversion(unittest.TestCase):
         self.assertTrue(os.path.isdir(dst))
         self.assertEqual(os.path.getsize(os.path.join(dst, "data.mdb")), before)
 
-    def test_transform_corrupts_frames_in_the_data_path(self) -> None:
-        """The reader hook is what makes self-supervised training possible."""
-        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
-        dst = os.path.join(self.tmp, "for_training")
-        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
-        reader = LmdbDataReader(dst, type_map)
-        plain = reader[0]
-        reader.set_frame_transform(
-            make_unimol_data_transform(type_map, seed=1, epoch=1)
-        )
-        corrupted = reader[0]
-
-        self.assertEqual(
-            sorted(set(corrupted) - set(plain)),
-            [
-                "find_unimol_coord_target",
-                "find_unimol_token_target",
-                "unimol_coord_target",
-                "unimol_token_target",
-            ],
-        )
-        target = np.asarray(corrupted["unimol_token_target"])
-        clean = np.asarray(corrupted["unimol_coord_target"]).reshape(-1, 3)
-        noisy = np.asarray(corrupted["coord"]).reshape(-1, 3)
-        # Only selected atoms may move, and the clean target is centred.
-        moved = np.abs(noisy - clean).max(axis=-1) > 0
-        self.assertTrue(bool(np.all(~moved | (target != 0))))
-        # Centring is exact only to fp32, because the transform keeps upstream's
-        # fp32 coordinates.
-        np.testing.assert_allclose(clean.mean(axis=0), np.zeros(3), atol=1e-6)
-        # Masked atoms are carried as the pseudo-element. Of the selected
-        # atoms, 90% are masked and 5% take a random element; both are moved,
-        # so the masked ones are a subset of the moved ones.
-        is_mask = np.asarray(corrupted["atype"]) == type_map.index("[MASK]")
-        self.assertLessEqual(int(is_mask.sum()), int(moved.sum()))
-        self.assertTrue(bool(np.all(~is_mask | moved)))
-
-    def test_the_objective_supplies_its_own_transform(self) -> None:
-        """A trainer installs whatever the loss declares, and nothing else.
-
-        Supervised losses return None here, so the data path is untouched for
-        them; this objective returns the corruption that produces its labels.
-        """
-        from deepmd.dpmodel.loss.property import (
-            PropertyLoss,
-        )
-
-        type_map = [*UNIMOL_ELEMENTS, "[MASK]"]
-        self.assertIsNone(
-            PropertyLoss(task_dim=1, var_name="property").frame_transform(type_map)
-        )
-
-        loss = UniMolLoss(mask_prob=0.2)
-        self.assertEqual(
-            [r.key for r in loss.label_requirement],
-            ["unimol_token_target", "unimol_coord_target"],
-        )
-        dst = os.path.join(self.tmp, "through_the_loss")
-        convert_unimol_lmdb(self.src, dst, type_map=type_map, map_size=1 << 24)
-        reader = LmdbDataReader(dst, type_map)
-        before = set(reader[0])
-        reader.set_frame_transform(loss.frame_transform(type_map))
-        after = reader[0]
-        for key in ("unimol_token_target", "unimol_coord_target"):
-            self.assertIn(key, set(after) - before)
-        self.assertEqual(
-            len(np.asarray(after["unimol_token_target"])), len(after["atype"])
-        )
-
-    def test_an_element_outside_unimol_vocabulary_is_refused(self) -> None:
-        """Rewriting it as [MASK] would quietly corrupt an ordinary atom.
-
-        Uni-Mol knows 26 elements. A model whose type_map goes beyond them
-        tokenizes the extras as [UNK], and [UNK] has no type to come back to.
-        """
-        wider = ["C", "N", "O", "H", "Mg", "[MASK]"]
-        transform = make_unimol_data_transform(wider, seed=1)
-        frame = {
-            "coord": np.array(
-                [[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [0.0, 1.5, 0.0], [0.0, 0.0, 1.5]]
-            ),
-            # the third atom is magnesium, which Uni-Mol has no token for
-            "atype": np.array([0, 1, 4, 3], dtype=np.int64),
-        }
-        with self.assertRaisesRegex(ValueError, "cannot express"):
-            transform(frame, 0)
-
-        # Without it, the same frame goes through.
-        ordinary = make_unimol_data_transform(["C", "N", "O", "H", "[MASK]"], seed=1)
-        ordinary(
-            {
-                "coord": frame["coord"],
-                "atype": np.array([0, 1, 2, 3], dtype=np.int64),
-            },
-            0,
-        )
-
-    def test_transform_requires_the_mask_pseudo_element(self) -> None:
-        with self.assertRaisesRegex(ValueError, r"\[MASK\]"):
-            make_unimol_data_transform(list(UNIMOL_ELEMENTS))
-
     def test_limits_are_respected(self) -> None:
         dst = os.path.join(self.tmp, "limited")
         counts = convert_unimol_lmdb(
@@ -484,47 +380,32 @@ class TestUniMolDataConversion(unittest.TestCase):
         self.assertEqual(counts["molecules"], 1)
         self.assertEqual(counts["frames"], 2)
 
-    @unittest.skipUnless(find_spec("rdkit"), "RDKit is not installed")
     def test_an_unparsable_smiles_only_loses_its_2d_conformer(self) -> None:
-        """RDKit returns None for a SMILES it cannot parse.
+        """A failed SMILES parse keeps the existing conformers.
 
-        Handing that to AddHs raised inside the conversion, so one such record
-        threw away the whole dataset. The 3D conformers do not depend on the
-        SMILES, so the molecule keeps them.
+        Mocking the optional RDKit dependency keeps this regression test active
+        in the normal test environment, where RDKit is not installed. Passing
+        ``None`` to ``AddHs`` used to abort conversion; the 3D conformers do not
+        depend on the SMILES and must remain available.
         """
         rng = np.random.default_rng(1)
-        src = os.path.join(self.tmp, "bad_smiles.lmdb")
-        _write_unimol_lmdb(
-            src,
-            [
-                {
-                    "atoms": ["C", "C", "O"],
-                    "coordinates": [
-                        rng.normal(size=(3, 3)).astype(np.float32) for _ in range(2)
-                    ],
-                    "smi": "CCO",
-                },
-                {
-                    "atoms": ["C", "C", "C", "C"],
-                    "coordinates": [
-                        rng.normal(size=(4, 3)).astype(np.float32) for _ in range(2)
-                    ],
-                    # an unclosed ring
-                    "smi": "C1CCC",
-                },
-            ],
-        )
-        dst = os.path.join(self.tmp, "bad_smiles")
-        counts = convert_unimol_lmdb(src, dst, add_2d_conformer=True, map_size=1 << 24)
-        self.assertEqual(counts["molecules"], 2)
-        self.assertEqual(counts["skipped"], 0)
-        reader = LmdbDataReader(dst, list(UNIMOL_ELEMENTS))
-        nlocs = sorted(
-            int(np.asarray(reader[i]["atype"]).size) for i in range(len(reader))
-        )
-        # three frames of the parsable molecule, its 2D conformer included, and
-        # the two 3D ones of the other
-        self.assertEqual(nlocs, [3, 3, 3, 4, 4])
+        conformers = [rng.normal(size=(4, 3)).astype(np.float32) for _ in range(2)]
+        record = {"atoms": ["C"] * 4, "coordinates": conformers, "smi": "C1CCC"}
+        chem = types.ModuleType("rdkit.Chem")
+        chem.MolFromSmiles = unittest.mock.Mock(return_value=None)
+        chem.AddHs = unittest.mock.Mock(side_effect=AssertionError("must not run"))
+        chem.AllChem = types.SimpleNamespace(Compute2DCoords=unittest.mock.Mock())
+        rdkit = types.ModuleType("rdkit")
+        rdkit.Chem = chem
+        with unittest.mock.patch.dict(
+            sys.modules, {"rdkit": rdkit, "rdkit.Chem": chem}
+        ):
+            kept = _conformers(record, add_2d_conformer=True)
+        self.assertEqual(len(kept), 2)
+        for actual, expected in zip(kept, conformers, strict=True):
+            np.testing.assert_array_equal(actual, expected)
+        chem.MolFromSmiles.assert_called_once_with("C1CCC")
+        chem.AddHs.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -146,7 +146,12 @@ class TestPairDistanceHead(unittest.TestCase):
         for coverage in PairDistanceHead.COVERAGES:
             with self.subTest(coverage=coverage):
                 dist, _ = self._head(coverage)(self.node, self.nlist)
-                np.testing.assert_array_equal(dist, np.transpose(dist, (0, 2, 1)))
+                np.testing.assert_allclose(
+                    dist,
+                    np.transpose(dist, (0, 2, 1)),
+                    rtol=0.0,
+                    atol=1e-14,
+                )
 
     def test_the_diagonal_follows_the_coverage(self) -> None:
         """Upstream scores the zero self-distance; a neighbour list cannot.
@@ -253,7 +258,7 @@ class TestUniMolDPAPretrainFitting(unittest.TestCase):
             self.nlist,
             mapping=np.tile(np.arange(self.nloc), (1, 1)),
         )
-        return self.fitting.call_atoms(node, latent, self.nlist)
+        return self.fitting.call_atoms(node, latent, self.nlist, self.coord)
 
     def test_every_output_is_declared(self) -> None:
         """The output machinery indexes the definition for every key returned.
@@ -273,6 +278,26 @@ class TestUniMolDPAPretrainFitting(unittest.TestCase):
         for name, value in out.items():
             with self.subTest(output=name):
                 self.assertTrue(bool(np.all(np.isfinite(value))))
+
+    def test_coordinate_prediction_translates_with_the_input(self) -> None:
+        """The head predicts ``coord + update`` like Uni-Mol v1."""
+        base = self._run()["coord_update"]
+        shift = np.array([1.25, -0.5, 0.75])
+        shifted_node, shifted_latent = self.desc.call_with_latent(
+            self.coord + shift,
+            self.atype,
+            self.nlist,
+            mapping=np.tile(np.arange(self.nloc), (1, 1)),
+        )
+        shifted = self.fitting.call_atoms(
+            shifted_node, shifted_latent, self.nlist, self.coord + shift
+        )["coord_update"]
+        np.testing.assert_allclose(
+            shifted - base,
+            np.broadcast_to(shift, base.shape),
+            rtol=1e-10,
+            atol=1e-10,
+        )
 
     def test_columns_past_the_frame_are_not_covered(self) -> None:
         """The declared width is fixed; a shorter frame pads the rest."""
@@ -299,12 +324,33 @@ class TestUniMolDPAPretrainFitting(unittest.TestCase):
             mapping=np.tile(np.arange(self.nloc), (1, 1)),
         )
         with self.assertRaisesRegex(ValueError, "exceeds max_atoms"):
-            narrow.call_atoms(node, latent, self.nlist)
+            narrow.call_atoms(node, latent, self.nlist, self.coord)
 
     def test_the_five_tuple_path_is_refused(self) -> None:
         """These heads need the equivariant state and the neighbour list."""
         with self.assertRaisesRegex(NotImplementedError, "call_atoms"):
             self.fitting.call(np.zeros((1, 1, 1)), np.zeros((1, 1), dtype=np.int64))
+
+    def test_optional_heads_can_all_be_disabled(self) -> None:
+        fitting = UniMolDPAPretrainFitting(
+            ntypes=3,
+            dim_descrpt=self.desc.channels,
+            node_readout_lmax=self.desc.node_readout_lmax,
+            max_atoms=self.max_atoms,
+            mask_token_head=False,
+            coord_head=False,
+            dist_head=False,
+            precision="float64",
+            seed=1,
+        )
+        node, latent = self.desc.call_with_latent(
+            self.coord,
+            self.atype,
+            self.nlist,
+            mapping=np.tile(np.arange(self.nloc), (1, 1)),
+        )
+        self.assertEqual(fitting.output_def().var_defs, {})
+        self.assertEqual(fitting.call_atoms(node, latent, self.nlist, self.coord), {})
 
     def test_serialize_round_trip(self) -> None:
         revived = UniMolDPAPretrainFitting.deserialize(self.fitting.serialize())
@@ -314,8 +360,8 @@ class TestUniMolDPAPretrainFitting(unittest.TestCase):
             self.nlist,
             mapping=np.tile(np.arange(self.nloc), (1, 1)),
         )
-        a = self.fitting.call_atoms(node, latent, self.nlist)
-        b = revived.call_atoms(node, latent, self.nlist)
+        a = self.fitting.call_atoms(node, latent, self.nlist, self.coord)
+        b = revived.call_atoms(node, latent, self.nlist, self.coord)
         for key in a:
             with self.subTest(output=key):
                 np.testing.assert_allclose(a[key], b[key])

@@ -11,7 +11,9 @@ MIT licensed:
 Five terms, with upstream's default weights from its README pretraining recipe:
 element prediction (1), coordinate denoising (5), distance prediction (10), and
 the two norm regularisers (0.01 each). The regularisers are produced by the
-backbone, so the loss only weights them.
+backbone, so the loss only weights them. A DPA backbone has no corresponding
+outputs; its configuration sets both weights to zero and the loss rejects a
+nonzero value before training starts.
 """
 
 from collections.abc import (
@@ -133,37 +135,6 @@ def _clean_distances(
         tokens = xp.concat([zero, atoms, zero], axis=1)
     else:
         tokens = atoms
-    if tokens.shape[1] < ncol:
-        pad = xp.zeros(
-            (nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype, device=dev
-        )
-        tokens = xp.concat([tokens, pad], axis=1)
-    diff = atoms[:, :, None, :] - tokens[:, None, :, :]
-    return xp.sqrt(xp.sum(diff**2, axis=-1))
-
-
-def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
-    """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
-    xp = array_api_compat.array_namespace(mask)
-    n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
-    positions = xp.arange(ncol, device=array_api_compat.device(mask))[None, :]
-    return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
-
-
-def _clean_distances(coord_target: Array, mask: Array, ncol: int) -> Array:
-    """Pairwise distances from the clean coordinates, virtual tokens included.
-
-    Storing this as a label would cost O(natoms^2) per frame, so it is derived
-    here instead. The two virtual tokens sit at the origin, which is the
-    centroid of the clean coordinates because the transform centres them.
-    """
-    xp = array_api_compat.array_namespace(coord_target)
-    nf = coord_target.shape[0]
-    real = xp.astype(mask, coord_target.dtype)[..., None]
-    atoms = coord_target * real
-    dev = array_api_compat.device(coord_target)
-    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
-    tokens = xp.concat([zero, atoms, zero], axis=1)
     if tokens.shape[1] < ncol:
         pad = xp.zeros(
             (nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype, device=dev
@@ -355,8 +326,9 @@ class UniMolLoss(Loss):
                 "coord_loss",
             )
         if self.masked_dist_loss > 0:
-            # Rows are the corrupted atoms; columns are every non-padding token,
-            # BOS, EOS and the diagonal included (losses/unimol.py:159-180).
+            # Rows are the corrupted atoms; columns are every covered, non-padding
+            # token. Uni-Mol includes BOS/EOS; a DPA head has only real-atom
+            # columns and its pair mask selects the neighbour or all-pairs subset.
             ncol = model_dict["pair_dist"].shape[-1]
             token_mask = label_dict.get("unimol_token_mask")
             if token_mask is None:
@@ -447,7 +419,7 @@ class UniMolLoss(Loss):
         """Serialize the loss module."""
         return {
             "@class": "UniMolLoss",
-            "@version": 1,
+            "@version": 2,
             "masked_token_loss": self.masked_token_loss,
             "masked_coord_loss": self.masked_coord_loss,
             "masked_dist_loss": self.masked_dist_loss,
@@ -468,6 +440,6 @@ class UniMolLoss(Loss):
     def deserialize(cls, data: dict) -> "UniMolLoss":
         """Deserialize the loss module."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)

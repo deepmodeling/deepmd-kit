@@ -163,10 +163,12 @@ class PairDistanceHead(NativeOP):
     departs from Uni-Mol by construction:
 
     ``neighbour``
-        Only pairs inside the backbone's neighbour list. Cheap, and it reuses
-        the structure the backbone already built, which is how the rest of
-        deepmd trains. On drug-like molecules a 6 Angstrom cut-off holds about
-        half of all pairs, so the objective sees less than Uni-Mol's.
+        Only pairs inside the backbone's neighbour list. The mask reuses the
+        structure the backbone already built, but the dense pair features and
+        MLP are still evaluated for every ``nloc x nloc`` pair, so this setting
+        has O(nloc^2) head compute and only reduces the scored entries. On
+        drug-like molecules a 6 Angstrom cut-off holds about half of all pairs,
+        so the objective sees less than Uni-Mol's.
     ``all_pairs``
         Every ordered pair, the diagonal included, which is Uni-Mol's own
         coverage and what to use to reproduce its training. Costs O(nloc^2) and

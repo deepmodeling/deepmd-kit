@@ -3555,9 +3555,10 @@ def fitting_unimol_dpa_pretrain() -> list[Argument]:
     doc_dist_hidden = "Width of the distance head's hidden layer."
     doc_dist_coverage = (
         "Which atom pairs the distance term covers. 'neighbour' follows the backbone's own "
-        "neighbour list: it costs O(nloc * nnei), and it reuses the locality the rest of deepmd "
-        "trains on, but it sees only the pairs inside the cut-off -- on drug-like molecules a 6 A "
-        "cut-off holds roughly half of all pairs, and less for the larger ones. 'all_pairs' covers "
+        "neighbour list for the scored entries, but the dense pair head still evaluates all "
+        "nloc^2 pairs, so its head compute remains O(nloc^2); it reuses the locality the rest of "
+        "deepmd trains on, but it sees only the pairs inside the cut-off -- on drug-like molecules "
+        "a 6 A cut-off holds roughly half of all pairs, and less for the larger ones. 'all_pairs' covers "
         "every pair, which is Uni-Mol's own coverage and what to use to reproduce its training; it "
         "costs O(nloc^2) and does not share the backbone's neighbour structure. The setting "
         "changes which pairs are scored and nothing else: the head predicts the same numbers "

@@ -602,10 +602,15 @@ class TestUniMolLoss(UniMolGoldenMixin, unittest.TestCase):
         np.testing.assert_allclose(float(derived), float(explicit), rtol=1e-7)
 
     def test_serialize_round_trip(self) -> None:
-        loss = UniMolLoss(masked_coord_loss=3.0, beta=0.5)
+        loss = UniMolLoss(masked_coord_loss=3.0, beta=0.5, virtual_tokens=False)
         clone = UniMolLoss.deserialize(loss.serialize())
         self.assertEqual(clone.masked_coord_loss, 3.0)
         self.assertEqual(clone.beta, 0.5)
+        self.assertFalse(clone.virtual_tokens)
+        legacy = loss.serialize()
+        legacy["@version"] = 1
+        legacy.pop("virtual_tokens")
+        self.assertTrue(UniMolLoss.deserialize(legacy).virtual_tokens)
 
 
 class TestUniMolExample(unittest.TestCase):

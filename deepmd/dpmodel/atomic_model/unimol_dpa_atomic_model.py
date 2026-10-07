@@ -102,7 +102,7 @@ class DPUniMolDPAAtomicModel(DPAtomicModel):
             mapping=mapping,
             charge_spin=charge_spin,
         )
-        return self.fitting_net.call_atoms(node_ebd, latent, nlist)
+        return self.fitting_net.call_atoms(node_ebd, latent, nlist, extended_coord)
 
     def supports_graph_export(self) -> bool:
         """No graph entry: these heads read the neighbour list directly.

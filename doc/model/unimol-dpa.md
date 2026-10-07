@@ -26,10 +26,13 @@ scatter softmax and returns no pair axis at all. So:
 | distance   | the pair channel            | the two endpoints' representations    |
 
 The coordinate head projects the backbone's equivariant state with a degree-wise
-linear whose weights are shared across the three $m$ components, so its output
-rotates with the molecule rather than merely being three numbers. The distance
-head combines the two endpoints symmetrically, $[h_i + h_j \,\|\, h_i \odot
-h_j]$, which makes the predicted matrix symmetric by construction.
+linear whose weights are shared across the three $m$ components, so its
+predicted displacement rotates with the molecule rather than merely being three
+numbers. The displacement is added to the input coordinates before the
+coordinate loss, matching Uni-Mol's `coord + update` head and making the clean
+coordinate prediction translate with the input. The distance head combines the
+two endpoints symmetrically, $[h_i + h_j \,\|\, h_i \odot h_j]$, which makes the
+predicted matrix symmetric by construction.
 
 Uni-Mol's two norm regularisers constrain quantities belonging to its own
 transformer and have no counterpart here, so they carry no weight; and because
@@ -57,10 +60,11 @@ This is the one place the objective departs from Uni-Mol by construction, and it
 is a choice rather than a limitation of the port.
 
 `dist_coverage: neighbour` (default)
-: Only pairs inside the backbone's neighbour list. It reuses the locality the
-rest of deepmd trains on and costs `O(nloc * nnei)`. It also sees less than
-Uni-Mol does: on drug-like molecules a 6 Å cut-off holds about half of all
-pairs, and under a third for the largest.
+: Only pairs inside the backbone's neighbour list. The mask reuses the locality
+  the rest of deepmd trains on and reduces the scored entries, but the dense
+  pair head still evaluates all `nloc²` pairs, so its head compute remains
+  `O(nloc²)`. It also sees less than Uni-Mol does: on drug-like molecules a 6 Å
+  cut-off holds about half of all pairs, and under a third for the largest.
 
 `dist_coverage: all_pairs`
 : Every pair, which is Uni-Mol's own coverage and what to use to reproduce its
