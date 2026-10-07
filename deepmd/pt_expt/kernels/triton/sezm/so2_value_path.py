@@ -104,6 +104,9 @@ from torch.library import (
     wrap_triton,
 )
 
+from ...utils import (
+    use_rot_mix_bwd_fused,
+)
 from .gated_activation import (
     gated_activation_second_order,
     gated_activation_second_order_reference,
@@ -130,7 +133,6 @@ from .tile_configs import (
     stack_fp32_configs,
     stack_m0_gate_config,
 )
-from ...utils import use_rot_mix_bwd_fused
 
 if TYPE_CHECKING:
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (

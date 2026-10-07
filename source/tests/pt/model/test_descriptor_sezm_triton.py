@@ -2174,9 +2174,7 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         wg = wigner.clone().requires_grad_(True)
         kg = kc.clone().requires_grad_(True)
         src_order = torch.argsort(src)
-        boundaries = torch.arange(
-            self.N_NODE + 1, device=src.device, dtype=src.dtype
-        )
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
         src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
         out = vp._rotate_mix_op(
             xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank
