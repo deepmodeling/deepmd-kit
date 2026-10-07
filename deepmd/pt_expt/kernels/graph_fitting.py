@@ -401,6 +401,7 @@ def graph_fitting(
     fit: Any,
     descriptor: torch.Tensor,
     atype: torch.Tensor,
+    atom_bias: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
     """Fused energy fitting on the flat node axis.
 
@@ -417,6 +418,8 @@ def graph_fitting(
         Flat descriptor with shape (N, nd).
     atype : torch.Tensor
         Flat node atom types with shape (N,), int64.
+    atom_bias : torch.Tensor
+        Per-type energy bias added to the network output, shape (ntypes, 1).
 
     Returns
     -------
@@ -433,7 +436,7 @@ def graph_fitting(
         arguments.residuals,
         arguments.head_weight,
         arguments.head_bias,
-        fit.bias_atom_e.to(torch.float64).reshape(-1, 1)[:, 0].contiguous(),
+        atom_bias.to(torch.float64).reshape(-1, 1)[:, 0].contiguous(),
         arguments.activation,
     )
     return {fit.var_name: e}

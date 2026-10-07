@@ -73,6 +73,7 @@ from deepmd.pd.utils.env import (
 )
 from deepmd.pd.utils.stat import (
     make_stat_input,
+    scan_redu_stats,
 )
 from deepmd.pd.utils.utils import (
     nvprof_context,
@@ -83,6 +84,9 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
+)
+from deepmd.utils.out_stat import (
+    ReduStatScanner,
 )
 from deepmd.utils.path import (
     DPH5Path,
@@ -233,6 +237,7 @@ class Trainer:
             _validation_data: Any | None,
             _stat_file_path: str | Path | None,
             _data_requirement: list[DataRequirementItem],
+            _data_stat_full: bool = False,
             finetune_has_new_type: bool = False,
         ) -> Any:
             _data_requirement += get_additional_data_requirement(_model)
@@ -248,6 +253,15 @@ class Trainer:
                     _data_stat_nbatch,
                 )
                 return sampled
+
+            if _data_stat_full:
+                # sampling a few batches per system can miss rare elements
+                # entirely; scan every frame for the output statistics instead
+                get_sample.redu_stat_scanner = ReduStatScanner(
+                    lambda ntypes, keys, intensive: scan_redu_stats(
+                        _training_data.dataloaders, ntypes, keys, intensive=intensive
+                    )
+                )
 
             if (not resuming or finetune_has_new_type) and self.rank == 0:
                 _model.compute_or_load_stat(
@@ -310,6 +324,7 @@ class Trainer:
                 validation_data,
                 stat_file_path,
                 self.loss.label_requirement,
+                _data_stat_full=model_params.get("data_stat_full", False),
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
@@ -349,6 +364,9 @@ class Trainer:
                     validation_data[model_key],
                     stat_file_path[model_key],
                     self.loss[model_key].label_requirement,
+                    _data_stat_full=model_params["model_dict"][model_key].get(
+                        "data_stat_full", False
+                    ),
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()

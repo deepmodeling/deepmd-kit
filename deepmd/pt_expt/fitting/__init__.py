@@ -30,6 +30,10 @@ from .unimol_pretrain import (
     UniMolPretrainFitting,
 )
 
+from .unimol_pretrain import (
+    UniMolPretrainFitting,
+)
+
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",

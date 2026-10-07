@@ -53,7 +53,6 @@ def eval_model(
     spins: np.ndarray | paddle.Tensor | None = None,
     atomic: bool = False,
     infer_batch_size: int = 2,
-    denoise: bool = False,
 ):
     model = model.to(DEVICE)
     energy_out = []
@@ -62,8 +61,6 @@ def eval_model(
     force_mag_out = []
     virial_out = []
     atomic_virial_out = []
-    updated_coord_out = []
-    logits_out = []
     err_msg = (
         f"All inputs should be the same format, "
         f"but found {type(coords)}, {type(cells)}, {type(atom_types)} instead! "
@@ -188,10 +185,6 @@ def eval_model(
                 virial_out.append(batch_output["virial"].numpy())
             if "atom_virial" in batch_output:
                 atomic_virial_out.append(batch_output["atom_virial"].numpy())
-            if "updated_coord" in batch_output:
-                updated_coord_out.append(batch_output["updated_coord"].numpy())
-            if "logits" in batch_output:
-                logits_out.append(batch_output["logits"].numpy())
         else:
             if "energy" in batch_output:
                 energy_out.append(batch_output["energy"])
@@ -205,10 +198,6 @@ def eval_model(
                 virial_out.append(batch_output["virial"])
             if "atom_virial" in batch_output:
                 atomic_virial_out.append(batch_output["atom_virial"])
-            if "updated_coord" in batch_output:
-                updated_coord_out.append(batch_output["updated_coord"])
-            if "logits" in batch_output:
-                logits_out.append(batch_output["logits"])
     if not return_tensor:
         energy_out = (
             np.concatenate(energy_out) if energy_out else np.zeros([nframes, 1])  # pylint: disable=no-explicit-dtype
@@ -234,10 +223,6 @@ def eval_model(
             if atomic_virial_out
             else np.zeros([nframes, natoms, 3, 3])  # pylint: disable=no-explicit-dtype
         )
-        updated_coord_out = (
-            np.concatenate(updated_coord_out) if updated_coord_out else None
-        )
-        logits_out = np.concatenate(logits_out) if logits_out else None
     else:
         energy_out = (
             paddle.concat(energy_out)
@@ -281,21 +266,14 @@ def eval_model(
                 [nframes, natoms, 3, 3], dtype=GLOBAL_PD_FLOAT_PRECISION
             ).to(device=DEVICE)
         )
-        updated_coord_out = (
-            paddle.concat(updated_coord_out) if updated_coord_out else None
-        )
-        logits_out = paddle.concat(logits_out) if logits_out else None
-    if denoise:
-        return updated_coord_out, logits_out
-    else:
-        results_dict = {
-            "energy": energy_out,
-            "force": force_out,
-            "virial": virial_out,
-        }
-        if has_spin:
-            results_dict["force_mag"] = force_mag_out
-        if atomic:
-            results_dict["atom_energy"] = atomic_energy_out
-            results_dict["atom_virial"] = atomic_virial_out
-        return results_dict
+    results_dict = {
+        "energy": energy_out,
+        "force": force_out,
+        "virial": virial_out,
+    }
+    if has_spin:
+        results_dict["force_mag"] = force_mag_out
+    if atomic:
+        results_dict["atom_energy"] = atomic_energy_out
+        results_dict["atom_virial"] = atomic_virial_out
+    return results_dict

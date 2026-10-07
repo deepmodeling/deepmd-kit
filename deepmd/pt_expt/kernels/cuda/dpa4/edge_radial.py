@@ -8,6 +8,8 @@ derives from the pair distance::
     env[e] = keep[e] * E_p1(r)
     rbf[e, n] = keep[e] * phi_n(r) * E_p2(r)
 
+An empty basis-envelope series selects the raw basis, without ``E_p2``.
+
 Written as tensor operations this chain is cheap enough that the compiler
 inlines it into every consumer of ``env`` and ``rbf`` and re-evaluates it there,
 so a 96 MB pass is paid several times over. Behind an operator boundary it runs
@@ -30,6 +32,9 @@ from typing import (
 )
 
 import torch
+from torch._subclasses.fake_tensor import (
+    FakeTensor,
+)
 
 __all__ = [
     "BESSEL",
@@ -62,8 +67,8 @@ def series_coefficients(exponent: int) -> tuple[float, ...]:
 
 
 def supported(exponent_env: int, exponent_rbf: int) -> bool:
-    """Whether both envelope orders fit the staged series limit."""
-    return 2 <= exponent_env <= _MAX_SERIES and 2 <= exponent_rbf <= _MAX_SERIES
+    """Whether the envelope orders fit the staged limit, including a bare basis."""
+    return 1 <= exponent_env <= _MAX_SERIES and 0 <= exponent_rbf <= _MAX_SERIES
 
 
 def _forward_fake(
@@ -166,7 +171,8 @@ def edge_radial(
     env_series : torch.Tensor
         Horner coefficients of the edge envelope with shape (p1,).
     rbf_series : torch.Tensor
-        Horner coefficients of the basis envelope with shape (p2,).
+        Horner coefficients of the basis envelope with shape (p2,). An empty
+        tensor disables the basis envelope.
     rcut : float
         Cutoff radius in Å.
     gaussian_coeff : float
@@ -195,21 +201,28 @@ class EdgeRadialCuda:
     """
 
     def __init__(self, envelope: Any, basis: Any) -> None:
+        ensure_registered()
         self._envelope = envelope
         self._basis = basis
         self._rcut = float(envelope.rcut)
-        self._basis_type = BESSEL if basis.basis_type == "bessel" else GAUSSIAN
+        self._gaussian_coeff = float(basis.gaussian_coeff)
+        self._basis_type = BESSEL if basis.basis_family == "bessel" else GAUSSIAN
         self._env = series_coefficients(envelope.p)
-        self._rbf = series_coefficients(basis.envelope.p)
+        self._rbf = series_coefficients(basis.exponent)
         self._series: tuple[torch.Tensor, torch.Tensor] | None = None
 
     def series(self, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
         """The two Horner series on the compute device."""
         if self._series is None or self._series[0].device != device:
-            self._series = (
+            series = (
                 torch.tensor(self._env, dtype=torch.float32, device=device),
                 torch.tensor(self._rbf, dtype=torch.float32, device=device),
             )
+            # Series built under a tracing mode are fake tensors bound to that
+            # trace; only real series are kept for later calls.
+            if isinstance(series[0], FakeTensor):
+                return series
+            self._series = series
         return self._series
 
     def __call__(
@@ -232,14 +245,14 @@ class EdgeRadialCuda:
             ``C3CutoffEnvelope`` and ``RadialBasis`` scaled by ``keep``.
         """
         env_series, rbf_series = self.series(edge_len.device)
-        return edge_radial(
+        return torch.ops.deepmd.dpa4_edge_radial(
             edge_len,
             keep,
             self._basis.adam_freqs,
             env_series,
             rbf_series,
             self._rcut,
-            float(self._basis.gaussian_coeff),
+            self._gaussian_coeff,
             self._basis_type,
         )
 
@@ -260,8 +273,8 @@ def make_cuda_edge_radial(envelope: Any, basis: Any) -> EdgeRadialCuda | None:
         return None
     if basis.adam_freqs.dtype is not torch.float32:
         return None
-    if not supported(int(envelope.p), int(basis.envelope.p)):
+    if not supported(int(envelope.p), int(basis.exponent)):
         return None
-    if basis.basis_type not in ("bessel", "gaussian"):
+    if basis.basis_family not in ("bessel", "gaussian"):
         return None
     return EdgeRadialCuda(envelope, basis)

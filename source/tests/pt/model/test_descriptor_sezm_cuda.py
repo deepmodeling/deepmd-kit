@@ -556,6 +556,25 @@ class TestSeZMGridPairCuda(unittest.TestCase):
                     scale = ref.abs().max()
                     self.assertLess(((got - ref).abs().max() / scale).item(), 5e-6)
 
+    def test_fake_layout_matches_noncontiguous_inputs(self) -> None:
+        """Forward and backward fake layouts match the CUDA allocations for views."""
+        left, right, to_grid, from_grid_t = self._case(2, 12, 32, 24)
+        left = left.transpose(1, 2).contiguous().transpose(1, 2)
+        right = right.transpose(1, 2).contiguous().transpose(1, 2)
+        self.assertFalse(left.is_contiguous())
+        self.assertFalse(right.is_contiguous())
+        inputs = (left, right, to_grid, from_grid_t)
+        output = grid_pair(*inputs)
+        for op, args in (
+            (torch.ops.deepmd.dpa4_grid_pair.default, inputs),
+            (
+                torch.ops.deepmd.dpa4_grid_pair_backward.default,
+                (torch.ones_like(output), *inputs),
+            ),
+        ):
+            with self.subTest(operator=str(op)):
+                torch.library.opcheck(op, args, test_utils=("test_faketensor",))
+
 
 @unittest.skipUnless(CUDA_ZONAL, "requires the CUDA dpa4_zonal_scatter operator")
 class TestSeZMZonalScatterCuda(unittest.TestCase):
@@ -643,6 +662,26 @@ class TestSeZMZonalScatterCuda(unittest.TestCase):
             (fused_scale.grad - scale.grad).abs().max() / scale.grad.abs().max()
         ).item()
         self.assertLess(rel, 5e-6)
+
+    def test_fake_layout_matches_noncontiguous_inputs(self) -> None:
+        """Forward and backward fake layouts match the CUDA allocations for views."""
+        n_node = 2
+        zonal, radial, dst, order, row_ptr, scale, _ = self._case(2, n_node, 2, 32)
+        zonal = zonal.T.contiguous().T
+        radial = radial.transpose(1, 2).contiguous().transpose(1, 2)
+        self.assertFalse(zonal.is_contiguous())
+        self.assertFalse(radial.is_contiguous())
+        inputs = (zonal, radial, dst, order, row_ptr, scale, n_node)
+        output = zonal_scatter(*inputs)
+        for op, args in (
+            (torch.ops.deepmd.dpa4_zonal_scatter.default, inputs),
+            (
+                torch.ops.deepmd.dpa4_zonal_scatter_backward.default,
+                (torch.ones_like(output), zonal, radial, dst, scale),
+            ),
+        ):
+            with self.subTest(operator=str(op)):
+                torch.library.opcheck(op, args, test_utils=("test_faketensor",))
 
     def test_channel_widths_beyond_one_block(self) -> None:
         # A lane owns one channel of a 32-wide block, so wider features sweep
@@ -835,6 +874,53 @@ class TestSeZMEdgeRadialCuda(unittest.TestCase):
             dtype=torch.float32,
         )
         self.assertIsNone(make_cuda_edge_radial(envelope, basis))
+
+    def test_warmed_series_cache_survives_compile(self) -> None:
+        """Dynamo lifts cached eager constants into the same-device compiled graph."""
+        _, _, fused = self._modules("gaussian")
+        r, keep = self._distances(32, self.RCUT)
+        expected = fused(r, keep)
+        cached = fused.series(r.device)
+        compiled = torch.compile(fused, fullgraph=True)
+        actual = compiled(r, keep)
+        for got, want in zip(actual, expected, strict=True):
+            torch.testing.assert_close(got, want)
+        self.assertIs(fused.series(r.device), cached)
+
+    def test_one_term_envelopes_match_the_reference(self) -> None:
+        """Every positive envelope order is eligible, including one-term series."""
+        for basis_type in ("bessel", "gaussian"):
+            for basis_exponent in (0, 1, 7):
+                with self.subTest(basis=basis_type, exponent=basis_exponent):
+                    envelope = C3CutoffEnvelope(
+                        rcut=self.RCUT, exponent=1, dtype=torch.float32
+                    ).cuda()
+                    basis = RadialBasis(
+                        rcut=self.RCUT,
+                        basis_type=basis_type,
+                        n_radial=8,
+                        exponent=basis_exponent,
+                        dtype=torch.float32,
+                    ).cuda()
+                    fused = make_cuda_edge_radial(envelope, basis)
+                    self.assertIsNotNone(fused)
+                    r, keep = self._distances(128, self.RCUT)
+                    r[0] = 0.0
+                    keep[0] = 1.0
+                    r.requires_grad_(True)
+                    expected = (envelope(r) * keep, basis(r) * keep)
+                    actual = fused(r, keep)
+                    for got, want in zip(actual, expected, strict=True):
+                        torch.testing.assert_close(got, want, rtol=5e-5, atol=5e-6)
+                    expected_grad = torch.autograd.grad(
+                        sum(value.sum() for value in expected), r
+                    )[0]
+                    actual_grad = torch.autograd.grad(
+                        sum(value.sum() for value in actual), r
+                    )[0]
+                    torch.testing.assert_close(
+                        actual_grad, expected_grad, rtol=5e-5, atol=5e-6
+                    )
 
 
 @unittest.skipUnless(_IMPORT_OK, "requires the pt_expt CUDA bindings")

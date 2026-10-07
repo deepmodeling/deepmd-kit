@@ -25,6 +25,9 @@ from deepmd.dpmodel.train import (
 from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 from deepmd.pt_expt.train import (
     training,
 )
@@ -387,7 +390,8 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
 
     def print_summary(self) -> None:
         """Print pt_expt backend summary."""
-        SummaryPrinter()()
+        if is_node_main_process():
+            SummaryPrinter()()
 
     def setup_run(
         self,

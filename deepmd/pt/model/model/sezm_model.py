@@ -563,8 +563,11 @@ def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
     if is_vesin_torch_available():
         return VesinNeighborList()
     raise RuntimeError(
-        "SeZM neighbor-list construction requires either 'nvalchemiops' or "
-        "'vesin', but neither is importable."
+        "SeZM neighbor-list construction requires a neighbor-list backend, but "
+        "neither 'vesin' nor 'nvalchemiops' is importable. Install one of:\n"
+        "  pip install 'vesin[torch]'        # portable CPU/CUDA cell list\n"
+        "  pip install nvalchemi-toolkit-ops # batched CUDA kernels\n"
+        "'vesin' also ships with the PyTorch extra: pip install 'deepmd-kit[torch]'."
     )
 
 
@@ -655,7 +658,10 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         descriptor.inner_clamp_r_outer,
         int(descriptor.get_dim_chg_spin()),
     )
-    fitting_state = (_int_tuple(fitting.exclude_types),)
+    fitting_state = (
+        _int_tuple(fitting.exclude_types),
+        bool(fitting.needs_vacuum_descriptor()),
+    )
     atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
     model_state = (
         str(model.bridging_method),
@@ -843,56 +849,52 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             noise_mask=noise_mask,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict: dict[str, torch.Tensor] = {}
+        model_predict: dict[str, torch.Tensor] = {}
 
-            # === Step 1. Energy ===
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
+        # === Step 1. Energy ===
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
 
-            # === Step 2. Force (independent branch) ===
-            if self.do_grad_r("energy"):
-                model_predict["force"] = rearrange(
-                    model_ret["energy_derv_r"],
-                    "nf nloc 1 three -> nf nloc three",
-                    three=3,
-                )
-            else:
-                model_predict["force"] = model_ret["dforce"]
-
-            if self.get_active_mode() == "dens":
-                if "energy_norm" in model_ret:
-                    model_predict["energy_norm"] = model_ret["energy_norm"]
-                if "atom_energy_norm" in model_ret:
-                    model_predict["atom_energy_norm"] = model_ret["atom_energy_norm"]
-                if "dforce_norm" in model_ret:
-                    model_predict["force_norm"] = model_ret["dforce_norm"]
-                if "clean_dforce_norm" in model_ret:
-                    model_predict["clean_force_norm"] = model_ret["clean_dforce_norm"]
-                if "denoising_dforce_norm" in model_ret:
-                    model_predict["denoising_force_norm"] = model_ret[
-                        "denoising_dforce_norm"
-                    ]
-
-            # === Step 3. Virial ===
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = rearrange(
-                    model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
-                )
-                if do_atomic_virial:
-                    model_predict["atom_virial"] = rearrange(
-                        model_ret["energy_derv_c"],
-                        "nf nloc 1 nine -> nf nloc nine",
-                        nine=9,
-                    )
-
-            # === Step 4. Mask ===
-            if "mask" in model_ret:
-                model_predict["mask"] = model_ret["mask"]
-
+        # === Step 2. Force (independent branch) ===
+        if self.do_grad_r("energy"):
+            model_predict["force"] = rearrange(
+                model_ret["energy_derv_r"],
+                "nf nloc 1 three -> nf nloc three",
+                three=3,
+            )
         else:
-            model_predict = model_ret
-            model_predict["updated_coord"] += coord
+            model_predict["force"] = model_ret["dforce"]
+
+        if self.get_active_mode() == "dens":
+            if "energy_norm" in model_ret:
+                model_predict["energy_norm"] = model_ret["energy_norm"]
+            if "atom_energy_norm" in model_ret:
+                model_predict["atom_energy_norm"] = model_ret["atom_energy_norm"]
+            if "dforce_norm" in model_ret:
+                model_predict["force_norm"] = model_ret["dforce_norm"]
+            if "clean_dforce_norm" in model_ret:
+                model_predict["clean_force_norm"] = model_ret["clean_dforce_norm"]
+            if "denoising_dforce_norm" in model_ret:
+                model_predict["denoising_force_norm"] = model_ret[
+                    "denoising_dforce_norm"
+                ]
+
+        # === Step 3. Virial ===
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = rearrange(
+                model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
+            )
+            if do_atomic_virial:
+                model_predict["atom_virial"] = rearrange(
+                    model_ret["energy_derv_c"],
+                    "nf nloc 1 nine -> nf nloc nine",
+                    nine=9,
+                )
+
+        # === Step 4. Mask ===
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
+
         return model_predict
 
     def forward_embedding(
@@ -1251,6 +1253,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         "train" if self.training else "eval",
                         has_coord_corr,
                         time.perf_counter() - self._core_compute_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._core_compute_pending_compile_t0 = None
                     self._core_compute_pending_compile_key = None
@@ -1373,6 +1376,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     log.info(
                         "SeZM: finished compiling dens path in %.2fs",
                         time.perf_counter() - self._dens_pending_compile_t0,
+                        extra={"rank_scope": "all"},
                     )
                     self._dens_pending_compile_t0 = None
             else:
@@ -1554,8 +1558,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # either way. ``comm_dict`` (possibly ``None``) and ``nloc`` are
         # forwarded unconditionally -- ``forward_with_edges`` ignores ``nloc``
         # without ``comm_dict``, and ``extended_coord`` only supplies the device.
+        fitting_net = self.atomic_model.fitting_net
         with nvtx_range("SeZM/descriptor"):
-            descriptor, _ = descriptor_model.forward_with_edges(
+            descriptor, _, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=coord,
                 extended_atype=descriptor_atype,
                 edge_index=edge_index,
@@ -1565,17 +1570,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 spin=spin,
                 comm_dict=comm_dict,
                 nloc=nloc,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if fitting_net.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 3. Fitting net ===
         # The same fitting forward serves both modes; ``embedding_only`` only asks
         # it to also return the last hidden activation.
         with nvtx_range("SeZM/fitting_net"):
-            fit_ret = self.atomic_model.fitting_net(
+            fit_ret = fitting_net(
                 descriptor,
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_atomic_feature=embedding_only,
             )
 
@@ -1755,7 +1764,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         # === Step 3. Descriptor forward with force embedding ===
         with nvtx_range("SeZM/descriptor_dens"):
-            descriptor, latent = descriptor_model.forward_with_edges(
+            descriptor, latent, vacuum = descriptor_model.forward_with_edges(
                 extended_coord=extended_coord[:, :nloc, :],
                 extended_atype=atype,
                 edge_index=edge_index,
@@ -1763,6 +1772,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_mask=edge_mask,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
+                vacuum_conditions=self.atomic_model.vacuum_conditions()
+                if dens_fitting.needs_vacuum_descriptor()
+                else None,
             )
 
         # === Step 4. Dens fitting net ===
@@ -1774,6 +1786,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 noise_mask=noise_mask,
                 fparam=fparam,
                 aparam=aparam,
+                vacuum_descriptor=vacuum,
                 return_components=True,
             )
         return torch.cat(
@@ -1836,8 +1849,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Returns
         -------
         dict[str, torch.Tensor]
-            Lower-interface outputs.
-            When a fitting net is present, this always includes:
+            Lower-interface outputs. Always includes:
             - `atom_energy`: atomic energy on local atoms with shape (nf, nloc, 1)
             - `energy`: reduced energy with shape (nf, 1)
             It additionally includes:
@@ -1847,7 +1859,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             - `virial`: reduced virial with shape (nf, 9) when `self.do_grad_c("energy")` is true
             - `extended_virial`: per-extended-atom virial with shape (nf, nall, 9)
               only when both `self.do_grad_c("energy")` and `do_atomic_virial` are true
-            If no fitting net is present, the raw result of `forward_common_lower()` is returned.
         """
         if self.get_active_mode() == "dens":
             raise NotImplementedError(
@@ -1866,37 +1877,34 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             extended_atype=extended_atype,
             charge_spin=charge_spin,
         )
-        if self.get_fitting_net() is not None:
-            model_predict: dict[str, torch.Tensor] = {}
+        model_predict: dict[str, torch.Tensor] = {}
 
-            # === Step 1. Energy ===
-            model_predict["atom_energy"] = model_ret["energy"]
-            model_predict["energy"] = model_ret["energy_redu"]
+        # === Step 1. Energy ===
+        model_predict["atom_energy"] = model_ret["energy"]
+        model_predict["energy"] = model_ret["energy_redu"]
 
-            # === Step 2. Force (independent branch) ===
-            if self.do_grad_r("energy"):
-                model_predict["extended_force"] = rearrange(
-                    model_ret["energy_derv_r"],
-                    "nf nall 1 three -> nf nall three",
-                    three=3,
-                )
-            else:
-                assert model_ret["dforce"] is not None
-                model_predict["dforce"] = model_ret["dforce"]
-
-            # === Step 3. Virial ===
-            if self.do_grad_c("energy"):
-                model_predict["virial"] = rearrange(
-                    model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
-                )
-                if do_atomic_virial:
-                    model_predict["extended_virial"] = rearrange(
-                        model_ret["energy_derv_c"],
-                        "nf nall 1 nine -> nf nall nine",
-                        nine=9,
-                    )
+        # === Step 2. Force (independent branch) ===
+        if self.do_grad_r("energy"):
+            model_predict["extended_force"] = rearrange(
+                model_ret["energy_derv_r"],
+                "nf nall 1 three -> nf nall three",
+                three=3,
+            )
         else:
-            model_predict = model_ret
+            assert model_ret["dforce"] is not None
+            model_predict["dforce"] = model_ret["dforce"]
+
+        # === Step 3. Virial ===
+        if self.do_grad_c("energy"):
+            model_predict["virial"] = rearrange(
+                model_ret["energy_derv_c_redu"], "nf 1 nine -> nf nine", nine=9
+            )
+            if do_atomic_virial:
+                model_predict["extended_virial"] = rearrange(
+                    model_ret["energy_derv_c"],
+                    "nf nall 1 nine -> nf nall nine",
+                    nine=9,
+                )
         return model_predict
 
     # =========================================================================
@@ -1951,7 +1959,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 full_cache_key
             ]
             self._task_buf_order_cache[cache_key] = _SEZM_TASK_BUF_ORDER[structure_key]
-            log.info(
+            log.debug(
                 "SeZM: reusing shared compiled graph (mode=%s, coord_corr=%s)",
                 mode,
                 has_coord_corr,
@@ -1962,6 +1970,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             "SeZM: start tracing and compiling (mode=%s, coord_corr=%s)",
             mode,
             has_coord_corr,
+            extra={"rank_scope": "all"},
         )
 
         # Promote the per-task buffers (see ``get_task_buffer_names``) to
@@ -2438,7 +2447,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         check_compile_torch_version()
         from torch._inductor import config as inductor_config
 
-        log.info("SeZM: start compiling dens path")
+        log.info("SeZM: start compiling dens path", extra={"rank_scope": "all"})
         _compile_t0 = time.perf_counter()
 
         inductor_config.max_autotune_report_choices_stats = False
@@ -3220,6 +3229,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Target mode to reset.
         """
         self.atomic_model.reset_head_for_mode(mode)
+        self.drop_compiled_graphs(mode)
+
+    def drop_compiled_graphs(self, mode: str) -> None:
+        """
+        Drop the compiled graphs of one head so the next forward retraces.
+
+        Parameters
+        ----------
+        mode
+            ``"dens"`` for the DeNS head; any other value for the energy head,
+            whose embedding graph reads the same fitting head and is dropped
+            together with it.
+        """
         if mode == "dens":
             self._dens_compiled = False
             self._dens_pending_compile_t0 = None
@@ -3227,12 +3249,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         else:
             self._core_compute_pending_compile_t0 = None
             self._core_compute_pending_compile_key = None
-            # Drop every compile slot so the next forward retraces against the
-            # reinitialised fitting head.  The embedding graph reads the same
-            # fitting head, so it is invalidated together with the energy graph.
             self.compiled_core_compute_cache.clear()
             object.__setattr__(self, "compiled_embedding", None)
             object.__setattr__(self, "_embedding_task_buf_order", None)
+
+    def fold_vacuum_reference(self) -> None:
+        """
+        Fold the vacuum reference into the energy fitting and drop its compiled graphs.
+
+        A traced graph bakes in whether reference nodes trail the real nodes,
+        so the energy head retraces after the fold. The DeNS head serves
+        training alone and is not exported, so it keeps its reference.
+        """
+        self.atomic_model.fold_vacuum_reference()
+        self.drop_compiled_graphs("ener")
 
     # =========================================================================
     # Bridging Helpers

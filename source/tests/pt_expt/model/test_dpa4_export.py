@@ -168,7 +168,10 @@ def test_dpa4_fp32_cpu_export_runs_without_cuda_only_ops(monkeypatch) -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required")
-def test_dpa4_fp32_cuda_export_runs_with_fast_ops(monkeypatch) -> None:
+@pytest.mark.parametrize("env_exp", [None, 5])
+def test_dpa4_fp32_cuda_export_runs_with_fast_ops(
+    monkeypatch: pytest.MonkeyPatch, env_exp: int | None
+) -> None:
     """CPU tracing preserves the CUDA fast operators for a CUDA target."""
     try:
         import deepmd.pt.cxx_op  # noqa: F401
@@ -204,6 +207,7 @@ def test_dpa4_fp32_cuda_export_runs_with_fast_ops(monkeypatch) -> None:
     config = copy.deepcopy(_DPA4_CONFIG)
     config["descriptor"]["precision"] = "float32"
     config["descriptor"]["channels"] = 32
+    config["descriptor"]["env_exp"] = env_exp
     config["fitting_net"]["precision"] = "float32"
     model = get_model(config).to("cpu").eval()
     data = {"model": model.serialize()}
@@ -294,10 +298,15 @@ def test_dpa4_triton_force_assembly_survives_cpu_trace(monkeypatch) -> None:
         pytest.param(torch.device("cuda"), id="cuda"),
     ],
 )
+@pytest.mark.parametrize(
+    "env_exp",
+    [pytest.param(None, id="double_envelope"), pytest.param(5, id="single_envelope")],
+)
 def test_dpa4_fp32_aoti_package_runs_on_target(
     monkeypatch,
     tmp_path,
     target_device,
+    env_exp: int | None,
 ) -> None:
     """CPU tracing produces runnable CPU and CUDA packages for their target."""
     if target_device.type == "cuda" and not torch.cuda.is_available():
@@ -346,6 +355,7 @@ def test_dpa4_fp32_aoti_package_runs_on_target(
     config = copy.deepcopy(_DPA4_CONFIG)
     config["descriptor"]["precision"] = "float32"
     config["descriptor"]["channels"] = 32
+    config["descriptor"]["env_exp"] = env_exp
     config["fitting_net"]["precision"] = "float32"
     model = get_model(config).to("cpu").eval()
     data = {"model": model.serialize()}
@@ -392,6 +402,9 @@ def test_dpa4_fp32_aoti_package_runs_on_target(
     assert output
     assert all(bool(torch.isfinite(value).all()) for value in output.values())
     assert torch.max(torch.abs(output["force"])).item() > 1e-6
+    expected = exported.module()(*sample)
+    for key, value in output.items():
+        torch.testing.assert_close(value, expected[key], rtol=1e-4, atol=1e-5)
 
 
 @pytest.mark.skipif(

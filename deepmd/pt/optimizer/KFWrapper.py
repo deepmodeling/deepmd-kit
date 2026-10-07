@@ -89,46 +89,6 @@ class KFOptimizerWrapper:
             self.optimizer.step(error)
         return Etot_predict, force_predict
 
-    def update_denoise_coord(
-        self,
-        inputs: dict,
-        clean_coord: torch.Tensor,
-        update_prefactor: float = 1,
-        mask_loss_coord: bool = True,
-        coord_mask: torch.Tensor = None,
-    ) -> None:
-        natoms_sum = int(inputs["atype"].shape[-1])
-        bs = clean_coord.shape[0]
-        self.optimizer.set_grad_prefactor(natoms_sum * self.atoms_per_group * 3)
-
-        index = self.__sample(self.atoms_selected, self.atoms_per_group, natoms_sum)
-
-        for i in range(index.shape[0]):
-            self.optimizer.zero_grad()
-            model_pred, _, _ = self.model(**inputs, skip_loss=True)
-            updated_coord = model_pred["updated_coord"]
-            natoms_sum = int(inputs["atype"].shape[-1])
-            error_tmp = clean_coord[:, index[i]] - updated_coord[:, index[i]]
-            error_tmp = update_prefactor * error_tmp
-            if mask_loss_coord:
-                error_tmp[~coord_mask[:, index[i]]] = 0
-            mask = error_tmp < 0
-            error_tmp[mask] = -1 * error_tmp[mask]
-            error = error_tmp.mean() / natoms_sum
-
-            if self.is_distributed:
-                dist.all_reduce(error)
-                error /= dist.get_world_size()
-
-            tmp_coord_predict = updated_coord[:, index[i]] * update_prefactor
-            tmp_coord_predict[mask] = -update_prefactor * tmp_coord_predict[mask]
-
-            # In order to solve a pytorch bug, reference: https://github.com/pytorch/pytorch/issues/43259
-            (tmp_coord_predict.sum() + updated_coord.sum() * 0).backward()
-            error = error * math.sqrt(bs)
-            self.optimizer.step(error)
-        return model_pred
-
     def __sample(
         self, atoms_selected: int, atoms_per_group: int, natoms: int
     ) -> np.ndarray:

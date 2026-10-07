@@ -296,7 +296,6 @@ def build_edge_cache(
     deg_norm_floor: float,
     edge_envelope: Callable[[torch.Tensor], torch.Tensor],
     radial_basis: Callable[[torch.Tensor], torch.Tensor],
-    n_radial: int,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
@@ -353,8 +352,6 @@ def build_edge_cache(
         C^3 edge envelope module.
     radial_basis
         Radial basis module.
-    n_radial
-        Number of radial basis channels used for empty-cache allocation.
     random_gamma
         Whether to apply a random roll around the local +Z axis before
         constructing Wigner-D blocks.
@@ -382,15 +379,6 @@ def build_edge_cache(
             mapping=mapping,
             pair_keep_mask=pair_keep_mask,
             nall=nall,
-        )
-
-    if src.numel() == 0:
-        return _get_empty_edge_cache(
-            n_nodes=n_nodes,
-            n_radial=n_radial,
-            n_channel=type_ebed.shape[1],
-            device=extended_coord.device,
-            dtype=extended_coord.dtype,
         )
 
     # === Step 3-5. Edge geometry/RBF chain ===
@@ -747,61 +735,6 @@ def _finalize_edge_cache(
         csr_cache={},
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
-    )
-
-
-def _get_empty_edge_cache(
-    *,
-    n_nodes: int,
-    n_radial: int,
-    n_channel: int,
-    device: torch.device,
-    dtype: torch.dtype,
-) -> EdgeFeatureCache:
-    """
-    Allocate an empty edge cache for one SeZM forward pass.
-
-    Parameters
-    ----------
-    n_nodes
-        Number of local nodes in the flattened frame-major layout.
-    n_radial
-        Number of radial basis channels.
-    n_channel
-        Edge type feature width.
-    device
-        Target device for the cache tensors.
-    dtype
-        Target floating-point dtype for the cache tensors.
-
-    Returns
-    -------
-    EdgeFeatureCache
-        Empty cache with valid tensor shapes and neutral degree normalization.
-    """
-    empty_long = torch.empty(0, dtype=torch.long, device=device)
-    empty_vec = torch.empty(0, 3, dtype=dtype, device=device)
-    empty_quat = torch.empty(0, 4, dtype=dtype, device=device)
-    empty_rbf = torch.empty(0, n_radial, dtype=dtype, device=device)
-    empty_type_feat = torch.empty(0, n_channel, dtype=dtype, device=device)
-    deg = torch.zeros(n_nodes, dtype=dtype, device=device)
-    inv_sqrt_deg = torch.ones(n_nodes, 1, 1, dtype=dtype, device=device)
-    return EdgeFeatureCache(
-        src=empty_long,
-        dst=empty_long,
-        edge_type_feat=empty_type_feat,
-        edge_vec=empty_vec,
-        edge_rbf=empty_rbf,
-        edge_env=torch.empty(0, 1, dtype=dtype, device=device),
-        deg=deg,
-        inv_sqrt_deg=inv_sqrt_deg,
-        D_full=None,
-        Dt_full=None,
-        D_to_m_cache={},
-        Dt_from_m_cache={},
-        csr_cache={},
-        edge_src_gate=None,
-        edge_quat=empty_quat,
     )
 
 

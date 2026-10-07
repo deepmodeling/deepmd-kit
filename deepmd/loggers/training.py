@@ -70,7 +70,8 @@ def log_parameter_counts(
         return
     log.warning(
         "In multitask mode, parameters may be shared across tasks. "
-        "The following per-task counts may include duplicates."
+        "The following per-task counts may include duplicates.",
+        extra={"rank_scope": "node"},
     )
     for task_key, (trainable, total) in counts.items():
         log.info(

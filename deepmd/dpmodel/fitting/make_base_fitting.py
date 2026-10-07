@@ -39,6 +39,17 @@ def make_base_fitting(
     class BF(ABC, PluginVariant, make_plugin_registry("fitting")):
         """Base fitting provides the interfaces of fitting net."""
 
+        vacuum_ref: bool = False
+        """Whether every atom is referenced to the isolated atom of its type.
+
+        A fitting that sets it takes the vacuum descriptor of every type in
+        its forward; the default holds for fittings without the option.
+        """
+
+        def needs_vacuum_descriptor(self) -> bool:
+            """Whether the forward takes the vacuum descriptor of every type from the descriptor."""
+            return False
+
         def __new__(cls: type, *args: Any, **kwargs: Any) -> Any:
             if cls is BF:
                 cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))

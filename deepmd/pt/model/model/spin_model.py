@@ -374,6 +374,12 @@ class SpinModel(torch.nn.Module):
             )
         return aparam
 
+    def adam_route_patterns(self) -> list[str]:
+        """Prefix the backbone's AdamW patterns with its parameter path."""
+        return [
+            f"backbone_model.{p}" for p in self.backbone_model.adam_route_patterns()
+        ]
+
     @torch.jit.export
     def get_type_map(self) -> list[str]:
         """Get the type map."""
@@ -385,6 +391,10 @@ class SpinModel(torch.nn.Module):
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of the backbone fitting into its bias."""
+        self.backbone_model.fold_vacuum_reference()
 
     @torch.jit.export
     def get_rcut(self) -> float:

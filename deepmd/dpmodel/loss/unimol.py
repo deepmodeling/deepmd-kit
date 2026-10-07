@@ -142,6 +142,37 @@ def _clean_distances(
     return xp.sqrt(xp.sum(diff**2, axis=-1))
 
 
+def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
+    """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
+    xp = array_api_compat.array_namespace(mask)
+    n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
+    positions = xp.arange(ncol, device=array_api_compat.device(mask))[None, :]
+    return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
+
+
+def _clean_distances(coord_target: Array, mask: Array, ncol: int) -> Array:
+    """Pairwise distances from the clean coordinates, virtual tokens included.
+
+    Storing this as a label would cost O(natoms^2) per frame, so it is derived
+    here instead. The two virtual tokens sit at the origin, which is the
+    centroid of the clean coordinates because the transform centres them.
+    """
+    xp = array_api_compat.array_namespace(coord_target)
+    nf = coord_target.shape[0]
+    real = xp.astype(mask, coord_target.dtype)[..., None]
+    atoms = coord_target * real
+    dev = array_api_compat.device(coord_target)
+    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
+    tokens = xp.concat([zero, atoms, zero], axis=1)
+    if tokens.shape[1] < ncol:
+        pad = xp.zeros(
+            (nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype, device=dev
+        )
+        tokens = xp.concat([tokens, pad], axis=1)
+    diff = atoms[:, :, None, :] - tokens[:, None, :, :]
+    return xp.sqrt(xp.sum(diff**2, axis=-1))
+
+
 def _masked_nll(logits: Array, target: Array, pad_idx: int) -> Array:
     """Negative log likelihood over the selected positions.
 
