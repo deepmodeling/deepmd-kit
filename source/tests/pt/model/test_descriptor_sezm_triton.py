@@ -2053,3 +2053,172 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@_GPU_KERNELS
+class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
+    """Cross-check the fused rotate+mix backward against the unfused pair.
+
+    The fused kernel replaces ``_rotate_mix_bwd_*`` + ``_segment_sum`` and
+    must not materialize ``gxe``.  ``grad_wigner``/``grad_kc`` use the same
+    per-edge math but are scheduled differently (shared-row broadcast vs
+    per-edge tile), so all three outputs are compared at fp32-rounding
+    tolerance; ``grad_x`` additionally changes its per-segment
+    accumulation order.
+    """
+
+    CASES: typing.ClassVar[list[tuple]] = [
+        # (lmax, channels, n_focus, rank)
+        (1, 32, 1, 0),
+        (2, 32, 1, 1),
+        (3, 64, 2, 1),  # production shape (C_wide = 64, lmax = 3)
+        (4, 64, 1, 1),
+    ]
+
+    N_NODE = 512
+    N_EDGE = 20000
+
+    def _inputs(self, lmax, channels, n_focus, rank):
+        generator = torch.Generator(device="cuda").manual_seed(1234 + lmax)
+        dim = (lmax + 1) ** 2
+        c_wide = channels * n_focus
+        row = (3 * lmax + 1) * channels
+        x = torch.randn(self.N_NODE, dim, c_wide, device="cuda", generator=generator)
+        src = torch.randint(
+            0, self.N_NODE, (self.N_EDGE,), device="cuda", generator=generator
+        )
+        grad_u = (
+            torch.randn(n_focus, self.N_EDGE, row, device="cuda", generator=generator)
+            * 0.3
+        )
+        if rank == 0:
+            kc = (
+                torch.randn(
+                    self.N_EDGE, lmax + 1, c_wide, device="cuda", generator=generator
+                )
+                * 0.2
+            )
+            cb = torch.zeros(1, c_wide, device="cuda")
+        else:
+            ksz = (lmax + 1) ** 2 + lmax**2
+            kc = torch.randn(self.N_EDGE, ksz, device="cuda", generator=generator) * 0.2
+            cb = torch.randn(1, c_wide, device="cuda", generator=generator) * 0.1
+        # Structural block-diagonal Wigner-D values (zeros elsewhere), so
+        # the gw comparison covers exactly the stored entries.
+        wigner = torch.zeros(self.N_EDGE, dim, dim, device="cuda")
+        for l in range(lmax + 1):
+            base = l * l
+            block = torch.randn(
+                self.N_EDGE,
+                2 * l + 1,
+                2 * l + 1,
+                device="cuda",
+                generator=generator,
+            )
+            wigner[:, base : base + 2 * l + 1, base : base + 2 * l + 1] = block
+        return grad_u, x, src, wigner, kc, cb
+
+    def test_fused_matches_unfused_across_family(self):
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        for lmax, channels, n_focus, rank in self.CASES:
+            with self.subTest(case=(lmax, channels, n_focus, rank)):
+                grad_u, x, src, wigner, kc, cb = self._inputs(
+                    lmax, channels, n_focus, rank
+                )
+                order = torch.argsort(src)
+                boundaries = torch.arange(
+                    self.N_NODE + 1, device="cuda", dtype=src.dtype
+                )
+                row_ptr = torch.searchsorted(src.index_select(0, order), boundaries)
+
+                gxe, gw_ref, gkc_ref = vp._rotate_mix_bwd_op(
+                    grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
+                )
+                gx_ref = vp._segment_sum_op(gxe, order, row_ptr)
+
+                gx_fused, gw_fused, gkc_fused = vp._rotate_mix_bwd_fused_op(
+                    grad_u,
+                    x,
+                    src,
+                    wigner,
+                    kc,
+                    cb,
+                    order,
+                    row_ptr,
+                    lmax,
+                    n_focus,
+                    rank,
+                )
+
+                gw_scale = gw_ref.abs().max().item()
+                torch.testing.assert_close(
+                    gw_fused, gw_ref, atol=1e-6 * max(gw_scale, 1.0), rtol=1e-5
+                )
+                gkc_scale = gkc_ref.abs().max().item()
+                torch.testing.assert_close(
+                    gkc_fused, gkc_ref, atol=1e-6 * max(gkc_scale, 1.0), rtol=1e-5
+                )
+                scale = gx_ref.abs().max().item()
+                torch.testing.assert_close(
+                    gx_fused, gx_ref, atol=1e-5 * max(scale, 1.0), rtol=1e-5
+                )
+
+    def test_autograd_branch_follows_module_flag(self):
+        """The autograd backward dispatches on ``_ROT_MIX_BWD_FUSED``."""
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, channels, n_focus, rank = 3, 32, 2, 1
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        xg = x.clone().requires_grad_(True)
+        wg = wigner.clone().requires_grad_(True)
+        kg = kc.clone().requires_grad_(True)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(
+            self.N_NODE + 1, device=src.device, dtype=src.dtype
+        )
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+        out = vp._rotate_mix_op(
+            xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank
+        )
+        grads = {}
+        for flag in (False, True):
+            saved = vp._ROT_MIX_BWD_FUSED
+            vp._ROT_MIX_BWD_FUSED = flag
+            try:
+                grads[flag] = torch.autograd.grad(
+                    out, [xg, wg, kg], grad_u, retain_graph=True
+                )
+            finally:
+                vp._ROT_MIX_BWD_FUSED = saved
+        # All three agree at fp32 rounding level: grad_x by accumulation
+        # order, gw/gkc by instruction scheduling of the same math.
+        scale = grads[False][0].abs().max().item()
+        torch.testing.assert_close(
+            grads[True][0], grads[False][0], atol=1e-5 * max(scale, 1.0), rtol=1e-5
+        )
+        for i in (1, 2):
+            s = grads[False][i].abs().max().item()
+            torch.testing.assert_close(
+                grads[True][i], grads[False][i], atol=1e-6 * max(s, 1.0), rtol=1e-5
+            )
+
+    def test_env_flag_defaults_off(self):
+        """``DP_ROT_MIX_BWD_FUSED_INFER`` parses truthy/falsy, default off."""
+        import os
+
+        from deepmd.pt_expt.kernels.utils import (
+            use_rot_mix_bwd_fused,
+        )
+
+        saved = os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
+        try:
+            self.assertFalse(use_rot_mix_bwd_fused())
+            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1"
+            self.assertTrue(use_rot_mix_bwd_fused())
+            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "false"
+            self.assertFalse(use_rot_mix_bwd_fused())
+        finally:
+            os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
+            if saved is not None:
+                os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
