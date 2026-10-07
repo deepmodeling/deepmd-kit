@@ -57,7 +57,17 @@ class TestDPIPIProtocolValidation(unittest.TestCase):
                     stderr=subprocess.PIPE,
                     text=True,
                 )
-                connection, _ = server.accept()
+                try:
+                    connection, _ = server.accept()
+                except TimeoutError:
+                    if process.poll() is None:
+                        process.kill()
+                    stdout, stderr = process.communicate(timeout=5)
+                    self.fail(
+                        "dp_ipi did not connect within 30 seconds "
+                        f"(return code {process.returncode}).\n"
+                        f"stdout:\n{stdout}\nstderr:\n{stderr}"
+                    )
                 with connection:
                     identity = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
                     connection.sendall(b"POSDATA     ")
