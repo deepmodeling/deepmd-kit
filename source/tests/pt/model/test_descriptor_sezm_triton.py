@@ -2100,9 +2100,16 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
             )
             cb = torch.zeros(1, c_wide, device="cuda")
         else:
+            # rank-R factorized kernel: kc is (E, KSZ * rank) flattened and
+            # cb is (rank, C_wide); the kernels index both by the leading
+            # rank, so undersized rank-1 buffers would read/write out of
+            # bounds (the reference reshape rejects the element count).
             ksz = (lmax + 1) ** 2 + lmax**2
-            kc = torch.randn(self.N_EDGE, ksz, device="cuda", generator=generator) * 0.2
-            cb = torch.randn(1, c_wide, device="cuda", generator=generator) * 0.1
+            kc = (
+                torch.randn(self.N_EDGE, ksz * rank, device="cuda", generator=generator)
+                * 0.2
+            )
+            cb = torch.randn(rank, c_wide, device="cuda", generator=generator) * 0.1
         # Structural block-diagonal Wigner-D values (zeros elsewhere), so
         # the gw comparison covers exactly the stored entries.
         wigner = torch.zeros(self.N_EDGE, dim, dim, device="cuda")
@@ -2261,10 +2268,6 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         out = vp._rotate_mix_op(
             xg, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank
         )
-        # The rank>1 per-edge chain has a first-call-vs-steady-state value
-        # difference on current master (reproduced without this change),
-        # so warm it up once before the flag comparison.
-        torch.autograd.grad(out, xg, grad_u, retain_graph=True)
         grads = {}
         for flag in (False, True):
             saved = vp._ROT_MIX_BWD_FUSED
