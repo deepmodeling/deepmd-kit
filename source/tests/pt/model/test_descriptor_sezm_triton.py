@@ -2201,6 +2201,90 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                 grads[True][i], grads[False][i], atol=1e-6 * max(s, 1.0), rtol=1e-5
             )
 
+    def test_higher_order_backward_preserved_with_flag_on(self):
+        """With the flag on, ``create_graph=True`` keeps the supported path.
+
+        The fused operator registers only a fake (meta) implementation and
+        no next-derivative formula; the backward of the backward must
+        therefore route through the unfused backward + segment-sum pair
+        even when ``_ROT_MIX_BWD_FUSED`` is enabled.  Both flag settings
+        take that same path here, so the second-order results agree.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, channels, n_focus, rank = 3, 32, 2, 1
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        xg = x.clone().requires_grad_(True)
+        wg = wigner.clone().requires_grad_(True)
+        kg = kc.clone().requires_grad_(True)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+        out = vp._rotate_mix_op(
+            xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank
+        )
+        second = {}
+        for flag in (False, True):
+            saved = vp._ROT_MIX_BWD_FUSED
+            vp._ROT_MIX_BWD_FUSED = flag
+            try:
+                (g1,) = torch.autograd.grad(
+                    out, xg, grad_u, create_graph=True, retain_graph=True
+                )
+                second[flag] = torch.autograd.grad(g1.sum(), [wg, kg])
+            finally:
+                vp._ROT_MIX_BWD_FUSED = saved
+        for i in (0, 1):
+            s = second[False][i].abs().max().item()
+            torch.testing.assert_close(
+                second[True][i],
+                second[False][i],
+                atol=1e-6 * max(s, 1.0),
+                rtol=1e-5,
+            )
+
+    def test_rank_above_one_falls_back(self):
+        """``rank > 1`` never takes the fused path (flag or not).
+
+        Both flag settings take the same unfused path; that chain is not
+        bitwise deterministic across runs, so agreement is checked at
+        fp32-rounding tolerance.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, channels, n_focus, rank = 3, 32, 2, 2
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        xg = x.clone().requires_grad_(True)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+        out = vp._rotate_mix_op(
+            xg, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank
+        )
+        # The rank>1 per-edge chain has a first-call-vs-steady-state value
+        # difference on current master (reproduced without this change),
+        # so warm it up once before the flag comparison.
+        torch.autograd.grad(out, xg, grad_u, retain_graph=True)
+        grads = {}
+        for flag in (False, True):
+            saved = vp._ROT_MIX_BWD_FUSED
+            vp._ROT_MIX_BWD_FUSED = flag
+            try:
+                (grads[flag],) = torch.autograd.grad(out, xg, grad_u, retain_graph=True)
+            finally:
+                vp._ROT_MIX_BWD_FUSED = saved
+        # The rank>1 chain itself is not bitwise deterministic across runs
+        # (atomic accumulation), so compare at fp32-rounding tolerance: the
+        # point is that both flag settings take the same unfused path.
+        s = grads[False].abs().max().item()
+        torch.testing.assert_close(
+            grads[True], grads[False], atol=1e-6 * max(s, 1.0), rtol=1e-5
+        )
+
+
+class TestSeZMRotMixFlagParser(unittest.TestCase):
+    """Parse ``DP_ROT_MIX_BWD_FUSED_INFER`` without needing a GPU."""
+
     def test_env_flag_defaults_off(self):
         """``DP_ROT_MIX_BWD_FUSED_INFER`` parses truthy/falsy, default off."""
         import os

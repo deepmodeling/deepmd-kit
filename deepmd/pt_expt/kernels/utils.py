@@ -386,8 +386,14 @@ def use_rot_mix_bwd_fused() -> bool:
     """Return whether the rotate+mix backward fuses its segment reduction.
 
     The flag is controlled by the ``DP_ROT_MIX_BWD_FUSED_INFER`` environment
-    variable and is read at module construction time. It only takes effect
-    during inference; training always uses the dense reference path.
+    variable and is read at module construction time.  The Triton rotate+mix
+    path itself also binds for training (``triton_train_level >= 1`` with
+    wide channels), so this gate is not inference-only: the fused backward
+    engages whenever no higher-order gradient graph is being built.  When
+    the backward is itself differentiated (``create_graph=True``, e.g.
+    force-loss training), the dispatch falls back to the unfused backward +
+    segment-sum pair, which carry next-derivative formulas the fused
+    operator does not register.
 
     When enabled, the SO(2) rotate+mix backward
     (``sezm_triton::so2_rotate_mix_bwd_fused`` in

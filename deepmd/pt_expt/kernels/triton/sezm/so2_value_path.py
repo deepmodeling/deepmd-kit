@@ -4195,7 +4195,14 @@ def _rotate_mix_setup_context(ctx, inputs, output):
 def _rotate_mix_backward(ctx, grad_u):
     x, src, src_order, src_rowptr, wigner, kc, cb = ctx.saved_tensors
     grad_u = grad_u.contiguous()
-    if _ROT_MIX_BWD_FUSED and int(ctx.rank) <= 1:
+    # ``torch.is_grad_enabled()`` is True inside this backward exactly when
+    # the backward itself is being differentiated (``create_graph=True``,
+    # e.g. force-loss training).  The fused operator registers only a fake
+    # (meta) implementation and no next-derivative formula, while the
+    # unfused backward and segment-sum operators do support the next
+    # derivative -- so higher-order callers keep the supported pair and the
+    # fused path engages only when no higher-order graph is being built.
+    if _ROT_MIX_BWD_FUSED and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
         # Fused path: the node gradient accumulates on chip inside the
         # kernel; the (E, D, C_wide) ``gxe`` HBM round-trip never exists.
         grad_x, grad_wigner, grad_kc = _rotate_mix_bwd_fused_op(
