@@ -2632,17 +2632,6 @@ class LmdbDataReader:
         """
         self._decode_config.frame_transform = transform
 
-    def set_frame_transform(
-        self, transform: Callable[[dict[str, Any], int], dict[str, Any]] | None
-    ) -> None:
-        """Install a per-frame transform, or remove it with ``None``.
-
-        The transform runs on every decoded frame, in whichever process decodes
-        it, and receives ``(frame, frame_index)``. Self-supervised training uses
-        it to corrupt inputs and derive labels before the model runs.
-        """
-        self._decode_config.frame_transform = transform
-
     # --- Properties ---
 
     @property
