@@ -50,10 +50,6 @@ from .unimol import (
     DescrptUniMol,
 )
 
-from .unimol import (
-    DescrptUniMol,
-)
-
 __all__ = [
     "BaseDescriptor",
     "DescrptDPA1",

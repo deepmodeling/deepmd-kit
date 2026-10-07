@@ -18,10 +18,6 @@ from deepmd.pt_expt.loss.unimol import (
     UniMolLoss,
 )
 
-from deepmd.pt_expt.loss.unimol import (
-    UniMolLoss,
-)
-
 __all__ = [
     "DOSLoss",
     "EnergyLoss",

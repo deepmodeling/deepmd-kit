@@ -49,10 +49,6 @@ from .unimol_pretrain_model import (
     UniMolPretrainModel,
 )
 
-from .unimol_pretrain_model import (
-    UniMolPretrainModel,
-)
-
 __all__ = [
     "BaseModel",
     "DOSModel",

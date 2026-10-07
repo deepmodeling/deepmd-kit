@@ -61,10 +61,10 @@ is a choice rather than a limitation of the port.
 
 `dist_coverage: neighbour` (default)
 : Only pairs inside the backbone's neighbour list. The mask reuses the locality
-  the rest of deepmd trains on and reduces the scored entries, but the dense
-  pair head still evaluates all `nloc²` pairs, so its head compute remains
-  `O(nloc²)`. It also sees less than Uni-Mol does: on drug-like molecules a 6 Å
-  cut-off holds about half of all pairs, and under a third for the largest.
+the rest of deepmd trains on and reduces the scored entries, but the dense
+pair head still evaluates all `nloc²` pairs, so its head compute remains
+`O(nloc²)`. It also sees less than Uni-Mol does: on drug-like molecules a 6 Å
+cut-off holds about half of all pairs, and under a third for the largest.
 
 `dist_coverage: all_pairs`
 : Every pair, which is Uni-Mol's own coverage and what to use to reproduce its
