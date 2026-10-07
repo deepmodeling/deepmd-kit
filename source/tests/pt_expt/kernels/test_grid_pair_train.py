@@ -26,6 +26,7 @@ from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
 
+from deepmd.pt_expt.kernels.triton.sezm import grid_pair as grid_pair_module
 from deepmd.pt_expt.kernels.triton.sezm.grid_pair import (
     GRID_PAIR_TRITON_AVAILABLE,
     _built_in_launch_config,
@@ -391,3 +392,112 @@ def test_aotautograd_reuses_multifocus_stride_across_batch_shapes() -> None:
             torch.testing.assert_close(got, want)
 
     assert compile_counter.frame_count == 1
+
+
+@pytest.mark.parametrize(
+    ("n_focus", "channels", "amp", "force_reference"),
+    [
+        (2, 64, False, False),
+        (1, 192, False, False),
+        (2, 64, True, False),
+        (1, 192, True, False),
+        (2, 16, False, True),
+    ],
+)
+def test_cold_compiled_force_backward(
+    n_focus: int,
+    channels: int,
+    amp: bool,
+    force_reference: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolve device resources before tracing a production grid's second order.
+
+    The first execution is compiled, so an eager pass cannot populate the
+    launch cache first. The two production layouts cover multi-focus messages
+    and the single-focus feed-forward grid. A device with no viable fused
+    configuration must retain the reference composition through compilation.
+    """
+    torch._dynamo.reset()
+    grid_pair_module._select_launch_config.cache_clear()
+    monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
+    monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
+    if force_reference:
+
+        def reject_configs(*_args: object, **_kwargs: object) -> None:
+            return None
+
+        monkeypatch.setattr(grid_pair_module, "_select_launch_config", reject_configs)
+
+    n_frames, coeff_dim, n_grid = 3, 36, 344
+    device = torch.device("cuda")
+    generator = torch.Generator(device=device).manual_seed(40529)
+    projectors = tuple(
+        torch.randn(
+            n_grid,
+            coeff_dim * n_frames,
+            device=device,
+            dtype=torch.float32,
+            generator=generator,
+        )
+        / n_grid**0.5
+        for _ in range(2)
+    )
+
+    def make_inputs(n_node: int) -> tuple[torch.Tensor, ...]:
+        # Degree-major storage gives the coefficient axis a batch-dependent
+        # stride; the logical entry remains (N, D, F, K * C).
+        shape = (coeff_dim, n_node, n_focus, n_frames * channels)
+        return tuple(
+            torch.randn(
+                shape,
+                device=device,
+                dtype=torch.float32,
+                generator=generator,
+                requires_grad=True,
+            )
+            for _ in range(2)
+        )
+
+    def force_forward(
+        left: torch.Tensor,
+        right: torch.Tensor,
+        to_grid: torch.Tensor,
+        from_grid: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+            out = grid_pair_train(
+                left.permute(1, 0, 2, 3),
+                right.permute(1, 0, 2, 3),
+                to_grid,
+                from_grid,
+                n_frames,
+            )
+        gradients = torch.autograd.grad(out.sum(), (left, right), create_graph=True)
+        return out, *gradients
+
+    def force_loss_gradient(
+        outputs: tuple[torch.Tensor, ...],
+        inputs: tuple[torch.Tensor, ...],
+    ) -> tuple[torch.Tensor, ...]:
+        loss = sum(value.float().square().mean() for value in outputs)
+        return torch.autograd.grad(loss, inputs)
+
+    traced_inputs = make_inputs(7)
+    graph = make_fx(force_forward, tracing_mode="symbolic")(*traced_inputs, *projectors)
+    counter = CompileCounterWithBackend("inductor")
+    with torch._inductor.config.patch(fx_graph_cache=False):
+        compiled = torch.compile(graph, backend=counter, dynamic=True, fullgraph=True)
+        for n_node in (7, 11):
+            inputs = traced_inputs if n_node == 7 else make_inputs(n_node)
+            actual = compiled(*inputs, *projectors)
+            actual_gradients = force_loss_gradient(actual, inputs)
+            expected = force_forward(*inputs, *projectors)
+            expected_gradients = force_loss_gradient(expected, inputs)
+            for got, want in zip(
+                (*actual, *actual_gradients),
+                (*expected, *expected_gradients),
+                strict=True,
+            ):
+                torch.testing.assert_close(got, want)
+    assert counter.frame_count == 1
