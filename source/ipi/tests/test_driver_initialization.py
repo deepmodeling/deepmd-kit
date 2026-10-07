@@ -18,7 +18,9 @@ from pathlib import (
     reason="Skip test because PyTorch support is not enabled.",
 )
 class TestDPIPIInitialization(unittest.TestCase):
-    def exchange(self, payload: bytes, length: int | None = None) -> None:
+    def exchange(
+        self, payload: bytes, length: int | None = None, *, verbose: bool = False
+    ) -> None:
         model = Path(__file__).resolve().parents[2] / "tests/infer/deeppot_sea.pth"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -30,7 +32,7 @@ class TestDPIPIInitialization(unittest.TestCase):
             config.write_text(
                 json.dumps(
                     {
-                        "verbose": False,
+                        "verbose": verbose,
                         "use_unix": True,
                         "port": 31415,
                         "host": name,
@@ -58,7 +60,7 @@ class TestDPIPIInitialization(unittest.TestCase):
                     size = len(payload) if length is None else length
                     connection.sendall(b"INIT        " + struct.pack("=ii", 0, size))
                     connection.sendall(payload)
-                    if size >= 0:
+                    if size == len(payload):
                         connection.sendall(b"STATUS      ")
                         response = b""
                         while len(response) < 12:
@@ -67,12 +69,17 @@ class TestDPIPIInitialization(unittest.TestCase):
                             response += part
                         self.assertEqual(response, b"READY       ")
                         connection.sendall(b"EXIT        ")
+                    elif size > len(payload):
+                        connection.shutdown(socket.SHUT_WR)
                 stdout, stderr = process.communicate(timeout=30)
                 self.assertEqual(
                     process.returncode,
-                    0 if size >= 0 else 1,
+                    0 if size == len(payload) else (1 if size < 0 else 255),
                     msg=f"stdout:\n{stdout}\nstderr:\n{stderr}",
                 )
+                if size > len(payload):
+                    self.assertIn("Error reading from socket", stderr)
+                    self.assertNotIn(payload.decode(), stdout)
                 if size < 0:
                     self.assertIn(
                         "dp_ipi: INIT payload length must be nonnegative.", stderr
@@ -95,3 +102,6 @@ class TestDPIPIInitialization(unittest.TestCase):
 
     def test_negative_initialization_length_is_rejected(self) -> None:
         self.exchange(b"", length=-1)
+
+    def test_truncated_verbose_initialization_is_rejected(self) -> None:
+        self.exchange(b"partial-init-marker", length=64, verbose=True)

@@ -110,6 +110,34 @@ int deepmd_write_all(int sockfd,
   return 0;
 }
 
+int deepmd_read_all(int sockfd,
+                    char* data,
+                    size_t len,
+                    deepmd_socket_read_fn read_fn) {
+  size_t received = 0;
+  if (read_fn == NULL || (data == NULL && len != 0)) {
+    errno = EINVAL;
+    return -1;
+  }
+  while (received < len) {
+    ssize_t count = read_fn(sockfd, data + received, len - received);
+    if (count > 0) {
+      if ((size_t)count > len - received) {
+        errno = EIO;
+        return -1;
+      }
+      received += (size_t)count;
+    } else if (count == 0) {
+      // A partial frame must never be consumed as a complete protocol field.
+      errno = ECONNRESET;
+      return -1;
+    } else if (errno != EINTR) {
+      return -1;
+    }
+  }
+  return 0;
+}
+
 void error(const char* msg)
 // Prints an error message and then exits.
 {
@@ -213,17 +241,11 @@ Args:
 */
 
 {
-  int n, nr;
-  int sockfd = *psockfd;
-
-  n = nr = read(sockfd, data, len);
-
-  while (nr > 0 && n < len) {
-    nr = read(sockfd, &data[n], len - n);
-    n += nr;
+  if (len < 0) {
+    errno = EINVAL;
+    error("Error reading from socket: invalid buffer length");
   }
-
-  if (n == 0) {
+  if (deepmd_read_all(*psockfd, data, (size_t)len, read) < 0) {
     error("Error reading from socket: server has quit or connection broke");
   }
 }
