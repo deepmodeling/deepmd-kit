@@ -117,6 +117,7 @@ from .second_order import (
 from .so2_rotation import (
     _block_to_local_op,
 )
+from ...utils import use_stack_bwd_fused
 from .tile_configs import (
     GATE_BMM_MIN_FOCUS_DIM,
     gate_config,
@@ -2152,6 +2153,202 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             mask=m_mask,
         )
 
+    # Launch geometry for the fused per-layer backward below.  BLOCK_M=64 /
+    # BLOCK_N=64 with 4 warps fills the 255-register budget and spills 226
+    # slots; the spill traffic eats the fusion win, so the M dimension is
+    # halved instead.  BLOCK_K is not free here: it must equal the channel
+    # group width so one K tile is exactly one row group (see the kernel).
+    _STACK_BWD_FUSED_CONFIG = (32, 64, 4, 3)
+
+    @triton.jit
+    def _stack_bwd_fused_kernel(
+        g_ptr,  # (F, E, ROW) upstream gradient of the layer output, focus-major
+        z_ptr,  # z_all stack (NL, F, E, ROW), layer selected by ``layer``
+        gw_ptr,  # (NL, F, CF, L*CF) gate projections
+        gwt_ptr,  # (NL, F, L*CF, CF) transposed gate projections
+        w0t_ptr,  # (NL, F, M0, M0) stacked transposed weights (m = 0 block)
+        w1t_ptr,  # (NL, F, M1, M1) stacked transposed weights (|m| = 1 block)
+        gu_ptr,  # (F, E, ROW) layer-input gradient output
+        n_edge,
+        layer,
+        L: tl.constexpr,
+        CF: tl.constexpr,
+        PART: tl.constexpr,  # 0: m = 0 block (with the scalar chain); 1: |m| = 1
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+    ):
+        """Single-pass backward of one gated layer; ``gz`` lives only in registers.
+
+        Replaces the three-kernel relay (gate-sigmoid recompute -> pointwise
+        chain writing ``gz`` to HBM -> block GEMM reading ``gz`` back) with two
+        launches over disjoint column segments of ``g_next``.  The tiles
+        (BLOCK_M/N/K) and the ``tl.dot`` reduction order copy
+        ``_stack_gemm_bwd_kernel``; each row group's ``gz`` tile is recomputed
+        in place from ``g``/``z`` -- the scalar group (r = 0) replays the full
+        dot-accumulation chain of ``_stack_point_bwd_kernel``, the other row
+        groups multiply by their gate -- so the numerics match the relay
+        bit-for-bit.  PART splits the launch because the m = 0 path has far
+        higher register pressure than m = 1; a shared kernel would drag the
+        m = 1 tiles down to its occupancy.  Requires ``CF == BLOCK_K`` so each
+        K tile is exactly one row group.
+        """
+        M0: tl.constexpr = (L + 1) * CF
+        M1: tl.constexpr = 2 * L * CF
+        ROW: tl.constexpr = (3 * L + 1) * CF
+        LG: tl.constexpr = L * CF
+        CP: tl.constexpr = triton.next_power_of_2(CF)
+        NT0: tl.constexpr = (M0 + BLOCK_N - 1) // BLOCK_N
+        NT1: tl.constexpr = (M1 + BLOCK_N - 1) // BLOCK_N
+
+        if PART == 0:
+            NTile: tl.constexpr = NT0
+        else:
+            NTile: tl.constexpr = NT1
+
+        pid = tl.program_id(0)
+        fid = tl.program_id(1).to(tl.int64)
+        n_focus = tl.num_programs(1)
+        pid_m = pid // NTile
+        pid_n = pid % NTile
+
+        offs_m = (pid_m * BLOCK_M + tl.arange(0, BLOCK_M)).to(tl.int64)
+        m_mask = offs_m < n_edge
+        mm = m_mask[:, None]
+        nc = tl.arange(0, CP)
+        cm = mm & (nc < CF)[None, :]
+        wm = ((nc < CF)[:, None]) & ((nc < CF)[None, :])
+
+        g_row = g_ptr + fid * n_edge * ROW + offs_m * ROW
+        z_row = z_ptr + (layer * n_focus + fid) * n_edge * ROW + offs_m * ROW
+        gu_row = gu_ptr + fid * n_edge * ROW + offs_m * ROW
+
+        # Gate sigmoid, recomputed in place with the same operator sequence
+        # as _stack_recompute_kernel.
+        z_s = tl.load(z_row[:, None] + nc[None, :], mask=cm, other=0.0).to(tl.float32)
+        sigs = ()
+        for g_ in tl.static_range(L):
+            gw_g = tl.load(
+                gw_ptr
+                + (layer * n_focus + fid) * CF * LG
+                + nc[:, None] * LG
+                + (g_ * CF + nc)[None, :],
+                mask=wm,
+                other=0.0,
+            ).to(tl.float32)
+            sigs = sigs + (tl.sigmoid(tl.dot(z_s, gw_g, input_precision="ieee")),)
+
+        offs_k = tl.arange(0, BLOCK_K)
+        if PART == 0:
+            offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+            n_mask = offs_n < M0
+            acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+            w_ptrs = (
+                w0t_ptr
+                + (layer * n_focus + fid) * M0 * M0
+                + offs_k[:, None] * M0
+                + offs_n[None, :]
+            )
+            # K tiles advance one row group at a time: the scalar group walks
+            # the full gated chain, the gated groups scale by their gate.
+            for r in tl.static_range(M0 // CF):
+                if r == 0:
+                    g_s = tl.load(g_row[:, None] + nc[None, :], mask=cm, other=0.0).to(
+                        tl.float32
+                    )
+                    s0 = tl.sigmoid(z_s)
+                    a = g_s * s0 * (1.0 + z_s * (1.0 - s0))
+                    for g_ in tl.static_range(L):
+                        gr0 = tl.load(
+                            g_row[:, None] + ((1 + g_) * CF + nc)[None, :],
+                            mask=cm,
+                            other=0.0,
+                        )
+                        zr0 = tl.load(
+                            z_row[:, None] + ((1 + g_) * CF + nc)[None, :],
+                            mask=cm,
+                            other=0.0,
+                        )
+                        rn = (L + 1) + g_
+                        grn = tl.load(
+                            g_row[:, None] + (rn * CF + nc)[None, :],
+                            mask=cm,
+                            other=0.0,
+                        )
+                        zrn = tl.load(
+                            z_row[:, None] + (rn * CF + nc)[None, :],
+                            mask=cm,
+                            other=0.0,
+                        )
+                        rp = (2 * L + 1) + g_
+                        grp = tl.load(
+                            g_row[:, None] + (rp * CF + nc)[None, :],
+                            mask=cm,
+                            other=0.0,
+                        )
+                        zrp = tl.load(
+                            z_row[:, None] + (rp * CF + nc)[None, :],
+                            mask=cm,
+                            other=0.0,
+                        )
+                        sig_g = sigs[g_]
+                        g_sig = gr0 * zr0 + grn * zrn + grp * zrp
+                        g_logit = g_sig * sig_g * (1.0 - sig_g)
+                        gwt_g = tl.load(
+                            gwt_ptr
+                            + (layer * n_focus + fid) * LG * CF
+                            + (g_ * CF + nc)[:, None] * CF
+                            + nc[None, :],
+                            mask=wm,
+                            other=0.0,
+                        ).to(tl.float32)
+                        a = tl.dot(g_logit, gwt_g, a, input_precision="ieee")
+                else:
+                    g_r = tl.load(
+                        g_row[:, None] + (r * CF + nc)[None, :], mask=cm, other=0.0
+                    )
+                    a = g_r * sigs[r - 1]
+                w = tl.load(w_ptrs, mask=n_mask[None, :], other=0.0)
+                acc = tl.dot(a, w, acc, input_precision="ieee")
+                w_ptrs += BLOCK_K * M0
+            col0 = offs_n
+            col_mask = n_mask
+        else:
+            offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+            n_mask = offs_n < M1
+            acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+            w_ptrs = (
+                w1t_ptr
+                + (layer * n_focus + fid) * M1 * M1
+                + offs_k[:, None] * M1
+                + offs_n[None, :]
+            )
+            # The m = 1 block is all |m| = 1 stripes: the two stripes of gate
+            # group g_ ((L+1)+g_ and (2L+1)+g_) share one gate.  Stripes outer,
+            # gate groups inner, keeping the K-tile accumulation order of the
+            # relay; static indices use plain loop variables only.
+            for s_ in tl.static_range(2):
+                for g_ in tl.static_range(L):
+                    r = (L + 1) + s_ * L + g_
+                    g_r = tl.load(
+                        g_row[:, None] + (r * CF + nc)[None, :], mask=cm, other=0.0
+                    )
+                    a = g_r * sigs[g_]
+                    w = tl.load(w_ptrs, mask=n_mask[None, :], other=0.0)
+                    acc = tl.dot(a, w, acc, input_precision="ieee")
+                    w_ptrs += BLOCK_K * M1
+            col0 = M0 + offs_n
+            col_mask = n_mask
+
+        # The residual is this layer's upstream gradient g, loaded the same
+        # way _stack_gemm_bwd_kernel loads it.
+        res = tl.load(
+            g_row[:, None] + col0[None, :], mask=mm & col_mask[None, :], other=0.0
+        )
+        tl.store(
+            gu_row[:, None] + col0[None, :], acc + res, mask=mm & col_mask[None, :]
+        )
+
 
 # ======================================================================
 # Zero-edge guard and dispatch predicate
@@ -2461,6 +2658,60 @@ def _launch_stack_point_backward(
         num_warps=warps,
         num_stages=stages,
     )
+
+
+def _launch_stack_bwd_fused(
+    g_cur: Tensor,
+    z_all: Tensor,
+    gw_all: Tensor,
+    gwt_all: Tensor,
+    w0t_all: Tensor,
+    w1t_all: Tensor,
+    g_next: Tensor,
+    n_edge,
+    layer: int,
+    lmax: int,
+    focus_dim: int,
+    block_k: int,
+    n_focus: int,
+) -> None:
+    """Launch one gated layer's fused backward into ``g_next``.
+
+    The two PART launches write disjoint column segments (the ``m = 0``
+    block with the scalar chain, then the ``|m| = 1`` stripes); see
+    ``_stack_bwd_fused_kernel`` for the register-pressure rationale.
+    ``block_k`` comes from the shared backward GEMM configuration and the
+    dispatch has already verified it equals ``focus_dim``.
+    """
+    lmax = int(lmax)
+    focus_dim = int(focus_dim)
+    m0 = (lmax + 1) * focus_dim
+    m1 = 2 * lmax * focus_dim
+    fbm, fbn, fwarps, fstages = _STACK_BWD_FUSED_CONFIG
+    nt0 = triton.cdiv(m0, fbn)
+    nt1 = triton.cdiv(m1, fbn)
+    for part, nt_part in ((0, nt0), (1, nt1)):
+        wrap_triton(_stack_bwd_fused_kernel)[
+            (triton.cdiv(n_edge, fbm) * nt_part, n_focus)
+        ](
+            g_cur,
+            z_all,
+            gw_all,
+            gwt_all,
+            w0t_all,
+            w1t_all,
+            g_next,
+            n_edge,
+            layer,
+            L=lmax,
+            CF=focus_dim,
+            PART=part,
+            BLOCK_M=fbm,
+            BLOCK_N=fbn,
+            BLOCK_K=block_k,
+            num_warps=fwarps,
+            num_stages=fstages,
+        )
 
 
 # ======================================================================
@@ -3276,7 +3527,31 @@ def _stack_backward_traversal(
     # Inference and first-order weight gradients consume each surface before
     # advancing to the next layer, so one scratch allocation serves the stack.
     gate_width = lmax * focus_dim
-    sig = torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
+    use_bmm = focus_dim >= GATE_BMM_MIN_FOCUS_DIM
+    # The gate is read here (when the backward runs), matching the repository
+    # convention of call-time reads for these switches; a compiled graph bakes
+    # in the value observed at trace time.  The fused kernel registers no
+    # next-derivative formula, so it engages only when no higher-order
+    # gradient graph is being built (torch.is_grad_enabled() is True inside
+    # this backward exactly then); the supported relay carries those
+    # derivatives.  ``CF == block_k`` makes one K tile exactly one row group
+    # -- the bitwise-matching reduction order the fused kernel assumes.
+    fused = (
+        use_stack_bwd_fused()
+        and not use_bmm
+        and focus_dim == block_k
+        and (focus_dim & (focus_dim - 1)) == 0
+        and grad_out.dtype == torch.float32
+        and not with_weights
+        and not keep
+        and grad_z_upstream is None
+        and not torch.is_grad_enabled()
+    )
+    sig = (
+        torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
+        if not fused
+        else None
+    )
     grad_z_all = (
         torch.empty((n_gated, n_focus, n_edge, row), device=device, dtype=dtype)
         if keep
@@ -3284,10 +3559,9 @@ def _stack_backward_traversal(
     )
     grad_z_scratch = (
         torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
-        if not keep
+        if not keep and not fused
         else None
     )
-    use_bmm = focus_dim >= GATE_BMM_MIN_FOCUS_DIM
     store_logit = with_weights or use_bmm or (keep and need_logit)
     grad_logit_all = (
         torch.empty(
@@ -3311,6 +3585,30 @@ def _stack_backward_traversal(
     )
     u_next = u_final
     for layer in range(n_gated - 1, -1, -1):
+        if fused:
+            # Single-pass per-layer backward: the gate sigmoids and the
+            # pre-activation gradient stay in registers, so neither the
+            # sigmoid surface nor the gz scratch buffer exists.
+            assert g_spare is not None
+            g_next = g_spare
+            _launch_stack_bwd_fused(
+                g_cur,
+                z_all,
+                gw_all,
+                gwt_all,
+                w0t_all,
+                w1t_all,
+                g_next,
+                n_edge,
+                layer,
+                lmax,
+                focus_dim,
+                block_k,
+                n_focus,
+            )
+            g_spare = g_cur
+            g_cur = g_next
+            continue
         if keep:
             assert grad_z_all is not None
             gz = grad_z_all[layer]
