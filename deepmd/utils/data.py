@@ -129,10 +129,11 @@ class DeepmdData:
                 self.type_idx_map = np.append(
                     self.type_idx_map, np.array([-1], dtype=np.int32)
                 )
-        if type_map:
-            # Without a dataset map, stored type indices already refer to the
-            # model map; element-dependent derived fields still need its names.
             self.type_map = type_map
+        # Element-based derived fields may use the model's names without a
+        # dataset map. Those names do not define the reader's numeric type
+        # domain: legacy spin data also stores unnamed virtual atom types.
+        self._element_type_map = tuple(type_map or self.type_map or ())
         if type_map is None and self.type_map is None and self.mixed_type:
             raise RuntimeError("mixed_type format must have type_map!")
         # make idx map
@@ -414,8 +415,8 @@ class DeepmdData:
         return requirement_half_thresholds(
             float(requirement.get("default", 0.0)),
             str(requirement.get("length_scale", "absolute")),
-            None if self.type_map is None else tuple(self.type_map),
-            self.get_ntypes(),
+            self._element_type_map or None,
+            max(self.get_ntypes(), len(self._element_type_map)),
         )
 
     def _derive_pair_margin_batch(
