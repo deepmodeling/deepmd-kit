@@ -21,6 +21,11 @@ class TestDPIPIInitialization(unittest.TestCase):
     def exchange(
         self, payload: bytes, length: int | None = None, *, verbose: bool = False
     ) -> None:
+        """Check INIT framing, optionally advertising an invalid payload length.
+
+        A complete payload must preserve the following STATUS header. A short
+        payload is followed by EOF and must fail before its bytes are logged.
+        """
         model = Path(__file__).resolve().parents[2] / "tests/infer/deeppot_sea.pth"
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

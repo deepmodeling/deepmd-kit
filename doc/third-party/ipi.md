@@ -46,3 +46,10 @@ The client accepts the standard i-PI `INIT` message (replica ID, payload length,
 and payload). Its model and atom types remain configured by the JSON input;
 initialization payloads are consumed without a fixed size limit. Negative
 payload lengths are rejected with an error.
+
+Socket reads assemble each requested protocol field completely, including when
+its bytes arrive in separate packets. Interrupted reads are retried. If the
+server closes the connection before a field is complete, the client exits with
+an error before consuming that field or printing an incomplete INIT chunk in
+verbose mode. To request a successful client shutdown, send the standard `EXIT`
+message rather than closing the socket without it.
