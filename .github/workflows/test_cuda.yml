@@ -68,6 +68,9 @@ jobs:
           # The float64 DPA4 training kernels serve the consistency tests only.
           CMAKE_ARGS: -DDEEPMD_ENABLE_DPA4_FP64=ON
       - run: dp --version
+      - name: Verify float64 CUDA kernels are enabled
+        run: |
+          python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is True"
       - run: python -m pytest source/tests --ignore=source/tests/pd
         env:
           NUM_WORKERS: 0
@@ -120,6 +123,13 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
+      - name: Test the default CUDA dtype contract
+        run: |
+          python -c "import torch; import deepmd.pt.cxx_op; from deepmd.pt_expt.kernels.cuda.dpa4.so2_conv_train import op_available, float64_available; assert torch.cuda.is_available(); assert op_available(); assert float64_available() is False"
+          python -m pytest source/tests/pt_expt/kernels/test_so2_value_train.py -k unsupported_value_dtypes
+        env:
+          CUDA_VISIBLE_DEVICES: 0
+          OMP_NUM_THREADS: 1
       - name: Convert models
         run: source/tests/infer/convert-models.sh
       - run: |

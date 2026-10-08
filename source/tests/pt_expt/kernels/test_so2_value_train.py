@@ -19,6 +19,7 @@ from __future__ import (
     annotations,
 )
 
+import re
 from types import (
     SimpleNamespace,
 )
@@ -509,6 +510,25 @@ def test_float64_agrees_with_eager_to_reduction_order(
         scale = truth.abs().max().clamp_min(1.0).item()
         error = (got - truth).abs().max().item() / scale
         assert error <= 1e-12, f"{name}: float64 disagreement {error:.3e}"
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float64])
+def test_unsupported_value_dtypes_are_rejected(dtype: torch.dtype) -> None:
+    """The CUDA entry rejects working dtypes absent from the compiled build."""
+    if not op_available():
+        pytest.skip("the DPA4 CUDA training operators are unavailable")
+    has_float64 = float64_available()
+    if dtype is torch.float64 and has_float64:
+        pytest.skip("the build includes float64 kernels")
+    supported = (
+        "float32, bfloat16 or float64"
+        if has_float64
+        else "float32 or bfloat16 (float64 requires a build with "
+        "DEEPMD_ENABLE_DPA4_FP64=ON)"
+    )
+    case = _ValuePathCase(*BLOCK_SHAPES[0], seed=DRAW_SEEDS[0], n_node=8, n_edge=16)
+    with pytest.raises(RuntimeError, match=re.escape(f"x must be {supported}")):
+        case.evaluate(fused=True, dtype=dtype, amp=False, second=False)
 
 
 @pytest.mark.parametrize(
