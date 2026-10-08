@@ -44,8 +44,9 @@ The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wik
 
 The client accepts the standard i-PI `INIT` message (replica ID, payload length,
 and payload). Its model and atom types remain configured by the JSON input;
-initialization payloads are consumed without a fixed size limit. Negative
-payload lengths are rejected with an error.
+initialization payloads are read in chunks with no additional size cap beyond
+the signed 32-bit protocol length limit. Negative payload lengths are rejected
+with an error.
 
 The socket protocol uses atomic units: bohr for positions and cell vectors,
 Hartree for energy and virial, and Hartree/bohr for forces. The driver converts
