@@ -2276,7 +2276,9 @@ class TestSeZMStackBwdFused(unittest.TestCase):
 
 class TestSeZMStackBwdFlagParser(unittest.TestCase):
     def test_values(self):
-        from deepmd.pt_expt.kernels.utils import use_stack_bwd_fused
+        from deepmd.pt_expt.kernels.utils import (
+            use_stack_bwd_fused,
+        )
 
         old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
         try:

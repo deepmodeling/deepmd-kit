@@ -104,6 +104,9 @@ from torch.library import (
     wrap_triton,
 )
 
+from ...utils import (
+    use_stack_bwd_fused,
+)
 from .gated_activation import (
     gated_activation_second_order,
     gated_activation_second_order_reference,
@@ -117,7 +120,6 @@ from .second_order import (
 from .so2_rotation import (
     _block_to_local_op,
 )
-from ...utils import use_stack_bwd_fused
 from .tile_configs import (
     GATE_BMM_MIN_FOCUS_DIM,
     gate_config,
