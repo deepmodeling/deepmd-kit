@@ -165,6 +165,9 @@ def _compute_expected() -> None:
     infer_dir = str(pb_file.resolve().parent)
     script = (
         "import json, sys\n"
+        "# Keep backend initialization messages off the JSON transport.\n"
+        "json_stdout = sys.stdout\n"
+        "sys.stdout = sys.stderr\n"
         "import numpy as np\n"
         f"sys.path.insert(0, {infer_dir!r})\n"
         "import deepmd.pt  # noqa: F401  (triggers the base op-library load)\n"
@@ -183,7 +186,7 @@ def _compute_expected() -> None:
         '    "ae": np.asarray(ae[0]).reshape(-1).tolist(),\n'
         '    "f": np.asarray(f[0]).tolist(),\n'
         '    "av": np.asarray(av[0]).tolist(),\n'
-        "}))\n"
+        "}), file=json_stdout)\n"
     )
     proc = sp.run([sys.executable, "-c", script], capture_output=True, text=True)
     if proc.returncode != 0:

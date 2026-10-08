@@ -459,9 +459,9 @@ class WignerDCalculator(nn.Module):
                     ]
             # The monomial basis routes through whichever accelerated backend
             # is selected; the two gates are mutually exclusive.
-            self._use_cutile_monomials = use_cutile_infer()
-            self._use_triton_monomials = triton_infer_level() >= 1
-            self._use_triton_train_monomials = triton_train_level() >= 1
+            self.cutile_infer_monomials = use_cutile_infer()
+            self.triton_infer_l_1_monomials = triton_infer_level() >= 1
+            self.triton_train_l_1_monomials = triton_train_level() >= 1
             # The l = 2 contraction tensor collapsed onto the 35 unique
             # degree-4 monomials: column m of the coefficient matrix sums
             # C_l2[:, :, p] over the 4^4 index tuples p whose component
@@ -1150,12 +1150,12 @@ class WignerDCalculator(nn.Module):
             and (
                 (
                     not self.training
-                    and (self._use_triton_monomials or self._use_cutile_monomials)
+                    and (self.triton_infer_l_1_monomials or self.cutile_infer_monomials)
                 )
-                or (self.training and self._use_triton_train_monomials)
+                or (self.training and self.triton_train_l_1_monomials)
             )
         ):
-            if not self.training and self._use_cutile_monomials:
+            if not self.training and self.cutile_infer_monomials:
                 from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
                     wigner_monomials as monomial_basis,
                 )
@@ -1191,12 +1191,12 @@ class WignerDCalculator(nn.Module):
             and (
                 (
                     not self.training
-                    and (self._use_triton_monomials or self._use_cutile_monomials)
+                    and (self.triton_infer_l_1_monomials or self.cutile_infer_monomials)
                 )
-                or (self.training and self._use_triton_train_monomials)
+                or (self.training and self.triton_train_l_1_monomials)
             )
         ):
-            if not self.training and self._use_cutile_monomials:
+            if not self.training and self.cutile_infer_monomials:
                 from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
                     wigner_monomials as monomial_basis,
                 )

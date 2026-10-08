@@ -8,6 +8,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     build_edge_csr,
     canonicalize_neighbor_graph,
+    compact_edges,
 )
 
 
@@ -140,6 +141,79 @@ class TestBuildEdgeCSR(unittest.TestCase):
             result.edge_index,
             np.array([[1, 0], [0, 1]], dtype=np.int64),
         )
+
+    def test_compaction_preserves_canonical_csr(self) -> None:
+        graph = NeighborGraph(
+            n_node=np.array([3], dtype=np.int64),
+            edge_index=np.array([[2, 0, 0, 0], [0, 1, 0, 0]], dtype=np.int64),
+            edge_vec=np.arange(12, dtype=np.float64).reshape(4, 3),
+            edge_mask=np.array([True, True, False, False]),
+            destination_order=np.arange(4, dtype=np.int64),
+            destination_row_ptr=np.array([0, 1, 2, 2], dtype=np.int64),
+            source_order=np.array([1, 0, 2, 3], dtype=np.int64),
+            source_row_ptr=np.array([0, 1, 1, 2], dtype=np.int64),
+            destination_sorted=True,
+        )
+
+        result = compact_edges(graph)
+
+        np.testing.assert_array_equal(result.edge_index, graph.edge_index[:, :2])
+        np.testing.assert_array_equal(result.edge_vec, graph.edge_vec[:2])
+        np.testing.assert_array_equal(result.edge_mask, [True, True])
+        np.testing.assert_array_equal(result.destination_order, [0, 1])
+        np.testing.assert_array_equal(result.destination_row_ptr, [0, 1, 2, 2])
+        np.testing.assert_array_equal(result.source_order, [1, 0])
+        np.testing.assert_array_equal(result.source_row_ptr, [0, 1, 1, 2])
+        self.assertTrue(result.destination_sorted)
+
+    def test_compaction_preserves_csr_with_internal_mask(self) -> None:
+        graph = NeighborGraph(
+            n_node=np.array([2], dtype=np.int64),
+            edge_index=np.array([[1, 0, 0], [0, 0, 1]], dtype=np.int64),
+            edge_vec=np.arange(9, dtype=np.float64).reshape(3, 3),
+            edge_mask=np.array([True, False, True]),
+            destination_order=np.array([0, 1, 2], dtype=np.int64),
+            destination_row_ptr=np.array([0, 2, 3], dtype=np.int64),
+            source_order=np.array([1, 2, 0], dtype=np.int64),
+            source_row_ptr=np.array([0, 2, 3], dtype=np.int64),
+            destination_sorted=True,
+        )
+
+        result = compact_edges(graph)
+
+        np.testing.assert_array_equal(result.edge_index, graph.edge_index[:, [0, 2]])
+        np.testing.assert_array_equal(result.edge_vec, graph.edge_vec[[0, 2]])
+        np.testing.assert_array_equal(result.edge_mask, [True, True])
+        np.testing.assert_array_equal(result.destination_order, [0, 1])
+        np.testing.assert_array_equal(result.destination_row_ptr, [0, 1, 2])
+        np.testing.assert_array_equal(result.source_order, [1, 0])
+        np.testing.assert_array_equal(result.source_row_ptr, [0, 1, 2])
+        self.assertTrue(result.destination_sorted)
+
+    def test_compaction_preserves_permuted_csr_with_internal_mask(self) -> None:
+        graph = NeighborGraph(
+            n_node=np.array([3], dtype=np.int64),
+            edge_index=np.array(
+                [[2, 0, 1, 0], [1, 2, 0, 1]],
+                dtype=np.int32,
+            ),
+            edge_vec=np.arange(12, dtype=np.float64).reshape(4, 3),
+            edge_mask=np.array([True, False, True, True]),
+            destination_order=np.array([2, 0, 3, 1], dtype=np.int32),
+            destination_row_ptr=np.array([0, 1, 3, 4], dtype=np.int64),
+            source_order=np.array([1, 3, 2, 0], dtype=np.int32),
+            source_row_ptr=np.array([0, 2, 3, 4], dtype=np.int64),
+            destination_sorted=False,
+        )
+
+        result = compact_edges(graph)
+
+        np.testing.assert_array_equal(result.edge_index, graph.edge_index[:, [0, 2, 3]])
+        np.testing.assert_array_equal(result.destination_order, [1, 0, 2])
+        np.testing.assert_array_equal(result.destination_row_ptr, [0, 1, 3, 3])
+        np.testing.assert_array_equal(result.source_order, [2, 1, 0])
+        np.testing.assert_array_equal(result.source_row_ptr, [0, 1, 2, 3])
+        self.assertFalse(result.destination_sorted)
 
 
 from deepmd.dpmodel.utils.neighbor_graph import (

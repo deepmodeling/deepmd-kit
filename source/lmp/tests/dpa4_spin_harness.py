@@ -148,6 +148,10 @@ def compute_expected(
     script = textwrap.dedent(f"""\
         import json
         import sys
+
+        # Keep backend initialization messages off the JSON transport.
+        json_stdout = sys.stdout
+        sys.stdout = sys.stderr
         import numpy as np
 
         sys.path.insert(0, {infer_dir!r})
@@ -171,7 +175,7 @@ def compute_expected(
             "f": np.asarray(f[0]).tolist(),
             "fm": np.asarray(fm[0]).tolist(),
             "av": np.asarray(av[0]).tolist(),
-        }}))
+        }}), file=json_stdout)
     """)
     proc = sp.run([sys.executable, "-c", script], capture_output=True, text=True)
     if proc.returncode != 0:

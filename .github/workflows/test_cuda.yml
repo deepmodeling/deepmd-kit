@@ -28,7 +28,7 @@ jobs:
     # container:
     #   image: nvidia/cuda:12.9.1-cudnn-devel-ubuntu22.04
     #   options: --gpus all
-    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
+    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'Test CUDA') || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -58,7 +58,7 @@ jobs:
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
+          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,cute,torch,jax] mpi4py --reinstall-package deepmd-kit
           # See https://github.com/jax-ml/jax/issues/29042
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
@@ -66,6 +66,7 @@ jobs:
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
       - run: dp --version
+      - run: python -c "import cutlass.cute"
       - run: python -m pytest source/tests --ignore=source/tests/pd
         env:
           NUM_WORKERS: 0
@@ -78,7 +79,7 @@ jobs:
   test_cc:
     name: Test C++ on CUDA
     runs-on: gpu
-    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
+    if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'Test CUDA') || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       # Jobs run on separate runners, so the C++ job needs its own complete
       # CUDA toolchain and Python dependency installation.

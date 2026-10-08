@@ -17,6 +17,9 @@ from __future__ import (
 
 import ctypes
 import unittest
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import torch
@@ -42,6 +45,29 @@ from deepmd.pt_expt.utils.comm import (
 # Self-send send-lists embed the address of a numpy array; the arrays must
 # outlive the eager ``border_op`` calls that dereference them.
 _SENDLIST_KEEPALIVE: list[np.ndarray] = []
+
+
+class TestSeZMDenseCommIsolation(unittest.TestCase):
+    def test_local_nlist_features_are_not_passed_to_ghost_exchange(self) -> None:
+        model = _build_model(torch.device("cpu"))
+        descriptor = model.atomic_model.descriptor
+        coord = torch.tensor(
+            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]],
+            dtype=torch.float64,
+            device="cpu",
+        )
+        atype = torch.tensor([[0, 1, 0]], dtype=torch.int64, device="cpu")
+        # Two local atoms and a mapped ghost atom.
+        nlist = torch.tensor([[[1, 2], [0, 2]]], dtype=torch.int64, device="cpu")
+        mapping = torch.tensor([[0, 1, 0]], dtype=torch.int64, device="cpu")
+        expected = descriptor(coord, atype, nlist, mapping=mapping)[0]
+        with mock.patch.object(
+            sezm_block,
+            "exchange_ghost_features",
+            side_effect=AssertionError("local-only features reached ghost exchange"),
+        ):
+            actual = descriptor(coord, atype, nlist, mapping=mapping, comm_dict={})[0]
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 
 
 def _tiny_parallel_model_params(**overrides) -> dict:

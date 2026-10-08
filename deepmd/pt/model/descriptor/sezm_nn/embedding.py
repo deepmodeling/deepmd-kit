@@ -35,6 +35,10 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     get_generator,
 )
+from deepmd.pt_expt.kernels.cute.sezm.so2.wigner_layout import (
+    PACKED_VALUE_COUNT,
+    ZONAL_PANEL_OFFSETS,
+)
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
 )
@@ -199,6 +203,16 @@ class GeometricInitialEmbedding(nn.Module):
             node_radial_l_index,
             persistent=True,
         )
+        packed_zonal_offsets = torch.tensor(
+            ZONAL_PANEL_OFFSETS if self.lmax == 3 else (),
+            device=self.device,
+            dtype=torch.long,
+        )
+        self.register_buffer(
+            "packed_zonal_offsets",
+            packed_zonal_offsets,
+            persistent=False,
+        )
         # The l=1 coefficients (packed rows 1..3) are the first three entries of
         # the non-scalar sequence ``node_row_index = [1, 2, ..., D-1]``, so the
         # native neighbor-spin l=1 message folds in at these local positions.
@@ -212,17 +226,17 @@ class GeometricInitialEmbedding(nn.Module):
         # The reference composition materializes the per-edge message, an
         # (E, D-1, C) tensor that dominates the cost of this module. The fused
         # operator keeps it in registers and reduces through the destination CSR.
-        self._cuda_scatter = False
+        self.cuda_infer_l_1_scatter = False
         # ``None`` keeps the runtime ``zonal_coupling.is_cuda`` dispatch; the
         # freeze pins it to the AOTI target because tracing always runs on CPU.
-        self._force_fused_scatter: bool | None = None
+        self.force_cuda_infer_l_1_scatter: bool | None = None
         if cuda_infer_level() >= 1 and self.dtype is torch.float32:
             from deepmd.pt_expt.kernels.cuda.dpa4.zonal_scatter import (
                 op_available,
                 supported,
             )
 
-            self._cuda_scatter = op_available() and supported(
+            self.cuda_infer_l_1_scatter = op_available() and supported(
                 self.lmax, self.ebed_dim - 1, self.channels
             )
 
@@ -259,37 +273,58 @@ class GeometricInitialEmbedding(nn.Module):
         torch.Tensor
             Initial features to add with shape (N, D, C). l=0 is guaranteed zero.
         """
-        # === Step 1. Initialize output ===
+        # === Step 1. Validate the non-scalar contract ===
         device = edge_cache.edge_vec.device
         dtype = edge_cache.edge_vec.dtype
-        out = torch.zeros(
-            n_nodes, self.ebed_dim, self.channels, device=device, dtype=dtype
-        )  # (N, D, C)
         if self.lmax == 0:
-            return out
+            return torch.zeros(
+                n_nodes, self.ebed_dim, self.channels, device=device, dtype=dtype
+            )
 
         # === Step 2. Gather all m=0 columns (l >= 1) in one shot ===
         # Advanced indexing pairs one packed non-scalar row with the zonal m=0 column
         # from the same degree block in Dt_full.
         if zonal_coupling is None:
-            Dt_full = edge_cache.Dt_full  # (E, D, D)
-            zonal_coupling = Dt_full[
-                :,
-                self.non_scalar_row_index,
-                self.zonal_m0_col_index_for_row,
-            ]  # (E, D-1)
+            D_packed = edge_cache.D_packed
+            if D_packed is not None:
+                if self.lmax != 3 or D_packed.shape[1] != PACKED_VALUE_COUNT:
+                    raise ValueError("packed Wigner zonal coupling requires Neo lmax=3")
+                zonal_coupling = D_packed.index_select(
+                    1,
+                    self.packed_zonal_offsets,
+                )
+            else:
+                Dt_full = edge_cache.Dt_full  # (E, D, D)
+                if Dt_full is None:
+                    raise RuntimeError("GIE requires dense or packed Wigner storage")
+                zonal_coupling = Dt_full[
+                    :,
+                    self.non_scalar_row_index,
+                    self.zonal_m0_col_index_for_row,
+                ]  # (E, D-1)
 
-        # === Step 3. Broadcast radial features per row ===
+        # === Step 3. Optional backend message construction and reduction ===
+        accelerated = self.run_cute_infer_gie(
+            n_nodes=n_nodes,
+            edge_cache=edge_cache,
+            radial_feat=radial_feat,
+            zonal_coupling=zonal_coupling,
+            spin_l1_message=spin_l1_message,
+        )
+        if accelerated is not None:
+            return accelerated
+
+        # === Step 4. Eager fallback: broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
         # The fused operator spans this broadcast and the scatter of Step 5, so
         # it takes over whenever nothing else joins the message in between.
         if (
-            self._can_fuse_scatter(zonal_coupling)
+            self.can_run_cuda_infer_l_1_scatter(zonal_coupling)
             and spin_l1_message is None
             and edge_cache.edge_src_gate is None
             and edge_cache.csr_cache is not None
         ):
-            return self.forward_fused_scatter(
+            return self.run_cuda_infer_l_1_scatter(
                 n_nodes, edge_cache, radial_feat, zonal_coupling
             )
 
@@ -309,7 +344,7 @@ class GeometricInitialEmbedding(nn.Module):
                 1, self.l1_local_index, spin_l1_message
             )
 
-        # === Step 4. Source Freeze Propagation Gate (optional) ===
+        # === Step 5. Source Freeze Propagation Gate (optional) ===
         # Mute messages emitted by nodes whose local neighborhood enters
         # the frozen zone. ``edge_src_gate`` is ``None`` outside bridging
         # mode so this is a no-op in normal training.
@@ -319,7 +354,10 @@ class GeometricInitialEmbedding(nn.Module):
                 dtype=non_scalar_message.dtype
             ).unsqueeze(-1)
 
-        # === Step 5. Scatter to nodes and normalize ===
+        # === Step 6. Scatter to nodes and normalize ===
+        out = torch.zeros(
+            n_nodes, self.ebed_dim, self.channels, device=device, dtype=dtype
+        )  # (N, D, C)
         # Avoid advanced-index writeback (out[:, non_scalar_row_index, :]) which produces a copy.
         non_scalar_out = out.new_zeros(
             n_nodes, self.non_scalar_row_index.numel(), self.channels
@@ -329,16 +367,71 @@ class GeometricInitialEmbedding(nn.Module):
         out.mul_(edge_cache.inv_sqrt_deg)
         return out
 
-    def _can_fuse_scatter(self, zonal_coupling: torch.Tensor) -> bool:
-        """Return whether the fused scatter serves the runtime or trace target."""
+    def run_cute_infer_gie(
+        self,
+        *,
+        n_nodes: int | torch.SymInt,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+        zonal_coupling: torch.Tensor,
+        spin_l1_message: torch.Tensor | None = None,
+    ) -> torch.Tensor | None:
+        """Run the CuTe GIE path when its exact inference contract matches.
+
+        Parameters
+        ----------
+        n_nodes : int or torch.SymInt
+            Number of nodes addressed by the edge cache.
+        edge_cache : EdgeFeatureCache
+            Per-forward geometric edge cache.
+        radial_feat : torch.Tensor
+            Radial features with shape ``(E, lmax, C)``.
+        zonal_coupling : torch.Tensor
+            Zonal coupling with shape ``(E, D - 1)``.
+        spin_l1_message : torch.Tensor, optional
+            Native-spin message with shape ``(E, 3, C)``.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Initial embedding with shape ``(N, D, C)``, or ``None`` when the
+            exact CuTe contract is not satisfied.
+        """
+        if self.training or spin_l1_message is not None:
+            return None
+        from deepmd.pt_expt.kernels.cute.sezm.gie import (
+            maybe_run_cute_gie,
+        )
+
+        return maybe_run_cute_gie(
+            self,
+            n_nodes=n_nodes,
+            edge_cache=edge_cache,
+            radial_feat=radial_feat,
+            zonal_coupling=zonal_coupling,
+        )
+
+    def can_run_cuda_infer_l_1_scatter(self, zonal_coupling: torch.Tensor) -> bool:
+        """Return whether the fused scatter serves the runtime or trace target.
+
+        Parameters
+        ----------
+        zonal_coupling : torch.Tensor
+            Zonal coupling with shape ``(E, D - 1)``.
+
+        Returns
+        -------
+        bool
+            Whether the CUDA inference level-one scatter is eligible.
+        """
         target_is_cuda = (
             zonal_coupling.is_cuda
-            if self._force_fused_scatter is None
-            else self._force_fused_scatter
+            if self.force_cuda_infer_l_1_scatter is None
+            else self.force_cuda_infer_l_1_scatter
         )
-        return self._cuda_scatter and not self.training and target_is_cuda
+        return self.cuda_infer_l_1_scatter and not self.training and target_is_cuda
 
-    def forward_fused_scatter(
+    def run_cuda_infer_l_1_scatter(
         self,
         n_nodes: int | torch.SymInt,
         edge_cache: EdgeFeatureCache,

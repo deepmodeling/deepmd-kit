@@ -98,8 +98,8 @@ class WignerDCalculator(WignerDCalculatorDP):
                     ]
             # The monomial basis routes through whichever accelerated backend
             # is selected; the two gates are mutually exclusive.
-            self._use_cutile_monomials = use_cutile_infer()
-            self._use_triton_monomials = triton_infer_level() >= 1
+            self.cutile_infer_monomials = use_cutile_infer()
+            self.triton_infer_l_1_monomials = triton_infer_level() >= 1
             # The l = 2 contraction tensor collapsed onto the 35 unique
             # degree-4 monomials: column m of the coefficient matrix sums
             # C_l2[:, :, p] over the 4^4 index tuples p whose component
@@ -185,9 +185,9 @@ class WignerDCalculator(WignerDCalculatorDP):
             exponents is not None
             and edge_quaternion.is_cuda
             and not self.training
-            and (self._use_triton_monomials or self._use_cutile_monomials)
+            and (self.triton_infer_l_1_monomials or self.cutile_infer_monomials)
         ):
-            if self._use_cutile_monomials:
+            if self.cutile_infer_monomials:
                 from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
                     wigner_monomials as monomial_basis,
                 )
@@ -212,9 +212,9 @@ class WignerDCalculator(WignerDCalculatorDP):
             exponents is not None
             and edge_quaternion.is_cuda
             and not self.training
-            and (self._use_triton_monomials or self._use_cutile_monomials)
+            and (self.triton_infer_l_1_monomials or self.cutile_infer_monomials)
         ):
-            if self._use_cutile_monomials:
+            if self.cutile_infer_monomials:
                 from deepmd.pt_expt.kernels.cutile.sezm.wigner_monomials import (
                     wigner_monomials as monomial_basis,
                 )
