@@ -19,3 +19,10 @@ int deepmd_write_all(int sockfd,
                      const char* data,
                      size_t len,
                      deepmd_socket_write_fn write_fn);
+
+// Receive exactly len bytes; EOF before completion is an error.
+typedef ssize_t (*deepmd_socket_read_fn)(int, void*, size_t);
+int deepmd_read_all(int sockfd,
+                    char* data,
+                    size_t len,
+                    deepmd_socket_read_fn read_fn);

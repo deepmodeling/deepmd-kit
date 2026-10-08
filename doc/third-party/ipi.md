@@ -56,3 +56,10 @@ The native `source/ipi/tests/test_driver_numeric.py` regression compares the
 PyTorch inference API with `dp_ipi` over Unix and TCP sockets, including atom
 permutations, periodic images and changing triclinic cells. Run it with a
 PyTorch-enabled `dp_ipi` on `PATH` and the matching Python inference package.
+
+Socket reads assemble each requested protocol field completely, including when
+its bytes arrive in separate packets. Interrupted reads are retried. If the
+server closes the connection before a field is complete, the client exits with
+an error before consuming that field or printing an incomplete INIT chunk in
+verbose mode. To request a successful client shutdown, send the standard `EXIT`
+message rather than closing the socket without it.
