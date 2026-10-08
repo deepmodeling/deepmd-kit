@@ -2219,8 +2219,9 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         The fused operator registers only a fake (meta) implementation and
         no next-derivative formula; the backward of the backward must
         therefore route through the unfused backward + segment-sum pair
-        even when ``_ROT_MIX_BWD_FUSED`` is enabled.  Both flag settings
-        take that same path here, so the second-order results agree.
+        even when ``DP_ROT_MIX_BWD_FUSED_INFER`` is enabled.  Both flag
+        settings take that same path here, so the second-order results
+        agree.
         """
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
