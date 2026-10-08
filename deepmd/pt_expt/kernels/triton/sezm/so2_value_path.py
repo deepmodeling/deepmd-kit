@@ -168,8 +168,6 @@ _ROTATE_MIX_BWD_CONFIG = (1, 2)  # per-edge backward (warps, stages)
 # warps, stages).  Conservative defaults; a swept table is the
 # follow-up if the fusion proves out on more shapes.
 _ROT_MIX_BWD_FUSED_CONFIG = (8, 4, 2)
-# Read once at import: compile-time constant for the traced graph.
-_ROT_MIX_BWD_FUSED = use_rot_mix_bwd_fused()
 
 
 # ======================================================================
@@ -4202,7 +4200,11 @@ def _rotate_mix_backward(ctx, grad_u):
     # unfused backward and segment-sum operators do support the next
     # derivative -- so higher-order callers keep the supported pair and the
     # fused path engages only when no higher-order graph is being built.
-    if _ROT_MIX_BWD_FUSED and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
+    # The gate is read here rather than at module import: the repository
+    # convention for these switches is construction/call time, not import
+    # time, and a read here is baked into the traced graph at trace time
+    # just the same (one environment lookup per backward invocation).
+    if use_rot_mix_bwd_fused() and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
         # Fused path: the node gradient accumulates on chip inside the
         # kernel; the (E, D, C_wide) ``gxe`` HBM round-trip never exists.
         grad_x, grad_wigner, grad_kc = _rotate_mix_bwd_fused_op(

@@ -2171,8 +2171,8 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                     gx_fused, gx_ref, atol=1e-5 * max(scale, 1.0), rtol=1e-5
                 )
 
-    def test_autograd_branch_follows_module_flag(self):
-        """The autograd backward dispatches on ``_ROT_MIX_BWD_FUSED``."""
+    def test_autograd_branch_follows_env_flag(self):
+        """The autograd backward dispatches on ``DP_ROT_MIX_BWD_FUSED_INFER``."""
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
         lmax, channels, n_focus, rank = 3, 32, 2, 1
@@ -2188,14 +2188,19 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         )
         grads = {}
         for flag in (False, True):
-            saved = vp._ROT_MIX_BWD_FUSED
-            vp._ROT_MIX_BWD_FUSED = flag
+            import os
+
+            saved = os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER")
+            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1" if flag else "0"
             try:
                 grads[flag] = torch.autograd.grad(
                     out, [xg, wg, kg], grad_u, retain_graph=True
                 )
             finally:
-                vp._ROT_MIX_BWD_FUSED = saved
+                if saved is None:
+                    os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
+                else:
+                    os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
         # All three agree at fp32 rounding level: grad_x by accumulation
         # order, gw/gkc by instruction scheduling of the same math.
         scale = grads[False][0].abs().max().item()
@@ -2232,15 +2237,20 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         )
         second = {}
         for flag in (False, True):
-            saved = vp._ROT_MIX_BWD_FUSED
-            vp._ROT_MIX_BWD_FUSED = flag
+            import os
+
+            saved = os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER")
+            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1" if flag else "0"
             try:
                 (g1,) = torch.autograd.grad(
                     out, xg, grad_u, create_graph=True, retain_graph=True
                 )
                 second[flag] = torch.autograd.grad(g1.sum(), [wg, kg])
             finally:
-                vp._ROT_MIX_BWD_FUSED = saved
+                if saved is None:
+                    os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
+                else:
+                    os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
         for i in (0, 1):
             s = second[False][i].abs().max().item()
             torch.testing.assert_close(
@@ -2270,12 +2280,17 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         )
         grads = {}
         for flag in (False, True):
-            saved = vp._ROT_MIX_BWD_FUSED
-            vp._ROT_MIX_BWD_FUSED = flag
+            import os
+
+            saved = os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER")
+            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1" if flag else "0"
             try:
                 (grads[flag],) = torch.autograd.grad(out, xg, grad_u, retain_graph=True)
             finally:
-                vp._ROT_MIX_BWD_FUSED = saved
+                if saved is None:
+                    os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
+                else:
+                    os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
         # The rank>1 chain itself is not bitwise deterministic across runs
         # (atomic accumulation), so compare at fp32-rounding tolerance: the
         # point is that both flag settings take the same unfused path.
