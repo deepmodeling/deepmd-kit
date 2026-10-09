@@ -21,6 +21,7 @@ class _LinearToyModel(torch.nn.Module):
         self.scale = torch.nn.Parameter(torch.ones((), device="cpu"))
         self.fail_forward = fail_forward
         self.last_requires_grad: tuple[bool, ...] | None = None
+        self.last_charge_spin: torch.Tensor | None = None
 
     def forward(
         self,
@@ -32,7 +33,8 @@ class _LinearToyModel(torch.nn.Module):
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        del atype, box, do_atomic_virial, fparam, aparam, charge_spin
+        del atype, box, do_atomic_virial, fparam, aparam
+        self.last_charge_spin = charge_spin
         self.last_requires_grad = tuple(
             param.requires_grad for param in self.parameters()
         )
@@ -47,6 +49,22 @@ class _LinearToyModel(torch.nn.Module):
             "energy": energy,
             "force": force,
         }
+
+
+class _LegacyToyModel(torch.nn.Module):
+    """Model with the scripted signature used before charge_spin was added."""
+
+    def forward(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Return a simple energy without accepting a charge_spin keyword."""
+        return {"energy": coord.sum(dim=-1).sum(dim=-1, keepdim=True)}
 
 
 class _EnergyLoss(torch.nn.Module):
@@ -69,6 +87,35 @@ class TestModelWrapper(unittest.TestCase):
         torch.manual_seed(20240611)
         self.coord = torch.randn(2, 5, 3, device="cpu")
         self.atype = torch.zeros(2, 5, dtype=torch.long, device="cpu")
+
+    def test_legacy_scripted_signature_without_charge_spin(self) -> None:
+        """Omitting charge_spin must work without a neighbor-list dependency."""
+        for mode in ("inference", "skip_loss", "training"):
+            with self.subTest(mode=mode):
+                model = torch.jit.script(_LegacyToyModel())
+                loss = None if mode == "inference" else _EnergyLoss()
+                wrapper = ModelWrapper(model, loss)
+                expected = model(self.coord, self.atype)
+                actual, _, _ = wrapper(
+                    self.coord, self.atype, skip_loss=mode == "skip_loss"
+                )
+                torch.testing.assert_close(actual["energy"], expected["energy"])
+
+    def test_supplied_charge_spin_is_forwarded_unchanged(self) -> None:
+        """Forward the supplied tensor through inference and loss evaluation."""
+        charge_spin = torch.tensor([[1.0, 0.0], [-1.0, 2.0]], device="cpu")
+        for mode in ("inference", "skip_loss", "training"):
+            with self.subTest(mode=mode):
+                model = _LinearToyModel()
+                loss = None if mode == "inference" else _EnergyLoss()
+                wrapper = ModelWrapper(model, loss)
+                wrapper(
+                    self.coord,
+                    self.atype,
+                    skip_loss=mode == "skip_loss",
+                    charge_spin=charge_spin,
+                )
+                self.assertIs(model.last_charge_spin, charge_spin)
 
     def test_inference_wrapper_freezes_parameters_without_changing_predictions(
         self,
