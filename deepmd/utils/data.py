@@ -198,6 +198,9 @@ class DeepmdData:
         special_shape : str, optional
             Name of a loader-defined non-standard shape contract. ``"hessian"``
             stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
+            ``"frame_major"`` stores one variable-length ``(npoints, ndof)``
+            array per frame (e.g. grid/density), kept as a frame-major
+            ``(nframes, npoints, ndof)`` tensor without any natoms reshaping.
         """
         # normalize key: "atomic_" prefix -> "atom_", same convention as _load_set output
         if key.startswith("atomic_"):
@@ -541,12 +544,14 @@ class DeepmdData:
         # 5. Standardize keys
         frame_data = {kk.replace("atomic", "atom"): vv for kk, vv in frame_data.items()}
 
-        # 6. Reshape atomic data to match expected format [natoms, ndof]
+        # 6. Reshape non-atomic data to match expected format [ndof];
+        # frame-major arrays keep their per-frame (npoints, ndof) layout
         for kk in self.data_dict.keys():
             if (
                 "find_" not in kk
                 and kk in frame_data
                 and not self.data_dict[kk]["atomic"]
+                and self.data_dict[kk].get("special_shape") != "frame_major"
             ):
                 frame_data[kk] = frame_data[kk].reshape(-1)
         frame_data["atype"] = frame_data["type"]
@@ -690,6 +695,26 @@ class DeepmdData:
             if "find_" in kk:
                 self.test_set[kk] = test_sets[0][kk]
             else:
+                vv = self.data_dict.get(kk, {})
+                if vv.get("special_shape") == "frame_major":
+                    # sets of one system must agree on the frame-major extent:
+                    # numpy would otherwise fail with a raw shape error
+                    extents = {
+                        (
+                            ss[kk].shape[-2]
+                            if ss[kk].ndim >= 3
+                            else ss[kk].shape[-1] // vv["ndof"]
+                        )
+                        for ss in test_sets
+                        if float(ss.get("find_" + kk, 0.0)) == 1.0
+                    }
+                    if len(extents) > 1:
+                        raise ValueError(
+                            f"The frame-major data {kk} has inconsistent "
+                            f"extents {sorted(extents)} across the sets of "
+                            "this system; every set must carry the same "
+                            "number of points"
+                        )
                 self.test_set[kk] = np.concatenate(
                     [test_set[kk] for test_set in test_sets], axis=0
                 )
@@ -706,9 +731,14 @@ class DeepmdData:
         for kk in data:
             if (
                 isinstance(data[kk], np.ndarray)
-                and len(data[kk].shape) == 2
                 and data[kk].shape[0] == nframes
                 and "find_" not in kk
+                # frame-major arrays (e.g. grid/density) keep their 3D layout
+                # (nframes, ngrid, ...) and shuffle along the frame axis
+                and (
+                    len(data[kk].shape) == 2
+                    or self.data_dict.get(kk, {}).get("special_shape") == "frame_major"
+                )
             ):
                 ret[kk] = data[kk][idx]
             else:
@@ -799,6 +829,28 @@ class DeepmdData:
                 tmp_in = data[k_in].astype(GLOBAL_ENER_FLOAT_PRECISION)
                 data[kk] = np.sum(
                     np.reshape(tmp_in, [nframes, self.natoms, ndof]), axis=1
+                )
+
+        # frame-major keys that share the same extent must agree on it:
+        # a grid/density pair with different npoints would only fail far
+        # downstream when the residual is formed
+        frame_major_extents = {}
+        for kk, vv in self.data_dict.items():
+            if (
+                vv.get("special_shape") == "frame_major"
+                and kk in data
+                and float(data.get("find_" + kk, 0.0)) == 1.0
+            ):
+                arr = data[kk]
+                extent = arr.shape[-2] if arr.ndim >= 3 else arr.shape[-1] // vv["ndof"]
+                frame_major_extents[kk] = extent
+        if frame_major_extents:
+            extents = set(frame_major_extents.values())
+            if len(extents) > 1:
+                raise ValueError(
+                    f"The frame-major data in {set_name} have inconsistent "
+                    f"extents {frame_major_extents}; grid and density labels "
+                    "must share the same number of points"
                 )
 
         if self.mixed_type:
@@ -893,6 +945,34 @@ class DeepmdData:
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
         path = self._get_data_path(set_name, key)
+        if special_shape == "frame_major" and path.is_file():
+            data = path.load_numpy().astype(dtype)
+            if data.ndim < 2:
+                raise ValueError(
+                    f"The data {key} in {set_name} must have a leading frame "
+                    f"dimension, but got shape {data.shape}"
+                )
+            if data.shape[0] != nframes:
+                raise ValueError(
+                    f"The frame count of data {key} in {set_name} is "
+                    f"{data.shape[0]}, which doesn't match the set's nframes {nframes}"
+                )
+            if data.ndim >= 3:
+                # (nframes, npoints, ndof): trailing dim must be exactly ndof
+                if data.shape[-1] != ndof_:
+                    raise ValueError(
+                        f"The data {key} in {set_name} has trailing dimension "
+                        f"{data.shape[-1]}, which doesn't match the declared "
+                        f"ndof {ndof_}"
+                    )
+            elif data.shape[-1] % ndof_ != 0:
+                # (nframes, npoints*ndof) flattened: width must be a multiple
+                raise ValueError(
+                    f"The data {key} in {set_name} has trailing dimension "
+                    f"{data.shape[-1]}, which is not a multiple of the "
+                    f"declared ndof {ndof_}"
+                )
+            return np.float32(1.0), data
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
@@ -959,7 +1039,12 @@ class DeepmdData:
                 ndof = 9 * self.natoms * self.natoms
             elif atomic and type_sel is not None and not output_natoms_for_type_sel:
                 ndof = ndof_ * natoms_sel
-            data = np.full([nframes, ndof], default, dtype=dtype)
+            if special_shape == "frame_major":
+                # frame extent is unknown without the file; keep an empty
+                # per-frame payload and rely on find=0 downstream
+                data = np.full([nframes, 0, ndof], default, dtype=dtype)
+            else:
+                data = np.full([nframes, ndof], default, dtype=dtype)
             if repeat != 1:
                 data = np.repeat(data, repeat).reshape([nframes, -1])
             return np.float32(0.0), data
@@ -1024,6 +1109,10 @@ class DeepmdData:
             # Create a default array based on requirements
             if is_hessian:
                 data = np.full([9 * natoms * natoms], vv["default"], dtype=dtype)
+            elif vv.get("special_shape") == "frame_major":
+                # frame extent is unknown without the file; an empty frame
+                # dimension is the honest shape and find=0 marks it absent
+                data = np.full([0, ndof], vv["default"], dtype=dtype)
             elif vv["atomic"]:
                 if vv["type_sel"] is not None and not vv["output_natoms_for_type_sel"]:
                     natoms = natoms_sel
@@ -1041,13 +1130,44 @@ class DeepmdData:
             # For filesystem paths, use memmap for better performance
             mmap_obj = self._get_memmap(path)
 
-        # corner case: single frame
-        if set_nframes == 1:
+        # Validate frame-major layout before indexing, so that shuffling
+        # cannot pair a structure with another frame's grid or density label.
+        if vv.get("special_shape") == "frame_major":
+            if mmap_obj.ndim < 2:
+                raise ValueError(
+                    f"The data {key} in {set_dir} must have a leading frame "
+                    f"dimension, but got shape {mmap_obj.shape}"
+                )
+            if mmap_obj.shape[0] != set_nframes:
+                raise ValueError(
+                    f"The frame count of data {key} in {set_dir} is "
+                    f"{mmap_obj.shape[0]}, which doesn't match the set's "
+                    f"nframes {set_nframes}"
+                )
+            if mmap_obj.ndim >= 3:
+                if mmap_obj.shape[-1] != ndof:
+                    raise ValueError(
+                        f"The data {key} in {set_dir} has trailing dimension "
+                        f"{mmap_obj.shape[-1]}, which doesn't match the declared "
+                        f"ndof {ndof}"
+                    )
+            elif mmap_obj.shape[-1] % ndof != 0:
+                raise ValueError(
+                    f"The data {key} in {set_dir} has trailing dimension "
+                    f"{mmap_obj.shape[-1]}, which is not a multiple of the "
+                    f"declared ndof {ndof}"
+                )
+
+        # corner case: single frame. frame-major arrays always carry a
+        # leading frame dimension (validated above), so no expansion is needed.
+        if set_nframes == 1 and vv.get("special_shape") != "frame_major":
             mmap_obj = mmap_obj[None, ...]
         # Slice the single frame and make an in-memory copy for modification
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
+            if vv.get("special_shape") == "frame_major":
+                return np.float32(1.0), data
             if is_hessian:
                 data = data.reshape(3 * natoms, 3 * natoms)
                 num_chunks, chunk_size = len(idx_map), 3
@@ -1201,6 +1321,9 @@ class DataRequirementItem:
     special_shape : str, optional
         Name of a loader-defined non-standard shape contract. ``"hessian"``
         stores one full-frame ``(3 * natoms) x (3 * natoms)`` matrix per frame.
+        ``"frame_major"`` stores one variable-length ``(npoints, ndof)`` array
+        per frame (e.g. grid/density), kept frame-major without natoms
+        reshaping.
     source_policy : {"tracked", "default", "derived"}, optional
         How source availability affects the consumer. ``"tracked"`` keeps
         source presence in the ``find_*`` contract. ``"default"`` treats the

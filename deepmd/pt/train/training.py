@@ -51,6 +51,7 @@ from deepmd.pt.loss import (
     DOSLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    GridDensityLoss,
     PopulationLoss,
     PropertyLoss,
     TaskLoss,
@@ -2252,6 +2253,7 @@ class Trainer:
             "coord",
             "atype",
             "spin",
+            "grid",
             "box",
             "fparam",
             "aparam",
@@ -2276,6 +2278,10 @@ class Trainer:
         if "fid" in batch_data:
             log_dict["fid"] = batch_data["fid"]
         log_dict["sid"] = batch_data["sid"]
+        # models without grid support do not accept a grid keyword in forward;
+        # drop it when the data does not provide grid
+        if input_dict.get("grid") is None:
+            input_dict.pop("grid", None)
         return input_dict, label_dict, log_dict
 
     def print_header(
@@ -2420,6 +2426,22 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         ]
         additional_data_requirement += spin_requirement_items
+    has_grid = getattr(_model, "has_grid", False)
+    if callable(has_grid):
+        has_grid = has_grid()
+    if has_grid:
+        # the grid is a model input (like fparam/aparam), not a label; it is
+        # frame-major (nframes, ngrid, 3) and not per-atom
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "grid",
+                ndof=3,
+                atomic=False,
+                must=True,
+                high_prec=True,
+                special_shape="frame_major",
+            )
+        )
     if _model.has_chg_spin_ebd():
         has_default_cs = _model.has_default_chg_spin()
         cs_default = (
@@ -2523,6 +2545,9 @@ def get_loss(
             tensor_name = "polar"
         loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
+    elif loss_type == "grid_density":
+        loss_params["starter_learning_rate"] = start_lr
+        return GridDensityLoss(**loss_params)
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
         var_name = _model.get_var_name()

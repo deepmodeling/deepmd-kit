@@ -579,6 +579,15 @@ class DeepmdDataSystem:
                     )
                 b_data[kk] = merged.reshape(len(batch_data), -1)
             elif not vv["atomic"]:
+                if vv.get("special_shape") == "frame_major":
+                    extents = {bb[kk].shape[1:] for bb in batch_data}
+                    if len(extents) > 1:
+                        raise ValueError(
+                            f"The frame-major data {kk} has inconsistent "
+                            f"extents {sorted(extents)} across systems; "
+                            "mixed batching requires the same extent in "
+                            "every system"
+                        )
                 b_data[kk] = np.concatenate([bb[kk] for bb in batch_data], axis=0)
             else:
                 b_data[kk] = np.zeros(
