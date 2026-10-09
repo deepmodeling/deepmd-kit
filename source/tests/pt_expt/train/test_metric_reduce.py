@@ -16,9 +16,7 @@ torch = pytest.importorskip("torch")
 from deepmd.dpmodel.train.metrics import (
     MetricAccumulator,
 )
-from deepmd.pt_expt.train import (
-    metrics as metrics_mod,
-)
+from deepmd.pt_expt.train import metrics as metrics_mod
 from deepmd.pt_expt.train.metrics import (
     _collective_device,
     all_reduce_metric_accumulator,
@@ -32,7 +30,9 @@ def test_all_reduce_is_noop_without_process_group() -> None:
     assert accumulator.average("task") == {"rmse": 1.5}
 
 
-def test_collective_device_follows_nccl_not_host_window(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collective_device_follows_nccl_not_host_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """NCCL ranks must agree on CUDA even when the local window is host-only."""
     monkeypatch.setattr(metrics_mod.dist, "get_backend", lambda group=None: "nccl")
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
@@ -75,7 +75,9 @@ def test_all_reduce_uses_group_device_for_host_only_window(
     real_tensor = torch.tensor
 
     def fake_tensor(data, dtype=None, device=None, **kwargs):
-        captured["requested_device"] = torch.device(device) if device is not None else torch.device("cpu")
+        captured["requested_device"] = (
+            torch.device(device) if device is not None else torch.device("cpu")
+        )
         return real_tensor(data, dtype=dtype, device="cpu", **kwargs)
 
     monkeypatch.setattr(torch, "tensor", fake_tensor)
