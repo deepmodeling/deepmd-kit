@@ -288,3 +288,35 @@ def test_resolve_latest_prefers_pointer_then_alias(tmp_path: Path) -> None:
     assert resolve_checkpoint_path("latest", store=store) == path
     assert resolve_checkpoint_path(tmp_path, store=store) == path
     assert resolve_checkpoint_path(tmp_path / "model.ckpt") == path
+
+def test_resolve_directory_ignores_foreign_store(tmp_path: Path) -> None:
+    """A directory spec must read THAT directory, even when a store is passed.
+
+    ``store`` is only for the literal ``latest`` handle. Consulting it for a
+    directory would return another run's checkpoint (e.g. resolving run B's
+    directory while holding store A).
+    """
+    run_a = tmp_path / "run_a"
+    run_b = tmp_path / "run_b"
+    store_a = CheckpointStore(
+        run_a / "model.ckpt",
+        save_dir=run_a / "ckpts",
+        pointer_file=run_a / "checkpoint",
+    )
+    store_b = CheckpointStore(
+        run_b / "model.ckpt",
+        save_dir=run_b / "ckpts",
+        pointer_file=run_b / "checkpoint",
+    )
+    store_a.prepare()
+    store_b.prepare()
+    path_a = _write(store_a.path_for(1))
+    path_b = _write(store_b.path_for(2))
+    store_a.publish(path_a)
+    store_b.publish(path_b)
+
+    assert resolve_checkpoint_path("latest", store=store_a) == path_a
+    assert resolve_checkpoint_path(run_b, store=store_a) == path_b
+    assert resolve_checkpoint_path(run_b) == path_b
+    assert resolve_checkpoint_path(run_a, store=store_b) == path_a
+

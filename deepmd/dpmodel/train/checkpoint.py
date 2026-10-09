@@ -283,8 +283,9 @@ def resolve_checkpoint_path(
         suffix), a directory holding a ``checkpoint`` pointer / prefix alias,
         or the literal ``latest`` when ``store`` is provided.
     store : CheckpointStore, optional
-        Store consulted when ``spec`` is ``latest`` or a bare directory that
-        should follow that store's pointer and alias conventions.
+        Store consulted only when ``spec`` is the literal ``latest``. Directory
+        specs always read that directory's own pointer / prefix alias, matching
+        freeze-without-store behavior, so a foreign store cannot hijack them.
     suffix : str, optional
         Suffix appended when ``spec`` looks like a prefix rather than a file.
 
@@ -316,10 +317,9 @@ def resolve_checkpoint_path(
         return path
 
     if path.is_dir():
-        if store is not None:
-            resolved = store.resolve_latest()
-            if resolved is not None and resolved.is_file():
-                return resolved
+        # Directories always resolve against their own contents. ``store`` is
+        # reserved for the literal ``latest`` handle above; consulting it here
+        # would ignore ``dir`` and return another run's checkpoint.
         pointer = path / "checkpoint"
         if pointer.is_file():
             recorded = Path(pointer.read_text().strip())

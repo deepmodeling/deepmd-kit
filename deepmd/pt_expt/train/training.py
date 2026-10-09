@@ -2039,8 +2039,6 @@ class Trainer(AbstractTrainer):
             ema_prefix=self.ema_save_ckpt,
             rank=self.rank,
         )
-        self.ckpt_store = self.checkpoint_manager.store
-        self.ema_ckpt_store = self.checkpoint_manager.ema_store
 
         # Learning rate -------------------------------------------------------
         self.lr_schedule = make_learning_rate_schedule(
