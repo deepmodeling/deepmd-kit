@@ -990,3 +990,82 @@ class TestFullValidationMetricProfiles(unittest.TestCase):
         np.testing.assert_array_equal(
             prediction["mask_mag"].astype(bool), expected_mask
         )
+
+
+class TestFullValidatorCheckpointGate(unittest.TestCase):
+    def _make_validator(self, tmpdir: str) -> FullValidator:
+        return FullValidator(
+            validating_params={
+                "full_validation": True,
+                "validation_freq": 1,
+                "save_best": True,
+                "max_best_ckpt": 1,
+                "validation_metric": "E:MAE",
+                "full_val_file": str(Path(tmpdir) / "val.log"),
+                "full_val_start": 0.0,
+            },
+            validation_data=_DummyValidationData(),
+            model=_DummyModel(),
+            state_store={},
+            num_steps=10,
+            rank=0,
+            restart_training=False,
+            checkpoint_dir=Path(tmpdir),
+        )
+
+    def test_full_validator_defers_topk_until_successful_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = self._make_validator(tmpdir)
+            writes: list[Path] = []
+
+            def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                Path(path).write_text("ok")
+                writes.append(Path(path))
+
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 0.5},
+            ):
+                result = validator.run(
+                    step_id=1,
+                    display_step=1,
+                    lr=1e-3,
+                    save_checkpoint=save_checkpoint,
+                )
+
+            self.assertIsNotNone(result)
+            self.assertEqual(len(writes), 1)
+            self.assertTrue(writes[0].exists())
+            self.assertEqual(len(validator.topk_records), 1)
+            self.assertEqual(validator.topk_records[0].step, 1)
+            self.assertIsNone(validator._pending_topk_records)
+
+    def test_full_validator_discards_topk_when_save_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = self._make_validator(tmpdir)
+
+            def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del path, lr, step
+                raise RuntimeError("Non-finite gradient norm; training has diverged.")
+
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 0.25},
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Non-finite"):
+                    validator.run(
+                        step_id=2,
+                        display_step=2,
+                        lr=1e-3,
+                        save_checkpoint=save_checkpoint,
+                    )
+
+            self.assertEqual(validator.topk_records, [])
+            self.assertIsNone(validator._pending_topk_records)
+            self.assertEqual(
+                list(Path(tmpdir).glob("best.ckpt-*.pt")),
+                [],
+            )

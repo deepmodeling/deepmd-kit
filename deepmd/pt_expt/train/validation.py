@@ -289,6 +289,7 @@ class FullValidator:
             )
 
         self.topk_records = self._load_topk_records()
+        self._pending_topk_records: list[BestCheckpointRecord] | None = None
         self._sync_state_store()
         if self.rank == 0:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -350,8 +351,14 @@ class FullValidator:
                 if (self.is_distributed and self.sharding.enabled) or self.rank == 0:
                     save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
                 if self.rank == 0:
+                    # Commit top-K bookkeeping only after the checkpoint bytes
+                    # are written, so a failed publication boundary (including
+                    # a non-finite gradient abort) leaves metadata unchanged.
+                    self._commit_pending_best_state()
                     self._reconcile_best_checkpoints()
             except Exception as exc:
+                if self.rank == 0:
+                    self._pending_topk_records = None
                 caught_exception = exc
                 error_message = (
                     "Full validation failed while saving the best checkpoint:\n"
@@ -408,12 +415,21 @@ class FullValidator:
                 f"validation dataset: {self.metric_name.upper()}."
             )
 
-        # === Step 3. Update Best Tracking ===
+        # === Step 3. Propose / commit best tracking ===
+        # When a checkpoint file will be written, top-K metadata stays pending
+        # until that write succeeds (see run()). Tracking-only updates commit
+        # immediately because they never serialize weights.
         selected_metric_value = float(metrics[self.metric_key])
-        saved_best_path = self._update_best_state(
+        proposed_records, saved_best_path = self._propose_best_checkpoint(
             display_step=display_step,
             selected_metric_value=selected_metric_value,
         )
+        self._pending_topk_records = None
+        if saved_best_path is not None:
+            self._pending_topk_records = proposed_records
+        elif proposed_records is not None:
+            self.topk_records = proposed_records
+            self._sync_state_store()
         return FullValidationResult(
             display_step=display_step,
             metrics=metrics,
@@ -696,13 +712,21 @@ class FullValidator:
             prediction["virial"] = batch_prediction["virial"]
         return prediction
 
-    def _update_best_state(
+    def _propose_best_checkpoint(
         self,
         *,
         display_step: int,
         selected_metric_value: float,
-    ) -> str | None:
-        """Update the top-K records and return the checkpoint path to save."""
+    ) -> tuple[list[BestCheckpointRecord] | None, str | None]:
+        """Compute the next top-K set and optional save path without committing.
+
+        Returns
+        -------
+        tuple[list[BestCheckpointRecord] | None, str | None]
+            ``(updated_records, save_path)``. ``updated_records`` is ``None``
+            when the candidate misses the top-K window. ``save_path`` is set
+            only when ``save_best`` is enabled and the candidate is retained.
+        """
         candidate = BestCheckpointRecord(
             metric=selected_metric_value,
             step=display_step,
@@ -714,14 +738,43 @@ class FullValidator:
         updated_records.sort()
         updated_records = updated_records[: self.max_best_ckpt]
         if candidate not in updated_records:
-            return None
-
-        self.topk_records = updated_records
-        self._sync_state_store()
+            return None, None
         if not self.save_best:
-            return None
-        candidate_rank = self.topk_records.index(candidate) + 1
-        return str(self._best_checkpoint_path(display_step, candidate_rank))
+            return updated_records, None
+        candidate_rank = updated_records.index(candidate) + 1
+        return updated_records, str(
+            self._best_checkpoint_path(display_step, candidate_rank)
+        )
+
+    def _commit_pending_best_state(self) -> None:
+        """Persist a deferred top-K update after a successful checkpoint write."""
+        if self._pending_topk_records is None:
+            return
+        self.topk_records = self._pending_topk_records
+        self._sync_state_store()
+        self._pending_topk_records = None
+
+    def _update_best_state(
+        self,
+        *,
+        display_step: int,
+        selected_metric_value: float,
+    ) -> str | None:
+        """Update the top-K records and return the checkpoint path to save.
+
+        This helper commits immediately and is used by unit tests and callers
+        that manage serialization themselves. The training ``run()`` path uses
+        :meth:`_propose_best_checkpoint` so metadata can wait on a successful
+        write.
+        """
+        updated_records, save_path = self._propose_best_checkpoint(
+            display_step=display_step,
+            selected_metric_value=selected_metric_value,
+        )
+        if updated_records is not None:
+            self.topk_records = updated_records
+            self._sync_state_store()
+        return save_path
 
     def _sync_state_store(self) -> None:
         """Synchronize top-K validation state into the configured state store."""

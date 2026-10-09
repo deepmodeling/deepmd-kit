@@ -1749,22 +1749,14 @@ class Trainer:
                     step_id=_step_id,
                     display_step=display_step_id,
                     lr=cur_lr,
-                    save_checkpoint=(
-                        self.save_model_merged
-                        if self._lora_enabled
-                        else self.save_model
-                    ),
+                    save_checkpoint=self._save_full_validation_checkpoint,
                 )
             if self.ema_full_validator is not None:
                 self.ema_full_validator.run(
                     step_id=_step_id,
                     display_step=display_step_id,
                     lr=cur_lr,
-                    save_checkpoint=(
-                        self.save_ema_model_merged
-                        if self._lora_enabled
-                        else self.save_ema_model
-                    ),
+                    save_checkpoint=self._save_full_validation_ema_checkpoint,
                 )
 
             should_save_checkpoint = display_step_id == self.num_steps or (
@@ -1773,11 +1765,8 @@ class Trainer:
                 and _step_id != self.start_step
             )
             if should_save_checkpoint:
-                # Abort before writing if any gradient norm since the previous
-                # checkpoint was non-finite.
-                self.nonfinite_grad_guard.raise_if_nonfinite(
-                    self.wrapper.named_parameters
-                )
+                # One logical publication boundary for live (+ EMA) weights.
+                self.ensure_finite_gradients_for_checkpoint()
             if should_save_checkpoint and (
                 self.sharding.enabled or self.rank == 0 or dist.get_rank() == 0
             ):
@@ -2048,6 +2037,40 @@ class Trainer:
                 item["lr"] = float(item["lr"])
         torch.save(checkpoint_data, save_path)
         store.prune(save_path)
+
+    def ensure_finite_gradients_for_checkpoint(self) -> None:
+        """Validate and reset non-finite gradient state before publication.
+
+        Every training-side checkpoint boundary — regular, EMA, validation-best,
+        and EMA-validation-best — must call this once before any checkpoint
+        bytes or publication metadata are written. A regular checkpoint that
+        materializes both live and EMA weights is one logical boundary: the
+        check runs before either file is written and is not repeated between
+        them.
+        """
+        self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
+
+    def _save_full_validation_checkpoint(
+        self,
+        save_path: str | Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save a live-weight checkpoint selected by full validation."""
+        self.ensure_finite_gradients_for_checkpoint()
+        save = self.save_model_merged if self._lora_enabled else self.save_model
+        save(save_path, lr=lr, step=step)
+
+    def _save_full_validation_ema_checkpoint(
+        self,
+        save_path: str | Path,
+        lr: float = 0.0,
+        step: int = 0,
+    ) -> None:
+        """Save an EMA-weight checkpoint selected by EMA full validation."""
+        self.ensure_finite_gradients_for_checkpoint()
+        save = self.save_ema_model_merged if self._lora_enabled else self.save_ema_model
+        save(save_path, lr=lr, step=step)
 
     def save_model(
         self,

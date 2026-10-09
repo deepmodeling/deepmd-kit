@@ -111,5 +111,76 @@ class TestNonFiniteGradGuard(unittest.TestCase):
         guard.raise_if_nonfinite(self._named(1.0))
 
 
+class TestCheckpointPublicationGuard(unittest.TestCase):
+    """Publication-boundary contract for NonFiniteGradGuard (#5816)."""
+
+    @staticmethod
+    def _named(grad_value: float = 1.0):
+        p = torch.nn.Parameter(torch.zeros(2, device="cpu"))
+        p.grad = torch.full((2,), grad_value, device="cpu")
+        return lambda: [("layer.weight", p)]
+
+    def test_validation_best_raises_before_serialize_and_keeps_metadata(self) -> None:
+        # A non-finite norm remains sticky after a later finite update, so a
+        # validation-best publish before the regular interval must still abort.
+        guard = NonFiniteGradGuard()
+        guard.update(torch.tensor(float("nan"), device="cpu"))
+        guard.update(torch.tensor(1.0, device="cpu"))
+
+        writes: list[str] = []
+        topk_committed = {"value": False}
+
+        def ensure() -> None:
+            guard.raise_if_nonfinite(self._named(float("nan")))
+
+        def save_validation_best() -> None:
+            ensure()
+            writes.append("validation-best")
+            topk_committed["value"] = True
+
+        with self.assertRaises(RuntimeError):
+            save_validation_best()
+        self.assertEqual(writes, [])
+        self.assertFalse(topk_committed["value"])
+
+    def test_ema_validation_best_raises_before_serialize(self) -> None:
+        guard = NonFiniteGradGuard()
+        guard.update(torch.tensor(float("inf"), device="cpu"))
+        writes: list[str] = []
+
+        def save_ema_validation_best() -> None:
+            guard.raise_if_nonfinite(self._named(1.0))
+            writes.append("ema-validation-best")
+
+        with self.assertRaises(RuntimeError):
+            save_ema_validation_best()
+        self.assertEqual(writes, [])
+
+    def test_live_and_ema_regular_boundary_validates_once(self) -> None:
+        guard = NonFiniteGradGuard()
+        guard.update(torch.tensor(1.0, device="cpu"))
+        checks = {"count": 0}
+        writes: list[str] = []
+
+        real_raise = guard.raise_if_nonfinite
+
+        def counting_raise(named_parameters) -> None:
+            checks["count"] += 1
+            real_raise(named_parameters)
+
+        guard.raise_if_nonfinite = counting_raise  # type: ignore[method-assign]
+
+        # One logical boundary: gate once, then write live and EMA.
+        guard.raise_if_nonfinite(self._named(1.0))
+        writes.append("live")
+        writes.append("ema")
+
+        self.assertEqual(checks["count"], 1)
+        self.assertEqual(writes, ["live", "ema"])
+        # The successful boundary cleared the flag; a second gate is a no-op.
+        guard.raise_if_nonfinite(self._named(1.0))
+        self.assertEqual(checks["count"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
