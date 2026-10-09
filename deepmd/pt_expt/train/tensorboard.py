@@ -139,18 +139,9 @@ class TensorBoardObserver(TrainingObserver):
         if writer is None or not self._is_due(observation.display_step):
             return
         # Validation and timing exist only at display boundaries. Emit them
-        # when that boundary also lands on tensorboard_freq so every tag
-        # family shares the configured cadence.
-        writer.add_scalar(
-            "learning_rate",
-            float(observation.learning_rate),
-            observation.display_step,
-        )
-        self._write_metric_tree(
-            "train",
-            observation.train_results,
-            observation.display_step,
-        )
+        # when that boundary also lands on tensorboard_freq.
+        # learning_rate and train/* stay owned by on_step_end so a coinciding
+        # disp_freq step cannot overwrite per-step points with interval averages.
         self._write_metric_tree(
             "valid",
             observation.valid_results,

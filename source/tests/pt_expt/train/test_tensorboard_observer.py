@@ -247,3 +247,69 @@ def test_exceptional_close_is_idempotent(tmp_path: Path) -> None:
     observer.close()
     observer.close()
     writer.close.assert_called_once()
+
+def test_coinciding_display_keeps_step_train_metrics(tmp_path: Path) -> None:
+    """At disp ∩ tensorboard_freq, train/* is written once from the step hook.
+
+    DisplayObservations may carry interval averages (disp_avg=True). Those must
+    not overwrite the per-step train/* / learning_rate points already emitted by
+    on_step_end under the same tags and step.
+    """
+    writer = MagicMock()
+    observer = TensorBoardObserver(
+        log_dir=str(tmp_path / "tb"),
+        freq=2,
+        rank_context=RankContext(),
+        multi_task=False,
+        writer_factory=MagicMock(return_value=writer),
+    )
+    observer._writer = writer
+
+    step_rmse = 1.5
+    step_lr = 0.02
+    observer.on_step_end(
+        StepObservation(
+            step=1,
+            display_step=2,
+            task_key="Default",
+            learning_rate=step_lr,
+            step_result=TrainStepResult(
+                task_key="Default",
+                step=1,
+                train_results={"rmse": step_rmse},
+            ),
+            rank_context=RankContext(),
+        )
+    )
+    observer.on_display(
+        DisplayObservation(
+            step=1,
+            display_step=2,
+            task_key="Default",
+            learning_rate=0.99,
+            train_results={"rmse": 9.9},
+            valid_results={"rmse": 3.0},
+            timing=_interval(2),
+            rank_context=RankContext(),
+        )
+    )
+
+    train_calls = [
+        call
+        for call in writer.add_scalar.call_args_list
+        if call.args[0] == "train/rmse"
+    ]
+    lr_calls = [
+        call
+        for call in writer.add_scalar.call_args_list
+        if call.args[0] == "learning_rate"
+    ]
+    assert len(train_calls) == 1
+    assert train_calls[0].args[1] == step_rmse
+    assert train_calls[0].args[2] == 2
+    assert len(lr_calls) == 1
+    assert lr_calls[0].args[1] == step_lr
+    tags = [call.args[0] for call in writer.add_scalar.call_args_list]
+    assert "valid/rmse" in tags
+    assert "timing/interval_wall_time" in tags
+
