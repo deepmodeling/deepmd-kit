@@ -17,6 +17,7 @@ from .entrypoint import (
     TrainEntrypointOptions,
 )
 from .metrics import (
+    MetricAccumulator,
     TrainingMetricAccumulator,
 )
 from .schedule import (
@@ -50,6 +51,7 @@ __all__ = [
     "CheckpointStore",
     "DisplayInterval",
     "LearningCurveWriter",
+    "MetricAccumulator",
     "RankContext",
     "ShardingPolicy",
     "StepSchedule",

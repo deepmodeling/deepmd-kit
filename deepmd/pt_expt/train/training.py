@@ -49,6 +49,7 @@ except ImportError:
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     AbstractTrainer,
+    MetricAccumulator,
     RankContext,
     ShardingPolicy,
     TrainerConfig,
@@ -60,6 +61,9 @@ from deepmd.dpmodel.train import (
     change_model_out_bias,
     change_model_out_bias_by_task,
     resolve_step_schedule,
+)
+from deepmd.pt_expt.train.metrics import (
+    all_reduce_metric_accumulator,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -3278,6 +3282,12 @@ class Trainer(AbstractTrainer):
         """Switch the wrapper to training mode."""
         self.wrapper.train()
 
+    def synchronize_metric_accumulator(self) -> None:
+        """All-reduce averaged training metrics before the chief logs them."""
+        if self.metric_accumulator is None or self.world_size <= 1:
+            return
+        all_reduce_metric_accumulator(self.metric_accumulator)
+
     def collect_display_results(
         self,
         tasks: TrainingTaskCollection,
@@ -3382,12 +3392,17 @@ class Trainer(AbstractTrainer):
         Validation is therefore skipped from stage two on; the metrics remain
         available through the independent full validation flow, which every
         rank enters together.
+
+        Display validation uses the shared :class:`MetricAccumulator` with
+        atom weights so optional NaN metrics and empty batches share the same
+        rules as training interval averages.
         """
         if task.validation_data is None or self.sharding.shards_parameters:
             return None
 
-        valid_results: dict[str, float] = {}
-        sum_natoms = 0
+        loss = self.losses[task.key]
+        accumulator = MetricAccumulator({task.key: loss.training_metric_names})
+        saw_batch = False
         for _ii in range(task.valid_numb_batch):
             val_input, val_label = self.get_data(is_train=False, task_key=task.key)
             if not val_input:
@@ -3398,21 +3413,22 @@ class Trainer(AbstractTrainer):
                 label=val_label,
                 task_key=task.key,
             )
-            # The metrics are per-atom quantities, so each batch weighs by the
-            # real atoms it holds summed over its frames. Phantom atoms
-            # (atype < 0), which pad a mixed-nloc batch, contribute to none.
+            # Per-atom metrics weigh by real atoms across frames. Phantom
+            # atoms (atype < 0) pad mixed-nloc batches and contribute nothing.
             natoms = int((val_input["atype"] >= 0).sum())
-            sum_natoms += natoms
-            for key, value in vmore.items():
-                if "l2_" not in key:
-                    valid_results[key] = (
-                        valid_results.get(key, 0.0) + self._to_float(value) * natoms
-                    )
-        if sum_natoms > 0:
-            valid_results = {
-                key: value / sum_natoms for key, value in valid_results.items()
-            }
-        return valid_results
+            accumulator.add(
+                task.key,
+                {
+                    key: value.detach() if torch.is_tensor(value) else value
+                    for key, value in vmore.items()
+                    if "l2_" not in key
+                },
+                weight=float(natoms),
+            )
+            saw_batch = True
+        if not saw_batch:
+            return {}
+        return accumulator.average(task.key)
 
     def learning_rate(self, step: int) -> float:
         """Return the configured learning rate for a zero-based step."""

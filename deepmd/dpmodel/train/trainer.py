@@ -56,6 +56,7 @@ from .timing import (
 
 if TYPE_CHECKING:
     from .metrics import (
+        MetricAccumulator,
         TrainingMetricAccumulator,
     )
 
@@ -537,7 +538,7 @@ class AbstractTrainer(ABC):
         trainer_config: TrainerConfig,
         *,
         rank_context: RankContext | None = None,
-        metric_accumulator: TrainingMetricAccumulator | None = None,
+        metric_accumulator: MetricAccumulator | None = None,
     ) -> None:
         self.trainer_config = trainer_config
         self.rank_context = rank_context or RankContext()
@@ -572,6 +573,10 @@ class AbstractTrainer(ABC):
                 display_step = step + 1
 
                 if self._should_display(display_step):
+                    # Collectives for averaged metrics run on every rank before
+                    # the chief-only logging path. Local windows stay on device
+                    # until this boundary.
+                    self.synchronize_metric_accumulator()
                     if self.rank_context.is_chief:
                         train_results, valid_results = self.collect_display_results(
                             tasks,
@@ -664,6 +669,16 @@ class AbstractTrainer(ABC):
         if not tasks.is_multitask:
             return train_results[active_task.key], valid_results[active_task.key]
         return train_results, valid_results
+
+    def synchronize_metric_accumulator(self) -> None:
+        """Reduce local metric windows across ranks at a display boundary.
+
+        The default implementation is a no-op for single-process runs. A
+        distributed backend overrides this with an all-reduce of the packed
+        sums, weights, and observation counts. The call is collective: every
+        rank that accumulates metrics must enter it together.
+        """
+        return None
 
     def on_train_begin(self, tasks: TrainingTaskCollection) -> None:
         """Hook called before the first optimizer step."""
