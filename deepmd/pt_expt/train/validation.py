@@ -367,8 +367,13 @@ class FullValidator:
                     # Match remote-failure cleanup: restore top-K, then drop any
                     # bytes already written for the aborted candidate (write-
                     # then-fail leaves an orphan that rollback alone keeps).
-                    self._rollback_pending_best_state()
-                    self._reconcile_best_checkpoints()
+                    # Swallow cleanup errors so they cannot bypass the
+                    # post-save collective below.
+                    try:
+                        self._rollback_pending_best_state()
+                        self._reconcile_best_checkpoints()
+                    except Exception:
+                        pass
                 caught_exception = exc
                 error_message = (
                     "Full validation failed while saving the best checkpoint:\n"
@@ -384,12 +389,31 @@ class FullValidator:
                 # Local save succeeded but another rank failed: undo staged
                 # top-K and drop the orphaned file before propagating.
                 if self.rank == 0 and caught_exception is None:
-                    self._rollback_pending_best_state()
-                    self._reconcile_best_checkpoints()
+                    try:
+                        self._rollback_pending_best_state()
+                        self._reconcile_best_checkpoints()
+                    except Exception:
+                        # Already propagating a remote failure; cleanup must
+                        # not replace that exception or skip non-chief waits.
+                        pass
                 raise
+            # Commit/reconcile stay inside a coordinated error phase so a
+            # chief-only OSError (e.g. prune/rename) cannot leave other ranks
+            # blocked in a later collective.
+            commit_error: str | None = None
+            commit_exception: Exception | None = None
             if self.rank == 0:
-                self._commit_pending_best_state()
-                self._reconcile_best_checkpoints()
+                try:
+                    self._commit_pending_best_state()
+                    self._reconcile_best_checkpoints()
+                except Exception as exc:
+                    commit_exception = exc
+                    commit_error = (
+                        "Full validation failed while committing the best "
+                        "checkpoint:\n"
+                        f"{traceback.format_exc()}"
+                    )
+            self._raise_if_distributed_error(commit_error, commit_exception)
 
         if self.rank == 0:
             try:
