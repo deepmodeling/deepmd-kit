@@ -3921,7 +3921,10 @@ def sezm_model_args() -> Argument:
         "symbolic make_fx and torch.compile in the DPA4/SeZM model. "
         "This path may still expose PyTorch compiler bugs, but can improve "
         "training speed by roughly 2-3x on supported workloads. "
-        "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
+        "Requires a PyTorch release listed in "
+        ":data:`deepmd.pt.utils.compile_compat.SUPPORTED_COMPILE_TORCH` "
+        "(currently 2.11.x, 2.12.x, and 2.13.x). "
+        "NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
     doc_enable_tf32 = (
