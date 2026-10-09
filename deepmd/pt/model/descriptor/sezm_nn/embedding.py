@@ -251,8 +251,8 @@ class GeometricInitialEmbedding(nn.Module):
             Optional per-edge neighbor-spin l=1 message with shape (E, 3, C) for
             the native spin scheme (built by ``SpinEmbedding.edge_l1``). It is
             added to the l=1 rows of the per-edge message, so it shares this
-            module's source gate, scatter and degree normalization with the
-            geometric message.
+            module's scatter and degree normalization with the geometric
+            message.
 
         Returns
         -------
@@ -281,12 +281,11 @@ class GeometricInitialEmbedding(nn.Module):
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
-        # The fused operator spans this broadcast and the scatter of Step 5, so
+        # The fused operator spans this broadcast and the scatter of Step 4, so
         # it takes over whenever nothing else joins the message in between.
         if (
             self._can_fuse_scatter(zonal_coupling)
             and spin_l1_message is None
-            and edge_cache.edge_src_gate is None
             and edge_cache.csr_cache is not None
         ):
             return self.forward_fused_scatter(
@@ -303,23 +302,13 @@ class GeometricInitialEmbedding(nn.Module):
         # === Step 3b. Fold in the neighbor-spin l=1 message (native spin) ===
         # The l=1 coefficients occupy the first three packed non-scalar rows, so
         # the neighbor-spin message joins the geometric message there and then
-        # shares the source gate, scatter and degree normalization below.
+        # shares the scatter and degree normalization below.
         if spin_l1_message is not None:
             non_scalar_message = non_scalar_message.index_add(
                 1, self.l1_local_index, spin_l1_message
             )
 
-        # === Step 4. Source Freeze Propagation Gate (optional) ===
-        # Mute messages emitted by nodes whose local neighborhood enters
-        # the frozen zone. ``edge_src_gate`` is ``None`` outside bridging
-        # mode so this is a no-op in normal training.
-        src_gate = edge_cache.edge_src_gate
-        if src_gate is not None:
-            non_scalar_message = non_scalar_message * src_gate.to(
-                dtype=non_scalar_message.dtype
-            ).unsqueeze(-1)
-
-        # === Step 5. Scatter to nodes and normalize ===
+        # === Step 4. Scatter to nodes and normalize ===
         # Avoid advanced-index writeback (out[:, non_scalar_row_index, :]) which produces a copy.
         non_scalar_out = out.new_zeros(
             n_nodes, self.non_scalar_row_index.numel(), self.channels
@@ -699,11 +688,6 @@ class EnvironmentInitialEmbedding(nn.Module):
         # outer = r_tilde[:, :, None] * g[:, None, :]  # (E, coord_dim, embed_dim)
         outer = torch.einsum("ei,ej->eij", r_tilde, g)  # (E, coord_dim, embed_dim)
         outer_flat = outer.reshape(-1, self.coord_dim * self.embed_dim)
-        # Source Freeze Propagation Gate: mute the outer-product contribution
-        # of any edge whose source node has a neighbor in the frozen zone.
-        src_gate = edge_cache.edge_src_gate
-        if src_gate is not None:
-            outer_flat = outer_flat * src_gate.to(dtype=outer_flat.dtype)
         env_agg = outer_flat.new_zeros(n_nodes, self.coord_dim * self.embed_dim)
         env_agg.index_add_(0, dst, outer_flat)
         env_agg = env_agg.reshape(n_nodes, self.coord_dim, self.embed_dim)
@@ -1054,9 +1038,9 @@ class SpinEmbedding(nn.Module):
         (neighbor) spin, scaled by a per-source-type per-channel weight and
         gated by the C^3 envelope. The message is returned per edge; the
         geometric initial embedding folds it into the l=1 rows and applies the
-        shared source gate, scatter and degree normalization, so a neighbor's
-        spin direction enters an atom's l=1 backbone before any interaction
-        block (the spin analogue of the geometric initial embedding).
+        shared scatter and degree normalization, so a neighbor's spin direction
+        enters an atom's l=1 backbone before any interaction block (the spin
+        analogue of the geometric initial embedding).
 
         Parameters
         ----------

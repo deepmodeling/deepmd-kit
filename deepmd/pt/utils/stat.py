@@ -65,39 +65,52 @@ __all__ = [
     "_restore_observed_type_from_file",
     "_save_observed_type_to_file",
     "collect_observed_types",
-    "min_pair_dist_frame_mask",
     "observed_types_from_counts",
+    "pair_margin_frame_mask",
     "scan_redu_stats",
     "select_batch_frames",
 ]
 
 
-def min_pair_dist_frame_mask(
+def pair_margin_frame_mask(
     batch: dict[str, Any],
-    min_pair_dist: float,
+    enabled: bool,
 ) -> torch.Tensor | None:
     """
-    Return the valid-frame mask for a minimum pair-distance threshold.
+    Return the valid-frame mask of the pair-clearance filter.
+
+    The derived field holds each frame's margin against the thresholds its atom
+    pairs carry, so a frame is kept when that margin reaches one, whatever
+    length scale sized them. The registered filter radius is already
+    spent on that margin and takes no part in this comparison.
 
     Parameters
     ----------
     batch
         Data batch containing frame-aligned tensors.
-    min_pair_dist
-        Minimum allowed pair distance in Å.
+    enabled
+        Whether the pair-clearance filter is configured for this data.
 
     Returns
     -------
     torch.Tensor or None
         Boolean mask with shape (nframes), or ``None`` when filtering is
-        disabled or the distance field is unavailable.
+        disabled.
+
+    Raises
+    ------
+    RuntimeError
+        If the batch carries a placeholder instead of a derived margin, which
+        would otherwise accept every frame silently.
     """
-    if min_pair_dist <= 0.0 or "min_pair_dist" not in batch:
+    if not enabled:
         return None
-    distances = batch["min_pair_dist"]
-    if not isinstance(distances, torch.Tensor):
-        return None
-    return distances.reshape(-1) >= float(min_pair_dist)
+    if not batch.get("find_pair_margin", False):
+        raise RuntimeError(
+            "The pair-clearance filter is enabled, but the data source did not "
+            "derive the pair margin of the batch."
+        )
+    return batch["pair_margin"].reshape(-1) >= 1.0
 
 
 def select_batch_frames(
@@ -155,8 +168,10 @@ def make_stat_input(
     nbatches
         Maximum number of valid batches collected from each system.
     min_pair_dist
-        Minimum allowed pair distance in Å. Frames below the threshold are
-        excluded before statistics are accumulated.
+        Radius the training-frame filter was registered with. When
+        positive, frames holding a pair inside its window are dropped before
+        the statistics are accumulated, so they see the frames the optimizer
+        sees.
 
     Returns
     -------
@@ -186,7 +201,7 @@ def make_stat_input(
                     except StopIteration:
                         break
                 scanned_batches += 1
-                frame_mask = min_pair_dist_frame_mask(stat_data, min_pair_dist)
+                frame_mask = pair_margin_frame_mask(stat_data, min_pair_dist > 0.0)
                 if frame_mask is not None and not torch.any(frame_mask):
                     continue
                 if frame_mask is not None:
@@ -216,9 +231,8 @@ def make_stat_input(
             if min_pair_dist > 0.0:
                 log.info(
                     "Skipping data system %d in statistics because no frame "
-                    "satisfies min_pair_dist=%s.",
+                    "keeps every atom pair beyond the filter radius.",
                     system_index,
-                    min_pair_dist,
                 )
             else:
                 log.info(
@@ -285,8 +299,8 @@ def scan_redu_stats(
     intensive
         Whether the fitting target is intensive.
     min_pair_dist
-        Minimum allowed pair distance in Angstrom. Frames below the threshold
-        are excluded.
+        Radius the training-frame filter was registered with. When
+        positive, frames holding a pair inside its window are excluded.
 
     Returns
     -------
@@ -307,7 +321,7 @@ def scan_redu_stats(
     with torch.device("cpu"):
         for dataloader in dataloaders:
             for batch in _full_pass_loader(dataloader):
-                frame_mask = min_pair_dist_frame_mask(batch, min_pair_dist)
+                frame_mask = pair_margin_frame_mask(batch, min_pair_dist > 0.0)
                 if frame_mask is not None:
                     if not torch.any(frame_mask):
                         continue

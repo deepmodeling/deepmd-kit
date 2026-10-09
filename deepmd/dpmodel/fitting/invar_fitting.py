@@ -241,6 +241,7 @@ class InvarFitting(GeneralFitting):
         fparam: Array | None = None,
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
+        node_gate: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -266,6 +267,9 @@ class InvarFitting(GeneralFitting):
         vacuum_descriptor
             The descriptor of an isolated atom of every type, required by
             ``vacuum_ref``. shape: ntypes x nd
+        node_gate
+            Per-atom source gate of a bridged descriptor; the learned part of
+            the output fades with it. shape: nf x nloc x 1
 
         """
         return self._call_common(
@@ -277,4 +281,5 @@ class InvarFitting(GeneralFitting):
             fparam,
             aparam,
             vacuum_descriptor=vacuum_descriptor,
+            node_gate=node_gate,
         )

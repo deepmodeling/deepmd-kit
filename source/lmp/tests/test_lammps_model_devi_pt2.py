@@ -70,13 +70,14 @@ def _compute_expected():
     """
     global expected_e, expected_f, expected_v, expected_f2, expected_v2
 
-    import json
-    import subprocess
-    import sys
     import textwrap
 
+    from python_reference import (
+        run_python_reference,
+    )
+
     script = textwrap.dedent(f"""\
-        import json, numpy as np
+        import numpy as np
         from deepmd.infer import DeepPot
 
         coord = {coord.tolist()!r}
@@ -93,16 +94,9 @@ def _compute_expected():
                 atype, fparam=np.array(fp), aparam=np.array(ap), atomic=True,
             )
             results.append({{"e": e[0, 0], "f": f[0].tolist(), "av": av[0].tolist()}})
-        print(json.dumps(results))
+        result = results
     """)
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
-    results = json.loads(proc.stdout.strip())
+    results = run_python_reference(script)
     expected_e = results[0]["e"]
     expected_f = np.array(results[0]["f"])
     # DeepPot returns virial; LAMMPS centroid/stress/atom returns stress = -virial

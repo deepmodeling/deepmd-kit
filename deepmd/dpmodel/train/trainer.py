@@ -84,7 +84,7 @@ def change_model_out_bias(
     new_bias = deepcopy(model.get_out_bias())
 
     if recompute_input_stats and bias_adjust_mode == "set-by-statistic":
-        model.get_fitting_net().compute_input_stats(sample_func)
+        model.compute_fitting_input_stats(sample_func)
 
     model_type_map = model.get_type_map()
     log.info(

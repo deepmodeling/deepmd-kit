@@ -708,8 +708,11 @@ class TestSeZMModelCompile(unittest.TestCase):
             compute_dtype=descriptor.compute_dtype,
             eps=descriptor.eps,
             deg_norm_floor=descriptor.deg_norm_floor,
-            inner_clamp=descriptor.inner_clamp,
+            bridging_clamp=descriptor.bridging_clamp,
             bridging_switch=descriptor.bridging_switch,
+            # The standard path this compares against is bridging-free, so the
+            # fixture configures no window and no pair length scale is needed.
+            edge_contact=None,
             edge_envelope=descriptor.edge_envelope,
             radial_basis=descriptor.radial_basis,
             has_exclude_types=False,
@@ -1346,7 +1349,7 @@ class TestSeZMModelProperty(unittest.TestCase):
 
 
 class TestInnerPotential(unittest.TestCase):
-    """Test InnerPotential ZBL analytical pair potential."""
+    """Test InnerPotential analytical pair potential."""
 
     def setUp(self) -> None:
         self.device = env.DEVICE
@@ -1366,6 +1369,48 @@ class TestInnerPotential(unittest.TestCase):
         atype_flat = torch.tensor(atype_pair, dtype=torch.long, device=self.device)
         edge_mask = torch.tensor([True, True], device=self.device)
         return edge_vec, edge_index, atype_flat, edge_mask
+
+    def test_nlh_matches_the_backend_agnostic_reference(self) -> None:
+        """The pt forward reproduces the dpmodel one in NLH mode."""
+        from deepmd.dpmodel.atomic_model.inner_potential import (
+            InnerPotential as InnerPotentialDP,
+        )
+
+        type_map = ["O", "H", "Fe"]
+        pot = InnerPotential(type_map=type_map, mode="nlh").to(self.device)
+        reference = InnerPotentialDP(type_map=type_map, mode="nlh")
+        for r, pair in ((0.4, [0, 1]), (1.1, [0, 0]), (2.5, [1, 2])):
+            edge_vec, edge_index, atype_flat, edge_mask = self._pair_edges(r, pair)
+            got = pot(edge_vec, edge_index, atype_flat, edge_mask, 2)
+            want = reference.call(
+                edge_vec.detach().cpu().numpy(),
+                edge_index.detach().cpu().numpy(),
+                atype_flat.detach().cpu().numpy(),
+                edge_mask.detach().cpu().numpy(),
+                2,
+            )
+            np.testing.assert_allclose(
+                got.detach().cpu().numpy(), np.asarray(want), rtol=1e-12
+            )
+
+    def test_nlh_differs_from_zbl(self) -> None:
+        """The mode reaches the energy rather than falling back to ZBL."""
+        edge_vec, edge_index, atype_flat, edge_mask = self._pair_edges(0.8, [0, 0])
+        values = [
+            float(
+                InnerPotential(type_map=["O"], mode=mode)
+                .to(self.device)(edge_vec, edge_index, atype_flat, edge_mask, 2)
+                .sum()
+            )
+            for mode in ("zbl", "nlh")
+        ]
+        self.assertGreater(values[1], 0.0)
+        self.assertGreater(abs(values[1] / values[0] - 1.0), 0.05)
+
+    def test_nlh_series_table_stays_out_of_the_checkpoint(self) -> None:
+        """Every array follows type_map and mode, so none of them is stored."""
+        pot = InnerPotential(type_map=["O", "H"], mode="nlh").to(self.device)
+        self.assertEqual(list(pot.state_dict()), [])
 
     def test_zbl_known_value_OO(self) -> None:
         """ZBL energy for an O-O pair matches the analytic reference."""
@@ -1421,36 +1466,6 @@ class TestInnerPotential(unittest.TestCase):
         pot(edge_vec, edge_index, atype_flat, edge_mask, n_node=2).sum().backward()
         self.assertIsNotNone(edge_vec.grad)
         self.assertTrue(torch.isfinite(edge_vec.grad).all())
-
-    def test_virtual_spin_types_masked(self) -> None:
-        """Edges touching a virtual spin type (>= real_type_count) contribute 0."""
-        pot = InnerPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
-        # Node 2 is a virtual spin atom (type 2 >= real_type_count=2).
-        edge_vec = torch.tensor(
-            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        # Edges: (0<->1) real-real, (0<->2) touch virtual node 2.
-        edge_index = torch.tensor(
-            [[1, 0, 2, 0], [0, 1, 0, 2]], dtype=torch.long, device=self.device
-        )
-        atype_flat = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
-        edge_mask = torch.tensor([True, True, True, True], device=self.device)
-
-        with_virtual = pot(
-            edge_vec, edge_index, atype_flat, edge_mask, n_node=3, real_type_count=2
-        )
-        # Only the real-real pair survives.
-        real_only = pot(
-            edge_vec[:2],
-            edge_index[:, :2],
-            atype_flat,
-            edge_mask[:2],
-            n_node=3,
-            real_type_count=2,
-        )
-        torch.testing.assert_close(with_virtual, real_only)
 
     def test_unknown_element_raises(self) -> None:
         """Test that unknown element raises ValueError."""
@@ -2213,7 +2228,6 @@ class TestSeZMModelBridging(unittest.TestCase):
                 "rcut": 3.0,
                 "channels": 4,
                 "n_focus": 1,
-                "focus_compete": False,
                 "n_radial": 3,
                 "radial_mlp": [6],
                 "use_env_seed": False,
@@ -2256,7 +2270,30 @@ class TestSeZMModelBridging(unittest.TestCase):
         model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
         self.assertIsNotNone(model.inter_potential)
         self.assertEqual(model.bridging_method, "ZBL")
-        self.assertIsNotNone(model.atomic_model.descriptor.inner_clamp)
+        self.assertIsNotNone(model.atomic_model.descriptor.bridging_clamp)
+
+    def test_legacy_bridged_state_is_rejected(self) -> None:
+        """Tagged and untagged checkpoints obey the descriptor version contract."""
+        model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
+        for version in (None, 1.0, 1.1, 1.2):
+            with self.subTest(version=version):
+                state = model.state_dict()
+                version_key = "atomic_model.descriptor.version_tensor"
+                if version is None:
+                    del state[version_key]
+                else:
+                    state[version_key] = torch.full_like(state[version_key], version)
+                with self.assertRaisesRegex(ValueError, "Retrain the bridged model"):
+                    model.load_state_dict(state)
+
+    def test_current_bridged_state_round_trips(self) -> None:
+        """The state-dict and portable representations retain the same tensors."""
+        params = self._build_model_params(bridging_method="ZBL")
+        model = get_sezm_model(params)
+        restored = get_sezm_model(params)
+        restored.load_state_dict(model.state_dict())
+        portable = SeZMModel.deserialize(restored.serialize())
+        torch.testing.assert_close(portable.state_dict(), model.state_dict())
 
     def test_empty_statistics_raise(self) -> None:
         """A fully filtered statistics sample cannot calibrate output bias."""
@@ -2445,41 +2482,99 @@ class TestSeZMModelBridging(unittest.TestCase):
         repeated_bias = model.get_out_bias().detach().cpu().numpy().reshape(-1)[:2]
         np.testing.assert_allclose(repeated_bias, raw_fit, atol=1.0e-8)
 
+    def _excluded_pair_models(
+        self, exclusion_key: str, exclusion_value: list
+    ) -> tuple[SeZMModel, SeZMModel]:
+        """A plain and a bridged float64 model carrying the same weights."""
+        plain_params = self._build_model_params(bridging_method="none")
+        zbl_params = self._build_model_params(bridging_method="ZBL")
+        for params in (plain_params, zbl_params):
+            params[exclusion_key] = exclusion_value
+            params["descriptor"]["precision"] = "float64"
+            params["fitting_net"]["precision"] = "float64"
+        model_plain = get_sezm_model(plain_params).to(self.device).eval()
+        model_zbl = get_sezm_model(zbl_params).to(self.device).eval()
+        model_zbl.load_state_dict(model_plain.state_dict(), strict=False)
+        return model_plain, model_zbl
+
     def test_zbl_respects_exclusions(self) -> None:
-        """Excluded atoms and pairs contribute neither learned nor ZBL energy."""
-        coord = torch.tensor(
-            [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0]]],
-            dtype=torch.float64,
-            device=self.device,
-        )
+        """Excluded pairs and atoms leave the analytical term as they leave the learned one.
+
+        The two exclusions differ in what they hide. A pair exclusion takes the
+        pair out of the descriptor and out of the analytical term together, so
+        a bridged model reproduces a plain one even with the two atoms at the
+        inner radius of the window. An atom exclusion acts on atomic outputs
+        alone: the excluded atom loses its half of the pair energy with the
+        rest of its output, its geometry still shapes the environment of its
+        partner, and the partner keeps its own half. Beyond the outer radius
+        the bridged model is therefore the plain one plus that half; at the
+        inner radius the partner is a frozen atom and is left with the per-type
+        bias of the fitting plus the same half.
+        """
         atype = torch.tensor([[0, 1]], dtype=torch.long, device=self.device)
         box = torch.tensor(
             [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
             dtype=torch.float64,
             device=self.device,
         )
-        for exclusion_key, exclusion_value in (
-            ("pair_exclude_types", [[0, 1]]),
-            ("atom_exclude_types", [1]),
-        ):
-            with self.subTest(exclusion_key=exclusion_key):
-                plain_params = self._build_model_params(bridging_method="none")
-                zbl_params = self._build_model_params(bridging_method="ZBL")
-                for params in (plain_params, zbl_params):
-                    params[exclusion_key] = exclusion_value
-                    params["descriptor"]["precision"] = "float64"
-                    params["fitting_net"]["precision"] = "float64"
 
-                model_plain = get_sezm_model(plain_params).to(self.device).eval()
-                model_zbl = get_sezm_model(zbl_params).to(self.device).eval()
-                model_zbl.load_state_dict(model_plain.state_dict(), strict=False)
+        def _pair(separation: float) -> torch.Tensor:
+            return torch.tensor(
+                [[[0.0, 0.0, 0.0], [separation, 0.0, 0.0]]],
+                dtype=torch.float64,
+                device=self.device,
+            )
 
-                torch.testing.assert_close(
-                    model_zbl(coord, atype, box=box)["energy"],
-                    model_plain(coord, atype, box=box)["energy"],
-                    atol=1.0e-12,
-                    rtol=1.0e-12,
-                )
+        def _half_pair_energy(model: SeZMModel, separation: float) -> torch.Tensor:
+            """The analytical half-energy each atom of the pair collects."""
+            edge_vec = torch.tensor(
+                [[separation, 0.0, 0.0], [-separation, 0.0, 0.0]],
+                dtype=torch.float64,
+                device=self.device,
+            )
+            edge_index = torch.tensor([[1, 0], [0, 1]], device=self.device)
+            return model.inter_potential(
+                edge_vec,
+                edge_index,
+                atype.reshape(-1),
+                torch.ones(2, dtype=torch.bool, device=self.device),
+                2,
+            ).reshape(-1)[0]
+
+        with self.subTest(exclusion_key="pair_exclude_types"):
+            plain, bridged = self._excluded_pair_models("pair_exclude_types", [[0, 1]])
+            coord = _pair(0.8)
+            torch.testing.assert_close(
+                bridged(coord, atype, box=box)["energy"],
+                plain(coord, atype, box=box)["energy"],
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
+
+        with self.subTest(exclusion_key="atom_exclude_types"):
+            plain, bridged = self._excluded_pair_models("atom_exclude_types", [1])
+            coord = _pair(1.5)  # beyond the outer radius: the window is shut
+            torch.testing.assert_close(
+                bridged(coord, atype, box=box)["energy"],
+                plain(coord, atype, box=box)["energy"]
+                + _half_pair_energy(bridged, 1.5),
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
+
+            coord = _pair(0.8)  # at the inner radius: the pair is frozen
+            bias = bridged.atomic_model.fitting_net.bias_atom_e.reshape(-1)
+            torch.testing.assert_close(
+                bridged(coord, atype, box=box)["atom_energy"].reshape(-1),
+                torch.stack(
+                    [
+                        bias[0] + _half_pair_energy(bridged, 0.8),
+                        torch.zeros_like(bias[0]),
+                    ]
+                ),
+                atol=1.0e-12,
+                rtol=1.0e-12,
+            )
 
 
 class TestSeZMPhantomAtoms(unittest.TestCase):
@@ -2506,7 +2601,6 @@ class TestSeZMPhantomAtoms(unittest.TestCase):
                 "rcut": 4.0,
                 "channels": 4,
                 "n_focus": 1,
-                "focus_compete": False,
                 "n_radial": 3,
                 "radial_mlp": [6],
                 "use_env_seed": False,
@@ -2645,7 +2739,6 @@ class TestSeZMModelModes(unittest.TestCase):
                 "rcut": 3.0,
                 "channels": 4,
                 "n_focus": 1,
-                "focus_compete": False,
                 "n_radial": 3,
                 "radial_mlp": [6],
                 "use_env_seed": False,

@@ -24,6 +24,7 @@ from deepmd.dpmodel.utils.neighbor_list import (
 
 from .make_model import (
     _translate_energy_keys,
+    fused_atom_bias,
     make_model,
 )
 from .model import (
@@ -206,9 +207,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             atype,
             edge_vec,
         )
-        descriptor = self.atomic_model.descriptor
-        fitting = self.atomic_model.fitting_net
-        atom_bias = fitting.bias_atom_e[:, 0] + self.atomic_model.out_bias[0, :, 0]
+        learned, pair_potential = self.atomic_model.fused_decomposition()
+        descriptor = learned.descriptor
+        fitting = learned.fitting_net
+        atom_bias = fused_atom_bias(self.atomic_model, learned)
         if use_dpa4c:
             energy, atom_energy, force, virial, atom_virial, force_mag = (
                 dpa4c_canonical_compress_energy_force(
@@ -220,6 +222,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     atom_bias,
                     do_atomic_virial,
                     spin,
+                    None if pair_potential is None else pair_potential.pair_table,
                 )
             )
         else:

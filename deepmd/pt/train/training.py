@@ -103,7 +103,7 @@ from deepmd.pt.utils.lmdb_dataset import (
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
-    min_pair_dist_frame_mask,
+    pair_margin_frame_mask,
     scan_redu_stats,
     select_batch_frames,
 )
@@ -132,6 +132,7 @@ from deepmd.pt_expt.train.validation import (
 from deepmd.utils.data import (
     DataRequirementItem,
     has_data_requirement,
+    min_pair_dist_requirement,
 )
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
@@ -519,25 +520,22 @@ class Trainer:
         )
 
         # Data
+        # Radius of the pair-clearance filter, per task.
+        self.min_pair_dist_by_task: dict[str, float] = {}
         if not self.multi_task:
             # add data requirement for labels
             data_requirement = self.loss.label_requirement
             data_requirement += get_additional_data_requirement(self.model)
-            min_pair_dist = float(
-                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+            pair_filter = min_pair_dist_requirement(
+                model_params,
+                float(
+                    training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+                ),
             )
-            if min_pair_dist > 0.0:
-                data_requirement.append(
-                    DataRequirementItem(
-                        "min_pair_dist",
-                        ndof=1,
-                        atomic=False,
-                        must=False,
-                        high_prec=False,
-                        default=min_pair_dist,
-                        source_policy="derived",
-                    )
-                )
+            min_pair_dist = 0.0 if pair_filter is None else float(pair_filter.default)
+            self.min_pair_dist_by_task["Default"] = min_pair_dist
+            if pair_filter is not None:
+                data_requirement.append(pair_filter)
             training_data.add_data_requirement(data_requirement)
             if validation_data is not None:
                 validation_data.add_data_requirement(
@@ -601,23 +599,20 @@ class Trainer:
                 data_requirement += get_additional_data_requirement(
                     self.model[model_key]
                 )
-                min_pair_dist = float(
-                    training_params["data_dict"][model_key]
-                    .get("training_data", {})
-                    .get("min_pair_dist", 0.0)
+                pair_filter = min_pair_dist_requirement(
+                    model_params["model_dict"][model_key],
+                    float(
+                        training_params["data_dict"][model_key]
+                        .get("training_data", {})
+                        .get("min_pair_dist", 0.0)
+                    ),
                 )
-                if min_pair_dist > 0.0:
-                    data_requirement.append(
-                        DataRequirementItem(
-                            "min_pair_dist",
-                            ndof=1,
-                            atomic=False,
-                            must=False,
-                            high_prec=False,
-                            default=min_pair_dist,
-                            source_policy="derived",
-                        )
-                    )
+                min_pair_dist = (
+                    0.0 if pair_filter is None else float(pair_filter.default)
+                )
+                self.min_pair_dist_by_task[model_key] = min_pair_dist
+                if pair_filter is not None:
+                    data_requirement.append(pair_filter)
                 training_data[model_key].add_data_requirement(data_requirement)
                 if validation_data[model_key] is not None:
                     validation_data[model_key].add_data_requirement(
@@ -738,24 +733,12 @@ class Trainer:
         self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
-        # Minimum pairwise distance for filtering unphysical frames during training.
-        if self.multi_task:
-            self.min_pair_dist: float | dict[str, float] = {
-                model_key: float(
-                    training_params["data_dict"][model_key]
-                    .get("training_data", {})
-                    .get("min_pair_dist", 0.0)
-                )
-                for model_key in self.model_keys
-            }
-        else:
-            self.min_pair_dist = float(
-                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
-            )
-        self.has_min_pair_filter = (
-            any(value > 0.0 for value in self.min_pair_dist.values())
-            if isinstance(self.min_pair_dist, dict)
-            else self.min_pair_dist > 0.0
+        # Radius the pair-clearance filter was registered with. The
+        # filter reads it as an enable flag, the frames carrying a margin that
+        # is already measured against that radius. It is resolved once with the
+        # data requirement, so the two cannot disagree.
+        self.has_min_pair_filter = any(
+            value > 0.0 for value in self.min_pair_dist_by_task.values()
         )
         if self.has_min_pair_filter:
             if self.multi_task:
@@ -2161,12 +2144,6 @@ class Trainer:
             use_ema_weights=True,
         )
 
-    def _get_min_pair_dist(self, task_key: str) -> float:
-        """Return the minimum pair distance configured for one task."""
-        if isinstance(self.min_pair_dist, dict):
-            return self.min_pair_dist[task_key]
-        return self.min_pair_dist
-
     def _next_training_batch(
         self,
         task_key: str,
@@ -2207,8 +2184,12 @@ class Trainer:
 
         raise RuntimeError(
             "Unable to collect a globally valid training batch for task "
-            f"{task_key!r} after {max_attempts} attempts with "
-            f"min_pair_dist={self._get_min_pair_dist(task_key)}."
+            f"{task_key!r} after {max_attempts} attempts: no frame keeps every "
+            "atom pair beyond the frame-filter radius. A bridged model filters at "
+            "the midpoint of its bridging window, so lower "
+            "`bridging_fraction_inner` or `bridging_fraction_outer` there, or "
+            "`training_data.min_pair_dist` on any other model, or clean the "
+            "dataset."
         )
 
     def get_data(
@@ -2224,10 +2205,8 @@ class Trainer:
             return {}, {}, {}
         batch_data = next(iterator)
         # === Filter frames with atoms too close (training only) ===
-        min_pair_dist = self._get_min_pair_dist(task_key)
-        valid_mask = (
-            min_pair_dist_frame_mask(batch_data, min_pair_dist) if is_train else None
-        )
+        filter_enabled = is_train and self.min_pair_dist_by_task[task_key] > 0.0
+        valid_mask = pair_margin_frame_mask(batch_data, filter_enabled)
         local_has_valid = valid_mask is None or bool(torch.any(valid_mask))
         if not local_has_valid:
             return {}, {}, {}
@@ -2349,9 +2328,35 @@ class Trainer:
         fout.flush()
 
 
+#: The world a validity group was drawn from, paired with that group. The flag
+#: is a host value and its answer gates host control flow, so reducing it over a
+#: CPU backend keeps it off the accelerator and out of its execution stream,
+#: where reading it back would drain the pipeline once per step.
+_VALIDITY_GROUP: tuple[Any, Any] | None = None
+
+
+def _validity_group() -> Any:
+    """Return the CPU process group used for the frame-validity agreement.
+
+    The group belongs to the world it was drawn from, so it is retained under
+    that world and rebuilt when a process enters a new one.
+    """
+    global _VALIDITY_GROUP
+    world = dist.group.WORLD
+    if _VALIDITY_GROUP is None or _VALIDITY_GROUP[0] is not world:
+        group = (
+            world if dist.get_backend() == "gloo" else dist.new_group(backend="gloo")
+        )
+        _VALIDITY_GROUP = (world, group)
+    return _VALIDITY_GROUP[1]
+
+
 def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
     """
     Return whether every distributed rank has a valid training frame.
+
+    The agreement travels over the CPU process group of :func:`_validity_group`,
+    so the flag it reduces lives on the host whatever device the model trains on.
 
     Parameters
     ----------
@@ -2364,11 +2369,9 @@ def all_ranks_have_valid_frames(local_has_valid: bool) -> bool:
         ``True`` only when every rank reports a valid frame.
     """
     all_ranks_have_valid = torch.tensor(
-        int(local_has_valid),
-        dtype=torch.int32,
-        device=DEVICE,
+        int(local_has_valid), dtype=torch.int32, device="cpu"
     )
-    dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN)
+    dist.all_reduce(all_ranks_have_valid, op=dist.ReduceOp.MIN, group=_validity_group())
     return bool(all_ranks_have_valid.item())
 
 

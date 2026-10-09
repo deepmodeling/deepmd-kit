@@ -203,14 +203,14 @@ int isa_block() {
 }
 
 /// Resolve the kernels of the running CPU.
-Kernels resolve_kernels(int lmax, bool has_modes) {
+Kernels resolve_kernels(int lmax, bool has_modes, bool bridged) {
   switch (deepmd_cpu::host_isa()) {
     case Isa::kAvx512:
-      return avx512::kernels(lmax, has_modes);
+      return avx512::kernels(lmax, has_modes, bridged);
     case Isa::kAvx2:
-      return avx2::kernels(lmax, has_modes);
+      return avx2::kernels(lmax, has_modes, bridged);
     default:
-      return scalar::kernels(lmax, has_modes);
+      return scalar::kernels(lmax, has_modes, bridged);
   }
 }
 
@@ -333,11 +333,14 @@ Arguments build_arguments(const Inputs& inputs,
                           const torch::Tensor& coupling_value,
                           const torch::Tensor& output_mean,
                           const torch::Tensor& output_inv_std,
+                          const torch::Tensor& contact_radius,
                           double table_stride,
                           double table_max,
                           double rcut,
                           double eps,
-                          double degree_floor) {
+                          double degree_floor,
+                          double f_inner,
+                          double f_outer) {
   Arguments arguments{};
   arguments.edge_vec = inputs.edge_vec.const_data_ptr<float>();
   arguments.source = inputs.source.const_data_ptr<int64_t>();
@@ -364,6 +367,14 @@ Arguments build_arguments(const Inputs& inputs,
                                  : coupling_value.const_data_ptr<float>();
   arguments.output_mean = output_mean.const_data_ptr<float>();
   arguments.output_inv_std = output_inv_std.const_data_ptr<float>();
+  TORCH_CHECK(
+      contact_radius.is_contiguous() &&
+          contact_radius.scalar_type() == torch::kFloat32 &&
+          contact_radius.sizes() ==
+              torch::IntArrayRef({static_cast<long>(inputs.layout.type_count)}),
+      "dpa4c_graph_compress: contact_radius must be a contiguous fp32 "
+      "tensor with shape (type_count,)");
+  arguments.contact_radius = contact_radius.const_data_ptr<float>();
   arguments.node_count = inputs.atype.size(0);
   arguments.edge_count = inputs.edge_vec.size(0);
   arguments.coupling_count = static_cast<int>(coupling_meta.numel() / 8);
@@ -372,6 +383,15 @@ Arguments build_arguments(const Inputs& inputs,
   arguments.rcut = static_cast<float>(rcut);
   arguments.eps = static_cast<float>(eps);
   arguments.degree_floor = static_cast<float>(degree_floor);
+  TORCH_CHECK(f_inner >= 0.0 && f_outer >= f_inner,
+              "dpa4c_graph_compress: the bridging switch needs 0 <= "
+              "f_inner <= f_outer, got ",
+              f_inner, " and ", f_outer);
+  const bool windowed = f_outer > f_inner;
+  arguments.f_inner = windowed ? static_cast<float>(f_inner) : 0.0f;
+  arguments.f_outer = windowed ? static_cast<float>(f_outer) : 0.0f;
+  arguments.inverse_f_width =
+      windowed ? static_cast<float>(1.0 / (f_outer - f_inner)) : 0.0f;
   return arguments;
 }
 
@@ -411,13 +431,16 @@ std::tuple<torch::Tensor, torch::Tensor> forward(
     torch::Tensor spin,
     torch::Tensor spin_pair,
     torch::Tensor spin_type,
+    torch::Tensor contact_radius,
     bool canonical,
     int64_t lmax,
     double table_stride,
     double table_max,
     double rcut,
     double eps,
-    double degree_floor) {
+    double degree_floor,
+    double f_inner,
+    double f_outer) {
   TORCH_CHECK(spin.dim() != 2,
               "dpa4c_graph_compress: the CPU kernel has no native spin "
               "branch; evaluate a spin-conditioned descriptor eagerly");
@@ -430,20 +453,22 @@ std::tuple<torch::Tensor, torch::Tensor> forward(
       torch::empty({inputs.atype.size(0), layout.output_width}, options);
   auto state =
       torch::empty({inputs.atype.size(0), layout.moment_width + 2}, options);
-  Arguments arguments =
-      build_arguments(inputs, type_embedding.contiguous(),
-                      readout_matrices.contiguous(), coupling_meta.contiguous(),
-                      coupling_entry.contiguous(), coupling_value.contiguous(),
-                      output_mean.contiguous(), output_inv_std.contiguous(),
-                      table_stride, table_max, rcut, eps, degree_floor);
+  Arguments arguments = build_arguments(
+      inputs, type_embedding.contiguous(), readout_matrices.contiguous(),
+      coupling_meta.contiguous(), coupling_entry.contiguous(),
+      coupling_value.contiguous(), output_mean.contiguous(),
+      output_inv_std.contiguous(), contact_radius, table_stride, table_max,
+      rcut, eps, degree_floor, f_inner, f_outer);
   arguments.descriptor = descriptor.data_ptr<float>();
   arguments.state = state.data_ptr<float>();
-  run_scan(resolve_kernels(static_cast<int>(lmax), layout.modes > 0).forward,
+  run_scan(resolve_kernels(static_cast<int>(lmax), layout.modes > 0,
+                           f_outer > f_inner)
+               .forward,
            arguments, layout);
   return {descriptor, state};
 }
 
-std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> backward(
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor> backward(
     torch::Tensor descriptor_gradient,
     torch::Tensor state,
     torch::Tensor edge_vec,
@@ -465,13 +490,18 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> backward(
     torch::Tensor spin,
     torch::Tensor spin_pair,
     torch::Tensor spin_type,
+    torch::Tensor contact_radius,
     bool canonical,
     int64_t lmax,
     double table_stride,
     double table_max,
     double rcut,
     double eps,
-    double degree_floor) {
+    double degree_floor,
+    double f_inner,
+    double f_outer,
+    torch::Tensor pair_table,
+    torch::Tensor pair_seed) {
   TORCH_CHECK(spin.dim() != 2,
               "dpa4c_graph_compress_backward: the CPU kernel has no native "
               "spin branch");
@@ -482,12 +512,12 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> backward(
   auto options = edge_vec.options().dtype(torch::kFloat32);
   auto edge_gradient = torch::empty({inputs.edge_vec.size(0), 3}, options);
   auto absent = torch::empty({0}, options);
-  Arguments arguments =
-      build_arguments(inputs, type_embedding.contiguous(),
-                      readout_matrices.contiguous(), coupling_meta.contiguous(),
-                      coupling_entry.contiguous(), coupling_value.contiguous(),
-                      output_mean.contiguous(), output_inv_std.contiguous(),
-                      table_stride, table_max, rcut, eps, degree_floor);
+  Arguments arguments = build_arguments(
+      inputs, type_embedding.contiguous(), readout_matrices.contiguous(),
+      coupling_meta.contiguous(), coupling_entry.contiguous(),
+      coupling_value.contiguous(), output_mean.contiguous(),
+      output_inv_std.contiguous(), contact_radius, table_stride, table_max,
+      rcut, eps, degree_floor, f_inner, f_outer);
   auto contiguous_gradient =
       descriptor_gradient.to(torch::kFloat32).contiguous();
   auto contiguous_state = state.to(torch::kFloat32).contiguous();
@@ -495,6 +525,32 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> backward(
   arguments.state =
       const_cast<float*>(contiguous_state.const_data_ptr<float>());
   arguments.edge_gradient = edge_gradient.data_ptr<float>();
+
+  // The pair energy accumulates onto zeros here; a model without an analytical
+  // pair potential passes an empty table and receives an empty energy.
+  const bool has_pair = pair_table.numel() != 0;
+  const int64_t node_count = inputs.atype.size(0);
+  auto pair_energy =
+      has_pair ? torch::zeros({node_count, 1},
+                              edge_vec.options().dtype(torch::kFloat64))
+               : torch::empty({0}, edge_vec.options().dtype(torch::kFloat64));
+  auto contiguous_table = pair_table.contiguous();
+  auto contiguous_seed = pair_seed.contiguous();
+  if (has_pair) {
+    const int64_t pairs =
+        static_cast<int64_t>(layout.type_count) * layout.type_count;
+    TORCH_CHECK(contiguous_table.scalar_type() == torch::kFloat32 &&
+                    contiguous_table.sizes() == torch::IntArrayRef({pairs, 8}),
+                "dpa4c_graph_compress_backward: pair_table must be fp32 with "
+                "shape (type_count^2, 8)");
+    TORCH_CHECK(contiguous_seed.scalar_type() == torch::kFloat64 &&
+                    contiguous_seed.numel() == node_count,
+                "dpa4c_graph_compress_backward: pair_seed must be fp64 with "
+                "one entry per node");
+    arguments.pair_table = contiguous_table.const_data_ptr<float>();
+    arguments.pair_seed = contiguous_seed.const_data_ptr<double>();
+    arguments.pair_energy = pair_energy.data_ptr<double>();
+  }
 
   // A masked edge sorts past the last destination row, so no row reaches it
   // and the scan never writes its slot. Both topology forms keep those slots
@@ -520,9 +576,12 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> backward(
       });
     }
   }
-  run_scan(resolve_kernels(static_cast<int>(lmax), layout.modes > 0).backward,
+  run_scan(resolve_kernels(static_cast<int>(lmax), layout.modes > 0,
+                           f_outer > f_inner || has_pair)
+               .backward,
            arguments, layout);
-  return {edge_gradient.to(edge_vec.scalar_type()), absent, absent.clone()};
+  return {edge_gradient.to(edge_vec.scalar_type()), absent, absent.clone(),
+          pair_energy};
 }
 
 }  // namespace

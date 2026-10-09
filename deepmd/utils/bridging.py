@@ -10,7 +10,7 @@ config spelling is therefore::
         "models": [
             {"type": "dpa4", "descriptor": {...}, "fitting_net": {...}},
             {"type": "inner_potential", "mode": "zbl",
-             "r_inner": 0.5, "r_outer": 0.8}
+             "fraction_inner": 0.26, "fraction_outer": 0.80}
         ]
     }
 
@@ -24,12 +24,54 @@ handling can drift.
 
 import copy
 
+import numpy as np
+
 __all__ = [
+    "check_bridging_record_version",
+    "check_window_inside_cutoff",
+    "concise_bridging_window",
     "expand_bridging_method",
     "is_bridged_sezm_config",
+    "migrate_inner_clamp_keys",
+    "resolve_bridging_window",
+    "window_midpoint",
 ]
 
+BRIDGING_RECORD_VERSION = 1.3
+"""Descriptor format version that introduced the current window mechanics."""
+
+DEFAULT_FRACTION_INNER = 0.26
+"""Inner window radius as a fraction of the pair's covalent bond length."""
+
+DEFAULT_FRACTION_OUTER = 0.80
+"""Outer window radius as a fraction of the pair's covalent bond length."""
+
 _DPA4_FAMILY_TYPES = ("dpa4", "sezm")
+
+
+def window_midpoint(f_inner: float, f_outer: float) -> float:
+    """
+    Midpoint of a bridging window, in the units of its two radii.
+
+    The switch of the window is exactly half open there, the training-frame
+    filter of a bridged model keeps pairs down to it, and the DPA4C clamp holds
+    that same value below the inner radius. Reading the point from one place
+    keeps the descriptors and the data filter agreeing on where the training
+    data end.
+
+    Parameters
+    ----------
+    f_inner : float
+        Inner radius of the window.
+    f_outer : float
+        Outer radius of the window.
+
+    Returns
+    -------
+    float
+        The midpoint ``(f_inner + f_outer) / 2``.
+    """
+    return 0.5 * (f_inner + f_outer)
 
 
 def is_bridged_sezm_config(data: dict) -> bool:
@@ -84,6 +126,8 @@ _COMPOSITION_KEYS = (
 # composition nor the learned child.
 _CONSUMED_KEYS = (
     "bridging_method",
+    "bridging_fraction_inner",
+    "bridging_fraction_outer",
     "bridging_r_inner",
     "bridging_r_outer",
 )
@@ -238,6 +282,32 @@ def route_canonical_learned_options(composition: dict, learned: dict) -> None:
             learned[key] = copy.deepcopy(composition[key])
 
 
+def concise_bridging_window(data: dict) -> dict:
+    """Read the window the concise ``bridging_*`` keys of a model section spell.
+
+    Parameters
+    ----------
+    data : dict
+        A model section carrying the concise bridging keys.
+
+    Returns
+    -------
+    dict
+        The window fields of an ``inner_potential`` child: the two fractions,
+        defaulted, and the two explicit radii, ``None`` when unset.
+    """
+    return {
+        "fraction_inner": float(
+            data.get("bridging_fraction_inner", DEFAULT_FRACTION_INNER)
+        ),
+        "fraction_outer": float(
+            data.get("bridging_fraction_outer", DEFAULT_FRACTION_OUTER)
+        ),
+        "r_inner": data.get("bridging_r_inner"),
+        "r_outer": data.get("bridging_r_outer"),
+    }
+
+
 def expand_bridging_method(data: dict) -> dict:
     """Expand the ``bridging_method`` sugar into a ``linear_ener`` config.
 
@@ -284,8 +354,7 @@ def expand_bridging_method(data: dict) -> dict:
             "and an `inner_potential` sub-model instead."
         )
     data = copy.deepcopy(data)
-    r_inner = float(data.get("bridging_r_inner", 0.5))
-    r_outer = float(data.get("bridging_r_outer", 0.8))
+    window = concise_bridging_window(data)
 
     # Legacy promotion (pt `type: "dpa4"` semantics): a descriptor-scoped
     # exclusion also governs the analytical term of a bridged model.
@@ -314,8 +383,7 @@ def expand_bridging_method(data: dict) -> dict:
             {
                 "type": "inner_potential",
                 "mode": method,
-                "r_inner": r_inner,
-                "r_outer": r_outer,
+                **window,
             },
         ],
         "atom_exclude_types": data.get("atom_exclude_types", []),
@@ -327,3 +395,145 @@ def expand_bridging_method(data: dict) -> dict:
         if key in data:
             canonical[key] = data[key]
     return canonical
+
+
+def resolve_bridging_window(inner_cfg: dict) -> dict:
+    """
+    Resolve an ``inner_potential`` child's window into descriptor options.
+
+    The window is a pair of fractions of each atom pair's own covalent bond
+    length, so one setting describes every element combination. Explicit radii
+    in Å replace it with a window that is the same for every pair; both forms
+    reach the descriptor as the same three options, the absolute one through a
+    unit length scale that leaves the fractions carrying the radii themselves.
+
+    Parameters
+    ----------
+    inner_cfg : dict
+        The ``inner_potential`` sub-model configuration.
+
+    Returns
+    -------
+    dict
+        The ``inner_clamp_f_inner``, ``inner_clamp_f_outer`` and
+        ``inner_clamp_scale`` options of the learned sibling's descriptor.
+
+    Raises
+    ------
+    ValueError
+        If only one of ``r_inner`` and ``r_outer`` is given.
+    """
+    r_inner = inner_cfg.get("r_inner")
+    r_outer = inner_cfg.get("r_outer")
+    if (r_inner is None) != (r_outer is None):
+        raise ValueError(
+            "An explicit bridging window needs both `r_inner` and `r_outer`; "
+            "leave both unset to size the window by the covalent bond length "
+            "of each atom pair."
+        )
+    if r_inner is None:
+        return {
+            "inner_clamp_f_inner": float(
+                inner_cfg.get("fraction_inner", DEFAULT_FRACTION_INNER)
+            ),
+            "inner_clamp_f_outer": float(
+                inner_cfg.get("fraction_outer", DEFAULT_FRACTION_OUTER)
+            ),
+            "inner_clamp_scale": "covalent",
+        }
+    return {
+        "inner_clamp_f_inner": float(r_inner),
+        "inner_clamp_f_outer": float(r_outer),
+        "inner_clamp_scale": "absolute",
+    }
+
+
+def migrate_inner_clamp_keys(config: dict) -> None:
+    """Bring a descriptor configuration's window options up to date in place.
+
+    Records predating the pair-relative window spell it as ``inner_clamp_r_inner``
+    and ``inner_clamp_r_outer``, two radii in Å. The absolute scale is that same
+    window measured against a unit pair length, so the radii carry over as the
+    fractions themselves and the record needs no other adjustment.
+
+    Parameters
+    ----------
+    config : dict
+        The constructor arguments read back from a serialized descriptor.
+    """
+    r_inner = config.pop("inner_clamp_r_inner", None)
+    r_outer = config.pop("inner_clamp_r_outer", None)
+    if r_inner is None and r_outer is None:
+        return
+    # A record that states only one radius is carried through as it stands, so
+    # the constructor reports the half-given window rather than this function.
+    config["inner_clamp_f_inner"] = None if r_inner is None else float(r_inner)
+    config["inner_clamp_f_outer"] = None if r_outer is None else float(r_outer)
+    config["inner_clamp_scale"] = "absolute"
+
+
+def check_window_inside_cutoff(
+    contact_radius: np.ndarray, f_outer: float, rcut: float
+) -> None:
+    """Refuse a bridging window that reaches the cutoff for some pair.
+
+    The switch and the clamp of a pair return to the identity at the outer
+    radius. A pair whose outer radius lies at or beyond the cutoff leaves the
+    neighbor list before that happens, so its gate never reopens and the
+    displayed distance of its edges is read past the cutoff.
+
+    Parameters
+    ----------
+    contact_radius : np.ndarray
+        Per-type length scales in Å with shape ``(ntypes + 1,)``, the trailing
+        entry belonging to the padding type.
+    f_outer : float
+        Outer radius of the window as a fraction of the pair length scale.
+    rcut : float
+        Cutoff radius in Å.
+
+    Raises
+    ------
+    ValueError
+        If the outer radius of the largest pair reaches ``rcut``.
+    """
+    outer = f_outer * 2.0 * float(np.max(contact_radius[:-1]))
+    if outer >= rcut:
+        raise ValueError(
+            f"The bridging window of the largest pair ends at {outer:.3f} Å, at or "
+            f"beyond the cutoff {rcut} Å; enlarge `rcut` or shrink the window."
+        )
+
+
+def check_bridging_record_version(config: dict, version: float) -> None:
+    """Refuse a bridged descriptor record written before the current window.
+
+    Records before :data:`BRIDGING_RECORD_VERSION` froze the clamp at the inner
+    radius, muted a closing pair through a full product of switch amplitudes on
+    the messages and carried no readout gate, so their weights were trained
+    under a different function of the geometry than the one this code builds.
+    An unbridged record of any version is unaffected.
+
+    Parameters
+    ----------
+    config : dict
+        The constructor arguments read back from a serialized descriptor, with
+        the window keys already in their current spelling.
+    version : float
+        The ``@version`` the record was written at.
+
+    Raises
+    ------
+    ValueError
+        If the record is bridged and older than the current window mechanics.
+    """
+    if (
+        version < BRIDGING_RECORD_VERSION
+        and config.get("inner_clamp_f_inner") is not None
+    ):
+        raise ValueError(
+            f"This bridged DPA4 record was written at format version {version}, "
+            "before the current bridging window (clamp freeze point, leave-one-out "
+            "source gate and readout gate); its weights were trained under a "
+            "different function of the geometry. Retrain the bridged model."
+        )

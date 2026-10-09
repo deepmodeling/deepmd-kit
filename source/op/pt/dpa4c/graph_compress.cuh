@@ -215,6 +215,62 @@ __device__ __forceinline__ void accumulate_modes_with_derivative(
   }
 }
 
+// The edge envelope is the C³ cutoff factor times the inner bridging switch,
+// and the radial table of a bridged model is read at a clamped length rather
+// than the true one. The window of a pair is two dimensionless fractions of
+// that pair's own length scale `s`, the sum of the covalent radii of its two
+// elements, so both are functions of the reduced distance `u = r / s` through
+// the window parameter `t = clamp((u - f_inner) / (f_outer - f_inner), 0, 1)`:
+//
+//   w(u) = h(t),   h(t) = 35 t^4 - 84 t^5 + 70 t^6 - 20 t^7,
+//                  h'(t) = 140 t^3 (1 - t)^3,
+//   ũ(u) = f_mid + (f_outer - f_inner) S(t),
+//                  S(t) = 7 t^5 - 14 t^6 + 10 t^7 - 2.5 t^8,
+//                  f_mid = (f_inner + f_outer) / 2,
+//
+// the septic smootherstep of the portable descriptor and its antiderivative,
+// evaluated in the same Horner forms so that all three agree term by term.
+// The switch vanishes exactly at and below the inner fraction, which removes
+// the edge from every moment, and equals one exactly at and beyond the outer
+// fraction. Since `S' = h`, `S(0) = 0` and `S(1) = 1/2`, the clamped length
+// `r̃ = s ũ` is frozen at the window midpoint at and below the inner fraction,
+// equals `r` at and beyond the outer fraction, and moves with `r` at the rate
+// `dr̃/dr = w` in between. The kernels therefore evaluate the window only for
+// an edge inside it, which the comparison `r < f_outer * s` decides without a
+// division: in a simulation nearly every edge lies outside, so the edges of a
+// warp almost always skip it together and the common path costs one
+// multiply-compare.
+//
+// `bridging_switch_derivative` returns dh/du; a caller that needs the radial
+// derivative divides it by the pair's length scale once.
+
+__device__ __forceinline__ float window_parameter(float reduced,
+                                                  float inner,
+                                                  float inverse_width) {
+  return fminf(fmaxf((reduced - inner) * inverse_width, 0.0f), 1.0f);
+}
+
+__device__ __forceinline__ float bridging_switch(float t) {
+  const float t2 = t * t;
+  return t2 * t2 * (35.0f + t * (-84.0f + t * (70.0f - 20.0f * t)));
+}
+
+__device__ __forceinline__ float bridging_switch_derivative(
+    float t, float inverse_width) {
+  const float bump = t * (1.0f - t);
+  return 140.0f * bump * bump * bump * inverse_width;
+}
+
+__device__ __forceinline__ float clamped_length(float t,
+                                                float contact,
+                                                float inner,
+                                                float outer) {
+  const float t2 = t * t;
+  const float rise =
+      t2 * t2 * t * (7.0f + t * (-14.0f + t * (10.0f - 2.5f * t)));
+  return contact * fmaf(outer - inner, rise, 0.5f * (inner + outer));
+}
+
 __device__ __forceinline__ float c3_envelope(float radius, float rcut) {
   const float u = fminf(fmaxf(__fdividef(rcut - radius, rcut), 0.0f), 1.0f);
   const float x = 1.0f - u;
@@ -240,31 +296,85 @@ __device__ __forceinline__ float c3_envelope_derivative(float radius,
   return __fdividef(-4.0f * u2 * u * series + u2 * u2 * derivative, rcut);
 }
 
+// === Analytical pair potential ===
+//
+// One ordered type pair owns the eight constants [A_0..A_3, c_0..c_3] of the
+// screened Coulomb series (the ZBL form)
+//
+//   V(r) = (1/r) sum_k A_k exp(-c_k r),
+//   dV/dr = -(1/r) sum_k A_k (c_k + 1/r) exp(-c_k r).
+//
+// Energy and slope share their exponentials, so both come from one
+// evaluation. The `Width` lanes of an edge group split the four terms between
+// them, lane `l` taking the terms `k = l (mod Width)`: the partial slopes are
+// merged by the reduction that already merges the lanes of an edge and the
+// partial energies by one reduction over the warp after the scan, no lane
+// evaluates more than two exponentials per edge, and the split is resolved at
+// compile time.
+
+struct PairTerm {
+  float energy;
+  float slope;
+};
+
+template <int Width>
+__device__ __forceinline__ PairTerm
+pair_term(const float* row, int lane, float radius, float inverse_radius) {
+  PairTerm term = {0.0f, 0.0f};
+#pragma unroll
+  for (int first = 0; first < 4; first += Width) {
+    const int k = first + lane;
+    if (Width <= 4 || k < 4) {
+      const float rate = __ldg(row + 4 + k);
+      const float decayed =
+          __ldg(row + k) * expf(-rate * radius) * inverse_radius;
+      term.energy += decayed;
+      term.slope = fmaf(-decayed, rate + inverse_radius, term.slope);
+    }
+  }
+  return term;
+}
+
 // === Edge geometry and angular basis ===
 
 struct EdgeGeometry {
   float ux;
   float uy;
   float uz;
+  // True regularized length, which the direction, the analytical pair
+  // potential and the bridging window read.
   float radius;
   float inverse_radius;
+  // Length the radial table reads: the clamped length inside a bridging
+  // window, the true one everywhere else.
+  float seen;
   float envelope;
   int source_type;
   // Retained for the native spin branch, which gathers the source moment.
   long source;
 };
 
-template <bool Canonical, typename index_t>
-__device__ __forceinline__ EdgeGeometry load_geometry(long edge,
-                                                      float rcut,
-                                                      float eps,
-                                                      const float* edge_vec,
-                                                      const index_t* edge_index,
-                                                      const long* atype) {
+// The length scale of a pair is the sum of the two per-element radii. The
+// centre contributes a block constant, so only the source radius is indexed
+// per edge; `EdgeGeometry` keeps the source type, from which the backward
+// recovers the same sum, given that constant, at the cost of one further load
+// and one add.
+template <bool Bridged>
+__device__ __forceinline__ EdgeGeometry
+load_geometry(long edge,
+              long source,
+              int source_type,
+              float rcut,
+              float f_inner,
+              float f_outer,
+              float inverse_f_width,
+              float center_radius,
+              const float* contact_radius,
+              float eps,
+              const float* edge_vec) {
   EdgeGeometry geometry;
-  const long source = static_cast<long>(edge_index[edge]);
   geometry.source = source;
-  geometry.source_type = static_cast<int>(atype[source]);
+  geometry.source_type = source_type;
   const float x = edge_vec[edge * 3 + 0];
   const float y = edge_vec[edge * 3 + 1];
   const float z = edge_vec[edge * 3 + 2];
@@ -274,8 +384,59 @@ __device__ __forceinline__ EdgeGeometry load_geometry(long edge,
   geometry.ux = x * geometry.inverse_radius;
   geometry.uy = y * geometry.inverse_radius;
   geometry.uz = z * geometry.inverse_radius;
+  geometry.seen = geometry.radius;
   geometry.envelope = c3_envelope(geometry.radius, rcut);
+  if constexpr (Bridged) {
+    const float contact =
+        center_radius + __ldg(contact_radius + geometry.source_type);
+    if (geometry.radius < f_outer * contact) {
+      const float t = window_parameter(__fdividef(geometry.radius, contact),
+                                       f_inner, inverse_f_width);
+      geometry.seen = clamped_length(t, contact, f_inner, f_outer);
+      geometry.envelope = c3_envelope(geometry.seen, rcut) * bridging_switch(t);
+    }
+  }
   return geometry;
+}
+
+// Closes the radial chain rule at the tail of the backward scan. The table
+// cotangent differentiates the length the table reads and the envelope
+// cotangent the envelope; both become derivatives with respect to the true
+// length. In a plain model, and outside the window of a bridged one, the
+// table reads the true length and the envelope is the cutoff factor alone.
+// Inside the window the table reads the clamped length, whose slope is the
+// switch `w`, and the envelope is `c3(r̃) w`, so
+//
+//   d/dr = table_gradient * w + envelope_gradient * (c3'(r̃) w^2 + c3(r̃) dw/dr),
+//
+// with `dw/dr = h'(t) / ((f_outer - f_inner) s)`. The window is resolved again
+// here rather than carried through the channel scan, which keeps its state
+// out of the registers the scan is short of.
+template <bool Bridged>
+__device__ __forceinline__ float radial_chain(const EdgeGeometry& geometry,
+                                              const Arguments& args,
+                                              float center_radius,
+                                              float table_gradient,
+                                              float envelope_gradient) {
+  if constexpr (Bridged) {
+    const float contact =
+        center_radius + __ldg(args.contact_radius + geometry.source_type);
+    if (geometry.radius < args.f_outer * contact) {
+      const float t = window_parameter(__fdividef(geometry.radius, contact),
+                                       args.f_inner, args.inverse_f_width);
+      const float seen = clamped_length(t, contact, args.f_inner, args.f_outer);
+      const float weight = bridging_switch(t);
+      const float slope = fmaf(
+          c3_envelope_derivative(seen, args.rcut) * weight, weight,
+          c3_envelope(seen, args.rcut) *
+              __fdividef(bridging_switch_derivative(t, args.inverse_f_width),
+                         contact));
+      return fmaf(envelope_gradient, slope, table_gradient * weight);
+    }
+  }
+  return fmaf(envelope_gradient,
+              c3_envelope_derivative(geometry.radius, args.rcut),
+              table_gradient);
 }
 
 // The Cartesian harmonics are evaluated on the unit direction, so the squared

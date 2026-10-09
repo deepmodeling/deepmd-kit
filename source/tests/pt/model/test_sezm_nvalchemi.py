@@ -24,11 +24,11 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    ELEMENT_TO_Z,
+)
 from deepmd.pt.model.model import (
     get_sezm_model,
-)
-from deepmd.pt.model.model.sezm_model import (
-    ELEMENT_TO_Z,
 )
 from deepmd.pt.utils import (
     env,

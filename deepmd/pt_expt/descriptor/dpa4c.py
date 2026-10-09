@@ -15,8 +15,10 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import BridgingClamp as BridgingClampDP
 from deepmd.dpmodel.descriptor.dpa4c import DescrptDPA4C as DescrptDPA4CDP
 from deepmd.pt_expt.common import (
+    register_dpmodel_mapping,
     torch_module,
 )
 from deepmd.pt_expt.descriptor.base_descriptor import (
@@ -81,6 +83,21 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
     return module
 
 
+# The distance clamp of the bridging window is parameter-free (the two window
+# fractions only, no serialize()) and belongs to DPA4C alone; rebuild it fresh
+# from the stored constructor arguments.
+@torch_module
+class BridgingClamp(BridgingClampDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+register_dpmodel_mapping(
+    BridgingClampDP,
+    lambda v: BridgingClamp(v.f_inner, v.f_outer),
+)
+
+
 @BaseDescriptor.register("dpa4c")
 @torch_module
 class DescrptDPA4C(DescrptDPA4CDP):
@@ -101,6 +118,11 @@ class DescrptDPA4C(DescrptDPA4CDP):
     """
 
     _update_sel_cls = UpdateSel
+
+    #: The per-element length scales of the bridging window follow from
+    #: ``type_map``, which the constructor resolves on every load, so the
+    #: buffer they land in stays out of the state dict.
+    CONFIG_DERIVED_ARRAYS = ("contact_radius",)
 
     def adam_route_patterns(self) -> list[str]:
         """
@@ -433,21 +455,68 @@ class DescrptDPA4C(DescrptDPA4CDP):
         and the cutoff survive without rounding, and the angular coupling
         layout keeps ``int32``; every other artifact is the ``float32`` the
         kernel consumes.
+
+        The operator scalars are that metadata followed by the two fractions of
+        the bridging window, from which the kernels resolve the switch on the
+        edge envelope and the clamped length the table reads after scaling
+        them by the length scale of each pair. The fractions are descriptor
+        configuration rather than table metadata, and equal fractions denote a
+        descriptor without a window.
+
+        The per-element length scales those fractions are measured against join
+        the artifacts in the same ``float32`` layout, so that an operator call
+        hands the kernels a frozen table instead of recasting one. They follow
+        ``type_map``, which the constructor resolves on every load, so the
+        buffer they land in stays out of the state dict.
         """
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            contact_radius_input,
+        )
+
         device = self.stddev.device
         info = torch.as_tensor(artifacts["info"])
-        self._compression_scalars = tuple(
-            float(value) for value in info.detach().cpu().tolist()
+        window = (
+            (0.0, 0.0)
+            if self.bridging_switch is None
+            else (self.bridging_f_inner, self.bridging_f_outer)
+        )
+        self._compression_scalars = (
+            *(float(value) for value in info.detach().cpu().tolist()),
+            *window,
         )
         for name in self._COMPRESSION_BUFFER_NAMES:
             dtype = self._COMPRESSION_BUFFER_DTYPES.get(name, torch.float32)
             value = artifacts[name].to(device=device, dtype=dtype).contiguous()
-            buffer_name = f"compress_{name}"
-            if buffer_name in self._buffers:
-                self._buffers[buffer_name] = value
-            else:
-                self.register_buffer(buffer_name, value)
+            self._store_compression_buffer(name, value)
+        self._store_compression_buffer(
+            "contact_radius", contact_radius_input(self), persistent=False
+        )
         self.compress = True
+
+    def _store_compression_buffer(
+        self,
+        name: str,
+        value: torch.Tensor,
+        persistent: bool = True,
+    ) -> None:
+        """Bind one ``compress_``-prefixed artifact, replacing any earlier one.
+
+        Parameters
+        ----------
+        name
+            Artifact name without the ``compress_`` prefix.
+        value
+            Tensor to bind, already in the layout the kernels read.
+        persistent
+            Whether the buffer belongs in the state dict. Artifacts that follow
+            from the configuration alone are rebuilt on every load and are
+            bound without it.
+        """
+        buffer_name = f"compress_{name}"
+        if buffer_name in self._buffers:
+            self._buffers[buffer_name] = value
+        else:
+            self.register_buffer(buffer_name, value, persistent=persistent)
 
     def apply_charge_state(self, charge_spin: Any) -> None:
         """Re-specialize a compressed snapshot to a frame charge state.
@@ -595,6 +664,7 @@ class DescrptDPA4C(DescrptDPA4CDP):
         atom_bias: torch.Tensor,
         do_atomic_virial: bool,
         spin: torch.Tensor | None = None,
+        pair_table: torch.Tensor | None = None,
     ) -> (
         tuple[
             torch.Tensor,
@@ -611,6 +681,8 @@ class DescrptDPA4C(DescrptDPA4CDP):
         Returns ``None`` when the model or graph cannot use the level-two CUDA
         path, allowing the caller to retain the generic autograd lower. The
         trailing output is the magnetic force, empty for a spin-free model.
+        ``pair_table`` carries the analytical pair potential of a bridged
+        model, which the backward edge scan evaluates alongside the descriptor.
         """
         if (
             self.training
@@ -648,4 +720,5 @@ class DescrptDPA4C(DescrptDPA4CDP):
             atype.shape[0],
             do_atomic_virial,
             None if self.spin is None else self.require_spin(spin),
+            pair_table,
         )

@@ -340,6 +340,7 @@ class DeepmdDataSystem:
                     "output_natoms_for_type_sel", False
                 ),
                 special_shape=adict[kk].get("special_shape"),
+                length_scale=adict[kk].get("length_scale", "absolute"),
             )
 
     def add_data_requirements(
@@ -361,6 +362,7 @@ class DeepmdDataSystem:
         dtype: np.dtype | None = None,
         output_natoms_for_type_sel: bool = False,
         special_shape: str | None = None,
+        length_scale: str = "absolute",
     ) -> None:
         """Add a data item that to be loaded.
 
@@ -391,6 +393,9 @@ class DeepmdDataSystem:
             If True and type_sel is True, the atomic dimension will be natoms instead of nsel
         special_shape : str, optional
             Name of a loader-defined non-standard shape contract.
+        length_scale : str, optional
+            Per-element length scale a derived geometric item measures its
+            default against, either ``"absolute"`` or ``"covalent"``.
         """
         for ii in self.data_systems:
             ii.add(
@@ -405,6 +410,7 @@ class DeepmdDataSystem:
                 dtype=dtype,
                 output_natoms_for_type_sel=output_natoms_for_type_sel,
                 special_shape=special_shape,
+                length_scale=length_scale,
             )
 
     def reduce(self, key_out: str, key_in: str) -> None:
@@ -649,6 +655,18 @@ class DeepmdDataSystem:
     def get_batch_size(self) -> int:
         """Get the batch size."""
         return self.batch_size
+
+    def get_batch_pass_length(self) -> int:
+        """Return the local sampling-pass length, including system probabilities.
+
+        NumPy data systems are replicated across ranks, so a reader's pass
+        length is independent of the distributed optimizer's world size.
+        """
+        from deepmd.dpmodel.utils.training_utils import (
+            compute_total_numb_batch,
+        )
+
+        return compute_total_numb_batch(self.nbatches, self.sys_probs)
 
     def print_summary(self, name: str) -> None:
         print_summary(

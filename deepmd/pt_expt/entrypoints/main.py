@@ -14,6 +14,9 @@ from typing import (
     Any,
 )
 
+from deepmd.dpmodel.atomic_model.inner_potential import (
+    InnerPotentialAtomicModel,
+)
 from deepmd.dpmodel.train import (
     AbstractTrainEntrypoint,
     TrainEntrypointOptions,
@@ -33,6 +36,9 @@ from deepmd.pt_expt.train import (
 )
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
+)
+from deepmd.utils.data import (
+    min_pair_dist_requirement,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -817,13 +823,34 @@ def change_bias(
         mock_loss = get_loss({"inference": True}, 1.0, len(type_map), model_to_change)
         data.add_data_requirements(mock_loss.label_requirement)
         data.add_data_requirements(get_additional_data_requirement(model_to_change))
+        # A bridged model draws its statistics under the frame filter of its
+        # window, as training does. The filter is read from the training
+        # configuration; an archive that carries none cannot be filtered and
+        # is refused rather than read unfiltered.
+        if model_params is None:
+            children = getattr(model_to_change.atomic_model, "models", ())
+            if any(isinstance(child, InnerPotentialAtomicModel) for child in children):
+                raise ValueError(
+                    f"'{input_file}' carries no training configuration, so the "
+                    "frame filter of its bridging window cannot be derived; run "
+                    "change-bias on the checkpoint (.pt) instead."
+                )
+            pair_filter = None
+        else:
+            pair_filter = min_pair_dist_requirement(model_params, 0.0)
+        if pair_filter is not None:
+            data.add_data_requirements([pair_filter])
         if numb_batch != 0:
             nbatches = numb_batch
         else:
             # Cap at the minimum across systems so no system wraps and
             # overweights short systems (matching PT behavior).
             nbatches = min(data.get_nbatches())
-        sampled_data = make_stat_input(data, nbatches)
+        sampled_data = make_stat_input(
+            data,
+            nbatches,
+            0.0 if pair_filter is None else float(pair_filter.default),
+        )
         model_to_change = model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
         )

@@ -27,7 +27,6 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 from deepmd.pt.model.model.sezm_model import (
-    InnerPotential,
     SeZMModel,
 )
 from deepmd.pt.model.model.spin_model import (
@@ -76,10 +75,16 @@ class SeZMSpinModel(SeZMModel):
         real_sel: list[int],
         **kwargs: Any,
     ) -> None:
-        # Delay InnerPotential construction until ntypes_real is available.
-        bridging_method = str(kwargs.pop("bridging_method", "none")).upper()
-        kwargs["bridging_method"] = "none"
-
+        # A magnetic atom lies inside the bridging window of its own virtual
+        # partner, so the window mechanics would freeze every magnetic atom;
+        # the native spin scheme carries no virtual atoms and is the bridged
+        # spin model.
+        if str(kwargs.get("bridging_method", "none")).upper() != "NONE":
+            raise ValueError(
+                "Analytical bridging is not supported by the deepspin "
+                "(virtual-atom) scheme; use spin scheme 'native' for a bridged "
+                "DPA4/SeZM spin model."
+            )
         super().__init__(*args, **kwargs)
         self.spin = spin
         self.ntypes_real = self.spin.ntypes_real
@@ -93,13 +98,6 @@ class SeZMSpinModel(SeZMModel):
             "spin_mask",
             to_torch_tensor(self.spin.get_spin_mask()),
             persistent=False,
-        )
-
-        self.bridging_method = bridging_method
-        self.inter_potential = (
-            InnerPotential(type_map=self.get_type_map(), mode=self.bridging_method)
-            if self.bridging_method != "NONE"
-            else None
         )
 
     # =========================================================================
@@ -600,10 +598,6 @@ class SeZMSpinModel(SeZMModel):
             sum(self.atomic_model.get_sel()),
             extra_nlist_sort=extra_nlist_sort,
         )
-
-    def _get_inter_potential_real_type_count(self) -> int:
-        """Return the number of real types for real-only ZBL masking."""
-        return self.ntypes_real
 
     def _get_spin_sampled_func(
         self, sampled_func: Callable[[], list[dict[str, Any]]]

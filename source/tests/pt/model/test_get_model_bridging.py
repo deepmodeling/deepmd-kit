@@ -24,10 +24,7 @@ def _descriptor() -> dict:
     return {
         "type": "dpa4",
         "rcut": 4.0,
-        "rcut_smth": 0.5,
         "sel": 20,
-        "n_dim": 8,
-        "e_dim": 8,
         "precision": "float64",
         "seed": 7,
     }
@@ -79,8 +76,12 @@ def test_canonical_builds_sezm_model() -> None:
     model = get_model(_canonical_config())
     assert isinstance(model, SeZMModel)
     assert model.bridging_method == "ZBL"
-    assert model.bridging_r_inner == 0.8
-    assert model.bridging_r_outer == 1.2
+    # The window belongs to the descriptor, which is what the composition's
+    # radii have to reach for the learned side to honour them.
+    descriptor = model.atomic_model.descriptor
+    assert descriptor.bridging_f_inner == 0.8
+    assert descriptor.bridging_f_outer == 1.2
+    assert descriptor.bridging_scale == "absolute"
 
 
 def test_canonical_matches_sugar_serialize() -> None:

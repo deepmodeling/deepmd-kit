@@ -111,6 +111,10 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
     """Verify statistics use the training minimum-distance frame semantics."""
 
     def test_min_pair_dist_filters_every_frame_aligned_tensor(self) -> None:
+        # The field holds margins against each frame's own pair thresholds, so
+        # the verdict is a comparison against one. Both margins clear the
+        # configured window radius of 0.8, which is therefore no threshold of
+        # its own: a filter that compared against it would keep both frames.
         batch = {
             "coord": torch.arange(18, dtype=torch.float64, device="cpu").reshape(
                 2, 3, 3
@@ -122,9 +126,10 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
                 [[1000.0], [2.0]], dtype=torch.float64, device="cpu"
             ),
             "natoms": torch.tensor([[3, 3, 2, 1], [3, 3, 1, 2]], device="cpu"),
-            "min_pair_dist": torch.tensor(
-                [[0.5], [1.0]], dtype=torch.float64, device="cpu"
+            "pair_margin": torch.tensor(
+                [[0.9], [1.2]], dtype=torch.float64, device="cpu"
             ),
+            "find_pair_margin": np.float32(1.0),
             "fid": ["rejected", "accepted"],
             "find_energy": np.float32(1.0),
         }
@@ -149,12 +154,16 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
         )
 
     def test_min_pair_dist_skips_system_without_valid_frames(self) -> None:
+        # The only frame falls short of a margin of one while still clearing
+        # the configured window radius, so a filter reading that radius as a
+        # threshold would keep the system instead of skipping it.
         batch = {
             "coord": torch.zeros(1, 2, 3, device="cpu"),
             "atype": torch.zeros(1, 2, dtype=torch.long, device="cpu"),
             "energy": torch.zeros(1, 1, device="cpu"),
             "natoms": torch.tensor([[2, 2, 2]], device="cpu"),
-            "min_pair_dist": torch.tensor([[0.5]], device="cpu"),
+            "pair_margin": torch.tensor([[0.9]], device="cpu"),
+            "find_pair_margin": np.float32(1.0),
             "find_energy": np.float32(1.0),
         }
         sampled = make_stat_input(
@@ -171,13 +180,21 @@ class TestStatisticsFrameFiltering(unittest.TestCase):
         def mark_remote_rank_empty(
             valid_flag: torch.Tensor,
             op: Any,
+            group: Any,
         ) -> None:
             self.assertEqual(op, torch.distributed.ReduceOp.MIN)
+            self.assertFalse(valid_flag.is_cuda)
             valid_flag.zero_()
 
-        with patch(
-            "deepmd.pt.train.training.dist.all_reduce",
-            side_effect=mark_remote_rank_empty,
+        # The agreement travels over a dedicated CPU process group, which only
+        # exists once distributed training is initialized; stubbing the lookup
+        # keeps the MIN decision itself under test without a live group.
+        with (
+            patch(
+                "deepmd.pt.train.training.dist.all_reduce",
+                side_effect=mark_remote_rank_empty,
+            ),
+            patch("deepmd.pt.train.training._validity_group", return_value=None),
         ):
             self.assertFalse(all_ranks_have_valid_frames(local_has_valid=True))
 
