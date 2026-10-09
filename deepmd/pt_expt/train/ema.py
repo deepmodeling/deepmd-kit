@@ -53,12 +53,28 @@ def get_ema_validation_log_path(full_val_file: str | Path) -> Path:
     return _append_suffix(full_val_file, "_ema")
 
 
+def _foreach_compatible(shadow: torch.Tensor, param: torch.Tensor) -> bool:
+    """Return whether a shadow/param pair can use ``torch._foreach_lerp_``."""
+    return (
+        not shadow.is_sparse
+        and not param.is_sparse
+        and shadow.is_contiguous()
+        and param.is_contiguous()
+        and shadow.device == param.device
+        and shadow.dtype == param.dtype
+    )
+
+
 class ModelEMA:
     """Maintain an exponential moving average of model parameters.
 
     This helper assumes DDP/ZeRO-1 style training where every rank owns the
     same full, consistently ordered model parameters. It is not a sharded
     parameter EMA implementation.
+
+    The per-step update path uses grouped ``torch._foreach_lerp_`` launches
+    built once when EMA binds to a model. Rebuild via ``rebind`` (or
+    construction) when the bound model object changes; never on every step.
     """
 
     def __init__(
@@ -70,8 +86,11 @@ class ModelEMA:
         self.decay = float(decay)
         self.shadow_params = self._clone_model_parameters(model)
         self.validation_state: dict[str, Any] = {}
+        self._update_groups: list[tuple[list[torch.Tensor], list[torch.Tensor]]] = []
+        self._update_fallback: list[tuple[torch.Tensor, torch.Tensor]] = []
         if state is not None:
             self.load_state_dict(state)
+        self._rebuild_update_plan(model)
 
     @staticmethod
     def _named_model_parameters(
@@ -106,11 +125,65 @@ class ModelEMA:
                 for name, param in self._named_model_parameters(model)
             }
 
+    def _rebuild_update_plan(
+        self,
+        model: torch.nn.Module | dict[str, torch.nn.Module],
+    ) -> None:
+        """Bind live parameter refs into foreach groups for the hot update path.
+
+        Groups dense contiguous tensors by ``(device, dtype)``. Sparse or
+        non-contiguous pairs use an explicit per-tensor fallback. Call only on
+        construction / rebind / after load when the model identity changes —
+        never each optimizer step.
+        """
+        named_parameters = self._named_model_parameters(model)
+        names = [name for name, _ in named_parameters]
+        current_keys = set(self.shadow_params)
+        model_keys = set(names)
+        if current_keys != model_keys:
+            missing = sorted(current_keys - model_keys)
+            unexpected = sorted(model_keys - current_keys)
+            raise KeyError(
+                "EMA update plan parameter keys do not match shadow state. "
+                f"Missing keys: {missing[:5]}, unexpected keys: {unexpected[:5]}."
+            )
+
+        grouped: dict[
+            tuple[torch.device, torch.dtype],
+            tuple[list[torch.Tensor], list[torch.Tensor]],
+        ] = {}
+        fallback: list[tuple[torch.Tensor, torch.Tensor]] = []
+        for name, param in named_parameters:
+            shadow = self.shadow_params[name]
+            if not _foreach_compatible(shadow, param):
+                fallback.append((shadow, param))
+                continue
+            key = (param.device, param.dtype)
+            shadows, params = grouped.setdefault(key, ([], []))
+            shadows.append(shadow)
+            params.append(param)
+
+        self._update_groups = list(grouped.values())
+        self._update_fallback = fallback
+
+    def rebind(self, model: torch.nn.Module | dict[str, torch.nn.Module]) -> None:
+        """Rebuild the foreach update plan against a (possibly new) model."""
+        self._rebuild_update_plan(model)
+
     def update(self, model: torch.nn.Module | dict[str, torch.nn.Module]) -> None:
-        """Update EMA shadow parameters from the current model parameters."""
+        """Update EMA shadow parameters from the current model parameters.
+
+        Uses the cached foreach plan. ``model`` is accepted for API
+        compatibility with the trainer; the hot path does not traverse names.
+        Call ``rebind(model)`` if the bound model object changes.
+        """
+        del model  # plan holds live Parameter refs from the last bind
         with torch.no_grad():
-            for name, param in self._named_model_parameters(model):
-                self.shadow_params[name].lerp_(param.detach(), weight=1.0 - self.decay)
+            weight = 1.0 - self.decay
+            for shadows, params in self._update_groups:
+                torch._foreach_lerp_(shadows, params, weight)
+            for shadow, param in self._update_fallback:
+                shadow.lerp_(param.detach(), weight=weight)
 
     def state_dict(self) -> dict[str, Any]:
         """Serialize EMA state for restart."""
@@ -124,7 +197,12 @@ class ModelEMA:
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
-        """Restore EMA shadow parameters and validator state."""
+        """Restore EMA shadow parameters and validator state.
+
+        Shadow tensor objects are preserved (values are ``copy_``'d), so an
+        existing update plan remains valid. Call ``rebind(model)`` after load
+        only if binding to a different model object.
+        """
         if EMA_DECAY_KEY in state:
             checkpoint_decay = float(state[EMA_DECAY_KEY])
             if checkpoint_decay != self.decay:
