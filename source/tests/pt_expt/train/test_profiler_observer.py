@@ -25,7 +25,9 @@ from deepmd.pt_expt.train.profiler import (
 )
 
 
-def _step(display_step: int, *, rank_context: RankContext | None = None) -> StepObservation:
+def _step(
+    display_step: int, *, rank_context: RankContext | None = None
+) -> StepObservation:
     ctx = rank_context or RankContext()
     return StepObservation(
         step=display_step - 1,

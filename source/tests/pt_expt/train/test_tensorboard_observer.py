@@ -248,6 +248,7 @@ def test_exceptional_close_is_idempotent(tmp_path: Path) -> None:
     observer.close()
     writer.close.assert_called_once()
 
+
 def test_coinciding_display_keeps_step_train_metrics(tmp_path: Path) -> None:
     """At disp ∩ tensorboard_freq, train/* is written once from the step hook.
 
@@ -312,4 +313,3 @@ def test_coinciding_display_keeps_step_train_metrics(tmp_path: Path) -> None:
     tags = [call.args[0] for call in writer.add_scalar.call_args_list]
     assert "valid/rmse" in tags
     assert "timing/interval_wall_time" in tags
-
