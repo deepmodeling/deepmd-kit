@@ -22,7 +22,7 @@
 
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
-#include <torch/torch.h>
+#include <torch/types.h>
 
 #include <cub/device/device_scan.cuh>
 #include <limits>
