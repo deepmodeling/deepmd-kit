@@ -15,7 +15,9 @@ if(ENABLE_TENSORFLOW)
     TensorFlow::tensorflow_framework)
 endif()
 if(ENABLE_PYTORCH)
-  target_compile_definitions(runUnitTests_cc PRIVATE BUILD_PYTORCH)
+  target_compile_definitions(
+    runUnitTests_cc
+    PRIVATE BUILD_PYTORCH DEEPMD_TORCH_HAS_GPU=$<BOOL:${DEEPMD_TORCH_HAS_CUDA}>)
   # Link torch so __has_include(<torch/csrc/inductor/...>) succeeds and
   # BUILD_PT_EXPT is set for the test binary; otherwise pt_expt tests all
   # GTEST_SKIP() with "PyTorch support is not enabled".

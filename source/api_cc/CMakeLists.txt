@@ -112,7 +112,9 @@ if(ENABLE_PYTORCH AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}")
                                        src/DeepSpinPT.cc src/DeepTensorPT.cc)
   deepmd_configure_backend_plugin(deepmd_backend_pt)
   target_link_libraries(deepmd_backend_pt PRIVATE "${TORCH_LIBRARIES}")
-  target_compile_definitions(deepmd_backend_pt PRIVATE BUILD_PYTORCH)
+  target_compile_definitions(
+    deepmd_backend_pt
+    PRIVATE BUILD_PYTORCH DEEPMD_TORCH_HAS_GPU=$<BOOL:${DEEPMD_TORCH_HAS_CUDA}>)
 
   add_library(
     deepmd_backend_ptexpt SHARED
@@ -120,7 +122,9 @@ if(ENABLE_PYTORCH AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}")
     src/NativeSpinPTExpt.cc)
   deepmd_configure_backend_plugin(deepmd_backend_ptexpt)
   target_link_libraries(deepmd_backend_ptexpt PRIVATE "${TORCH_LIBRARIES}")
-  target_compile_definitions(deepmd_backend_ptexpt PRIVATE BUILD_PYTORCH)
+  target_compile_definitions(
+    deepmd_backend_ptexpt
+    PRIVATE BUILD_PYTORCH DEEPMD_TORCH_HAS_GPU=$<BOOL:${DEEPMD_TORCH_HAS_CUDA}>)
 endif()
 
 if(ENABLE_JAX)

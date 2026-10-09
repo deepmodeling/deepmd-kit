@@ -23,6 +23,21 @@ constexpr const char* kRefPath = "../../tests/infer/deeppot_dpa_spin.expected";
 constexpr const char* kModelPath = "../../tests/infer/deeppot_dpa_spin.pt2";
 }  // namespace
 
+TEST(TestDeepSpinPTExptInit, rejects_in_memory_file_content) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  deepmd::DeepSpin dp;
+  try {
+    dp.init("unused.pt2", 0, "unsupported in-memory model");
+    FAIL() << "Expected in-memory .pt2 loading to be rejected.";
+  } catch (const deepmd::deepmd_exception& error) {
+    EXPECT_NE(std::string(error.what())
+                  .find("In-memory file_content loading is not supported"),
+              std::string::npos);
+  }
+}
+
 // ============================================================================
 // PBC test fixture
 // ============================================================================
