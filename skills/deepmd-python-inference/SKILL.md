@@ -1,11 +1,11 @@
 ---
 name: deepmd-python-inference
-description: Run Python inference with DeePMD-kit models using the DeepPot API. Use when the user wants to load a trained/frozen DeePMD model (.pth or .pb) or a built-in pretrained model (e.g., DPA-3.2-5M) in Python, predict energy/force/virial for atomic configurations, evaluate descriptors, or calculate model deviation between multiple models. Also covers using `dp test` CLI for batch evaluation against labeled data.
-compatibility: Requires deepmd-kit Python package installed. PyTorch backend for .pth models, TensorFlow for .pb models.
+description: Run Python inference with DeePMD-kit models using the DeepPot API. Use when the user wants to load a checkpoint, frozen model (.pb or .pth), DPA4/SeZM AOTInductor deployment archive (.pt2), or built-in pretrained model in Python; predict energy/force/virial; evaluate supported descriptors; calculate model deviation; or use `dp test` against labeled data.
+compatibility: Requires deepmd-kit installed with the backend required by the selected model artifact.
 license: LGPL-3.0-or-later
 metadata:
   author: iProzd
-  version: '1.0'
+  version: '1.1'
   repository: https://github.com/deepmodeling/deepmd-kit
 ---
 
@@ -29,15 +29,20 @@ e, f, v = dp.eval(coord, cell, atype)
 ## Agent Responsibilities
 
 1. Determine the model source:
-   - Frozen model file (`.pth` for PyTorch, `.pb` for TensorFlow)
+   - Frozen model file (`.pth` for conventional PyTorch, `.pb` for TensorFlow, or `.pt2` for DPA4/SeZM)
    - Built-in pretrained model name (e.g., `DPA-3.2-5M`)
-   - Checkpoint file (requires freezing first)
+   - PyTorch checkpoint (`.pt`), whose stored model configuration must be inspected before choosing an inference or export path
+1. Read `references/model-artifacts.md` for `.pt`/`.pt2` models or whenever the artifact route is unclear.
+1. Read `references/held-out-evaluation.md` for complete labeled evaluation used for checkpoint selection or production admission.
 1. Determine the inference task:
    - Single-frame prediction (energy, force, virial)
    - Batch prediction over multiple frames
    - Descriptor evaluation
    - Model deviation calculation
    - CLI-based testing against labeled data
+1. Before using descriptor or embedding hooks, confirm that the selected
+   artifact supports them; a loadable `.pt2` does not necessarily contain the
+   serialized model required by those hooks.
 1. Help the user prepare input arrays in the correct format.
 1. Run inference and report results.
 
@@ -53,6 +58,9 @@ dp = DeepPot("model.pth")
 
 # From a frozen TensorFlow model
 dp = DeepPot("graph.pb")
+
+# From a frozen DPA4/SeZM model
+dp = DeepPot("model.pt2")
 
 # From a built-in pretrained model (auto-downloads if not cached)
 dp = DeepPot("DPA-3.2-5M")
@@ -196,6 +204,9 @@ Virial RMSE/Natoms : 2.957e-04 eV
 
 With `-d test_detail`, per-frame predictions are saved to files for further analysis.
 
+The 30-frame commands above are bounded examples, not complete held-out evaluation.
+Use `references/held-out-evaluation.md` when the result admits a model for production.
+
 ## Complete Example: Train, Freeze, and Inference
 
 ```python
@@ -285,7 +296,9 @@ dp pretrained download DPA-3.2-5M --cache-dir ./models
 
 ## Agent Checklist
 
-- [ ] Model file exists and is accessible (`.pth`, `.pb`, or valid pretrained name)
+- [ ] Model file exists and is accessible (`.pb`, `.pth`, `.pt`, `.pt2`, or valid pretrained name)
+- [ ] An ambiguous `.pt` checkpoint was classified from its stored configuration, not its filename
+- [ ] The requested descriptor or embedding operation is supported by the specific artifact, not inferred from its suffix
 - [ ] `coord` array is shaped (nframes, natoms\*3) and in Angstrom
 - [ ] `cell` array is shaped (nframes, 9) or `None` for non-periodic systems
 - [ ] `atype` indices match the model's `type_map` ordering
