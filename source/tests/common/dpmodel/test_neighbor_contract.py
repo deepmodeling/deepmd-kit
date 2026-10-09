@@ -173,7 +173,9 @@ class TestPrepareNeighborsSkipsUpdateSel(unittest.TestCase):
             unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel"
             ) as update_sel,
-            unittest.mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
+            unittest.mock.patch(
+                "deepmd.dpmodel.model.dp_model.UpdateSel"
+            ) as update_sel_cls,
         ):
             update_sel_cls.return_value.get_min_nbor_dist.return_value = 0.5
             updated, min_dist = DPModelCommon.prepare_neighbors(
@@ -308,7 +310,9 @@ class TestPrepareNeighborsMinNborDist(unittest.TestCase):
             unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel"
             ) as update_sel,
-            unittest.mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
+            unittest.mock.patch(
+                "deepmd.dpmodel.model.dp_model.UpdateSel"
+            ) as update_sel_cls,
         ):
             update_sel_cls.return_value.get_min_nbor_dist.return_value = 0.42
             updated, min_dist = DPModelCommon.prepare_neighbors(
