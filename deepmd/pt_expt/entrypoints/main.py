@@ -42,6 +42,9 @@ from deepmd.utils.data_system import (
 from deepmd.utils.stat_file import (
     StatFileSpec,
 )
+from deepmd.dpmodel.train import (
+    resolve_checkpoint_path,
+)
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
@@ -889,24 +892,9 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             output=FLAGS.output,
         )
     elif FLAGS.command == "freeze":
-        if Path(FLAGS.checkpoint_folder).is_dir():
-            checkpoint_path = Path(FLAGS.checkpoint_folder)
-            # pt_expt training saves a symlink "model.ckpt.pt" → latest ckpt
-            default_ckpt = checkpoint_path / "model.ckpt.pt"
-            if default_ckpt.exists():
-                FLAGS.model = str(default_ckpt)
-            else:
-                raise FileNotFoundError(
-                    f"Cannot find checkpoint in '{checkpoint_path}'. "
-                    "Expected 'model.ckpt.pt' (created by pt_expt training)."
-                )
-        else:
-            model_path = Path(FLAGS.checkpoint_folder)
-            if not model_path.exists():
-                raise FileNotFoundError(
-                    f"Checkpoint path '{model_path}' does not exist."
-                )
-            FLAGS.model = str(model_path)
+        # Directories resolve through the checkpoint pointer / latest alias so
+        # a save_dir layout still freezes the published periodic checkpoint.
+        FLAGS.model = str(resolve_checkpoint_path(FLAGS.checkpoint_folder))
         # Suffix defaulting lives in freeze(): the correct suffix depends on
         # the RESOLVED lower kind (native-spin models force 'graph'), which
         # is only known after the checkpoint's model is built there.

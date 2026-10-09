@@ -11,6 +11,7 @@ import pytest
 from deepmd.dpmodel.train import (
     CheckpointStore,
     build_checkpoint_stores,
+    resolve_checkpoint_path,
     resolve_keep_ckpt_count,
 )
 
@@ -234,3 +235,56 @@ def test_ema_store_accepts_an_explicit_retention_override(
 
     assert store.max_keep == 7
     assert ema_store.max_keep == 2
+
+
+def test_nested_and_absolute_prefix_resolution(tmp_path: Path) -> None:
+    """Only the prefix file name seeds numbered files under save_dir."""
+    nested = CheckpointStore(tmp_path / "run" / "nested" / "model.ckpt")
+    assert nested.path_for(1) == tmp_path / "run" / "nested" / "model.ckpt-1.pt"
+    assert nested.alias_path == tmp_path / "run" / "nested" / "model.ckpt.pt"
+
+    relocated = CheckpointStore(
+        tmp_path / "run" / "nested" / "model.ckpt",
+        save_dir=tmp_path / "models",
+    )
+    assert relocated.path_for(1) == tmp_path / "models" / "model.ckpt-1.pt"
+    assert relocated.alias_path == tmp_path / "run" / "nested" / "model.ckpt.pt"
+
+    absolute = CheckpointStore(
+        tmp_path / "abs" / "model.ckpt",
+        save_dir=tmp_path / "models",
+    )
+    assert absolute.path_for(2) == tmp_path / "models" / "model.ckpt-2.pt"
+    assert absolute.alias_path == tmp_path / "abs" / "model.ckpt.pt"
+
+
+def test_prune_never_deletes_the_latest_alias_target(tmp_path: Path) -> None:
+    store = CheckpointStore(tmp_path / "model.ckpt", max_keep=1)
+    older = _write(store.path_for(1))
+    newer = _write(store.path_for(2))
+    store.publish(older)
+
+    # Retention is asked to keep only the fresh write, but the published latest
+    # still names the older file and must survive.
+    store.prune(newer)
+
+    assert older.exists()
+    assert newer.exists()
+    _assert_prefix_alias(tmp_path / "model.ckpt.pt", older, "model.ckpt-1.pt")
+
+
+def test_resolve_latest_prefers_pointer_then_alias(tmp_path: Path) -> None:
+    store = CheckpointStore(
+        tmp_path / "model.ckpt",
+        save_dir=tmp_path / "ckpts",
+        pointer_file=tmp_path / "checkpoint",
+    )
+    store.prepare()
+    path = _write(store.path_for(4))
+    store.publish(path)
+
+    assert store.resolve_latest() == path
+
+    assert resolve_checkpoint_path("latest", store=store) == path
+    assert resolve_checkpoint_path(tmp_path, store=store) == path
+    assert resolve_checkpoint_path(tmp_path / "model.ckpt") == path

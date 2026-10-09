@@ -4,6 +4,7 @@
 from .checkpoint import (
     CheckpointStore,
     build_checkpoint_stores,
+    resolve_checkpoint_path,
     resolve_keep_ckpt_count,
 )
 from .data import (
@@ -67,6 +68,7 @@ __all__ = [
     "iter_training_task_configs",
     "make_task_maps",
     "print_data_summaries",
+    "resolve_checkpoint_path",
     "resolve_keep_ckpt_count",
     "resolve_step_schedule",
 ]
