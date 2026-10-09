@@ -1196,6 +1196,10 @@ def _collect_metadata(
         "sel_type": [int(t) for t in model.get_sel_type()],
         "is_spin": is_spin,
     }
+    if "dos" in model.model_output_type():
+        # DeepDOS reshapes its output with this width; a metadata-only
+        # archive has no dpmodel to ask.
+        meta["numb_dos"] = int(model.get_numb_dos())
     if is_spin:
         # The scheme is what selects the serving backend class in C++
         # (``deepmd_create_deepspin_backend_v1``): "native" is served by
