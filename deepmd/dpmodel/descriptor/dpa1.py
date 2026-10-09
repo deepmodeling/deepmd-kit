@@ -40,6 +40,12 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+    ensure_construction_sel,
+    graph_eligible_tebd_mode,
+    is_auto_sel,
+)
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
@@ -54,12 +60,6 @@ from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
     remap_atype_to_padding,
     take_type_embedding,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
-    ensure_construction_sel,
-    graph_eligible_tebd_mode,
-    is_auto_sel,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -634,7 +634,6 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
         """
         return self.se_atten.attn_layer > 0
-
 
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:

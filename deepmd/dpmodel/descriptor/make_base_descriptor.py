@@ -17,16 +17,16 @@ from deepmd.common import (
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+    dense_contract_from_sel_field,
+    ensure_construction_sel,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
-    dense_contract_from_sel_field,
-    ensure_construction_sel,
 )
 from deepmd.utils.plugin import (
     PluginVariant,
@@ -298,7 +298,6 @@ def make_base_descriptor(
                 # descriptors without sel (DPA4C) override this method.
                 return ensure_construction_sel(local_jdata)
             return dict(local_jdata)
-
 
         def dense_lower_supports_comm(self) -> bool:
             """Whether the DENSE (nlist) lower implements comm_dict exchange.

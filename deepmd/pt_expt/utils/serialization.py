@@ -20,6 +20,9 @@ from deepmd.dpmodel.utils.nlist import (
 )
 
 log = logging.getLogger(__name__)
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
@@ -31,9 +34,6 @@ from deepmd.pt.utils.compile_compat import (
 )
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
 )
 from deepmd.utils.charge_state import (
     CHARGE_STATE_TABLE_RANGES,
@@ -1121,7 +1121,6 @@ def _spin_scheme(model_type: str | None) -> str | None:
     if model_type == "spin_ener":
         return "deepspin"
     return None
-
 
 
 def _neighbor_contract_for_model(model: torch.nn.Module) -> NeighborContract:

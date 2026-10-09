@@ -49,14 +49,14 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils import (
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -2032,7 +2032,6 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def uses_graph_lower(self) -> bool:
         """Return whether graph-native lowering is supported."""
         return True
-
 
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:

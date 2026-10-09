@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """NeighborContract unit tests."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import unittest
-from unittest import mock
+from unittest import (
+    mock,
+)
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,

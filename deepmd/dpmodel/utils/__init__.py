@@ -18,6 +18,9 @@ from .lmdb_data import (
     is_lmdb,
     make_neighbor_stat_data,
 )
+from .neighbor_contract import (
+    NeighborContract,
+)
 from .neighbor_graph import (
     GraphLayout,
     NeighborGraph,
@@ -31,9 +34,6 @@ from .neighbor_graph import (
     pad_and_guard_edges,
     segment_mean,
     segment_sum,
-)
-from .neighbor_contract import (
-    NeighborContract,
 )
 from .neighbor_list import (
     NeighborList,
@@ -93,8 +93,8 @@ __all__ = [
     "LmdbTestDataNlocView",
     "NativeLayer",
     "NativeNet",
-    "NeighborGraph",
     "NeighborContract",
+    "NeighborGraph",
     "NeighborList",
     "NetworkCollection",
     "PairExcludeMask",

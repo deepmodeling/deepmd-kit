@@ -17,6 +17,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.nlist import (
     nlist_distinguish_types,
 )
@@ -25,9 +28,6 @@ from deepmd.utils.data_system import (
 )
 from deepmd.utils.path import (
     DPPath,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -422,7 +422,6 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod
-
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
         """Merge child descriptor contracts; require a single representation."""
@@ -435,7 +434,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             raise ValueError("hybrid descriptor config has an empty child list")
         contract = BaseDescriptor.neighbor_contract_from_jdata(children[0])
         for child in children[1:]:
-            contract = contract.merge(BaseDescriptor.neighbor_contract_from_jdata(child))
+            contract = contract.merge(
+                BaseDescriptor.neighbor_contract_from_jdata(child)
+            )
         return contract
 
     @classmethod

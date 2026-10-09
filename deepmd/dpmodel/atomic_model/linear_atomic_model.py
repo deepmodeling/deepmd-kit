@@ -325,7 +325,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return any(m.compression_needs_min_nbor_dist() for m in self.models)
 
-
     def get_neighbor_contract(self):
         """Merge child neighbor contracts into one consistent contract."""
         contracts = [m.get_neighbor_contract() for m in self.models]

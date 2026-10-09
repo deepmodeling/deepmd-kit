@@ -22,6 +22,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -72,9 +75,6 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 )
 from deepmd.utils.charge_state import (
     CHARGE_STATE_TABLE_RANGES,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
 )
 from deepmd.utils.pt_checkpoint import (
     detect_pt_checkpoint_backend,
@@ -416,9 +416,7 @@ class DeepEval(DeepEvalBackend):
             )
         )
         self._sel = (
-            []
-            if self._neighbor_contract.is_graph
-            else list(self._dpmodel.get_sel())
+            [] if self._neighbor_contract.is_graph else list(self._dpmodel.get_sel())
         )
         self._mixed_types = bool(self._dpmodel.mixed_types())
         if self._is_spin:
@@ -696,11 +694,7 @@ class DeepEval(DeepEvalBackend):
             if hasattr(model, "get_neighbor_contract")
             else NeighborContract.dense(model.get_sel(), requires_capacity=False)
         )
-        self._sel = (
-            []
-            if self._neighbor_contract.is_graph
-            else list(model.get_sel())
-        )
+        self._sel = [] if self._neighbor_contract.is_graph else list(model.get_sel())
         self._mixed_types = bool(model.mixed_types())
         if self._is_spin:
             self._model_output_def = ModelOutputDef(

@@ -26,6 +26,9 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.network import (
     Identity,
     NativeLayer,
@@ -40,9 +43,6 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
     take_type_embedding,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -755,7 +755,6 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         if not self.repformer_args.set_davg_zero:
             return False
         return self.repinit.tebd_input_mode in ("concat", "strip")
-
 
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:

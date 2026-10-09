@@ -63,6 +63,9 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
     frame_id_from_n_node,
@@ -70,9 +73,6 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
-)
-from deepmd.dpmodel.utils.neighbor_contract import (
-    NeighborContract,
 )
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
@@ -2449,7 +2449,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             gate is applied (issue #5906).
         """
         return not self._graph_lower_disabled
-
 
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
