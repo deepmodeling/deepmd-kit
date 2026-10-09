@@ -1214,6 +1214,57 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
             self.assertIsNone(validator._pending_topk_records)
             self.assertIsNone(validator._rollback_topk_records)
 
+    def test_local_write_then_fail_reconciles_orphan(self) -> None:
+        """Local save that writes then raises must delete the orphan file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = self._make_validator(tmpdir)
+
+            def save_ok(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                Path(path).write_text("ok")
+
+            def save_write_then_fail(
+                path: Path, lr: float = 0.0, step: int = 0
+            ) -> None:
+                del lr, step
+                Path(path).write_text("orphan")
+                raise RuntimeError("post-write failure")
+
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 0.5},
+            ):
+                validator.run(
+                    step_id=1,
+                    display_step=1,
+                    lr=1e-3,
+                    save_checkpoint=save_ok,
+                )
+            kept = sorted(Path(tmpdir).glob("best.ckpt-*.pt"))
+            self.assertEqual(len(kept), 1)
+            self.assertIn("best.ckpt-1", kept[0].name)
+
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 0.1},
+            ):
+                with self.assertRaisesRegex(RuntimeError, "post-write"):
+                    validator.run(
+                        step_id=2,
+                        display_step=2,
+                        lr=1e-3,
+                        save_checkpoint=save_write_then_fail,
+                    )
+
+            self.assertEqual(len(validator.topk_records), 1)
+            self.assertEqual(validator.topk_records[0].step, 1)
+            remaining = sorted(Path(tmpdir).glob("best.ckpt-*.pt"))
+            self.assertEqual(len(remaining), 1)
+            self.assertIn("best.ckpt-1", remaining[0].name)
+            self.assertFalse(any("best.ckpt-2" in p.name for p in remaining))
+
     def test_distributed_remote_save_failure_rolls_back_committed_topk(self) -> None:
         """Rank 0 must not keep top-K when another rank aborts the save."""
         with tempfile.TemporaryDirectory() as tmpdir:

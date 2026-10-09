@@ -364,7 +364,11 @@ class FullValidator:
                 save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
             except Exception as exc:
                 if self.rank == 0:
+                    # Match remote-failure cleanup: restore top-K, then drop any
+                    # bytes already written for the aborted candidate (write-
+                    # then-fail leaves an orphan that rollback alone keeps).
                     self._rollback_pending_best_state()
+                    self._reconcile_best_checkpoints()
                 caught_exception = exc
                 error_message = (
                     "Full validation failed while saving the best checkpoint:\n"
