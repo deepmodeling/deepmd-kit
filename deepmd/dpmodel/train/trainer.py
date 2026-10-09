@@ -49,6 +49,13 @@ from deepmd.loggers.training import (
     format_training_message_per_task,
 )
 
+from .observer import (
+    CheckpointObservation,
+    DisplayObservation,
+    StepObservation,
+    TrainingObserver,
+    TrainingObserverList,
+)
 from .timing import (
     DisplayInterval,
     TrainingTimer,
@@ -538,10 +545,19 @@ class AbstractTrainer(ABC):
         *,
         rank_context: RankContext | None = None,
         metric_accumulator: TrainingMetricAccumulator | None = None,
+        observers: Sequence[TrainingObserver] | TrainingObserver | None = None,
     ) -> None:
         self.trainer_config = trainer_config
         self.rank_context = rank_context or RankContext()
         self.metric_accumulator = metric_accumulator
+        if observers is None:
+            self.observers = TrainingObserverList()
+        elif isinstance(observers, TrainingObserverList):
+            self.observers = observers
+        elif isinstance(observers, TrainingObserver):
+            self.observers = TrainingObserverList((observers,))
+        else:
+            self.observers = TrainingObserverList(observers)
         self.lcurve_writer = LearningCurveWriter()
 
     def run(self, tasks: TrainingTaskCollection) -> None:
@@ -554,6 +570,7 @@ class AbstractTrainer(ABC):
             if self.metric_accumulator is not None:
                 self.metric_accumulator.reset()
             self.on_train_begin(tasks)
+            self.observers.on_train_begin(tasks, rank_context=self.rank_context)
             fout = self._open_learning_curve()
             timer = TrainingTimer(
                 start_step=start_step,
@@ -570,6 +587,20 @@ class AbstractTrainer(ABC):
                         )
                     self.metric_accumulator.add(task.key, step_result.train_results)
                 display_step = step + 1
+                current_lr: float | None = None
+
+                if self.observers.wants_step(display_step):
+                    current_lr = self.learning_rate(step)
+                    self.observers.on_step_end(
+                        StepObservation(
+                            step=step,
+                            display_step=display_step,
+                            task_key=task.key,
+                            learning_rate=current_lr,
+                            step_result=step_result,
+                            rank_context=self.rank_context,
+                        )
+                    )
 
                 if self._should_display(display_step):
                     if self.rank_context.is_chief:
@@ -579,7 +610,9 @@ class AbstractTrainer(ABC):
                             step=step,
                             step_result=step_result,
                         )
-                        current_lr = self.learning_rate(step)
+                        if current_lr is None:
+                            current_lr = self.learning_rate(step)
+                        interval = timer.record(display_step)
                         self.lcurve_writer.log_results(
                             step=display_step,
                             learning_rate=current_lr,
@@ -595,7 +628,7 @@ class AbstractTrainer(ABC):
                                 else ()
                             ),
                         )
-                        self._log_interval(timer.record(display_step))
+                        self._log_interval(interval)
                         if fout is not None:
                             if fout.tell() == 0:
                                 self.lcurve_writer.write_header(
@@ -610,13 +643,29 @@ class AbstractTrainer(ABC):
                                 train_results=train_results,
                                 valid_results=valid_results,
                             )
+                        self.observers.on_display(
+                            DisplayObservation(
+                                step=step,
+                                display_step=display_step,
+                                task_key=task.key,
+                                learning_rate=current_lr,
+                                train_results=train_results,
+                                valid_results=valid_results,
+                                timing=interval,
+                                rank_context=self.rank_context,
+                            )
+                        )
                     if self.metric_accumulator is not None:
                         self.metric_accumulator.reset()
 
+                if current_lr is None:
+                    learning_rate = self.learning_rate(step)
+                else:
+                    learning_rate = current_lr
                 self.run_full_validation(
                     step=step,
                     display_step=display_step,
-                    learning_rate=self.learning_rate(step),
+                    learning_rate=learning_rate,
                 )
 
                 if (
@@ -625,14 +674,29 @@ class AbstractTrainer(ABC):
                     and display_step % self.trainer_config.save_freq == 0
                 ):
                     self.save_checkpoint(display_step)
+                    self.observers.on_checkpoint(
+                        CheckpointObservation(
+                            display_step=display_step,
+                            rank_context=self.rank_context,
+                        )
+                    )
 
             if self._should_save_final_checkpoint():
                 self.save_checkpoint(num_steps)
+                self.observers.on_checkpoint(
+                    CheckpointObservation(
+                        display_step=num_steps,
+                        rank_context=self.rank_context,
+                    )
+                )
             self._log_average_step_time(timer)
         finally:
             if fout is not None:
                 fout.close()
-            self.on_train_end(tasks)
+            try:
+                self.on_train_end(tasks)
+            finally:
+                self.observers.on_train_end(tasks, rank_context=self.rank_context)
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select the task for the next optimizer step."""

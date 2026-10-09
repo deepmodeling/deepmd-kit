@@ -19,6 +19,13 @@ from .entrypoint import (
 from .metrics import (
     TrainingMetricAccumulator,
 )
+from .observer import (
+    CheckpointObservation,
+    DisplayObservation,
+    StepObservation,
+    TrainingObserver,
+    TrainingObserverList,
+)
 from .schedule import (
     StepSchedule,
     resolve_step_schedule,
@@ -47,16 +54,21 @@ __all__ = [
     "DEFAULT_TASK_KEY",
     "AbstractTrainEntrypoint",
     "AbstractTrainer",
+    "CheckpointObservation",
     "CheckpointStore",
     "DisplayInterval",
+    "DisplayObservation",
     "LearningCurveWriter",
     "RankContext",
     "ShardingPolicy",
+    "StepObservation",
     "StepSchedule",
     "TrainEntrypointOptions",
     "TrainStepResult",
     "TrainerConfig",
     "TrainingMetricAccumulator",
+    "TrainingObserver",
+    "TrainingObserverList",
     "TrainingTask",
     "TrainingTaskCollection",
     "TrainingTaskConfig",
