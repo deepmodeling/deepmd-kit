@@ -164,7 +164,11 @@ class TorchProfilerObserver(TrainingObserver):
         profiler_factory = self._profiler_factory
         schedule_factory = self._schedule_factory
         handler_factory = self._tensorboard_handler_factory
-        if profiler_factory is None or schedule_factory is None:
+        if (
+            profiler_factory is None
+            or schedule_factory is None
+            or handler_factory is None
+        ):
             import torch.profiler as torch_profiler
 
             if profiler_factory is None:

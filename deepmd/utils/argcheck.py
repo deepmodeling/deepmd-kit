@@ -6028,12 +6028,18 @@ def training_args(
     )
     doc_profiling = (
         "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
-        "JSON trace; PaddlePaddle starts its Nsight Systems profiling flow."
+        "JSON trace; PaddlePaddle starts its Nsight Systems profiling flow. "
+        "PyTorch Exportable (pt_expt) writes Chrome traces and, under distributed "
+        "training, appends a `.rankN` suffix to the profiling file stem."
     )
-    doc_profiling_file = "Output file for the TensorFlow or PyTorch Chrome JSON trace."
+    doc_profiling_file = (
+        "Output file for the TensorFlow or PyTorch Chrome JSON trace. "
+        "For pt_expt distributed runs the stem receives a `.rankN` suffix."
+    )
     doc_enable_profiler = (
         "Enable the backend profiler. TensorFlow and PyTorch write profiler data "
-        "under `tensorboard_log_dir`; PaddlePaddle starts Nsight Systems profiling."
+        "under `tensorboard_log_dir`; PaddlePaddle starts Nsight Systems profiling. "
+        "pt_expt uses TorchProfilerObserver with the same TensorBoard log directory."
     )
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"

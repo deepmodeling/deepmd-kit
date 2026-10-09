@@ -203,5 +203,14 @@ class TrainingObserverList(TrainingObserver):
         *,
         rank_context: RankContext,
     ) -> None:
+        # Cleanup must run for every observer even if an earlier one fails
+        # (e.g. TensorBoard close must not skip stopping an active profiler).
+        first_error: Exception | None = None
         for observer in self._observers:
-            observer.on_train_end(tasks, rank_context=rank_context)
+            try:
+                observer.on_train_end(tasks, rank_context=rank_context)
+            except Exception as error:
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            raise first_error

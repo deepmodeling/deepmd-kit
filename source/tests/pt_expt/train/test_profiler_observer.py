@@ -380,6 +380,7 @@ def test_close_releases_even_when_export_fails(tmp_path: Path) -> None:
     try:
         observer.close()
     except RuntimeError:
+        # Expected: export path raises; stop/cleanup assertions follow.
         pass
     assert observer.profiler is None
     profiler.stop.assert_called_once()
