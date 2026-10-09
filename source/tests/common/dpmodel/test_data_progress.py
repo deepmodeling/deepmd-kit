@@ -25,13 +25,13 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchSampler,
     LmdbDataReader,
 )
-from deepmd.utils.data import (
-    DataRequirementItem,
-)
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
 from deepmd.utils import random as dp_random
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )

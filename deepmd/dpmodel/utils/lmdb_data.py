@@ -17,6 +17,7 @@ from collections.abc import (
     Callable,
     Iterable,
     Iterator,
+    Mapping,
     Sequence,
 )
 from concurrent.futures import (
@@ -37,7 +38,6 @@ from typing import (
     Any,
     cast,
 )
-from collections.abc import Mapping
 
 import lmdb
 import msgpack
