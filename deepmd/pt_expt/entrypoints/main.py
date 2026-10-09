@@ -21,6 +21,7 @@ from deepmd.dpmodel.train import (
     iter_training_task_configs,
     make_task_maps,
     print_data_summaries,
+    resolve_checkpoint_path,
 )
 from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
@@ -41,9 +42,6 @@ from deepmd.utils.data_system import (
 )
 from deepmd.utils.stat_file import (
     StatFileSpec,
-)
-from deepmd.dpmodel.train import (
-    resolve_checkpoint_path,
 )
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 

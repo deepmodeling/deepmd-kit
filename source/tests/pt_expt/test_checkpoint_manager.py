@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for the pt_expt Torch checkpoint manager."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import pytest
 import torch
