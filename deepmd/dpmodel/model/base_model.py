@@ -256,6 +256,36 @@ def make_base_model() -> type[object]:
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
 
+        @classmethod
+        def prepare_neighbors(
+            cls,
+            train_data: DeepmdDataSystem,
+            type_map: list[str] | None,
+            local_jdata: dict,
+        ) -> tuple[dict, float | None]:
+            """Prepare neighbor config under the model neighbor contract.
+
+            Dispatches through the model plugin registry. Prefers a concrete
+            ``prepare_neighbors`` defined above this base class; otherwise
+            falls back to :meth:`update_sel`.
+            """
+            model_type = local_jdata.get("type", "standard")
+            if model_type == "standard":
+                model_type = local_jdata.get("fitting", {}).get("type", "ener")
+            concrete = cls.get_class_by_type(model_type)
+            prepare = None
+            for klass in concrete.__mro__:
+                if klass is BaseBaseModel:
+                    break
+                if "prepare_neighbors" in klass.__dict__:
+                    prepare = klass.__dict__["prepare_neighbors"]
+                    break
+            if prepare is not None:
+                return prepare.__get__(None, concrete)(
+                    train_data, type_map, local_jdata
+                )
+            return concrete.update_sel(train_data, type_map, local_jdata)
+
         @abstractmethod
         def get_observed_type_list(self) -> list[str]:
             """Get observed types (elements) of the model during data statistics.

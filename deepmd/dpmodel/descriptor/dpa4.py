@@ -71,6 +71,9 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
@@ -2446,6 +2449,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             gate is applied (issue #5906).
         """
         return not self._graph_lower_disabled
+
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """DPA4 defaults to the carry-all graph lower."""
+        del local_jdata
+        return NeighborContract.graph()
 
     def uses_compact_edge_pairs(self) -> bool:
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""

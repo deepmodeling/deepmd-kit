@@ -32,6 +32,9 @@ from .neighbor_graph import (
     segment_mean,
     segment_sum,
 )
+from .neighbor_contract import (
+    NeighborContract,
+)
 from .neighbor_list import (
     NeighborList,
 )
@@ -91,6 +94,7 @@ __all__ = [
     "NativeLayer",
     "NativeNet",
     "NeighborGraph",
+    "NeighborContract",
     "NeighborList",
     "NetworkCollection",
     "PairExcludeMask",

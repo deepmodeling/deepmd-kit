@@ -41,6 +41,9 @@ from deepmd.dpmodel.utils.type_embed import (
     TypeEmbedNet,
     take_type_embedding,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.update_sel import (
     UpdateSel,
 )
@@ -752,6 +755,25 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         if not self.repformer_args.set_davg_zero:
             return False
         return self.repinit.tebd_input_mode in ("concat", "strip")
+
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """Match :meth:`uses_graph_lower` eligibility from config alone."""
+        if local_jdata.get("use_three_body", False):
+            return NeighborContract.from_legacy_sel(
+                (local_jdata.get("repinit") or {}).get("sel", local_jdata.get("sel"))
+            )
+        repinit = local_jdata.get("repinit") or {}
+        repformer = local_jdata.get("repformer") or {}
+        if not repinit.get("set_davg_zero", True):
+            return NeighborContract.from_legacy_sel(repinit.get("sel"))
+        if not repformer.get("set_davg_zero", True):
+            return NeighborContract.from_legacy_sel(repinit.get("sel"))
+        tebd = repinit.get("tebd_input_mode", "concat")
+        if tebd in ("concat", "strip"):
+            return NeighborContract.graph()
+        return NeighborContract.from_legacy_sel(repinit.get("sel"))
 
     def graph_type_embedding_table(self) -> Array:
         """Full type-embedding table consumed by the graph-route forward.

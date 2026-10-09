@@ -1220,6 +1220,10 @@ def make_model(
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
 
+        def get_neighbor_contract(self):
+            """Return the neighbor representation contract of this model."""
+            return self.atomic_model.get_neighbor_contract()
+
         def mixed_types(self) -> bool:
             """If true, the model
             1. assumes total number of atoms aligned across frames;

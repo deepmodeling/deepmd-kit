@@ -257,6 +257,19 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
+    def get_neighbor_contract(self):
+        """Return the neighbor representation contract of this atomic model."""
+        getter = getattr(self.descriptor, "get_neighbor_contract", None)
+        if callable(getter):
+            return getter()
+        from deepmd.dpmodel.utils.neighbor_contract import (
+            NeighborContract,
+        )
+
+        if self.uses_graph_lower():
+            return NeighborContract.graph()
+        return NeighborContract.dense(self.get_sel(), requires_capacity=False)
+
     def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,

@@ -32,6 +32,9 @@ from deepmd.pt.utils.compile_compat import (
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.utils.charge_state import (
     CHARGE_STATE_TABLE_RANGES,
 )
@@ -1120,6 +1123,34 @@ def _spin_scheme(model_type: str | None) -> str | None:
     return None
 
 
+
+def _neighbor_contract_for_model(model: torch.nn.Module) -> NeighborContract:
+    """Resolve the export neighbor contract from a live model."""
+    getter = getattr(model, "get_neighbor_contract", None)
+    if callable(getter):
+        return getter()
+    atomic = getattr(model, "atomic_model", None)
+    if atomic is not None:
+        getter = getattr(atomic, "get_neighbor_contract", None)
+        if callable(getter):
+            return getter()
+        descriptor = getattr(atomic, "descriptor", None)
+        if descriptor is not None:
+            getter = getattr(descriptor, "get_neighbor_contract", None)
+            if callable(getter):
+                return getter()
+            uses = getattr(descriptor, "uses_graph_lower", None)
+            if callable(uses) and bool(uses()):
+                return NeighborContract.graph()
+    uses = getattr(model, "uses_graph_lower", None)
+    if callable(uses) and bool(uses()):
+        return NeighborContract.graph()
+    try:
+        return NeighborContract.dense(model.get_sel(), requires_capacity=False)
+    except Exception:
+        return NeighborContract.graph()
+
+
 def _collect_metadata(
     model: torch.nn.Module,
     spin_scheme: str | None = None,
@@ -1167,11 +1198,27 @@ def _collect_metadata(
                 "intensive": vdef.intensive,
             }
         )
+    neighbor_contract = _neighbor_contract_for_model(model)
     meta = {
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
-        "sel": model.get_sel(),
-        "nnei": sum(model.get_sel()),
+        "neighbor_contract": neighbor_contract.to_dict(),
+        # Legacy dense fields: omitted for graph-native models so metadata does
+        # not invent a dummy capacity. Dense models keep sel/nnei for old readers.
+        **(
+            {}
+            if neighbor_contract.is_graph
+            else {
+                "sel": list(neighbor_contract.capacity)
+                if neighbor_contract.capacity is not None
+                else list(model.get_sel()),
+                "nnei": (
+                    sum(neighbor_contract.capacity)
+                    if neighbor_contract.capacity is not None
+                    else sum(model.get_sel())
+                ),
+            }
+        ),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
         "dim_chg_spin": model.get_dim_chg_spin(),
