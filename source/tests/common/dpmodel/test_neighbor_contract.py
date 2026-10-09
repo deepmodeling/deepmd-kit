@@ -19,6 +19,9 @@ from deepmd.dpmodel.descriptor.dpa1 import (
 from deepmd.dpmodel.descriptor.dpa4c import (
     DescrptDPA4C,
 )
+from deepmd.dpmodel.descriptor.hybrid import (
+    DescrptHybrid,
+)
 from deepmd.dpmodel.model.dp_model import (
     DPModelCommon,
 )
@@ -66,6 +69,32 @@ class TestNeighborContract(unittest.TestCase):
     def test_merge_rejects_mixed_representation(self) -> None:
         with self.assertRaises(ValueError):
             NeighborContract.graph().merge(NeighborContract.dense([4]))
+
+    def test_graph_merge_preserves_requires_capacity(self) -> None:
+        # Hybrid: graph without sel + graph sel:auto must keep discovery.
+        left = NeighborContract.graph()
+        right = NeighborContract(representation="graph", requires_capacity=True)
+        merged = left.merge(right)
+        self.assertTrue(merged.is_graph)
+        self.assertTrue(merged.requires_capacity)
+        self.assertIsNone(merged.capacity)
+        # Symmetric
+        self.assertTrue(right.merge(left).requires_capacity)
+        # Both False stays False
+        self.assertFalse(left.merge(NeighborContract.graph()).requires_capacity)
+
+    def test_dense_merge_preserves_discovery_when_sibling_needs_it(self) -> None:
+        # Hybrid dense: sel:auto + explicit sel must still require discovery.
+        auto = NeighborContract.dense(None, requires_capacity=True)
+        explicit = NeighborContract.dense([8, 16], requires_capacity=False)
+        merged = auto.merge(explicit)
+        self.assertTrue(merged.is_dense)
+        self.assertTrue(merged.requires_capacity)
+        self.assertEqual(merged.capacity, (8, 16))
+        # Explicit + explicit: no discovery
+        both = NeighborContract.dense([4]).merge(NeighborContract.dense([8]))
+        self.assertFalse(both.requires_capacity)
+        self.assertEqual(both.capacity, (8,))
 
     def test_ensure_construction_sel(self) -> None:
         prepared = ensure_construction_sel({"type": "dpa1", "sel": "auto"})
@@ -192,6 +221,106 @@ class TestPrepareNeighborsSkipsUpdateSel(unittest.TestCase):
             update_sel.assert_called_once()
             self.assertEqual(updated["descriptor"]["sel"], [4, 8])
             self.assertEqual(min_dist, 0.8)
+
+
+
+class TestHybridUpdateSelClassmethod(unittest.TestCase):
+    def test_update_sel_is_classmethod(self) -> None:
+        self.assertTrue(isinstance(DescrptHybrid.__dict__["update_sel"], classmethod))
+
+    def test_hybrid_update_sel_dispatch(self) -> None:
+        jdata = {
+            "type": "hybrid",
+            "list": [
+                {
+                    "type": "dpa1",
+                    "rcut": 6.0,
+                    "rcut_smth": 0.5,
+                    "tebd_input_mode": "concat",
+                    "sel": "auto",
+                },
+                {
+                    "type": "dpa1",
+                    "rcut": 6.0,
+                    "rcut_smth": 0.5,
+                    "tebd_input_mode": "concat",
+                },
+            ],
+        }
+        train_data = mock.MagicMock()
+        with mock.patch(
+            "deepmd.dpmodel.descriptor.hybrid.BaseDescriptor.update_sel",
+            side_effect=lambda td, tm, child: (
+                {**child, "sel": [4] if child.get("sel") == "auto" else child.get("sel", 1)},
+                0.3,
+            ),
+        ):
+            # Must be callable on the class without binding an instance.
+            updated, min_dist = DescrptHybrid.update_sel(train_data, ["O", "H"], jdata)
+        self.assertEqual(updated["list"][0]["sel"], [4])
+        self.assertEqual(min_dist, 0.3)
+
+    def test_hybrid_graph_merge_keeps_requires_capacity(self) -> None:
+        jdata = {
+            "type": "hybrid",
+            "list": [
+                {
+                    "type": "dpa1",
+                    "rcut": 6.0,
+                    "rcut_smth": 0.5,
+                    "tebd_input_mode": "concat",
+                },
+                {
+                    "type": "dpa1",
+                    "rcut": 6.0,
+                    "rcut_smth": 0.5,
+                    "tebd_input_mode": "concat",
+                    "sel": "auto",
+                },
+            ],
+        }
+        contract = DescrptHybrid.neighbor_contract_from_jdata(jdata)
+        self.assertTrue(contract.is_graph)
+        self.assertTrue(contract.requires_capacity)
+
+
+class TestPrepareNeighborsMinNborDist(unittest.TestCase):
+    def test_skip_capacity_returns_min_nbor_dist_without_top_level_rcut(self) -> None:
+        # DPA2-like nested cutoffs under repinit/repformer only.
+        jdata = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa2",
+                "repinit": {"rcut": 6.0, "rcut_smth": 0.5, "nsel": 20},
+                "repformer": {"rcut": 4.0, "rcut_smth": 0.5, "nsel": 10},
+            },
+            "fitting": {"type": "ener"},
+        }
+        train_data = mock.MagicMock()
+        with (
+            mock.patch(
+                "deepmd.dpmodel.model.dp_model.BaseDescriptor.neighbor_contract_from_jdata",
+                return_value=NeighborContract.graph(),
+            ),
+            mock.patch(
+                "deepmd.dpmodel.model.dp_model.BaseDescriptor.prepare_jdata_for_neighbor_contract",
+                side_effect=lambda j, c: dict(j),
+            ),
+            mock.patch(
+                "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel"
+            ) as update_sel,
+            mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
+        ):
+            update_sel_cls.return_value.get_min_nbor_dist.return_value = 0.42
+            updated, min_dist = DPModelCommon.prepare_neighbors(
+                train_data, ["O", "H"], jdata
+            )
+            update_sel.assert_not_called()
+            update_sel_cls.return_value.get_min_nbor_dist.assert_called_once_with(
+                train_data
+            )
+            self.assertEqual(min_dist, 0.42)
+            self.assertNotIn("rcut", updated["descriptor"])
 
 
 if __name__ == "__main__":

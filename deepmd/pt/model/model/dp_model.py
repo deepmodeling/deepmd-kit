@@ -38,8 +38,9 @@ class DPModelCommon:
         )
         local_jdata_cpy["descriptor"] = descriptor_jdata
         if not contract.requires_capacity:
-            if descriptor_jdata.get("rcut") is None:
-                return local_jdata_cpy, None
+            # Capacity discovery is skipped, but min neighbor distance is still
+            # needed for compression bounds. get_min_nbor_dist does not use
+            # rcut, so nested-cutoff descriptors (DPA2, hybrid, …) are covered.
             return local_jdata_cpy, float(UpdateSel().get_min_nbor_dist(train_data))
         local_jdata_cpy["descriptor"], min_nbor_dist = BaseDescriptor.update_sel(
             train_data, type_map, descriptor_jdata

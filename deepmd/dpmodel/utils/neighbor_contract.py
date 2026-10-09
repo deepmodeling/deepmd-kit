@@ -78,12 +78,12 @@ class NeighborContract:
         )
 
     @classmethod
-    def graph(cls) -> NeighborContract:
+    def graph(cls, *, requires_capacity: bool = False) -> NeighborContract:
         """Build a carry-all graph contract with no neighbor capacity."""
         return cls(
             version=NEIGHBOR_CONTRACT_VERSION,
             representation="graph",
-            requires_capacity=False,
+            requires_capacity=bool(requires_capacity),
             capacity=None,
         )
 
@@ -182,11 +182,15 @@ class NeighborContract:
                 "Every child must share one representation (dense or graph)."
             )
         if self.is_graph:
-            return NeighborContract.graph()
+            # Preserve OR of requires_capacity so a graph child that still
+            # needs discovery (e.g. DPA1 sel:auto) is not silently dropped.
+            return NeighborContract.graph(
+                requires_capacity=self.requires_capacity or other.requires_capacity
+            )
         capacity = _merge_capacities(self.capacity, other.capacity)
+        # Discovery remains required if either side still needs it, even when
+        # the merged capacity is non-None (sibling may still be auto-sel).
         requires_capacity = self.requires_capacity or other.requires_capacity
-        if capacity is not None:
-            requires_capacity = False
         return NeighborContract.dense(capacity, requires_capacity=requires_capacity)
 
 

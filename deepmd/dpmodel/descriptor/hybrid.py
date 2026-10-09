@@ -422,7 +422,6 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         return out_descriptor, out_gr, out_g2, out_h2, out_sw
 
     @classmethod
-    @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
         """Merge child descriptor contracts; require a single representation."""
         from deepmd.dpmodel.descriptor.base_descriptor import (
@@ -464,6 +463,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         del contract
         return out
 
+    @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
