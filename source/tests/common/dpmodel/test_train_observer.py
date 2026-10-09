@@ -23,9 +23,7 @@ class RecordingObserver(TrainingObserver):
         self.events: list[str] = []
 
     def wants_step(self, display_step: int) -> bool:
-        return display_step == 1 or (
-            self.freq > 0 and display_step % self.freq == 0
-        )
+        return display_step == 1 or (self.freq > 0 and display_step % self.freq == 0)
 
     def on_train_begin(self, tasks, *, rank_context: RankContext) -> None:
         self.events.append(f"begin:{rank_context.rank}")

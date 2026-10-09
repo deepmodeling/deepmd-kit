@@ -213,9 +213,7 @@ class TensorBoardObserver(TrainingObserver):
             more_loss = step_result.payload.get("more_loss")
             if isinstance(more_loss, Mapping):
                 metrics = {
-                    key: value
-                    for key, value in more_loss.items()
-                    if "l2_" not in key
+                    key: value for key, value in more_loss.items() if "l2_" not in key
                 }
         if not metrics:
             return
@@ -247,9 +245,7 @@ class TensorBoardObserver(TrainingObserver):
                 )
             return
         if isinstance(results, Mapping):
-            tag_prefix = (
-                f"{prefix}/{DEFAULT_TASK_KEY}" if self._multi_task else prefix
-            )
+            tag_prefix = f"{prefix}/{DEFAULT_TASK_KEY}" if self._multi_task else prefix
             self._write_metric_mapping(tag_prefix, results, display_step)
 
     def _write_metric_mapping(
