@@ -2272,6 +2272,29 @@ class TestSeZMModelBridging(unittest.TestCase):
         self.assertEqual(model.bridging_method, "ZBL")
         self.assertIsNotNone(model.atomic_model.descriptor.bridging_clamp)
 
+    def test_legacy_bridged_state_is_rejected(self) -> None:
+        """Tagged and untagged checkpoints obey the descriptor version contract."""
+        model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
+        for version in (None, 1.0, 1.1, 1.2):
+            with self.subTest(version=version):
+                state = model.state_dict()
+                version_key = "atomic_model.descriptor.version_tensor"
+                if version is None:
+                    del state[version_key]
+                else:
+                    state[version_key] = torch.full_like(state[version_key], version)
+                with self.assertRaisesRegex(ValueError, "Retrain the bridged model"):
+                    model.load_state_dict(state)
+
+    def test_current_bridged_state_round_trips(self) -> None:
+        """The state-dict and portable representations retain the same tensors."""
+        params = self._build_model_params(bridging_method="ZBL")
+        model = get_sezm_model(params)
+        restored = get_sezm_model(params)
+        restored.load_state_dict(model.state_dict())
+        portable = SeZMModel.deserialize(restored.serialize())
+        torch.testing.assert_close(portable.state_dict(), model.state_dict())
+
     def test_empty_statistics_raise(self) -> None:
         """A fully filtered statistics sample cannot calibrate output bias."""
         model = get_sezm_model(self._build_model_params(bridging_method="ZBL"))

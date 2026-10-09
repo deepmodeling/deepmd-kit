@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from unittest import (
+    mock,
+)
 
 import numpy as np
+import pytest
 import torch
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
@@ -10,8 +14,16 @@ from torch.fx.experimental.proxy_tensor import (
 from deepmd.dpmodel.descriptor import (
     DescrptSeA,
 )
+from deepmd.dpmodel.fitting.ener_fitting import EnergyFittingNet as EnergyFittingNetDP
+from deepmd.pt.cxx_op import (
+    ENABLE_CUSTOMIZED_OP,
+)
 from deepmd.pt_expt.fitting import (
     EnergyFittingNet,
+    ener_fitting,
+)
+from deepmd.pt_expt.kernels.graph_fitting import (
+    op_available,
 )
 from deepmd.pt_expt.utils import (
     env,
@@ -26,6 +38,81 @@ from ...seed import (
 from ..export_helpers import (
     export_save_load_and_compare,
 )
+
+
+@pytest.mark.skipif(
+    not ENABLE_CUSTOMIZED_OP or not op_available(),
+    reason="the fused fitting operator is unavailable",
+)
+@pytest.mark.parametrize("activation", ["tanh", "silu"])
+@pytest.mark.parametrize("reference_mode", ["none", "vacuum", "folded"])
+def test_fused_node_gate_matches_portable(
+    monkeypatch: pytest.MonkeyPatch, activation: str, reference_mode: str
+) -> None:
+    """The fused readout preserves gates and their gradients across vacuum folding."""
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    fitting = (
+        EnergyFittingNet(
+            ntypes=2,
+            dim_descrpt=12,
+            neuron=[16, 16],
+            resnet_dt=False,
+            activation_function=activation,
+            precision="float32",
+            mixed_types=True,
+            vacuum_ref=reference_mode != "none",
+            seed=3,
+        )
+        .to(env.DEVICE)
+        .eval()
+    )
+    generator = torch.Generator(device=env.DEVICE).manual_seed(5)
+    descriptor = torch.randn(
+        8, 12, generator=generator, dtype=torch.float32, device=env.DEVICE
+    ).requires_grad_(True)
+    atype = torch.arange(8, dtype=torch.int64, device=env.DEVICE) % 2
+    gate = torch.tensor(
+        [0.0, 1.0, 0.2, 0.65, 0.9, 0.0, 0.4, 1.0],
+        dtype=torch.float64,
+        device=env.DEVICE,
+        requires_grad=True,
+    )
+    vacuum = (
+        torch.randn(2, 12, generator=generator, dtype=torch.float32, device=env.DEVICE)
+        if reference_mode != "none"
+        else None
+    )
+    with torch.no_grad():
+        fitting.bias_atom_e[:, 0].copy_(fitting.bias_atom_e.new_tensor([1.25, -0.75]))
+    if reference_mode == "folded":
+        fitting.fold_vacuum_reference(vacuum)
+        vacuum = None
+
+    kwargs = {"vacuum_descriptor": vacuum, "node_gate": gate}
+    reference = EnergyFittingNetDP.call_graph(fitting, descriptor, atype, **kwargs)[
+        "energy"
+    ]
+    with mock.patch.object(
+        ener_fitting, "graph_fitting", wraps=ener_fitting.graph_fitting
+    ) as fused:
+        actual = fitting.call_graph(descriptor, atype, **kwargs)["energy"]
+    fused.assert_called_once()
+    torch.testing.assert_close(actual, reference, atol=2e-5, rtol=2e-5)
+    closed = gate == 0.0
+    bias = fitting.readout_reference().to(actual.dtype)[atype]
+    torch.testing.assert_close(actual[closed], bias[closed], atol=0.0, rtol=0.0)
+
+    cotangent = torch.linspace(-1.0, 1.0, 8, device=env.DEVICE)[:, None]
+    expected_gradients = torch.autograd.grad(
+        (reference * cotangent).sum(), (descriptor, gate)
+    )
+    actual_gradients = torch.autograd.grad(
+        (actual * cotangent).sum(), (descriptor, gate)
+    )
+    torch.testing.assert_close(
+        actual_gradients, expected_gradients, atol=2e-5, rtol=2e-5
+    )
+    assert actual_gradients[1].abs().max() > 1e-6
 
 
 class TestEnergyFittingNet(unittest.TestCase, TestCaseSingleFrameWithNlist):

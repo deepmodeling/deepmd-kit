@@ -20,6 +20,9 @@ import torch
 from deepmd.dpmodel.atomic_model.inner_potential import (
     ELEMENT_TO_Z,
 )
+from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    ef_op_available,
+)
 from deepmd.pt_expt.model.dp_linear_model import (
     LinearEnergyModel,
 )
@@ -465,6 +468,10 @@ class TestCompressedDPA4CZBLBridging:
             patch.setattr(make_model, "fused_energy_force_enabled", lambda: False)
             return self._lower(n_local)
 
+    @pytest.mark.skipif(
+        not ef_op_available(),
+        reason="the fused DPA4C energy-force operators are required",
+    )
     @pytest.mark.parametrize("ghosts", [0, 3])
     def test_fused_route_matches_the_autograd_composition(
         self,

@@ -494,6 +494,18 @@ class TestZBLBridgingPtExpt:
                 float(force[atom, comp]), fd, rtol=1e-6, atol=1e-6
             )
 
+    @pytest.mark.parametrize("version", [None, 1.0, 1.1, 1.2])
+    def test_legacy_bridged_state_is_rejected(self, version: float | None) -> None:
+        """A composition cannot restore weights trained under an older window."""
+        state = self.pt_expt_model.state_dict()
+        version_key = "atomic_model.models.0.descriptor.version_tensor"
+        if version is None:
+            del state[version_key]
+        else:
+            state[version_key] = torch.full_like(state[version_key], version)
+        with pytest.raises(ValueError, match="Retrain the bridged model"):
+            self.pt_expt_model.load_state_dict(state)
+
     def test_serialize_roundtrip(self) -> None:
         from deepmd.pt_expt.model.model import (
             BaseModel,

@@ -2858,11 +2858,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         anything is assigned to a module: ``load_state_dict`` restores a
         module's own buffers before descending into its children, so a
         migration applied to live attributes would rewrite values the child
-        load is about to overwrite. Only representations are upgraded here;
-        a difference no rewrite can absorb stays a forward-time branch on
-        :attr:`version`, so a migrated descriptor never changes its own math.
-        The one change that carries no branch, the bridging window of version
-        1.3, refuses older bridged records in :meth:`deserialize` instead.
+        load is about to overwrite. Both checkpoints and portable records
+        pass through this migration. Incompatible bridging states are rejected
+        before the descriptor's tensors are restored. Other differences that
+        no rewrite can absorb stay forward-time branches on :attr:`version`,
+        so a migrated descriptor never changes its own math.
 
         Version 1.2 moved the env-seed spin gate from the spin coordinate to
         the resulting environment quadratic form. For an active-spin model,
@@ -2876,7 +2876,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Version 1.3 changes only bridging. An unbridged state at version 1.2
         therefore adopts the current record version without changing its
         function, so later fine-tuning can enable the current window. An older
-        bridged state cannot be upgraded this way.
+        bridged state cannot be upgraded this way and is refused.
 
         Parameters
         ----------
@@ -2892,6 +2892,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         float
             Version the variables express after migration.
         """
+        check_bridging_record_version(
+            {"inner_clamp_f_inner": self.bridging_f_inner}, version
+        )
         if 1.1 <= version < 1.2:
             gate_key = prefix + "env_seed_embedding.spin_scale"
             if self.use_spin is not None and not any(self.use_spin):
@@ -2913,7 +2916,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 variables[gate_key] = variables[gate_key] ** 2
             version = 1.2
 
-        if 1.2 <= version < BRIDGING_RECORD_VERSION and self.bridging_f_inner is None:
+        if 1.2 <= version < BRIDGING_RECORD_VERSION:
             return BRIDGING_RECORD_VERSION
         return version
 
@@ -3011,7 +3014,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         data.pop("env_mat", None)
         config.pop("s2_grid_resolution", None)
         migrate_inner_clamp_keys(config)
-        check_bridging_record_version(config, version)
         obj = cls(**config)
         obj.version = obj._migrate_variables(variables, version)
         obj._load_variables(variables)
