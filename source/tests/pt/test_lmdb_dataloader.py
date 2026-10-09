@@ -224,6 +224,20 @@ class TestHelpers:
 class TestLmdbDataset:
     """Test LmdbDataset class."""
 
+    def test_seed_controls_batch_order(self, lmdb_dir):
+        """Rank-aware seeds reach the NumPy sampler used by the PT adapter."""
+
+        def order(seed):
+            data = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2, seed=seed)
+            try:
+                return [list(batch) for batch in data._batch_sampler]
+            finally:
+                data.close()
+
+        assert order([0, 42]) == order([0, 42])
+        assert order([0, 42]) != order([0, 43])
+        assert order([0, 42]) != order([1, 42])
+
     def test_len(self, lmdb_dir):
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         assert len(ds) == 10
