@@ -11,7 +11,6 @@ from __future__ import (
     annotations,
 )
 
-import logging
 import os
 from pathlib import (
     Path,
@@ -33,8 +32,6 @@ if TYPE_CHECKING:
     from collections.abc import (
         Mapping,
     )
-
-log = logging.getLogger(__name__)
 
 __all__ = ["TorchCheckpointManager"]
 

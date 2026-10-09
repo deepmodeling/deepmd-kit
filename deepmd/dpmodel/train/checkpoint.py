@@ -264,6 +264,8 @@ class CheckpointStore:
                 if path.resolve() in protected:
                     continue
             except OSError:
+                # Unresolvable path cannot be in ``protected``; fall through
+                # to unlink with missing_ok.
                 pass
             path.unlink(missing_ok=True)
 
