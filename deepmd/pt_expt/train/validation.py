@@ -406,7 +406,12 @@ class FullValidator:
                 try:
                     self._commit_pending_best_state()
                     self._reconcile_best_checkpoints()
+                    self._rollback_topk_records = None
                 except Exception as exc:
+                    try:
+                        self._rollback_pending_best_state()
+                    except Exception:
+                        pass
                     commit_exception = exc
                     commit_error = (
                         "Full validation failed while committing the best "
@@ -808,9 +813,12 @@ class FullValidator:
         self._sync_state_store()
 
     def _commit_pending_best_state(self) -> None:
-        """Keep staged top-K after a successful checkpoint write."""
+        """Drop the proposal pointer after a successful checkpoint write.
+
+        The rollback snapshot stays until :meth:`_reconcile_best_checkpoints`
+        finishes, so a mid-reconcile failure can still restore bookkeeping.
+        """
         self._pending_topk_records = None
-        self._rollback_topk_records = None
 
     def _rollback_pending_best_state(self) -> None:
         """Restore pre-proposal top-K after a failed publication boundary."""
@@ -922,33 +930,42 @@ class FullValidator:
             files_by_step.setdefault(step, []).append(checkpoint_path)
 
         temp_moves: list[tuple[Path, Path]] = []
-        for step, checkpoint_paths in files_by_step.items():
-            expected_name = expected_names.get(step)
-            if expected_name is None:
-                stale_files.extend(checkpoint_paths)
-                continue
+        try:
+            for step, checkpoint_paths in files_by_step.items():
+                expected_name = expected_names.get(step)
+                if expected_name is None:
+                    stale_files.extend(checkpoint_paths)
+                    continue
 
-            keep_path = next(
-                (
-                    checkpoint_path
-                    for checkpoint_path in checkpoint_paths
-                    if checkpoint_path.name == expected_name
-                ),
-                checkpoint_paths[0],
-            )
-            for checkpoint_path in checkpoint_paths:
-                if checkpoint_path != keep_path:
-                    stale_files.append(checkpoint_path)
-            if keep_path.name != expected_name:
-                temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
-                keep_path.rename(temp_path)
-                temp_moves.append((temp_path, keep_path.with_name(expected_name)))
+                keep_path = next(
+                    (
+                        checkpoint_path
+                        for checkpoint_path in checkpoint_paths
+                        if checkpoint_path.name == expected_name
+                    ),
+                    checkpoint_paths[0],
+                )
+                for checkpoint_path in checkpoint_paths:
+                    if checkpoint_path != keep_path:
+                        stale_files.append(checkpoint_path)
+                if keep_path.name != expected_name:
+                    temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
+                    keep_path.rename(temp_path)
+                    temp_moves.append((temp_path, keep_path.with_name(expected_name)))
 
-        for checkpoint_path in stale_files:
-            self._remove_checkpoint_path(checkpoint_path)
-        for temp_path, final_path in temp_moves:
-            self._remove_checkpoint_path(final_path)
-            temp_path.rename(final_path)
+            for checkpoint_path in stale_files:
+                self._remove_checkpoint_path(checkpoint_path)
+            for temp_path, final_path in temp_moves:
+                self._remove_checkpoint_path(final_path)
+                temp_path.rename(final_path)
+        except Exception:
+            # Undo partial temp renames so restart can still see the files.
+            for temp_path, _final_path in temp_moves:
+                if temp_path.exists():
+                    original = temp_path.with_name(temp_path.name.removesuffix(".tmp"))
+                    if not original.exists():
+                        temp_path.rename(original)
+            raise
 
     def _initialize_best_checkpoints(self, restart_training: bool) -> None:
         """Align on-disk best checkpoints with the current training mode."""
