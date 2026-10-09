@@ -57,7 +57,6 @@ from .timing import (
 if TYPE_CHECKING:
     from .metrics import (
         MetricAccumulator,
-        TrainingMetricAccumulator,
     )
 
 DEFAULT_TASK_KEY = "Default"

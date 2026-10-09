@@ -14,7 +14,9 @@ poison an otherwise finite interval. Distributed runs keep local sums and
 weights on device and reduce them only at a display boundary.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 from collections.abc import (
     Mapping,

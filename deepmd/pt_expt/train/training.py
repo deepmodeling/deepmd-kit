@@ -62,9 +62,6 @@ from deepmd.dpmodel.train import (
     change_model_out_bias_by_task,
     resolve_step_schedule,
 )
-from deepmd.pt_expt.train.metrics import (
-    all_reduce_metric_accumulator,
-)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -123,6 +120,9 @@ from deepmd.pt_expt.train.ema import (
 from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+)
+from deepmd.pt_expt.train.metrics import (
+    all_reduce_metric_accumulator,
 )
 from deepmd.pt_expt.train.utils import (
     MatmulPrecisionPolicy,

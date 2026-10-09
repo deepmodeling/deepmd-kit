@@ -36,9 +36,6 @@ from deepmd.dpmodel.train import (
     change_model_out_bias,
     resolve_step_schedule,
 )
-from deepmd.pt_expt.train.metrics import (
-    all_reduce_metric_accumulator,
-)
 from deepmd.dpmodel.utils import (
     compute_total_numb_batch,
 )
@@ -122,6 +119,9 @@ from deepmd.pt_expt.train.ema import (
 from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+)
+from deepmd.pt_expt.train.metrics import (
+    all_reduce_metric_accumulator,
 )
 from deepmd.pt_expt.train.utils import (
     count_parameters,
@@ -1641,9 +1641,7 @@ class Trainer:
                             _task_key,
                             {
                                 name: (
-                                    value.detach()
-                                    if torch.is_tensor(value)
-                                    else value
+                                    value.detach() if torch.is_tensor(value) else value
                                 )
                                 for name, value in more_loss.items()
                                 if "l2_" not in name

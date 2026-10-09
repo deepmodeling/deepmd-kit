@@ -5,10 +5,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from deepmd.dpmodel.train.metrics import (  # noqa: E402
+from deepmd.dpmodel.train.metrics import (
     MetricAccumulator,
 )
-from deepmd.pt_expt.train.metrics import (  # noqa: E402
+from deepmd.pt_expt.train.metrics import (
     all_reduce_metric_accumulator,
 )
 
