@@ -1069,3 +1069,50 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
                 list(Path(tmpdir).glob("best.ckpt-*.pt")),
                 [],
             )
+
+    def test_distributed_non_chief_enters_save_callback(self) -> None:
+        """Non-chief ranks must enter save so the non-finite gate can reset."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = self._make_validator(tmpdir)
+            validator.rank = 1
+            validator.is_distributed = True
+            writes: list[Path] = []
+
+            def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                Path(path).write_text("ok")
+                writes.append(Path(path))
+
+            def broadcast_save_path(holder: list, src: int = 0) -> None:
+                del src
+                holder[0] = str(Path(tmpdir) / "best.ckpt-7-1.pt")
+
+            with (
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.barrier",
+                ),
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.broadcast_object_list",
+                    side_effect=broadcast_save_path,
+                ),
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.get_world_size",
+                    return_value=2,
+                ),
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.all_gather_object",
+                    side_effect=lambda out, obj: out.__setitem__(
+                        slice(None), [obj, None]
+                    ),
+                ),
+            ):
+                result = validator.run(
+                    step_id=7,
+                    display_step=7,
+                    lr=1e-3,
+                    save_checkpoint=save_checkpoint,
+                )
+
+            self.assertIsNone(result)
+            self.assertEqual(len(writes), 1)
+            self.assertTrue(writes[0].exists())

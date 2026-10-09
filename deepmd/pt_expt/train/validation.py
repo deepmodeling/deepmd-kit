@@ -346,10 +346,11 @@ class FullValidator:
 
         if save_path[0] is not None:
             try:
-                # Assembling a checkpoint from shards is collective, so every
-                # rank enters it once any training state is sharded.
-                if (self.is_distributed and self.sharding.enabled) or self.rank == 0:
-                    save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
+                # Every rank enters the publication boundary so NonFiniteGradGuard
+                # validates and resets consistently (mirroring PT regular saves).
+                # Writers and sharded collectives stay inside the save callback /
+                # Trainer._write_checkpoint; non-chief ranks return before disk I/O.
+                save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
                 if self.rank == 0:
                     # Commit top-K bookkeeping only after the checkpoint bytes
                     # are written, so a failed publication boundary (including
