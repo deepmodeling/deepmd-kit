@@ -1017,9 +1017,14 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             validator = self._make_validator(tmpdir)
             writes: list[Path] = []
+            serialized_topk: list[list[dict]] = []
 
             def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
                 del lr, step
+                # The checkpoint bytes must already see the proposed top-K.
+                serialized_topk.append(
+                    list(validator.state_store[validator.topk_records_info_key])
+                )
                 Path(path).write_text("ok")
                 writes.append(Path(path))
 
@@ -1041,6 +1046,8 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
             self.assertEqual(len(validator.topk_records), 1)
             self.assertEqual(validator.topk_records[0].step, 1)
             self.assertIsNone(validator._pending_topk_records)
+            self.assertIsNone(validator._rollback_topk_records)
+            self.assertEqual(serialized_topk, [[{"metric": 0.5, "step": 1}]])
 
     def test_full_validator_discards_topk_when_save_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1065,10 +1072,147 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
 
             self.assertEqual(validator.topk_records, [])
             self.assertIsNone(validator._pending_topk_records)
+            self.assertIsNone(validator._rollback_topk_records)
+            self.assertEqual(
+                validator.state_store.get(validator.topk_records_info_key, []),
+                [],
+            )
             self.assertEqual(
                 list(Path(tmpdir).glob("best.ckpt-*.pt")),
                 [],
             )
+
+    def test_full_validator_serialized_topk_survives_restart_reconcile(self) -> None:
+        """Improved best ckpt must serialize its own record so restart keeps it."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_store: dict = {}
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": True,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": str(Path(tmpdir) / "val.log"),
+                    "full_val_start": 0.0,
+                },
+                validation_data=_DummyValidationData(),
+                model=_DummyModel(),
+                state_store=state_store,
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+                checkpoint_dir=Path(tmpdir),
+            )
+            serialized_stores: list[dict] = []
+
+            def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                # Snapshot what a real torch.save would capture from train_infos.
+                serialized_stores.append(
+                    {
+                        validator.metric_name_info_key: state_store[
+                            validator.metric_name_info_key
+                        ],
+                        validator.topk_records_info_key: [
+                            dict(record)
+                            for record in state_store[validator.topk_records_info_key]
+                        ],
+                    }
+                )
+                Path(path).write_text(f"ckpt-{path.name}")
+                # Leave older best files in place; reconcile decides retention.
+
+            metrics = {1: 0.5, 2: 0.1}
+            for display_step, metric in metrics.items():
+                with patch.object(
+                    validator,
+                    "evaluate_all_systems",
+                    return_value={validator.metric_key: metric},
+                ):
+                    validator.run(
+                        step_id=display_step,
+                        display_step=display_step,
+                        lr=1e-3,
+                        save_checkpoint=save_checkpoint,
+                    )
+
+            self.assertEqual(len(serialized_stores), 2)
+            self.assertEqual(
+                serialized_stores[1][validator.topk_records_info_key],
+                [{"metric": 0.1, "step": 2}],
+            )
+            # Restart from the improved checkpoint's serialized train_infos.
+            restarted = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": True,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": str(Path(tmpdir) / "val.log"),
+                    "full_val_start": 0.0,
+                },
+                validation_data=_DummyValidationData(),
+                model=_DummyModel(),
+                state_store=dict(serialized_stores[1]),
+                num_steps=10,
+                rank=0,
+                restart_training=True,
+                checkpoint_dir=Path(tmpdir),
+            )
+            self.assertEqual(len(restarted.topk_records), 1)
+            self.assertEqual(restarted.topk_records[0].step, 2)
+            remaining = sorted(Path(tmpdir).glob("best.ckpt-*.pt"))
+            self.assertEqual(len(remaining), 1)
+            self.assertIn("best.ckpt-2", remaining[0].name)
+
+    def test_full_validator_rolls_back_previous_topk_on_failed_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = self._make_validator(tmpdir)
+
+            def save_ok(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                Path(path).write_text("ok")
+
+            def save_fail(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del path, lr, step
+                raise RuntimeError("Non-finite gradient norm; training has diverged.")
+
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 0.5},
+            ):
+                validator.run(
+                    step_id=1,
+                    display_step=1,
+                    lr=1e-3,
+                    save_checkpoint=save_ok,
+                )
+            self.assertEqual(validator.topk_records[0].step, 1)
+
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 0.1},
+            ):
+                with self.assertRaisesRegex(RuntimeError, "Non-finite"):
+                    validator.run(
+                        step_id=2,
+                        display_step=2,
+                        lr=1e-3,
+                        save_checkpoint=save_fail,
+                    )
+
+            self.assertEqual(len(validator.topk_records), 1)
+            self.assertEqual(validator.topk_records[0].step, 1)
+            self.assertEqual(
+                validator.state_store[validator.topk_records_info_key],
+                [{"metric": 0.5, "step": 1}],
+            )
+            self.assertIsNone(validator._pending_topk_records)
+            self.assertIsNone(validator._rollback_topk_records)
 
     def test_distributed_non_chief_enters_save_callback(self) -> None:
         """Non-chief ranks must enter save so the non-finite gate can reset."""

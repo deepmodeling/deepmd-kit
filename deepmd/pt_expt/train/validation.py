@@ -290,6 +290,7 @@ class FullValidator:
 
         self.topk_records = self._load_topk_records()
         self._pending_topk_records: list[BestCheckpointRecord] | None = None
+        self._rollback_topk_records: list[BestCheckpointRecord] | None = None
         self._sync_state_store()
         if self.rank == 0:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -346,20 +347,23 @@ class FullValidator:
 
         if save_path[0] is not None:
             try:
+                # Stage proposed top-K into the live state_store before
+                # serialization so the written checkpoint carries the records
+                # that name this file. Keep a rollback snapshot until the write
+                # either commits or aborts (non-finite gate, I/O, etc.).
+                if self.rank == 0:
+                    self._stage_pending_best_state()
                 # Every rank enters the publication boundary so NonFiniteGradGuard
                 # validates and resets consistently (mirroring PT regular saves).
                 # Writers and sharded collectives stay inside the save callback /
                 # Trainer._write_checkpoint; non-chief ranks return before disk I/O.
                 save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
                 if self.rank == 0:
-                    # Commit top-K bookkeeping only after the checkpoint bytes
-                    # are written, so a failed publication boundary (including
-                    # a non-finite gradient abort) leaves metadata unchanged.
                     self._commit_pending_best_state()
                     self._reconcile_best_checkpoints()
             except Exception as exc:
                 if self.rank == 0:
-                    self._pending_topk_records = None
+                    self._rollback_pending_best_state()
                 caught_exception = exc
                 error_message = (
                     "Full validation failed while saving the best checkpoint:\n"
@@ -418,7 +422,8 @@ class FullValidator:
 
         # === Step 3. Propose / commit best tracking ===
         # When a checkpoint file will be written, top-K metadata stays pending
-        # until that write succeeds (see run()). Tracking-only updates commit
+        # until run() stages it into state_store for serialization and then
+        # commits or rolls back after the write. Tracking-only updates commit
         # immediately because they never serialize weights.
         selected_metric_value = float(metrics[self.metric_key])
         proposed_records, saved_best_path = self._propose_best_checkpoint(
@@ -747,13 +752,33 @@ class FullValidator:
             self._best_checkpoint_path(display_step, candidate_rank)
         )
 
-    def _commit_pending_best_state(self) -> None:
-        """Persist a deferred top-K update after a successful checkpoint write."""
+    def _stage_pending_best_state(self) -> None:
+        """Expose proposed top-K in ``state_store`` before checkpoint serialization.
+
+        The trainer serializes the validator's ``state_store`` (via wrapper
+        ``train_infos`` / EMA validation state) inside the save callback. The
+        proposed records must therefore be live before that call, while a
+        rollback snapshot preserves the previous bookkeeping until the write
+        commits or fails.
+        """
         if self._pending_topk_records is None:
             return
+        self._rollback_topk_records = list(self.topk_records)
         self.topk_records = self._pending_topk_records
         self._sync_state_store()
+
+    def _commit_pending_best_state(self) -> None:
+        """Keep staged top-K after a successful checkpoint write."""
         self._pending_topk_records = None
+        self._rollback_topk_records = None
+
+    def _rollback_pending_best_state(self) -> None:
+        """Restore pre-proposal top-K after a failed publication boundary."""
+        if self._rollback_topk_records is not None:
+            self.topk_records = self._rollback_topk_records
+            self._sync_state_store()
+        self._pending_topk_records = None
+        self._rollback_topk_records = None
 
     def _update_best_state(
         self,
@@ -765,8 +790,8 @@ class FullValidator:
 
         This helper commits immediately and is used by unit tests and callers
         that manage serialization themselves. The training ``run()`` path uses
-        :meth:`_propose_best_checkpoint` so metadata can wait on a successful
-        write.
+        :meth:`_propose_best_checkpoint` so metadata can be staged for the
+        write and rolled back if publication fails.
         """
         updated_records, save_path = self._propose_best_checkpoint(
             display_step=display_step,
