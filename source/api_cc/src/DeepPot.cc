@@ -692,6 +692,16 @@ bool DeepPotBackend::supports_device_edge_inference() const { return false; }
 
 bool DeepPotBackend::uses_canonical_graph_inference() const { return false; }
 
+std::vector<double> DeepPotBackend::get_default_chg_spin() const {
+  throw deepmd::deepmd_exception(
+      "this backend cannot query the model's default charge/spin state");
+}
+
+bool DeepPotBackend::has_atomic_virial() const {
+  throw deepmd::deepmd_exception(
+      "this backend cannot query atomic-virial availability");
+}
+
 void DeepPot::compute_edges_gpu(double* d_atom_energy,
                                 double* d_force,
                                 double* d_atom_virial,
@@ -777,6 +787,12 @@ bool DeepPot::uses_canonical_graph_inference() const {
 }
 
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
+
+std::vector<double> DeepPot::get_default_chg_spin() const {
+  return dp->get_default_chg_spin();
+}
+
+bool DeepPot::has_atomic_virial() const { return dp->has_atomic_virial(); }
 
 void DeepPot::set_charge_spin(const std::vector<double>& charge_spin) {
   dp->set_charge_spin(charge_spin);

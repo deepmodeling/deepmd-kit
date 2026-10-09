@@ -13,7 +13,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 30
+#define DP_C_API_VERSION 31
 
 /**
  * @brief Neighbor list.
@@ -2613,6 +2613,34 @@ int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
  * @since API version 27
  */
 int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp);
+
+/**
+ * @brief Copy the current default charge/spin state, including frozen states.
+ * Supported by the PyTorch Exportable backend. Zero values identify an
+ * unconditioned model; an unknown state is an error.
+ * Clears any previous error before querying; DP_DeepPotCheckOK reports only
+ * the result of this query.
+ * @param[in] dp An initialized DP.
+ * @param[out] values Caller-owned buffer, or NULL with capacity zero to query
+ * the required length. No values are written on error.
+ * @param[in] capacity Buffer capacity in doubles; must fit the entire state.
+ * @return Required length, or -1 on error. Inspect DP_DeepPotCheckOK for
+ * errors. The length is independent of DP_DeepPotGetDimChgSpin.
+ * @since API version 31
+ */
+int DP_DeepPotGetDefaultChgSpin(DP_DeepPot* dp, double* values, int capacity);
+
+/**
+ * @brief Whether the model provides atomic virials.
+ * Supported by the PyTorch Exportable backend.
+ * Clears any previous error before querying; DP_DeepPotCheckOK reports only
+ * the result of this query, including successful queries returning false.
+ * @param[in] dp An initialized DP.
+ * @return True if available, false if unavailable or on error. Inspect
+ * DP_DeepPotCheckOK to distinguish an unsupported query from unavailability.
+ * @since API version 31
+ */
+bool DP_DeepPotHasAtomicVirial(DP_DeepPot* dp);
 
 /**
  * @brief Fix the charge/spin condition served for the rest of the run.

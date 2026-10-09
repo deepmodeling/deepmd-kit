@@ -382,6 +382,83 @@ inline void check_charge_spin_domain(
 }
 
 /**
+ * @brief Read the served charge/spin state independently of the input width.
+ * Compressed archives can freeze a state without a runtime input or a fold.
+ * An empty result requires explicit metadata identifying no conditioning.
+ */
+inline std::vector<double> read_default_chg_spin_for_query(
+    const JsonValue& metadata, const int dim_chg_spin) {
+  for (const auto* key : {"has_chg_spin_ebd", "has_default_chg_spin"}) {
+    if (metadata.has(key) && metadata[key].type != JsonValue::Bool) {
+      throw deepmd::deepmd_exception(std::string(key) + " must be boolean.");
+    }
+  }
+  if (metadata.has("dim_chg_spin") &&
+      (metadata["dim_chg_spin"].type != JsonValue::Number ||
+       metadata["dim_chg_spin"].as_double() != dim_chg_spin ||
+       dim_chg_spin < 0)) {
+    throw deepmd::deepmd_exception(
+        "dim_chg_spin must be a nonnegative integer.");
+  }
+  std::vector<double> state;
+  if (metadata.has("default_chg_spin") &&
+      metadata["default_chg_spin"].type != JsonValue::Null) {
+    const auto& value = metadata["default_chg_spin"];
+    if (value.type != JsonValue::Array) {
+      throw deepmd::deepmd_exception("default_chg_spin must be an array.");
+    }
+    for (const auto& component : value.as_array()) {
+      if (component.type != JsonValue::Number ||
+          !std::isfinite(component.as_double()) ||
+          component.as_double() != std::floor(component.as_double())) {
+        throw deepmd::deepmd_exception(
+            "default_chg_spin must contain finite integer values.");
+      }
+      state.push_back(component.as_double());
+    }
+  }
+  if (metadata.has("has_default_chg_spin") &&
+      metadata["has_default_chg_spin"].as_bool() != !state.empty()) {
+    throw deepmd::deepmd_exception(
+        "has_default_chg_spin disagrees with default_chg_spin.");
+  }
+  const bool unconditioned = metadata.has("has_chg_spin_ebd") &&
+                             !metadata["has_chg_spin_ebd"].as_bool();
+  if (unconditioned && (dim_chg_spin != 0 || !state.empty())) {
+    throw deepmd::deepmd_exception(
+        "has_chg_spin_ebd=false disagrees with the charge/spin state.");
+  }
+  if (state.empty()) {
+    if (unconditioned) {
+      return state;
+    }
+    throw deepmd::deepmd_exception(
+        "the model's default charge/spin state cannot be established from "
+        "metadata; regenerate the model with an explicit default state");
+  }
+  if (dim_chg_spin > 0 &&
+      state.size() != static_cast<std::size_t>(dim_chg_spin)) {
+    throw deepmd::deepmd_exception(
+        "default_chg_spin length does not match dim_chg_spin.");
+  }
+  if (metadata.has("chg_spin_table_ranges")) {
+    for (const auto& bounds : metadata["chg_spin_table_ranges"].as_array()) {
+      for (const auto& limit : bounds.as_array()) {
+        if (limit.type != JsonValue::Number ||
+            !std::isfinite(limit.as_double())) {
+          throw deepmd::deepmd_exception(
+              "chg_spin_table_ranges must contain finite numeric bounds.");
+        }
+      }
+    }
+  }
+  check_charge_spin_domain(
+      state,
+      read_chg_spin_table_ranges(metadata, static_cast<int>(state.size())));
+  return state;
+}
+
+/**
  * @brief Validate a charge/spin condition supplied with an inference call.
  *
  * The condition holds either one frame's values, broadcast to every frame, or

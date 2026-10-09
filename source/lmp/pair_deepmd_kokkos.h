@@ -19,6 +19,7 @@ PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "compact_canonical_graph_kokkos.h"
 #include "kokkos_base.h"
@@ -47,7 +48,11 @@ using DeepMDKokkosCommBuffer = DAT::tdual_double_1d;
 // returned per-atom force / energy / virial are scattered back into the
 // Kokkos atom arrays without any host round-trip. This removes the per-step
 // host coordinate marshaling and the host-device transfers of the standalone
-// ``pair_style deepmd`` path.
+// ``pair_style deepmd`` path. With multiple compatible canonical models,
+// deviation steps reuse model 0's outputs and the same device graph for the
+// reference models. Kokkos accumulates deviations on the device; only final
+// statistics are copied to the host for output. This mode requires one MPI
+// rank, matching cutoffs and type maps, and no runtime model parameters.
 //
 // A single rank uses the folded minimum-image node set (box thickness
 // > 2 * cutoff along every periodic direction); domain decomposition uses the
@@ -81,8 +86,25 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // neighbor list, returning the edge count. Public because it launches
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
+  /** Sample reference models after driving outputs have been consumed.
+   * Public because CUDA extended lambdas require a public enclosing member.
+   */
+  void compute_model_deviation_device();
 
  protected:
+  /** Load and validate the canonical ensemble without a legacy observer. */
+  bool initialize_models(const std::vector<std::string>& models) override;
+  // Each reference owns its C/C++ API object. In particular, never copy the
+  // C API wrapper's owning raw handle when growing this vector.
+  std::vector<std::unique_ptr<deepmd_compat::DeepPot> > reference_models;
+  Kokkos::View<double*, DeviceType> d_devi_force_mean;  // 3 * nloc_model
+  Kokkos::View<double*, DeviceType> d_devi_force_m2;    // nloc_model
+  Kokkos::View<double*, DeviceType> d_devi_atomic;      // optional local output
+  Kokkos::View<double[9], DeviceType> d_devi_virial_sum;
+  Kokkos::View<double[9], DeviceType> d_devi_virial_mean;
+  Kokkos::View<double[9], DeviceType> d_devi_virial_m2;
+  // max/min/rms virial, max/min/mean force, and a non-finite status flag.
+  Kokkos::View<double[7], DeviceType> d_devi_summary;
   // Model node set and, for a compact canonical artifact, the graph itself.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
   Kokkos::View<int*, DeviceType>
