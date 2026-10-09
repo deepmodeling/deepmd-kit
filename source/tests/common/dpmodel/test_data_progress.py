@@ -25,9 +25,6 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchSampler,
     LmdbDataReader,
 )
-from deepmd.pt_expt.utils.lmdb_dataset import (
-    LmdbDataSystem,
-)
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -145,7 +142,11 @@ class TestLmdbDataProgress(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def _system(self, **kwargs) -> LmdbDataSystem:
+    def _system(self, **kwargs):
+        from deepmd.pt_expt.utils.lmdb_dataset import (
+            LmdbDataSystem,
+        )
+
         params = {
             "lmdb_path": self.lmdb_path,
             "type_map": ["O", "H"],
