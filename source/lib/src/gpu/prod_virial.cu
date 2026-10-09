@@ -116,7 +116,12 @@ void prod_virial_a_gpu(FPTYPE* virial,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  if (nall > 0) {
+    DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  }
+  if (nloc == 0 || nnei == 0) {
+    return;
+  }
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
@@ -146,7 +151,12 @@ void prod_virial_r_gpu(FPTYPE* virial,
   DPErrcheck(gpuGetLastError());
   DPErrcheck(gpuDeviceSynchronize());
   DPErrcheck(gpuMemset(virial, 0, sizeof(FPTYPE) * 9));
-  DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  if (nall > 0) {
+    DPErrcheck(gpuMemset(atom_virial, 0, sizeof(FPTYPE) * 9 * nall));
+  }
+  if (nloc == 0 || nnei == 0) {
+    return;
+  }
 
   const int LEN = 16;
   int nblock = (nnei + LEN - 1) / LEN;
