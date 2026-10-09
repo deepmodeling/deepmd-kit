@@ -27,7 +27,9 @@ from deepmd.dpmodel.utils import (
     NetworkCollection,
 )
 from deepmd.dpmodel.utils.neighbor_contract import (
+    GRAPH_NATIVE_CONSTRUCTION_SEL,
     NeighborContract,
+    is_auto_sel,
 )
 from deepmd.dpmodel.utils.network import (
     Identity,
@@ -758,21 +760,58 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
 
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
-        """Match :meth:`uses_graph_lower` eligibility from config alone."""
-        if local_jdata.get("use_three_body", False):
-            return NeighborContract.from_legacy_sel(
-                (local_jdata.get("repinit") or {}).get("sel", local_jdata.get("sel"))
-            )
+        """Match :meth:`uses_graph_lower` eligibility from config alone.
+
+        DPA2 stores capacities under ``repinit.nsel`` / ``repformer.nsel``.
+        Graph-eligible configs keep auto-nsel discovery (as DPA1 does for
+        ``sel: auto``) so dual-path mean/std and nnei normalization stay
+        intact until companion sel-decoupling work lands.
+        """
         repinit = local_jdata.get("repinit") or {}
         repformer = local_jdata.get("repformer") or {}
+
+        def _block_sel(block: dict):
+            if "nsel" in block:
+                return block.get("nsel")
+            return block.get("sel")
+
+        def _dense_from_blocks() -> NeighborContract:
+            return NeighborContract.from_legacy_sel(_block_sel(repinit))
+
+        if local_jdata.get("use_three_body", False):
+            return _dense_from_blocks()
         if not repinit.get("set_davg_zero", True):
-            return NeighborContract.from_legacy_sel(repinit.get("sel"))
+            return _dense_from_blocks()
         if not repformer.get("set_davg_zero", True):
-            return NeighborContract.from_legacy_sel(repinit.get("sel"))
+            return _dense_from_blocks()
         tebd = repinit.get("tebd_input_mode", "concat")
-        if tebd in ("concat", "strip"):
+        if tebd not in ("concat", "strip"):
+            return _dense_from_blocks()
+
+        sels = [_block_sel(repinit), _block_sel(repformer)]
+        if all(sel is None for sel in sels):
             return NeighborContract.graph()
-        return NeighborContract.from_legacy_sel(repinit.get("sel"))
+        if any(is_auto_sel(sel) for sel in sels):
+            return NeighborContract.graph(requires_capacity=True)
+        return NeighborContract.graph(requires_capacity=False)
+
+    @classmethod
+    def prepare_jdata_for_neighbor_contract(
+        cls,
+        local_jdata: dict,
+        contract: NeighborContract,
+    ) -> dict:
+        """Rewrite block ``nsel`` placeholders; never inject a top-level ``sel``."""
+        out = dict(local_jdata)
+        if not (contract.is_graph and not contract.requires_capacity):
+            return out
+        for key in ("repinit", "repformer"):
+            block = dict(out.get(key) or {})
+            nsel = block.get("nsel", block.get("sel"))
+            if nsel is None or is_auto_sel(nsel):
+                block["nsel"] = int(GRAPH_NATIVE_CONSTRUCTION_SEL)
+            out[key] = block
+        return out
 
     def graph_type_embedding_table(self) -> Array:
         """Full type-embedding table consumed by the graph-route forward.

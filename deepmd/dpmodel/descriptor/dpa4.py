@@ -65,6 +65,8 @@ from deepmd.dpmodel.utils.exclude_mask import (
 )
 from deepmd.dpmodel.utils.neighbor_contract import (
     NeighborContract,
+    ensure_construction_sel,
+    is_auto_sel,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
@@ -2452,9 +2454,26 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
 
     @classmethod
     def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
-        """DPA4 defaults to the carry-all graph lower."""
-        del local_jdata
+        """DPA4 defaults to the carry-all graph lower.
+
+        ``sel: auto`` still requires capacity discovery so update_sel can
+        materialize a numeric width for mean/std buffers.
+        """
+        if is_auto_sel(local_jdata.get("sel")):
+            return NeighborContract.graph(requires_capacity=True)
         return NeighborContract.graph()
+
+    @classmethod
+    def prepare_jdata_for_neighbor_contract(
+        cls,
+        local_jdata: dict,
+        contract: NeighborContract,
+    ) -> dict:
+        """Inject a construction ``sel`` only when capacity discovery is skipped."""
+        if contract.is_graph and not contract.requires_capacity:
+            if local_jdata.get("sel") is None or is_auto_sel(local_jdata.get("sel")):
+                return ensure_construction_sel(local_jdata)
+        return dict(local_jdata)
 
     def uses_compact_edge_pairs(self) -> bool:
         """DPA4 attention is a per-edge scatter softmax; no pair axis."""

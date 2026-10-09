@@ -415,8 +415,13 @@ class DeepEval(DeepEvalBackend):
                 self._dpmodel.get_sel(), requires_capacity=False
             )
         )
+        uses_graph = bool(
+            getattr(self._dpmodel, "uses_graph_lower", lambda: False)()
+        )
         self._sel = (
-            [] if self._neighbor_contract.is_graph else list(self._dpmodel.get_sel())
+            []
+            if self._neighbor_contract.is_graph and uses_graph
+            else list(self._dpmodel.get_sel())
         )
         self._mixed_types = bool(self._dpmodel.mixed_types())
         if self._is_spin:
@@ -449,8 +454,9 @@ class DeepEval(DeepEvalBackend):
         self._rcut = float(self.metadata["rcut"])
         self._type_map = list(self.metadata["type_map"])
         self._neighbor_contract = NeighborContract.from_metadata(self.metadata)
-        if self._neighbor_contract.is_graph:
-            # Graph-native archives omit sel; keep an empty legacy list.
+        lower_kind = self.metadata.get("lower_input_kind", "nlist")
+        if self._neighbor_contract.is_graph and lower_kind != "nlist":
+            # Graph-routed archives omit sel; keep an empty legacy list.
             self._sel = []
         elif "sel" in self.metadata:
             self._sel = [int(s) for s in self.metadata["sel"]]
@@ -694,7 +700,11 @@ class DeepEval(DeepEvalBackend):
             if hasattr(model, "get_neighbor_contract")
             else NeighborContract.dense(model.get_sel(), requires_capacity=False)
         )
-        self._sel = [] if self._neighbor_contract.is_graph else list(model.get_sel())
+        self._sel = (
+            []
+            if self._neighbor_contract.is_graph and use_graph_lower
+            else list(model.get_sel())
+        )
         self._mixed_types = bool(model.mixed_types())
         if self._is_spin:
             self._model_output_def = ModelOutputDef(
@@ -727,7 +737,7 @@ class DeepEval(DeepEvalBackend):
             "neighbor_contract": self._neighbor_contract.to_dict(),
             **(
                 {}
-                if self._neighbor_contract.is_graph
+                if self._neighbor_contract.is_graph and use_graph_lower
                 else {"sel": model.get_sel(), "nnei": sum(model.get_sel())}
             ),
             "dim_fparam": model.get_dim_fparam(),

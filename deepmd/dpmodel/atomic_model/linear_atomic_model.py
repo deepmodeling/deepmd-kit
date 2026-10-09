@@ -326,7 +326,18 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         return any(m.compression_needs_min_nbor_dist() for m in self.models)
 
     def get_neighbor_contract(self):
-        """Merge child neighbor contracts into one consistent contract."""
+        """Merge child neighbor contracts into one consistent contract.
+
+        Mixed dense compositions (e.g. standard DP+ZBL with ``PairTab``) do
+        not share one representation; publish the composition's dense
+        ``get_sel()`` instead of asking incompatible children to merge.
+        """
+        from deepmd.dpmodel.utils.neighbor_contract import (
+            NeighborContract,
+        )
+
+        if not self.uses_graph_lower():
+            return NeighborContract.dense(self.get_sel(), requires_capacity=False)
         contracts = [m.get_neighbor_contract() for m in self.models]
         contract = contracts[0]
         for other in contracts[1:]:

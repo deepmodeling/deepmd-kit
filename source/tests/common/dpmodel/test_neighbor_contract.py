@@ -13,6 +13,9 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.descriptor.dpa1 import (
     DescrptDPA1,
 )
+from deepmd.dpmodel.descriptor.dpa2 import (
+    DescrptDPA2,
+)
 from deepmd.dpmodel.descriptor.dpa4c import (
     DescrptDPA4C,
 )
@@ -283,6 +286,50 @@ class TestHybridUpdateSelClassmethod(unittest.TestCase):
         contract = DescrptHybrid.neighbor_contract_from_jdata(jdata)
         self.assertTrue(contract.is_graph)
         self.assertTrue(contract.requires_capacity)
+
+
+    def test_dpa2_auto_nsel_keeps_capacity_discovery(self) -> None:
+        jdata = {
+            "type": "dpa2",
+            "repinit": {
+                "rcut": 6.0,
+                "rcut_smth": 0.5,
+                "nsel": "auto",
+                "tebd_input_mode": "concat",
+                "set_davg_zero": True,
+            },
+            "repformer": {
+                "rcut": 4.0,
+                "rcut_smth": 0.5,
+                "nsel": "auto",
+                "set_davg_zero": True,
+            },
+        }
+        contract = DescrptDPA2.neighbor_contract_from_jdata(jdata)
+        self.assertTrue(contract.is_graph)
+        self.assertTrue(contract.requires_capacity)
+
+    def test_dpa2_prepare_jdata_does_not_inject_top_level_sel(self) -> None:
+        jdata = {
+            "type": "dpa2",
+            "repinit": {
+                "rcut": 6.0,
+                "rcut_smth": 0.5,
+                "nsel": 20,
+                "tebd_input_mode": "concat",
+                "set_davg_zero": True,
+            },
+            "repformer": {
+                "rcut": 4.0,
+                "rcut_smth": 0.5,
+                "nsel": 10,
+                "set_davg_zero": True,
+            },
+        }
+        contract = DescrptDPA2.neighbor_contract_from_jdata(jdata)
+        prepared = DescrptDPA2.prepare_jdata_for_neighbor_contract(jdata, contract)
+        self.assertNotIn("sel", prepared)
+        self.assertEqual(prepared["repinit"]["nsel"], 20)
 
 
 class TestPrepareNeighborsMinNborDist(unittest.TestCase):

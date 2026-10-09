@@ -1144,10 +1144,7 @@ def _neighbor_contract_for_model(model: torch.nn.Module) -> NeighborContract:
     uses = getattr(model, "uses_graph_lower", None)
     if callable(uses) and bool(uses()):
         return NeighborContract.graph()
-    try:
-        return NeighborContract.dense(model.get_sel(), requires_capacity=False)
-    except Exception:
-        return NeighborContract.graph()
+    return NeighborContract.dense(model.get_sel(), requires_capacity=False)
 
 
 def _collect_metadata(
@@ -1198,6 +1195,9 @@ def _collect_metadata(
             }
         )
     neighbor_contract = _neighbor_contract_for_model(model)
+    # Omit sel only for graph-routed lowers. An nlist lower always needs the
+    # model's dense capacity even if a child described itself as graph.
+    omit_legacy_sel = neighbor_contract.is_graph and lower_kind != "nlist"
     meta = {
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
@@ -1206,7 +1206,7 @@ def _collect_metadata(
         # not invent a dummy capacity. Dense models keep sel/nnei for old readers.
         **(
             {}
-            if neighbor_contract.is_graph
+            if omit_legacy_sel
             else {
                 "sel": list(neighbor_contract.capacity)
                 if neighbor_contract.capacity is not None
