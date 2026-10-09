@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import torch
 
@@ -122,9 +124,13 @@ class TestCheckpointPublicationGuard(unittest.TestCase):
         return lambda: [("layer.weight", p)]
 
     def _bare_trainer(self, *, with_ema: bool = False):
-        from types import SimpleNamespace
+        from types import (
+            SimpleNamespace,
+        )
 
-        from deepmd.pt_expt.train.training import Trainer
+        from deepmd.pt_expt.train.training import (
+            Trainer,
+        )
 
         trainer = Trainer.__new__(Trainer)
         trainer.nonfinite_grad_guard = NonFiniteGradGuard()
