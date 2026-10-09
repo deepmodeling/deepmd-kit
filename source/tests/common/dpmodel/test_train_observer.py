@@ -139,6 +139,7 @@ def test_observer_still_closes_after_training_failure(tmp_path: Path) -> None:
     try:
         trainer.run(TrainingTaskCollection.single(DummyData([1.0])))
     except RuntimeError:
+        # Expected: DummyTrainer.train_step raises; assert cleanup below.
         pass
     assert observer.events[0] == "begin:0"
     assert observer.events[-1] == "end:0"
