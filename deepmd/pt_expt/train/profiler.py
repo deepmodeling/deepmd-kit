@@ -4,6 +4,14 @@
 Owns create/enter, per-step ``profiler.step()``, Chrome/TensorBoard export, and
 release on completion or failure. Control stays outside the compiled model
 graph. Disabled configurations install no observer.
+
+When both ``enable_profiler`` and ``profiling`` are set, one session serves both
+sinks: a custom ``on_trace_ready`` exports the Kineto trace **once**, then places
+the file into the TensorBoard log dir and the rank-resolved ``profiling_file``.
+``close()`` only performs a Chrome export if that ready-handler save never ran
+(short runs that never reach ``RECORD_AND_SAVE``). Profiling-only keeps
+end-of-run Chrome export with ``on_trace_ready=None``; enable-profiler-only uses
+the TensorBoard handler and never Chrome-exports at close.
 """
 
 from __future__ import (
@@ -11,6 +19,10 @@ from __future__ import (
 )
 
 import logging
+import os
+import shutil
+import socket
+import time
 from collections.abc import (
     Callable,
     Mapping,
@@ -109,6 +121,9 @@ class TorchProfilerObserver(TrainingObserver):
         self._tensorboard_handler_factory = tensorboard_handler_factory
         self._profiler: Any | None = None
         self._closed = False
+        # True after a ready-handler (or short-run close fallback) has already
+        # called export_chrome_trace once for this session.
+        self._trace_saved = False
         self._chrome_trace_path = resolve_chrome_trace_path(
             self._profiling_file,
             rank=rank_context.rank,
@@ -128,6 +143,11 @@ class TorchProfilerObserver(TrainingObserver):
     @property
     def profiler(self) -> Any | None:
         return self._profiler
+
+    @property
+    def trace_saved(self) -> bool:
+        """Whether a Chrome/Kineto export has already completed this session."""
+        return self._trace_saved
 
     def wants_step(self, display_step: int) -> bool:
         # Every completed optimizer step must call profiler.step() once.
@@ -154,17 +174,7 @@ class TorchProfilerObserver(TrainingObserver):
             if handler_factory is None:
                 handler_factory = torch_profiler.tensorboard_trace_handler
 
-        on_trace_ready = None
-        if self._enable_profiler:
-            assert handler_factory is not None
-            Path(self._tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
-            worker_name = None
-            if self._rank_context.world_size > 1:
-                worker_name = f"rank{self._rank_context.rank}"
-            on_trace_ready = handler_factory(
-                self._tensorboard_log_dir,
-                worker_name=worker_name,
-            )
+        on_trace_ready = self._build_on_trace_ready(handler_factory)
 
         self._profiler = profiler_factory(
             schedule=schedule_factory(**_DEFAULT_SCHEDULE),
@@ -174,6 +184,7 @@ class TorchProfilerObserver(TrainingObserver):
         )
         self._profiler.start()
         self._closed = False
+        self._trace_saved = False
         log.info(
             "Torch profiler started (enable_profiler=%s, profiling=%s)",
             self._enable_profiler,
@@ -195,28 +206,102 @@ class TorchProfilerObserver(TrainingObserver):
         self.close()
 
     def close(self) -> None:
-        """Stop the profiler, export Chrome traces when requested, and release."""
+        """Stop the profiler, export Chrome traces when still needed, and release."""
         profiler = self._profiler
         if profiler is None or self._closed:
             self._profiler = None
             self._closed = True
             return
         try:
+            # stop() may invoke on_trace_ready for a pending RECORD_AND_SAVE cycle.
             profiler.stop()
-            if self._enable_profiler:
+            if self._enable_profiler and not self._profiling:
                 log.info(
                     "Profiler TensorBoard traces saved under %s",
                     self._tensorboard_log_dir,
                 )
-            if self._profiling:
-                parent = Path(self._chrome_trace_path).parent
-                if str(parent) not in ("", "."):
-                    parent.mkdir(parents=True, exist_ok=True)
+            elif self._profiling and not self._enable_profiler:
+                # Profiling-only: always end-of-run Chrome export.
+                self._ensure_parent_dir(self._chrome_trace_path)
                 profiler.export_chrome_trace(self._chrome_trace_path)
+                self._trace_saved = True
                 log.info(
                     "Profiler Chrome trace saved to: %s",
                     self._chrome_trace_path,
                 )
+            elif self._enable_profiler and self._profiling:
+                if not self._trace_saved:
+                    # Short run: schedule never fired ready-handler; one save, both sinks.
+                    self._export_combined_trace(profiler)
+                else:
+                    log.info(
+                        "Profiler traces placed under %s and at %s",
+                        self._tensorboard_log_dir,
+                        self._chrome_trace_path,
+                    )
         finally:
             self._profiler = None
             self._closed = True
+
+    def _build_on_trace_ready(
+        self,
+        handler_factory: Callable[..., Any] | None,
+    ) -> Callable[[Any], None] | None:
+        """Choose the ready callback for the configured sinks.
+
+        - enable_profiler only → stock TensorBoard handler
+        - profiling only → ``None`` (export at close)
+        - combined → export once, then place into TB dir and profiling_file
+        """
+        if self._enable_profiler and self._profiling:
+            Path(self._tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
+            return self._combined_on_trace_ready
+        if self._enable_profiler:
+            assert handler_factory is not None
+            Path(self._tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
+            return handler_factory(
+                self._tensorboard_log_dir,
+                worker_name=self._tensorboard_worker_name(),
+            )
+        return None
+
+    def _combined_on_trace_ready(self, prof: Any) -> None:
+        """Save the Kineto trace once and fan out to both configured sinks."""
+        self._export_combined_trace(prof)
+
+    def _export_combined_trace(self, prof: Any) -> None:
+        """Call ``export_chrome_trace`` once; copy into TB log dir and profiling_file."""
+        chrome_path = self._chrome_trace_path
+        self._ensure_parent_dir(chrome_path)
+        Path(self._tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
+
+        # Kineto allows only one export per saved cycle. Write the user-facing
+        # profiling_file first, then copy into the TensorBoard log directory
+        # with the same naming convention as tensorboard_trace_handler.
+        prof.export_chrome_trace(chrome_path)
+        tb_path = self._tensorboard_trace_path()
+        shutil.copy2(chrome_path, tb_path)
+        self._trace_saved = True
+        log.info(
+            "Profiler Chrome trace saved to: %s (TensorBoard copy: %s)",
+            chrome_path,
+            tb_path,
+        )
+
+    def _tensorboard_worker_name(self) -> str | None:
+        if self._rank_context.world_size > 1:
+            return f"rank{self._rank_context.rank}"
+        return None
+
+    def _tensorboard_trace_path(self) -> str:
+        worker = self._tensorboard_worker_name()
+        if not worker:
+            worker = f"{socket.gethostname()}_{os.getpid()}"
+        file_name = f"{worker}.{time.time_ns()}.pt.trace.json"
+        return str(Path(self._tensorboard_log_dir) / file_name)
+
+    @staticmethod
+    def _ensure_parent_dir(path: str) -> None:
+        parent = Path(path).parent
+        if str(parent) not in ("", "."):
+            parent.mkdir(parents=True, exist_ok=True)

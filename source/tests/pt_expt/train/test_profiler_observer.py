@@ -3,8 +3,8 @@ from __future__ import (
     annotations,
 )
 
-from typing import (
-    TYPE_CHECKING,
+from pathlib import (
+    Path,
 )
 from unittest.mock import (
     MagicMock,
@@ -24,15 +24,8 @@ from deepmd.pt_expt.train.profiler import (
     resolve_chrome_trace_path,
 )
 
-if TYPE_CHECKING:
-    from pathlib import (
-        Path,
-    )
 
-
-def _step(
-    display_step: int, *, rank_context: RankContext | None = None
-) -> StepObservation:
+def _step(display_step: int, *, rank_context: RankContext | None = None) -> StepObservation:
     ctx = rank_context or RankContext()
     return StepObservation(
         step=display_step - 1,
@@ -162,14 +155,19 @@ def test_enable_profiler_only_uses_tensorboard_handler(tmp_path: Path) -> None:
     profiler.export_chrome_trace.assert_not_called()
 
 
-def test_combined_modes_one_session_both_outputs(tmp_path: Path) -> None:
+def test_combined_short_run_exports_once_to_both_sinks_at_close(tmp_path: Path) -> None:
+    """Schedule never fires ready-handler; close() does one export for both sinks."""
     log_dir = tmp_path / "tb"
     chrome = tmp_path / "both.json"
     profiler = MagicMock()
     schedule = MagicMock(return_value="sched")
-    ready = object()
-    handler = MagicMock(return_value=ready)
+    handler = MagicMock()
     factory = MagicMock(return_value=profiler)
+
+    def _export(path: str) -> None:
+        Path(path).write_text("{}", encoding="utf-8")
+
+    profiler.export_chrome_trace.side_effect = _export
 
     observer = create_profiler_observer(
         {
@@ -190,7 +188,10 @@ def test_combined_modes_one_session_both_outputs(tmp_path: Path) -> None:
         rank_context=RankContext(),
     )
     assert factory.call_count == 1
-    assert factory.call_args.kwargs["on_trace_ready"] is ready
+    on_ready = factory.call_args.kwargs["on_trace_ready"]
+    assert callable(on_ready)
+    # Combined mode must not install the stock TB handler (would double-save).
+    handler.assert_not_called()
     observer.on_step_end(_step(1))
     observer.on_step_end(_step(2))
     observer.close()
@@ -198,6 +199,65 @@ def test_combined_modes_one_session_both_outputs(tmp_path: Path) -> None:
     assert profiler.step.call_count == 2
     profiler.export_chrome_trace.assert_called_once_with(str(chrome))
     profiler.stop.assert_called_once()
+    assert chrome.is_file()
+    tb_traces = list(log_dir.glob("*.pt.trace.json"))
+    assert len(tb_traces) == 1
+    assert tb_traces[0].read_text(encoding="utf-8") == "{}"
+    assert observer.trace_saved
+
+
+def test_combined_ready_handler_single_save_no_double_export_at_close(
+    tmp_path: Path,
+) -> None:
+    """Ready-handler already saved: close() must not call export_chrome_trace again.
+
+    Mimics Kineto's destructive second export (RuntimeError: Trace is already saved).
+    """
+    log_dir = tmp_path / "tb"
+    chrome = tmp_path / "both.json"
+    export_count = 0
+
+    def _export(path: str) -> None:
+        nonlocal export_count
+        export_count += 1
+        if export_count > 1:
+            raise RuntimeError("Trace is already saved")
+        Path(path).write_text("{}", encoding="utf-8")
+
+    profiler = MagicMock()
+    profiler.export_chrome_trace.side_effect = _export
+    schedule = MagicMock(return_value="sched")
+    factory = MagicMock(return_value=profiler)
+
+    observer = TorchProfilerObserver(
+        enable_profiler=True,
+        profiling=True,
+        profiling_file=str(chrome),
+        tensorboard_log_dir=str(log_dir),
+        rank_context=RankContext(),
+        profiler_factory=factory,
+        schedule_factory=schedule,
+        tensorboard_handler_factory=MagicMock(),
+    )
+    observer.on_train_begin(
+        TrainingTaskCollection.single(object()),
+        rank_context=RankContext(),
+    )
+    on_ready = factory.call_args.kwargs["on_trace_ready"]
+    assert callable(on_ready)
+
+    # Simulate schedule completing an active window (RECORD_AND_SAVE).
+    on_ready(profiler)
+    assert export_count == 1
+    assert chrome.is_file()
+    assert list(log_dir.glob("*.pt.trace.json"))
+    assert observer.trace_saved
+
+    # close() must not attempt a second Kineto export.
+    observer.close()
+    assert export_count == 1
+    profiler.stop.assert_called_once()
+    assert observer.profiler is None
 
 
 def test_distributed_rank_suffix_and_worker_name(tmp_path: Path) -> None:
@@ -208,6 +268,11 @@ def test_distributed_rank_suffix_and_worker_name(tmp_path: Path) -> None:
     handler = MagicMock(return_value=object())
     factory = MagicMock(return_value=profiler)
     ctx = RankContext(rank=1, world_size=4)
+
+    def _export(path: str) -> None:
+        Path(path).write_text("{}", encoding="utf-8")
+
+    profiler.export_chrome_trace.side_effect = _export
 
     observer = TorchProfilerObserver(
         enable_profiler=True,
@@ -225,12 +290,44 @@ def test_distributed_rank_suffix_and_worker_name(tmp_path: Path) -> None:
         TrainingTaskCollection.single(object()),
         rank_context=ctx,
     )
-    handler.assert_called_once_with(str(log_dir), worker_name="rank1")
+    # Combined uses custom ready handler; stock TB factory unused.
+    handler.assert_not_called()
+    on_ready = factory.call_args.kwargs["on_trace_ready"]
+    on_ready(profiler)
     observer.on_step_end(_step(1, rank_context=ctx))
     observer.close()
+
     profiler.export_chrome_trace.assert_called_once_with(
         str(tmp_path / "timeline.rank1.json")
     )
+    tb_traces = list(log_dir.glob("rank1.*.pt.trace.json"))
+    assert len(tb_traces) == 1
+
+
+def test_enable_profiler_distributed_passes_worker_name(tmp_path: Path) -> None:
+    log_dir = tmp_path / "tb"
+    profiler = MagicMock()
+    handler = MagicMock(return_value=object())
+    factory = MagicMock(return_value=profiler)
+    ctx = RankContext(rank=2, world_size=4)
+
+    observer = TorchProfilerObserver(
+        enable_profiler=True,
+        profiling=False,
+        profiling_file=str(tmp_path / "timeline.json"),
+        tensorboard_log_dir=str(log_dir),
+        rank_context=ctx,
+        profiler_factory=factory,
+        schedule_factory=MagicMock(return_value="sched"),
+        tensorboard_handler_factory=handler,
+    )
+    observer.on_train_begin(
+        TrainingTaskCollection.single(object()),
+        rank_context=ctx,
+    )
+    handler.assert_called_once_with(str(log_dir), worker_name="rank2")
+    observer.close()
+    profiler.export_chrome_trace.assert_not_called()
 
 
 def test_exceptional_exit_still_releases(tmp_path: Path) -> None:
