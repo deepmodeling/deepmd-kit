@@ -223,7 +223,6 @@ class TestPrepareNeighborsSkipsUpdateSel(unittest.TestCase):
             self.assertEqual(min_dist, 0.8)
 
 
-
 class TestHybridUpdateSelClassmethod(unittest.TestCase):
     def test_update_sel_is_classmethod(self) -> None:
         self.assertTrue(isinstance(DescrptHybrid.__dict__["update_sel"], classmethod))
@@ -251,7 +250,10 @@ class TestHybridUpdateSelClassmethod(unittest.TestCase):
         with mock.patch(
             "deepmd.dpmodel.descriptor.hybrid.BaseDescriptor.update_sel",
             side_effect=lambda td, tm, child: (
-                {**child, "sel": [4] if child.get("sel") == "auto" else child.get("sel", 1)},
+                {
+                    **child,
+                    "sel": [4] if child.get("sel") == "auto" else child.get("sel", 1),
+                },
                 0.3,
             ),
         ):
