@@ -25,6 +25,9 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbBatchSampler,
     LmdbDataReader,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
@@ -78,6 +81,44 @@ def _create_test_lmdb(path: str, nframes: int, natoms: int) -> None:
         for i in range(nframes):
             key = format(i, fmt).encode()
             txn.put(key, msgpack.packb(_make_frame(natoms, i), use_bin_type=True))
+    env.close()
+
+
+def _create_mixed_nloc_lmdb(
+    path: str,
+    frames_spec: list[tuple[int, int]] | None = None,
+) -> None:
+    """Write an LMDB whose frames span several atom counts.
+
+    ``frames_spec`` lists ``(natoms, count)`` pairs. Mixed nloc plus ``mix:N``
+    makes per-epoch batch counts shuffle-dependent, which is what exposes the
+    single-process logical-cursor wrap bug.
+    """
+    if frames_spec is None:
+        frames_spec = [(6, 8), (9, 5), (12, 3), (4, 6)]
+    env = lmdb.open(path, map_size=20 * 1024 * 1024)
+    fmt = "012d"
+    nframes = sum(count for _, count in frames_spec)
+    metadata = {
+        "nframes": nframes,
+        "frame_idx_fmt": fmt,
+        "system_info": {
+            "formula": "mixed",
+            "natoms": [2, 4],
+            "nframes": nframes,
+        },
+    }
+    with env.begin(write=True) as txn:
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        idx = 0
+        for natoms, count in frames_spec:
+            for _ in range(count):
+                key = format(idx, fmt).encode()
+                txn.put(
+                    key,
+                    msgpack.packb(_make_frame(natoms, idx), use_bin_type=True),
+                )
+                idx += 1
     env.close()
 
 
@@ -171,6 +212,86 @@ class TestLmdbDataProgress(unittest.TestCase):
         finally:
             iterator.close()
             reader.close()
+
+    def test_ragged_mix_epoch_boundary_cursor_matches_uninterrupted(self) -> None:
+        """Resume across a ragged ``mix:N`` wrap must keep the same next batch.
+
+        Prefetch opens the next ``LmdbBatchSampler`` epoch before the logical
+        cursor wraps. That sampler advances on ``__iter__``, so a naive
+        ``len(sampler)`` at wrap observes epoch+2. Under ragged ``mix:N`` the
+        lengths differ across epochs; using the wrong length wraps early and a
+        restored run skips the remaining batches of the true epoch.
+        """
+        mixed_path = str(Path(self.tmp.name) / "mixed.lmdb")
+        _create_mixed_nloc_lmdb(mixed_path)
+        seed = 0
+        budget = "mix:18"
+
+        def _epoch_lengths(count: int = 4) -> list[int]:
+            reader = LmdbDataReader(mixed_path, ["O", "H"], batch_size=budget)
+            reader.add_data_requirement(
+                [
+                    DataRequirementItem("force", 3, atomic=True, must=False),
+                    DataRequirementItem("energy", 1, atomic=False, must=False),
+                ]
+            )
+            reader.use_ragged_batches(True)
+            sampler = LmdbBatchSampler(reader, shuffle=True, seed=seed)
+            lengths = []
+            for epoch in range(count):
+                sampler.set_epoch(epoch)
+                lengths.append(len(sampler))
+            reader.close()
+            return lengths
+
+        lengths = _epoch_lengths()
+        self.assertNotEqual(
+            lengths[1],
+            lengths[2],
+            "fixture must vary mix epoch length so the wrap bug is observable",
+        )
+
+        def _open_iterator() -> tuple[LmdbDataReader, LmdbBatchIterator]:
+            reader = LmdbDataReader(mixed_path, ["O", "H"], batch_size=budget)
+            reader.add_data_requirement(
+                [
+                    DataRequirementItem("force", 3, atomic=True, must=False),
+                    DataRequirementItem("energy", 1, atomic=False, must=False),
+                ]
+            )
+            reader.use_ragged_batches(True)
+            sampler = LmdbBatchSampler(reader, shuffle=True, seed=seed)
+            return reader, LmdbBatchIterator(reader, sampler, num_workers=0)
+
+        reference_reader, reference = _open_iterator()
+        try:
+            for _ in range(lengths[0]):
+                next(reference)
+            self.assertEqual(reference.state_dict(), {"epoch": 1, "batch_index": 0})
+            self.assertEqual(reference._logical_epoch_length, lengths[1])
+            # Mid-epoch-1 checkpoint under the true length, then continue past
+            # where a wrong stored length would have wrapped early.
+            mid = lengths[1] // 2
+            for _ in range(mid):
+                next(reference)
+            progress = reference.state_dict()
+            expected = [next(reference)["fid"] for _ in range(lengths[1] - mid + 1)]
+        finally:
+            reference.close()
+            reference_reader.close()
+
+        self.assertEqual(progress["epoch"], 1)
+        self.assertEqual(progress["batch_index"], mid)
+
+        restored_reader, restored = _open_iterator()
+        try:
+            restored.load_state_dict(progress)
+            actual = [next(restored)["fid"] for _ in range(lengths[1] - mid + 1)]
+        finally:
+            restored.close()
+            restored_reader.close()
+
+        self.assertEqual(actual, expected)
 
     def test_distributed_ranks_restore_disjoint_shards(self) -> None:
         systems = [self._system(rank=rank, world_size=2, seed=19) for rank in range(2)]

@@ -1621,6 +1621,10 @@ class LmdbBatchIterator:
         self._logical_epoch = 0
         self._logical_batch_index = 0
         self._logical_epoch_length = 0
+        # Length of a sampler epoch opened by prefetch before the logical
+        # cursor wraps. LmdbBatchSampler advances on ``__iter__``, so
+        # ``len(self._sampler)`` at wrap would observe the *following* epoch.
+        self._pending_logical_epoch_length: int | None = None
         self._num_workers = num_workers
         self._pool: _LmdbPoolEntry | None = None
         self._pending: _PendingBatch | None = None
@@ -1679,6 +1683,7 @@ class LmdbBatchIterator:
                 f"batch_index={batch_index}"
             )
         self._cancel_prefetch()
+        self._pending_logical_epoch_length = None
         self._logical_epoch = epoch
         self._logical_batch_index = batch_index
         self._epoch = epoch
@@ -1701,9 +1706,12 @@ class LmdbBatchIterator:
     def _advance_logical_cursor(self) -> None:
         """Record that one batch was returned to the trainer.
 
-        Prefetch may already have opened the next sampler epoch and changed
-        ``len(self._sampler)``; the wrap uses the length captured for the
-        logical epoch that was just consumed.
+        Prefetch may already have opened the next sampler epoch. That open
+        stashes the next logical length in ``_pending_logical_epoch_length``;
+        the wrap applies it. Falling back to ``len(self._sampler)`` is only
+        correct when prefetch has not yet opened the successor (samplers such
+        as ``LmdbBatchSampler`` advance on ``__iter__``, so a post-prefetch
+        ``len`` would name the epoch after next).
         """
         if self._logical_epoch_length <= 0:
             return
@@ -1712,7 +1720,11 @@ class LmdbBatchIterator:
             return
         self._logical_epoch += 1
         self._logical_batch_index = 0
-        self._logical_epoch_length = len(self._sampler)
+        if self._pending_logical_epoch_length is not None:
+            self._logical_epoch_length = self._pending_logical_epoch_length
+            self._pending_logical_epoch_length = None
+        else:
+            self._logical_epoch_length = len(self._sampler)
 
     def _cancel_prefetch(self) -> None:
         """Drop prefetched work so a seek can rebuild the sampler position."""
@@ -1814,10 +1826,15 @@ class LmdbBatchIterator:
             set_epoch(self._epoch)
         epoch_length = len(self._sampler)
         # Prefetch may open the next sampler epoch before the trainer consumes
-        # the last batch of the logical epoch; only bind the logical length when
-        # reconstructing the epoch the cursor still names.
+        # the last batch of the logical epoch. Bind the active logical length
+        # only when reconstructing the epoch the cursor still names; otherwise
+        # stash the length for the upcoming wrap — ``iter(self._sampler)`` may
+        # already advance the sampler, so a later ``len`` would be wrong.
         if self._epoch == self._logical_epoch:
             self._logical_epoch_length = epoch_length
+            self._pending_logical_epoch_length = None
+        else:
+            self._pending_logical_epoch_length = epoch_length
         return iter(self._sampler)
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
