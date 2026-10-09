@@ -23,6 +23,7 @@ reference:
 """
 
 import math
+import os
 import typing
 import unittest
 from unittest import (
@@ -2049,6 +2050,254 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         )
         self.assertTrue(tc.has_tile_config("flash_bwd_edge", key))
         self.assertTrue(tc.has_tile_config("flash_bwd_block", key))
+
+
+@_GPU_KERNELS
+class TestSeZMStackBwdFused(unittest.TestCase):
+    """Fused per-layer fp32 mixing-stack backward against the unfused relay.
+
+    The fused kernel keeps each layer's gate sigmoids and pre-activation
+    gradient in registers, so its results must match the unfused
+    recompute/pointwise/GEMM relay bit-for-bit at fp32; the remaining tests
+    pin the dispatch contract (env flag, higher-order fallback, wide-channel
+    and non-fp32 fallback).
+    """
+
+    N_EDGE = 20000
+    N_FOCUS = 2
+    N_LAYERS = 4  # one final linear layer plus three gated layers
+    CASES = ((1, 32, False), (3, 32, False), (3, 32, True))  # lmax, Cf, apply_alpha
+
+    def _bwd_inputs(self, lmax, focus_dim, generator):
+        m0 = (lmax + 1) * focus_dim
+        half = lmax * focus_dim
+        row = (3 * lmax + 1) * focus_dim
+        n_gated = self.N_LAYERS - 1
+
+        def randn(*shape, scale=1.0):
+            return torch.randn(*shape, device="cuda", generator=generator) * scale
+
+        grad_out = randn(self.N_EDGE, self.N_FOCUS, row, scale=0.05)
+        x_local = randn(self.N_EDGE, self.N_FOCUS, row, scale=0.05)
+        alpha = (
+            torch.rand(self.N_EDGE, self.N_FOCUS, device="cuda", generator=generator)
+            + 0.5
+        )
+        z_all = randn(n_gated, self.N_FOCUS, self.N_EDGE, row, scale=0.5)
+        u_final = randn(self.N_EDGE, self.N_FOCUS, row, scale=0.05)
+        w0t_all = randn(self.N_LAYERS, self.N_FOCUS, m0, m0, scale=0.02)
+        block_u = randn(self.N_LAYERS, self.N_FOCUS, half, half, scale=0.02)
+        block_v = randn(self.N_LAYERS, self.N_FOCUS, half, half, scale=0.02)
+        # The |m| = 1 weight carries the [[U, V], [-V, U]] complex structure
+        # of SO2Linear so the synthetic stack matches the production operator.
+        w1t_all = torch.cat(
+            [
+                torch.cat([block_u, block_v], dim=3),
+                torch.cat([-block_v, block_u], dim=3),
+            ],
+            dim=2,
+        ).contiguous()
+        gw_all = randn(n_gated, self.N_FOCUS, focus_dim, half, scale=0.2)
+        gwt_all = gw_all.transpose(-1, -2).contiguous()
+        return (
+            grad_out,
+            x_local,
+            alpha,
+            z_all,
+            u_final,
+            w0t_all,
+            w1t_all,
+            gw_all,
+            gwt_all,
+        )
+
+    def _run_traversal(self, inputs, lmax, focus_dim, apply_alpha):
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _stack_backward_traversal,
+        )
+
+        with torch.no_grad():
+            g, ga, _, _ = _stack_backward_traversal(
+                inputs[0],
+                inputs[1],
+                inputs[3],
+                inputs[4],
+                inputs[2],
+                inputs[5],
+                inputs[6],
+                inputs[7],
+                inputs[8],
+                None,
+                None,
+                lmax,
+                focus_dim,
+                apply_alpha,
+                with_weights=False,
+                keep=False,
+            )
+        torch.cuda.synchronize()
+        return g, ga
+
+    def test_fused_matches_unfused_bitwise(self):
+        generator = torch.Generator(device="cuda").manual_seed(42)
+        for lmax, focus_dim, apply_alpha in self.CASES:
+            with self.subTest(lmax=lmax, cf=focus_dim, alpha=apply_alpha):
+                inputs = self._bwd_inputs(lmax, focus_dim, generator)
+                old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+                try:
+                    ref = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+                    os.environ["DP_STACK_BWD_FUSED_INFER"] = "1"
+                    fused = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+                finally:
+                    os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+                    if old is not None:
+                        os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+                self.assertTrue(torch.equal(ref[0], fused[0]))
+                # grad_alpha is computed only when alpha was applied; the
+                # traversal leaves it uninitialized otherwise.
+                if apply_alpha:
+                    self.assertTrue(torch.equal(ref[1], fused[1]))
+
+    def test_higher_order_backward_preserved_with_flag_on(self):
+        """``create_graph=True`` keeps the supported path with the flag on.
+
+        The fused kernel registers no next-derivative formula; the backward
+        of the backward must route through the operator that carries the
+        hand-derived second order even when the flag is enabled.  Both flag
+        settings take that same path here, so the second-order results
+        agree.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            _mixing_stack_op,
+        )
+
+        lmax, focus_dim = 3, 32
+        generator = torch.Generator(device="cuda").manual_seed(7)
+        m0 = (lmax + 1) * focus_dim
+        half = lmax * focus_dim
+        row = (3 * lmax + 1) * focus_dim
+
+        def randn(*shape, scale=1.0):
+            return torch.randn(*shape, device="cuda", generator=generator) * scale
+
+        u0 = randn(self.N_FOCUS, self.N_EDGE, row, scale=0.5)
+        alpha = (
+            torch.rand(self.N_EDGE, self.N_FOCUS, device="cuda", generator=generator)
+            + 0.1
+        )
+        w0_all = randn(self.N_LAYERS, self.N_FOCUS, m0, m0, scale=0.2)
+        block_u = randn(self.N_LAYERS, self.N_FOCUS, half, half, scale=0.2)
+        block_v = randn(self.N_LAYERS, self.N_FOCUS, half, half, scale=0.2)
+        w1_all = torch.cat(
+            [
+                torch.cat([block_u, block_v], dim=3),
+                torch.cat([-block_v, block_u], dim=3),
+            ],
+            dim=2,
+        ).contiguous()
+        gw_all = randn(self.N_LAYERS - 1, self.N_FOCUS, focus_dim, half, scale=0.3)
+
+        # Gradients are requested for the gate weights as well: the
+        # double-backward replays the gate-logit surfaces only when the
+        # weight-gradient channel carries a cotangent.
+        results = {}
+        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+        try:
+            for flag in (False, True):
+                os.environ["DP_STACK_BWD_FUSED_INFER"] = "1" if flag else "0"
+                # Reseed so both states draw identical cotangent samples.
+                torch.manual_seed(99)
+                u0r = u0.clone().requires_grad_(True)
+                gwr = gw_all.clone().requires_grad_(True)
+                out = _mixing_stack_op(
+                    u0r, alpha, w0_all, w1_all, gwr, lmax, focus_dim, True
+                )
+                seed = torch.randn_like(out[0])
+                g_u0, g_gw = torch.autograd.grad(
+                    (out[0] * seed).sum(), (u0r, gwr), create_graph=True
+                )
+                seed_gw = torch.randn_like(g_gw)
+                (second,) = torch.autograd.grad((g_gw * seed_gw).sum(), u0r)
+                results[flag] = (g_u0.detach().clone(), second.detach().clone())
+        finally:
+            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+            if old is not None:
+                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+        torch.testing.assert_close(results[False][0], results[True][0])
+        torch.testing.assert_close(results[False][1], results[True][1])
+
+    def _record_launches(self, lmax, focus_dim, apply_alpha=False, dtype=torch.float32):
+        """Run the traversal with a recording stand-in for the fused launch."""
+        import deepmd.pt_expt.kernels.triton.sezm.so2_value_path as vp
+
+        calls = []
+        original = vp._launch_stack_bwd_fused
+
+        def recorder(*args, **kwargs):
+            calls.append(args[8])  # the layer index
+            return original(*args, **kwargs)
+
+        generator = torch.Generator(device="cuda").manual_seed(11)
+        inputs = self._bwd_inputs(lmax, focus_dim, generator)
+        inputs = tuple(t.to(dtype) for t in inputs)
+        with mock.patch.object(vp, "_launch_stack_bwd_fused", side_effect=recorder):
+            out = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+        return calls, out
+
+    def test_dispatch_follows_env_flag(self):
+        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+        try:
+            for flag, expected in (("1", 3), ("0", 0)):
+                with self.subTest(flag=flag):
+                    os.environ["DP_STACK_BWD_FUSED_INFER"] = flag
+                    calls, _ = self._record_launches(3, 32)
+                    self.assertEqual(len(calls), expected)
+        finally:
+            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+            if old is not None:
+                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+
+    def test_wide_channels_fall_back(self):
+        """``Cf >= GATE_BMM_MIN_FOCUS_DIM`` routes through cuBLAS, not fusion."""
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
+            GATE_BMM_MIN_FOCUS_DIM,
+        )
+
+        calls, out = self._record_launches(2, GATE_BMM_MIN_FOCUS_DIM)
+        self.assertEqual(calls, [])
+        self.assertTrue(torch.isfinite(out[0]).all())
+
+    def test_non_fp32_fall_back(self):
+        """The fused kernel assumes fp32 rounding; other dtypes keep the relay."""
+        calls, out = self._record_launches(3, 32, dtype=torch.bfloat16)
+        self.assertEqual(calls, [])
+        self.assertTrue(torch.isfinite(out[0]).all())
+
+
+class TestSeZMStackBwdFlagParser(unittest.TestCase):
+    def test_values(self):
+        from deepmd.pt_expt.kernels.utils import (
+            use_stack_bwd_fused,
+        )
+
+        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+        try:
+            for value, expected in (
+                ("1", True),
+                ("true", True),
+                ("ON", True),
+                ("0", False),
+                ("nope", False),
+            ):
+                with self.subTest(value=value):
+                    os.environ["DP_STACK_BWD_FUSED_INFER"] = value
+                    self.assertEqual(use_stack_bwd_fused(), expected)
+            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+            self.assertFalse(use_stack_bwd_fused())
+        finally:
+            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+            if old is not None:
+                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
 
 
 if __name__ == "__main__":
