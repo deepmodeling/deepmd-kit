@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // The device pair style is available when the LAMMPS Kokkos package is enabled.
-#ifdef LMP_KOKKOS
-
-#ifndef LAMMPS_VERSION_NUMBER
-#error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
-#endif
-
 #ifdef PAIR_CLASS
+#ifdef LMP_KOKKOS
 // clang-format off
 PairStyle(dpa4spin/kk,PairDPA4SpinKokkos<LMPDeviceType>);
 PairStyle(dpa4spin/kk/device,PairDPA4SpinKokkos<LMPDeviceType>);
 PairStyle(dpa4spin/kk/host,PairDPA4SpinKokkos<LMPHostType>);
 // clang-format on
+#endif
 #else
+
+#ifdef LMP_KOKKOS
+
+#ifndef LAMMPS_VERSION_NUMBER
+#error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
+#endif
 
 #ifndef LMP_PAIR_DPA4SPIN_KOKKOS_H
 #define LMP_PAIR_DPA4SPIN_KOKKOS_H
@@ -118,6 +120,6 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
 }  // namespace LAMMPS_NS
 
 #endif
-#endif
-
 #endif  // LMP_KOKKOS
+
+#endif

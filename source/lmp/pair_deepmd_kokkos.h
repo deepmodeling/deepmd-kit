@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // The device pair style is available when the LAMMPS Kokkos package is enabled.
-#ifdef LMP_KOKKOS
-
-#ifndef LAMMPS_VERSION_NUMBER
-#error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
-#endif
-
 #ifdef PAIR_CLASS
+#ifdef LMP_KOKKOS
 // clang-format off
 PairStyle(deepmd/kk,PairDeepMDKokkos<LMPDeviceType>);
 PairStyle(deepmd/kk/device,PairDeepMDKokkos<LMPDeviceType>);
 PairStyle(deepmd/kk/host,PairDeepMDKokkos<LMPHostType>);
 // clang-format on
+#endif
 #else
+
+#ifdef LMP_KOKKOS
+
+#ifndef LAMMPS_VERSION_NUMBER
+#error Please define LAMMPS_VERSION_NUMBER to yyyymmdd
+#endif
 
 #ifndef LMP_PAIR_DEEPMD_KOKKOS_H
 #define LMP_PAIR_DEEPMD_KOKKOS_H
@@ -129,6 +131,6 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
 }  // namespace LAMMPS_NS
 
 #endif
-#endif
-
 #endif  // LMP_KOKKOS
+
+#endif
