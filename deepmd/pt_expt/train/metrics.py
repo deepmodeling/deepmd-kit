@@ -41,7 +41,10 @@ def all_reduce_metric_accumulator(
     if not packed:
         return
 
-    device = _state_device(packed)
+    # Packing always host-converts via float(); the collective device must
+    # come from the process group, not from whether this rank's window
+    # promoted any sums to tensors.
+    device = _collective_device(group)
     tensor = torch.tensor(
         [float(value) for value in packed],
         dtype=torch.float64,
@@ -51,9 +54,15 @@ def all_reduce_metric_accumulator(
     accumulator.load_flat_state(tensor.detach().cpu().tolist())
 
 
-def _state_device(packed: list[Any]) -> torch.device:
-    """Prefer the device of the first tensor entry; otherwise use CPU."""
-    for value in packed:
-        if torch.is_tensor(value):
-            return value.device
+def _collective_device(group: Any | None = None) -> torch.device:
+    """Return one all-reduce device that every rank in ``group`` can use.
+
+    Device choice follows the process-group backend and this rank's current
+    CUDA device. It must not depend on local accumulator contents: a rank
+    whose window never promoted sums to tensors would otherwise pick CPU
+    while another rank picked CUDA, which breaks NCCL collectives.
+    """
+    backend = str(dist.get_backend(group)).lower()
+    if "nccl" in backend and torch.cuda.is_available():
+        return torch.device("cuda", torch.cuda.current_device())
     return torch.device("cpu")
