@@ -6,9 +6,6 @@ from __future__ import (
 )
 
 import unittest
-from unittest import (
-    mock,
-)
 
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
@@ -171,12 +168,12 @@ class TestPrepareNeighborsSkipsUpdateSel(unittest.TestCase):
             },
             "fitting": {"type": "ener"},
         }
-        train_data = mock.MagicMock()
+        train_data = unittest.mock.MagicMock()
         with (
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel"
             ) as update_sel,
-            mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
+            unittest.mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
         ):
             update_sel_cls.return_value.get_min_nbor_dist.return_value = 0.5
             updated, min_dist = DPModelCommon.prepare_neighbors(
@@ -200,17 +197,17 @@ class TestPrepareNeighborsSkipsUpdateSel(unittest.TestCase):
             },
             "fitting": {"type": "ener"},
         }
-        train_data = mock.MagicMock()
+        train_data = unittest.mock.MagicMock()
         with (
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel",
                 return_value=({"type": "se_e2_a", "sel": [4, 8]}, 0.8),
             ) as update_sel,
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.neighbor_contract_from_jdata",
                 return_value=NeighborContract.dense(None, requires_capacity=True),
             ),
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.prepare_jdata_for_neighbor_contract",
                 side_effect=lambda j, c: dict(j),
             ),
@@ -246,8 +243,8 @@ class TestHybridUpdateSelClassmethod(unittest.TestCase):
                 },
             ],
         }
-        train_data = mock.MagicMock()
-        with mock.patch(
+        train_data = unittest.mock.MagicMock()
+        with unittest.mock.patch(
             "deepmd.dpmodel.descriptor.hybrid.BaseDescriptor.update_sel",
             side_effect=lambda td, tm, child: (
                 {
@@ -298,20 +295,20 @@ class TestPrepareNeighborsMinNborDist(unittest.TestCase):
             },
             "fitting": {"type": "ener"},
         }
-        train_data = mock.MagicMock()
+        train_data = unittest.mock.MagicMock()
         with (
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.neighbor_contract_from_jdata",
                 return_value=NeighborContract.graph(),
             ),
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.prepare_jdata_for_neighbor_contract",
                 side_effect=lambda j, c: dict(j),
             ),
-            mock.patch(
+            unittest.mock.patch(
                 "deepmd.dpmodel.model.dp_model.BaseDescriptor.update_sel"
             ) as update_sel,
-            mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
+            unittest.mock.patch("deepmd.dpmodel.model.dp_model.UpdateSel") as update_sel_cls,
         ):
             update_sel_cls.return_value.get_min_nbor_dist.return_value = 0.42
             updated, min_dist = DPModelCommon.prepare_neighbors(
