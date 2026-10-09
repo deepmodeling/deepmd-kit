@@ -63,6 +63,44 @@ def test_metric_with_only_nan_observations_reports_nan() -> None:
     assert accumulator.average("task")["mae"] == 3.0
 
 
+def test_add_does_not_float_coerce_device_scalars() -> None:
+    """Present accelerator metrics must not D2H-sync on every training step."""
+
+    class DeviceScalar:
+        def __init__(self, value: float) -> None:
+            self.value = float(value)
+            self.device = "cuda:0"
+            self.ndim = 0
+            self.float_calls = 0
+
+        def __float__(self) -> float:
+            self.float_calls += 1
+            return self.value
+
+        def __mul__(self, other: object):
+            return DeviceScalar(self.value * float(other))
+
+        __rmul__ = __mul__
+
+        def __add__(self, other: object):
+            if isinstance(other, DeviceScalar):
+                return DeviceScalar(self.value + other.value)
+            return DeviceScalar(self.value + float(other))
+
+        def __radd__(self, other: object):
+            return self.__add__(other)
+
+        def __truediv__(self, other: object):
+            return DeviceScalar(self.value / float(other))
+
+    accumulator = MetricAccumulator({"task": ("rmse",)})
+    device_value = DeviceScalar(2.0)
+    accumulator.add("task", {"rmse": device_value})
+    assert device_value.float_calls == 0
+    # Host conversion is reserved for the display boundary.
+    assert accumulator.average("task") == {"rmse": 2.0}
+
+
 def test_atom_weights_compute_validation_style_averages() -> None:
     accumulator = MetricAccumulator({"task": ("rmse",)})
     accumulator.add("task", {"rmse": 1.0}, weight=2.0)

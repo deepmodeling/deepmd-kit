@@ -8,10 +8,11 @@ Two weighting policies share one accumulator:
 * Validation batches use an atom weight (real atoms in the batch), so the
   reported value is the atom-weighted mean of per-atom metrics.
 
-Optional labels emit NaN through ``display_if_exist``. Those observations are
-excluded from that metric's sum and weight so a single unlabeled batch cannot
-poison an otherwise finite interval. Distributed runs keep local sums and
-weights on device and reduce them only at a display boundary.
+Optional labels emit host NaN through ``display_if_exist``. Those observations
+are excluded from that metric's sum and weight so a single unlabeled batch
+cannot poison an otherwise finite interval. Present device metrics are never
+host-synced on ``add``; distributed runs keep local sums and weights on device
+and reduce them only at a display boundary.
 """
 
 from __future__ import (
@@ -30,14 +31,31 @@ from typing import (
 )
 
 
-def _is_nan(value: Any) -> bool:
-    """Return whether a scalar host or array value is NaN."""
+def _is_host_nan(value: Any) -> bool:
+    """Return whether a host scalar is NaN without touching device memory.
+
+    Optional-label gaps arrive as host ``float("nan")`` from
+    ``display_if_exist``. Present CUDA / accelerator metrics must stay on
+    device through :meth:`MetricAccumulator.add`; coercing them with
+    ``float()`` would D2H-sync on every training step. Device values are
+    therefore never inspected here. Host conversion happens only in
+    :meth:`average` and in display-boundary all-reduce packing.
+    """
     if value is None:
         return True
-    try:
-        return bool(isnan(float(value)))
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return False
+    if isinstance(value, (int, float)):
+        return isnan(float(value))
+    # 0-d NumPy arrays and NumPy scalars are already on the host.
+    if type(value).__module__.startswith("numpy"):
+        ndim = getattr(value, "ndim", 0)
+        if ndim == 0:
+            try:
+                return bool(isnan(float(value)))
+            except (TypeError, ValueError):
+                return False
+    return False
 
 
 class MetricAccumulator:
@@ -46,7 +64,7 @@ class MetricAccumulator:
     Metric names are declared before training so an unsampled task keeps the
     same columns as a sampled task. Each call to :meth:`add` is one
     observation: training uses ``weight=1``, validation passes the number of
-    real atoms. A NaN metric is skipped for that observation only.
+    real atoms. A host-NaN metric is skipped for that observation only.
 
     Scalar arrays stay on their original device until :meth:`average`
     converts them to Python floats for display. Out-of-place addition
@@ -89,7 +107,7 @@ class MetricAccumulator:
         """Record one observation of detached scalar metrics.
 
         Backends detach metrics from their differentiation graph before
-        calling this method. Missing or NaN metrics are omitted from that
+        calling this method. Missing or host-NaN metrics are omitted from that
         metric's weighted average rather than treated as zero. A non-positive
         weight records the observation for task sampling but contributes to
         no metric totals.
@@ -104,7 +122,7 @@ class MetricAccumulator:
         weights = self._weights[task_key]
         for name in names:
             value = metrics.get(name, float("nan"))
-            if weight <= 0.0 or _is_nan(value):
+            if weight <= 0.0 or _is_host_nan(value):
                 continue
             # Out-of-place update: backends may overwrite the tensor buffer
             # that produced ``value`` on the next step.
@@ -127,7 +145,7 @@ class MetricAccumulator:
         result: dict[str, float] = {}
         for name in self._names[task_key]:
             weight = float(weights[name])
-            if weight == 0.0 or _is_nan(weight):
+            if weight == 0.0 or isnan(weight):
                 result[name] = float("nan")
             else:
                 result[name] = float(sums[name] / weights[name])
