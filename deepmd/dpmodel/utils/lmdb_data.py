@@ -35,9 +35,9 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Mapping,
     cast,
 )
+from collections.abc import Mapping
 
 import lmdb
 import msgpack
@@ -1668,7 +1668,9 @@ class LmdbBatchIterator:
             Progress previously returned by :meth:`state_dict`.
         """
         if self._closed:
-            raise RuntimeError("cannot restore progress on a closed LMDB batch iterator")
+            raise RuntimeError(
+                "cannot restore progress on a closed LMDB batch iterator"
+            )
         epoch = int(state["epoch"])
         batch_index = int(state["batch_index"])
         if epoch < 0 or batch_index < 0:

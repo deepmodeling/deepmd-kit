@@ -173,9 +173,7 @@ class TestLmdbDataProgress(unittest.TestCase):
             reader.close()
 
     def test_distributed_ranks_restore_disjoint_shards(self) -> None:
-        systems = [
-            self._system(rank=rank, world_size=2, seed=19) for rank in range(2)
-        ]
+        systems = [self._system(rank=rank, world_size=2, seed=19) for rank in range(2)]
         try:
             for system in systems:
                 system.get_batch()
@@ -190,9 +188,7 @@ class TestLmdbDataProgress(unittest.TestCase):
         self.assertEqual(progresses[0]["epoch"], progresses[1]["epoch"])
         self.assertEqual(progresses[0]["batch_index"], progresses[1]["batch_index"])
 
-        restored = [
-            self._system(rank=rank, world_size=2, seed=19) for rank in range(2)
-        ]
+        restored = [self._system(rank=rank, world_size=2, seed=19) for rank in range(2)]
         try:
             for system, progress in zip(restored, progresses, strict=True):
                 system.load_state_dict(progress)
@@ -216,8 +212,6 @@ class TestLmdbDataProgress(unittest.TestCase):
         finally:
             system.close()
 
-
-
     def test_multitask_independent_cursors(self) -> None:
         first = self._system(seed=3)
         second = self._system(seed=5)
@@ -225,9 +219,7 @@ class TestLmdbDataProgress(unittest.TestCase):
             first.get_batch()
             second.get_batch()
             second.get_batch()
-            progress = collect_training_data_progress(
-                {"water": first, "ice": second}
-            )
+            progress = collect_training_data_progress({"water": first, "ice": second})
             expected = {
                 "water": first.get_batch()["fid"],
                 "ice": second.get_batch()["fid"],

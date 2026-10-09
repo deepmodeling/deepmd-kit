@@ -104,9 +104,7 @@ def restore_training_data_progress(
         if not callable(load_state_dict):
             continue
         if task_key not in tasks:
-            raise ValueError(
-                f"data-progress checkpoint is missing task {task_key!r}."
-            )
+            raise ValueError(f"data-progress checkpoint is missing task {task_key!r}.")
         load_state_dict(tasks[task_key])
     if "rng" in progress:
         dp_random.set_state(progress["rng"])
