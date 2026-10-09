@@ -815,8 +815,10 @@ class FullValidator:
     def _commit_pending_best_state(self) -> None:
         """Drop the proposal pointer after a successful checkpoint write.
 
-        The rollback snapshot stays until :meth:`_reconcile_best_checkpoints`
-        finishes, so a mid-reconcile failure can still restore bookkeeping.
+        The rollback snapshot stays until ranked renames in
+        :meth:`_reconcile_best_checkpoints` succeed, so a rename-phase failure
+        can still restore bookkeeping. It is cleared before stale deletion so a
+        mid-prune failure cannot restore records that name deleted files.
         """
         self._pending_topk_records = None
 
@@ -916,7 +918,15 @@ class FullValidator:
         }
 
     def _reconcile_best_checkpoints(self) -> None:
-        """Rename retained best checkpoints to ranked names and delete stale ones."""
+        """Rename retained best checkpoints to ranked names and delete stale ones.
+
+        Ranked renames complete before any stale deletion. A failure during the
+        rename phase undoes ``.tmp`` moves so restart still sees the files, and
+        the caller may restore bookkeeping from the rollback snapshot. After
+        renames succeed the on-disk retained set matches ``topk_records``, so the
+        rollback snapshot is dropped before prune; a mid-delete failure must not
+        restore bookkeeping that names removed files.
+        """
         expected_names = self._expected_topk_checkpoint_names()
         current_files = self._list_best_checkpoints()
         files_by_step: dict[int, list[Path]] = {}
@@ -953,11 +963,21 @@ class FullValidator:
                     keep_path.rename(temp_path)
                     temp_moves.append((temp_path, keep_path.with_name(expected_name)))
 
-            for checkpoint_path in stale_files:
-                self._remove_checkpoint_path(checkpoint_path)
+            # Finalize ranked names before deleting anything still named by the
+            # previous top-K. Collision clears here only remove paths we are
+            # about to replace or that are already listed as stale.
             for temp_path, final_path in temp_moves:
                 self._remove_checkpoint_path(final_path)
                 temp_path.rename(final_path)
+            temp_moves.clear()
+
+            # Disk retained set now matches topk_records. Drop the snapshot so
+            # a mid-prune OSError cannot roll bookkeeping back to naming deleted
+            # stales; _rollback_pending_best_state becomes a no-op.
+            self._rollback_topk_records = None
+
+            for checkpoint_path in stale_files:
+                self._remove_checkpoint_path(checkpoint_path)
         except Exception:
             # Undo partial temp renames so restart can still see the files.
             for temp_path, _final_path in temp_moves:

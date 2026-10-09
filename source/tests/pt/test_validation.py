@@ -33,6 +33,7 @@ from deepmd.pt.utils.lmdb_dataset import (
 from deepmd.pt_expt.train.validation import (
     BEST_METRIC_NAME_INFO_KEY,
     TOPK_RECORDS_INFO_KEY,
+    BestCheckpointRecord,
     FullValidator,
     resolve_full_validation_start_step,
 )
@@ -1373,3 +1374,315 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
             self.assertIsNone(result)
             self.assertEqual(len(writes), 1)
             self.assertTrue(writes[0].exists())
+
+    def test_reconcile_renames_before_deleting_stales(self) -> None:
+        """Ranked renames must finish before any stale prune."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": True,
+                    "max_best_ckpt": 2,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": str(Path(tmpdir) / "val.log"),
+                    "full_val_start": 0.0,
+                },
+                validation_data=_DummyValidationData(),
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+                checkpoint_dir=Path(tmpdir),
+            )
+            # Previous top-K on disk: steps 10 (rank1) and 20 (rank2).
+            Path(tmpdir, "best.ckpt-10.t-1.pt").write_text("10")
+            Path(tmpdir, "best.ckpt-20.t-2.pt").write_text("20")
+            # New top-K displaces 10; newly written 30 already at proposed rank.
+            Path(tmpdir, "best.ckpt-30.t-2.pt").write_text("30")
+            validator.topk_records = [
+                BestCheckpointRecord(metric=1.0, step=20),
+                BestCheckpointRecord(metric=1.5, step=30),
+            ]
+            validator._sync_state_store()
+
+            events: list[str] = []
+            real_rename = Path.rename
+            real_remove = FullValidator._remove_checkpoint_path
+
+            def tracking_rename(self_path: Path, target: Path) -> None:
+                events.append(f"rename:{self_path.name}->{target.name}")
+                real_rename(self_path, target)
+
+            def tracking_remove(path: Path) -> None:
+                events.append(f"remove:{path.name}")
+                real_remove(path)
+
+            with (
+                patch.object(Path, "rename", tracking_rename),
+                patch.object(
+                    FullValidator,
+                    "_remove_checkpoint_path",
+                    staticmethod(tracking_remove),
+                ),
+            ):
+                validator._reconcile_best_checkpoints()
+
+            remove_stale_idxs = [
+                i for i, e in enumerate(events) if e.startswith("remove:best.ckpt-10")
+            ]
+            final_rename_idxs = [
+                i
+                for i, e in enumerate(events)
+                if e.startswith("rename:") and e.endswith(".tmp->best.ckpt-20.t-1.pt")
+            ]
+            self.assertTrue(final_rename_idxs, events)
+            self.assertTrue(remove_stale_idxs, events)
+            self.assertLess(max(final_rename_idxs), min(remove_stale_idxs), events)
+            self.assertEqual(
+                sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.pt")),
+                ["best.ckpt-20.t-1.pt", "best.ckpt-30.t-2.pt"],
+            )
+
+    def test_prune_failure_does_not_restore_bookkeeping_naming_deleted_stales(
+        self,
+    ) -> None:
+        """After ranked renames, prune failure must not roll top-K back to deleted files.
+
+        Reproduces the pre-fix hazard: deleting ``best.ckpt-10…`` then failing
+        left rollback restoring steps ``{10,20}`` while disk only had ``{20,30}``.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": True,
+                    "max_best_ckpt": 2,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": str(Path(tmpdir) / "val.log"),
+                    "full_val_start": 0.0,
+                },
+                validation_data=_DummyValidationData(),
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+                checkpoint_dir=Path(tmpdir),
+            )
+            old_records = [
+                BestCheckpointRecord(metric=1.0, step=10),
+                BestCheckpointRecord(metric=2.0, step=20),
+            ]
+            new_records = [
+                BestCheckpointRecord(metric=1.0, step=20),
+                BestCheckpointRecord(metric=1.5, step=30),
+            ]
+            Path(tmpdir, "best.ckpt-10.t-1.pt").write_text("10")
+            Path(tmpdir, "best.ckpt-20.t-2.pt").write_text("20")
+            Path(tmpdir, "best.ckpt-30.t-2.pt").write_text("30")
+            validator._rollback_topk_records = list(old_records)
+            validator.topk_records = list(new_records)
+            validator._sync_state_store()
+
+            real_remove = FullValidator._remove_checkpoint_path
+
+            def fail_on_stale_step10(path: Path) -> None:
+                if path.name.startswith("best.ckpt-10."):
+                    # Delete first (as a real OS would), then fail — matching the
+                    # mid-prune window the old ordering exposed to rollback.
+                    real_remove(path)
+                    raise OSError("simulated prune failure")
+                real_remove(path)
+
+            with patch.object(
+                FullValidator,
+                "_remove_checkpoint_path",
+                staticmethod(fail_on_stale_step10),
+            ):
+                with self.assertRaises(OSError):
+                    validator._reconcile_best_checkpoints()
+
+            # Snapshot cleared after renames; caller rollback is a no-op.
+            validator._rollback_pending_best_state()
+            named_steps = {record.step for record in validator.topk_records}
+            on_disk_steps = set()
+            for path in Path(tmpdir).glob("best.ckpt-*.pt"):
+                match = validator.best_checkpoint_pattern.match(path.name)
+                self.assertIsNotNone(match, path.name)
+                on_disk_steps.add(int(match.group(1)))
+            self.assertEqual(named_steps, {20, 30})
+            self.assertTrue(
+                named_steps.issubset(on_disk_steps),
+                f"bookkeeping {named_steps} missing on disk {on_disk_steps}",
+            )
+            self.assertEqual(
+                sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.pt")),
+                ["best.ckpt-20.t-1.pt", "best.ckpt-30.t-2.pt"],
+            )
+            self.assertIsNone(validator._rollback_topk_records)
+
+    def test_rename_phase_failure_keeps_rollback_and_restores_temps(self) -> None:
+        """Failure before ranked renames finish still allows bookkeeping rollback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": True,
+                    "max_best_ckpt": 2,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": str(Path(tmpdir) / "val.log"),
+                    "full_val_start": 0.0,
+                },
+                validation_data=_DummyValidationData(),
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+                checkpoint_dir=Path(tmpdir),
+            )
+            old_records = [
+                BestCheckpointRecord(metric=1.0, step=10),
+                BestCheckpointRecord(metric=2.0, step=20),
+            ]
+            new_records = [
+                BestCheckpointRecord(metric=1.0, step=20),
+                BestCheckpointRecord(metric=1.5, step=30),
+            ]
+            Path(tmpdir, "best.ckpt-10.t-1.pt").write_text("10")
+            Path(tmpdir, "best.ckpt-20.t-2.pt").write_text("20")
+            Path(tmpdir, "best.ckpt-30.t-2.pt").write_text("30")
+            validator._rollback_topk_records = list(old_records)
+            validator.topk_records = list(new_records)
+            validator._sync_state_store()
+
+            real_rename = Path.rename
+
+            def fail_final_rename(self_path: Path, target: Path) -> None:
+                # Fail only the ranked finalization, not the .tmp→original undo.
+                if self_path.name.endswith(".tmp"):
+                    original_name = self_path.name.removesuffix(".tmp")
+                    if target.name != original_name:
+                        raise OSError("simulated ranked rename failure")
+                real_rename(self_path, target)
+
+            with patch.object(Path, "rename", fail_final_rename):
+                with self.assertRaises(OSError):
+                    validator._reconcile_best_checkpoints()
+
+            # Temps undone; stale 10 still present; rollback snapshot retained.
+            self.assertIsNotNone(validator._rollback_topk_records)
+            validator._rollback_pending_best_state()
+            named_steps = {record.step for record in validator.topk_records}
+            on_disk_steps = set()
+            for path in Path(tmpdir).glob("best.ckpt-*.pt"):
+                match = validator.best_checkpoint_pattern.match(path.name)
+                self.assertIsNotNone(match, path.name)
+                on_disk_steps.add(int(match.group(1)))
+            self.assertEqual(named_steps, {10, 20})
+            self.assertTrue(
+                named_steps.issubset(on_disk_steps),
+                f"bookkeeping {named_steps} missing on disk {on_disk_steps}",
+            )
+            self.assertFalse(list(Path(tmpdir).glob("*.tmp")))
+
+    def test_commit_path_prune_failure_keeps_named_checkpoints(self) -> None:
+        """run() commit/reconcile prune failure must not orphan named top-K steps."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": True,
+                    "max_best_ckpt": 2,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": str(Path(tmpdir) / "val.log"),
+                    "full_val_start": 0.0,
+                },
+                validation_data=_DummyValidationData(),
+                model=_DummyModel(),
+                state_store={},
+                num_steps=10,
+                rank=0,
+                restart_training=False,
+                checkpoint_dir=Path(tmpdir),
+            )
+
+            def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                Path(path).write_text(f"ckpt-{path.name}")
+
+            # Seed previous best pair via a successful run, then force a third
+            # candidate so reconcile must prune the displaced step.
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 2.0},
+            ):
+                validator.run(
+                    step_id=10,
+                    display_step=10,
+                    lr=1e-3,
+                    save_checkpoint=save_checkpoint,
+                )
+            with patch.object(
+                validator,
+                "evaluate_all_systems",
+                return_value={validator.metric_key: 1.0},
+            ):
+                validator.run(
+                    step_id=20,
+                    display_step=20,
+                    lr=1e-3,
+                    save_checkpoint=save_checkpoint,
+                )
+            self.assertEqual(
+                {record.step for record in validator.topk_records},
+                {10, 20},
+            )
+
+            real_remove = FullValidator._remove_checkpoint_path
+
+            def fail_on_stale_step10(path: Path) -> None:
+                if path.name.startswith("best.ckpt-10."):
+                    real_remove(path)
+                    raise OSError("simulated prune failure")
+                real_remove(path)
+
+            with (
+                patch.object(
+                    validator,
+                    "evaluate_all_systems",
+                    return_value={validator.metric_key: 1.5},
+                ),
+                patch.object(
+                    FullValidator,
+                    "_remove_checkpoint_path",
+                    staticmethod(fail_on_stale_step10),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "committing the best"):
+                    validator.run(
+                        step_id=30,
+                        display_step=30,
+                        lr=1e-3,
+                        save_checkpoint=save_checkpoint,
+                    )
+
+            named_steps = {record.step for record in validator.topk_records}
+            on_disk_steps = set()
+            for path in Path(tmpdir).glob("best.ckpt-*.pt"):
+                match = validator.best_checkpoint_pattern.match(path.name)
+                self.assertIsNotNone(match, path.name)
+                on_disk_steps.add(int(match.group(1)))
+            self.assertEqual(named_steps, {20, 30})
+            self.assertTrue(
+                named_steps.issubset(on_disk_steps),
+                f"bookkeeping {named_steps} missing on disk {on_disk_steps}",
+            )
+            self.assertIsNone(validator._rollback_topk_records)
+            self.assertIsNone(validator._pending_topk_records)
