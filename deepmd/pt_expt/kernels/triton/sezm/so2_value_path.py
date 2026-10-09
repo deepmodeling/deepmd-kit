@@ -104,6 +104,9 @@ from torch.library import (
     wrap_triton,
 )
 
+from ...utils import (
+    use_rot_mix_bwd_fused,
+)
 from .gated_activation import (
     gated_activation_second_order,
     gated_activation_second_order_reference,
@@ -160,6 +163,11 @@ _MAX_LMAX = 6
 _MAX_MIXER_RANK = 4
 
 _ROTATE_MIX_BWD_CONFIG = (1, 2)  # per-edge backward (warps, stages)
+# Fused rotate+mix backward (segment-parallel, the per-edge node
+# gradient ``gxe`` is never materialized): (BLOCK_E edges per chunk,
+# warps, stages).  Conservative defaults; a swept table is the
+# follow-up if the fusion proves out on more shapes.
+_ROT_MIX_BWD_FUSED_CONFIG = (8, 4, 2)
 
 
 # ======================================================================
@@ -1027,6 +1035,236 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             e = tl.load(order_ptr + i).to(tl.int64)
             acc += tl.load(rows_ptr + e * P + cols, mask=col_mask, other=0.0)
         tl.store(out_ptr + node * P + cols, acc, mask=col_mask)
+
+    @triton.jit
+    def _rotate_mix_bwd_fused_kernel(
+        gu_ptr,  # (F, E, ROW) upstream gradient (focus-major)
+        x_ptr,  # (N, D, CW) node features
+        w_ptr,  # (E, D, D) block-diagonal Wigner-D
+        kc_ptr,  # (E, KSZ) rank-1 compact kernel, or (E, L+1, CW) when RANK == 0
+        cb_ptr,  # (1, CW) channel basis (RANK == 1)
+        order_ptr,  # (E,) edge ids sorted by source node
+        row_ptr_ptr,  # (N + 1,) CSR offsets into ``order``
+        gx_ptr,  # (N, D, CW) node gradient out (accumulated on chip)
+        gw_ptr,  # (E, D, D) Wigner gradient out (structural non-zeros; pre-zeroed)
+        gkc_ptr,  # gradient of kc out, same layout as kc
+        n_edge,
+        x_sn,
+        x_sd,
+        L: tl.constexpr,
+        CF: tl.constexpr,
+        CW: tl.constexpr,
+        CP: tl.constexpr,  # next power of two >= CW (vector lane count)
+        DP: tl.constexpr,  # next power of two >= DIM (accumulator row count)
+        RANK: tl.constexpr,
+        BLOCK_E: tl.constexpr,
+    ):
+        """Source-segmented rotate+mix backward: ``gxe`` never materialized.
+
+        One program per source node walks its CSR segment (``order`` /
+        ``row_ptr``) in ``BLOCK_E``-edge chunks, recomputes the rotation
+        backward per chunk with exactly the edge-block kernel's math, and
+        accumulates the per-edge node-gradient rows into an on-chip
+        ``(DP, CP)`` accumulator, replacing the
+        ``_rotate_mix_bwd_*_kernel`` -> ``_segment_sum_kernel`` pair and
+        its ``(E, D, CW)`` HBM round-trip.  Two structural properties of
+        the segment make this cheap: every edge in the segment shares the
+        same source row, so the ``x`` rows are loaded once per program
+        (not once per edge), and the per-edge gradient contribution is a
+        rank-1 update ``w[col] * g_row`` whose segment sum is one
+        ``tl.sum`` over the edge axis.
+
+        ``gw``/``gkc`` are stored per edge with the same math as the
+        edge-block kernel (identical values up to instruction scheduling,
+        i.e. fp32 rounding); ``gx`` accumulates in chunk order with a
+        ``tl.sum`` inside each chunk, so it differs from the unfused path
+        only at fp32 rounding level.  Masked edges contribute exactly zero
+        (their Wigner scalars load as 0).
+        """
+        NS0: tl.constexpr = L + 1
+        DIM: tl.constexpr = (L + 1) * (L + 1)
+        ROW: tl.constexpr = (3 * L + 1) * CF
+        KSZ: tl.constexpr = NS0 * NS0 + L * L
+        PADDED: tl.constexpr = CP != CW
+
+        node = tl.program_id(0).to(tl.int64)
+        beg = tl.load(row_ptr_ptr + node).to(tl.int64)
+        end = tl.load(row_ptr_ptr + node + 1).to(tl.int64)
+
+        chan = tl.arange(0, CP)
+        if PADDED:
+            cmask = chan < CW
+            chan_c = tl.where(cmask, chan, 0)
+        else:
+            cmask = None
+            chan_c = chan
+        didx = tl.arange(0, DP)
+        # Every edge of the segment shares this source row, so ``x`` is
+        # read through one node base; the rows stay L1/L2-resident across
+        # the chunk loop (dynamic loops cannot index register tuples, so
+        # the rows are reloaded per use -- near-free out of cache).
+        x_node = x_ptr + node * x_sn
+
+        if RANK == 1:
+            cbv = tl.load(cb_ptr + chan, mask=(chan < CW), other=0.0)[None, :]
+
+        acc = tl.zeros((DP, CP), dtype=tl.float32)
+        for i0 in range(beg, end, BLOCK_E):
+            offs = i0 + tl.arange(0, BLOCK_E)
+            e_mask = offs < end
+            eq = tl.load(order_ptr + offs, mask=e_mask, other=0).to(tl.int64)
+            if PADDED:
+                em = e_mask[:, None] & cmask[None, :]
+            else:
+                em = e_mask[:, None]
+
+            d_base = w_ptr + eq * DIM * DIM
+            gd_base = gw_ptr + eq * DIM * DIM
+            if RANK == 0:
+                kc_base = kc_ptr + (eq * NS0 * CW)[:, None]
+                gkc_base = gkc_ptr + (eq * NS0 * CW)[:, None]
+            else:
+                kc_base = kc_ptr + eq * KSZ
+                gkc_base = gkc_ptr + eq * KSZ
+
+            f_off = (
+                gu_ptr
+                + ((chan_c // CF).to(tl.int64) * n_edge * ROW + (chan_c % CF))[None, :]
+                + (eq * ROW)[:, None]
+            )
+
+            for l in tl.static_range(L + 1):
+                base = l * l
+                r0 = base + l
+
+                xl0 = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                xlm = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                xlp = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                for j in tl.static_range(2 * l + 1):
+                    if PADDED:
+                        xv = tl.load(
+                            x_node + (base + j) * x_sd + chan_c,
+                            mask=cmask,
+                            other=0.0,
+                        )
+                    else:
+                        xv = tl.load(x_node + (base + j) * x_sd + chan_c)
+                    w0 = tl.load(d_base + r0 * DIM + base + j, mask=e_mask, other=0.0)
+                    xl0 += w0[:, None] * xv[None, :]
+                    if l >= 1:
+                        wm = tl.load(
+                            d_base + (r0 - 1) * DIM + base + j,
+                            mask=e_mask,
+                            other=0.0,
+                        )
+                        wp = tl.load(
+                            d_base + (r0 + 1) * DIM + base + j,
+                            mask=e_mask,
+                            other=0.0,
+                        )
+                        xlm += wm[:, None] * xv[None, :]
+                        xlp += wp[:, None] * xv[None, :]
+
+                # Kernel gradient rows and local-frame gradients of degree
+                # l (same values, same per-o accumulation order as the
+                # edge-block kernel -> bit-identical gw/gkc).
+                g0 = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                gm = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                gp = tl.zeros((BLOCK_E, CP), dtype=tl.float32)
+                if RANK == 0:
+                    gy0 = tl.load(f_off + l * CF, mask=em, other=0.0)
+                    if l >= 1:
+                        gym = tl.load(f_off + (NS0 + l - 1) * CF, mask=em, other=0.0)
+                        gyp = tl.load(
+                            f_off + (NS0 + L + l - 1) * CF, mask=em, other=0.0
+                        )
+                        t = gy0 * xl0 + gym * xlm + gyp * xlp
+                    else:
+                        t = gy0 * xl0
+                    tl.store(gkc_base + l * CW + chan[None, :], t, mask=em)
+                    rad_l = tl.load(
+                        kc_base + l * CW + chan[None, :], mask=em, other=0.0
+                    )
+                    g0 = gy0 * rad_l
+                    if l >= 1:
+                        gm = gym * rad_l
+                        gp = gyp * rad_l
+                else:
+                    for o in tl.static_range(NS0):
+                        gyo = tl.load(f_off + o * CF, mask=em, other=0.0) * cbv
+                        tl.store(
+                            gkc_base + l * NS0 + o,
+                            tl.sum(gyo * xl0, axis=1),
+                            mask=e_mask,
+                        )
+                        k_val = tl.load(kc_base + l * NS0 + o, mask=e_mask, other=0.0)
+                        g0 += k_val[:, None] * gyo
+                    if l >= 1:
+                        for o in tl.static_range(L):
+                            gyn = (
+                                tl.load(f_off + (NS0 + o) * CF, mask=em, other=0.0)
+                                * cbv
+                            )
+                            gys = (
+                                tl.load(f_off + (NS0 + L + o) * CF, mask=em, other=0.0)
+                                * cbv
+                            )
+                            tl.store(
+                                gkc_base + NS0 * NS0 + (l - 1) * L + o,
+                                tl.sum(gyn * xlm + gys * xlp, axis=1),
+                                mask=e_mask,
+                            )
+                            k_val = tl.load(
+                                kc_base + NS0 * NS0 + (l - 1) * L + o,
+                                mask=e_mask,
+                                other=0.0,
+                            )
+                            gm += k_val[:, None] * gyn
+                            gp += k_val[:, None] * gys
+
+                # Rotation backward: Wigner gradients per edge (unchanged
+                # math), node-gradient rows accumulated on chip.
+                for j in tl.static_range(2 * l + 1):
+                    col = base + j
+                    if PADDED:
+                        xv = tl.load(
+                            x_node + col * x_sd + chan_c, mask=cmask, other=0.0
+                        )
+                    else:
+                        xv = tl.load(x_node + col * x_sd + chan_c)
+                    w0 = tl.load(d_base + r0 * DIM + col, mask=e_mask, other=0.0)
+                    gx_row = w0[:, None] * g0
+                    tl.store(
+                        gd_base + r0 * DIM + col,
+                        tl.sum(g0 * xv[None, :], axis=1),
+                        mask=e_mask,
+                    )
+                    if l >= 1:
+                        wm = tl.load(
+                            d_base + (r0 - 1) * DIM + col, mask=e_mask, other=0.0
+                        )
+                        wp = tl.load(
+                            d_base + (r0 + 1) * DIM + col, mask=e_mask, other=0.0
+                        )
+                        gx_row += wm[:, None] * gm + wp[:, None] * gp
+                        tl.store(
+                            gd_base + (r0 - 1) * DIM + col,
+                            tl.sum(gm * xv[None, :], axis=1),
+                            mask=e_mask,
+                        )
+                        tl.store(
+                            gd_base + (r0 + 1) * DIM + col,
+                            tl.sum(gp * xv[None, :], axis=1),
+                            mask=e_mask,
+                        )
+                    gxs = tl.sum(gx_row, axis=0)
+                    acc += tl.where((didx == col)[:, None], gxs[None, :], 0.0)
+
+        tl.store(
+            gx_ptr + node * DIM * CW + didx[:, None] * CW + chan[None, :],
+            acc,
+            mask=(didx < DIM)[:, None] & (chan[None, :] < CW),
+        )
 
     @triton.jit
     def _stack_gemm_m0_kernel(
@@ -2926,6 +3164,75 @@ def _gated_act_bwd_impl(
     return grad_z, grad_logit
 
 
+def _rotate_mix_bwd_fused_impl(
+    grad_u: Tensor,
+    x: Tensor,
+    src: Tensor,
+    wigner: Tensor,
+    kc: Tensor,
+    cb: Tensor,
+    order: Tensor,
+    row_ptr: Tensor,
+    lmax: int,
+    n_focus: int,
+    rank: int,
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Rotate+mix backward with the node-gradient reduction fused in.
+
+    Returns ``(grad_x, grad_wigner, grad_kc)`` directly -- the per-edge
+    dense gradient ``gxe`` of the unfused path is never materialized (see
+    :func:`_rotate_mix_bwd_fused_kernel`).  ``order``/``row_ptr`` are the
+    source-segment CSR topology the unfused path builds for
+    ``segment_sum``.
+    """
+    n_edge = src.shape[0]
+    n_node = row_ptr.shape[0] - 1
+    c_wide = int(x.shape[2])
+    dim = (int(lmax) + 1) ** 2
+    if not _use_triton(x):
+        grad_x_edge, grad_wigner, grad_kc = _rotate_mix_backward_reference(
+            grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
+        )
+        counts = row_ptr[1:] - row_ptr[:-1]
+        seg_of_sorted = torch.repeat_interleave(
+            torch.arange(n_node, device=x.device, dtype=order.dtype), counts
+        )
+        grad_x = grad_x_edge.new_zeros((n_node, dim, c_wide))
+        grad_x.index_add_(0, seg_of_sorted, grad_x_edge.index_select(0, order))
+        return grad_x, grad_wigner, grad_kc
+    grad_x = torch.empty(n_node, dim, c_wide, device=x.device, dtype=x.dtype)
+    grad_wigner = torch.zeros_like(wigner)
+    grad_kc = torch.empty_like(kc)
+    if _has_no_edges(n_edge):
+        return grad_x.zero_(), grad_wigner, grad_kc
+    block_e, warps, stages = _ROT_MIX_BWD_FUSED_CONFIG
+    wrap_triton(_rotate_mix_bwd_fused_kernel)[(n_node,)](
+        grad_u,
+        x,
+        wigner,
+        kc,
+        cb,
+        order,
+        row_ptr,
+        grad_x,
+        grad_wigner,
+        grad_kc,
+        n_edge,
+        x.stride(0),
+        x.stride(1),
+        L=int(lmax),
+        CF=c_wide // int(n_focus),
+        CW=c_wide,
+        CP=triton.next_power_of_2(c_wide),
+        DP=triton.next_power_of_2(dim),
+        RANK=int(rank),
+        BLOCK_E=block_e,
+        num_warps=warps,
+        num_stages=stages,
+    )
+    return grad_x, grad_wigner, grad_kc
+
+
 def _mixing_stack_impl(
     u0: Tensor,
     alpha: Tensor,
@@ -3610,6 +3917,20 @@ _rotate_mix_bwd_op = torch.library.triton_op(
 _segment_sum_op = torch.library.triton_op("sezm_triton::segment_sum", mutates_args=())(
     _segment_sum_impl
 )
+_rotate_mix_bwd_fused_op = torch.library.triton_op(
+    "sezm_triton::so2_rotate_mix_bwd_fused", mutates_args=()
+)(_rotate_mix_bwd_fused_impl)
+
+
+@_rotate_mix_bwd_fused_op.register_fake
+def _(grad_u, x, src, wigner, kc, cb, order, row_ptr, lmax, n_focus, rank):
+    return (
+        x.new_empty((row_ptr.shape[0] - 1, (lmax + 1) ** 2, x.shape[2])),
+        torch.empty_like(wigner),
+        torch.empty_like(kc),
+    )
+
+
 _mixing_stack_op = torch.library.triton_op(
     "sezm_triton::so2_mixing_stack", mutates_args=()
 )(_mixing_stack_impl)
@@ -3872,12 +4193,40 @@ def _rotate_mix_setup_context(ctx, inputs, output):
 def _rotate_mix_backward(ctx, grad_u):
     x, src, src_order, src_rowptr, wigner, kc, cb = ctx.saved_tensors
     grad_u = grad_u.contiguous()
-    grad_x_edge, grad_wigner, grad_kc = _rotate_mix_bwd_op(
-        grad_u, x, src, wigner, kc, cb, ctx.lmax, ctx.n_focus, ctx.rank
-    )
-    # Contention-free segmented reduction of the per-edge node gradient through
-    # the source CSR view the step builds once.
-    grad_x = _segment_sum_op(grad_x_edge, src_order, src_rowptr)
+    # ``torch.is_grad_enabled()`` is True inside this backward exactly when
+    # the backward itself is being differentiated (``create_graph=True``,
+    # e.g. force-loss training).  The fused operator registers only a fake
+    # (meta) implementation and no next-derivative formula, while the
+    # unfused backward and segment-sum operators do support the next
+    # derivative -- so higher-order callers keep the supported pair and the
+    # fused path engages only when no higher-order graph is being built.
+    # The gate is read here rather than at module import: the repository
+    # convention for these switches is construction/call time, not import
+    # time, and a read here is baked into the traced graph at trace time
+    # just the same (one environment lookup per backward invocation).
+    if use_rot_mix_bwd_fused() and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
+        # Fused path: the node gradient accumulates on chip inside the
+        # kernel; the (E, D, C_wide) ``gxe`` HBM round-trip never exists.
+        grad_x, grad_wigner, grad_kc = _rotate_mix_bwd_fused_op(
+            grad_u,
+            x,
+            src,
+            wigner,
+            kc,
+            cb,
+            src_order,
+            src_rowptr,
+            ctx.lmax,
+            ctx.n_focus,
+            ctx.rank,
+        )
+    else:
+        grad_x_edge, grad_wigner, grad_kc = _rotate_mix_bwd_op(
+            grad_u, x, src, wigner, kc, cb, ctx.lmax, ctx.n_focus, ctx.rank
+        )
+        # Contention-free segmented reduction of the per-edge node gradient
+        # through the source CSR view the step builds once.
+        grad_x = _segment_sum_op(grad_x_edge, src_order, src_rowptr)
     grad_cb = (
         rotate_mix_basis_grad(
             grad_u, x, src, wigner, kc, cb, ctx.lmax, ctx.n_focus, ctx.rank
