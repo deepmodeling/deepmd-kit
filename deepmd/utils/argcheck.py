@@ -2781,6 +2781,14 @@ doc_fitting_unimol_pretrain = (
     "The three self-supervised heads of Uni-Mol v1 pretraining: element prediction, coordinate "
     "denoising and pairwise distance prediction."
 )
+doc_fitting_unimol_dpa_pretrain = (
+    "Uni-Mol v1's three self-supervised heads reading a DPA backbone. The element head takes the "
+    "per-atom representation as in Uni-Mol; the coordinate head takes the backbone's equivariant "
+    "state, because a DPA backbone carries no pair channel to read an update from; and the "
+    "distance head describes a pair by its two endpoints for the same reason. Uni-Mol's two norm "
+    "regularisers have no counterpart here, since they constrain quantities belonging to its own "
+    "transformer."
+)
 
 
 @descrpt_args_plugin.register(
@@ -3509,6 +3517,71 @@ def fitting_unimol_pretrain() -> list[Argument]:
             "attention_heads", int, optional=True, default=64, doc=doc_attention_heads
         ),
         Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "mask_token_head",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_mask_token_head,
+        ),
+        Argument("coord_head", bool, optional=True, default=True, doc=doc_coord_head),
+        Argument("dist_head", bool, optional=True, default=True, doc=doc_dist_head),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
+@fitting_args_plugin.register(
+    "unimol_dpa_pretrain",
+    doc=supported_backends("pt_expt") + doc_fitting_unimol_dpa_pretrain,
+)
+def fitting_unimol_dpa_pretrain() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_n_token = (
+        "Size of the Uni-Mol vocabulary, which is the width of the element head."
+    )
+    doc_max_atoms = (
+        "Largest molecule accepted, which fixes the distance head's column count. A frame with "
+        "more atoms than this is refused rather than truncated."
+    )
+    doc_dist_hidden = "Width of the distance head's hidden layer."
+    doc_dist_coverage = (
+        "Which atom pairs the distance term covers. 'neighbour' follows the backbone's own "
+        "neighbour list for the scored entries, but the dense pair head still evaluates all "
+        "nloc^2 pairs, so its head compute remains O(nloc^2); it reuses the locality the rest of "
+        "deepmd trains on, but it sees only the pairs inside the cut-off -- on drug-like molecules "
+        "a 6 A cut-off holds roughly half of all pairs, and less for the larger ones. 'all_pairs' covers "
+        "every pair, which is Uni-Mol's own coverage and what to use to reproduce its training; it "
+        "costs O(nloc^2) and does not share the backbone's neighbour structure. The setting "
+        "changes which pairs are scored and nothing else: the head predicts the same numbers "
+        "either way."
+    )
+    doc_activation_function = f"The activation function of the heads. Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    doc_mask_token_head = "Build the element-prediction head."
+    doc_coord_head = (
+        "Build the coordinate-denoising head. It reads the backbone's equivariant state, so the "
+        "backbone must read out at least degree 1."
+    )
+    doc_dist_head = "Build the distance-prediction head."
+    return [
+        Argument("n_token", int, optional=True, default=31, doc=doc_n_token),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument("dist_hidden", int, optional=True, default=64, doc=doc_dist_hidden),
+        Argument(
+            "dist_coverage",
+            str,
+            optional=True,
+            default="neighbour",
+            doc=doc_dist_coverage,
+        ),
         Argument(
             "activation_function",
             str,
@@ -5605,8 +5678,16 @@ def loss_unimol() -> list[Argument]:
     doc_masked_token_loss = "Weight of the element-prediction term."
     doc_masked_coord_loss = "Weight of the coordinate-denoising term."
     doc_masked_dist_loss = "Weight of the distance-prediction term."
-    doc_x_norm_loss = "Weight of the node-norm regularizer."
-    doc_delta_pair_repr_norm_loss = "Weight of the pair-delta-norm regularizer."
+    doc_x_norm_loss = (
+        "Weight of the node-norm regularizer. It constrains a quantity of "
+        "Uni-Mol's own transformer, so only the unimol_pretrain fitting "
+        "produces it; on any other backbone this must be 0."
+    )
+    doc_delta_pair_repr_norm_loss = (
+        "Weight of the pair-delta-norm regularizer. As with the node-norm "
+        "regularizer, only the unimol_pretrain fitting produces it; on any "
+        "other backbone this must be 0."
+    )
     doc_beta = (
         "Transition point of the smooth L1 used by the coordinate and distance terms."
     )
@@ -5625,6 +5706,11 @@ def loss_unimol() -> list[Argument]:
         "round. A run is reproducible from it only when one process decodes the "
         "data (DP_LMDB_NUM_WORKERS=0); with decoder workers the draws follow how "
         "frames were distributed."
+    )
+    doc_virtual_tokens = (
+        "Whether the backbone wraps each molecule in two virtual tokens and counts them among "
+        "the distance columns, which Uni-Mol's own backbone does and a DPA backbone does not. "
+        "Scoring a backbone with the wrong setting compares against columns that are not there."
     )
     return [
         Argument(
@@ -5689,6 +5775,13 @@ def loss_unimol() -> list[Argument]:
         ),
         Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
         Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),
+        Argument(
+            "virtual_tokens",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_virtual_tokens,
+        ),
     ]
 
 

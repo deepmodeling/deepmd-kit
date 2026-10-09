@@ -1,0 +1,116 @@
+{
+  "_comment": "Uni-Mol v1's self-supervised objective on a DPA4 backbone. The element head reads the per-atom representation as Uni-Mol's does; the coordinate head reads the backbone's equivariant state, because DPA4 carries no pair channel; the distance head describes a pair by its two endpoints, for the same reason.",
+  "model": {
+    "type_map": [
+      "C",
+      "N",
+      "O",
+      "S",
+      "H",
+      "Cl",
+      "F",
+      "Br",
+      "I",
+      "Si",
+      "P",
+      "B",
+      "Na",
+      "K",
+      "Al",
+      "Ca",
+      "Sn",
+      "As",
+      "Hg",
+      "Fe",
+      "Zn",
+      "Cr",
+      "Se",
+      "Gd",
+      "Au",
+      "Li",
+      "[MASK]"
+    ],
+    "_comment_type_map": "[MASK] is the pseudo-element a corrupted atom is carried as; the objective needs it",
+    "descriptor": {
+      "type": "dpa4",
+      "rcut": 6.0,
+      "channels": 32,
+      "n_radial": 16,
+      "edge_norm": false,
+      "use_env_seed": true,
+      "lmax": 2,
+      "mmax": 1,
+      "n_blocks": 2,
+      "mixing_layers": 3,
+      "radial_so2_mode": "degree_channel",
+      "radial_so2_rank": 1,
+      "n_focus": 1,
+      "focus_dim": 0,
+      "n_atten_head": 1,
+      "message_node_so3": true,
+      "ffn_neurons": 0,
+      "ffn_so3_grid": true,
+      "grid_mlp": false,
+      "grid_branch": [
+        0,
+        0,
+        1
+      ],
+      "ffn_blocks": 1,
+      "so3_readout": "mlp",
+      "use_amp": true,
+      "precision": "float32",
+      "seed": 42
+    },
+    "fitting_net": {
+      "type": "unimol_dpa_pretrain",
+      "n_token": 31,
+      "max_atoms": 256,
+      "dist_hidden": 64,
+      "dist_coverage": "neighbour",
+      "_comment_dist_coverage": "follow the backbone's neighbour list, which is what the rest of deepmd trains on; set all_pairs to cover every pair as Uni-Mol does, at quadratic cost and without sharing that locality",
+      "seed": 1
+    }
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 0.0001,
+    "stop_lr": 1e-12,
+    "warmup_steps": 10000,
+    "decay_type": "linear",
+    "decay_phase_ratio": 1.0
+  },
+  "loss": {
+    "type": "unimol",
+    "masked_token_loss": 1.0,
+    "masked_coord_loss": 5.0,
+    "masked_dist_loss": 10.0,
+    "x_norm_loss": 0.0,
+    "delta_pair_repr_norm_loss": 0.0,
+    "virtual_tokens": false,
+    "_comment": "Uni-Mol's two norm regularisers constrain quantities belonging to its own transformer and have no counterpart here, so they carry no weight; a DPA backbone also wraps no virtual tokens around a molecule"
+  },
+  "training": {
+    "training_data": {
+      "systems": "./unimol_train",
+      "batch_size": 16,
+      "_comment": "an LMDB dataset path, given as a string; build it with deepmd.utils.unimol_data"
+    },
+    "validation_data": {
+      "systems": "./unimol_valid",
+      "batch_size": 16
+    },
+    "numb_steps": 1000000,
+    "seed": 1,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 10000
+  },
+  "optimizer": {
+    "type": "Adam",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.99,
+    "adam_eps": 1e-06,
+    "weight_decay": 0.0001
+  }
+}

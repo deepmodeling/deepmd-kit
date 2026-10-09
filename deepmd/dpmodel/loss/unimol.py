@@ -11,8 +11,14 @@ MIT licensed:
 Five terms, with upstream's default weights from its README pretraining recipe:
 element prediction (1), coordinate denoising (5), distance prediction (10), and
 the two norm regularisers (0.01 each). The regularisers are produced by the
-backbone, so the loss only weights them.
+backbone, so the loss only weights them. A DPA backbone has no corresponding
+outputs; its configuration sets both weights to zero and the loss rejects a
+nonzero value before training starts.
 """
+
+from collections.abc import (
+    Iterable,
+)
 
 import array_api_compat
 
@@ -33,6 +39,19 @@ from deepmd.utils.version import (
 # (unimol/losses/unimol.py:17-18). They are hard-coded there, not fitted.
 DIST_MEAN = 6.312581655060595
 DIST_STD = 3.3899264663911888
+
+# Which model output each weighted term reads. A backbone carries the heads its
+# fitting was configured with, and Uni-Mol's two norm regularisers describe its
+# own transformer, so not every term can be evaluated against every backbone.
+# The weights are what the configuration exposes, so a term that cannot be fed
+# is reported by the name of the knob that switches it off.
+TERM_OUTPUT = {
+    "masked_token_loss": "token_logits",
+    "masked_coord_loss": "coord_update",
+    "masked_dist_loss": "pair_dist",
+    "x_norm_loss": "x_norm",
+    "delta_pair_repr_norm_loss": "delta_pair_norm",
+}
 
 
 def _smooth_l1(pred: Array, label: Array, beta: float = 1.0) -> Array:
@@ -80,30 +99,42 @@ def _frame_scalar(value: Array, mask: Array | None) -> Array:
     return xp.sum(per_atom * weights) / xp.where(total > 0, total, xp.ones_like(total))
 
 
-def _token_mask_from_atoms(mask: Array, ncol: int) -> Array:
-    """Mark the non-padding token columns: BOS, the real atoms, then EOS."""
+def _token_mask_from_atoms(mask: Array, ncol: int, virtual: bool = True) -> Array:
+    """Mark the non-padding token columns.
+
+    For Uni-Mol those are BOS, the real atoms, then EOS. A DPA backbone wraps
+    the molecule in no virtual tokens at all, so there the columns are just the
+    real atoms.
+    """
     xp = array_api_compat.array_namespace(mask)
     n_real = xp.sum(xp.astype(mask, xp.int64), axis=-1)
     positions = xp.arange(ncol, dtype=xp.int64, device=array_api_compat.device(mask))[
         None, :
     ]
-    return xp.astype(positions < (n_real + 2)[:, None], xp.int64)
+    return xp.astype(positions < (n_real + (2 if virtual else 0))[:, None], xp.int64)
 
 
-def _clean_distances(coord_target: Array, mask: Array, ncol: int) -> Array:
-    """Pairwise distances from the clean coordinates, virtual tokens included.
+def _clean_distances(
+    coord_target: Array, mask: Array, ncol: int, virtual: bool = True
+) -> Array:
+    """Pairwise distances from the clean coordinates.
 
     Storing this as a label would cost O(natoms^2) per frame, so it is derived
-    here instead. The two virtual tokens sit at the origin, which is the
-    centroid of the clean coordinates because the transform centres them.
+    here instead. With ``virtual``, the two virtual tokens are included and sit
+    at the origin, which is the centroid of the clean coordinates because the
+    transform centres them. A DPA backbone has no virtual tokens and passes
+    ``virtual=False``.
     """
     xp = array_api_compat.array_namespace(coord_target)
     nf = coord_target.shape[0]
     real = xp.astype(mask, coord_target.dtype)[..., None]
     atoms = coord_target * real
     dev = array_api_compat.device(coord_target)
-    zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
-    tokens = xp.concat([zero, atoms, zero], axis=1)
+    if virtual:
+        zero = xp.zeros((nf, 1, 3), dtype=coord_target.dtype, device=dev)
+        tokens = xp.concat([zero, atoms, zero], axis=1)
+    else:
+        tokens = atoms
     if tokens.shape[1] < ncol:
         pad = xp.zeros(
             (nf, ncol - tokens.shape[1], 3), dtype=coord_target.dtype, device=dev
@@ -180,6 +211,7 @@ class UniMolLoss(Loss):
         noise_type: str = "uniform",
         noise: float = 1.0,
         data_seed: int = 1,
+        virtual_tokens: bool = True,
         **kwargs: float,
     ) -> None:
         self.masked_token_loss = masked_token_loss
@@ -197,6 +229,52 @@ class UniMolLoss(Loss):
         self.noise_type = noise_type
         self.noise = noise
         self.data_seed = data_seed
+        # Uni-Mol wraps each molecule in BOS and EOS and counts them among the
+        # distance columns. A DPA backbone wraps it in nothing.
+        self.virtual_tokens = virtual_tokens
+
+    def check_backbone_outputs(self, available: Iterable[str]) -> None:
+        """Refuse a weighted term that this backbone cannot feed.
+
+        The five weights are independent of which fitting is on the other end,
+        so a configuration can ask for a term whose model output does not
+        exist -- the two norm regularisers on a DPA backbone being the case
+        that arises in practice, since they describe Uni-Mol's own transformer
+        and a DPA backbone has nothing corresponding. Left alone that surfaces
+        as a ``KeyError`` on the first batch, after the data has been read and
+        the statistics computed; this says what to change instead, and the
+        trainer calls it while the model and the loss are being wired together.
+
+        Parameters
+        ----------
+        available : Iterable[str]
+            The names the model emits, either from its output definition or
+            from a batch it has already produced.
+
+        Raises
+        ------
+        ValueError
+            If any term with a non-zero weight has no matching output.
+        """
+        have = set(available)
+        missing = [
+            (knob, key)
+            for knob, key in TERM_OUTPUT.items()
+            if getattr(self, knob) > 0 and key not in have
+        ]
+        if not missing:
+            return
+        keys = ", ".join(key for _, key in missing)
+        knobs = ", ".join(knob for knob, _ in missing)
+        raise ValueError(
+            f"this backbone emits no {keys}, so the objective cannot evaluate "
+            f"the term(s) weighted by {knobs}. Uni-Mol's two norm regularisers "
+            "constrain quantities belonging to its own transformer, and a DPA "
+            "backbone has no counterpart for them, so on a DPA backbone their "
+            "weights belong at zero -- as examples/unimol/dpa_pretrain/"
+            "input.json sets them. Otherwise give the fitting the head that "
+            f"produces {keys}."
+        )
 
     def call(
         self,
@@ -208,6 +286,10 @@ class UniMolLoss(Loss):
     ) -> tuple[Array, dict[str, Array]]:
         """Evaluate the five terms and their weighted sum."""
         del learning_rate, natoms, mae
+        # The trainer already checked this while wiring the two together; it is
+        # repeated here so that a loss built by hand fails the same way rather
+        # than on a missing key several lines down.
+        self.check_backbone_outputs(model_dict.keys())
         mask = model_dict.get("mask")
         token_target = label_dict["unimol_token_target"]
         xp = array_api_compat.array_namespace(token_target)
@@ -244,18 +326,42 @@ class UniMolLoss(Loss):
                 "coord_loss",
             )
         if self.masked_dist_loss > 0:
-            # Rows are the corrupted atoms; columns are every non-padding token,
-            # BOS, EOS and the diagonal included (losses/unimol.py:159-180).
+            # Rows are the corrupted atoms; columns are every covered, non-padding
+            # token. Uni-Mol includes BOS/EOS; a DPA head has only real-atom
+            # columns and its pair mask selects the neighbour or all-pairs subset.
             ncol = model_dict["pair_dist"].shape[-1]
             token_mask = label_dict.get("unimol_token_mask")
             if token_mask is None:
-                token_mask = _token_mask_from_atoms(mask, ncol)
+                token_mask = _token_mask_from_atoms(mask, ncol, self.virtual_tokens)
             dist_target = label_dict.get("unimol_dist_target")
             if dist_target is None:
                 dist_target = _clean_distances(
-                    label_dict["unimol_coord_target"], mask, ncol
+                    label_dict["unimol_coord_target"], mask, ncol, self.virtual_tokens
+                )
+            # A head that covers only part of the pair axis says so; Uni-Mol's
+            # covers all of it and emits nothing here. Which head is on the other
+            # end also settles whether there are virtual tokens to count, and
+            # getting that wrong is silent: every label shifts one column, so
+            # every corrupted row trains against another atom's distances. The
+            # two are cross-checked here rather than left to the configuration.
+            covered = model_dict.get("pair_mask")
+            if covered is None and not self.virtual_tokens:
+                raise ValueError(
+                    "virtual_tokens=False, but this backbone emits no pair "
+                    "coverage, which means it is the Uni-Mol one -- and that "
+                    "wraps every molecule in BOS and EOS. Scoring it without "
+                    "them shifts every distance label by one column"
+                )
+            if covered is not None and self.virtual_tokens:
+                raise ValueError(
+                    "virtual_tokens=True, but this backbone wraps no virtual "
+                    "tokens around a molecule (it emits pair coverage, so it is "
+                    "a DPA one). Scoring it as though it did shifts every "
+                    "distance label by one column; set virtual_tokens=False"
                 )
             pair_mask = masked[..., None] & xp.astype(token_mask, xp.bool)[:, None, :]
+            if covered is not None:
+                pair_mask = pair_mask & xp.astype(covered, xp.bool)
             dist_label = (dist_target[pair_mask] - DIST_MEAN) / DIST_STD
             add(
                 _smooth_l1(model_dict["pair_dist"][pair_mask], dist_label, self.beta),
@@ -313,7 +419,7 @@ class UniMolLoss(Loss):
         """Serialize the loss module."""
         return {
             "@class": "UniMolLoss",
-            "@version": 1,
+            "@version": 2,
             "masked_token_loss": self.masked_token_loss,
             "masked_coord_loss": self.masked_coord_loss,
             "masked_dist_loss": self.masked_dist_loss,
@@ -327,12 +433,13 @@ class UniMolLoss(Loss):
             "noise_type": self.noise_type,
             "noise": self.noise,
             "data_seed": self.data_seed,
+            "virtual_tokens": self.virtual_tokens,
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "UniMolLoss":
         """Deserialize the loss module."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         return cls(**data)

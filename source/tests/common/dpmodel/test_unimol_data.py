@@ -4,7 +4,9 @@
 import os
 import pickle
 import shutil
+import sys
 import tempfile
+import types
 import unittest
 import unittest.mock
 
@@ -23,6 +25,7 @@ from deepmd.dpmodel.utils.unimol_transform import (
     make_unimol_data_transform,
 )
 from deepmd.utils.unimol_data import (
+    _conformers,
     convert_unimol_lmdb,
     read_unimol_lmdb,
 )
@@ -376,6 +379,33 @@ class TestUniMolDataConversion(unittest.TestCase):
         )
         self.assertEqual(counts["molecules"], 1)
         self.assertEqual(counts["frames"], 2)
+
+    def test_an_unparsable_smiles_only_loses_its_2d_conformer(self) -> None:
+        """A failed SMILES parse keeps the existing conformers.
+
+        Mocking the optional RDKit dependency keeps this regression test active
+        in the normal test environment, where RDKit is not installed. Passing
+        ``None`` to ``AddHs`` used to abort conversion; the 3D conformers do not
+        depend on the SMILES and must remain available.
+        """
+        rng = np.random.default_rng(1)
+        conformers = [rng.normal(size=(4, 3)).astype(np.float32) for _ in range(2)]
+        record = {"atoms": ["C"] * 4, "coordinates": conformers, "smi": "C1CCC"}
+        chem = types.ModuleType("rdkit.Chem")
+        chem.MolFromSmiles = unittest.mock.Mock(return_value=None)
+        chem.AddHs = unittest.mock.Mock(side_effect=AssertionError("must not run"))
+        chem.AllChem = types.SimpleNamespace(Compute2DCoords=unittest.mock.Mock())
+        rdkit = types.ModuleType("rdkit")
+        rdkit.Chem = chem
+        with unittest.mock.patch.dict(
+            sys.modules, {"rdkit": rdkit, "rdkit.Chem": chem}
+        ):
+            kept = _conformers(record, add_2d_conformer=True)
+        self.assertEqual(len(kept), 2)
+        for actual, expected in zip(kept, conformers, strict=True):
+            np.testing.assert_array_equal(actual, expected)
+        chem.MolFromSmiles.assert_called_once_with("C1CCC")
+        chem.AddHs.assert_not_called()
 
 
 if __name__ == "__main__":
