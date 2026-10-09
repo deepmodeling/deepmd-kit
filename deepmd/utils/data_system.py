@@ -646,6 +646,48 @@ class DeepmdDataSystem:
         """Get a certain data system."""
         return self.data_systems[idx]
 
+    def state_dict(self) -> dict:
+        """Return per-system training cursors for checkpointing."""
+        return {
+            "version": 1,
+            "kind": "directory",
+            "systems": [system.state_dict() for system in self.data_systems],
+            "pick_idx": int(self.pick_idx),
+            "nsystems": int(self.nsystems),
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        """Restore per-system training cursors.
+
+        Parameters
+        ----------
+        state : dict
+            Progress previously returned by :meth:`state_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the payload does not describe this data system.
+        """
+        if state.get("kind", "directory") != "directory":
+            raise ValueError(
+                f"Cannot restore {state.get('kind')!r} data progress into a "
+                "directory/HDF5 data source."
+            )
+        if int(state.get("nsystems", -1)) != self.nsystems:
+            raise ValueError(
+                "directory data-progress nsystems mismatch: checkpoint has "
+                f"{state.get('nsystems')!r}, current data source has {self.nsystems}."
+            )
+        systems = state.get("systems")
+        if not isinstance(systems, list) or len(systems) != self.nsystems:
+            raise ValueError(
+                "directory data-progress must list one cursor per data system."
+            )
+        for system, system_state in zip(self.data_systems, systems, strict=True):
+            system.load_state_dict(system_state)
+        self.pick_idx = int(state.get("pick_idx", 0))
+
     def get_batch_size(self) -> int:
         """Get the batch size."""
         return self.batch_size

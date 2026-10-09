@@ -139,6 +139,7 @@ class DeepmdData:
         # set counters
         self.set_count = 0
         self.iterator = 0
+        self._batch_order = np.zeros(0, dtype=np.int64)
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
@@ -672,11 +673,74 @@ class DeepmdData:
             self.batch_set = self._load_set(set_name)
             if self.modifier is not None:
                 self.modifier.modify_data(self.batch_set, self)
-        self.batch_set, _ = self._shuffle_data(self.batch_set)
+        self.batch_set, self._batch_order = self._shuffle_data(self.batch_set)
         self.reset_get_batch()
 
     def reset_get_batch(self) -> None:
         self.iterator = 0
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return the set cursor and the shuffle order of the loaded set."""
+        return {
+            "set_count": int(self.set_count),
+            "iterator": int(self.iterator),
+            "batch_order": self._batch_order.astype(np.int64).tolist(),
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore the set cursor without re-drawing the shuffle RNG.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            Progress previously returned by :meth:`state_dict`.
+        """
+        set_count = int(state["set_count"])
+        iterator = int(state["iterator"])
+        batch_order = np.asarray(state["batch_order"], dtype=np.int64)
+        if set_count < 0 or iterator < 0:
+            raise ValueError(
+                f"directory data-progress cursor must be non-negative, got "
+                f"set_count={set_count}, iterator={iterator}"
+            )
+        if set_count == 0:
+            if iterator != 0 or batch_order.size:
+                raise ValueError(
+                    "directory data-progress with set_count=0 must have an empty "
+                    "batch and iterator=0"
+                )
+            self.set_count = 0
+            self.iterator = 0
+            self._batch_order = np.zeros(0, dtype=np.int64)
+            if hasattr(self, "batch_set"):
+                del self.batch_set
+            return
+        set_idx = (set_count - 1) % self.get_numb_set()
+        raw = self._load_set(self.dirs[set_idx])
+        if self.modifier is not None:
+            self.modifier.modify_data(raw, self)
+        self.batch_set = self._apply_batch_order(raw, batch_order)
+        self._batch_order = batch_order
+        self.set_count = set_count
+        self.iterator = iterator
+
+    def _apply_batch_order(
+        self, data: dict[str, Any], idx: np.ndarray
+    ) -> dict[str, Any]:
+        """Apply a saved frame permutation produced by :meth:`_shuffle_data`."""
+        ret: dict[str, Any] = {}
+        nframes = data["coord"].shape[0]
+        for key, value in data.items():
+            if (
+                isinstance(value, np.ndarray)
+                and value.ndim == 2
+                and value.shape[0] == nframes
+                and "find_" not in key
+            ):
+                ret[key] = value[idx]
+            else:
+                ret[key] = value
+        return ret
 
     def _load_test_set(self, shuffle_test: bool) -> None:
         test_sets = []
