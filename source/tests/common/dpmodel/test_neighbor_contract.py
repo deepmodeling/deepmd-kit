@@ -287,7 +287,6 @@ class TestHybridUpdateSelClassmethod(unittest.TestCase):
         self.assertTrue(contract.is_graph)
         self.assertTrue(contract.requires_capacity)
 
-
     def test_dpa2_auto_nsel_keeps_capacity_discovery(self) -> None:
         jdata = {
             "type": "dpa2",

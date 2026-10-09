@@ -415,9 +415,7 @@ class DeepEval(DeepEvalBackend):
                 self._dpmodel.get_sel(), requires_capacity=False
             )
         )
-        uses_graph = bool(
-            getattr(self._dpmodel, "uses_graph_lower", lambda: False)()
-        )
+        uses_graph = bool(getattr(self._dpmodel, "uses_graph_lower", lambda: False)())
         self._sel = (
             []
             if self._neighbor_contract.is_graph and uses_graph
