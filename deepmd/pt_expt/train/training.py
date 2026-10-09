@@ -120,6 +120,9 @@ from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
 )
+from deepmd.pt_expt.train.profiler import (
+    create_profiler_observer,
+)
 from deepmd.pt_expt.train.tensorboard import (
     create_tensorboard_observer,
 )
@@ -2406,11 +2409,22 @@ class Trainer(AbstractTrainer):
                 if training_params.get("disp_avg", False)
                 else None
             ),
-            observers=create_tensorboard_observer(
-                training_params,
-                rank_context=rank_context,
-                multi_task=self.multi_task,
-            ),
+            observers=[
+                observer
+                for observer in (
+                    create_tensorboard_observer(
+                        training_params,
+                        rank_context=rank_context,
+                        multi_task=self.multi_task,
+                    ),
+                    create_profiler_observer(
+                        training_params,
+                        rank_context=rank_context,
+                    ),
+                )
+                if observer is not None
+            ]
+            or None,
         )
         self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
