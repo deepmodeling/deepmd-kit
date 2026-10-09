@@ -1214,6 +1214,68 @@ class TestFullValidatorCheckpointGate(unittest.TestCase):
             self.assertIsNone(validator._pending_topk_records)
             self.assertIsNone(validator._rollback_topk_records)
 
+    def test_distributed_remote_save_failure_rolls_back_committed_topk(self) -> None:
+        """Rank 0 must not keep top-K when another rank aborts the save."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            validator = self._make_validator(tmpdir)
+            validator.is_distributed = True
+            writes: list[Path] = []
+
+            def save_checkpoint(path: Path, lr: float = 0.0, step: int = 0) -> None:
+                del lr, step
+                Path(path).write_text("ok")
+                writes.append(Path(path))
+
+            gather_calls = {"n": 0}
+
+            def gather_remote_error(out: list, obj: object) -> None:
+                # Succeed on the post-evaluate sync; fail on the post-save sync.
+                gather_calls["n"] += 1
+                if gather_calls["n"] == 2:
+                    out[:] = [
+                        obj,
+                        "Full validation failed while saving the best checkpoint:\nremote",
+                    ]
+                else:
+                    out[:] = [obj, None]
+
+            with (
+                patch.object(
+                    validator,
+                    "evaluate_all_systems",
+                    return_value={validator.metric_key: 0.5},
+                ),
+                patch("deepmd.pt_expt.train.validation.dist.barrier"),
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.broadcast_object_list",
+                ),
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.get_world_size",
+                    return_value=2,
+                ),
+                patch(
+                    "deepmd.pt_expt.train.validation.dist.all_gather_object",
+                    side_effect=gather_remote_error,
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "remote"):
+                    validator.run(
+                        step_id=3,
+                        display_step=3,
+                        lr=1e-3,
+                        save_checkpoint=save_checkpoint,
+                    )
+
+            self.assertEqual(len(writes), 1)
+            self.assertEqual(validator.topk_records, [])
+            self.assertIsNone(validator._pending_topk_records)
+            self.assertIsNone(validator._rollback_topk_records)
+            self.assertEqual(
+                validator.state_store.get(validator.topk_records_info_key, []),
+                [],
+            )
+            self.assertEqual(list(Path(tmpdir).glob("best.ckpt-*.pt")), [])
+
     def test_distributed_non_chief_enters_save_callback(self) -> None:
         """Non-chief ranks must enter save so the non-finite gate can reset."""
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -346,11 +346,15 @@ class FullValidator:
             dist.broadcast_object_list(save_path, src=0)
 
         if save_path[0] is not None:
+            # Stage → save on every rank → sync outcomes → only then commit.
+            # Committing before ``_raise_if_distributed_error`` would let rank 0
+            # publish top-K (and keep the file) when a non-chief rank aborted
+            # the publication boundary.
             try:
                 # Stage proposed top-K into the live state_store before
                 # serialization so the written checkpoint carries the records
-                # that name this file. Keep a rollback snapshot until the write
-                # either commits or aborts (non-finite gate, I/O, etc.).
+                # that name this file. Keep a rollback snapshot until every
+                # rank reports a successful boundary.
                 if self.rank == 0:
                     self._stage_pending_best_state()
                 # Every rank enters the publication boundary so NonFiniteGradGuard
@@ -358,9 +362,6 @@ class FullValidator:
                 # Writers and sharded collectives stay inside the save callback /
                 # Trainer._write_checkpoint; non-chief ranks return before disk I/O.
                 save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
-                if self.rank == 0:
-                    self._commit_pending_best_state()
-                    self._reconcile_best_checkpoints()
             except Exception as exc:
                 if self.rank == 0:
                     self._rollback_pending_best_state()
@@ -373,7 +374,18 @@ class FullValidator:
                 error_message = None
                 caught_exception = None
 
-            self._raise_if_distributed_error(error_message, caught_exception)
+            try:
+                self._raise_if_distributed_error(error_message, caught_exception)
+            except Exception:
+                # Local save succeeded but another rank failed: undo staged
+                # top-K and drop the orphaned file before propagating.
+                if self.rank == 0 and caught_exception is None:
+                    self._rollback_pending_best_state()
+                    self._reconcile_best_checkpoints()
+                raise
+            if self.rank == 0:
+                self._commit_pending_best_state()
+                self._reconcile_best_checkpoints()
 
         if self.rank == 0:
             try:
