@@ -38,16 +38,18 @@ from .timing import (
     TrainingTimer,
 )
 from .trainer import (
-    DEFAULT_TASK_KEY,
     AbstractTrainer,
     LearningCurveWriter,
-    RankContext,
     TrainerConfig,
+    change_model_out_bias,
+    change_model_out_bias_by_task,
+)
+from .types import (
+    DEFAULT_TASK_KEY,
+    RankContext,
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
-    change_model_out_bias,
-    change_model_out_bias_by_task,
 )
 
 __all__ = [

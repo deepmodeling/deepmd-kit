@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from .timing import (
         DisplayInterval,
     )
-    from .trainer import (
+    from .types import (
         RankContext,
         TrainingTaskCollection,
         TrainStepResult,
