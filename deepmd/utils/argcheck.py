@@ -6028,12 +6028,18 @@ def training_args(
     )
     doc_profiling = (
         "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
-        "JSON trace; PaddlePaddle starts its Nsight Systems profiling flow."
+        "JSON trace; PaddlePaddle starts its Nsight Systems profiling flow. "
+        "PyTorch Exportable (pt_expt) writes Chrome traces and, under distributed "
+        "training, appends a `.rankN` suffix to the profiling file stem."
     )
-    doc_profiling_file = "Output file for the TensorFlow or PyTorch Chrome JSON trace."
+    doc_profiling_file = (
+        "Output file for the TensorFlow or PyTorch Chrome JSON trace. "
+        "For pt_expt distributed runs the stem receives a `.rankN` suffix."
+    )
     doc_enable_profiler = (
         "Enable the backend profiler. TensorFlow and PyTorch write profiler data "
-        "under `tensorboard_log_dir`; PaddlePaddle starts Nsight Systems profiling."
+        "under `tensorboard_log_dir`; PaddlePaddle starts Nsight Systems profiling. "
+        "pt_expt uses TorchProfilerObserver with the same TensorBoard log directory."
     )
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
@@ -6232,42 +6238,45 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("tf", "pt", "pd") + doc_profiling,
+            doc=supported_backends("tf", "pt", "pd", "pt_expt") + doc_profiling,
         ),
         Argument(
             "profiling_file",
             str,
             optional=True,
             default="timeline.json",
-            doc=supported_backends("tf", "pt") + doc_profiling_file,
+            doc=supported_backends("tf", "pt", "pt_expt") + doc_profiling_file,
         ),
         Argument(
             "enable_profiler",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("tf", "pt", "pd") + doc_enable_profiler,
+            doc=supported_backends("tf", "pt", "pd", "pt_expt") + doc_enable_profiler,
         ),
         Argument(
             "tensorboard",
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_tensorboard,
+            doc=supported_backends("tf", "pt", "pd", "tf2", "pt_expt")
+            + doc_tensorboard,
         ),
         Argument(
             "tensorboard_log_dir",
             str,
             optional=True,
             default="log",
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_tensorboard_log_dir,
+            doc=supported_backends("tf", "pt", "pd", "tf2", "pt_expt")
+            + doc_tensorboard_log_dir,
         ),
         Argument(
             "tensorboard_freq",
             int,
             optional=True,
             default=1,
-            doc=supported_backends("tf", "pt", "pd", "tf2") + doc_tensorboard_freq,
+            doc=supported_backends("tf", "pt", "pd", "tf2", "pt_expt")
+            + doc_tensorboard_freq,
         ),
         Argument(
             "gradient_max_norm",

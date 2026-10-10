@@ -120,6 +120,12 @@ from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
 )
+from deepmd.pt_expt.train.profiler import (
+    create_profiler_observer,
+)
+from deepmd.pt_expt.train.tensorboard import (
+    create_tensorboard_observer,
+)
 from deepmd.pt_expt.train.utils import (
     MatmulPrecisionPolicy,
     count_parameters,
@@ -2384,6 +2390,7 @@ class Trainer(AbstractTrainer):
             self._compile_model(compile_opts)
 
         self.training_tasks = self._make_training_tasks()
+        rank_context = RankContext(rank=self.rank, world_size=self.world_size)
         super().__init__(
             TrainerConfig.from_training_params(
                 training_params,
@@ -2391,7 +2398,7 @@ class Trainer(AbstractTrainer):
                 start_step=self.start_step,
                 restart_training=self.restart_training,
             ),
-            rank_context=RankContext(rank=self.rank, world_size=self.world_size),
+            rank_context=rank_context,
             metric_accumulator=(
                 TrainingMetricAccumulator(
                     {
@@ -2402,6 +2409,22 @@ class Trainer(AbstractTrainer):
                 if training_params.get("disp_avg", False)
                 else None
             ),
+            observers=[
+                observer
+                for observer in (
+                    create_tensorboard_observer(
+                        training_params,
+                        rank_context=rank_context,
+                        multi_task=self.multi_task,
+                    ),
+                    create_profiler_observer(
+                        training_params,
+                        rank_context=rank_context,
+                    ),
+                )
+                if observer is not None
+            ]
+            or None,
         )
         self.full_validator, self.ema_full_validator = self._create_full_validators(
             validating_params=validating_params,
