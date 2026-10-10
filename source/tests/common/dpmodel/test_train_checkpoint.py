@@ -273,6 +273,31 @@ def test_prune_never_deletes_the_latest_alias_target(tmp_path: Path) -> None:
     _assert_prefix_alias(tmp_path / "model.ckpt.pt", older, "model.ckpt-1.pt")
 
 
+def test_prune_before_publish_counts_previous_latest_in_budget(
+    tmp_path: Path,
+) -> None:
+    """PT writes prune before publish; the prior alias target still counts.
+
+    Skipping every protected path without budgeting it would leave
+    ``max_keep + 1`` files when the fresh write and the previous latest are
+    distinct. Publish does not prune again, so the completed save must already
+    honor the configured window.
+    """
+    store = CheckpointStore(tmp_path / "model.ckpt", max_keep=2)
+    for step in (2, 3, 4):
+        _write(store.path_for(step))
+    store.publish(store.path_for(3))
+
+    store.prune(store.path_for(4))
+
+    assert not store.path_for(2).exists()
+    assert store.path_for(3).exists()
+    assert store.path_for(4).exists()
+    _assert_prefix_alias(
+        tmp_path / "model.ckpt.pt", store.path_for(3), "model.ckpt-3.pt"
+    )
+
+
 def test_resolve_latest_prefers_pointer_then_alias(tmp_path: Path) -> None:
     store = CheckpointStore(
         tmp_path / "model.ckpt",

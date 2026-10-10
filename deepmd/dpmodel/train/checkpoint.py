@@ -226,7 +226,9 @@ class CheckpointStore:
         written checkpoint instead, so a rerun in a finished directory would
         keep no result at all. The window then retains the newest ``max_keep``
         checkpoints. The checkpoint just written and the target of the latest
-        alias are never removed, nor are unrelated files.
+        alias are never removed, nor are unrelated files. Protected in-store
+        checkpoints still occupy slots of that window, so prune-before-publish
+        (PT) and publish-then-prune (pt_expt) both honor ``max_keep``.
 
         Parameters
         ----------
@@ -240,6 +242,11 @@ class CheckpointStore:
         current_step = self.step_of(current) if self.holds(current) else None
         protected = self._protected_targets(current)
         retained: list[tuple[int, Path]] = []
+        # Protected numbered files are skipped from deletion but still count
+        # toward ``max_keep``. Counting only ``current`` would under-budget
+        # when prune runs before publish and the previous latest alias target
+        # is a distinct in-store checkpoint.
+        occupied = 0
         for path in self.directory.glob(f"*{self.suffix}"):
             step = self.step_of(path)
             if step is None or path.is_symlink():
@@ -249,15 +256,14 @@ class CheckpointStore:
             except OSError:
                 continue
             if resolved in protected:
+                if current_step is None or step <= current_step:
+                    occupied += 1
                 continue
             if current_step is not None and step > current_step:
                 path.unlink(missing_ok=True)
             else:
                 retained.append((step, path))
         retained.sort(key=lambda item: (item[0], item[1].name))
-        # The current checkpoint occupies one slot of the window when this
-        # store holds it.
-        occupied = 1 if current_step is not None else 0
         excess = max(0, len(retained) + occupied - self.max_keep)
         for _, path in retained[:excess]:
             try:
