@@ -123,7 +123,7 @@ def test_flat_state_round_trip_supports_distributed_reduce() -> None:
     left.add("b", {"mae": 2.0})
     right.add("a", {"rmse": 3.0})
     # b unsampled on the right rank
-    merged = [x + y for x, y in zip(left.flat_state(), right.flat_state())]
+    merged = [x + y for x, y in zip(left.flat_state(), right.flat_state(), strict=True)]
     left.load_flat_state(merged)
     assert left.average("a") == {"rmse": 2.0}
     assert left.average("b") == {"mae": 2.0}
