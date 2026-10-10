@@ -2165,11 +2165,11 @@ class TestSeZMTritonWignerBand(unittest.TestCase):
 
     @_GPU_KERNELS
     def test_value_path_packed_bitwise(self):
-        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
-            make_triton_value_path,
-        )
         from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
             WignerDCalculator,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
         )
 
         case = (3, 64, 2, 96, 4, "degree_channel", 1)
