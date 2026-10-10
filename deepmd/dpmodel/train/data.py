@@ -19,7 +19,7 @@ from deepmd.utils.stat_file import (
     StatFileSpec,
 )
 
-from .trainer import (
+from .types import (
     DEFAULT_TASK_KEY,
 )
 
