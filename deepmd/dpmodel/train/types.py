@@ -33,9 +33,9 @@ DEFAULT_TASK_KEY = "Default"
 __all__ = [
     "DEFAULT_TASK_KEY",
     "RankContext",
+    "TrainStepResult",
     "TrainingTask",
     "TrainingTaskCollection",
-    "TrainStepResult",
 ]
 
 
