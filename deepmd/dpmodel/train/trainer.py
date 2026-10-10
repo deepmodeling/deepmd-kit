@@ -58,6 +58,7 @@ from .timing import (
     TrainingTimer,
 )
 from .types import (
+    DEFAULT_TASK_KEY as DEFAULT_TASK_KEY,
     RankContext,
     TrainingTask,
     TrainingTaskCollection,
