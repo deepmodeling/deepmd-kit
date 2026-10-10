@@ -45,6 +45,85 @@ from .utils import (
 _TORCH_RELEASE = Version(torch.__version__).release[:2]
 
 
+def _wigner_d_assemble_impl(
+    blocks: list[torch.Tensor],
+    dim_full: int,
+    poly_lmin: int,
+    n_regular: int,
+) -> torch.Tensor:
+    """Assemble the dense block-diagonal matrix; the transpose stays a view.
+
+    In-place slice assignments are exactly what Inductor's functionalization
+    cannot keep in place: traced, they expand into a chain of full-size
+    ``zeros + index_put + add`` tensors plus a realized transpose (~4 GB of
+    HBM traffic at the SeZM N=4096 workload).  Behind a custom op the eager
+    scatter stays a scatter.  Only ``D_full`` is produced here; the caller
+    makes ``Dt_full`` a plain transpose view outside the op, and every
+    consumer addresses it through strides (the flash and rotation kernels
+    take explicit stride arguments; the eager consumers are strided torch
+    operators).
+    """
+    ref = blocks[0]
+    n_edge = ref.shape[0]
+    d_full = torch.zeros(n_edge, dim_full, dim_full, dtype=ref.dtype, device=ref.device)
+    d_full[:, 0, 0] = 1.0
+    off = 1
+    for block in blocks[:n_regular]:
+        size = block.shape[1]
+        d_full[:, off : off + size, off : off + size] = block
+        off += size
+    if n_regular < len(blocks):
+        po = poly_lmin * poly_lmin
+        d_full[:, po:, po:] = blocks[n_regular]
+    return d_full
+
+
+_wigner_d_assemble_op = torch.library.custom_op(
+    "sezm_nn::wigner_d_assemble", mutates_args=()
+)(_wigner_d_assemble_impl)
+
+
+@_wigner_d_assemble_op.register_fake
+def _(
+    blocks: list[torch.Tensor],
+    dim_full: int,
+    poly_lmin: int,
+    n_regular: int,
+) -> torch.Tensor:
+    ref = blocks[0]
+    return ref.new_zeros((ref.shape[0], dim_full, dim_full))
+
+
+def _wigner_d_assemble_setup(ctx: Any, inputs: Any, output: Any) -> None:
+    blocks, _, poly_lmin, n_regular = inputs
+    ctx.blocks = blocks
+    ctx.poly_lmin = poly_lmin
+    ctx.n_regular = n_regular
+
+
+def _wigner_d_assemble_backward(
+    ctx: Any, grad_d_full: torch.Tensor
+) -> tuple[list[torch.Tensor], None, None, None]:
+    # The transpose view's gradient reaches D_full through the ordinary
+    # autograd of aten.transpose, so only D-slices arrive here.  The [0, 0]
+    # constant receives no gradient.
+    grads = []
+    off = 1
+    for block in ctx.blocks[: ctx.n_regular]:
+        size = block.shape[1]
+        grads.append(grad_d_full[:, off : off + size, off : off + size])
+        off += size
+    if ctx.n_regular < len(ctx.blocks):
+        po = ctx.poly_lmin * ctx.poly_lmin
+        grads.append(grad_d_full[:, po:, po:])
+    return grads, None, None, None
+
+
+_wigner_d_assemble_op.register_autograd(
+    _wigner_d_assemble_backward, setup_context=_wigner_d_assemble_setup
+)
+
+
 class CaseCoefficients(nn.Module):
     """
     Polynomial tables for one magnitude-ordered branch of the quaternion Wigner path.
@@ -546,62 +625,63 @@ class WignerDCalculator(nn.Module):
             eps=self.eps,
         )
         n_edge = edge_quaternion.shape[0]
-        D_full = torch.zeros(
-            n_edge,
-            self.dim_full,
-            self.dim_full,
-            dtype=edge_quaternion.dtype,
-            device=edge_quaternion.device,
-        )
-        D_full[:, 0, 0] = 1.0
+
+        # Degree blocks are computed first; the dense assembly then either
+        # runs in place (eager) or behind the opaque wigner_d_assemble op
+        # (compiled).  Under tracing, the in-place slice assignments below
+        # would be functionalized into a chain of full-size zeros/index_put
+        # adds plus a realized transpose; the custom op keeps the eager
+        # scatter and hands the graph two plain contiguous tensors.
+        blocks: list[torch.Tensor] = []
+        poly_block: torch.Tensor | None = None
 
         if self.lmax >= 1:
             with nvtx_range("WignerD/l1"):
-                D_full[:, 1:4, 1:4] = self._compute_l1_block(edge_quaternion)
+                blocks.append(self._compute_l1_block(edge_quaternion))
 
         if self.lmax >= 2:
             with nvtx_range("WignerD/l2"):
-                D_full[:, 4:9, 4:9] = self._compute_l2_block(edge_quaternion)
+                blocks.append(self._compute_l2_block(edge_quaternion))
 
         if self.lmax >= 3:
             if self.lmax >= 4:
                 with nvtx_range("WignerD/l3l4"):
                     D_l3, D_l4 = self._compute_l3l4_blocks(edge_quaternion)
-                    D_full[:, 9:16, 9:16] = D_l3
-                    D_full[:, 16:25, 16:25] = D_l4
+                    blocks.append(D_l3)
+                    blocks.append(D_l4)
             else:
                 with nvtx_range("WignerD/l3"):
-                    D_full[:, 9:16, 9:16] = self._compute_l3_block(edge_quaternion)
+                    blocks.append(self._compute_l3_block(edge_quaternion))
 
         if self.lmax >= 5:
             if self.lmax >= 6:
                 with nvtx_range("WignerD/l5l6"):
                     D_l5, D_l6 = self._compute_l5l6_blocks(edge_quaternion)
-                    D_full[:, 25:36, 25:36] = D_l5
-                    D_full[:, 36:49, 36:49] = D_l6
+                    blocks.append(D_l5)
+                    blocks.append(D_l6)
             else:
                 with nvtx_range("WignerD/l5"):
-                    D_full[:, 25:36, 25:36] = self._compute_l5_block(edge_quaternion)
+                    blocks.append(self._compute_l5_block(edge_quaternion))
 
         if self.lmax >= 7:
             if self.lmax >= 8:
                 with nvtx_range("WignerD/l7l8"):
                     D_l7, D_l8 = self._compute_l7l8_blocks(edge_quaternion)
-                    D_full[:, 49:64, 49:64] = D_l7
-                    D_full[:, 64:81, 64:81] = D_l8
+                    blocks.append(D_l7)
+                    blocks.append(D_l8)
             else:
                 with nvtx_range("WignerD/l7"):
-                    D_full[:, 49:64, 49:64] = self._compute_l7_block(edge_quaternion)
+                    blocks.append(self._compute_l7_block(edge_quaternion))
 
         if self.lmax >= 9:
             if self.lmax >= 10:
                 with nvtx_range("WignerD/l9l10"):
                     D_l9, D_l10 = self._compute_l9l10_blocks(edge_quaternion)
-                    D_full[:, 81:100, 81:100] = D_l9
-                    D_full[:, 100:121, 100:121] = D_l10
+                    blocks.append(D_l9)
+                    blocks.append(D_l10)
             else:
                 with nvtx_range("WignerD/l9"):
-                    D_full[:, 81:100, 81:100] = self._compute_l9_block(edge_quaternion)
+                    blocks.append(self._compute_l9_block(edge_quaternion))
 
         if self.lmax >= self.poly_lmin:
             with nvtx_range("WignerD/polynomial"):
@@ -616,7 +696,7 @@ class WignerDCalculator(nn.Module):
                     self.poly_coeffs,
                     dtype=self.dtype,
                 )
-                D_poly = self._wigner_d_pair_to_real(
+                poly_block = self._wigner_d_pair_to_real(
                     D_re,
                     D_im,
                     (
@@ -628,7 +708,42 @@ class WignerDCalculator(nn.Module):
                     lmax=self.lmax,
                     lmin=self.poly_lmin,
                 )
-                D_full[:, self.poly_offset :, self.poly_offset :] = D_poly
+
+        # ``is_compiling`` alone is not enough here: this module is traced
+        # through make_fx fake tensors, where the flag stays False.  A fake
+        # tensor carries its mode, so probe for that instead.
+        tracing = (
+            torch.compiler.is_compiling()
+            or getattr(blocks[0], "fake_mode", None) is not None
+            if blocks
+            else False
+        )
+        if blocks and tracing:
+            d_full = _wigner_d_assemble_op(
+                blocks + ([poly_block] if poly_block is not None else []),
+                self.dim_full,
+                self.poly_lmin,
+                len(blocks),
+            )
+            # Stride-addressed consumers read the inverse rotation straight
+            # from the shared storage; no transpose copy ever exists.
+            return d_full, d_full.transpose(-1, -2)
+
+        D_full = torch.zeros(
+            n_edge,
+            self.dim_full,
+            self.dim_full,
+            dtype=edge_quaternion.dtype,
+            device=edge_quaternion.device,
+        )
+        D_full[:, 0, 0] = 1.0
+        off = 1
+        for block in blocks:
+            size = block.shape[1]
+            D_full[:, off : off + size, off : off + size] = block
+            off += size
+        if poly_block is not None:
+            D_full[:, self.poly_offset :, self.poly_offset :] = poly_block
 
         # Consumers address the inverse rotation through explicit strides or
         # PyTorch strided operators, so the transpose can share D_full's storage.
