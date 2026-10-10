@@ -12,6 +12,7 @@ from __future__ import (
 )
 
 import logging
+import os
 from math import (
     ceil,
 )
@@ -37,7 +38,24 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ["CheckpointStore", "build_checkpoint_stores", "resolve_keep_ckpt_count"]
+__all__ = [
+    "CheckpointStore",
+    "build_checkpoint_stores",
+    "resolve_checkpoint_path",
+    "resolve_keep_ckpt_count",
+]
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Replace ``path`` with ``text`` via a temporary sibling and ``os.replace``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(text)
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 class CheckpointStore:
@@ -48,6 +66,12 @@ class CheckpointStore:
     ``save_dir`` when given and the directory of ``prefix`` otherwise.
     Publishing a checkpoint points the prefix-named files at it, so a consumer
     that only knows the prefix always reaches the newest checkpoint.
+
+    Nested and absolute ``prefix`` values keep their directory for the
+    latest-checkpoint alias and the optional pointer file's default location
+    semantics; only the file name of ``prefix`` seeds numbered files under
+    ``save_dir``. When ``save_dir`` is unset, numbered files share the prefix
+    directory, which is the historical prefix-relative layout.
 
     Parameters
     ----------
@@ -83,6 +107,11 @@ class CheckpointStore:
         self.max_keep = int(max_keep)
         self.suffix = suffix
         self.pointer_file = Path(pointer_file) if pointer_file is not None else None
+
+    @property
+    def alias_path(self) -> Path:
+        """Path of the prefix-named latest-checkpoint alias for this store."""
+        return Path(f"{self.prefix}{self.suffix}")
 
     def prepare(self) -> None:
         """Create the directories receiving the checkpoints and the symlinks."""
@@ -159,7 +188,34 @@ class CheckpointStore:
         self.prefix.parent.mkdir(parents=True, exist_ok=True)
         symlink_prefix_files(str(path.with_suffix("")), str(self.prefix))
         if self.pointer_file is not None:
-            self.pointer_file.write_text(str(path))
+            _atomic_write_text(self.pointer_file, str(path))
+
+    def resolve_latest(self) -> Path | None:
+        """Return the checkpoint currently published by this store, if any.
+
+        Prefers the pointer file when this store owns one, then the
+        prefix-named alias. Relative pointer entries are resolved against the
+        process working directory, matching how they were recorded.
+        """
+        if self.pointer_file is not None and self.pointer_file.is_file():
+            recorded = Path(self.pointer_file.read_text().strip())
+            if recorded.is_file():
+                return recorded
+        alias = self.alias_path
+        if alias.exists():
+            return alias.resolve() if alias.is_symlink() else alias
+        return None
+
+    def _protected_targets(self, current: Path) -> set[Path]:
+        """Paths retention must not delete: the fresh write and the latest alias."""
+        protected: set[Path] = set()
+        for candidate in (current, self.alias_path):
+            try:
+                if candidate.exists():
+                    protected.add(candidate.resolve())
+            except OSError:
+                continue
+        return protected
 
     def prune(self, current: Path) -> None:
         """Drop the checkpoints made obsolete by a fresh one.
@@ -169,7 +225,10 @@ class CheckpointStore:
         them in place would let the retention window discard the freshly
         written checkpoint instead, so a rerun in a finished directory would
         keep no result at all. The window then retains the newest ``max_keep``
-        checkpoints. The checkpoint just written is never removed.
+        checkpoints. The checkpoint just written and the target of the latest
+        alias are never removed, nor are unrelated files. Protected in-store
+        checkpoints still occupy slots of that window, so prune-before-publish
+        (PT) and publish-then-prune (pt_expt) both honor ``max_keep``.
 
         Parameters
         ----------
@@ -181,24 +240,112 @@ class CheckpointStore:
         if self.max_keep < 1:
             return
         current_step = self.step_of(current) if self.holds(current) else None
+        protected = self._protected_targets(current)
         retained: list[tuple[int, Path]] = []
+        # Protected numbered files are skipped from deletion but still count
+        # toward ``max_keep``. Counting only ``current`` would under-budget
+        # when prune runs before publish and the previous latest alias target
+        # is a distinct in-store checkpoint.
+        occupied = 0
         for path in self.directory.glob(f"*{self.suffix}"):
             step = self.step_of(path)
             if step is None or path.is_symlink():
                 continue
-            if current_step is not None and path.name == current.name:
+            try:
+                resolved = path.resolve()
+            except OSError:
+                continue
+            if resolved in protected:
+                if current_step is None or step <= current_step:
+                    occupied += 1
                 continue
             if current_step is not None and step > current_step:
                 path.unlink(missing_ok=True)
             else:
                 retained.append((step, path))
         retained.sort(key=lambda item: (item[0], item[1].name))
-        # The current checkpoint occupies one slot of the window when this
-        # store holds it.
-        occupied = 1 if current_step is not None else 0
         excess = max(0, len(retained) + occupied - self.max_keep)
         for _, path in retained[:excess]:
+            try:
+                if path.resolve() in protected:
+                    continue
+            except OSError:
+                # Unresolvable path cannot be in ``protected``; fall through
+                # to unlink with missing_ok.
+                pass
             path.unlink(missing_ok=True)
+
+
+def resolve_checkpoint_path(
+    spec: str | Path,
+    *,
+    store: CheckpointStore | None = None,
+    suffix: str = ".pt",
+) -> Path:
+    """Resolve an explicit checkpoint, a prefix, or a latest-checkpoint handle.
+
+    Parameters
+    ----------
+    spec : str or Path
+        An existing checkpoint file, a checkpoint prefix (with or without the
+        suffix), a directory holding a ``checkpoint`` pointer / prefix alias,
+        or the literal ``latest`` when ``store`` is provided.
+    store : CheckpointStore, optional
+        Store consulted only when ``spec`` is the literal ``latest``. Directory
+        specs always read that directory's own pointer / prefix alias, matching
+        freeze-without-store behavior, so a foreign store cannot hijack them.
+    suffix : str, optional
+        Suffix appended when ``spec`` looks like a prefix rather than a file.
+
+    Returns
+    -------
+    Path
+        Path of an existing checkpoint file.
+
+    Raises
+    ------
+    FileNotFoundError
+        When no checkpoint can be resolved from ``spec``.
+    """
+    text = str(spec).strip()
+    if text == "latest":
+        if store is None:
+            raise FileNotFoundError(
+                "Cannot resolve checkpoint 'latest' without a checkpoint store."
+            )
+        resolved = store.resolve_latest()
+        if resolved is None:
+            raise FileNotFoundError(
+                "No latest checkpoint is published for the configured store."
+            )
+        return resolved
+
+    path = Path(text)
+    if path.is_file():
+        return path
+
+    if path.is_dir():
+        # Directories always resolve against their own contents. ``store`` is
+        # reserved for the literal ``latest`` handle above; consulting it here
+        # would ignore ``dir`` and return another run's checkpoint.
+        pointer = path / "checkpoint"
+        if pointer.is_file():
+            recorded = Path(pointer.read_text().strip())
+            candidate = recorded if recorded.is_absolute() else path / recorded
+            if candidate.is_file():
+                return candidate
+            if recorded.is_file():
+                return recorded
+        for name in ("model.ckpt" + suffix, "model.ckpt.pt"):
+            alias = path / name
+            if alias.exists():
+                return alias.resolve() if alias.is_symlink() else alias
+        raise FileNotFoundError(f"Cannot find a checkpoint in directory {path}.")
+
+    suffixed = path if path.name.endswith(suffix) else Path(f"{path}{suffix}")
+    if suffixed.exists():
+        return suffixed.resolve() if suffixed.is_symlink() else suffixed
+    raise FileNotFoundError(f"Cannot find checkpoint {spec!r}.")
 
 
 def resolve_keep_ckpt_count(

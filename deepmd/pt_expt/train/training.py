@@ -56,7 +56,6 @@ from deepmd.dpmodel.train import (
     TrainingTask,
     TrainingTaskCollection,
     TrainStepResult,
-    build_checkpoint_stores,
     change_model_out_bias,
     change_model_out_bias_by_task,
     resolve_step_schedule,
@@ -110,6 +109,9 @@ from deepmd.pt_expt.model import (
 )
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
+)
+from deepmd.pt_expt.train.checkpoint import (
+    TorchCheckpointManager,
 )
 from deepmd.pt_expt.train.ema import (
     EMA_CHECKPOINT_KEY,
@@ -2029,8 +2031,9 @@ class Trainer(AbstractTrainer):
 
         # Checkpoint layout ----------------------------------------------------
         # num_steps is final here, so a retention ratio can be converted into an
-        # absolute keep count once.
-        self.ckpt_store, self.ema_ckpt_store = build_checkpoint_stores(
+        # absolute keep count once. The manager owns path resolution, atomic
+        # publication, latest aliases, and retention for each family.
+        self.checkpoint_manager = TorchCheckpointManager.from_training_params(
             training_params,
             num_steps=self.num_steps,
             ema_prefix=self.ema_save_ckpt,
@@ -2959,18 +2962,15 @@ class Trainer(AbstractTrainer):
         # Abort before writing if any gradient norm since the previous
         # checkpoint was non-finite, so a diverged interval is not persisted.
         self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
-        ckpt_path = self.ckpt_store.path_for(step)
+        ckpt_path = self.checkpoint_manager.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
+        self.checkpoint_manager.commit(ckpt_path)
         if self.rank == 0:
-            self.ckpt_store.publish(ckpt_path)
-            self.ckpt_store.prune(ckpt_path)
             log.info(f"Saved model to {ckpt_path}")
         if self.model_ema is not None:
-            ema_path = self.ema_ckpt_store.path_for(step)
+            ema_path = self.checkpoint_manager.path_for(step, ema=True)
             self._save_checkpoint_to_path(ema_path, step=step, use_ema_weights=True)
-            if self.rank == 0:
-                self.ema_ckpt_store.publish(ema_path)
-                self.ema_ckpt_store.prune(ema_path)
+            self.checkpoint_manager.commit(ema_path, ema=True)
 
     def _save_full_validation_checkpoint(
         self,
@@ -3066,8 +3066,9 @@ class Trainer(AbstractTrainer):
             state["optimizer"] = optim_state
         if include_ema_state and self.model_ema is not None:
             state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
-        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(state, ckpt_path)
+        # Payload assembly may need every rank under sharding; filesystem
+        # publication is chief-only and atomic inside the manager.
+        self.checkpoint_manager.write(ckpt_path, state)
 
     def _collect_checkpoint_states(
         self,
