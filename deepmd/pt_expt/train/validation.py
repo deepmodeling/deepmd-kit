@@ -289,6 +289,8 @@ class FullValidator:
             )
 
         self.topk_records = self._load_topk_records()
+        self._pending_topk_records: list[BestCheckpointRecord] | None = None
+        self._rollback_topk_records: list[BestCheckpointRecord] | None = None
         self._sync_state_store()
         if self.rank == 0:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -344,14 +346,35 @@ class FullValidator:
             dist.broadcast_object_list(save_path, src=0)
 
         if save_path[0] is not None:
+            # Stage → save on every rank → sync outcomes → only then commit.
+            # Committing before ``_raise_if_distributed_error`` would let rank 0
+            # publish top-K (and keep the file) when a non-chief rank aborted
+            # the publication boundary.
             try:
-                # Assembling a checkpoint from shards is collective, so every
-                # rank enters it once any training state is sharded.
-                if (self.is_distributed and self.sharding.enabled) or self.rank == 0:
-                    save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
+                # Stage proposed top-K into the live state_store before
+                # serialization so the written checkpoint carries the records
+                # that name this file. Keep a rollback snapshot until every
+                # rank reports a successful boundary.
                 if self.rank == 0:
-                    self._reconcile_best_checkpoints()
+                    self._stage_pending_best_state()
+                # Every rank enters the publication boundary so NonFiniteGradGuard
+                # validates and resets consistently (mirroring PT regular saves).
+                # Writers and sharded collectives stay inside the save callback /
+                # Trainer._write_checkpoint; non-chief ranks return before disk I/O.
+                save_checkpoint(Path(save_path[0]), lr=lr, step=step_id)
             except Exception as exc:
+                if self.rank == 0:
+                    # Match remote-failure cleanup: restore top-K, then drop any
+                    # bytes already written for the aborted candidate (write-
+                    # then-fail leaves an orphan that rollback alone keeps).
+                    try:
+                        self._rollback_pending_best_state()
+                        self._reconcile_best_checkpoints()
+                    except Exception:
+                        # Swallow cleanup errors so they cannot bypass the
+                        # post-save collective below (primary save failure
+                        # must still be broadcast to every rank).
+                        pass
                 caught_exception = exc
                 error_message = (
                     "Full validation failed while saving the best checkpoint:\n"
@@ -361,7 +384,44 @@ class FullValidator:
                 error_message = None
                 caught_exception = None
 
-            self._raise_if_distributed_error(error_message, caught_exception)
+            try:
+                self._raise_if_distributed_error(error_message, caught_exception)
+            except Exception:
+                # Local save succeeded but another rank failed: undo staged
+                # top-K and drop the orphaned file before propagating.
+                if self.rank == 0 and caught_exception is None:
+                    try:
+                        self._rollback_pending_best_state()
+                        self._reconcile_best_checkpoints()
+                    except Exception:
+                        # Already propagating a remote failure; cleanup must
+                        # not replace that exception or skip non-chief waits.
+                        pass
+                raise
+            # Commit/reconcile stay inside a coordinated error phase so a
+            # chief-only OSError (e.g. prune/rename) cannot leave other ranks
+            # blocked in a later collective.
+            commit_error: str | None = None
+            commit_exception: Exception | None = None
+            if self.rank == 0:
+                try:
+                    self._commit_pending_best_state()
+                    self._reconcile_best_checkpoints()
+                    self._rollback_topk_records = None
+                except Exception as exc:
+                    try:
+                        self._rollback_pending_best_state()
+                    except Exception:
+                        # Already recording a commit failure; nested rollback
+                        # errors must not replace that exception.
+                        pass
+                    commit_exception = exc
+                    commit_error = (
+                        "Full validation failed while committing the best "
+                        "checkpoint:\n"
+                        f"{traceback.format_exc()}"
+                    )
+            self._raise_if_distributed_error(commit_error, commit_exception)
 
         if self.rank == 0:
             try:
@@ -408,12 +468,22 @@ class FullValidator:
                 f"validation dataset: {self.metric_name.upper()}."
             )
 
-        # === Step 3. Update Best Tracking ===
+        # === Step 3. Propose / commit best tracking ===
+        # When a checkpoint file will be written, top-K metadata stays pending
+        # until run() stages it into state_store for serialization and then
+        # commits or rolls back after the write. Tracking-only updates commit
+        # immediately because they never serialize weights.
         selected_metric_value = float(metrics[self.metric_key])
-        saved_best_path = self._update_best_state(
+        proposed_records, saved_best_path = self._propose_best_checkpoint(
             display_step=display_step,
             selected_metric_value=selected_metric_value,
         )
+        self._pending_topk_records = None
+        if saved_best_path is not None:
+            self._pending_topk_records = proposed_records
+        elif proposed_records is not None:
+            self.topk_records = proposed_records
+            self._sync_state_store()
         return FullValidationResult(
             display_step=display_step,
             metrics=metrics,
@@ -696,13 +766,21 @@ class FullValidator:
             prediction["virial"] = batch_prediction["virial"]
         return prediction
 
-    def _update_best_state(
+    def _propose_best_checkpoint(
         self,
         *,
         display_step: int,
         selected_metric_value: float,
-    ) -> str | None:
-        """Update the top-K records and return the checkpoint path to save."""
+    ) -> tuple[list[BestCheckpointRecord] | None, str | None]:
+        """Compute the next top-K set and optional save path without committing.
+
+        Returns
+        -------
+        tuple[list[BestCheckpointRecord] | None, str | None]
+            ``(updated_records, save_path)``. ``updated_records`` is ``None``
+            when the candidate misses the top-K window. ``save_path`` is set
+            only when ``save_best`` is enabled and the candidate is retained.
+        """
         candidate = BestCheckpointRecord(
             metric=selected_metric_value,
             step=display_step,
@@ -714,14 +792,68 @@ class FullValidator:
         updated_records.sort()
         updated_records = updated_records[: self.max_best_ckpt]
         if candidate not in updated_records:
-            return None
-
-        self.topk_records = updated_records
-        self._sync_state_store()
+            return None, None
         if not self.save_best:
-            return None
-        candidate_rank = self.topk_records.index(candidate) + 1
-        return str(self._best_checkpoint_path(display_step, candidate_rank))
+            return updated_records, None
+        candidate_rank = updated_records.index(candidate) + 1
+        return updated_records, str(
+            self._best_checkpoint_path(display_step, candidate_rank)
+        )
+
+    def _stage_pending_best_state(self) -> None:
+        """Expose proposed top-K in ``state_store`` before checkpoint serialization.
+
+        The trainer serializes the validator's ``state_store`` (via wrapper
+        ``train_infos`` / EMA validation state) inside the save callback. The
+        proposed records must therefore be live before that call, while a
+        rollback snapshot preserves the previous bookkeeping until the write
+        commits or fails.
+        """
+        if self._pending_topk_records is None:
+            return
+        self._rollback_topk_records = list(self.topk_records)
+        self.topk_records = self._pending_topk_records
+        self._sync_state_store()
+
+    def _commit_pending_best_state(self) -> None:
+        """Drop the proposal pointer after a successful checkpoint write.
+
+        The rollback snapshot stays until ranked renames in
+        :meth:`_reconcile_best_checkpoints` succeed, so a rename-phase failure
+        can still restore bookkeeping. It is cleared before stale deletion so a
+        mid-prune failure cannot restore records that name deleted files.
+        """
+        self._pending_topk_records = None
+
+    def _rollback_pending_best_state(self) -> None:
+        """Restore pre-proposal top-K after a failed publication boundary."""
+        if self._rollback_topk_records is not None:
+            self.topk_records = self._rollback_topk_records
+            self._sync_state_store()
+        self._pending_topk_records = None
+        self._rollback_topk_records = None
+
+    def _update_best_state(
+        self,
+        *,
+        display_step: int,
+        selected_metric_value: float,
+    ) -> str | None:
+        """Update the top-K records and return the checkpoint path to save.
+
+        This helper commits immediately and is used by unit tests and callers
+        that manage serialization themselves. The training ``run()`` path uses
+        :meth:`_propose_best_checkpoint` so metadata can be staged for the
+        write and rolled back if publication fails.
+        """
+        updated_records, save_path = self._propose_best_checkpoint(
+            display_step=display_step,
+            selected_metric_value=selected_metric_value,
+        )
+        if updated_records is not None:
+            self.topk_records = updated_records
+            self._sync_state_store()
+        return save_path
 
     def _sync_state_store(self) -> None:
         """Synchronize top-K validation state into the configured state store."""
@@ -789,7 +921,15 @@ class FullValidator:
         }
 
     def _reconcile_best_checkpoints(self) -> None:
-        """Rename retained best checkpoints to ranked names and delete stale ones."""
+        """Rename retained best checkpoints to ranked names and delete stale ones.
+
+        Ranked renames complete before any stale deletion. A failure during the
+        rename phase undoes ``.tmp`` moves so restart still sees the files, and
+        the caller may restore bookkeeping from the rollback snapshot. After
+        renames succeed the on-disk retained set matches ``topk_records``, so the
+        rollback snapshot is dropped before prune; a mid-delete failure must not
+        restore bookkeeping that names removed files.
+        """
         expected_names = self._expected_topk_checkpoint_names()
         current_files = self._list_best_checkpoints()
         files_by_step: dict[int, list[Path]] = {}
@@ -803,33 +943,52 @@ class FullValidator:
             files_by_step.setdefault(step, []).append(checkpoint_path)
 
         temp_moves: list[tuple[Path, Path]] = []
-        for step, checkpoint_paths in files_by_step.items():
-            expected_name = expected_names.get(step)
-            if expected_name is None:
-                stale_files.extend(checkpoint_paths)
-                continue
+        try:
+            for step, checkpoint_paths in files_by_step.items():
+                expected_name = expected_names.get(step)
+                if expected_name is None:
+                    stale_files.extend(checkpoint_paths)
+                    continue
 
-            keep_path = next(
-                (
-                    checkpoint_path
-                    for checkpoint_path in checkpoint_paths
-                    if checkpoint_path.name == expected_name
-                ),
-                checkpoint_paths[0],
-            )
-            for checkpoint_path in checkpoint_paths:
-                if checkpoint_path != keep_path:
-                    stale_files.append(checkpoint_path)
-            if keep_path.name != expected_name:
-                temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
-                keep_path.rename(temp_path)
-                temp_moves.append((temp_path, keep_path.with_name(expected_name)))
+                keep_path = next(
+                    (
+                        checkpoint_path
+                        for checkpoint_path in checkpoint_paths
+                        if checkpoint_path.name == expected_name
+                    ),
+                    checkpoint_paths[0],
+                )
+                for checkpoint_path in checkpoint_paths:
+                    if checkpoint_path != keep_path:
+                        stale_files.append(checkpoint_path)
+                if keep_path.name != expected_name:
+                    temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
+                    keep_path.rename(temp_path)
+                    temp_moves.append((temp_path, keep_path.with_name(expected_name)))
 
-        for checkpoint_path in stale_files:
-            self._remove_checkpoint_path(checkpoint_path)
-        for temp_path, final_path in temp_moves:
-            self._remove_checkpoint_path(final_path)
-            temp_path.rename(final_path)
+            # Finalize ranked names before deleting anything still named by the
+            # previous top-K. Collision clears here only remove paths we are
+            # about to replace or that are already listed as stale.
+            for temp_path, final_path in temp_moves:
+                self._remove_checkpoint_path(final_path)
+                temp_path.rename(final_path)
+            temp_moves.clear()
+
+            # Disk retained set now matches topk_records. Drop the snapshot so
+            # a mid-prune OSError cannot roll bookkeeping back to naming deleted
+            # stales; _rollback_pending_best_state becomes a no-op.
+            self._rollback_topk_records = None
+
+            for checkpoint_path in stale_files:
+                self._remove_checkpoint_path(checkpoint_path)
+        except Exception:
+            # Undo partial temp renames so restart can still see the files.
+            for temp_path, _final_path in temp_moves:
+                if temp_path.exists():
+                    original = temp_path.with_name(temp_path.name.removesuffix(".tmp"))
+                    if not original.exists():
+                        temp_path.rename(original)
+            raise
 
     def _initialize_best_checkpoints(self, restart_training: bool) -> None:
         """Align on-disk best checkpoints with the current training mode."""
