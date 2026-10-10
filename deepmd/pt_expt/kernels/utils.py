@@ -380,3 +380,23 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_packed_d_infer() -> bool:
+    """Return whether inference stores the Wigner rotations in banded form.
+
+    The flag is controlled by the ``DP_PACKED_D_INFER`` environment variable
+    and is read when the edge cache is built. When truthy (and the model
+    configuration supports it), the edge cache stores only the ``3 * D - 2``
+    structural band entries of the block-diagonal Wigner matrices per edge
+    instead of the dense ``(E, D, D)`` surfaces; the fused Triton consumers
+    (rotate-mix, flash aggregation) address the band directly, and paths that
+    still need the dense layout unpack it on demand. The stored values are the
+    same floats, so consumer outputs are bit-identical to the dense mode.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_PACKED_D_INFER`` is set to a truthy value.
+    """
+    return os.environ.get("DP_PACKED_D_INFER", "0").strip().lower() in _INFER_TRUE
