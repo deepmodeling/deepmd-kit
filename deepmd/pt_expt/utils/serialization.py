@@ -1195,29 +1195,20 @@ def _collect_metadata(
             }
         )
     neighbor_contract = _neighbor_contract_for_model(model)
-    # Omit sel only for graph-routed lowers. An nlist lower always needs the
-    # model's dense capacity even if a child described itself as graph.
-    omit_legacy_sel = neighbor_contract.is_graph and lower_kind != "nlist"
+    # Always emit legacy sel/nnei. C++ DeepPotPTExpt / DeepSpinPTExpt still
+    # read them before lower_input_kind (map::at on missing keys). Keep a
+    # construction placeholder for graph-native models until those readers
+    # migrate to neighbor_contract; neighbor_contract remains authoritative.
+    if neighbor_contract.capacity is not None:
+        legacy_sel = list(neighbor_contract.capacity)
+    else:
+        legacy_sel = list(model.get_sel())
     meta = {
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
         "neighbor_contract": neighbor_contract.to_dict(),
-        # Legacy dense fields: omitted for graph-native models so metadata does
-        # not invent a dummy capacity. Dense models keep sel/nnei for old readers.
-        **(
-            {}
-            if omit_legacy_sel
-            else {
-                "sel": list(neighbor_contract.capacity)
-                if neighbor_contract.capacity is not None
-                else list(model.get_sel()),
-                "nnei": (
-                    sum(neighbor_contract.capacity)
-                    if neighbor_contract.capacity is not None
-                    else sum(model.get_sel())
-                ),
-            }
-        ),
+        "sel": legacy_sel,
+        "nnei": int(sum(legacy_sel)),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
         "dim_chg_spin": model.get_dim_chg_spin(),

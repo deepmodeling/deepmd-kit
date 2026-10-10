@@ -454,7 +454,8 @@ class DeepEval(DeepEvalBackend):
         self._neighbor_contract = NeighborContract.from_metadata(self.metadata)
         lower_kind = self.metadata.get("lower_input_kind", "nlist")
         if self._neighbor_contract.is_graph and lower_kind != "nlist":
-            # Graph-routed archives omit sel; keep an empty legacy list.
+            # Graph route ignores dense capacity; keep an empty legacy list even
+            # when metadata still carries a C++-compat placeholder sel/nnei.
             self._sel = []
         elif "sel" in self.metadata:
             self._sel = [int(s) for s in self.metadata["sel"]]

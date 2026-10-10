@@ -330,6 +330,50 @@ class TestHybridUpdateSelClassmethod(unittest.TestCase):
         self.assertNotIn("sel", prepared)
         self.assertEqual(prepared["repinit"]["nsel"], 20)
 
+    def test_dpa2_dense_mixed_auto_requires_capacity(self) -> None:
+        # Graph-ineligible (nonzero mean) with explicit repinit + auto repformer
+        # must still discover capacity for the unresolved block.
+        jdata = {
+            "type": "dpa2",
+            "repinit": {
+                "rcut": 6.0,
+                "rcut_smth": 0.5,
+                "nsel": 20,
+                "tebd_input_mode": "concat",
+                "set_davg_zero": False,
+            },
+            "repformer": {
+                "rcut": 4.0,
+                "rcut_smth": 0.5,
+                "nsel": "auto",
+                "set_davg_zero": True,
+            },
+        }
+        contract = DescrptDPA2.neighbor_contract_from_jdata(jdata)
+        self.assertTrue(contract.is_dense)
+        self.assertTrue(contract.requires_capacity)
+
+    def test_dpa2_prepare_omitted_nsel_preserves_ordering(self) -> None:
+        jdata = {
+            "type": "dpa2",
+            "repinit": {
+                "rcut": 6.0,
+                "rcut_smth": 0.5,
+                "tebd_input_mode": "concat",
+                "set_davg_zero": True,
+            },
+            "repformer": {
+                "rcut": 4.0,
+                "rcut_smth": 0.5,
+                "set_davg_zero": True,
+            },
+        }
+        contract = DescrptDPA2.neighbor_contract_from_jdata(jdata)
+        self.assertTrue(contract.is_graph)
+        self.assertFalse(contract.requires_capacity)
+        prepared = DescrptDPA2.prepare_jdata_for_neighbor_contract(jdata, contract)
+        self.assertGreater(prepared["repinit"]["nsel"], prepared["repformer"]["nsel"])
+
 
 class TestPrepareNeighborsMinNborDist(unittest.TestCase):
     def test_skip_capacity_returns_min_nbor_dist_without_top_level_rcut(self) -> None:

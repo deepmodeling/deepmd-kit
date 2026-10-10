@@ -460,8 +460,8 @@ class TestLinearEnerWeights(unittest.TestCase):
 class TestLinearUpdateSel(unittest.TestCase):
     """Test that update_sel writes updated sub-model configs back."""
 
-    @patch("deepmd.pt_expt.model.dp_linear_model.DPModelCommon.update_sel")
-    def test_updated_sel_written_back(self, mock_update_sel) -> None:
+    @patch("deepmd.pt_expt.model.dp_linear_model.DPModelCommon.prepare_neighbors")
+    def test_updated_sel_written_back(self, mock_prepare_neighbors) -> None:
         """Verify that update_sel returns configs with updated sel values."""
 
         def side_effect(train_data, type_map, sub_jdata):
@@ -469,7 +469,7 @@ class TestLinearUpdateSel(unittest.TestCase):
             updated["descriptor"]["sel"] = 99
             return updated, 0.5
 
-        mock_update_sel.side_effect = side_effect
+        mock_prepare_neighbors.side_effect = side_effect
 
         local_jdata = {
             "type_map": ["O", "H"],
