@@ -49,11 +49,11 @@ from .trainer import (
 )
 
 __all__ = [
+    "DATA_PROGRESS_CHECKPOINT_KEY",
     "DEFAULT_TASK_KEY",
     "AbstractTrainEntrypoint",
     "AbstractTrainer",
     "CheckpointStore",
-    "DATA_PROGRESS_CHECKPOINT_KEY",
     "DisplayInterval",
     "LearningCurveWriter",
     "RankContext",
