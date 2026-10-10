@@ -272,12 +272,21 @@ class GeometricInitialEmbedding(nn.Module):
         # Advanced indexing pairs one packed non-scalar row with the zonal m=0 column
         # from the same degree block in Dt_full.
         if zonal_coupling is None:
-            Dt_full = edge_cache.Dt_full  # (E, D, D)
-            zonal_coupling = Dt_full[
-                :,
-                self.non_scalar_row_index,
-                self.zonal_m0_col_index_for_row,
-            ]  # (E, D-1)
+            if getattr(edge_cache, "D_packed", None) is not None:
+                # The m = 0 band segment holds D[r0(l), d] per column d; the
+                # zonal entry Dt[row(l, m), col(l, 0)] equals D[r0(l), row(l, m)],
+                # so indexing the segment by the non-scalar rows reproduces
+                # the gather below without the dense surface.
+                zonal_coupling = getattr(edge_cache, "D_packed", None)[
+                    :, self.non_scalar_row_index
+                ]
+            else:
+                Dt_full = edge_cache.Dt_full  # (E, D, D)
+                zonal_coupling = Dt_full[
+                    :,
+                    self.non_scalar_row_index,
+                    self.zonal_m0_col_index_for_row,
+                ]  # (E, D-1)
 
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l.
