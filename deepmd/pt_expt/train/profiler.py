@@ -23,14 +23,11 @@ import os
 import shutil
 import socket
 import time
-from collections.abc import (
-    Callable,
-    Mapping,
-)
 from pathlib import (
     Path,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -38,10 +35,17 @@ from deepmd.dpmodel.train.observer import (
     StepObservation,
     TrainingObserver,
 )
-from deepmd.dpmodel.train.trainer import (
-    RankContext,
-    TrainingTaskCollection,
-)
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+        Mapping,
+    )
+
+    from deepmd.dpmodel.train.trainer import (
+        RankContext,
+        TrainingTaskCollection,
+    )
 
 log = logging.getLogger(__name__)
 
