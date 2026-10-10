@@ -53,6 +53,7 @@ __all__ = [
     "AbstractTrainEntrypoint",
     "AbstractTrainer",
     "CheckpointStore",
+    "DATA_PROGRESS_CHECKPOINT_KEY",
     "DisplayInterval",
     "LearningCurveWriter",
     "RankContext",
