@@ -47,6 +47,7 @@ except ImportError:
     fully_shard = None  # type: ignore[assignment]
 
 from deepmd.dpmodel.train import (
+    DATA_PROGRESS_CHECKPOINT_KEY,
     DEFAULT_TASK_KEY,
     AbstractTrainer,
     RankContext,
@@ -59,7 +60,9 @@ from deepmd.dpmodel.train import (
     build_checkpoint_stores,
     change_model_out_bias,
     change_model_out_bias_by_task,
+    collect_training_data_progress,
     resolve_step_schedule,
+    restore_training_data_progress,
 )
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -2102,6 +2105,7 @@ class Trainer(AbstractTrainer):
         # cannot be copied into sharded parameters.
         ema_state_dict = None
         optimizer_state_dict = None
+        data_progress_state = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             is_pte = resume_model.endswith((".pte", ".pt2"))
@@ -2117,7 +2121,7 @@ class Trainer(AbstractTrainer):
                 if "model" in state_dict:
                     # Optimizer and EMA state describe the weights of the run
                     # they were saved by; a finetune starts a new run and keeps
-                    # neither.
+                    # neither. Data-source progress is likewise resume-only.
                     continues_run = self.restart_training and finetune_model is None
                     optimizer_state_dict = (
                         state_dict["optimizer"] if continues_run else None
@@ -2125,9 +2129,15 @@ class Trainer(AbstractTrainer):
                     ema_state_dict = (
                         state_dict.get(EMA_CHECKPOINT_KEY) if continues_run else None
                     )
+                    data_progress_state = (
+                        state_dict.get(DATA_PROGRESS_CHECKPOINT_KEY)
+                        if continues_run
+                        else None
+                    )
                     state_dict = state_dict["model"]
                 else:
                     optimizer_state_dict = None
+                    data_progress_state = None
                 self.start_step = (
                     state_dict["_extra_state"]["train_infos"]["step"]
                     if self.restart_training
@@ -2369,6 +2379,14 @@ class Trainer(AbstractTrainer):
             ModelEMA(self.model, decay=self.ema_decay, state=ema_state_dict)
             if self.enable_ema
             else None
+        )
+
+        # Data-source progress is restored after requirements and statistics
+        # hooks have run, and before training can draw a batch. Missing progress
+        # keeps the legacy restart behaviour of rebuilding iterators at epoch 0.
+        restore_training_data_progress(
+            self.training_data_by_task,
+            data_progress_state,
         )
 
         self._configure_neighbor_graph_method(
@@ -3066,6 +3084,12 @@ class Trainer(AbstractTrainer):
             state["optimizer"] = optim_state
         if include_ema_state and self.model_ema is not None:
             state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
+        if include_optimizer:
+            # Resume-capable checkpoints record the logical data cursor so a
+            # restart yields the same next batch; deployment snapshots omit it.
+            state[DATA_PROGRESS_CHECKPOINT_KEY] = collect_training_data_progress(
+                self.training_data_by_task
+            )
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(state, ckpt_path)
 
