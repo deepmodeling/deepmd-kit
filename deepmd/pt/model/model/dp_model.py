@@ -1,7 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.pt.model.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -10,6 +16,36 @@ from deepmd.utils.data_system import (
 
 class DPModelCommon:
     """A base class to implement common methods for all the Models."""
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """Resolve the model neighbor contract from config before construction."""
+        return BaseDescriptor.neighbor_contract_from_jdata(local_jdata["descriptor"])
+
+    @classmethod
+    def prepare_neighbors(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: list[str] | None,
+        local_jdata: dict,
+    ) -> tuple[dict, float | None]:
+        """Prepare neighbor config under the model neighbor contract."""
+        local_jdata_cpy = dict(local_jdata)
+        descriptor_jdata = dict(local_jdata_cpy["descriptor"])
+        contract = BaseDescriptor.neighbor_contract_from_jdata(descriptor_jdata)
+        descriptor_jdata = BaseDescriptor.prepare_jdata_for_neighbor_contract(
+            descriptor_jdata, contract
+        )
+        local_jdata_cpy["descriptor"] = descriptor_jdata
+        if not contract.requires_capacity:
+            # Capacity discovery is skipped, but min neighbor distance is still
+            # needed for compression bounds. get_min_nbor_dist does not use
+            # rcut, so nested-cutoff descriptors (DPA2, hybrid, …) are covered.
+            return local_jdata_cpy, float(UpdateSel().get_min_nbor_dist(train_data))
+        local_jdata_cpy["descriptor"], min_nbor_dist = BaseDescriptor.update_sel(
+            train_data, type_map, descriptor_jdata
+        )
+        return local_jdata_cpy, min_nbor_dist
 
     @classmethod
     def update_sel(
@@ -36,11 +72,7 @@ class DPModelCommon:
         float
             The minimum distance between two atoms
         """
-        local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["descriptor"], min_nbor_dist = BaseDescriptor.update_sel(
-            train_data, type_map, local_jdata["descriptor"]
-        )
-        return local_jdata_cpy, min_nbor_dist
+        return cls.prepare_neighbors(train_data, type_map, local_jdata)
 
     # sadly, use -> BaseFitting here will not make torchscript happy
     def get_fitting_net(self):  # noqa: ANN201

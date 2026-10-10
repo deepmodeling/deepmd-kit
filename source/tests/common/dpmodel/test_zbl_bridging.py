@@ -896,11 +896,13 @@ class TestCanonicalCompositionGuards:
 
         seen = []
 
-        def _fake_update_sel(train_data, type_map, sub):
+        def _fake_prepare_neighbors(train_data, type_map, sub):
             seen.append(copy.deepcopy(sub))
             return sub, 0.9
 
-        monkeypatch.setattr(DPModelCommon, "update_sel", staticmethod(_fake_update_sel))
+        monkeypatch.setattr(
+            DPModelCommon, "prepare_neighbors", staticmethod(_fake_prepare_neighbors)
+        )
         cfg = model_args().normalize_value(_canonical_config(), trim_pattern="_*")
         updated, min_dist = BaseModel.update_sel(None, cfg["type_map"], cfg)
         assert min_dist == 0.9

@@ -151,32 +151,25 @@ class DPZBLModel(DPZBLModel_):
         return output_def
 
     @classmethod
+    def prepare_neighbors(
+        cls,
+        train_data: DeepmdDataSystem,
+        type_map: list[str] | None,
+        local_jdata: dict,
+    ) -> tuple[dict, float | None]:
+        """Prepare the learned DP child under its neighbor contract."""
+        local_jdata_cpy = local_jdata.copy()
+        local_jdata_cpy["dpmodel"], min_nbor_dist = DPModelCommon.prepare_neighbors(
+            train_data, type_map, local_jdata["dpmodel"]
+        )
+        return local_jdata_cpy, min_nbor_dist
+
+    @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
         type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[dict, float | None]:
-        """Update the selection and perform neighbor statistics.
-
-        Parameters
-        ----------
-        train_data : DeepmdDataSystem
-            data used to do neighbor statistics
-        type_map : list[str], optional
-            The name of each type of atoms
-        local_jdata : dict
-            The local data refer to the current class
-
-        Returns
-        -------
-        dict
-            The updated local data
-        float
-            The minimum distance between two atoms
-        """
-        local_jdata_cpy = local_jdata.copy()
-        local_jdata_cpy["dpmodel"], min_nbor_dist = DPModelCommon.update_sel(
-            train_data, type_map, local_jdata["dpmodel"]
-        )
-        return local_jdata_cpy, min_nbor_dist
+        """Update the selection and perform neighbor statistics."""
+        return cls.prepare_neighbors(train_data, type_map, local_jdata)

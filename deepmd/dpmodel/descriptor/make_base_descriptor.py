@@ -17,6 +17,11 @@ from deepmd.common import (
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+    dense_contract_from_sel_field,
+    ensure_construction_sel,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -247,6 +252,52 @@ def make_base_descriptor(
             :meth:`uses_graph_lower` can return ``True``.
             """
             return False
+
+        def get_neighbor_contract(self) -> NeighborContract:
+            """Return the neighbor representation contract of this descriptor.
+
+            Graph-eligible descriptors publish a capacity-free graph contract.
+            Dense descriptors publish their ``get_sel()`` capacity.
+            """
+            if self.uses_graph_lower():
+                return NeighborContract.graph()
+            return NeighborContract.dense(self.get_sel(), requires_capacity=False)
+
+        @classmethod
+        def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+            """Derive a neighbor contract from descriptor config before construction.
+
+            Dispatches through the descriptor plugin registry. The default is a
+            dense contract driven by the ``sel`` field (including auto-sel).
+            Graph-native descriptors override to return
+            :meth:`NeighborContract.graph`.
+            """
+            if cls is BD:
+                cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
+                return cls.neighbor_contract_from_jdata(local_jdata)
+            return dense_contract_from_sel_field(local_jdata.get("sel"))
+
+        @classmethod
+        def prepare_jdata_for_neighbor_contract(
+            cls,
+            local_jdata: dict,
+            contract: NeighborContract,
+        ) -> dict:
+            """Normalize descriptor config under a resolved neighbor contract.
+
+            Graph contracts replace missing/auto ``sel`` with a construction
+            placeholder so models that still size mean/std buffers can build
+            without neighbor-capacity discovery. Dense contracts leave the
+            config for ``update_sel``.
+            """
+            if cls is BD:
+                cls = cls.get_class_by_type(j_get_type(local_jdata, cls.__name__))
+                return cls.prepare_jdata_for_neighbor_contract(local_jdata, contract)
+            if contract.is_graph:
+                # Default assumes a sel-bearing descriptor. Graph-native
+                # descriptors without sel (DPA4C) override this method.
+                return ensure_construction_sel(local_jdata)
+            return dict(local_jdata)
 
         def dense_lower_supports_comm(self) -> bool:
             """Whether the DENSE (nlist) lower implements comm_dict exchange.

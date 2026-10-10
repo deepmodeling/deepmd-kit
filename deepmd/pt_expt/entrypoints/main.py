@@ -361,7 +361,7 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
         *,
         multi_task: bool,
     ) -> tuple[dict[str, Any], float | dict[str, float | None] | None]:
-        """Update pt_expt descriptor selections from neighbor statistics."""
+        """Prepare neighbor contracts and update dense selections when required."""
         log.info(
             "Calculate neighbor statistics... "
             "(add --skip-neighbor-stat to skip this step)"
@@ -376,7 +376,7 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             train_data = _get_neighbor_stat_data(
                 dict(task_config.training_data_params), type_map
             )
-            updated_model_params, task_min_nbor_dist = BaseModel.update_sel(
+            updated_model_params, task_min_nbor_dist = BaseModel.prepare_neighbors(
                 train_data, type_map, dict(task_config.model_params)
             )
             min_nbor_dist[task_config.key] = task_min_nbor_dist

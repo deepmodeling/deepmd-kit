@@ -17,6 +17,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.nlist import (
     nlist_distinguish_types,
 )
@@ -417,6 +420,48 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         out_descriptor = xp.concat(out_descriptor, axis=-1)
         out_gr = xp.concat(out_gr, axis=-2) if out_gr else None
         return out_descriptor, out_gr, out_g2, out_h2, out_sw
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """Merge child descriptor contracts; require a single representation."""
+        from deepmd.dpmodel.descriptor.base_descriptor import (
+            BaseDescriptor,
+        )
+
+        children = local_jdata.get("list") or []
+        if not children:
+            raise ValueError("hybrid descriptor config has an empty child list")
+        contract = BaseDescriptor.neighbor_contract_from_jdata(children[0])
+        for child in children[1:]:
+            contract = contract.merge(
+                BaseDescriptor.neighbor_contract_from_jdata(child)
+            )
+        return contract
+
+    @classmethod
+    def prepare_jdata_for_neighbor_contract(
+        cls,
+        local_jdata: dict,
+        contract: NeighborContract,
+    ) -> dict:
+        """Prepare each hybrid child under the merged contract."""
+        from deepmd.dpmodel.descriptor.base_descriptor import (
+            BaseDescriptor,
+        )
+
+        out = dict(local_jdata)
+        prepared = []
+        for child in local_jdata.get("list") or []:
+            child_contract = BaseDescriptor.neighbor_contract_from_jdata(child)
+            # Merged contract already enforced representation equality.
+            prepared.append(
+                BaseDescriptor.prepare_jdata_for_neighbor_contract(
+                    child, child_contract
+                )
+            )
+        out["list"] = prepared
+        del contract
+        return out
 
     @classmethod
     def update_sel(

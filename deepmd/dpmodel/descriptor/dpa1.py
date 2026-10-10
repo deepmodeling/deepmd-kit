@@ -40,6 +40,12 @@ from deepmd.dpmodel.utils import (
 from deepmd.dpmodel.utils.env_mat_stat import (
     EnvMatStatSe,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+    ensure_construction_sel,
+    graph_eligible_tebd_mode,
+    is_auto_sel,
+)
 from deepmd.dpmodel.utils.network import (
     LayerNorm,
     NativeLayer,
@@ -628,6 +634,49 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             Whether tracing :meth:`call_graph` runs ``center_edge_pairs``.
         """
         return self.se_atten.attn_layer > 0
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """Resolve DPA1 neighbor contract from config.
+
+        Graph-eligible tebd modes publish a graph representation. Capacity
+        discovery is skipped only when ``sel`` is omitted: ``auto`` / explicit
+        ``sel`` still run the legacy update path so dual-path mean/std and
+        ``nnei`` normalization stay unchanged until the companion sel-decoupling
+        work lands.
+        """
+        sel = local_jdata.get("sel")
+        if not graph_eligible_tebd_mode(local_jdata.get("tebd_input_mode")):
+            return NeighborContract.from_legacy_sel(sel)
+        if sel is None:
+            # Omitted sel: graph-native config that skips capacity discovery.
+            return NeighborContract.graph()
+        if is_auto_sel(sel):
+            # Keep auto-sel discovery so existing dual-path nnei/mean-std
+            # behavior is unchanged until companion issue #5824.
+            return NeighborContract(
+                representation="graph",
+                requires_capacity=True,
+                capacity=None,
+            )
+        # Explicit capacity: still graph execution, no discovery needed.
+        return NeighborContract(
+            representation="graph",
+            requires_capacity=False,
+            capacity=None,
+        )
+
+    @classmethod
+    def prepare_jdata_for_neighbor_contract(
+        cls,
+        local_jdata: dict,
+        contract: NeighborContract,
+    ) -> dict:
+        """Inject a construction ``sel`` only when capacity discovery is skipped."""
+        if contract.is_graph and not contract.requires_capacity:
+            if local_jdata.get("sel") is None:
+                return ensure_construction_sel(local_jdata)
+        return dict(local_jdata)
 
     def disable_graph_lower(self) -> None:
         """Force the legacy dense lower for this descriptor.

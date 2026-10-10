@@ -26,6 +26,11 @@ from deepmd.dpmodel.utils import (
     EnvMat,
     NetworkCollection,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    GRAPH_NATIVE_CONSTRUCTION_SEL,
+    NeighborContract,
+    is_auto_sel,
+)
 from deepmd.dpmodel.utils.network import (
     Identity,
     NativeLayer,
@@ -752,6 +757,108 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         if not self.repformer_args.set_davg_zero:
             return False
         return self.repinit.tebd_input_mode in ("concat", "strip")
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """Match :meth:`uses_graph_lower` eligibility from config alone.
+
+        DPA2 stores capacities under ``repinit.nsel`` / ``repformer.nsel``.
+        Graph-eligible configs keep auto-nsel discovery (as DPA1 does for
+        ``sel: auto``) so dual-path mean/std and nnei normalization stay
+        intact until companion sel-decoupling work lands.
+
+        Dense discovery is required when *any* block still needs capacity
+        (repinit / repformer / three_body), not only when repinit is auto.
+        """
+        repinit = local_jdata.get("repinit") or {}
+        repformer = local_jdata.get("repformer") or {}
+        use_three_body = bool(
+            local_jdata.get("use_three_body", False)
+            or repinit.get("use_three_body", False)
+        )
+
+        def _block_sel(block: dict) -> object:
+            if "nsel" in block:
+                return block.get("nsel")
+            return block.get("sel")
+
+        def _needs_discovery(sel: object) -> bool:
+            return sel is None or is_auto_sel(sel)
+
+        def _any_block_needs_discovery() -> bool:
+            needs = _needs_discovery(_block_sel(repinit)) or _needs_discovery(
+                _block_sel(repformer)
+            )
+            if use_three_body:
+                needs = needs or _needs_discovery(repinit.get("three_body_sel"))
+            return needs
+
+        def _dense_from_blocks() -> NeighborContract:
+            # Outer capacity tracks repinit; OR requires_capacity across blocks
+            # so an explicit repinit cannot skip discovery for auto repformer /
+            # three_body_sel.
+            base = NeighborContract.from_legacy_sel(_block_sel(repinit))
+            if _any_block_needs_discovery():
+                return NeighborContract.dense(base.capacity, requires_capacity=True)
+            return base
+
+        if use_three_body:
+            return _dense_from_blocks()
+        if not repinit.get("set_davg_zero", True):
+            return _dense_from_blocks()
+        if not repformer.get("set_davg_zero", True):
+            return _dense_from_blocks()
+        tebd = repinit.get("tebd_input_mode", "concat")
+        if tebd not in ("concat", "strip"):
+            return _dense_from_blocks()
+
+        sels = [_block_sel(repinit), _block_sel(repformer)]
+        if all(sel is None for sel in sels):
+            return NeighborContract.graph()
+        if any(is_auto_sel(sel) for sel in sels):
+            return NeighborContract.graph(requires_capacity=True)
+        return NeighborContract.graph(requires_capacity=False)
+
+    @classmethod
+    def prepare_jdata_for_neighbor_contract(
+        cls,
+        local_jdata: dict,
+        contract: NeighborContract,
+    ) -> dict:
+        """Rewrite block ``nsel`` placeholders; never inject a top-level ``sel``.
+
+        Construction placeholders must satisfy
+        ``repinit.nsel > repformer.nsel`` (:meth:`DescrptDPA2.__init__`).
+        """
+        out = dict(local_jdata)
+        if not (contract.is_graph and not contract.requires_capacity):
+            return out
+
+        def _numeric_nsel(sel: object) -> int | None:
+            if sel is None or is_auto_sel(sel):
+                return None
+            if isinstance(sel, (list, tuple)):
+                return int(sel[0]) if sel else None
+            return int(sel)
+
+        repinit = dict(out.get("repinit") or {})
+        repformer = dict(out.get("repformer") or {})
+        repinit_nsel = repinit.get("nsel", repinit.get("sel"))
+        repformer_nsel = repformer.get("nsel", repformer.get("sel"))
+        base = int(GRAPH_NATIVE_CONSTRUCTION_SEL)
+
+        if repformer_nsel is None or is_auto_sel(repformer_nsel):
+            repformer["nsel"] = base
+            out["repformer"] = repformer
+            repformer_value = base
+        else:
+            repformer_value = _numeric_nsel(repformer_nsel)
+
+        if repinit_nsel is None or is_auto_sel(repinit_nsel):
+            # Keep the DescrptDPA2 ordering invariant: repinit > repformer.
+            repinit["nsel"] = max(base + 1, (repformer_value or base) + 1)
+            out["repinit"] = repinit
+        return out
 
     def graph_type_embedding_table(self) -> Array:
         """Full type-embedding table consumed by the graph-route forward.

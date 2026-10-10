@@ -22,6 +22,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -405,7 +408,19 @@ class DeepEval(DeepEvalBackend):
 
         self._rcut = self._dpmodel.get_rcut()
         self._type_map = self._dpmodel.get_type_map()
-        self._sel = list(self._dpmodel.get_sel())
+        self._neighbor_contract = (
+            self._dpmodel.get_neighbor_contract()
+            if hasattr(self._dpmodel, "get_neighbor_contract")
+            else NeighborContract.dense(
+                self._dpmodel.get_sel(), requires_capacity=False
+            )
+        )
+        uses_graph = bool(getattr(self._dpmodel, "uses_graph_lower", lambda: False)())
+        self._sel = (
+            []
+            if self._neighbor_contract.is_graph and uses_graph
+            else list(self._dpmodel.get_sel())
+        )
         self._mixed_types = bool(self._dpmodel.mixed_types())
         if self._is_spin:
             spin_fitting_defs = self._dpmodel.model_output_def().def_outp.get_data()
@@ -436,7 +451,16 @@ class DeepEval(DeepEvalBackend):
         self._is_spin = bool(self.metadata.get("is_spin", False))
         self._rcut = float(self.metadata["rcut"])
         self._type_map = list(self.metadata["type_map"])
-        self._sel = [int(s) for s in self.metadata["sel"]]
+        self._neighbor_contract = NeighborContract.from_metadata(self.metadata)
+        lower_kind = self.metadata.get("lower_input_kind", "nlist")
+        if self._neighbor_contract.is_graph and lower_kind != "nlist":
+            # Graph route ignores dense capacity; keep an empty legacy list even
+            # when metadata still carries a C++-compat placeholder sel/nnei.
+            self._sel = []
+        elif "sel" in self.metadata:
+            self._sel = [int(s) for s in self.metadata["sel"]]
+        else:
+            self._sel = self._neighbor_contract.legacy_sel()
         self._mixed_types = bool(self.metadata["mixed_types"])
 
         fitting_defs = []
@@ -670,7 +694,16 @@ class DeepEval(DeepEvalBackend):
         )
         self._rcut = model.get_rcut()
         self._type_map = model.get_type_map()
-        self._sel = list(model.get_sel())
+        self._neighbor_contract = (
+            model.get_neighbor_contract()
+            if hasattr(model, "get_neighbor_contract")
+            else NeighborContract.dense(model.get_sel(), requires_capacity=False)
+        )
+        self._sel = (
+            []
+            if self._neighbor_contract.is_graph and use_graph_lower
+            else list(model.get_sel())
+        )
         self._mixed_types = bool(model.mixed_types())
         if self._is_spin:
             self._model_output_def = ModelOutputDef(
@@ -700,7 +733,12 @@ class DeepEval(DeepEvalBackend):
             # (LinearEnergyAtomicModel) have no single descriptor to reach for
             "ntypes": len(model.get_type_map()),
             "rcut": model.get_rcut(),
-            "sel": model.get_sel(),
+            "neighbor_contract": self._neighbor_contract.to_dict(),
+            **(
+                {}
+                if self._neighbor_contract.is_graph and use_graph_lower
+                else {"sel": model.get_sel(), "nnei": sum(model.get_sel())}
+            ),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
             "dim_chg_spin": model.get_dim_chg_spin(),
