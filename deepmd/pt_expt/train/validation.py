@@ -367,12 +367,13 @@ class FullValidator:
                     # Match remote-failure cleanup: restore top-K, then drop any
                     # bytes already written for the aborted candidate (write-
                     # then-fail leaves an orphan that rollback alone keeps).
-                    # Swallow cleanup errors so they cannot bypass the
-                    # post-save collective below.
                     try:
                         self._rollback_pending_best_state()
                         self._reconcile_best_checkpoints()
                     except Exception:
+                        # Swallow cleanup errors so they cannot bypass the
+                        # post-save collective below (primary save failure
+                        # must still be broadcast to every rank).
                         pass
                 caught_exception = exc
                 error_message = (
@@ -411,6 +412,8 @@ class FullValidator:
                     try:
                         self._rollback_pending_best_state()
                     except Exception:
+                        # Already recording a commit failure; nested rollback
+                        # errors must not replace that exception.
                         pass
                     commit_exception = exc
                     commit_error = (
