@@ -2053,3 +2053,160 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeZMTritonWignerBand(unittest.TestCase):
+    """Cross-check the banded Wigner storage against the dense layout.
+
+    The band keeps the three structural rows per degree block in the flash
+    packed convention; every consumer addressing it must stay bit-identical
+    to the dense ``(E, D, D)`` layout it replaces.
+    """
+
+    N_EDGE = 2048
+    N_NODE = 128
+
+    def _quaternion(self, n, seed):
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+        quaternion = torch.randn(n, 4, device="cuda", generator=generator)
+        return quaternion / quaternion.norm(dim=-1, keepdim=True)
+
+    def _band_segments(self, band, dim):
+        return band[:, :dim], band[:, dim : 2 * dim - 1], band[:, 2 * dim - 1 :]
+
+    @_GPU_KERNELS
+    def test_band_matches_dense_blocks(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+
+        for lmax in (1, 2, 3, 4, 5):
+            with self.subTest(lmax=lmax):
+                calc = WignerDCalculator(lmax, dtype=torch.float32).to("cuda")
+                quaternion = self._quaternion(64, 17 + lmax)
+                dense, _ = calc(quaternion)
+                band = calc.forward_band(quaternion)
+                dim = (lmax + 1) ** 2
+                self.assertEqual(tuple(band.shape), (64, 3 * dim - 2))
+                m0, mm, mp = self._band_segments(band, dim)
+                self.assertTrue(torch.equal(m0[:, 0], dense[:, 0, 0]))
+                for degree in range(1, lmax + 1):
+                    base, size = degree * degree, 2 * degree + 1
+                    r0 = base + degree
+                    cols = slice(base, base + size)
+                    self.assertTrue(torch.equal(m0[:, cols], dense[:, r0, cols]))
+                    self.assertTrue(
+                        torch.equal(
+                            mm[:, base - 1 : base - 1 + size],
+                            dense[:, r0 - 1, cols],
+                        )
+                    )
+                    self.assertTrue(
+                        torch.equal(
+                            mp[:, base - 1 : base - 1 + size],
+                            dense[:, r0 + 1, cols],
+                        )
+                    )
+
+    @_GPU_KERNELS
+    def test_rotate_mix_packed_bitwise(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as svp
+
+        lmax, n_focus, focus_dim = 3, 2, 32
+        c_wide = n_focus * focus_dim
+        dim = (lmax + 1) ** 2
+        calc = WignerDCalculator(lmax, dtype=torch.float32).to("cuda")
+        quaternion = self._quaternion(self.N_EDGE, 23)
+        dense = calc(quaternion)[0]
+        band = calc.forward_band(quaternion)
+
+        generator = torch.Generator(device="cuda").manual_seed(29)
+        x = (
+            torch.randn(self.N_NODE, dim, c_wide, device="cuda", generator=generator)
+            * 0.5
+        ).contiguous()
+        src = torch.randint(
+            0, self.N_NODE, (self.N_EDGE,), device="cuda", generator=generator
+        )
+        kc = torch.randn(self.N_EDGE, 25, device="cuda", generator=generator) * 0.2
+        cb = (torch.randn(1, c_wide, device="cuda", generator=generator) * 0.3).reshape(
+            -1
+        )
+
+        u0 = svp._rotate_mix_impl(x, src, None, None, dense, kc, cb, lmax, n_focus, 1)
+        u1 = svp._rotate_mix_impl(x, src, None, None, band, kc, cb, lmax, n_focus, 1)
+        self.assertTrue(torch.equal(u0, u1))
+        grad_u = torch.randn(u0.shape, device="cuda", generator=generator)
+        gx0, gw0, gkc0 = svp._rotate_mix_bwd_impl(
+            grad_u, x, src, dense, kc, cb, lmax, n_focus, 1
+        )
+        gx1, gw1, gkc1 = svp._rotate_mix_bwd_impl(
+            grad_u, x, src, band, kc, cb, lmax, n_focus, 1
+        )
+        self.assertTrue(torch.equal(gx0, gx1))
+        self.assertTrue(torch.equal(gkc0, gkc1))
+        # The dense Wigner gradient is zero off the structural band; compare
+        # the three band segments slot by slot.
+        m0 = [gw0[:, 0, 0:1]]
+        mm: list[torch.Tensor] = []
+        mp: list[torch.Tensor] = []
+        for degree in range(1, lmax + 1):
+            base, size = degree * degree, 2 * degree + 1
+            r0 = base + degree
+            m0.append(gw0[:, r0, base : base + size])
+            mm.append(gw0[:, r0 - 1, base : base + size])
+            mp.append(gw0[:, r0 + 1, base : base + size])
+        self.assertTrue(torch.equal(torch.cat(m0, dim=1), gw1[:, :dim]))
+        self.assertTrue(torch.equal(torch.cat(mm, dim=1), gw1[:, dim : 2 * dim - 1]))
+        self.assertTrue(torch.equal(torch.cat(mp, dim=1), gw1[:, 2 * dim - 1 :]))
+
+    @_GPU_KERNELS
+    def test_value_path_packed_bitwise(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        case = (3, 64, 2, 96, 4, "degree_channel", 1)
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *case)
+        fused = make_triton_value_path(conv)
+        self.assertIsNotNone(fused)
+        x, cache, radial = value_path_cls._edge_inputs(self, conv, case[0], case[1])
+
+        calc = WignerDCalculator(case[0], dtype=torch.float32).to("cuda")
+        # Deterministic rotations; both layouts carry the same entries.
+        quaternion = self._quaternion(cache.D_full.shape[0], 31)
+        dense, _ = calc(quaternion)
+        band = calc.forward_band(quaternion)
+
+        import copy
+
+        # One shared cotangent so both layouts differentiate the same output.
+        cotangent = None
+
+        def run(rotation_layout):
+            nonlocal cotangent
+            source = copy.copy(cache)
+            source.D_full = dense if rotation_layout == "dense" else None
+            source.D_packed = None if rotation_layout == "dense" else band
+            rad = radial.clone().requires_grad_(True)
+            out, _ = fused(x, source, rad)
+            if cotangent is None:
+                cotangent = torch.randn(
+                    out.shape,
+                    device=out.device,
+                    generator=torch.Generator(device=out.device).manual_seed(37),
+                )
+            (grad_radial,) = torch.autograd.grad(out, rad, cotangent)
+            return out.detach(), grad_radial
+
+        out0, grad0 = run("dense")
+        out1, grad1 = run("band")
+        self.assertTrue(torch.equal(out0, out1))
+        self.assertTrue(torch.equal(grad0, grad1))

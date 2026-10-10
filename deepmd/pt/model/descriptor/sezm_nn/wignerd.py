@@ -524,6 +524,60 @@ class WignerDCalculator(nn.Module):
                 persistent=True,
             )
 
+    def _compute_all_blocks(
+        self, edge_quaternion: torch.Tensor
+    ) -> list[tuple[int, torch.Tensor]]:
+        """Compute every per-degree block below the polynomial tail.
+
+        Returns ``[(l, block)]`` with ``block`` of shape
+        ``(E, 2l+1, 2l+1)``, degrees ascending; degree 0 (the constant 1)
+        is not included.
+        """
+        blocks: list[tuple[int, torch.Tensor]] = []
+        if self.lmax >= 1:
+            with nvtx_range("WignerD/l1"):
+                blocks.append((1, self._compute_l1_block(edge_quaternion)))
+        if self.lmax >= 2:
+            with nvtx_range("WignerD/l2"):
+                blocks.append((2, self._compute_l2_block(edge_quaternion)))
+        if self.lmax >= 3:
+            if self.lmax >= 4:
+                with nvtx_range("WignerD/l3l4"):
+                    D_l3, D_l4 = self._compute_l3l4_blocks(edge_quaternion)
+                blocks.append((3, D_l3))
+                blocks.append((4, D_l4))
+            else:
+                with nvtx_range("WignerD/l3"):
+                    blocks.append((3, self._compute_l3_block(edge_quaternion)))
+        if self.lmax >= 5:
+            if self.lmax >= 6:
+                with nvtx_range("WignerD/l5l6"):
+                    D_l5, D_l6 = self._compute_l5l6_blocks(edge_quaternion)
+                blocks.append((5, D_l5))
+                blocks.append((6, D_l6))
+            else:
+                with nvtx_range("WignerD/l5"):
+                    blocks.append((5, self._compute_l5_block(edge_quaternion)))
+        if self.lmax >= 7:
+            if self.lmax >= 8:
+                with nvtx_range("WignerD/l7l8"):
+                    D_l7, D_l8 = self._compute_l7l8_blocks(edge_quaternion)
+                blocks.append((7, D_l7))
+                blocks.append((8, D_l8))
+            else:
+                with nvtx_range("WignerD/l7"):
+                    blocks.append((7, self._compute_l7_block(edge_quaternion)))
+        if self.lmax >= 9:
+            if self.lmax >= 10:
+                with nvtx_range("WignerD/l9l10"):
+                    D_l9, D_l10 = self._compute_l9l10_blocks(edge_quaternion)
+                blocks.append((9, D_l9))
+                blocks.append((10, D_l10))
+            else:
+                with nvtx_range("WignerD/l9"):
+                    blocks.append((9, self._compute_l9_block(edge_quaternion)))
+        return blocks
+
     def forward(
         self, edge_quaternion: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -555,53 +609,10 @@ class WignerDCalculator(nn.Module):
         )
         D_full[:, 0, 0] = 1.0
 
-        if self.lmax >= 1:
-            with nvtx_range("WignerD/l1"):
-                D_full[:, 1:4, 1:4] = self._compute_l1_block(edge_quaternion)
-
-        if self.lmax >= 2:
-            with nvtx_range("WignerD/l2"):
-                D_full[:, 4:9, 4:9] = self._compute_l2_block(edge_quaternion)
-
-        if self.lmax >= 3:
-            if self.lmax >= 4:
-                with nvtx_range("WignerD/l3l4"):
-                    D_l3, D_l4 = self._compute_l3l4_blocks(edge_quaternion)
-                    D_full[:, 9:16, 9:16] = D_l3
-                    D_full[:, 16:25, 16:25] = D_l4
-            else:
-                with nvtx_range("WignerD/l3"):
-                    D_full[:, 9:16, 9:16] = self._compute_l3_block(edge_quaternion)
-
-        if self.lmax >= 5:
-            if self.lmax >= 6:
-                with nvtx_range("WignerD/l5l6"):
-                    D_l5, D_l6 = self._compute_l5l6_blocks(edge_quaternion)
-                    D_full[:, 25:36, 25:36] = D_l5
-                    D_full[:, 36:49, 36:49] = D_l6
-            else:
-                with nvtx_range("WignerD/l5"):
-                    D_full[:, 25:36, 25:36] = self._compute_l5_block(edge_quaternion)
-
-        if self.lmax >= 7:
-            if self.lmax >= 8:
-                with nvtx_range("WignerD/l7l8"):
-                    D_l7, D_l8 = self._compute_l7l8_blocks(edge_quaternion)
-                    D_full[:, 49:64, 49:64] = D_l7
-                    D_full[:, 64:81, 64:81] = D_l8
-            else:
-                with nvtx_range("WignerD/l7"):
-                    D_full[:, 49:64, 49:64] = self._compute_l7_block(edge_quaternion)
-
-        if self.lmax >= 9:
-            if self.lmax >= 10:
-                with nvtx_range("WignerD/l9l10"):
-                    D_l9, D_l10 = self._compute_l9l10_blocks(edge_quaternion)
-                    D_full[:, 81:100, 81:100] = D_l9
-                    D_full[:, 100:121, 100:121] = D_l10
-            else:
-                with nvtx_range("WignerD/l9"):
-                    D_full[:, 81:100, 81:100] = self._compute_l9_block(edge_quaternion)
+        for l_degree, block in self._compute_all_blocks(edge_quaternion):
+            base = l_degree * l_degree
+            size = 2 * l_degree + 1
+            D_full[:, base : base + size, base : base + size] = block
 
         if self.lmax >= self.poly_lmin:
             with nvtx_range("WignerD/polynomial"):
@@ -640,6 +651,66 @@ class WignerDCalculator(nn.Module):
             # identical; later releases retain the shared-storage view.
             Dt_full = Dt_full.contiguous()
         return D_full, Dt_full
+
+    def band_supported(self) -> bool:
+        """Return whether :meth:`forward_band` covers this configuration.
+
+        The band layout stores three structural rows per degree block, which
+        only the per-degree ladder below the polynomial tail can produce.
+        """
+        return self.lmax < self.poly_lmin
+
+    def forward_band(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
+        """
+        Build the structural Wigner band in the flash packed convention.
+
+        The returned tensor has shape ``(E, 3 * D - 2)`` with
+        ``D = (lmax + 1)^2`` and holds, per output column ``d`` of degree
+        ``l = degree(d)``, the three Wigner entries the reduced ``mmax = 1``
+        consumers read:
+
+        - slots ``[0, D)``: ``D[l^2 + l, d]`` (the ``m = 0`` row),
+        - slots ``[D, 2D - 2)``: ``D[l^2 + l - 1, d]`` (``m = -1`` row,
+          degrees ``l >= 1`` only, stored at slot ``D + d - 1``),
+        - slots ``[2D - 1, 3D - 2)``: ``D[l^2 + l + 1, d]`` (``m = +1`` row,
+          stored at slot ``2D + d - 2``).
+
+        The stored values are the same floats the dense layout keeps at those
+        ``(row, column)`` pairs; only the storage order differs, so consumers
+        addressing the band produce bit-identical results. The band is a
+        projection for the reduced (``mmax = 1``) consumers, not the full
+        matrix: the remaining block rows are never read by them, and the
+        dense layout cannot be reconstructed from the band alone.
+
+        Parameters
+        ----------
+        edge_quaternion
+            Unit quaternions with shape ``(E, 4)``.
+
+        Returns
+        -------
+        torch.Tensor
+            Band tensor with shape ``(E, 3 * dim_full - 2)``.
+        """
+        if not self.band_supported():
+            raise RuntimeError(
+                f"banded Wigner storage requires lmax < {self.poly_lmin}, "
+                f"got lmax={self.lmax}"
+            )
+        edge_quaternion = quaternion_normalize(
+            edge_quaternion.to(dtype=self.dtype),
+            eps=self.eps,
+        )
+        n_edge = edge_quaternion.shape[0]
+        blocks = self._compute_all_blocks(edge_quaternion)
+        m0_rows = [edge_quaternion.new_ones((n_edge, 1))]
+        mm_rows: list[torch.Tensor] = []
+        mp_rows: list[torch.Tensor] = []
+        for l_degree, block in blocks:
+            m0_rows.append(block[:, l_degree, :])
+            mm_rows.append(block[:, l_degree - 1, :])
+            mp_rows.append(block[:, l_degree + 1, :])
+        return torch.cat(m0_rows + mm_rows + mp_rows, dim=1).contiguous()
 
     def forward_zonal(
         self,

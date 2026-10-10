@@ -25,6 +25,10 @@ from einops import (
     rearrange,
 )
 
+from deepmd.pt_expt.kernels.utils import (
+    use_packed_d_infer,
+)
+
 from .utils import (
     get_promoted_dtype,
     nvtx_range,
@@ -80,6 +84,12 @@ class EdgeFeatureCache(NamedTuple):
     edge_quat
         Per-edge global-to-local quaternion actually used to build ``D_full`` and
         ``Dt_full`` with shape (E, 4). Includes the optional random local-Z roll.
+    D_packed
+        Structural Wigner band with shape ``(E, 3*D-2)`` (the ``m = 0/-1/+1``
+        rows per degree block, flash packed convention). Present only when the
+        banded inference storage is enabled and supported; then ``D_full`` and
+        ``Dt_full`` are ``None`` and the fused reduced-layout consumers address
+        this band instead. None otherwise.
     D_to_m_cache
         Lazy cache for projected D matrices keyed by a normalized
         ``"lmax:mmax"`` identifier.
@@ -118,6 +128,7 @@ class EdgeFeatureCache(NamedTuple):
     csr_cache: dict[str, tuple[torch.Tensor, torch.Tensor]] | None = None
     edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
+    D_packed: torch.Tensor | None = None
 
 
 def cached_edge_csr(
@@ -406,7 +417,7 @@ def build_edge_cache(
 
     # === Step 6. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
-        D_full, Dt_full, edge_quat = _build_edge_wigner(
+        D_full, Dt_full, edge_quat, D_packed = _build_edge_wigner(
             edge_vec=edge_vec,
             edge_len=edge_len,
             eps=eps,
@@ -428,6 +439,7 @@ def build_edge_cache(
         D_full=D_full,
         Dt_full=Dt_full,
         edge_quat=edge_quat,
+        D_packed=D_packed,
         deg_norm_floor=deg_norm_floor,
     )
 
@@ -547,7 +559,7 @@ def build_edge_cache_from_edges(
 
     # === Step 4. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
-        D_full, Dt_full, edge_quat = _build_edge_wigner(
+        D_full, Dt_full, edge_quat, D_packed = _build_edge_wigner(
             edge_vec=edge_vec,
             edge_len=edge_len,
             eps=eps,
@@ -588,6 +600,7 @@ def build_edge_cache_from_edges(
         D_full=D_full,
         Dt_full=Dt_full,
         edge_quat=edge_quat,
+        D_packed=D_packed,
         deg_norm_floor=deg_norm_floor,
         edge_src_gate=edge_src_gate,
     )
@@ -649,9 +662,23 @@ def _build_edge_wigner(
 
     # === Step 3. Convert quaternions to packed Wigner-D blocks ===
     if not build_full:
-        return None, None, edge_quat
+        return None, None, edge_quat, None
+    # ``wigner_calc`` may arrive as the calculator instance (callable through
+    # ``nn.Module.__call__``) or as a bound forward; accept both.
+    calc = getattr(wigner_calc, "__self__", wigner_calc)
+    if (
+        use_packed_d_infer()
+        and callable(getattr(calc, "forward_band", None))
+        and calc.band_supported()
+    ):
+        # Banded inference storage: the fused reduced-layout consumers (the
+        # rotate-mix operator and the flash aggregation) read only the three
+        # structural rows per degree block, so the dense surfaces are never
+        # materialized. Reference paths that need the dense layout must not
+        # enable the flag.
+        return None, None, edge_quat, calc.forward_band(edge_quat)
     D_full, Dt_full = wigner_calc(edge_quat)
-    return D_full, Dt_full, edge_quat
+    return D_full, Dt_full, edge_quat, None
 
 
 def _finalize_edge_cache(
@@ -668,6 +695,7 @@ def _finalize_edge_cache(
     edge_quat: torch.Tensor,
     deg_norm_floor: float,
     edge_src_gate: torch.Tensor | None = None,
+    D_packed: torch.Tensor | None = None,
 ) -> EdgeFeatureCache:
     """
     Assemble the shared `EdgeFeatureCache` layout.
@@ -735,6 +763,7 @@ def _finalize_edge_cache(
         csr_cache={},
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        D_packed=D_packed,
     )
 
 
@@ -892,10 +921,12 @@ def edge_cache_to_dtype(
     _Dt_full = cache.Dt_full
     _edge_src_gate = cache.edge_src_gate
     _edge_quat = cache.edge_quat
+    _D_packed = cache.D_packed
     D_full: torch.Tensor | None = None
     Dt_full: torch.Tensor | None = None
     edge_src_gate: torch.Tensor | None = None
     edge_quat: torch.Tensor | None = None
+    D_packed: torch.Tensor | None = None
     if _D_full is not None:
         D_full = _D_full.to(dtype=dtype)
     if _Dt_full is not None:
@@ -904,6 +935,8 @@ def edge_cache_to_dtype(
         edge_src_gate = _edge_src_gate.to(dtype=dtype)
     if _edge_quat is not None:
         edge_quat = _edge_quat.to(dtype=dtype)
+    if _D_packed is not None:
+        D_packed = _D_packed.to(dtype=dtype)
 
     # CSR views contain only integer topology. Preserve them across the dtype
     # conversion so every accelerated consumer shares the per-step sort.
@@ -923,4 +956,5 @@ def edge_cache_to_dtype(
         csr_cache=None if cache.csr_cache is None else dict(cache.csr_cache),
         edge_src_gate=edge_src_gate,
         edge_quat=edge_quat,
+        D_packed=D_packed,
     )
