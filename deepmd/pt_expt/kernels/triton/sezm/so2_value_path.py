@@ -5311,7 +5311,16 @@ class _TritonSO2ValuePath:
         weff = getattr(self._conv, "_triton_radial_weff", None)
         wh = getattr(self._conv, "_triton_radial_wh", None)
         if weff is None or wh is None:
-            return None
+            # The plain checkpoint-to-eval flow never runs the prepare hook
+            # (only the pt2/freeze serialization does), so fall back to
+            # packing from the live weights here, mirroring how
+            # ``_pack_weights`` falls back to ``_assemble_weights``.  Under
+            # compilation the fold runs once at trace time and the effective
+            # weight becomes a graph constant.
+            packed = self._pack_radial_weights()
+            if packed is None:
+                return None
+            weff, wh = packed
         if (
             radial_feat.dtype is not torch.float32
             or not radial_feat.is_cuda

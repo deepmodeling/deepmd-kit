@@ -2149,6 +2149,25 @@ class TestSeZMTritonRadialHeadPacked(unittest.TestCase):
         self.assertEqual(feat.shape[1], conv.lmax + 1)
 
     @_GPU_KERNELS
+    def test_fallback_packing_without_prepare_hook(self):
+        # The plain checkpoint-to-eval flow never runs the prepare hook;
+        # the folded head must pack from the live weights on its own.
+        from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+            make_triton_value_path,
+        )
+
+        value_path_cls = TestSeZMTritonValuePath
+        conv = value_path_cls._build_conv(self, *self.CASE)
+        fused = make_triton_value_path(conv)
+        self.assertIsNone(getattr(conv, "_triton_radial_weff", None))
+        x, cache, radial = value_path_cls._edge_inputs(
+            self, conv, self.CASE[0], self.CASE[1]
+        )
+        with mock.patch.dict("os.environ", {"DP_RADIAL_HEAD_PACKED_INFER": "1"}):
+            _, feat = fused(x, cache, radial)
+        self.assertEqual(feat.shape[1], 1)
+
+    @_GPU_KERNELS
     def test_packed_buffer_shapes(self):
         conv, fused, *_ = self._build(self.CASE)
         lmax, channels, _, focus_dim, _, mode, rank = self.CASE
