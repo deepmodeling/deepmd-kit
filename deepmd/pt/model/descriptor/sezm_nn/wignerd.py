@@ -50,14 +50,18 @@ def _wigner_d_assemble_impl(
     dim_full: int,
     poly_lmin: int,
     n_regular: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Assemble the dense block-diagonal matrix and its contiguous transpose.
+) -> torch.Tensor:
+    """Assemble the dense block-diagonal matrix; the transpose stays a view.
 
     In-place slice assignments are exactly what Inductor's functionalization
     cannot keep in place: traced, they expand into a chain of full-size
     ``zeros + index_put + add`` tensors plus a realized transpose (~4 GB of
     HBM traffic at the SeZM N=4096 workload).  Behind a custom op the eager
-    scatter stays a scatter -- one buffer, one transpose copy.
+    scatter stays a scatter.  Only ``D_full`` is produced here; the caller
+    makes ``Dt_full`` a plain transpose view outside the op, and every
+    consumer addresses it through strides (the flash and rotation kernels
+    take explicit stride arguments; the eager consumers are strided torch
+    operators).
     """
     ref = blocks[0]
     n_edge = ref.shape[0]
@@ -71,7 +75,7 @@ def _wigner_d_assemble_impl(
     if n_regular < len(blocks):
         po = poly_lmin * poly_lmin
         d_full[:, po:, po:] = blocks[n_regular]
-    return d_full, d_full.transpose(-1, -2).contiguous()
+    return d_full
 
 
 _wigner_d_assemble_op = torch.library.custom_op(
@@ -85,15 +89,12 @@ def _(
     dim_full: int,
     poly_lmin: int,
     n_regular: int,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> torch.Tensor:
     ref = blocks[0]
-    d_full = ref.new_zeros((ref.shape[0], dim_full, dim_full))
-    return d_full, d_full.transpose(-1, -2).contiguous()
+    return ref.new_zeros((ref.shape[0], dim_full, dim_full))
 
 
-def _wigner_d_assemble_setup(
-    ctx: Any, inputs: Any, output: Any
-) -> None:
+def _wigner_d_assemble_setup(ctx: Any, inputs: Any, output: Any) -> None:
     blocks, _, poly_lmin, n_regular = inputs
     ctx.blocks = blocks
     ctx.poly_lmin = poly_lmin
@@ -101,24 +102,20 @@ def _wigner_d_assemble_setup(
 
 
 def _wigner_d_assemble_backward(
-    ctx: Any, grad_d_full: torch.Tensor, grad_dt_full: torch.Tensor
+    ctx: Any, grad_d_full: torch.Tensor
 ) -> tuple[list[torch.Tensor], None, None, None]:
-    # Each block lands in D as itself and in Dt transposed, so its gradient
-    # is the matching D-slice plus the transpose of the matching Dt-slice.
-    # The [0, 0] constant receives no gradient.
+    # The transpose view's gradient reaches D_full through the ordinary
+    # autograd of aten.transpose, so only D-slices arrive here.  The [0, 0]
+    # constant receives no gradient.
     grads = []
     off = 1
     for block in ctx.blocks[: ctx.n_regular]:
         size = block.shape[1]
-        g = grad_d_full[:, off : off + size, off : off + size]
-        gt = grad_dt_full[:, off : off + size, off : off + size]
-        grads.append(g + gt.transpose(-1, -2))
+        grads.append(grad_d_full[:, off : off + size, off : off + size])
         off += size
     if ctx.n_regular < len(ctx.blocks):
         po = ctx.poly_lmin * ctx.poly_lmin
-        g = grad_d_full[:, po:, po:]
-        gt = grad_dt_full[:, po:, po:]
-        grads.append(g + gt.transpose(-1, -2))
+        grads.append(grad_d_full[:, po:, po:])
     return grads, None, None, None
 
 
@@ -722,12 +719,15 @@ class WignerDCalculator(nn.Module):
             else False
         )
         if blocks and tracing:
-            return _wigner_d_assemble_op(
+            d_full = _wigner_d_assemble_op(
                 blocks + ([poly_block] if poly_block is not None else []),
                 self.dim_full,
                 self.poly_lmin,
                 len(blocks),
             )
+            # Stride-addressed consumers read the inverse rotation straight
+            # from the shared storage; no transpose copy ever exists.
+            return d_full, d_full.transpose(-1, -2)
 
         D_full = torch.zeros(
             n_edge,
