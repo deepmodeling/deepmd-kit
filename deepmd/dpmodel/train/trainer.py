@@ -37,7 +37,6 @@ from typing import (
     TextIO,
 )
 
-
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -57,8 +56,8 @@ from .timing import (
     DisplayInterval,
     TrainingTimer,
 )
+from .types import DEFAULT_TASK_KEY as DEFAULT_TASK_KEY
 from .types import (
-    DEFAULT_TASK_KEY as DEFAULT_TASK_KEY,
     RankContext,
     TrainingTask,
     TrainingTaskCollection,
