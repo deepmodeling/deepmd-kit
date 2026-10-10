@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from deepmd.dpmodel.train.metrics import (
+    MetricAccumulator,
     TrainingMetricAccumulator,
 )
 
@@ -45,12 +46,89 @@ def test_accumulation_does_not_alias_or_modify_backend_buffers() -> None:
 
 
 @pytest.mark.parametrize("metrics", [{}, {"rmse": float("nan")}])
-def test_missing_and_nan_metrics_are_not_silently_zeroed(metrics: dict) -> None:
-    accumulator = TrainingMetricAccumulator({"task": ("rmse",)})
+def test_missing_and_nan_metrics_are_excluded_from_the_average(metrics: dict) -> None:
+    """Optional labels must not poison an otherwise finite interval average."""
+    accumulator = MetricAccumulator({"task": ("rmse",)})
     accumulator.add("task", {"rmse": 1.0})
     accumulator.add("task", metrics)
-    assert math.isnan(accumulator.average("task")["rmse"])
+    assert accumulator.average("task") == {"rmse": 1.0}
     assert accumulator.count("task") == 2
+
+
+def test_metric_with_only_nan_observations_reports_nan() -> None:
+    accumulator = MetricAccumulator({"task": ("rmse", "mae")})
+    accumulator.add("task", {"rmse": float("nan"), "mae": 2.0})
+    accumulator.add("task", {"rmse": float("nan"), "mae": 4.0})
+    assert math.isnan(accumulator.average("task")["rmse"])
+    assert accumulator.average("task")["mae"] == 3.0
+
+
+def test_add_does_not_float_coerce_device_scalars() -> None:
+    """Present accelerator metrics must not D2H-sync on every training step."""
+
+    class DeviceScalar:
+        def __init__(self, value: float) -> None:
+            self.value = float(value)
+            self.device = "cuda:0"
+            self.ndim = 0
+            self.float_calls = 0
+
+        def __float__(self) -> float:
+            self.float_calls += 1
+            return self.value
+
+        def __mul__(self, other: object):
+            return DeviceScalar(self.value * float(other))
+
+        __rmul__ = __mul__
+
+        def __add__(self, other: object):
+            if isinstance(other, DeviceScalar):
+                return DeviceScalar(self.value + other.value)
+            return DeviceScalar(self.value + float(other))
+
+        def __radd__(self, other: object):
+            return self.__add__(other)
+
+        def __truediv__(self, other: object):
+            return DeviceScalar(self.value / float(other))
+
+    accumulator = MetricAccumulator({"task": ("rmse",)})
+    device_value = DeviceScalar(2.0)
+    accumulator.add("task", {"rmse": device_value})
+    assert device_value.float_calls == 0
+    # Host conversion is reserved for the display boundary.
+    assert accumulator.average("task") == {"rmse": 2.0}
+
+
+def test_atom_weights_compute_validation_style_averages() -> None:
+    accumulator = MetricAccumulator({"task": ("rmse",)})
+    accumulator.add("task", {"rmse": 1.0}, weight=2.0)
+    accumulator.add("task", {"rmse": 4.0}, weight=1.0)
+    assert accumulator.average("task") == {"rmse": 2.0}
+    assert accumulator.count("task") == 2
+
+
+def test_non_positive_weight_skips_metric_totals() -> None:
+    accumulator = MetricAccumulator({"task": ("rmse",)})
+    accumulator.add("task", {"rmse": 1.0}, weight=0.0)
+    assert accumulator.count("task") == 1
+    assert math.isnan(accumulator.average("task")["rmse"])
+
+
+def test_flat_state_round_trip_supports_distributed_reduce() -> None:
+    left = MetricAccumulator({"a": ("rmse",), "b": ("mae",)})
+    right = MetricAccumulator({"a": ("rmse",), "b": ("mae",)})
+    left.add("a", {"rmse": 1.0})
+    left.add("b", {"mae": 2.0})
+    right.add("a", {"rmse": 3.0})
+    # b unsampled on the right rank
+    merged = [x + y for x, y in zip(left.flat_state(), right.flat_state(), strict=True)]
+    left.load_flat_state(merged)
+    assert left.average("a") == {"rmse": 2.0}
+    assert left.average("b") == {"mae": 2.0}
+    assert left.count("a") == 2
+    assert left.count("b") == 1
 
 
 def test_unknown_metric_does_not_partially_update_the_window() -> None:

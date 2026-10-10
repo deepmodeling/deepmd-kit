@@ -28,6 +28,7 @@ import torch
 from deepmd.dpmodel.train import (
     DEFAULT_TASK_KEY,
     CheckpointStore,
+    MetricAccumulator,
     ShardingPolicy,
     TrainingMetricAccumulator,
     TrainingTimer,
@@ -118,6 +119,9 @@ from deepmd.pt_expt.train.ema import (
 from deepmd.pt_expt.train.gradient import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+)
+from deepmd.pt_expt.train.metrics import (
+    all_reduce_metric_accumulator,
 )
 from deepmd.pt_expt.train.utils import (
     count_parameters,
@@ -1593,22 +1597,28 @@ class Trainer:
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
                 self.wrapper.eval()  # Will set to train mode before fininshing validation
+                if self.metric_accumulator is not None and self.world_size > 1:
+                    all_reduce_metric_accumulator(self.metric_accumulator)
 
                 def log_loss_valid(_task_key: str = "Default") -> dict:
-                    single_results = {}
-                    sum_natoms = 0
                     if not self.multi_task:
                         valid_numb_batch = self.valid_numb_batch
+                        loss_obj = self.loss
                     else:
                         valid_numb_batch = self.valid_numb_batch[_task_key]
+                        loss_obj = self.loss[_task_key]
+                    accumulator = MetricAccumulator(
+                        {_task_key: loss_obj.training_metric_names}
+                    )
+                    saw_batch = False
                     for ii in range(valid_numb_batch):
                         self.optimizer.zero_grad()
                         input_dict, label_dict, _ = self.get_data(
                             is_train=False, task_key=_task_key
                         )
                         if input_dict == {}:
-                            # no validation data
-                            return {}
+                            # no validation data for this slot
+                            break
                         # Validation runs the inner module, not the DDP
                         # wrapper. A DDP forward under grad mode arms the
                         # reducer for an all-reduce that this loop never
@@ -1624,20 +1634,24 @@ class Trainer:
                             label=label_dict,
                             task_key=_task_key,
                         )
-                        # more_loss.update({"rmse": math.sqrt(loss)})
-                        # The metrics are per-atom quantities, so each batch
-                        # weighs by the real atoms it holds summed over its
-                        # frames. Phantom atoms (atype < 0), which pad a
-                        # mixed-nloc batch, contribute to none of them.
+                        # Per-atom metrics weigh by real atoms across frames.
+                        # Phantom atoms (atype < 0) pad mixed-nloc batches.
                         natoms = int((input_dict["atype"] >= 0).sum())
-                        sum_natoms += natoms
-                        for k, v in more_loss.items():
-                            if "l2_" not in k:
-                                single_results[k] = (
-                                    single_results.get(k, 0.0) + v * natoms
+                        accumulator.add(
+                            _task_key,
+                            {
+                                name: (
+                                    value.detach() if torch.is_tensor(value) else value
                                 )
-                    results = {k: v / sum_natoms for k, v in single_results.items()}
-                    return results
+                                for name, value in more_loss.items()
+                                if "l2_" not in name
+                            },
+                            weight=float(natoms),
+                        )
+                        saw_batch = True
+                    if not saw_batch:
+                        return {}
+                    return accumulator.average(_task_key)
 
                 if not self.multi_task:
                     train_results = self._training_results(more_loss)

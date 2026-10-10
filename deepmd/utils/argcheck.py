@@ -6023,8 +6023,12 @@ def training_args(
     doc_disp_avg = (
         "Display the arithmetic mean of per-step training metrics within each "
         "display interval, separately for each task. Tasks with no training "
-        "steps in an interval display NaN. Validation metrics are evaluated "
-        "at the display step, not averaged over training steps."
+        "steps in an interval display NaN. A metric that is NaN on a given "
+        "step (for example an optional label that was absent) is excluded "
+        "from that metric's interval mean. Validation metrics are evaluated "
+        "at the display step with atom weighting, not averaged over training "
+        "steps. Distributed runs reduce local sums and weights only at "
+        "display boundaries."
     )
     doc_profiling = (
         "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
