@@ -722,7 +722,7 @@ def _build_edge_wigner(
         # structural rows per degree block, so the dense surfaces are never
         # materialized. Reference paths that need the dense layout must not
         # enable the flag.
-        return None, None, edge_quat, calc.forward_band(edge_quat)
+        return None, None, edge_quat, calc.forward_band_fused(edge_quat)
     D_full, Dt_full = wigner_calc(edge_quat)
     return D_full, Dt_full, edge_quat, None
 

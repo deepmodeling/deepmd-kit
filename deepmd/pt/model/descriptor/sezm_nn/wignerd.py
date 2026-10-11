@@ -712,6 +712,51 @@ class WignerDCalculator(nn.Module):
             mp_rows.append(block[:, l_degree + 1, :])
         return torch.cat(m0_rows + mm_rows + mp_rows, dim=1).contiguous()
 
+    def band_op_supported(self) -> bool:
+        """Return whether the banded assembly can run behind the fused op.
+
+        The op boundary makes the band a save point for the compiled
+        backward: without it the whole quaternion -> monomial -> product
+        chain is replayed (once per backward section) instead of the tiny
+        band being kept. The op covers the CUDA fp32 inference ladder the
+        production model uses (degrees 1..3 with the Triton monomial
+        kernels); anything else keeps the plain composition.
+        """
+        return (
+            self.lmax in (1, 2, 3)
+            and not self.training
+            and bool(getattr(self, "_use_triton_monomials", False))
+            and "exp_l2" in getattr(self, "_monomial_exponents_flat", {})
+            and "exp_l3" in getattr(self, "_monomial_exponents_flat", {})
+            and hasattr(self, "_l2_monomial_coeff")
+        )
+
+    def forward_band_fused(self, edge_quaternion: torch.Tensor) -> torch.Tensor:
+        """
+        Build the structural band through the custom-op boundary.
+
+        Same values as :meth:`forward_band`; the normalization stays in the
+        traced graph so its own cotangent keeps flowing, and the band
+        production becomes opaque to the compiler, which then saves the
+        ``(E, 3D-2)`` band for the backward instead of replaying the whole
+        quaternion chain per backward section.
+        """
+        if not self.band_op_supported():
+            return self.forward_band(edge_quaternion)
+        q_unit = quaternion_normalize(
+            edge_quaternion.to(dtype=self.dtype), eps=self.eps
+        )
+        return wigner_band_op(
+            q_unit,
+            self.l1_perm,
+            self.l1_sign_outer,
+            self._l2_monomial_coeff,
+            self.small_order_kernels.C_l3,
+            self._monomial_exponents_flat["exp_l2"],
+            self._monomial_exponents_flat["exp_l3"],
+            int(self.lmax),
+        )
+
     def forward_zonal(
         self,
         edge_quaternion: torch.Tensor,
@@ -2029,3 +2074,190 @@ class WignerDCalculator(nn.Module):
         raise NotImplementedError(
             "WignerDCalculator.deserialize should be called by parent with lmax/dtype"
         )
+
+
+def _band_group_offsets(lmax: int) -> tuple[list[int], int]:
+    """Per-degree offsets of the three band row groups and the full dim.
+
+    The band packs, for degrees ``l = 1..lmax``, the ``m = 0`` row of each
+    block (preceded by the degree-0 constant), then all ``m = -1`` rows,
+    then all ``m = +1`` rows; degrees ascend inside every group.
+    """
+    dim = (lmax + 1) ** 2
+    widths = [2 * ell + 1 for ell in range(1, lmax + 1)]
+    bases = [sum(widths[:i]) for i in range(len(widths))]
+    return bases, dim
+
+
+def _wigner_band_impl(
+    quat: torch.Tensor,
+    l1_perm: torch.Tensor,
+    l1_sign: torch.Tensor,
+    coeff_l2: torch.Tensor,
+    c_l3: torch.Tensor,
+    exp_l2: list[int],
+    exp_l3: list[int],
+    lmax: int,
+) -> torch.Tensor:
+    """Band assembly behind an opaque boundary (input must be unit norm).
+
+    Mirrors :meth:`WignerDCalculator.forward_band` for the ``lmax <= 3``
+    ladder: the l=1 block is the permuted signed rotation matrix, the
+    l=2/l=3 blocks are the monomial evaluations contracted with the frozen
+    coefficient tables.
+    """
+    from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+        wigner_monomials,
+    )
+
+    n_edge = quat.shape[0]
+    m0_rows = [quat.new_ones((n_edge, 1))]
+    mm_rows: list[torch.Tensor] = []
+    mp_rows: list[torch.Tensor] = []
+    if lmax >= 1:
+        rot = quaternion_to_rotation_matrix(quat)
+        block = rot.index_select(-2, l1_perm).index_select(-1, l1_perm)
+        block = block * l1_sign
+        m0_rows.append(block[:, 1, :])
+        mm_rows.append(block[:, 0, :])
+        mp_rows.append(block[:, 2, :])
+    if lmax >= 2:
+        mono = wigner_monomials(quat, exp_l2, 4)
+        block = torch.matmul(mono, coeff_l2).view(n_edge, 5, 5)
+        m0_rows.append(block[:, 2, :])
+        mm_rows.append(block[:, 1, :])
+        mp_rows.append(block[:, 3, :])
+    if lmax >= 3:
+        mono = wigner_monomials(quat, exp_l3, 6)
+        block = torch.matmul(mono, c_l3.transpose(0, 1)).view(n_edge, 7, 7)
+        m0_rows.append(block[:, 3, :])
+        mm_rows.append(block[:, 2, :])
+        mp_rows.append(block[:, 4, :])
+    return torch.cat(m0_rows + mm_rows + mp_rows, dim=1).contiguous()
+
+
+_wigner_band_op = torch.library.triton_op("sezm_triton::wigner_band", mutates_args=())(
+    _wigner_band_impl
+)
+
+
+@_wigner_band_op.register_fake
+def _(
+    quat: torch.Tensor,
+    l1_perm: torch.Tensor,
+    l1_sign: torch.Tensor,
+    coeff_l2: torch.Tensor,
+    c_l3: torch.Tensor,
+    exp_l2: list[int],
+    exp_l3: list[int],
+    lmax: int,
+) -> torch.Tensor:
+    dim = (lmax + 1) ** 2
+    return quat.new_empty((quat.shape[0], 3 * dim - 2))
+
+
+def _wigner_band_setup_context(
+    ctx: Any, inputs: tuple[Any, ...], output: torch.Tensor
+) -> None:
+    quat, l1_perm, l1_sign, coeff_l2, c_l3, exp_l2, exp_l3, lmax = inputs
+    ctx.save_for_backward(quat, l1_perm, l1_sign, coeff_l2, c_l3)
+    ctx.exp_l2 = exp_l2
+    ctx.exp_l3 = exp_l3
+    ctx.lmax = lmax
+
+
+def _wigner_band_backward(ctx: Any, grad_band: torch.Tensor) -> tuple:
+    """Analytic band cotangent: rows -> monomial space -> quaternion.
+
+    The three stored rows of each degree block are contiguous block rows,
+    so each degree contracts its ``3 x (2l+1)`` gradient slice against the
+    matching coefficient rows in one small product, hands the result to the
+    monomial operator's own backward, and the l=1 rows differentiate the
+    rotation-matrix formula directly.
+    """
+    from deepmd.pt_expt.kernels.triton.sezm.wigner_monomials import (
+        _monomials_bwd_op,
+    )
+
+    quat, l1_perm, l1_sign, coeff_l2, c_l3 = ctx.saved_tensors
+    lmax = ctx.lmax
+    bases, dim = _band_group_offsets(lmax)
+    grad_quat = torch.zeros_like(quat)
+    if lmax >= 2:
+        width = 5
+        g2 = torch.cat(
+            [
+                grad_band[
+                    :,
+                    dim + bases[1] : dim + bases[1] + width,
+                ],
+                grad_band[:, 1 + bases[1] : 1 + bases[1] + width],
+                grad_band[
+                    :,
+                    2 * dim - 1 + bases[1] : 2 * dim - 1 + bases[1] + width,
+                ],
+            ],
+            dim=1,
+        )
+        # block rows (1, 2, 3) are flat columns [5, 20) of the product
+        g_mono = torch.matmul(g2, coeff_l2[:, 5 : 5 + 3 * width].t())
+        # the monomial backward runs as its own operator: routing through
+        # autograd would re-execute the monomial forward inside the traced
+        # backward and hand back the replay we are removing
+        grad_quat = grad_quat + _monomials_bwd_op(g_mono, quat, ctx.exp_l2, 4)
+    if lmax >= 3:
+        width = 7
+        g3 = torch.cat(
+            [
+                grad_band[
+                    :,
+                    dim + bases[2] : dim + bases[2] + width,
+                ],
+                grad_band[:, 1 + bases[2] : 1 + bases[2] + width],
+                grad_band[
+                    :,
+                    2 * dim - 1 + bases[2] : 2 * dim - 1 + bases[2] + width,
+                ],
+            ],
+            dim=1,
+        )
+        # block rows (2, 3, 4) are flat columns [14, 35) of the product
+        g_mono = torch.matmul(g3, c_l3[2 * width : 5 * width, :])
+        grad_quat = grad_quat + _monomials_bwd_op(g_mono, quat, ctx.exp_l3, 6)
+    with torch.enable_grad():
+        q = quat.detach().requires_grad_(True)
+        if lmax >= 1:
+            # rows (0, 1, 2) of the l=1 block come from the three groups
+            g1 = torch.cat(
+                [
+                    grad_band[:, dim + bases[0] : dim + bases[0] + 3],
+                    grad_band[:, 1 + bases[0] : 1 + bases[0] + 3],
+                    grad_band[:, 2 * dim - 1 + bases[0] : 2 * dim - 1 + bases[0] + 3],
+                ],
+                dim=1,
+            ).view(-1, 3, 3)
+            rot = quaternion_to_rotation_matrix(q)
+            block1 = rot.index_select(-2, l1_perm).index_select(-1, l1_perm) * l1_sign
+            grad_quat = grad_quat + torch.autograd.grad(block1, q, g1)[0]
+    return (grad_quat, None, None, None, None, None, None, None)
+
+
+torch.library.register_autograd(
+    "sezm_triton::wigner_band",
+    _wigner_band_backward,
+    setup_context=_wigner_band_setup_context,
+)
+
+
+def wigner_band_op(
+    quat: torch.Tensor,
+    l1_perm: torch.Tensor,
+    l1_sign: torch.Tensor,
+    coeff_l2: torch.Tensor,
+    c_l3: torch.Tensor,
+    exp_l2: list[int],
+    exp_l3: list[int],
+    lmax: int,
+) -> torch.Tensor:
+    """Public entry for the op-bound banded Wigner assembly."""
+    return _wigner_band_op(quat, l1_perm, l1_sign, coeff_l2, c_l3, exp_l2, exp_l3, lmax)
