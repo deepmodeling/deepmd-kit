@@ -380,6 +380,8 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
 def use_gie_scatter_infer() -> bool:
     """Return whether the GIE head message runs the fused scatter operator.
 
@@ -398,4 +400,3 @@ def use_gie_scatter_infer() -> bool:
         ``True`` when ``DP_GIE_SCATTER_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_GIE_SCATTER_INFER", "0").strip().lower() in _INFER_TRUE
-
