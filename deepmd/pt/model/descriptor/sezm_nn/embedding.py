@@ -37,6 +37,7 @@ from deepmd.pt.utils.utils import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    use_gie_scatter_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -226,6 +227,33 @@ class GeometricInitialEmbedding(nn.Module):
                 self.lmax, self.ebed_dim - 1, self.channels
             )
 
+        # === Fused Triton message-and-scatter operator ===
+        # Same boundary as the CUDA operator above, served by the Triton
+        # stack instead: the kernel specializes on the packed contiguous row
+        # layout, so anything else (or a non-fp32 compute) keeps the reference
+        # composition.
+        self._triton_scatter = None
+        if use_gie_scatter_infer() and self.dtype is torch.float32 and self.lmax == 3:
+            from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+                GIE_SCATTER_TRITON_AVAILABLE,
+                gie_zonal_scatter,
+            )
+
+            packed_rows = torch.arange(
+                1, self.ebed_dim, device=self.non_scalar_row_index.device
+            )
+            counts = [2 * ell + 1 for ell in range(1, self.lmax + 1)]
+            packed_slots = torch.repeat_interleave(
+                torch.arange(self.lmax, device=self.non_scalar_row_index.device),
+                torch.tensor(counts, device=self.non_scalar_row_index.device),
+            )
+            if (
+                GIE_SCATTER_TRITON_AVAILABLE
+                and torch.equal(self.non_scalar_row_index, packed_rows)
+                and torch.equal(self.radial_slot_index_for_row, packed_slots)
+            ):
+                self._triton_scatter = gie_zonal_scatter
+
     def forward(
         self,
         *,
@@ -292,6 +320,38 @@ class GeometricInitialEmbedding(nn.Module):
             return self.forward_fused_scatter(
                 n_nodes, edge_cache, radial_feat, zonal_coupling
             )
+
+        # === Step 3a. Fused Triton message-and-scatter ===
+        # Same boundary as the CUDA operator above: the degree-normalized
+        # scale stays outside so its cotangent keeps flowing through the
+        # traced graph, while the (E, D-1, C) message itself never leaves the
+        # kernel's registers in either direction.
+        if (
+            self._triton_scatter is not None
+            and spin_l1_message is None
+            and edge_cache.edge_src_gate is None
+            and edge_cache.csr_cache is not None
+        ):
+            from .edge_cache import (
+                cached_edge_csr,
+            )
+
+            order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
+            # The operator contract promises contiguous inputs: the
+            # radial slice and the gathered coupling are flattened in the
+            # traced graph before entering the op, like every other
+            # sezm_triton operator.
+            out = self._triton_scatter(
+                zonal_coupling.contiguous(),
+                radial_feat.contiguous(),
+                edge_cache.dst,
+                order,
+                row_ptr,
+                n_nodes,
+                self.lmax,
+            )  # (N, D, C), l=0 zero, unnormalized
+            out.mul_(edge_cache.inv_sqrt_deg)
+            return out
 
         radial_value_for_row = radial_feat.index_select(
             1, self.radial_slot_index_for_row
