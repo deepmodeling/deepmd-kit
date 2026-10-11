@@ -2036,6 +2036,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             shared = self._shared_wigner_runs(edge_cache, calc.lmax)
             if shared is not None:
                 return shared
+            packed = getattr(edge_cache, "D_packed", None)
+            if packed is not None and calc.lmax <= self.lmax:
+                # The packed band's m=0 group already carries these entries
+                # (band columns 1..(lmax+1)^2-1 equal the zonal coupling's
+                # packed-row order), so no second quaternion -> monomial ->
+                # block run is scheduled next to the banded assembly.
+                return packed[:, 1 : (calc.lmax + 1) ** 2]
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None
