@@ -2210,3 +2210,100 @@ class TestSeZMTritonWignerBand(unittest.TestCase):
         out1, grad1 = run("band")
         self.assertTrue(torch.equal(out0, out1))
         self.assertTrue(torch.equal(grad0, grad1))
+
+
+class TestSeZMWignerBandOp(unittest.TestCase):
+    """The op-bound banded assembly and its analytic backward."""
+
+    def _make_calc(self, lmax):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+
+        calc = WignerDCalculator(lmax=lmax, dtype=torch.float32).cuda()
+        calc.eval()
+        return calc
+
+    def _op_band(self, calc, quat):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            quaternion_normalize,
+            wigner_band_op,
+        )
+
+        return wigner_band_op(
+            quaternion_normalize(quat, eps=calc.eps),
+            calc.l1_perm,
+            calc.l1_sign_outer,
+            calc._l2_monomial_coeff,
+            calc.small_order_kernels.C_l3,
+            calc._monomial_exponents_flat["exp_l2"],
+            calc._monomial_exponents_flat["exp_l3"],
+            int(calc.lmax),
+        )
+
+    @_GPU_KERNELS
+    def test_matches_composition_with_grads(self):
+        import os
+        from unittest.mock import patch
+
+        generator = torch.Generator(device="cuda").manual_seed(23)
+        # the gate is conservative: the op promises the deployed ladder
+        # (all three degree tables present), lower lmax falls back
+        for lmax in (3,):
+            with self.subTest(lmax=lmax):
+                with patch.dict(os.environ, {"DP_TRITON_INFER": "3"}):
+                    calc = self._make_calc(lmax)
+                self.assertTrue(calc.band_op_supported())
+                quat = torch.randn(4096, 4, device="cuda", generator=generator)
+                quat = quat / quat.norm(dim=-1, keepdim=True)
+                quat = quat + 0.01 * torch.randn(
+                    4096, 4, device="cuda", generator=generator
+                )
+
+                q1 = quat.clone().requires_grad_(True)
+                band = self._op_band(calc, q1)
+                q2 = quat.clone().requires_grad_(True)
+                ref = calc.forward_band(q2)
+                torch.testing.assert_close(band, ref, atol=1e-6, rtol=1e-6)
+
+                cotangent = torch.randn(
+                    ref.shape,
+                    device="cuda",
+                    generator=torch.Generator(device="cuda").manual_seed(37),
+                )
+                g1 = torch.autograd.grad(band, q1, cotangent)[0]
+                g2 = torch.autograd.grad(ref, q2, cotangent)[0]
+                torch.testing.assert_close(g1, g2, atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_compile_matches_eager(self):
+        generator = torch.Generator(device="cuda").manual_seed(29)
+        calc = self._make_calc(3)
+        quat = torch.randn(2048, 4, device="cuda", generator=generator)
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+
+        def fn(q):
+            return self._op_band(calc, q)
+
+        q_e = quat.clone().requires_grad_(True)
+        out_e = fn(q_e)
+        cot = torch.randn_like(out_e)
+        g_e = torch.autograd.grad(out_e, q_e, cot)[0]
+
+        q_c = quat.clone().requires_grad_(True)
+        out_c = torch.compile(fn)(q_c)
+        g_c = torch.autograd.grad(out_c, q_c, cot)[0]
+        torch.testing.assert_close(out_c, out_e, atol=1e-6, rtol=1e-6)
+        torch.testing.assert_close(g_c, g_e, atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_zonal_coupling_equals_band_m0_group(self):
+        """The GIE zonal entries are exactly the band's m=0 columns."""
+        generator = torch.Generator(device="cuda").manual_seed(31)
+        calc = self._make_calc(3)
+        quat = torch.randn(2048, 4, device="cuda", generator=generator)
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+        zonal = calc.forward_zonal(quat, lmin=1)
+        band = calc.forward_band(quat)
+        dim = (calc.lmax + 1) ** 2
+        torch.testing.assert_close(zonal, band[:, 1:dim], atol=1e-6, rtol=1e-6)
