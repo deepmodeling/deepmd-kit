@@ -2244,7 +2244,9 @@ class TestSeZMWignerBandOp(unittest.TestCase):
     @_GPU_KERNELS
     def test_matches_composition_with_grads(self):
         import os
-        from unittest.mock import patch
+        from unittest.mock import (
+            patch,
+        )
 
         generator = torch.Generator(device="cuda").manual_seed(23)
         # the gate is conservative: the op promises the deployed ladder
