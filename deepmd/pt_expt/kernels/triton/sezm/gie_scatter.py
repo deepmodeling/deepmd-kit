@@ -30,6 +30,8 @@ from __future__ import (
 )
 
 import torch
+import triton
+import triton.language as tl
 from torch import (
     Tensor,
 )
@@ -39,8 +41,6 @@ from torch.library import (
 from triton import (
     cdiv,
 )
-import triton
-import triton.language as tl
 
 __all__ = [
     "GIE_SCATTER_TRITON_AVAILABLE",

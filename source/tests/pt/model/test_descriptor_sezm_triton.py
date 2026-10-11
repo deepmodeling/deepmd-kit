@@ -2123,7 +2123,9 @@ class TestSeZMGieScatter(unittest.TestCase):
 
     def test_reference_cpu_matches_manual(self):
         """CPU reference equals a hand-written sequential accumulation."""
-        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import _reference
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            _reference,
+        )
 
         generator = torch.Generator().manual_seed(7)
         n_edge, n_nodes = 513, 17
