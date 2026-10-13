@@ -647,6 +647,7 @@ class Trainer:
                             _bias_adjust_mode="change-by-statistic"
                             if not _finetune_rule_single.get_random_fitting()
                             else "set-by-statistic",
+                            apply_preset=True,
                         )
                         return _model
 
@@ -1455,11 +1456,13 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Any,
     _bias_adjust_mode: str = "change-by-statistic",
+    apply_preset: bool = False,
 ) -> None:
     old_bias = deepcopy(_model.get_out_bias())
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
+        apply_preset=apply_preset,
     )
     new_bias = deepcopy(_model.get_out_bias())
 

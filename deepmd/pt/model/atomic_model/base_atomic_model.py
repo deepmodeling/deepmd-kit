@@ -629,6 +629,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         bias_adjust_mode: str = "change-by-statistic",
         model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
         observed_type: list[str] | None = None,
+        apply_preset: bool = False,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -654,8 +655,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             preset value, and the types absent from the data keep zero; no
             statistics are computed, read or written for such an output, whose
             output std keeps its stored value.
-            In 'change-by-statistic' mode, presets are treated as part of the
-            current stored bias and the residual statistics are fitted normally.
+            In 'change-by-statistic' mode, stored presets are ignored unless
+            apply_preset is True for an explicitly provided downstream preset.
+        apply_preset : bool
+            Apply the current configuration's preset during residual fitting.
+            Enable only when the downstream operation explicitly supplies it.
         model_forward : Callable[..., dict[str, torch.Tensor]], optional
             Predictor of the complete atomic outputs used by 'change-by-statistic'.
             Defaults to the forward of this atomic model; a model that adds
@@ -672,7 +676,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         sampled = sample_merged
         # === Step 1. Outputs fixed by the preset ===
         fitted_keys = self.bias_keys
-        if self.preset_out_bias and not change:
+        if self.preset_out_bias and (not change or apply_preset):
             if observed_type is None:
                 sampled = sample_merged() if callable(sample_merged) else sample_merged
                 observed_type = collect_observed_types(sampled, self.type_map)
@@ -683,7 +687,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 to_numpy_array(self.out_bias),
                 self.bias_keys,
                 [self.atomic_output_def()[kk].size for kk in self.bias_keys],
-                keep_unassigned=False,
+                keep_unassigned=change,
                 excluded_types=self.atom_exclude_types,
             )
             self._store_out_stat({kk: to_torch_tensor(vv) for kk, vv in rows.items()})

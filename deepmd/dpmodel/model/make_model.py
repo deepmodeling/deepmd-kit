@@ -926,6 +926,7 @@ def make_model(
             self,
             merged: Any,
             bias_adjust_mode: str = "change-by-statistic",
+            apply_preset: bool = False,
         ) -> None:
             """Change the output bias according to the input data and the pretrained model.
 
@@ -937,7 +938,9 @@ def make_model(
                 The mode for changing output bias:
                 'change-by-statistic' or 'set-by-statistic'.
             """
-            self.atomic_model.change_out_bias(merged, bias_adjust_mode=bias_adjust_mode)
+            self.atomic_model.change_out_bias(
+                merged, bias_adjust_mode=bias_adjust_mode, apply_preset=apply_preset
+            )
 
         def _input_type_cast(
             self,

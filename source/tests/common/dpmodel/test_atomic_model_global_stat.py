@@ -341,6 +341,18 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         assert not np.allclose(out_bias["bar"], bar_bias)
 
+        # An explicit downstream preset overrides the fitted bias.
+        new_foo_bias = foo_bias + 7.0
+        md0.preset_out_bias["foo"] = new_foo_bias.tolist()
+        md0.change_out_bias(
+            self.merged_output_stat,
+            bias_adjust_mode="change-by-statistic",
+            apply_preset=True,
+        )
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(out_bias["foo"], new_foo_bias)
+        np.testing.assert_almost_equal(out_bias["bar"], bar_bias)
+
         # 4. a preset that leaves an observed type unassigned is rejected
         md1 = DPDPAtomicModel(
             ds,

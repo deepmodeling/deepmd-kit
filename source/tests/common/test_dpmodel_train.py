@@ -26,7 +26,8 @@ class FakeModel:
     def get_out_bias(self):
         return self.out_bias
 
-    def change_out_bias(self, sample_func, bias_adjust_mode):
+    def change_out_bias(self, sample_func, bias_adjust_mode, apply_preset=False):
+        self.apply_preset = apply_preset
         self.change_calls.append((sample_func, bias_adjust_mode))
         self.out_bias = self.out_bias + 1.0
 
@@ -38,6 +39,17 @@ class FakeModel:
 
 
 class TestChangeModelOutBias(unittest.TestCase):
+    def test_change_model_out_bias_explicit_preset(self):
+        model = FakeModel()
+
+        def sample_func():
+            return []
+
+        change_model_out_bias(model, sample_func)
+        self.assertFalse(model.apply_preset)
+        change_model_out_bias(model, sample_func, apply_preset=True)
+        self.assertTrue(model.apply_preset)
+
     def test_change_model_out_bias_recomputes_input_stats_when_requested(self):
         model = FakeModel()
 

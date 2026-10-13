@@ -231,6 +231,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             self,
             merged: list[dict] | Callable[[], list[dict]],
             bias_adjust_mode: str = "change-by-statistic",
+            apply_preset: bool = False,
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -252,6 +253,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             self.atomic_model.change_out_bias(
                 merged,
                 bias_adjust_mode=bias_adjust_mode,
+                apply_preset=apply_preset,
             )
 
         def forward_common_lower(

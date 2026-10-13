@@ -74,12 +74,14 @@ def change_model_out_bias(
     *,
     bias_adjust_mode: str = "change-by-statistic",
     recompute_input_stats: bool = False,
+    apply_preset: bool = False,
 ) -> Any:
     """Change one model's output bias and log the before/after values."""
     old_bias = deepcopy(model.get_out_bias())
     model.change_out_bias(
         sample_func,
         bias_adjust_mode=bias_adjust_mode,
+        apply_preset=apply_preset,
     )
     new_bias = deepcopy(model.get_out_bias())
 

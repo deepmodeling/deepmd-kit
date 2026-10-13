@@ -616,6 +616,7 @@ class DPTrainer(AbstractTrainer):
             self.models[model_key].change_out_bias(
                 self._sample_funcs[model_key],
                 bias_adjust_mode=bias_mode,
+                apply_preset=True,
             )
 
     def _initialize_stat(self, model_key: str) -> None:
