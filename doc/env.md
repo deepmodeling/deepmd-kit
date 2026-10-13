@@ -99,8 +99,9 @@ Setting this variable disables automatic sizing and uses the value given;
 out-of-memory errors can still reduce the batch, halving it (rounding up, so 2
 is always tried before 1), warning which
 batch was used, and keeping the surviving batch for the rest of the call. The
-result does not depend on the batch: it changes how the Hessian is computed,
-not what it is.
+result agrees with the unbatched result to floating-point rounding (about
+1e-14 relative in float64 and a few 1e-6 in float32): it changes how the
+Hessian is computed, not what it is.
 :::
 
 :::{envvar} DP_BACKEND

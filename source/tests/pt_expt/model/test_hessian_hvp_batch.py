@@ -164,7 +164,7 @@ class TestHessianHvpBatch:
         assert route_counts["batched"] == 0, "batch<=1 must not take the batched helper"
         assert route_counts["dense"] == 0
 
-    @pytest.mark.parametrize("batch", BATCHES)
+    @pytest.mark.parametrize("batch", BATCHES)  # rows per second-order backward
     def test_batched_matches_unbatched(self, batch, route_counts, monkeypatch) -> None:
         """Every batch size must reproduce the unbatched Hessian to float64 precision."""
         model = self._make_model()
@@ -183,7 +183,7 @@ class TestHessianHvpBatch:
             batched, reference, rtol=0.0, atol=float(1e-12 * scale)
         )
 
-    @pytest.mark.parametrize("batch", sorted(PADS))
+    @pytest.mark.parametrize("batch", sorted(PADS))  # rows per second-order backward
     def test_padded_final_chunk_is_discarded(self, batch, monkeypatch) -> None:
         """A batch size that does not divide 3*nloc still yields exactly 3*nloc rows.
 
@@ -287,7 +287,9 @@ class TestHessianHvpBatch:
         assert back is not None, "the Hessian no longer depends on the coordinates"
         assert torch.isfinite(back).all()
 
-    @pytest.mark.parametrize("dependence", ["linear", "constant"])
+    @pytest.mark.parametrize(
+        "dependence", ["linear", "constant"]
+    )  # coordinate dependence
     def test_a_curvature_free_energy_gives_a_zero_hessian_not_a_crash(
         self, dependence, monkeypatch
     ) -> None:
@@ -372,7 +374,7 @@ class TestHessianHvpBatch:
             f"an identity of size {NDOF} was built; sizes seen: {seen}"
         )
 
-    @pytest.mark.parametrize("wrapped", [False, True])
+    @pytest.mark.parametrize("wrapped", [False, True])  # wrapped probe OOM
     def test_an_out_of_memory_probe_falls_back_instead_of_escaping(
         self, wrapped, monkeypatch
     ) -> None:
@@ -484,7 +486,9 @@ class TestHessianHvpBatch:
             recovered, reference, rtol=0.0, atol=float(1e-12 * scale)
         )
 
-    @pytest.mark.parametrize("wrapped", ["message", "cause", "aoti"])
+    @pytest.mark.parametrize(
+        "wrapped", ["message", "cause", "aoti"]
+    )  # wrapped OOM representation
     def test_a_wrapped_out_of_memory_still_falls_back(
         self, wrapped, monkeypatch
     ) -> None:
@@ -754,28 +758,38 @@ class TestHvpBatchPolicy:
         allocated makes that cache zero and keeps the device's real state out
         of the arithmetic under test.
         """
+        # The policy arithmetic is device-independent once the replica cost is
+        # fixed. Use a CUDA device token with all allocator probes mocked so the
+        # exact policy runs in the ordinary CPU test job as well.
+        monkeypatch.setattr(env, "DEVICE", torch.device("cuda"))
+        monkeypatch.setattr(
+            mm,
+            "_hvp_replica_cost",
+            lambda *a, **k: 32 * self.MIB,
+        )
         monkeypatch.setattr(
             torch.cuda, "mem_get_info", lambda *a, **k: (free_mib * self.MIB, 0)
         )
         monkeypatch.setattr(
             torch.cuda,
+            "memory_allocated",
+            lambda *a, **k: 0,
+        )
+        monkeypatch.setattr(
+            torch.cuda,
             "memory_reserved",
-            lambda *a, **k: torch.cuda.memory_allocated(*a, **k),
+            lambda *a, **k: 0,
         )
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="the automatic batch needs CUDA"
-    )
-    @pytest.mark.parametrize("free_mib", [8, 64, 256, 1024, 4096, 16384, 65536])
+    @pytest.mark.parametrize(
+        "free_mib", [8, 64, 256, 1024, 4096, 16384, 65536]
+    )  # free memory MiB
     def test_auto_batch_is_bounded(self, free_mib, monkeypatch) -> None:
         """Whatever the free memory, the batch stays within [1, cap]."""
         self._free(monkeypatch, free_mib)
         batch = mm._auto_hvp_batch(env.DEVICE, self._probe(32 * self.MIB))
         assert 1 <= batch <= mm.DP_HESSIAN_HVP_BATCH_CAP
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="the automatic batch needs CUDA"
-    )
     def test_auto_batch_rises_with_free_memory(self, monkeypatch) -> None:
         """More memory must never buy a smaller batch."""
         chosen = []
@@ -787,9 +801,6 @@ class TestHvpBatchPolicy:
         assert chosen[0] == 1
         assert chosen[-1] == mm.DP_HESSIAN_HVP_BATCH_CAP
 
-    @pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="the automatic batch needs CUDA"
-    )
     def test_cached_memory_counts_as_free(self, monkeypatch) -> None:
         """Memory the caching allocator holds but is not using is usable.
 
