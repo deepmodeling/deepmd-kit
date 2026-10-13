@@ -180,7 +180,8 @@ def _compute_expected() -> None:
     proc = sp.run([sys.executable, "-c", script], capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(f"Failed to compute expected values:\n{proc.stderr}")
-    result = json.loads(proc.stdout.strip())
+    # Warp and other backends may log to stdout before the final JSON payload.
+    result = json.loads(proc.stdout.strip().splitlines()[-1])
 
     # Raw DeepEval force_mag (dE/dspin), scaled by LAMMPS's own
     # spin_norm / hbar unit convention (see ``_HBAR_METAL`` above) before
