@@ -54,6 +54,9 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   option(DEEPMD_ENABLE_DPA1_HIGH_LMAX
          "Instantiate experimental DPA1 CUDA kernels for lmax greater than one"
          OFF)
+  option(DEEPMD_ENABLE_DPA4_FP64
+         "Instantiate float64 DPA4 training kernels for numerical validation"
+         OFF)
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # CUDA 12.9 CCCL fails to compile CUB/Thrust with -arch=all.
     if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "12.9" AND CUDAToolkit_VERSION
@@ -92,6 +95,16 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
       dpa4/so2_conv_bwd_c64_l4.cu
       dpa4/so2_conv_bwd_c64_l5.cu
       dpa4/so2_conv_bwd_c64_l6.cu)
+  # Working types of the DPA4 training kernels: float32 and bfloat16 serve
+  # training, the latter under automatic mixed precision; float64 serves only
+  # the numerical validation of the fused operators.
+  set(DPA4_TRAIN_DTYPES f32 bf16)
+  if(DEEPMD_ENABLE_DPA4_FP64)
+    list(APPEND DPA4_TRAIN_DTYPES f64)
+  endif()
+  set(DPA4_TRAIN_TYPE_f32 float)
+  set(DPA4_TRAIN_TYPE_bf16 c10::BFloat16)
+  set(DPA4_TRAIN_TYPE_f64 double)
   # The rotation training kernels form a compile-time grid over degree, radial
   # rank and scalar type. Generate one source per grid point so Ninja can
   # compile the expensive template instantiations independently, while the
@@ -104,14 +117,8 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   file(MAKE_DIRECTORY "${DPA4_RMT_GENERATED_DIR}")
   foreach(DPA4_RMT_L RANGE 1 6)
     foreach(DPA4_RMT_RANK RANGE 0 4)
-      foreach(DPA4_RMT_DTYPE IN ITEMS f32 f64 bf16)
-        if(DPA4_RMT_DTYPE STREQUAL "f32")
-          set(DPA4_RMT_TYPE float)
-        elseif(DPA4_RMT_DTYPE STREQUAL "f64")
-          set(DPA4_RMT_TYPE double)
-        else()
-          set(DPA4_RMT_TYPE c10::BFloat16)
-        endif()
+      foreach(DPA4_RMT_DTYPE IN LISTS DPA4_TRAIN_DTYPES)
+        set(DPA4_RMT_TYPE "${DPA4_TRAIN_TYPE_${DPA4_RMT_DTYPE}}")
         set(DPA4_RMT_SHARD
             "${DPA4_RMT_GENERATED_DIR}/l${DPA4_RMT_L}_r${DPA4_RMT_RANK}_${DPA4_RMT_DTYPE}.cu"
         )
@@ -129,25 +136,16 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   unset(DPA4_RMT_INSTANTIATE_HEADER)
   unset(DPA4_RMT_GENERATED_DIR)
   # The training forward has a smaller template grid over degree and scalar
-  # type. Keep the same generated-shard layout as rotate_mix_train so the four
-  # dtype instantiations of a high degree do not serialize behind one nvcc
-  # invocation.
+  # type. Keep the same generated-shard layout as rotate_mix_train so the dtype
+  # instantiations of a high degree do not serialize behind one nvcc invocation.
   set(DPA4_SO2_CONV_TRAIN_KERNEL_SRC)
   set(DPA4_SCT_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/dpa4/so2_conv_train")
   set(DPA4_SCT_INSTANTIATE_HEADER
       "${CMAKE_CURRENT_SOURCE_DIR}/dpa4/so2_conv_train/instantiate.cuh")
   file(MAKE_DIRECTORY "${DPA4_SCT_GENERATED_DIR}")
   foreach(DPA4_SCT_L RANGE 1 6)
-    foreach(DPA4_SCT_DTYPE IN ITEMS f32 f64 f16 bf16)
-      if(DPA4_SCT_DTYPE STREQUAL "f32")
-        set(DPA4_SCT_TYPE float)
-      elseif(DPA4_SCT_DTYPE STREQUAL "f64")
-        set(DPA4_SCT_TYPE double)
-      elseif(DPA4_SCT_DTYPE STREQUAL "f16")
-        set(DPA4_SCT_TYPE c10::Half)
-      else()
-        set(DPA4_SCT_TYPE c10::BFloat16)
-      endif()
+    foreach(DPA4_SCT_DTYPE IN LISTS DPA4_TRAIN_DTYPES)
+      set(DPA4_SCT_TYPE "${DPA4_TRAIN_TYPE_${DPA4_SCT_DTYPE}}")
       set(DPA4_SCT_SHARD
           "${DPA4_SCT_GENERATED_DIR}/l${DPA4_SCT_L}_${DPA4_SCT_DTYPE}.cu")
       configure_file(dpa4/so2_conv_train/shard.cu.in "${DPA4_SCT_SHARD}" @ONLY)
@@ -160,6 +158,10 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   unset(DPA4_SCT_L)
   unset(DPA4_SCT_INSTANTIATE_HEADER)
   unset(DPA4_SCT_GENERATED_DIR)
+  unset(DPA4_TRAIN_TYPE_f32)
+  unset(DPA4_TRAIN_TYPE_bf16)
+  unset(DPA4_TRAIN_TYPE_f64)
+  unset(DPA4_TRAIN_DTYPES)
   set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC
       dpa4c/graph_compress.cu dpa4c/graph_compress_c8.cu
       dpa4c/graph_compress_c16.cu dpa4c/graph_compress_c32.cu
@@ -219,11 +221,18 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     target_compile_definitions(deepmd_op_pt
                                PRIVATE DEEPMD_ENABLE_DPA1_HIGH_LMAX=1)
   endif()
+  if(DEEPMD_ENABLE_DPA4_FP64)
+    target_compile_definitions(deepmd_op_pt PRIVATE DEEPMD_ENABLE_DPA4_FP64=1)
+  endif()
+  # The longest translation units run the per-architecture device passes of nvcc
+  # (the native code and the portable PTX) in parallel threads, which shortens
+  # the critical path of a parallel build.
+  set_source_files_properties(
+    ${DPA4_SO2_CONV_KERNEL_SRC} dpa1_graph_descriptor.cu
+    PROPERTIES COMPILE_OPTIONS "--threads=2")
   # The compressed DPA1 and DPA4C kernels are instantiated one translation unit
   # per channel width so their angular-degree and topology specializations
   # compile in parallel.
-  set_source_files_properties(${DPA4_SO2_CONV_KERNEL_SRC}
-                              PROPERTIES COMPILE_OPTIONS "--threads=2")
   set_source_files_properties(
     ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     PROPERTIES COMPILE_OPTIONS "--use_fast_math")
