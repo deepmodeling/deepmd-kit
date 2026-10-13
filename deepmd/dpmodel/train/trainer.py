@@ -78,10 +78,13 @@ def change_model_out_bias(
 ) -> Any:
     """Change one model's output bias and log the before/after values."""
     old_bias = deepcopy(model.get_out_bias())
+    preset_kwargs = (
+        {"preset_out_bias": preset_out_bias} if preset_out_bias is not None else {}
+    )
     model.change_out_bias(
         sample_func,
         bias_adjust_mode=bias_adjust_mode,
-        preset_out_bias=preset_out_bias,
+        **preset_kwargs,
     )
     new_bias = deepcopy(model.get_out_bias())
 
@@ -104,7 +107,6 @@ def change_model_out_bias_by_task(
     *,
     bias_adjust_mode: str = "change-by-statistic",
     recompute_input_stats: bool = False,
-    preset_out_bias_by_task: Mapping[str, dict | None] | None = None,
 ) -> MutableMapping[str, Any]:
     """Change output bias for all requested training-task models."""
     log.info("Changing output bias after training.")
@@ -114,11 +116,6 @@ def change_model_out_bias_by_task(
             sample_funcs[model_key],
             bias_adjust_mode=bias_adjust_mode,
             recompute_input_stats=recompute_input_stats,
-            preset_out_bias=(
-                preset_out_bias_by_task.get(model_key)
-                if preset_out_bias_by_task is not None
-                else None
-            ),
         )
     return models
 

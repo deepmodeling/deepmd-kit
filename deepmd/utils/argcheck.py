@@ -3646,11 +3646,9 @@ def model_args(
         "for tensor outputs, e.g. `{'dipole': [null, [0., 1., 2.]]}`. "
         "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
         "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
-        "output is taken from the preset without statistics when a model is initialized. During fine-tuning, "
-        "a preset explicitly provided in the downstream input overrides the loaded bias and skips fitting for "
-        "that output; without a downstream preset, the loaded bias is adjusted by fitting residuals. "
-        "Post-training bias updates use the same preset from the current training input. "
-        "`dp change-bias` in change mode fits residuals without reapplying the model's stored preset. "
+        "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
+        "changed by fine-tuning. `dp change-bias` fits from its input data without reapplying the model's stored "
+        "preset; explicit `--bias-value` values override the bias directly. "
         "Dipole models apply no output bias and take no preset."
     )
     doc_finetune_head = (

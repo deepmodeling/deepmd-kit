@@ -753,9 +753,6 @@ def _bias_sync_trainer(rank: int) -> DPTrainer:
     trainer.models = {DEFAULT_TASK_KEY: _BiasModel(0.0)}
     trainer._sample_funcs = {DEFAULT_TASK_KEY: object()}
     trainer.model_keys = [DEFAULT_TASK_KEY]
-    trainer.model_params_by_task = {
-        DEFAULT_TASK_KEY: {"preset_out_bias": {"energy": [1.0]}}
-    }
     return trainer
 
 
@@ -780,9 +777,6 @@ def test_jax_change_bias_after_training_broadcasts_chief_state() -> None:
         trainer._change_bias_after_training()
 
     change_model_out_bias_by_task.assert_called_once()
-    assert change_model_out_bias_by_task.call_args.kwargs[
-        "preset_out_bias_by_task"
-    ] == {DEFAULT_TASK_KEY: {"energy": [1.0]}}
     broadcast_one_to_all.assert_called_once()
     assert broadcast_one_to_all.call_args.kwargs["is_source"] is True
     np.testing.assert_allclose(

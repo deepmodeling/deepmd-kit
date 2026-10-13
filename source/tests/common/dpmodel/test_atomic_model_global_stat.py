@@ -319,52 +319,37 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for kk in ["foo", "pix", "bar"]:
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
-        # 3. change-by-statistic treats the preset as the stored starting bias
-        # and fits a downstream residual shift.
+        # 3. change-by-statistic keeps every assigned type at its preset
         md0.change_out_bias(
             self.merged_output_stat, bias_adjust_mode="change-by-statistic"
         )
-        args_stat = [
-            self.coord_ext,
-            np.array(self.merged_output_stat[0]["atype_ext"], dtype=np.int64),
-            self.nlist,
-        ]
-        ret3 = md0.forward_common_atomic(*args_stat)
-        expected_ret3 = {}
-        expected_ret3["foo"] = np.array([[3, 4, -2], [6, 0, 1]]).reshape(2, 3, 1)
-        expected_ret3["pix"] = ret0["pix"]
-        for kk in ["foo", "pix"]:
-            np.testing.assert_almost_equal(ret3[kk], expected_ret3[kk])
+        ret3 = md0.forward_common_atomic(*args)
+        for kk in ["foo", "pix", "bar"]:
+            np.testing.assert_almost_equal(ret3[kk], ret1[kk])
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(out_bias["foo"], foo_bias)
+        np.testing.assert_almost_equal(out_bias["bar"], bar_bias)
+
+        # Standalone change-bias explicitly ignores the checkpoint preset.
+        md0.change_out_bias(
+            self.merged_output_stat,
+            bias_adjust_mode="change-by-statistic",
+            preset_out_bias={},
+        )
         out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
         np.testing.assert_almost_equal(
             out_bias["foo"], np.array([2.0, -5.0]).reshape(2, 1)
         )
         assert not np.allclose(out_bias["bar"], bar_bias)
-        fitted_bar_bias = out_bias["bar"].copy()
 
-        # An explicit downstream preset overrides the fitted bias.
-        new_foo_bias = foo_bias + 7.0
-        md0.change_out_bias(
-            self.merged_output_stat,
-            bias_adjust_mode="change-by-statistic",
-            preset_out_bias={
-                "foo": new_foo_bias.tolist(),
-                "bar": bar_bias.tolist(),
-            },
-        )
-        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
-        np.testing.assert_almost_equal(out_bias["foo"], new_foo_bias)
-        np.testing.assert_almost_equal(out_bias["bar"], bar_bias)
-
-        # Presets for other outputs in the checkpoint are not downstream inputs.
-        md0.change_out_bias(
-            self.merged_output_stat,
-            preset_out_bias={"foo": new_foo_bias.tolist()},
-        )
-        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
-        np.testing.assert_almost_equal(out_bias["foo"], new_foo_bias)
-        np.testing.assert_almost_equal(out_bias["bar"], fitted_bar_bias)
+        # The override does not remove the model's configured preset.
         np.testing.assert_almost_equal(md0.preset_out_bias["foo"], foo_bias)
+        md0.change_out_bias(
+            self.merged_output_stat, bias_adjust_mode="change-by-statistic"
+        )
+        out_bias, _ = md0._fetch_out_stat(["foo", "bar"])
+        np.testing.assert_almost_equal(out_bias["foo"], foo_bias)
+        np.testing.assert_almost_equal(out_bias["bar"], bar_bias)
 
         # 4. a preset that leaves an observed type unassigned is rejected
         md1 = DPDPAtomicModel(

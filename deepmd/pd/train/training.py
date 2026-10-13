@@ -640,7 +640,6 @@ class Trainer:
                         _model: Any,
                         _finetune_rule_single: Any,
                         _sample_func: Any,
-                        _model_params: dict,
                     ) -> Any:
                         _model = model_change_out_bias(
                             _model,
@@ -648,17 +647,13 @@ class Trainer:
                             _bias_adjust_mode="change-by-statistic"
                             if not _finetune_rule_single.get_random_fitting()
                             else "set-by-statistic",
-                            preset_out_bias=_model_params.get("preset_out_bias"),
                         )
                         return _model
 
                     if not self.multi_task:
                         finetune_rule_single = self.finetune_links["Default"]
                         self.model = single_model_finetune(
-                            self.model,
-                            finetune_rule_single,
-                            self.get_sample_func,
-                            model_params,
+                            self.model, finetune_rule_single, self.get_sample_func
                         )
                     else:
                         for model_key in self.model_keys:
@@ -671,7 +666,6 @@ class Trainer:
                                     self.model[model_key],
                                     finetune_rule_single,
                                     self.get_sample_func[model_key],
-                                    model_params["model_dict"][model_key],
                                 )
                             else:
                                 log.info(
@@ -1093,7 +1087,6 @@ class Trainer:
                     self.model,
                     self.get_sample_func,
                     _bias_adjust_mode="change-by-statistic",
-                    preset_out_bias=self.wrapper.model_params.get("preset_out_bias"),
                 )
             else:
                 for model_key in self.model_keys:
@@ -1101,9 +1094,6 @@ class Trainer:
                         self.model[model_key],
                         self.get_sample_func[model_key],
                         _bias_adjust_mode="change-by-statistic",
-                        preset_out_bias=self.wrapper.model_params["model_dict"][
-                            model_key
-                        ].get("preset_out_bias"),
                     )
             self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pd")
             cur_lr = self.lr_schedule.value(self.num_steps - 1)
@@ -1468,10 +1458,13 @@ def model_change_out_bias(
     preset_out_bias: dict | None = None,
 ) -> None:
     old_bias = deepcopy(_model.get_out_bias())
+    preset_kwargs = (
+        {"preset_out_bias": preset_out_bias} if preset_out_bias is not None else {}
+    )
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
-        preset_out_bias=preset_out_bias,
+        **preset_kwargs,
     )
     new_bias = deepcopy(_model.get_out_bias())
 

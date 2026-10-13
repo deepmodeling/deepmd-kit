@@ -1388,9 +1388,7 @@ class TestEMATraining(unittest.TestCase):
     def test_ema_checkpoint_keeps_changed_out_bias(
         self, mocked_change_out_bias
     ) -> None:
-        def change_out_bias(
-            model, sample_func, _bias_adjust_mode, preset_out_bias=None
-        ):
+        def change_out_bias(model, sample_func, _bias_adjust_mode):
             model.set_out_bias(model.get_out_bias() + 1.0)
             return model
 

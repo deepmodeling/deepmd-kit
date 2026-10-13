@@ -519,17 +519,18 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
-            In 'set-by-statistic' mode, an output assigned in `preset_out_bias`
-            is fixed by the preset:
+            An output assigned in `preset_out_bias` is fixed by the preset in both modes:
             every element in the data must be assigned, the assigned types take the
-            preset value, and the types absent from the data keep zero; no
+            preset value, and the types absent from the data keep zero
+            ('set-by-statistic') or their stored bias ('change-by-statistic'); no
             statistics are computed, read or written for such an output, whose
             output std keeps its stored value.
-            In 'change-by-statistic' mode, stored presets are ignored.
         preset_out_bias : dict, optional
             An explicit downstream preset. Assigned outputs use this bias and
             skip fitting; other outputs fit residuals against the stored bias.
-            In 'set-by-statistic' mode, the model preset is used when omitted.
+            The model preset is used when omitted, preserving training and
+            fine-tuning behavior. Pass an empty dict to fit from the data
+            without reapplying the model's stored preset.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         observed_type : list[str], optional
@@ -542,7 +543,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         preset = (
             normalize_preset_out_bias(preset_out_bias, self.type_map)
             if preset_out_bias is not None
-            else (None if change else self.preset_out_bias)
+            else self.preset_out_bias
         )
         distinguish_types = self.get_compute_stats_distinguish_types()
         check_preset_out_bias(preset, self.bias_keys, distinguish_types)
