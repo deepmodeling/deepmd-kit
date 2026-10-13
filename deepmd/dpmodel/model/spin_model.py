@@ -603,7 +603,7 @@ class SpinModel(NativeOP):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         bias_adjust_mode: str = "change-by-statistic",
-        apply_preset: bool = False,
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -628,7 +628,7 @@ class SpinModel(NativeOP):
         self.backbone_model.change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
-            apply_preset=apply_preset,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(

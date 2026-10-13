@@ -629,7 +629,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         bias_adjust_mode: str = "change-by-statistic",
         model_forward: Callable[..., dict[str, torch.Tensor]] | None = None,
         observed_type: list[str] | None = None,
-        apply_preset: bool = False,
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
 
@@ -655,11 +655,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             preset value, and the types absent from the data keep zero; no
             statistics are computed, read or written for such an output, whose
             output std keeps its stored value.
-            In 'change-by-statistic' mode, stored presets are ignored unless
-            apply_preset is True for an explicitly provided downstream preset.
-        apply_preset : bool
-            Apply the current configuration's preset during residual fitting.
-            Enable only when the downstream operation explicitly supplies it.
+            In 'change-by-statistic' mode, stored presets are ignored.
+        preset_out_bias : dict, optional
+            An explicit downstream preset. Assigned outputs use this bias and
+            skip fitting; other outputs fit residuals against the stored bias.
+            In 'set-by-statistic' mode, the model preset is used when omitted.
         model_forward : Callable[..., dict[str, torch.Tensor]], optional
             Predictor of the complete atomic outputs used by 'change-by-statistic'.
             Defaults to the forward of this atomic model; a model that adds
@@ -671,17 +671,22 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         if bias_adjust_mode not in ("change-by-statistic", "set-by-statistic"):
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
         change = bias_adjust_mode == "change-by-statistic"
+        preset = (
+            normalize_preset_out_bias(preset_out_bias, self.type_map)
+            if preset_out_bias is not None
+            else (None if change else self.preset_out_bias)
+        )
         distinguish_types = self.get_compute_stats_distinguish_types()
-        check_preset_out_bias(self.preset_out_bias, self.bias_keys, distinguish_types)
+        check_preset_out_bias(preset, self.bias_keys, distinguish_types)
         sampled = sample_merged
         # === Step 1. Outputs fixed by the preset ===
         fitted_keys = self.bias_keys
-        if self.preset_out_bias and (not change or apply_preset):
+        if preset:
             if observed_type is None:
                 sampled = sample_merged() if callable(sample_merged) else sample_merged
                 observed_type = collect_observed_types(sampled, self.type_map)
             rows = preset_out_bias_rows(
-                self.preset_out_bias,
+                preset,
                 self.type_map,
                 observed_type,
                 to_numpy_array(self.out_bias),

@@ -975,7 +975,11 @@ class Trainer:
                             _bias_adjust_mode="change-by-statistic"
                             if not _finetune_rule.get_random_fitting()
                             else "set-by-statistic",
-                            apply_preset=True,
+                            preset_out_bias=(
+                                model_params["model_dict"][_model_key]
+                                if self.multi_task
+                                else model_params
+                            ).get("preset_out_bias"),
                         )
                         if self.multi_task:
                             self.model[_model_key] = model
@@ -1872,6 +1876,7 @@ class Trainer:
                     self.model,
                     self.get_sample_func,
                     _bias_adjust_mode="change-by-statistic",
+                    preset_out_bias=self.wrapper.model_params.get("preset_out_bias"),
                 )
             else:
                 for model_key in self.model_keys:
@@ -1879,6 +1884,9 @@ class Trainer:
                         self.model[model_key],
                         self.get_sample_func[model_key],
                         _bias_adjust_mode="change-by-statistic",
+                        preset_out_bias=self.wrapper.model_params["model_dict"][
+                            model_key
+                        ].get("preset_out_bias"),
                     )
             self.latest_model = self.ckpt_store.path_for(self.num_steps)
             cur_lr = self.lr_schedule.value(self.num_steps - 1)
@@ -2601,7 +2609,7 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Callable[[], Any],
     _bias_adjust_mode: str = "change-by-statistic",
-    apply_preset: bool = False,
+    preset_out_bias: dict | None = None,
 ) -> Any:
     from deepmd.pt.model.model.dp_model import (
         DPModelCommon,
@@ -2612,5 +2620,5 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
-        apply_preset=apply_preset,
+        preset_out_bias=preset_out_bias,
     )

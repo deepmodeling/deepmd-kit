@@ -3649,6 +3649,7 @@ def model_args(
         "output is taken from the preset without statistics when a model is initialized. During fine-tuning, "
         "a preset explicitly provided in the downstream input overrides the loaded bias and skips fitting for "
         "that output; without a downstream preset, the loaded bias is adjusted by fitting residuals. "
+        "Post-training bias updates use the same preset from the current training input. "
         "`dp change-bias` in change mode fits residuals without reapplying the model's stored preset. "
         "Dipole models apply no output bias and take no preset."
     )

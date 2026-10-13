@@ -26,8 +26,8 @@ class FakeModel:
     def get_out_bias(self):
         return self.out_bias
 
-    def change_out_bias(self, sample_func, bias_adjust_mode, apply_preset=False):
-        self.apply_preset = apply_preset
+    def change_out_bias(self, sample_func, bias_adjust_mode, preset_out_bias=None):
+        self.preset_out_bias = preset_out_bias
         self.change_calls.append((sample_func, bias_adjust_mode))
         self.out_bias = self.out_bias + 1.0
 
@@ -46,9 +46,10 @@ class TestChangeModelOutBias(unittest.TestCase):
             return []
 
         change_model_out_bias(model, sample_func)
-        self.assertFalse(model.apply_preset)
-        change_model_out_bias(model, sample_func, apply_preset=True)
-        self.assertTrue(model.apply_preset)
+        self.assertIsNone(model.preset_out_bias)
+        preset = {"energy": [1.0, 2.0]}
+        change_model_out_bias(model, sample_func, preset_out_bias=preset)
+        self.assertEqual(model.preset_out_bias, preset)
 
     def test_change_model_out_bias_recomputes_input_stats_when_requested(self):
         model = FakeModel()
@@ -82,9 +83,12 @@ class TestChangeModelOutBias(unittest.TestCase):
             models,
             sample_funcs,
             ["task_a", "task_b"],
+            preset_out_bias_by_task={"task_a": {"energy": [1.0, 2.0]}},
         )
 
         self.assertIs(returned, models)
+        self.assertEqual(models["task_a"].preset_out_bias, {"energy": [1.0, 2.0]})
+        self.assertIsNone(models["task_b"].preset_out_bias)
         np.testing.assert_allclose(models["task_a"].get_out_bias(), np.ones((1, 2, 1)))
         np.testing.assert_allclose(
             models["task_b"].get_out_bias(),

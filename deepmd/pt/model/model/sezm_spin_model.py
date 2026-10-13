@@ -432,7 +432,7 @@ class SeZMSpinModel(SeZMModel):
         self,
         merged: Callable[[], list[dict[str, Any]]] | list[dict[str, Any]],
         bias_adjust_mode: str = "change-by-statistic",
-        apply_preset: bool = False,
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change output bias using spin-expanded sampled data."""
         spin_sampled_func = self._get_spin_sampled_func(
@@ -441,7 +441,7 @@ class SeZMSpinModel(SeZMModel):
         super().change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
-            apply_preset=apply_preset,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(

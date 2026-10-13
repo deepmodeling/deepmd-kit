@@ -616,7 +616,9 @@ class DPTrainer(AbstractTrainer):
             self.models[model_key].change_out_bias(
                 self._sample_funcs[model_key],
                 bias_adjust_mode=bias_mode,
-                apply_preset=True,
+                preset_out_bias=self.model_params_by_task[model_key].get(
+                    "preset_out_bias"
+                ),
             )
 
     def _initialize_stat(self, model_key: str) -> None:
@@ -929,6 +931,10 @@ class DPTrainer(AbstractTrainer):
                 self._sample_funcs,
                 self.model_keys,
                 bias_adjust_mode="change-by-statistic",
+                preset_out_bias_by_task={
+                    key: self.model_params_by_task[key].get("preset_out_bias")
+                    for key in self.model_keys
+                },
             )
         self._broadcast_model_states()
 
