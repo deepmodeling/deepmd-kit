@@ -1220,7 +1220,7 @@ def make_model(
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
 
-        def get_neighbor_contract(self):
+        def get_neighbor_contract(self) -> "NeighborContract":
             """Return the neighbor representation contract of this model."""
             return self.atomic_model.get_neighbor_contract()
 

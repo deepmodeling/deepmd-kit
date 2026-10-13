@@ -199,7 +199,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
-    def get_neighbor_contract(self):
+    def get_neighbor_contract(self) -> "NeighborContract":
         """Return the neighbor representation contract of this atomic model.
 
         Default matches :meth:`uses_graph_lower`: graph-capable models publish

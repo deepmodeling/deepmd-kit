@@ -257,7 +257,7 @@ class DPAtomicModel(BaseAtomicModel):
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
 
-    def get_neighbor_contract(self):
+    def get_neighbor_contract(self) -> "NeighborContract":
         """Return the neighbor representation contract of this atomic model."""
         getter = getattr(self.descriptor, "get_neighbor_contract", None)
         if callable(getter):

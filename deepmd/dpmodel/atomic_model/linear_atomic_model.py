@@ -325,7 +325,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return any(m.compression_needs_min_nbor_dist() for m in self.models)
 
-    def get_neighbor_contract(self):
+    def get_neighbor_contract(self) -> "NeighborContract":
         """Merge child neighbor contracts into one consistent contract.
 
         Mixed dense compositions (e.g. standard DP+ZBL with ``PairTab``) do
