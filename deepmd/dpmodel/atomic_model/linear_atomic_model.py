@@ -3,8 +3,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
 
 import array_api_compat
 import numpy as np

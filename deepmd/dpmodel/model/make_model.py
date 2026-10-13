@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.exclude_mask import (
         PairExcludeMask,
     )
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
 
 import array_api_compat
 import numpy as np

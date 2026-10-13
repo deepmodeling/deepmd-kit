@@ -8,6 +8,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
