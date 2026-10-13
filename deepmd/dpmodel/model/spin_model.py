@@ -31,12 +31,12 @@ from deepmd.dpmodel.model.make_model import (
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
 )
-from deepmd.utils.spin import (
-    Spin,
-)
 from deepmd.utils.preset_out_bias import (
     normalize_preset_out_bias,
     remap_preset_out_bias,
+)
+from deepmd.utils.spin import (
+    Spin,
 )
 
 _NATOMS_VEC_KEYS = ("natoms", "real_natoms_vec")

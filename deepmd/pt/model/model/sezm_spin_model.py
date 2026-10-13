@@ -44,12 +44,12 @@ from deepmd.pt_expt.utils.edge_schema import (
 from deepmd.utils.path import (
     DPPath,
 )
-from deepmd.utils.spin import (
-    Spin,
-)
 from deepmd.utils.preset_out_bias import (
     normalize_preset_out_bias,
     remap_preset_out_bias,
+)
+from deepmd.utils.spin import (
+    Spin,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
