@@ -438,6 +438,21 @@ class TestSeZMSpinModel(unittest.TestCase):
             rtol=1.0e-12,
         )
 
+    def test_real_type_sequence_bias_override(self) -> None:
+        model = get_model(self._build_model_params()).to(self.device)
+        sample = {
+            "coord": self.coord,
+            "atype": self.atype,
+            "spin": self.spin,
+            "box": self.box,
+        }
+        model.change_out_bias([sample], preset_out_bias={"energy": [1.0, 2.0]})
+        bias = model.get_out_bias()
+        torch.testing.assert_close(
+            bias.reshape(-1),
+            torch.tensor([1.0, 2.0, 0.0, 0.0], dtype=bias.dtype, device=bias.device),
+        )
+
     def test_zbl_statistics_use_physical_spin_neighbor_topology(self) -> None:
         """Statistics preserve real-nlist expansion when `sel` is saturated."""
         params = self._build_model_params(bridging_method="ZBL")
