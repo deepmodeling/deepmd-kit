@@ -3441,6 +3441,7 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Any,
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> Any:
     """Change the output bias of a model based on sampled data.
 
@@ -3452,6 +3453,9 @@ def model_change_out_bias(
         Callable that returns sampled data for bias computation.
     _bias_adjust_mode
         ``"change-by-statistic"`` or ``"set-by-statistic"``.
+    preset_out_bias
+        Optional preset override. An empty mapping ignores checkpoint presets;
+        omitting it preserves training and fine-tuning behavior.
 
     Returns
     -------
@@ -3466,6 +3470,7 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
+        preset_out_bias=preset_out_bias,
     )
 
 

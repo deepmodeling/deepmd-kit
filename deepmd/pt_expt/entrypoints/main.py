@@ -825,7 +825,10 @@ def change_bias(
             nbatches = min(data.get_nbatches())
         sampled_data = make_stat_input(data, nbatches)
         model_to_change = model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if input_file.endswith(".pt"):
