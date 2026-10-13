@@ -117,6 +117,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         assert grid is not None
         assert grid_type is not None
         assert grid_nlist is not None
+        # Handle default chg_spin if the descriptor supports it, the same
+        # way DPAtomicModel.forward_atomic does
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
+                charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
         _, ngrid, _ = grid_nlist.shape
         # nb x (ngrid+nall) x 3
         merged_coord = torch.cat([grid, extended_coord], dim=1)
@@ -153,7 +160,7 @@ class DPDensityAtomicModel(DPAtomicModel):
             merged_nlist,
             mapping=merged_mapping,
             comm_dict=comm_dict,
-            charge_spin=charge_spin,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
 
@@ -214,9 +221,9 @@ class DPDensityAtomicModel(DPAtomicModel):
         ret_dict
             dict of output atomic properties.
             should implement the definition of `fitting_output_def`.
-            ret_dict["mask"] of shape nf x nloc will be provided.
-            ret_dict["mask"][ff,ii] == 1 indicating the ii-th atom of the ff-th frame is real.
-            ret_dict["mask"][ff,ii] == 0 indicating the ii-th atom of the ff-th frame is virtual.
+            ret_dict["mask"] of shape nf x ngrid will be provided.
+            ret_dict["mask"][ff,ii] == 1 indicating the ii-th grid point of the ff-th frame is included.
+            ret_dict["mask"][ff,ii] == 0 indicating the ii-th grid point of the ff-th frame is excluded.
 
         """
         assert grid is not None

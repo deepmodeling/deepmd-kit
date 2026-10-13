@@ -585,6 +585,7 @@ class DeepEval(DeepEvalBackend):
                 fparam,
                 aparam,
                 self._get_request_defs(atomic),
+                charge_spin,
             )
             # _eval_model_density returns a 1-element tuple; execute_all unwraps
             # it when auto batching is enabled, but with auto_batch_size=False
@@ -977,6 +978,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
@@ -1019,6 +1021,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -1031,6 +1037,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]

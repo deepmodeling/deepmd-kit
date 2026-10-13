@@ -56,6 +56,14 @@ class DensityTester(ModelTester):
             data.add(
                 "aparam", dp.get_dim_aparam(), atomic=True, must=True, high_prec=False
             )
+        if dp.has_chg_spin_ebd():
+            data.add(
+                "charge_spin",
+                2,
+                atomic=False,
+                must=not dp.has_default_chg_spin(),
+                high_prec=False,
+            )
 
     def evaluate_chunk(
         self,
@@ -76,7 +84,15 @@ class DensityTester(ModelTester):
             atype = test_data["type"][0]
         fparam = test_data["fparam"] if dp.get_dim_fparam() > 0 else None
         aparam = test_data["aparam"] if dp.get_dim_aparam() > 0 else None
-        grid = test_data["grid"]
+        charge_spin = (
+            test_data["charge_spin"]
+            if dp.has_chg_spin_ebd() and test_data.get("find_charge_spin", 0.0) != 0.0
+            else None
+        )
+        # the loader accepts both (nframes, ngrid, 3) and the flattened
+        # (nframes, ngrid*3) layout; DeepDensity.eval only accepts the
+        # former, so normalize here and keep one contract at the eval call
+        grid = test_data["grid"].reshape(nframes, -1, 3)
 
         prediction = dp.eval(
             coord,
@@ -85,6 +101,7 @@ class DensityTester(ModelTester):
             grid,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             mixed_type=mixed_type,
         ).reshape(nframes, -1)
         label = test_data["density"].reshape(nframes, -1)

@@ -4,7 +4,7 @@
 
 Usage
 -----
-python test_density_new.py model.pt /path/to/data --ratio 0.1 --output result.txt
+python dptest_density_script.py model.pt /path/to/data --ratio 0.1 --output result.txt
 """
 
 import argparse
@@ -47,7 +47,7 @@ dpdata.System.register_data_type(_DENSITY_DATA_TYPE)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate charge-density DeepPot model."
+        description="Evaluate a charge-density model on deepmd/npy datasets."
     )
     parser.add_argument("model", type=str, help="Path to the model file (.pt or .pth).")
     parser.add_argument(
@@ -121,7 +121,8 @@ def evaluate(
         coord = s.data["coords"].reshape(len(s), -1)
         atype = list(s.data["atom_types"])
         cell = s.data["cells"].reshape(len(s), -1)
-        grid = s.data["grid"].reshape(len(s), -1)
+        # DeepDensity.eval accepts only the (nframes, ngrid, 3) layout
+        grid = s.data["grid"].reshape(len(s), -1, 3)
 
         density_pred = dm.eval(coord, cell, atype, grid=grid)
         density_label = s.data["density"].reshape(len(s), -1)

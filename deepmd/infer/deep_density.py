@@ -89,7 +89,9 @@ class DeepDensity(DeepEval):
         mixed_type : bool, optional
             Whether the atom_types is mixed type, by default False.
         **kwargs : dict[str, Any]
-            Keyword arguments.
+            Keyword arguments. ``charge_spin`` (nframes, 2) is forwarded to
+            models with charge spin embedding; when omitted, such models use
+            their ``default_chg_spin`` if set.
 
         Returns
         -------

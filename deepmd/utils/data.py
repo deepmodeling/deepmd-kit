@@ -544,6 +544,28 @@ class DeepmdData:
         # 5. Standardize keys
         frame_data = {kk.replace("atomic", "atom"): vv for kk, vv in frame_data.items()}
 
+        # frame-major keys of one frame must agree on the point extent: a
+        # grid/density mismatch would otherwise broadcast silently (or fail
+        # with a raw size error) far downstream in the loss. The per-frame
+        # payload is (npoints, ndof) for a 3-D source array and (npoints*ndof,)
+        # for a flattened one.
+        frame_major_extents = {}
+        for kk, vv in self.data_dict.items():
+            if (
+                vv.get("special_shape") == "frame_major"
+                and kk in frame_data
+                and float(frame_data.get("find_" + kk, 0.0)) == 1.0
+            ):
+                arr = frame_data[kk]
+                extent = arr.shape[-2] if arr.ndim >= 2 else arr.shape[-1] // vv["ndof"]
+                frame_major_extents[kk] = extent
+        if len(set(frame_major_extents.values())) > 1:
+            raise ValueError(
+                f"The frame-major data in {set_dir} have inconsistent "
+                f"extents {frame_major_extents}; grid and density labels "
+                "must share the same number of points"
+            )
+
         # 6. Reshape non-atomic data to match expected format [ndof];
         # frame-major arrays keep their per-frame (npoints, ndof) layout
         for kk in self.data_dict.keys():

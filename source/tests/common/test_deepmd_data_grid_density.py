@@ -193,6 +193,16 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "extents"):
             self.build_data()._load_set(self.set_dir)
 
+    def test_extent_mismatch_single_frame(self) -> None:
+        # the PT training path (get_item_torch -> get_single_frame) assembles
+        # each frame key by key; the extent cross-check must run there too,
+        # or a 1-point density broadcasts silently against the ngrid-point
+        # prediction in the loss
+        self.set_data("density", np.zeros((NFRAMES, 1, 1), dtype=np.float32))
+        data = self.build_data()
+        with self.assertRaisesRegex(ValueError, "extents"):
+            data.get_item_torch(0)
+
     def test_cross_set_extent_mismatch(self) -> None:
         # two sets of one system must agree on the frame-major extent;
         # numpy would otherwise fail with a raw shape error in get_test

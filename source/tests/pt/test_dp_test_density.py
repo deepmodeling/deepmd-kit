@@ -36,6 +36,12 @@ from deepmd.pt.model.descriptor.se_a import (
 from deepmd.pt.model.descriptor.se_r import (
     DescrptSeR,
 )
+from deepmd.pt.model.model import (
+    get_model,
+)
+from deepmd.pt.model.model.density_model import (
+    GridDensityModel,
+)
 from deepmd.pt.model.task.density import (
     DensityFittingNet,
 )
@@ -284,6 +290,33 @@ class TestDPTestDensity(unittest.TestCase):
                 numb_aparam=2,
             )
 
+    def test_fitting_model_serialization_roundtrip(self) -> None:
+        # GeneralFitting.serialize() emits @version 5; the density fitting
+        # and the whole model must round-trip through serialize/deserialize,
+        # which is what model freezing relies on. The model must go through
+        # BaseModel.deserialize, which dispatches on the serialized fitting
+        # type ("density") and is what dp convert-backend uses.
+        from deepmd.pt.model.model.model import (
+            BaseModel,
+        )
+
+        fitting = self.torch_model.atomic_model.fitting_net
+        restored_fit = DensityFittingNet.deserialize(fitting.serialize())
+        self._assert_state_dict_equal(fitting, restored_fit)
+        model = self.torch_model
+        restored_model = BaseModel.deserialize(model.serialize())
+        self.assertIsInstance(restored_model, GridDensityModel)
+        self._assert_state_dict_equal(model, restored_model)
+
+    def _assert_state_dict_equal(
+        self, module0: torch.nn.Module, module1: torch.nn.Module
+    ) -> None:
+        sd0 = module0.state_dict()
+        sd1 = module1.state_dict()
+        self.assertEqual(set(sd0), set(sd1))
+        for key in sd0:
+            torch.testing.assert_close(sd0[key], sd1[key])
+
     def test_loss_serialization(self) -> None:
         # GridDensityLoss round-trips through serialize/deserialize
         from deepmd.pt.loss.charge import (
@@ -451,6 +484,25 @@ class TestDPTestDensity(unittest.TestCase):
             normalized["model"]["descriptor"]["list"][0]["env_protection"],
             1e-6,
         )
+
+    def test_env_protection_hybrid_common_explicit_value(self) -> None:
+        # a hybrid requires every sub-descriptor to share one env_protection;
+        # an omitted entry must take the siblings' explicit value, not 1e-6,
+        # or the model build would reject the mixed list
+        config = deepcopy(self.config)
+        descriptor = config["model"].pop("descriptor")
+        descriptor.pop("env_protection", None)
+        explicit = deepcopy(descriptor)
+        explicit["env_protection"] = 0.1
+        config["model"]["descriptor"] = {
+            "type": "hybrid",
+            "list": [explicit, descriptor],
+        }
+        normalized = normalize(config)
+        values = [
+            sub["env_protection"] for sub in normalized["model"]["descriptor"]["list"]
+        ]
+        self.assertEqual(values, [0.1, 0.1])
 
     def test_injected_pass_honors_pair_exclude_types(self) -> None:
         # the injected stat pass must see the model's pair_exclude_types,
@@ -723,6 +775,195 @@ class TestDPTestDensity(unittest.TestCase):
         self.assertEqual(len(shuf_rows), 2 * self.ngrid)
         for row in shuf_rows:
             self.assertIn(row, ref_rows)
+
+    def test_dp_test_flattened_grid(self) -> None:
+        # the loader also accepts a flattened (nframes, ngrid*3) grid; the
+        # tester must normalize it to the (nframes, ngrid, 3) contract that
+        # DeepDensity.eval expects, so both layouts give the same details
+        system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "system"
+        shutil.copytree(self.system, system)
+        set_dir = system / "set.000"
+        grid3d = np.load(set_dir / "grid.npy")
+        np.save(set_dir / "grid.npy", grid3d.reshape(self.nframes, -1))
+        detail_file = os.path.join(self.tmpdir.name, "detail_flat")
+        dp_test(
+            model=self.model_path,
+            system=str(system),
+            datafile=None,
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_file,
+            atomic=False,
+        )
+        coord = np.load(set_dir / "coord.npy")
+        box = np.load(set_dir / "box.npy")
+        atype = np.loadtxt(system / "type.raw", dtype=int)
+        ref = DeepDensity(self.model_path).eval(coord, box, atype, grid=grid3d)
+        for frame in range(self.nframes):
+            detail = np.loadtxt(f"{detail_file}.density.out.{frame}", skiprows=1)
+            self.assertEqual(detail.shape, (self.ngrid, 2))
+            np.testing.assert_allclose(detail[:, 1], ref[frame], rtol=1e-5, atol=1e-6)
+
+
+model_density_dpa3_chg_spin = {
+    "type_map": ["O", "H", "X"],
+    "descriptor": {
+        "type": "dpa3",
+        "repflow": {
+            "n_dim": 8,
+            "e_dim": 6,
+            "a_dim": 4,
+            "nlayers": 1,
+            "e_rcut": 4.0,
+            "e_rcut_smth": 0.5,
+            "e_sel": 12,
+            "a_rcut": 3.5,
+            "a_rcut_smth": 0.5,
+            "a_sel": 8,
+            "axis_neuron": 4,
+            "update_angle": False,
+        },
+        "env_protection": 1e-6,
+        "add_chg_spin_ebd": True,
+        "default_chg_spin": [1.0, 0.0],
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "density",
+        "neuron": [8, 8],
+        "seed": 1,
+    },
+}
+
+
+class TestDPTestDensityChgSpin(unittest.TestCase):
+    """charge_spin forwarding on the density inference and dp test paths."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmpdir = tempfile.TemporaryDirectory()
+        root = Path(cls.tmpdir.name)
+        rng = np.random.default_rng(7)
+        cls.nframes, natoms, cls.ngrid = 4, 5, 8
+        cls.system = root / "system"
+        set_dir = cls.system / "set.000"
+        set_dir.mkdir(parents=True)
+        np.save(set_dir / "coord.npy", rng.random((cls.nframes, natoms * 3)) * 8.0)
+        np.save(
+            set_dir / "box.npy",
+            np.tile(np.eye(3).reshape(-1) * 10.0, (cls.nframes, 1)),
+        )
+        np.save(set_dir / "grid.npy", rng.random((cls.nframes, cls.ngrid, 3)) * 8.0)
+        np.save(set_dir / "density.npy", rng.random((cls.nframes, cls.ngrid, 1)))
+        # non-default charge/spin conditions, so forwarding has a visible effect
+        np.save(set_dir / "charge_spin.npy", np.tile([2.0, 1.0], (cls.nframes, 1)))
+        np.savetxt(cls.system / "type.raw", [0, 0, 1, 1, 1], fmt="%d")
+        np.savetxt(cls.system / "type_map.raw", ["O", "H", "X"], fmt="%s")
+
+        model = get_model(deepcopy(model_density_dpa3_chg_spin))
+        scripted = torch.jit.script(model)
+        tmp_fd, cls.model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(scripted, cls.model_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.unlink(cls.model_path)
+        cls.tmpdir.cleanup()
+
+    def _inputs(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")
+        box = np.load(set_dir / "box.npy")
+        grid = np.load(set_dir / "grid.npy")
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        return coord, box, grid, atype
+
+    def test_eval_forwards_charge_spin(self) -> None:
+        dp = DeepDensity(self.model_path)
+        self.assertTrue(dp.has_chg_spin_ebd())
+        self.assertTrue(dp.has_default_chg_spin())
+        coord, box, grid, atype = self._inputs()
+        # without explicit charge_spin the model falls back to its default
+        out_default = dp.eval(coord, box, atype, grid=grid)
+        out_explicit_default = dp.eval(
+            coord,
+            box,
+            atype,
+            grid=grid,
+            charge_spin=np.tile([1.0, 0.0], (self.nframes, 1)),
+        )
+        np.testing.assert_allclose(
+            out_default, out_explicit_default, rtol=1e-6, atol=1e-8
+        )
+        # a non-default condition must change the prediction: the value has
+        # to reach the descriptor, not be dropped on the eval path
+        out_other = dp.eval(
+            coord,
+            box,
+            atype,
+            grid=grid,
+            charge_spin=np.tile([2.0, 1.0], (self.nframes, 1)),
+        )
+        self.assertFalse(np.allclose(out_default, out_other))
+
+    def test_dp_test_forwards_charge_spin(self) -> None:
+        # the system carries charge_spin.npy: the tester must load and
+        # forward it, so the details match an explicit eval with those values
+        detail_file = os.path.join(self.tmpdir.name, "detail_cs")
+        dp_test(
+            model=self.model_path,
+            system=str(self.system),
+            datafile=None,
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_file,
+            atomic=False,
+        )
+        coord, box, grid, atype = self._inputs()
+        dp = DeepDensity(self.model_path)
+        ref = dp.eval(
+            coord,
+            box,
+            atype,
+            grid=grid,
+            charge_spin=np.tile([2.0, 1.0], (self.nframes, 1)),
+        )
+        ref_default = dp.eval(coord, box, atype, grid=grid)
+        self.assertFalse(
+            np.allclose(ref, ref_default),
+            "the test is vacuous: charge_spin has no effect on this model",
+        )
+        for frame in range(self.nframes):
+            detail = np.loadtxt(f"{detail_file}.density.out.{frame}", skiprows=1)
+            self.assertEqual(detail.shape, (self.ngrid, 2))
+            np.testing.assert_allclose(detail[:, 1], ref[frame], rtol=1e-5, atol=1e-6)
+
+    def test_dp_test_default_chg_spin_without_data(self) -> None:
+        # no charge_spin file: evaluation must fall back to the model's
+        # default_chg_spin instead of failing inside the descriptor
+        system = Path(tempfile.mkdtemp(dir=self.tmpdir.name)) / "system"
+        shutil.copytree(self.system, system)
+        (system / "set.000" / "charge_spin.npy").unlink()
+        detail_file = os.path.join(self.tmpdir.name, "detail_cs_default")
+        dp_test(
+            model=self.model_path,
+            system=str(system),
+            datafile=None,
+            numb_test=0,
+            rand_seed=None,
+            shuffle_test=False,
+            detail_file=detail_file,
+            atomic=False,
+        )
+        coord, box, grid, atype = self._inputs()
+        ref = DeepDensity(self.model_path).eval(coord, box, atype, grid=grid)
+        for frame in range(self.nframes):
+            detail = np.loadtxt(f"{detail_file}.density.out.{frame}", skiprows=1)
+            self.assertEqual(detail.shape, (self.ngrid, 2))
+            np.testing.assert_allclose(detail[:, 1], ref[frame], rtol=1e-5, atol=1e-6)
 
 
 if __name__ == "__main__":

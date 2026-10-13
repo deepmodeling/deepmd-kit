@@ -6706,10 +6706,19 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
         if model.get("fitting_net", {}).get("type") != "density":
             return
         descriptor = model.get("descriptor", {})
+        fill = 1e-6
         # a hybrid descriptor has no top-level env_protection; each
-        # sub-descriptor carries its own
+        # sub-descriptor carries its own, and the model build requires all
+        # of them to agree. Filling each omitted sub-descriptor with 1e-6
+        # while a sibling carries an explicit value (e.g. 0.1) would produce
+        # a mixed list that the build then rejects, so omitted entries take
+        # the siblings' common explicit value instead.
         if descriptor.get("type") == "hybrid":
             sub_descriptors = descriptor.get("list", [])
+            explicit = {sub.get("env_protection", 0.0) for sub in sub_descriptors}
+            explicit.discard(0.0)
+            if len(explicit) == 1:
+                fill = explicit.pop()
         else:
             sub_descriptors = [descriptor]
         for sub in sub_descriptors:
@@ -6717,9 +6726,10 @@ def _apply_density_env_protection_default(data: dict[str, Any]) -> None:
                 log.warning(
                     "env_protection is 0.0 for a density model; grid points "
                     "coincident with atoms would produce NaN densities. "
-                    "Setting env_protection to 1e-6."
+                    "Setting env_protection to %s.",
+                    fill,
                 )
-                sub["env_protection"] = 1e-6
+                sub["env_protection"] = fill
 
     model = data.get("model", {})
     if "model_dict" in model:

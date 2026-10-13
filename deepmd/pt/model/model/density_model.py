@@ -25,6 +25,7 @@ from .make_density_model import (
 DPDensityModel_ = make_density_model(DPDensityAtomicModel)
 
 
+@BaseModel.register("density")
 @BaseModel.register("grid_density")
 class GridDensityModel(DPModelCommon, DPDensityModel_):
     model_type = "grid_density"
