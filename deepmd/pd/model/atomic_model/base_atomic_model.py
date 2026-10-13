@@ -518,12 +518,14 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
-            An output assigned in `preset_out_bias` is fixed by the preset in both modes:
+            In 'set-by-statistic' mode, an output assigned in `preset_out_bias`
+            is fixed by the preset:
             every element in the data must be assigned, the assigned types take the
-            preset value, and the types absent from the data keep zero
-            ('set-by-statistic') or their stored bias ('change-by-statistic'); no
+            preset value, and the types absent from the data keep zero; no
             statistics are computed, read or written for such an output, whose
             output std keeps its stored value.
+            In 'change-by-statistic' mode, presets are treated as part of the
+            current stored bias and the residual statistics are fitted normally.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         observed_type : list[str], optional
@@ -538,7 +540,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         sampled = sample_merged
         # === Step 1. Outputs fixed by the preset ===
         fitted_keys = self.bias_keys
-        if self.preset_out_bias:
+        if self.preset_out_bias and not change:
             if observed_type is None:
                 sampled = sample_merged() if callable(sample_merged) else sample_merged
                 observed_type = collect_observed_types(sampled, self.type_map)
@@ -549,7 +551,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
                 to_numpy_array(self.out_bias),
                 self.bias_keys,
                 [self.atomic_output_def()[kk].size for kk in self.bias_keys],
-                keep_unassigned=change,
+                keep_unassigned=False,
                 excluded_types=self.atom_exclude_types,
             )
             self._store_out_stat({kk: to_paddle_tensor(vv) for kk, vv in rows.items()})
