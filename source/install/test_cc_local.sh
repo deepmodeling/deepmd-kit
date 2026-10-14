@@ -55,102 +55,130 @@ else:
     shutil.copy2(str(so), str(dst))
     print(f"Installed {so} -> {dst}")
 '
-	# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
-	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
-	# in the gen scripts to avoid false reports from torch/paddle internals.
 	INFER_SCRIPT_PATH=${SCRIPT_PATH}/../tests/infer
-	# Remove stale generated model files so they can't be accidentally reused
-	# if gen scripts change format or the code version changes.
-	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
-	_GEN_ENV=""
-	if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
-		_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
-		if [ -n "${_LSAN_LIB}" ] && [ -f "${_LSAN_LIB}" ]; then
-			# DP_GEN_UNDER_SANITIZER: explicit signal for gen scripts that need
-			# to skip sanitizer-incompatible sections (e.g. gen_dpa2.py's
-			# AOTInductor graph .pt2 eval, which can SEGV under the LSAN
-			# runtime). Sniffing LD_PRELOAD inside the gen script is NOT
-			# reliable: the sanitizer runtime removes its own entry from the
-			# process environment during startup.
-			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0 DP_GEN_UNDER_SANITIZER=lsan"
+	_FIXTURE_MANIFEST=${INFER_SCRIPT_PATH}/.pt-fixture-cache-manifest
+	# CI may restore a complete, content-addressed fixture set. The manifest
+	# prevents a partial cache from silently reducing test coverage.
+	if [ "${DP_REUSE_GENERATED_PT_MODELS:-0}" = "1" ]; then
+		if [ ! -s "${_FIXTURE_MANIFEST}" ]; then
+			echo "ERROR: PT fixture cache hit without a non-empty manifest" >&2
+			exit 1
 		fi
-	fi
-	# Run gen scripts in parallel for faster model generation.
-	# Wait on each PID separately so any failure is caught by set -e.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
-	PID1=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py &
-	PID2=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py &
-	PID3=$!
-	wait $PID1
-	wait $PID2
-	wait $PID3
+		while IFS= read -r fixture; do
+			[ -n "${fixture}" ] || continue
+			if [ ! -f "${INFER_SCRIPT_PATH}/${fixture}" ]; then
+				echo "ERROR: cached PT fixture is missing: ${fixture}" >&2
+				exit 1
+			fi
+		done <"${_FIXTURE_MANIFEST}"
+		echo "Reusing $(wc -l <"${_FIXTURE_MANIFEST}") cached PT fixture files"
+	else
+		# Remove stale generated model files so they can't be accidentally reused
+		# if gen scripts change format or the code version changes. *.expected files
+		# are generated reference values consumed by the same C++ tests.
+		rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte ${INFER_SCRIPT_PATH}/*.expected "${_FIXTURE_MANIFEST}"
+		# When the build uses -fsanitize=leak, the custom op .so requires the LSAN
+		# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
+		# in the gen scripts to avoid false reports from torch/paddle internals.
+		_GEN_ENV=""
+		if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
+			_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
+			if [ -n "${_LSAN_LIB}" ] && [ -f "${_LSAN_LIB}" ]; then
+				# DP_GEN_UNDER_SANITIZER: explicit signal for gen scripts that need
+				# to skip sanitizer-incompatible sections (e.g. gen_dpa2.py's
+				# AOTInductor graph .pt2 eval, which can SEGV under the LSAN
+				# runtime). Sniffing LD_PRELOAD inside the gen script is NOT
+				# reliable: the sanitizer runtime removes its own entry from the
+				# process environment during startup.
+				_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0 DP_GEN_UNDER_SANITIZER=lsan"
+			fi
+		fi
+		# Run gen scripts in parallel for faster model generation.
+		# Wait on each PID separately so any failure is caught by set -e.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
+		PID1=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py &
+		PID2=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py &
+		PID3=$!
+		wait $PID1
+		wait $PID2
+		wait $PID3
 
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py &
-	PID4=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
-	PID5=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py &
-	PID6=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_chg_spin.py &
-	PID9=$!
-	wait $PID4
-	wait $PID5
-	wait $PID6
-	wait $PID9
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py &
+		PID4=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
+		PID5=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py &
+		PID6=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_chg_spin.py &
+		PID9=$!
+		wait $PID4
+		wait $PID5
+		wait $PID6
+		wait $PID9
 
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4.py &
-	PID9=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1_pairexcl.py &
-	PID10=$!
-	wait $PID9
-	wait $PID10
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4.py &
+		PID9=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1_pairexcl.py &
+		PID10=$!
+		wait $PID9
+		wait $PID10
 
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
-	PID7=$!
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
-	PID8=$!
-	wait $PID7
-	wait $PID8
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
+		PID7=$!
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
+		PID8=$!
+		wait $PID7
+		wait $PID8
 
-	# Native-spin DPA4 graph archives (baseline + model-level pair
-	# exclusion). Without this the whole native-spin graph C++ suite
-	# GTEST_SKIPs on the missing fixture, which is how a dead
-	# applyPairExclusion seam in DeepSpinPTExpt went unnoticed.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py &
-	PID11=$!
-	# DPA4 + analytical ZBL bridging: a linear COMPOSITION on the graph
-	# lower, which no other C++ fixture covers.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_zbl.py &
-	PID12=$!
-	# Native-spin DPA4 + charge-spin FiLM: the ONLY fixture with both
-	# is_spin=true and dim_chg_spin>0, i.e. the only one on which the
-	# runtime charge_spin argument of DeepSpin::compute is not inert.
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
-	PID13=$!
-	# Native-spin DPA4 + ZBL bridging COMBINED: spin reaching a linear
-	# composition, and the only fixture pinning that a bridged model
-	# exports NO with-comm artifact (single-rank only by construction).
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
-	PID14=$!
-	# Native-spin DPA4C: the archives above all ship a with-comm artifact
-	# and are therefore served by DeepSpinPTExpt, which leaves
-	# NativeSpinPTExpt -- the class the dispatch selects for a native-spin
-	# archive without one -- uncovered. DPA4C keeps its messaging local and
-	# so reaches it. The compiled graph calls CUDA-only operators, so the
-	# fixture is generated only where the C++ suite has a GPU; the tests
-	# built on it skip when it is absent.
-	if [ "${DP_VARIANT}" = "cuda" ]; then
-		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
-		PID15=$!
-	fi
-	wait $PID11
-	wait $PID12
-	wait $PID13
-	wait $PID14
-	if [ "${DP_VARIANT}" = "cuda" ]; then
-		wait $PID15
+		# Native-spin DPA4 graph archives (baseline + model-level pair
+		# exclusion). Without this the whole native-spin graph C++ suite
+		# GTEST_SKIPs on the missing fixture, which is how a dead
+		# applyPairExclusion seam in DeepSpinPTExpt went unnoticed.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin.py &
+		PID11=$!
+		# DPA4 + analytical ZBL bridging: a linear COMPOSITION on the graph
+		# lower, which no other C++ fixture covers.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_zbl.py &
+		PID12=$!
+		# Native-spin DPA4 + charge-spin FiLM: the ONLY fixture with both
+		# is_spin=true and dim_chg_spin>0, i.e. the only one on which the
+		# runtime charge_spin argument of DeepSpin::compute is not inert.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_chgspin.py &
+		PID13=$!
+		# Native-spin DPA4 + ZBL bridging COMBINED: spin reaching a linear
+		# composition, and the only fixture pinning that a bridged model
+		# exports NO with-comm artifact (single-rank only by construction).
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4_spin_zbl.py &
+		PID14=$!
+		# Native-spin DPA4C: the archives above all ship a with-comm artifact
+		# and are therefore served by DeepSpinPTExpt, which leaves
+		# NativeSpinPTExpt -- the class the dispatch selects for a native-spin
+		# archive without one -- uncovered. DPA4C keeps its messaging local and
+		# so reaches it. The compiled graph calls CUDA-only operators, so the
+		# fixture is generated only where the C++ suite has a GPU; the tests
+		# built on it skip when it is absent.
+		if [ "${DP_VARIANT}" = "cuda" ]; then
+			env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
+			PID15=$!
+		fi
+		wait $PID11
+		wait $PID12
+		wait $PID13
+		wait $PID14
+		if [ "${DP_VARIANT}" = "cuda" ]; then
+			wait $PID15
+		fi
+
+		# Record the exact generated fixture set for cache-hit validation.
+		for fixture in "${INFER_SCRIPT_PATH}"/*.pt2 "${INFER_SCRIPT_PATH}"/*.pte "${INFER_SCRIPT_PATH}"/*.expected; do
+			[ -f "${fixture}" ] && basename "${fixture}"
+		done | LC_ALL=C sort >"${_FIXTURE_MANIFEST}"
+		if [ ! -s "${_FIXTURE_MANIFEST}" ]; then
+			echo "ERROR: PT fixture generation produced no cacheable files" >&2
+			exit 1
+		fi
 	fi
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
