@@ -902,6 +902,8 @@ def sweep_rotate_fwd(
             CW=c_wide,
             BC=triton.next_power_of_2(c_wide),
             RANK=1,
+            # sweep the dense layout; the banded form shares this entry
+            PACKED=False,
             num_warps=warps,
             num_stages=stages,
         )
@@ -1002,6 +1004,8 @@ def sweep_rotate_bwd(
             CP=triton.next_power_of_2(c_wide),
             RANK=1,
             BLOCK_E=block_e,
+            # sweep the dense layout; the banded form shares this entry
+            PACKED=False,
             num_warps=warps,
             num_stages=stages,
         )
