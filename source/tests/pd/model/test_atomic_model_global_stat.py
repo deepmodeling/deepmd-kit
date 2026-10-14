@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import tempfile
 import unittest
-from unittest.mock import (
-    patch,
-)
 from pathlib import (
     Path,
+)
+from unittest.mock import (
+    patch,
 )
 
 import h5py
