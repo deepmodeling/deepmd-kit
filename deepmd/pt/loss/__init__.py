@@ -12,6 +12,9 @@ from .ener import (
 from .ener_spin import (
     EnergySpinLoss,
 )
+from .group_property import (
+    GroupPropertyLoss,
+)
 from .loss import (
     TaskLoss,
 )
@@ -31,6 +34,7 @@ __all__ = [
     "EnergyHessianStdLoss",
     "EnergySpinLoss",
     "EnergyStdLoss",
+    "GroupPropertyLoss",
     "PopulationLoss",
     "PropertyLoss",
     "TaskLoss",
