@@ -908,12 +908,10 @@ def _trace_and_compile_graph(
         trace_N, 3, dtype=GLOBAL_PT_FLOAT_PRECISION, device=_trace_device
     )
     from deepmd.pt_expt.utils.graph_builder import (
-        build_ragged_neighbor_graph,
+        build_all_pairs_unordered_graph,
     )
 
-    s_lr_graph = build_ragged_neighbor_graph(
-        "dense", s_lr_coord, s_atype, s_n_node, None, 1e6, None
-    )
+    s_lr_graph = build_all_pairs_unordered_graph(s_lr_coord, s_n_node)
 
     def fn(
         atype: torch.Tensor,
@@ -1582,6 +1580,7 @@ class _CompiledModel(torch.nn.Module):
             expand_node_values,
         )
         from deepmd.pt_expt.utils.graph_builder import (
+            build_all_pairs_unordered_graph,
             build_neighbor_graph_for_method,
             build_ragged_neighbor_graph,
         )
@@ -1676,18 +1675,13 @@ class _CompiledModel(torch.nn.Module):
         # fixed across all graph models.
         needs_lr = getattr(_model, "_needs_long_range_edges", False)
         if needs_lr:
-            # Force the dense builder for the all-pairs graph: the 1e6
-            # sentinel cutoff would explode the capacity/cell estimates of
-            # the spatial NV/vesin builders.
+            # Ragged-native unordered all-pairs: no cutoff search and no
+            # dependence on the short-range builder policy.
             if ragged:
-                lr_graph = build_ragged_neighbor_graph(
-                    "dense", coord_3d, atype, n_node, None, 1e6, None
-                )
+                lr_graph = build_all_pairs_unordered_graph(coord_3d, n_node)
             else:
                 coord_flat = coord_3d.reshape(n_padded, 3)[node_index]
-                lr_graph = build_ragged_neighbor_graph(
-                    "dense", coord_flat, atype_flat, ng.n_node, None, 1e6, None
-                )
+                lr_graph = build_all_pairs_unordered_graph(coord_flat, ng.n_node)
             lr_edge_index = lr_graph.edge_index
             lr_edge_vec = lr_graph.edge_vec
             lr_edge_mask = lr_graph.edge_mask

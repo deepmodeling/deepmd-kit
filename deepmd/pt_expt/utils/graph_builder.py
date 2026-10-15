@@ -342,3 +342,117 @@ def build_neighbor_graph_for_method(
         f"unknown neighbor_graph_method {method!r}; use 'dense', 'ase', "
         "'cell', 'vesin', or 'nv'"
     )
+
+
+class AllPairsGraph:
+    """Unordered intra-frame all-pairs graph for non-periodic LR terms.
+
+    Only the fields consumed by the long-range consumers are populated:
+    ``n_node``, ``edge_index`` (``[src, dst]``), ``edge_vec``
+    (``r_src - r_dst``), and an all-true ``edge_mask``.  Each atom pair
+    appears exactly once (``i < j``), so the energy contract is
+    ``sum_{i < j}`` with NO ``0.5`` factor, and the force/virial assembly
+    must scatter each pair to BOTH endpoints.
+
+    Attributes
+    ----------
+    n_node
+        Per-frame node counts with shape ``(nf,)``.
+    edge_index
+        ``[src, dst]`` node endpoints with shape ``(2, E)``, int64.
+    edge_vec
+        Per-edge displacement ``r_src - r_dst`` with shape ``(E, 3)``.
+    edge_mask
+        Valid-edge mask with shape ``(E,)``; always all-true (the builder
+        emits exactly the real pairs, there is no padding).
+    """
+
+    def __init__(
+        self,
+        n_node: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+    ) -> None:
+        self.n_node = n_node
+        self.edge_index = edge_index
+        self.edge_vec = edge_vec
+        self.edge_mask = edge_mask
+
+
+def build_all_pairs_unordered_graph(
+    coord: torch.Tensor,
+    n_node: torch.Tensor,
+) -> AllPairsGraph:
+    """Build the unordered (``i < j``) intra-frame all-pairs graph directly.
+
+    Every pair of atoms that shares a frame participates in a non-periodic
+    all-pairs interaction, so no distance search, padding, or cutoff is
+    involved: the pair indices are generated straight from the per-frame
+    node counts and the displacements are gathered from them.  Storage is
+    proportional to the true pair count ``sum_f n_f (n_f - 1) / 2`` -- half
+    the directed all-pairs count, and without widening every frame to the
+    batch maximum width.
+
+    The builder runs eagerly (outside any compiled region), so the
+    data-dependent pair count as a Python int is fine here.
+
+    Parameters
+    ----------
+    coord
+        Flat local coordinates with shape ``(N, 3)``, frame-major over
+        ``n_node``.
+    n_node
+        Atoms per frame with shape ``(nf,)``.
+
+    Returns
+    -------
+    AllPairsGraph
+        The unordered all-pairs graph on the flat node axis.
+    """
+    nf = n_node.shape[0]
+    device = n_node.device
+    n_pairs = (n_node * (n_node - 1)) // 2  # (nf,)
+    total_pairs = int(n_pairs.sum())
+    if total_pairs == 0:
+        return AllPairsGraph(
+            n_node=n_node,
+            edge_index=torch.zeros((2, 0), dtype=torch.int64, device=device),
+            edge_vec=torch.zeros((0, 3), dtype=coord.dtype, device=coord.device),
+            edge_mask=torch.zeros((0,), dtype=torch.bool, device=device),
+        )
+
+    pair_frame = torch.repeat_interleave(torch.arange(nf, device=device), n_pairs)
+    pair_start = torch.cumsum(n_pairs, 0) - n_pairs  # (nf,)
+    node_start = torch.cumsum(n_node, 0) - n_node  # (nf,)
+    # Pair rank within its frame, in row-major strict-upper-triangle order
+    # (0,1), (0,2), ..., (0,n-1), (1,2), ...
+    k = (torch.arange(total_pairs, device=device) - pair_start[pair_frame]).to(
+        torch.float64
+    )
+    n = n_node[pair_frame].to(torch.float64)
+    # Row i starts at S_i = i * (2n - 1 - i) / 2; solve S_i <= k < S_{i+1}.
+    # float64 is exact for the sizes involved (n^2 << 2^53); one correction
+    # step below guards the sqrt rounding regardless.
+    discr = (2 * n - 1).square() - 8 * k
+    ii = torch.floor(((2 * n - 1) - torch.sqrt(discr.clamp_min(0.0))) / 2)
+    ii = ii.clamp_min(0.0)
+
+    def row_start(i: torch.Tensor) -> torch.Tensor:
+        return i * (2 * n - 1 - i) / 2
+
+    ii = torch.where(k < row_start(ii), ii - 1, ii)
+    ii = torch.where(k >= row_start(ii + 1), ii + 1, ii)
+    jj = ii + 1 + (k - row_start(ii))
+
+    src = node_start[pair_frame] + ii.to(torch.int64)
+    dst = node_start[pair_frame] + jj.to(torch.int64)
+    edge_index = torch.stack([src, dst])
+    edge_vec = coord[src] - coord[dst]
+    edge_mask = torch.ones(total_pairs, dtype=torch.bool, device=device)
+    return AllPairsGraph(
+        n_node=n_node,
+        edge_index=edge_index,
+        edge_vec=edge_vec,
+        edge_mask=edge_mask,
+    )

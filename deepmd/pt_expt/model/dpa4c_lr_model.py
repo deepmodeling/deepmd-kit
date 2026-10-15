@@ -17,7 +17,8 @@ The force is computed via two gradient paths:
 * ``grad(E_SR + E_LR, edge_vec)`` gives the short-range force plus the
   charge-response term ``∂E_LR/∂q · dq/dR``;
 * ``grad(E_LR, lr_edge_vec)`` gives the geometry term ``∂E_LR/∂r|_q``,
-  assembled with the ``edge_force_virial`` conventions.
+  assembled with the unordered-pair conventions of
+  :func:`_unordered_pair_force_virial`.
 
 Only non-periodic systems (``box=None``) are supported.
 """
@@ -41,7 +42,6 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     compact_nodes,
-    edge_force_virial,
     expand_node_values,
     frame_id_from_n_node,
     segment_sum,
@@ -62,6 +62,7 @@ from deepmd.pt_expt.model.model import (
     BaseModel,
 )
 from deepmd.pt_expt.utils.graph_builder import (
+    build_all_pairs_unordered_graph,
     build_neighbor_graph_for_method,
     build_ragged_neighbor_graph,
     resolve_neighbor_graph_method,
@@ -75,6 +76,56 @@ from .transform_output import (
 )
 
 E2_PER_ANGSTROM_TO_EV = 14.3996454784255
+
+
+def _unordered_pair_force_virial(
+    g_e: torch.Tensor,
+    edge_vec: torch.Tensor,
+    edge_index: torch.Tensor,
+    edge_mask: torch.Tensor,
+    n_node: torch.Tensor,
+    node_capacity: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Assemble force/virial for an UNORDERED (``i < j``) pair graph.
+
+    Each edge is a distinct atom pair counted once, which differs from the
+    directed ``edge_force_virial`` contract in two ways:
+
+    * the force still scatters the per-edge gradient ``g_e = dE/d(edge_vec)``
+      to both endpoints with opposite signs (``dst += g_e``, ``src -= g_e``);
+    * the pair virial ``-g_e (x) edge_vec`` is split EVENLY between the two
+      endpoints.  The directed convention attributes the full edge virial to
+      ``src``, which is correct there only because the two opposite
+      half-weighted edges of a pair split it implicitly; reusing it here
+      would make the per-atom virial depend on the arbitrary endpoint order.
+
+    The per-frame virial is unaffected by the split: it reduces the per-atom
+    virial over each frame's nodes, and the two halves of a pair live in the
+    same frame.
+    """
+    nf = n_node.shape[0]
+    n_out = node_capacity
+    dtype = g_e.dtype
+    device = g_e.device
+    if isinstance(n_out, int) and n_out == 0:
+        return (
+            torch.zeros((0, 3), dtype=dtype, device=device),
+            torch.zeros((0, 3, 3), dtype=dtype, device=device),
+            torch.zeros((nf, 3, 3), dtype=dtype, device=device),
+        )
+    g = g_e * edge_mask.to(dtype).unsqueeze(-1)
+    src = edge_index[0] % n_out
+    dst = edge_index[1] % n_out
+    force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
+    # Half-weight pair virial to each endpoint (broadcast, no einsum).
+    w_half = -0.5 * (g[:, :, None] * edge_vec[:, None, :])  # (E, 3, 3)
+    atom_virial = segment_sum(w_half, src, n_out) + segment_sum(w_half, dst, n_out)
+    # Reduce the per-atom virial over nodes (N << E) rather than per-edge
+    # over pairs; both endpoints of a pair share a frame, so the per-frame
+    # total equals the full pair virial sum.
+    node_frame = frame_id_from_n_node(n_node, n_total=n_out)
+    virial = segment_sum(atom_virial, node_frame, nf)
+    return force, atom_virial, virial
 
 
 def _les_kernel_from_squared_distance(
@@ -386,7 +437,7 @@ class DPA4CLREnergyModel(EnergyModel):
                 create_graph=self.training,
                 retain_graph=True,
             )
-            lr_force, lr_atom_virial, lr_virial = edge_force_virial(
+            lr_force, lr_atom_virial, lr_virial = _unordered_pair_force_virial(
                 g_lr,
                 lr_edge_vec,
                 lr_edge_index,
@@ -427,7 +478,9 @@ class DPA4CLREnergyModel(EnergyModel):
 
         The long-range edges are built eagerly by the caller and passed in as
         inputs.  They contain only intra-frame all-pairs, so the storage scales
-        with ``Σ_f n_f^2`` rather than the full batch ``N^2``.
+        with ``Σ_f n_f^2`` rather than the full batch ``N^2``.  The pairs are
+        UNORDERED (``i < j``, each pair counted once), so the energy carries
+        no ``0.5`` double-counting factor.
         """
         if "latent_charge" not in atomic_ret:
             return atomic_ret, None
@@ -469,7 +522,8 @@ class DPA4CLREnergyModel(EnergyModel):
         e_edge = (q_src * q_dst).sum(-1) * K * lr_edge_mask.to(dtype)  # (E_lr,)
         edge_frame = frame_id[lr_edge_index[1]]  # (E_lr,) frame of dst
         e_lr_raw = segment_sum(e_edge, edge_frame, nf)
-        e_lr = e_lr_raw * (0.5 * E2_PER_ANGSTROM_TO_EV)
+        # Unordered pairs: each pair counted once, no 0.5 factor.
+        e_lr = e_lr_raw * E2_PER_ANGSTROM_TO_EV
 
         # Spread the frame LR energy evenly over the real atoms.
         nreal = n_node.to(e_lr.dtype).clamp_min(1)
@@ -545,11 +599,9 @@ class DPA4CLREnergyModel(EnergyModel):
             self.atomic_model.pair_excl,
         )
         # Long-range all-pairs graph, built eagerly outside the graph lower.
-        # Force the dense builder: the 1e6 sentinel cutoff would explode the
-        # capacity/cell estimates of the spatial NV/vesin builders.
-        lr_graph = build_ragged_neighbor_graph(
-            "dense", coord, atype, n_node, None, 1e6, None
-        )
+        # Ragged-native unordered pairs: no cutoff search, no padding to the
+        # batch max width, and half the directed pair storage.
+        lr_graph = build_all_pairs_unordered_graph(coord, n_node)
         predict = self.forward_common_lower_graph(
             atype,
             graph.n_node,
@@ -626,12 +678,9 @@ class DPA4CLREnergyModel(EnergyModel):
         spin_flat = spin.reshape(n_padded, 3)[node_index] if spin is not None else None
         coord_flat = cc.reshape(n_padded, 3)[node_index]
 
-        # Long-range all-pairs graph on the compact node axis.  Force the
-        # dense builder: the 1e6 sentinel cutoff would explode the
-        # capacity/cell estimates of the spatial NV/vesin builders.
-        lr_graph = build_ragged_neighbor_graph(
-            "dense", coord_flat, atype_flat, ng.n_node, None, 1e6, None
-        )
+        # Long-range all-pairs graph on the compact node axis: ragged-native
+        # unordered pairs, independent of the short-range search policy.
+        lr_graph = build_all_pairs_unordered_graph(coord_flat, ng.n_node)
 
         model_predict = self.forward_common_lower_graph(
             atype_flat,

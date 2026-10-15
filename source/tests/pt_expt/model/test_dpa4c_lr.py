@@ -17,6 +17,13 @@ from deepmd.pt_expt.model.dpa4c_lr_model import (
     E2_PER_ANGSTROM_TO_EV,
     _les_kernel_from_squared_distance,
     _SOGKernel,
+    _unordered_pair_force_virial,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    edge_force_virial,
+)
+from deepmd.pt_expt.utils.graph_builder import (
+    build_all_pairs_unordered_graph,
 )
 from deepmd.pt_expt.model.get_model import (
     get_model,
@@ -553,3 +560,239 @@ def test_compiled_lower_matches_eager(lr_kernel: str) -> None:
 
     torch.testing.assert_close(got["energy"], expected["energy"])
     torch.testing.assert_close(got["force"], expected["force"])
+
+
+def test_all_pairs_builder_matches_brute_force() -> None:
+    """The ragged-native builder emits exactly the unordered intra-frame pairs."""
+    torch.manual_seed(0)
+    for nlocs in [(3,), (1, 4, 2), (0, 5), (7, 1, 0, 3)]:
+        n_node = torch.tensor(nlocs, dtype=torch.long, device=env.DEVICE)
+        coord = torch.randn(
+            int(n_node.sum()), 3, dtype=torch.float64, device=env.DEVICE
+        )
+        graph = build_all_pairs_unordered_graph(coord, n_node)
+        expected = []
+        offset = 0
+        for n in nlocs:
+            expected.extend(
+                (offset + i, offset + j) for i in range(n) for j in range(i + 1, n)
+            )
+            offset += n
+        got = [tuple(pair) for pair in graph.edge_index.t().tolist()]
+        assert got == expected
+        src, dst = graph.edge_index
+        assert torch.equal(graph.edge_vec, coord[src] - coord[dst])
+        assert bool(graph.edge_mask.all())
+
+
+def test_unordered_pair_assembly_matches_directed_reference() -> None:
+    """Unordered force/virial assembly reproduces the directed convention.
+
+    The directed reference represents each pair as two opposite edges, each
+    carrying half the pair energy, and attributes the full edge virial to
+    ``src`` -- the two half-weighted edges then split the pair virial evenly
+    between the endpoints.  The unordered assembly must reproduce exactly
+    that split while storing each pair once.
+    """
+    torch.manual_seed(0)
+    nlocs = (2, 1, 5, 3)
+    n_node = torch.tensor(nlocs, dtype=torch.long, device=env.DEVICE)
+    n_total = int(n_node.sum())
+    coord = torch.randn(n_total, 3, dtype=torch.float64, device=env.DEVICE)
+
+    graph = build_all_pairs_unordered_graph(coord, n_node)
+    n_pair = graph.edge_index.shape[1]
+    g_pair = torch.randn(n_pair, 3, dtype=torch.float64, device=env.DEVICE)
+
+    force_u, atom_virial_u, virial_u = _unordered_pair_force_virial(
+        g_pair,
+        graph.edge_vec,
+        graph.edge_index,
+        graph.edge_mask,
+        n_node,
+        node_capacity=n_total,
+    )
+
+    index_dir = torch.cat([graph.edge_index, graph.edge_index.flip(0)], dim=1)
+    vec_dir = torch.cat([graph.edge_vec, -graph.edge_vec], dim=0)
+    g_dir = torch.cat([0.5 * g_pair, -0.5 * g_pair], dim=0)
+    mask_dir = torch.ones(2 * n_pair, dtype=torch.bool, device=env.DEVICE)
+    force_d, atom_virial_d, virial_d = edge_force_virial(
+        g_dir, vec_dir, index_dir, mask_dir, n_node, node_capacity=n_total
+    )
+
+    torch.testing.assert_close(force_u, force_d)
+    torch.testing.assert_close(atom_virial_u, atom_virial_d)
+    torch.testing.assert_close(virial_u, virial_d)
+
+
+@pytest.mark.parametrize("lr_kernel", ["les", "sog"])
+def test_graph_matches_legacy_dense_reference(lr_kernel: str) -> None:
+    """The unordered graph path matches the directed dense legacy path.
+
+    The dense fallback (``neighbor_graph_method='legacy'``) evaluates the LR
+    kernels as ``0.5 * sum_{i != j}`` over the padded batch -- the directed
+    reference.  Energy, force, and the total virial must match exactly.  The
+    per-atom virial follows a different (pre-existing) decomposition
+    convention in the dense path, so it is covered separately by the
+    directed-assembly and permutation tests.
+    """
+    torch.manual_seed(1234)
+    model = _build_model(lr_kernel=lr_kernel)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+
+    coord, atype = _make_batch((4, 7, 3))
+    coord_t = torch.tensor(coord, dtype=torch.float64, device=env.DEVICE)
+    atype_t = torch.tensor(atype, dtype=torch.long, device=env.DEVICE)
+
+    graph_ret = model.call_common(coord_t, atype_t, do_atomic_virial=True)
+    dense_ret = model.call_common(
+        coord_t, atype_t, do_atomic_virial=True, neighbor_graph_method="legacy"
+    )
+    for key in ("energy_redu", "energy_derv_r", "energy_derv_c_redu"):
+        torch.testing.assert_close(
+            graph_ret[key], dense_ret[key], atol=1e-10, rtol=1e-10
+        )
+
+
+@pytest.mark.parametrize("lr_kernel", ["les", "sog"])
+def test_atom_index_permutation_invariance(lr_kernel: str) -> None:
+    """Shuffling the atoms of a frame must not change any output.
+
+    In particular this guards the even pair-virial split: an assembly that
+    attributes the pair virial to an arbitrary endpoint would change the
+    per-atom virial under a permutation.
+    """
+    torch.manual_seed(1234)
+    model = _build_model(lr_kernel=lr_kernel)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+
+    coord, atype = _make_batch((6,), seed=5)
+    perm = np.random.default_rng(0).permutation(6)
+    coord_t = torch.tensor(coord, dtype=torch.float64, device=env.DEVICE)
+    atype_t = torch.tensor(atype, dtype=torch.long, device=env.DEVICE)
+    coord_p = torch.tensor(coord[:, perm], dtype=torch.float64, device=env.DEVICE)
+    atype_p = torch.tensor(atype[:, perm], dtype=torch.long, device=env.DEVICE)
+
+    base = model(coord_t, atype_t, do_atomic_virial=True)
+    permuted = model(coord_p, atype_p, do_atomic_virial=True)
+
+    perm_t = torch.tensor(perm, dtype=torch.long, device=env.DEVICE)
+    torch.testing.assert_close(permuted["energy"], base["energy"])
+    torch.testing.assert_close(permuted["virial"], base["virial"])
+    torch.testing.assert_close(permuted["force"][0], base["force"][0][perm_t])
+    torch.testing.assert_close(
+        permuted["atom_virial"][0], base["atom_virial"][0][perm_t]
+    )
+
+
+@pytest.mark.parametrize("lr_kernel", ["les", "sog"])
+def test_zero_and_single_atom_frames(lr_kernel: str) -> None:
+    """Frames with zero or one atom contribute no LR pairs and stay finite."""
+    torch.manual_seed(1234)
+    model = _build_model(lr_kernel=lr_kernel)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+
+    # Ragged layout: a zero-atom frame cannot be represented in a padded
+    # batch, so exercise it here.
+    nlocs = (1, 0, 4)
+    rng = np.random.default_rng(9)
+    flat_coord = torch.tensor(
+        rng.uniform(0.0, 6.0, (sum(nlocs), 3)), dtype=torch.float64, device=env.DEVICE
+    )
+    flat_atype = torch.tensor(
+        rng.integers(0, 2, sum(nlocs)), dtype=torch.long, device=env.DEVICE
+    )
+    n_node = torch.tensor(nlocs, dtype=torch.long, device=env.DEVICE)
+    ragged = model.forward_ragged(flat_coord, flat_atype, n_node)
+    for key in ("energy", "force"):
+        assert torch.isfinite(ragged[key]).all(), key
+
+    # A single-atom frame has no pairs: ragged and padded layouts must agree.
+    nlocs = (1, 5, 2)
+    coord, atype = _make_batch(nlocs, seed=13)
+    padded = model(
+        torch.tensor(coord, dtype=torch.float64, device=env.DEVICE),
+        torch.tensor(atype, dtype=torch.long, device=env.DEVICE),
+    )
+    flat_coord = torch.tensor(
+        np.concatenate([coord[i, :nloc] for i, nloc in enumerate(nlocs)]),
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    flat_atype = torch.tensor(
+        np.concatenate([atype[i, :nloc] for i, nloc in enumerate(nlocs)]),
+        dtype=torch.long,
+        device=env.DEVICE,
+    )
+    ragged = model.forward_ragged(
+        flat_coord, flat_atype, torch.tensor(nlocs, dtype=torch.long, device=env.DEVICE)
+    )
+    torch.testing.assert_close(padded["energy"], ragged["energy"])
+    offset = 0
+    for index, nloc in enumerate(nlocs):
+        torch.testing.assert_close(
+            padded["force"][index, :nloc],
+            ragged["force"][offset : offset + nloc],
+        )
+        offset += nloc
+
+
+@pytest.mark.parametrize("lr_kernel", ["les", "sog"])
+def test_force_loss_backward_through_long_range(lr_kernel: str) -> None:
+    """A training-mode force loss backpropagates into the LR kernel parameters."""
+    torch.manual_seed(1234)
+    model = _build_model(train=True, lr_kernel=lr_kernel)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+
+    coord, atype = _make_batch((5,), seed=11)
+    result = model(
+        torch.tensor(coord, dtype=torch.float64, device=env.DEVICE),
+        torch.tensor(atype, dtype=torch.long, device=env.DEVICE),
+    )
+    loss = result["energy"].square().sum() + result["force"].square().sum()
+    loss.backward()
+
+    fitting = model.get_fitting_net()
+    names = ("les_alpha",) if lr_kernel == "les" else ("amp", "bandwidth")
+    for name in names:
+        grad = getattr(fitting, name).grad
+        assert grad is not None, name
+        assert torch.isfinite(grad).all(), name
+        assert torch.count_nonzero(grad) > 0, name
+
+
+def test_pair_exclusion_consistent_between_paths() -> None:
+    """Model-level pair exclusion must not change the LR term between paths.
+
+    Both paths apply ``pair_exclude_types`` to the short-range graph only;
+    the all-pairs LR term deliberately ignores it.  The graph and dense
+    paths must therefore still agree.
+    """
+    config = _config("les")
+    config["pair_exclude_types"] = [[0, 1]]
+    torch.manual_seed(1234)
+    model = get_model(config).to(env.DEVICE)
+    model.eval()
+    with torch.no_grad():
+        for parameter in model.parameters():
+            parameter.copy_(torch.randn_like(parameter) * 0.1)
+
+    coord, atype = _make_batch((5, 6), seed=17)
+    coord_t = torch.tensor(coord, dtype=torch.float64, device=env.DEVICE)
+    atype_t = torch.tensor(atype, dtype=torch.long, device=env.DEVICE)
+
+    graph_ret = model.call_common(coord_t, atype_t)
+    dense_ret = model.call_common(coord_t, atype_t, neighbor_graph_method="legacy")
+    for key in ("energy_redu", "energy_derv_r", "energy_derv_c_redu"):
+        torch.testing.assert_close(
+            graph_ret[key], dense_ret[key], atol=1e-10, rtol=1e-10
+        )
