@@ -96,9 +96,12 @@ def _(
 
 def _wigner_d_assemble_setup(ctx: Any, inputs: Any, output: Any) -> None:
     blocks, _, poly_lmin, n_regular = inputs
-    ctx.blocks = blocks
+    # Only the layout metadata is needed to slice the cotangent; storing the
+    # block tensors would extend every activation's lifetime past the
+    # forward, which the backward never reads.
+    ctx.block_widths = [int(block.shape[1]) for block in blocks[:n_regular]]
+    ctx.has_poly_tail = n_regular < len(blocks)
     ctx.poly_lmin = poly_lmin
-    ctx.n_regular = n_regular
 
 
 def _wigner_d_assemble_backward(
@@ -109,11 +112,10 @@ def _wigner_d_assemble_backward(
     # constant receives no gradient.
     grads = []
     off = 1
-    for block in ctx.blocks[: ctx.n_regular]:
-        size = block.shape[1]
+    for size in ctx.block_widths:
         grads.append(grad_d_full[:, off : off + size, off : off + size])
         off += size
-    if ctx.n_regular < len(ctx.blocks):
+    if ctx.has_poly_tail:
         po = ctx.poly_lmin * ctx.poly_lmin
         grads.append(grad_d_full[:, po:, po:])
     return grads, None, None, None
@@ -626,12 +628,13 @@ class WignerDCalculator(nn.Module):
         )
         n_edge = edge_quaternion.shape[0]
 
-        # Degree blocks are computed first; the dense assembly then either
-        # runs in place (eager) or behind the opaque wigner_d_assemble op
-        # (compiled).  Under tracing, the in-place slice assignments below
-        # would be functionalized into a chain of full-size zeros/index_put
-        # adds plus a realized transpose; the custom op keeps the eager
-        # scatter and hands the graph two plain contiguous tensors.
+        # Degree blocks are computed first; the dense assembly below is one
+        # shared implementation, reached directly in eager execution and
+        # behind the opaque wigner_d_assemble operator under tracing (where
+        # functionalization would otherwise expand the in-place scatter into
+        # a chain of full-size zeros/index_put adds plus a realized
+        # transpose).  The operator hands the graph one contiguous tensor;
+        # the inverse rotation leaves through the shared transpose-view exit.
         blocks: list[torch.Tensor] = []
         poly_block: torch.Tensor | None = None
 
@@ -718,41 +721,44 @@ class WignerDCalculator(nn.Module):
             if blocks
             else False
         )
-        if blocks and tracing:
-            d_full = _wigner_d_assemble_op(
-                blocks + ([poly_block] if poly_block is not None else []),
+        # One assembly implementation serves both routes: the eager call
+        # goes straight to the differentiable scatter (autograd flows through
+        # the slice assignments), the traced call hides it behind the opaque
+        # operator so functionalization cannot expand the scatter.
+        all_blocks = blocks + ([poly_block] if poly_block is not None else [])
+        if not all_blocks:
+            # lmax == 0: the rotation acts only on the scalar channel.
+            D_full = torch.zeros(
+                n_edge,
+                self.dim_full,
+                self.dim_full,
+                dtype=edge_quaternion.dtype,
+                device=edge_quaternion.device,
+            )
+            D_full[:, 0, 0] = 1.0
+        elif tracing:
+            D_full = _wigner_d_assemble_op(
+                all_blocks,
                 self.dim_full,
                 self.poly_lmin,
                 len(blocks),
             )
-            # Stride-addressed consumers read the inverse rotation straight
-            # from the shared storage; no transpose copy ever exists.
-            return d_full, d_full.transpose(-1, -2)
+        else:
+            D_full = _wigner_d_assemble_impl(
+                all_blocks,
+                self.dim_full,
+                self.poly_lmin,
+                len(blocks),
+            )
 
-        D_full = torch.zeros(
-            n_edge,
-            self.dim_full,
-            self.dim_full,
-            dtype=edge_quaternion.dtype,
-            device=edge_quaternion.device,
-        )
-        D_full[:, 0, 0] = 1.0
-        off = 1
-        for block in blocks:
-            size = block.shape[1]
-            D_full[:, off : off + size, off : off + size] = block
-            off += size
-        if poly_block is not None:
-            D_full[:, self.poly_offset :, self.poly_offset :] = poly_block
-
-        # Consumers address the inverse rotation through explicit strides or
-        # PyTorch strided operators, so the transpose can share D_full's storage.
+        # One inverse-layout exit shared by both routes: the compatibility
+        # policy below is preserved as-is instead of being bypassed by the
+        # traced branch.  Stride-addressed consumers read the inverse
+        # rotation from the shared storage; PyTorch 2.11 Inductor cannot
+        # safely lower that escaping transpose view, so it is materialized
+        # there exactly as the eager route does.
         Dt_full = D_full.transpose(-1, -2)
         if self._materialize_inverse_rotation:
-            # PyTorch 2.11 Inductor cannot safely lower this escaping transpose
-            # view after the slice assignments that assemble D_full. The
-            # materialized layout keeps the compiled graph semantically
-            # identical; later releases retain the shared-storage view.
             Dt_full = Dt_full.contiguous()
         return D_full, Dt_full
 
