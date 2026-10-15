@@ -7,6 +7,9 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.utils.neighbor_graph import (
+    edge_force_virial,
+)
 from deepmd.infer import (
     DeepPot,
 )
@@ -19,12 +22,6 @@ from deepmd.pt_expt.model.dpa4c_lr_model import (
     _SOGKernel,
     _unordered_pair_force_virial,
 )
-from deepmd.dpmodel.utils.neighbor_graph import (
-    edge_force_virial,
-)
-from deepmd.pt_expt.utils.graph_builder import (
-    build_all_pairs_unordered_graph,
-)
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
@@ -33,6 +30,9 @@ from deepmd.pt_expt.train.wrapper import (
 )
 from deepmd.pt_expt.utils import (
     env,
+)
+from deepmd.pt_expt.utils.graph_builder import (
+    build_all_pairs_unordered_graph,
 )
 
 from ..compile_utils import (
