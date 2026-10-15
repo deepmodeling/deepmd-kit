@@ -1833,12 +1833,14 @@ def _trace_and_export_impl(
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
     model.eval()
-    # The vacuum reference is resolved on the export object, folded into the
-    # fitting bias or stored as a per-type table, so the exported graph
-    # carries no reference atoms; the move to the tracing device follows, so
-    # the table lands there with the rest of the model.
-    model.fold_vacuum_reference()
+    # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
+    # evaluates an isolated atom of every type through the descriptor; on CUDA
+    # that path can allocate several GiB even when export already holds most of
+    # the GPU. Move first so the fold runs where tracing will, and so the
+    # folded bias or vacuum table stays on that device with the rest of the
+    # model.
     model.to("cpu")
+    model.fold_vacuum_reference()
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)

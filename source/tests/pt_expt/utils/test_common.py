@@ -127,3 +127,35 @@ def test_torch_module_handles_no_call_lower_method() -> None:
     assert hasattr(module, "forward")
     # Should not have forward_lower method since there's no call_lower method
     assert not hasattr(module, "forward_lower")
+
+
+def test_dpmodel_setattr_keeps_module_device(monkeypatch) -> None:
+    """Numpy buffer assignment after Module.to keeps the module device.
+
+    ``env.DEVICE`` is patched to ``meta`` so a regression that always places
+    new buffers on the process default would land off-CPU and fail the assert.
+    """
+    from deepmd.dpmodel.common import (
+        NativeOP,
+    )
+    from deepmd.pt_expt.common import (
+        torch_module,
+    )
+
+    class HolderDP(NativeOP):
+        def __init__(self) -> None:
+            self.stat = np.zeros(3, dtype=np.float64)
+
+        def call(self, x: np.ndarray) -> np.ndarray:
+            return x
+
+    @torch_module
+    class Holder(HolderDP):
+        pass
+
+    module = Holder().to("cpu")
+    assert module.stat.device.type == "cpu"
+    monkeypatch.setattr(env, "DEVICE", torch.device("meta"))
+    module.stat = np.ones(3, dtype=np.float64)
+    assert module.stat.device.type == "cpu"
+    np.testing.assert_array_equal(module.stat.detach().cpu().numpy(), np.ones(3))
