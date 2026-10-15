@@ -130,7 +130,7 @@ def test_torch_module_handles_no_call_lower_method() -> None:
 
 
 def test_dpmodel_setattr_keeps_module_device(monkeypatch) -> None:
-    """Numpy buffer assignment after Module.to keeps the module device.
+    """NumPy buffer assignment after Module.to keeps the module device.
 
     ``env.DEVICE`` is patched to ``meta`` so a regression that always places
     new buffers on the process default would land off-CPU and fail the assert.
