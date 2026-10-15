@@ -7,7 +7,9 @@ charge/spin condition so ``pair_style dpa4spin`` can load it without extra
 keywords. Used by ``source/lmp/tests/test_dpa4spin_magnetic_force_convention.py``.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import copy
 import json
