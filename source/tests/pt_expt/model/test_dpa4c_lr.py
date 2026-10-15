@@ -301,7 +301,6 @@ def test_charge_constraint_zero_target_preserves_total_charge() -> None:
         for parameter in model.parameters():
             parameter.copy_(torch.randn_like(parameter) * 0.1)
 
-    fitting = model.get_fitting_net()
     nf, nloc = 2, 5
     q = torch.randn(nf * nloc, 1, dtype=torch.float64, device=env.DEVICE)
     n_node = torch.tensor([nloc] * nf, dtype=torch.long, device=env.DEVICE)
@@ -409,6 +408,74 @@ def test_graph_training_gradient_reaches_lr_parameters(lr_kernel: str) -> None:
     for name, gradient in grads.items():
         assert gradient is not None, name
         assert torch.isfinite(gradient).all(), name
+
+
+@pytest.mark.parametrize("lr_kernel", ["les", "sog"])
+def test_untrainable_fitting_freezes_long_range_parameters(lr_kernel: str) -> None:
+    """`trainable=False` must freeze the promoted long-range Parameters.
+
+    ``GeneralFitting`` normalizes ``trainable`` to a per-layer list, so a
+    plain ``bool(self.trainable)`` would always be True and the freeze would
+    silently not apply.
+    """
+    config = _config(lr_kernel)
+    config["fitting_net"]["trainable"] = False
+    fitting = get_model(config).to(env.DEVICE).get_fitting_net()
+    names = (
+        ("les_alpha", "bias_atom_q")
+        if lr_kernel == "les"
+        else (
+            "amp",
+            "bandwidth",
+            "bias_atom_q",
+        )
+    )
+    for name in names:
+        param = getattr(fitting, name)
+        assert isinstance(param, torch.nn.Parameter), name
+        assert not param.requires_grad, name
+
+
+@pytest.mark.parametrize("lr_kernel", ["les", "sog"])
+def test_untrainable_fitting_survives_an_optimizer_step(lr_kernel: str) -> None:
+    """A real forward/backward/optimizer step must not move frozen LR params.
+
+    Regression test for the review reproduction: with
+    ``fitting_net.trainable: false`` the LES/SOG parameters changed after one
+    Adam step because ``bool(self.trainable)`` on the normalized per-layer
+    list is always True.
+    """
+    config = _config(lr_kernel)
+    config["fitting_net"]["trainable"] = False
+    model = get_model(config).to(env.DEVICE)
+    fitting = model.get_fitting_net()
+    names = (
+        ("les_alpha", "bias_atom_q")
+        if lr_kernel == "les"
+        else (
+            "amp",
+            "bandwidth",
+            "bias_atom_q",
+        )
+    )
+    before = {name: getattr(fitting, name).detach().clone() for name in names}
+
+    coord, atype = _make_batch((5,), seed=7)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    result = model(
+        torch.tensor(coord, dtype=torch.float64, device=env.DEVICE),
+        torch.tensor(atype, dtype=torch.long, device=env.DEVICE),
+    )
+    loss = result["energy"].square().sum() + result["force"].square().sum()
+    loss.backward()
+    optimizer.step()
+
+    for name in names:
+        after = getattr(fitting, name).detach()
+        assert torch.equal(before[name], after), (
+            f"{name} moved despite trainable=False: "
+            f"{before[name].tolist()} -> {after.tolist()}"
+        )
 
 
 def test_sog_parameters_serialize_and_remain_trainable() -> None:

@@ -4229,7 +4229,9 @@ def dpa4c_lr_model_args() -> Argument:
                 ],
                 doc=supported_backends("pt_expt") + doc_fitting,
             ),
-            *_bridging_method_args(),
+            # NOTE: no `bridging_method` here. `expand_bridging_method` only
+            # accepts `standard`/`dpa4`/`sezm`, so advertising the flag for
+            # `dpa4c_lr` would pass validation and then fail at construction.
         ],
         doc=supported_backends("pt_expt") + doc_model,
     )

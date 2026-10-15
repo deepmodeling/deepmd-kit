@@ -33,9 +33,11 @@ the response of the latent charges to the atomic positions, so the model
 remains conservative.
 
 :::{warning}
-Only **non-periodic systems** (no simulation box) are supported. Periodic
-long-range summation (Ewald/SPME-style) is not implemented. Freezing to
-`.pt2`/`.pte` is not yet implemented for this model type.
+Only **non-periodic systems** are supported: input frames may carry no box
+(`box=None`) or an all-zero box, while nonzero periodic cells are rejected at
+training, forward, and inference entry points. Periodic long-range summation
+(Ewald/SPME-style) is not implemented. Freezing to `.pt2`/`.pte` is not yet
+implemented for this model type.
 :::
 
 ## Training input

@@ -47,8 +47,14 @@ class DPA4CLRFitting(DPA4CLRFittingDP):
         )
         if name in self._buffers:
             del self._buffers[name]
+        # GeneralFitting normalizes ``trainable`` to a per-layer list, so a
+        # plain bool() on it is always True; freeze only when every layer is
+        # frozen.
+        trainable = self.trainable
+        if isinstance(trainable, list):
+            trainable = all(trainable)
         self.register_parameter(
-            name, torch.nn.Parameter(tensor, requires_grad=bool(self.trainable))
+            name, torch.nn.Parameter(tensor, requires_grad=bool(trainable))
         )
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:

@@ -2420,12 +2420,18 @@ class DeepEval(DeepEvalBackend):
 
         coord_input = coords.reshape(nframes, natoms, 3)
         box_input = cells.reshape(nframes, 9) if cells is not None else None
+        # An all-zero cell marks a non-periodic frame. Normalize it to None
+        # before any graph is built: the fused-cell path would otherwise hand
+        # the singular lattice to the native periodic neighbor search, which
+        # rejects it.
+        if box_input is not None and not np.any(box_input != 0):
+            box_input = None
         # Build the carry-all graph at its exact edge count; the exported edge
         # axis is dynamic.
         graph = self._build_eval_graph(coord_input, atom_types, box_input, DEVICE)
         lr_graph = None
         if self.metadata.get("needs_long_range_edges", False):
-            if box_input is not None and bool(np.any(box_input != 0)):
+            if box_input is not None:
                 raise NotImplementedError(
                     "DPA4C-LR supports only non-periodic systems (box=None)."
                 )

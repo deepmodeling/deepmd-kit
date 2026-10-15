@@ -1676,14 +1676,17 @@ class _CompiledModel(torch.nn.Module):
         # fixed across all graph models.
         needs_lr = getattr(_model, "_needs_long_range_edges", False)
         if needs_lr:
+            # Force the dense builder for the all-pairs graph: the 1e6
+            # sentinel cutoff would explode the capacity/cell estimates of
+            # the spatial NV/vesin builders.
             if ragged:
                 lr_graph = build_ragged_neighbor_graph(
-                    method, coord_3d, atype, n_node, None, 1e6, None
+                    "dense", coord_3d, atype, n_node, None, 1e6, None
                 )
             else:
                 coord_flat = coord_3d.reshape(n_padded, 3)[node_index]
                 lr_graph = build_ragged_neighbor_graph(
-                    method, coord_flat, atype_flat, ng.n_node, None, 1e6, None
+                    "dense", coord_flat, atype_flat, ng.n_node, None, 1e6, None
                 )
             lr_edge_index = lr_graph.edge_index
             lr_edge_vec = lr_graph.edge_vec

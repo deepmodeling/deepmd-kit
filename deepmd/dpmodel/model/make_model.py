@@ -140,8 +140,12 @@ def model_call_from_call_lower(
         try:
             zero_box = bool(xp_bb.all(bb == 0))
         except Exception:
-            # Traced/symbolic arrays (e.g. JAX export) cannot be evaluated to
-            # a Python bool; keep the box as-is in that case.
+            # Traced/symbolic arrays (e.g. jax2tf export) cannot be evaluated
+            # to a Python bool, so this rewrite cannot be baked into an
+            # exported graph: the periodic topology is fixed at trace time.
+            # Callers exporting a non-periodic model must pass ``box=None``
+            # at export time; a dynamic all-zero box at runtime is not
+            # representable and keeps the periodic path.
             zero_box = False
         if zero_box:
             bb = None
@@ -1083,7 +1087,6 @@ def make_model(
                 the formatted nlist.
 
             """
-            n_nf, n_nloc, n_nnei = nlist.shape
             mixed_types = self.mixed_types()
             # Sentinel capacities (e.g. DPA4C's effectively-unbounded sel)
             # would allocate absurd padding; a frame can never contribute

@@ -242,10 +242,18 @@ class DPA4CLRFitting(SeZMEnergyFittingNet):
         h2: Any | None = None,
         fparam: Any | None = None,
         aparam: Any | None = None,
+        vacuum_descriptor: Any | None = None,
     ) -> dict[str, Any]:
         """Return energy and latent charges."""
         energy_ret = super().call(
-            descriptor, atype, gr=gr, g2=g2, h2=h2, fparam=fparam, aparam=aparam
+            descriptor,
+            atype,
+            gr=gr,
+            g2=g2,
+            h2=h2,
+            fparam=fparam,
+            aparam=aparam,
+            vacuum_descriptor=vacuum_descriptor,
         )
         xp = array_api_compat.array_namespace(descriptor, atype)
         nf = descriptor.shape[0]

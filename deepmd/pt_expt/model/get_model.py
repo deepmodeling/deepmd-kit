@@ -93,15 +93,18 @@ def get_dpa4c_lr_model(data: dict) -> DPA4CLREnergyModel:
     data.setdefault("descriptor", {})
     data.setdefault("fitting_net", {})
     data["descriptor"].setdefault("type", "dpa4c")
+    # Default the fitting type as well; otherwise the factory below would
+    # build the standard ``ener`` fitting for a config that omits it.
+    data["fitting_net"].setdefault("type", "dpa4c_lr")
     if data["descriptor"]["type"] not in ("dpa4", "dpa4c", "DPA4", "sezm", "SeZM"):
         raise ValueError(
             "Model type 'dpa4c_lr' requires a DPA4/SeZM descriptor, but got "
             f"descriptor type '{data['descriptor']['type']}'."
         )
-    if data["fitting_net"].get("type", "dpa4c_lr") != "dpa4c_lr":
+    if data["fitting_net"]["type"] != "dpa4c_lr":
         raise ValueError(
             "Model type 'dpa4c_lr' requires fitting type 'dpa4c_lr', but got "
-            f"'{data['fitting_net'].get('type')}'."
+            f"'{data['fitting_net']['type']}'."
         )
 
     descriptor_exclude_types = [

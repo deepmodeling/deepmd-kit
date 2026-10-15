@@ -250,7 +250,14 @@ class DPA4CLREnergyModel(EnergyModel):
         coord: torch.Tensor,
         atype: torch.Tensor,
         box: torch.Tensor | None = None,
-        **kwargs: Any,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        coord_corr_for_virial: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        neighbor_list: Any | None = None,
+        neighbor_graph_method: str | None = None,
+        spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Reject periodic cells; both LR kernels are non-periodic."""
         if box is not None:
@@ -259,7 +266,19 @@ class DPA4CLREnergyModel(EnergyModel):
                 raise NotImplementedError(
                     "DPA4C-LR supports only non-periodic systems (box=None)."
                 )
-        return super().call_common(coord, atype, box=box, **kwargs)
+        return super().call_common(
+            coord,
+            atype,
+            box=box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            coord_corr_for_virial=coord_corr_for_virial,
+            charge_spin=charge_spin,
+            neighbor_list=neighbor_list,
+            neighbor_graph_method=neighbor_graph_method,
+            spin=spin,
+        )
 
     # ------------------------------------------------------------------
     # Graph lower with LES/SOG
@@ -526,8 +545,10 @@ class DPA4CLREnergyModel(EnergyModel):
             self.atomic_model.pair_excl,
         )
         # Long-range all-pairs graph, built eagerly outside the graph lower.
+        # Force the dense builder: the 1e6 sentinel cutoff would explode the
+        # capacity/cell estimates of the spatial NV/vesin builders.
         lr_graph = build_ragged_neighbor_graph(
-            method, coord, atype, n_node, None, 1e6, None
+            "dense", coord, atype, n_node, None, 1e6, None
         )
         predict = self.forward_common_lower_graph(
             atype,
@@ -605,9 +626,11 @@ class DPA4CLREnergyModel(EnergyModel):
         spin_flat = spin.reshape(n_padded, 3)[node_index] if spin is not None else None
         coord_flat = cc.reshape(n_padded, 3)[node_index]
 
-        # Long-range all-pairs graph on the compact node axis.
+        # Long-range all-pairs graph on the compact node axis.  Force the
+        # dense builder: the 1e6 sentinel cutoff would explode the
+        # capacity/cell estimates of the spatial NV/vesin builders.
         lr_graph = build_ragged_neighbor_graph(
-            method, coord_flat, atype_flat, ng.n_node, None, 1e6, None
+            "dense", coord_flat, atype_flat, ng.n_node, None, 1e6, None
         )
 
         model_predict = self.forward_common_lower_graph(
