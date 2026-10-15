@@ -2370,22 +2370,13 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             def _inductor_inference_compiler(
                 fx_gm: torch.fx.GraphModule, fx_inputs: list[Any]
             ) -> Any:
+                # This callback lowers the forward-only AOTAutograd inference
+                # graph (the eval branch below owns it; training compiles
+                # through the separate torch.compile branch above).
                 # ``compile_options`` already includes ``triton.max_tiles=1``
-                # from ``build_inductor_compile_options``, so the 1D launch-grid
-                # constraint applies to both the training and evaluation graphs.
-                #
-                # ``is_inference`` mirrors what torch.compile's default
-                # inference compiler already does: planning for an inference
-                # graph allocates buffers at first use and frees them early
-                # instead of keeping them autograd-visible, which lowers peak
-                # VRAM of compiled eval (measured -12.5% at N=4096 on an
-                # RTX 5090, -13.9% on an H800).  The training graph keeps
-                # ``False`` so it compiles exactly as before.  Scheduling only:
-                # outputs agree with the previous compile to rounding level.
+                # from ``build_inductor_compile_options``.
                 with _ind_cfg.patch(compile_options):
-                    return compile_fx_inner(
-                        fx_gm, fx_inputs, is_inference=not self.training
-                    )
+                    return compile_fx_inner(fx_gm, fx_inputs, is_inference=True)
 
             # select_decomp_table keeps the decomposition set aligned with
             # Inductor's fallback set (a mismatch raises an aten._to_copy
