@@ -1,5 +1,5 @@
 {
-  "_comment": "DPA4-Nano energy-training example for the water dataset. The model architecture comes from the named preset; the explicit type_map and rcut override it and use_amp and seed supplement it.",
+  "_comment": "DPA4-Nano energy-training example for the water dataset. The architecture comes from dpa4-nano-v20260911; type_map, descriptor seed/use_amp, and fitting seed are task-specific additions.",
   "model": {
     "preset": "dpa4-nano-v20260911",
     "type_map": [
@@ -7,20 +7,17 @@
       "H"
     ],
     "descriptor": {
-      "rcut": 6.0,
       "use_amp": true,
       "seed": 42
     },
     "fitting_net": {
       "seed": 42
-    },
-    "use_compile": false,
-    "enable_tf32": true
+    }
   },
   "learning_rate": {
     "type": "wsd",
-    "start_lr": 4.5e-4,
-    "stop_lr": 1e-6,
+    "start_lr": 0.00045,
+    "stop_lr": 1e-06,
     "warmup_ratio": 0.003,
     "warmup_start_factor": 0.2,
     "decay_phase_ratio": 0.65,
