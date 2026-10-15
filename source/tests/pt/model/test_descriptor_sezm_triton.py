@@ -2053,3 +2053,209 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSeZMWignerDAssembleOp(unittest.TestCase):
+    """Focused coverage for the op-bound dense Wigner-D assembly."""
+
+    WIDTHS = (3, 5, 7)  # lmax = 3 ladder
+
+    def _make_blocks(self, widths, n_edge, seed, dtype=torch.float64):
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+        return [
+            torch.randn(n_edge, w, w, device="cuda", dtype=dtype, generator=generator)
+            for w in widths
+        ]
+
+    def _reference_assemble(self, blocks, poly, dim_full, poly_lmin):
+        ref = blocks[0]
+        dense = ref.new_zeros(ref.shape[0], dim_full, dim_full)
+        dense[:, 0, 0] = 1.0
+        off = 1
+        for block in blocks:
+            size = block.shape[1]
+            dense[:, off : off + size, off : off + size] = block
+            off += size
+        if poly is not None:
+            po = poly_lmin * poly_lmin
+            dense[:, po:, po:] = poly
+        return dense
+
+    def _loss(self, dense, seed):
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+        w1 = torch.randn(
+            dense.shape, device="cuda", dtype=dense.dtype, generator=generator
+        )
+        w2 = torch.randn(
+            dense.shape, device="cuda", dtype=dense.dtype, generator=generator
+        )
+        # cotangent contributions through both D and its transpose
+        return (dense * w1).sum() + (dense.transpose(-1, -2) * w2).sum()
+
+    @_GPU_KERNELS
+    def test_op_matches_reference_with_grads(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            _wigner_d_assemble_impl,
+            _wigner_d_assemble_op,
+        )
+
+        n_edge = 64
+        for widths, poly_lmin in ((self.WIDTHS, None), ((3, 5), 3)):
+            with self.subTest(widths=widths, tail=poly_lmin is not None):
+                blocks = self._make_blocks(widths, n_edge, seed=5)
+                poly = None
+                n_regular = len(blocks)
+                if poly_lmin is not None:
+                    poly_w = 4
+                    poly = self._make_blocks([poly_w], n_edge, seed=7)[0]
+                dim_full = sum(widths) + 1 if poly is None else poly_lmin**2 + poly_w
+                args = (
+                    blocks + ([poly] if poly is not None else []),
+                    dim_full,
+                    poly_lmin or 11,
+                    n_regular,
+                )
+
+                leaves_op = [
+                    b.clone().requires_grad_(True)
+                    for b in (blocks + ([poly] if poly is not None else []))
+                ]
+                dense_op = _wigner_d_assemble_op(leaves_op, args[1], args[2], args[3])
+                leaves_ref = [
+                    b.clone().requires_grad_(True)
+                    for b in (blocks + ([poly] if poly is not None else []))
+                ]
+                dense_ref = _wigner_d_assemble_impl(
+                    leaves_ref, args[1], args[2], args[3]
+                )
+                self.assertTrue(torch.equal(dense_op.detach(), dense_ref.detach()))
+                self.assertTrue(
+                    torch.equal(
+                        dense_op.detach(),
+                        self._reference_assemble(blocks, poly, args[1], args[2]),
+                    )
+                )
+
+                grads_op = torch.autograd.grad(
+                    self._loss(dense_op, 11), leaves_op, allow_unused=True
+                )
+                grads_ref = torch.autograd.grad(
+                    self._loss(dense_ref, 11), leaves_ref, allow_unused=True
+                )
+                for g1, g2 in zip(grads_op, grads_ref, strict=True):
+                    torch.testing.assert_close(g1, g2, atol=0.0, rtol=0.0)
+
+                # fp64 gradcheck on the operator route (small edge count)
+                small = [
+                    b[:3].clone().detach().requires_grad_(True)
+                    for b in (blocks + ([poly] if poly is not None else []))
+                ]
+                self.assertTrue(
+                    torch.autograd.gradcheck(
+                        lambda *bs: _wigner_d_assemble_op(
+                            list(bs), args[1], args[2], args[3]
+                        ),
+                        small,
+                    )
+                )
+
+    @_GPU_KERNELS
+    def test_opcheck_schema_fake_autograd(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            _wigner_d_assemble_op,
+        )
+
+        for widths, poly_lmin in ((self.WIDTHS, None), ((3, 5), 3)):
+            with self.subTest(widths=widths, tail=poly_lmin is not None):
+                blocks = self._make_blocks(widths, 8, seed=9)
+                args_tail = []
+                n_regular = len(blocks)
+                if poly_lmin is not None:
+                    args_tail = self._make_blocks([4], 8, seed=13)
+                    blocks = blocks + args_tail
+                dim_full = sum(widths) + 1 if not args_tail else poly_lmin**2 + 4
+                saved = torch.get_default_device()
+                torch.set_default_device(None)
+                try:
+                    with torch.device("cuda"):
+                        torch.library.opcheck(
+                            _wigner_d_assemble_op,
+                            (blocks, dim_full, poly_lmin or 11, n_regular),
+                        )
+                finally:
+                    torch.set_default_device(saved)
+
+    @_GPU_KERNELS
+    def test_traced_matches_eager_and_layout_policy(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(21)
+        quat = torch.randn(32, 4, device="cuda", generator=generator)
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+        calc = WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
+        calc.eval()
+
+        saved_device = torch.get_default_device()
+        torch.set_default_device(None)
+        try:
+            with torch.device("cuda"):
+                d_eager, dt_eager = calc.forward(quat)
+                d_compiled, dt_compiled = torch.compile(calc.forward)(quat)
+            # The assembly op itself is bitwise (see the reference test);
+            # the compiled ladder reassociates the degree-block math, so the
+            # cross-route comparison holds at rounding level.
+            torch.testing.assert_close(d_compiled, d_eager, atol=1e-5, rtol=1e-5)
+            torch.testing.assert_close(dt_compiled, dt_eager, atol=1e-5, rtol=1e-5)
+        finally:
+            torch.set_default_device(saved_device)
+
+        # The inverse-layout policy is one shared exit: both routes honor
+        # the compatibility flag instead of the traced route bypassing it.
+        def _run_routes():
+            saved = torch.get_default_device()
+            torch.set_default_device(None)
+            try:
+                with torch.device("cuda"):
+                    _, dt_eager_i = calc.forward(quat)
+                    _, dt_compiled_i = torch.compile(calc.forward)(quat)
+                return dt_eager_i, dt_compiled_i
+            finally:
+                torch.set_default_device(saved)
+
+        calc._materialize_inverse_rotation = False
+        dt_view, dt_view_c = _run_routes()
+        self.assertFalse(dt_view.is_contiguous())
+        self.assertFalse(dt_view_c.is_contiguous())
+        calc._materialize_inverse_rotation = True
+        dt_dense, dt_dense_c = _run_routes()
+        self.assertTrue(dt_dense.is_contiguous())
+        self.assertTrue(dt_dense_c.is_contiguous())
+        torch.testing.assert_close(dt_dense, dt_view, atol=0.0, rtol=0.0)
+
+    @_GPU_KERNELS
+    def test_lmax_zero_and_empty_edges(self):
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+
+        quat = torch.randn(8, 4, device="cuda")
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+        calc0 = WignerDCalculator(lmax=0, dtype=torch.float32).cuda()
+        calc0.eval()
+        d0, dt0 = calc0.forward(quat)
+        expected = torch.zeros(8, 1, 1, device="cuda")
+        expected[:, 0, 0] = 1.0
+        self.assertTrue(torch.equal(d0, expected))
+        self.assertTrue(torch.equal(dt0, expected))
+
+        calc3 = WignerDCalculator(lmax=3, dtype=torch.float32).cuda()
+        calc3.eval()
+        d_empty, dt_empty = calc3.forward(torch.empty(0, 4, device="cuda"))
+        self.assertEqual(tuple(d_empty.shape), (0, 16, 16))
+        self.assertEqual(tuple(dt_empty.shape), (0, 16, 16))
+
+
+if __name__ == "__main__":
+    unittest.main()
