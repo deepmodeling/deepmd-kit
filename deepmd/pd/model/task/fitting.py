@@ -401,7 +401,7 @@ class GeneralFitting(Fitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 4,
+            "@version": 5,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -410,6 +410,7 @@ class GeneralFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "vacuum_ref": False,
             "default_fparam": self.default_fparam,
             "activation_function": self.activation_function,
             "precision": self.precision,

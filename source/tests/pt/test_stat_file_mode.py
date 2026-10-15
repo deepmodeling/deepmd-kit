@@ -37,8 +37,14 @@ from deepmd.pt.utils.stat import (
 from deepmd.utils.argcheck import (
     normalize,
 )
+from deepmd.utils.out_stat import (
+    ReduScanResult,
+    ReduStatAccumulator,
+    ReduStatScanner,
+)
 from deepmd.utils.stat_file import (
     StatFileSpec,
+    load_output_stat_full_scan,
     open_stat_file,
 )
 
@@ -122,6 +128,101 @@ def _energy_stat_sample() -> list[dict[str, Any]]:
     ]
 
 
+def _energy_scan_sampler(bias: float) -> Mock:
+    """A stat sampler carrying a full-data scanner that fits a constant bias."""
+    sampler = Mock(return_value=_energy_stat_sample())
+    natoms = np.array([[2, 0], [0, 2]], dtype=np.float64)
+
+    def scan(ntypes: int, keys: tuple, intensive: bool) -> ReduScanResult:
+        accumulator = ReduStatAccumulator(ntypes, 1, [1], intensive=intensive)
+        accumulator.add(natoms.sum(axis=1, keepdims=True) * bias, natoms)
+        return ReduScanResult(
+            stats={"energy": accumulator},
+            natoms_total=natoms.sum(axis=0).astype(np.int64),
+            nframes=natoms.shape[0],
+        )
+
+    sampler.redu_stat_scanner = ReduStatScanner(scan)
+    return sampler
+
+
+def test_full_scan_replaces_a_sampled_cache(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    sampled = _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
+    # Sampled statistics carry no full-scan claim.
+    assert not _full_scan_claim(stat_file)
+    with h5py.File(stat_file, "r") as file:
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
+
+    # those values were estimated from batches, which is what the flag exists
+    # to replace, so the scan must win over the cache
+    scanned = _compute_energy_stats(stat_file, _energy_scan_sampler(7.0))
+    assert _full_scan_claim(stat_file)
+    np.testing.assert_allclose(scanned, 7.0)
+    assert not np.allclose(sampled, 7.0)
+
+    # a second full-scan run is a cache hit and must neither sample nor rescan
+    rescanner = _energy_scan_sampler(9.0)
+    np.testing.assert_allclose(_compute_energy_stats(stat_file, rescanner), 7.0)
+    rescanner.assert_not_called()
+
+
+def _full_scan_claim(stat_file: Path) -> bool:
+    with open_stat_file(StatFileSpec(str(stat_file), "read")) as stat_path:
+        return load_output_stat_full_scan(stat_path)
+
+
+def _compute_energy_stats(stat_file: Path, sampler: Mock) -> np.ndarray:
+    with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
+        assert stat_path is not None
+        bias, _ = compute_output_stats(
+            sampler,
+            ntypes=2,
+            keys=["energy"],
+            stat_file_path=stat_path,
+        )
+    return bias["energy"].cpu().numpy()
+
+
+def test_sampled_recompute_withdraws_the_full_scan_claim(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    _compute_energy_stats(stat_file, _energy_scan_sampler(7.0))
+    assert _full_scan_claim(stat_file)
+
+    # an incomplete pair forces a recomputation, here from sampled batches
+    with h5py.File(stat_file, "a") as file:
+        del file["std_atom_energy"]
+    sampled = _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
+
+    assert not _full_scan_claim(stat_file)
+    assert not np.allclose(sampled, 7.0)
+
+
+def test_interrupted_replacement_drops_the_full_scan_claim(tmp_path: Path) -> None:
+    stat_file = tmp_path / "stat.hdf5"
+    _compute_energy_stats(stat_file, _energy_scan_sampler(7.0))
+    assert _full_scan_claim(stat_file)
+
+    with h5py.File(stat_file, "a") as file:
+        del file["std_atom_energy"]
+    with (
+        patch(
+            "deepmd.pt.utils.stat.save_output_stats",
+            side_effect=RuntimeError("interrupted"),
+        ),
+        pytest.raises(RuntimeError, match="interrupted"),
+    ):
+        _compute_energy_stats(stat_file, Mock(return_value=_energy_stat_sample()))
+
+    # the claim describes values that were about to be overwritten, so it must
+    # not outlive them: a lost claim only costs a rescan, a stale one is wrong
+    assert not _full_scan_claim(stat_file)
+
+
 def test_default_stat_file_mode_remains_writable(tmp_path: Path) -> None:
     stat_file = tmp_path / "stat.hdf5"
     with open_stat_file(StatFileSpec(str(stat_file))) as stat_path:
@@ -198,6 +299,7 @@ def test_read_stat_file_mode_loads_complete_cache_from_two_readers(
     with h5py.File(stat_file, "w") as file:
         file.create_dataset("bias_atom_energy", data=np.zeros((1, 1)))
         file.create_dataset("std_atom_energy", data=np.ones((1, 1)))
+        file.create_dataset("preset_bias_energy", data=np.empty(0))
 
     spec = StatFileSpec(str(stat_file), "read")
     with open_stat_file(spec) as reader_one, open_stat_file(spec) as reader_two:
@@ -273,6 +375,8 @@ def test_update_mode_recomputes_partial_multi_output_cache(tmp_path: Path) -> No
             "bias_atom_property",
             "std_atom_energy",
             "std_atom_property",
+            "preset_bias_energy",
+            "preset_bias_property",
         }
         assert not np.all(file["bias_atom_energy"][:] == 100.0)
 
@@ -296,7 +400,11 @@ def test_update_mode_replaces_orphaned_output_pair(tmp_path: Path) -> None:
     assert set(bias) == {"energy"}
     assert set(std) == {"energy"}
     with h5py.File(stat_file, "r") as file:
-        assert set(file) == {"bias_atom_energy", "std_atom_energy"}
+        assert set(file) == {
+            "bias_atom_energy",
+            "std_atom_energy",
+            "preset_bias_energy",
+        }
     original = stat_file.read_bytes()
 
     sampler.reset_mock(side_effect=True)

@@ -88,6 +88,7 @@ test = [
     "pytest-sugar",
     "pytest-split",
     "pytest-timeout",
+    "jsonschema>=4.18",
     "dpgui",
     # DPA-ADAPT tests import sklearn via dpa_adapt.cv at module load time.
     "scikit-learn",

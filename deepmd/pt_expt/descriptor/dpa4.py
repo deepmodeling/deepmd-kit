@@ -159,14 +159,13 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
 
 def _promote_trainable(module: torch.nn.Module, names: tuple[str, ...]) -> None:
     """Re-register the given float buffers of *module* as Parameters."""
-    if not getattr(module, "trainable", True):
-        return
+    trainable = bool(getattr(module, "trainable", True))
     for name in names:
         buf = module._buffers.get(name)
         if buf is None or not buf.is_floating_point():
             continue
         del module._buffers[name]
-        setattr(module, name, torch.nn.Parameter(buf, requires_grad=True))
+        setattr(module, name, torch.nn.Parameter(buf, requires_grad=trainable))
 
 
 def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
@@ -198,6 +197,19 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
 @torch_module
 class DescrptDPA4(DescrptDPA4DP):
     _update_sel_cls = UpdateSel
+
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding and
+        the radial projection of the environment seed, which read the radial
+        basis and whose rows for rarely visited separations receive almost no
+        gradient.
+        """
+        return [
+            "radial_embedding.net.0.",
+            "env_seed_embedding.rbf_proj_layer1.",
+        ]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

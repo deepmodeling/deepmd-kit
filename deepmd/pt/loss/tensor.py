@@ -179,6 +179,18 @@ class TensorLoss(TaskLoss):
         return model_pred, loss, more_loss
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return configured local and global tensor metrics."""
+        return tuple(
+            f"rmse_{scope}_{self.tensor_name}"
+            for scope, enabled in (
+                ("local", self.has_local_weight),
+                ("global", self.has_global_weight),
+            )
+            if enabled
+        )
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation."""
         label_requirement = []

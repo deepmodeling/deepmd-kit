@@ -126,6 +126,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         self.weights = weights
 
+    def adam_route_patterns(self) -> list[str]:
+        """Collect child AdamW patterns under their indexed parameter paths."""
+        return [
+            f"models.{index}.{pattern}"
+            for index, model in enumerate(self.models)
+            for pattern in model.adam_route_patterns()
+        ]
+
     def _rebuild_mapping_state(self) -> None:
         """Rebuild ``mapping_list`` and everything derived from it.
 
@@ -218,6 +226,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     def get_type_map(self) -> list[str]:
         """Get the type map."""
         return self.type_map
+
+    def fold_vacuum_reference(self) -> None:
+        """Fold the vacuum reference of every sub-model into its bias."""
+        for model in self.models:
+            model.fold_vacuum_reference()
 
     def change_type_map(
         self, type_map: list[str], model_with_new_type_stat: Any | None = None

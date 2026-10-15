@@ -15,8 +15,8 @@ frames equally, while per-atom terms (force, atomic energy, dos, tensor) weigh
 them by their label count, so a caller passes the frames' atom counts there.
 
 Not covered: the TF backend, which still dilutes mixed_type losses
-(deepmodeling/deepmd-kit#5760), and the pt-only ``population`` and ``denoise``
-losses (deepmodeling/deepmd-kit#5761).
+(deepmodeling/deepmd-kit#5760), and the pt-only ``population`` loss
+(deepmodeling/deepmd-kit#5761).
 """
 
 import numpy as np

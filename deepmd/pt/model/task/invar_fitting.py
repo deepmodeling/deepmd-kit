@@ -75,6 +75,11 @@ class InvarFitting(GeneralFitting):
         The value is a list specifying the bias. the elements can be None or np.array of output shape.
         For example: [None, [2.]] means type 0 is not set, type 1 is set to [2.]
         The `set_davg_zero` key in the descriptor should be set.
+    vacuum_ref : bool
+        Reference the network output of every atom to the output of the same
+        network for an isolated atom of the same type under the same
+        conditioning, so that an atom without neighbors contributes exactly
+        its output bias.
     type_map: list[str], Optional
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
@@ -103,6 +108,7 @@ class InvarFitting(GeneralFitting):
         seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
         atom_ener: list[torch.Tensor | None] | None = None,
+        vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
         default_fparam: list[float] | None = None,
@@ -110,6 +116,15 @@ class InvarFitting(GeneralFitting):
     ) -> None:
         self.dim_out = dim_out
         self.atom_ener = atom_ener
+        if (
+            vacuum_ref
+            and atom_ener is not None
+            and any(x is not None for x in atom_ener)
+        ):
+            raise ValueError(
+                "atom_ener and vacuum_ref are exclusive; vacuum_ref references every "
+                "atom to the isolated atom of its type by itself"
+            )
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -129,6 +144,7 @@ class InvarFitting(GeneralFitting):
             remove_vaccum_contribution=None
             if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
             else [x is not None for x in atom_ener],
+            vacuum_ref=vacuum_ref,
             type_map=type_map,
             use_aparam_as_mask=use_aparam_as_mask,
             default_fparam=default_fparam,
@@ -149,7 +165,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         return super().deserialize(data)
 
     def output_def(self) -> FittingOutputDef:
@@ -174,6 +190,7 @@ class InvarFitting(GeneralFitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        vacuum_descriptor: torch.Tensor | None = None,
         return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Based on embedding net output, alculate total energy.
@@ -181,6 +198,8 @@ class InvarFitting(GeneralFitting):
         Args:
         - inputs: Embedding matrix. Its shape is [nframes, natoms[0], self.dim_descrpt].
         - natoms: Tell atom count and element count. Its shape is [2+self.ntypes].
+        - vacuum_descriptor: descriptor of an isolated atom of every type with
+          shape [ntypes, self.dim_descrpt], required by ``vacuum_ref``.
         - return_atomic_feature: also return the last hidden activation under the
           ``atomic_feature`` key.
 
@@ -196,6 +215,7 @@ class InvarFitting(GeneralFitting):
             h2,
             fparam,
             aparam,
+            vacuum_descriptor=vacuum_descriptor,
             return_atomic_feature=return_atomic_feature,
         )
         result = {self.var_name: out[self.var_name].to(env.GLOBAL_PT_FLOAT_PRECISION)}
