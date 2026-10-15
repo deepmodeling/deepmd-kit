@@ -93,10 +93,7 @@ class TestDeepEvalDOS(unittest.TestCase):
                 self.assertEqual(dos.shape, (1, self.numb_dos))
                 self.assertEqual(atom_dos.shape, (1, 4, self.numb_dos))
 
-    def test_non_dos_archive_has_no_numb_dos(self) -> None:
-        from deepmd.pt_expt.descriptor.se_e2_a import (
-            DescrptSeA,
-        )
+    def test_non_dos_archive_reports_zero(self) -> None:
         from deepmd.pt_expt.fitting import (
             EnergyFittingNet,
         )
@@ -107,9 +104,13 @@ class TestDeepEvalDOS(unittest.TestCase):
         ds = DescrptSeA(4.0, 0.5, [8, 6])
         ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=ds.mixed_types())
         model = EnergyModel(ds, ft, type_map=["foo", "bar"]).to(torch.float64).eval()
-        path = os.path.join(self._tmpdir.name, "energy.pte")
-        deserialize_to_file(path, {"model": model.serialize()})
-        self.assertNotIn("numb_dos", DeepEval(path).deep_eval.metadata)
+        full = os.path.join(self._tmpdir.name, "energy.pte")
+        meta_only = os.path.join(self._tmpdir.name, "energy_meta_only.pte")
+        deserialize_to_file(full, {"model": model.serialize()})
+        _strip_extra_model_json(Path(full), Path(meta_only))
+        for path in (full, meta_only):
+            with self.subTest(path=path):
+                self.assertEqual(DeepEval(path).deep_eval.get_numb_dos(), 0)
 
 
 if __name__ == "__main__":

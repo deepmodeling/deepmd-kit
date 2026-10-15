@@ -1189,11 +1189,12 @@ class DeepEval(DeepEvalBackend):
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
         if self._dpmodel is not None:
-            get_numb_dos = getattr(self._dpmodel, "get_numb_dos", None)
-            return int(get_numb_dos()) if get_numb_dos is not None else 0
-        # Metadata-only mode: `numb_dos` is written by `_collect_metadata`
-        # for models with a `dos` output; other models read as 0.
-        return int(self.metadata.get("numb_dos", 0))
+            return int(self._dpmodel.get_numb_dos())
+        # Metadata-only mode: the width is the shape of the ``dos`` output.
+        out_defs = self._model_output_def.get_data()
+        if "dos" in out_defs:
+            return int(out_defs["dos"].shape[0])
+        return 0
 
     def get_var_name(self) -> str:
         """Get the name of the property (property models only)."""
