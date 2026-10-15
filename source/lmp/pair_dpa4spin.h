@@ -66,8 +66,10 @@ class PairDPA4Spin : public Pair {
   PairDPA4Spin(class LAMMPS*);
   ~PairDPA4Spin() override;
 
-  // Load the artifact named by ``pair_style dpa4spin <model> [charge_spin
-  // <v1> ... <vN>]`` and fix the charge state the keyword names.
+  // Load the artifact named by ``pair_style dpa4spin <model>
+  // [charge_spin <v1> ... <vN>] [magnetic_force precession|cartesian]`` and
+  // fix the optional charge state and magnetic-force convention the keywords
+  // name. ``magnetic_force`` defaults to precession.
   void settings(int, char**) override;
   // Resolve the LAMMPS atom types onto the element list of the model.
   void coeff(int, char**) override;
@@ -98,6 +100,14 @@ class PairDPA4Spin : public Pair {
   std::vector<int> type_idx_map;
   // LAMMPS unit system relative to the eV / Angstrom system of the model.
   double ener_unit_cvt_factor, dist_unit_cvt_factor, force_unit_cvt_factor;
+  // Magnetic-force convention stored in ``atom->fm``. Zero selects the
+  // precession force (energy gradient scaled by the moment magnitude over
+  // hbar), which is the default and what the stock LAMMPS SPIN integrator
+  // expects. One selects the Cartesian energy gradient ``-dE/dS`` with only
+  // the energy-per-model-spin unit conversion, which a Newtonian spin
+  // integrator consumes. Exposed to callers through
+  // ``extract("fm_cartesian_force", dim)``.
+  int fm_cartesian_force;
 
  private:
   CommBrickDPA4Spin* commdata_;

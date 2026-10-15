@@ -18,9 +18,12 @@
 using namespace LAMMPS_NS;
 
 namespace {
-// Reduced Planck constant in eV.ps. The model reports the magnetic force as
-// the energy gradient with respect to the magnetic moment, while LAMMPS stores
-// the precession force; the two differ by the moment magnitude over hbar.
+// Reduced Planck constant in eV.ps (metal units). The model reports the
+// magnetic force as the energy gradient with respect to the magnetic moment.
+// Under magnetic_force precession (the default), that gradient is stored in
+// atom->fm after multiplication by |m| / hbar. Under magnetic_force cartesian
+// the gradient is stored with only the energy-per-model-spin unit conversion,
+// and this constant is unused.
 constexpr double kHBar = 6.5821191e-04;
 }  // namespace
 
@@ -333,7 +336,11 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
   // communication stages.
   auto model2loc = compact_graph.d_model2loc;
   const double fscale = scale[1][1] * force_unit_cvt_factor;
-  const double fmscale = scale[1][1] * force_unit_cvt_factor / kHBar;
+  // Precession: energy gradient times |m| / hbar. Cartesian: energy gradient
+  // with only the energy-per-model-spin unit conversion (no |m|, no hbar).
+  const int cartesian = fm_cartesian_force;
+  const double fmscale = cartesian ? scale[1][1] * ener_unit_cvt_factor
+                                   : scale[1][1] * force_unit_cvt_factor / kHBar;
   reverse_virial = false;
   reverse_used_host = false;
   // The KOKKOS package runs 'newton off', so the integrator's force_clear only
@@ -364,15 +371,14 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
       "dpa4spin/kk:scatter_f", Kokkos::RangePolicy<DeviceType>(0, nnode_m),
       KOKKOS_LAMBDA(const int m) {
         const int i = model2loc(m);
-        // The precession force carried by ``fm`` is the energy gradient with
-        // respect to the moment, rescaled by the moment magnitude over hbar.
-        const double moment = fmscale * sp(i, 3);
+        // Precession multiplies by the moment magnitude; Cartesian does not.
+        const double moment_factor = cartesian ? 1.0 : sp(i, 3);
         f(i, 0) += fscale * out_force(3 * m + 0);
         f(i, 1) += fscale * out_force(3 * m + 1);
         f(i, 2) += fscale * out_force(3 * m + 2);
-        fm(i, 0) += moment * out_force_mag(3 * m + 0);
-        fm(i, 1) += moment * out_force_mag(3 * m + 1);
-        fm(i, 2) += moment * out_force_mag(3 * m + 2);
+        fm(i, 0) += fmscale * moment_factor * out_force_mag(3 * m + 0);
+        fm(i, 1) += fmscale * moment_factor * out_force_mag(3 * m + 1);
+        fm(i, 2) += fmscale * moment_factor * out_force_mag(3 * m + 2);
       });
   atomKK->modified(execution_space, F_MASK | FM_MASK);
   if (multi_rank) {
