@@ -134,6 +134,7 @@ def test_adapter_declares_extract_key_and_keyword() -> None:
     root = Path(__file__).resolve().parents[1]
     pair_cpp = (root / "pair_dpa4spin.cpp").read_text(encoding="utf-8")
     pair_h = (root / "pair_dpa4spin.h").read_text(encoding="utf-8")
+    pair_kk = (root / "pair_dpa4spin_kokkos.cpp").read_text(encoding="utf-8")
     assert 'strcmp(str, "fm_cartesian_force")' in pair_cpp
     assert "fm_cartesian_force" in pair_h
     assert 'key == "magnetic_force"' in pair_cpp
@@ -141,6 +142,10 @@ def test_adapter_declares_extract_key_and_keyword() -> None:
     assert 'value == "precession"' in pair_cpp
     assert "dim = 0" in pair_cpp
     assert 'strcmp(update->unit_style, "metal")' in pair_cpp
+    # Primary issue target is dpa4spin/kk: scatter must keep both conventions.
+    assert "fm_cartesian_force" in pair_kk
+    assert "ener_unit_cvt_factor" in pair_kk
+    assert "cartesian ? 1.0 : sp(i, 3)" in pair_kk
 
 
 def test_non_unit_energy_conversion_applies_only_to_cartesian() -> None:
