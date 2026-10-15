@@ -477,14 +477,6 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         )
         return xp.sum(em[:, :, :, None] * values[:, :, None, :], axis=1)
 
-    def _add_to_slice(self, array: Array, start: int, end: int, value: Array) -> Array:
-        """Return ``array`` with ``value`` added to ``array[start:end]``."""
-        xp = array_api_compat.array_namespace(array, value)
-        return xp.concat(
-            [array[:start], array[start:end] + value, array[end:]],
-            axis=0,
-        )
-
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
@@ -578,41 +570,28 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 gg = self.cal_g(ss, (tt,))
                 gr += xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
         else:
-            # Sort atoms by center type so each type forms a contiguous block.
-            # Slice indexing (arr[s:e]) is array-api compatible and lets us
-            # run cal_g only on atoms of the matching center type, keeping the
-            # same O(nf*nloc) total embedding cost as the original numpy code.
+            # Gather the atoms of each center type so cal_g only runs on them.
+            # nonzero keeps the block sizes traceable, unlike int() on a sum.
+            # Its indices are ascending, so the concatenated blocks are in
+            # (stable) sorted order.
             atype_loc = xp.reshape(atype_ext[:, :nloc], (nf * nloc,))
-            sort_idx = xp.argsort(atype_loc)
-            unsort_idx = xp.argsort(sort_idx)
-            rr_s = xp.take(rr, sort_idx, axis=0)
-            mask_s = xp.take(exclude_mask, sort_idx, axis=0)
+            unsort_idx = xp.argsort(xp.argsort(atype_loc))
             dev = array_api_compat.device(coord_ext)
-            gr_s = xp.zeros([nf * nloc, ng, 4], dtype=input_dtype, device=dev)
-            # Per-type boundaries in sorted order
-            type_ends = []
-            offset = 0
+            gr_blocks = []
             for ti in range(self.ntypes):
-                offset += int(xp.sum(xp.astype(atype_loc == ti, xp.int32)))
-                type_ends.append(offset)
-            type_starts = [0, *type_ends[:-1]]
-            for ti in range(self.ntypes):
-                s, e = type_starts[ti], type_ends[ti]
-                if s == e:
-                    continue
+                idx = xp.nonzero(atype_loc == ti)[0]
+                rr_t = xp.take(rr, idx, axis=0)
+                mask_t = xp.take(exclude_mask, idx, axis=0)
+                gr_t = xp.zeros([idx.shape[0], ng, 4], dtype=input_dtype, device=dev)
                 for tt in range(self.ntypes):
-                    mm = mask_s[s:e, sec[tt] : sec[tt + 1]]
-                    tr = rr_s[s:e, sec[tt] : sec[tt + 1], :]
+                    mm = mask_t[:, sec[tt] : sec[tt + 1]]
+                    tr = rr_t[:, sec[tt] : sec[tt + 1], :]
                     tr = tr * xp.astype(mm[:, :, None], tr.dtype)
                     ss = tr[..., 0:1]
                     gg = self.cal_g(ss, (ti, tt))
-                    gr_s = self._add_to_slice(
-                        gr_s,
-                        s,
-                        e,
-                        xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1),
-                    )
-            gr = xp.take(gr_s, unsort_idx, axis=0)
+                    gr_t += xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
+                gr_blocks.append(gr_t)
+            gr = xp.take(xp.concat(gr_blocks, axis=0), unsort_idx, axis=0)
         gr = xp.reshape(gr, (nf, nloc, ng, 4))
         # nf x nloc x ng x 4
         gr /= self.nnei
@@ -664,45 +643,33 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 )
         else:
             atype_loc = xp.reshape(atype_ext[:, :nloc], (nfnl,))
-            sort_idx = xp.argsort(atype_loc)
-            unsort_idx = xp.argsort(sort_idx)
-            rr_s = xp.take(rr, sort_idx, axis=0)
-            mask_s = xp.take(exclude_mask, sort_idx, axis=0)
+            unsort_idx = xp.argsort(xp.argsort(atype_loc))
             dev = array_api_compat.device(rr)
-            gr_s = xp.zeros([nfnl, 4, ng], dtype=rr.dtype, device=dev)
-            type_ends = []
-            offset = 0
+            gr_blocks = []
             for ti in range(self.ntypes):
-                offset += int(xp.sum(xp.astype(atype_loc == ti, xp.int32)))
-                type_ends.append(offset)
-            type_starts = [0, *type_ends[:-1]]
-            for ti in range(self.ntypes):
-                s, e = type_starts[ti], type_ends[ti]
-                if s == e:
-                    continue
+                idx = xp.nonzero(atype_loc == ti)[0]
+                rr_t = xp.take(rr, idx, axis=0)
+                mask_t = xp.take(exclude_mask, idx, axis=0)
+                gr_t = xp.zeros([idx.shape[0], 4, ng], dtype=rr.dtype, device=dev)
                 for tt in range(self.ntypes):
                     embedding_idx = tt * self.ntypes + ti
                     compress_data_ii = self.compress_data[embedding_idx]
                     if array_api_compat.size(compress_data_ii) == 0:
                         continue
                     compress_info_ii = self.compress_info[embedding_idx]
-                    mm = mask_s[s:e, sec[tt] : sec[tt + 1]]
-                    rr_i = rr_s[s:e, sec[tt] : sec[tt + 1], :]
+                    mm = mask_t[:, sec[tt] : sec[tt + 1]]
+                    rr_i = rr_t[:, sec[tt] : sec[tt + 1], :]
                     rr_i = rr_i * xp.astype(mm[:, :, None], rr_i.dtype)
                     ss = rr_i[:, :, :1]
-                    gr_s = self._add_to_slice(
-                        gr_s,
-                        s,
-                        e,
-                        self._tabulate_fusion_se_a(
-                            compress_data_ii,
-                            compress_info_ii,
-                            ss,
-                            rr_i,
-                            ng,
-                        ),
+                    gr_t += self._tabulate_fusion_se_a(
+                        compress_data_ii,
+                        compress_info_ii,
+                        ss,
+                        rr_i,
+                        ng,
                     )
-            gr = xp.take(gr_s, unsort_idx, axis=0)
+                gr_blocks.append(gr_t)
+            gr = xp.take(xp.concat(gr_blocks, axis=0), unsort_idx, axis=0)
         return xp.permute_dims(gr, (0, 2, 1))
 
     def serialize(self) -> dict:
