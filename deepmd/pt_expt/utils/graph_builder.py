@@ -422,14 +422,17 @@ def build_all_pairs_unordered_graph(
             edge_mask=torch.zeros((0,), dtype=torch.bool, device=device),
         )
 
-    pair_frame = torch.repeat_interleave(torch.arange(nf, device=device), n_pairs)
+    pair_frame = torch.repeat_interleave(
+        torch.arange(nf, dtype=torch.int64, device=device), n_pairs
+    )
     pair_start = torch.cumsum(n_pairs, 0) - n_pairs  # (nf,)
     node_start = torch.cumsum(n_node, 0) - n_node  # (nf,)
     # Pair rank within its frame, in row-major strict-upper-triangle order
     # (0,1), (0,2), ..., (0,n-1), (1,2), ...
-    k = (torch.arange(total_pairs, device=device) - pair_start[pair_frame]).to(
-        torch.float64
-    )
+    k = (
+        torch.arange(total_pairs, dtype=torch.int64, device=device)
+        - pair_start[pair_frame]
+    ).to(torch.float64)
     n = n_node[pair_frame].to(torch.float64)
     # Row i starts at S_i = i * (2n - 1 - i) / 2; solve S_i <= k < S_{i+1}.
     # float64 is exact for the sizes involved (n^2 << 2^53); one correction
