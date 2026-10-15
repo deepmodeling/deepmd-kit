@@ -339,8 +339,9 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
   // Precession: energy gradient times |m| / hbar. Cartesian: energy gradient
   // with only the energy-per-model-spin unit conversion (no |m|, no hbar).
   const int cartesian = fm_cartesian_force;
-  const double fmscale = cartesian ? scale[1][1] * ener_unit_cvt_factor
-                                   : scale[1][1] * force_unit_cvt_factor / kHBar;
+  const double fmscale = cartesian
+                             ? scale[1][1] * ener_unit_cvt_factor
+                             : scale[1][1] * force_unit_cvt_factor / kHBar;
   reverse_virial = false;
   reverse_used_host = false;
   // The KOKKOS package runs 'newton off', so the integrator's force_clear only

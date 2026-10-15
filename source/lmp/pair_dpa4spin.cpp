@@ -592,12 +592,11 @@ void PairDPA4Spin::compute(int eflag, int vflag) {
   // with only the energy-per-model-spin unit conversion, including at zero
   // moment.
   const double force_scale = scale[1][1] * force_unit_cvt_factor;
-  const double magnetic_force_scale =
-      fm_cartesian_force ? scale[1][1] * ener_unit_cvt_factor
-                         : force_scale / kHBar;
+  const double magnetic_force_scale = fm_cartesian_force
+                                          ? scale[1][1] * ener_unit_cvt_factor
+                                          : force_scale / kHBar;
   for (int ii = 0; ii < nall; ++ii) {
-    const double moment_factor =
-        fm_cartesian_force ? 1.0 : sp[ii][3];
+    const double moment_factor = fm_cartesian_force ? 1.0 : sp[ii][3];
     for (int dd = 0; dd < 3; ++dd) {
       f[ii][dd] += dforce[3 * ii + dd] * force_scale;
       fm[ii][dd] +=

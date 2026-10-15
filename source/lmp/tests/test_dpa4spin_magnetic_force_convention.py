@@ -19,9 +19,13 @@ energy) belongs in CI with a Kokkos-enabled LAMMPS and a native-spin
 archive; this module does not substitute for that.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import pytest
@@ -158,6 +162,4 @@ def test_non_unit_energy_conversion_applies_only_to_cartesian() -> None:
         force_unit_cvt_factor=2.0,
     )
     np.testing.assert_allclose(cartesian, [[46.121098, 0.0, 0.0]])
-    np.testing.assert_allclose(
-        precession, force_mag * (2.0 / HBAR_METAL)
-    )
+    np.testing.assert_allclose(precession, force_mag * (2.0 / HBAR_METAL))
