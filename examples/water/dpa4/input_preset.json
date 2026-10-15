@@ -1,7 +1,7 @@
 {
   "_comment": "DPA4-Nano energy-training example for the water dataset. The model architecture comes from the named preset; the explicit type_map and rcut override it and use_amp and seed supplement it.",
   "model": {
-    "preset": "dpa4-nano-v20260901",
+    "preset": "dpa4-nano-v20260911",
     "type_map": [
       "O",
       "H"

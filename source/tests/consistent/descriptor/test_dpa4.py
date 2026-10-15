@@ -99,6 +99,8 @@ DPA4_CURATED_CASES = (
     dpa4_case(s2_activation=[False, False]),
     # gaussian radial basis
     dpa4_case(basis_type="gaussian"),
+    # the /fix suffix is accepted by every backend and evaluates like its family
+    dpa4_case(basis_type="gaussian/fix"),
     # float32 baseline
     dpa4_case(precision="float32"),
     # float32 mixed high-risk path

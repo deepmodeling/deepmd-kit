@@ -88,6 +88,7 @@ class PropertyFittingNet(InvarFitting):
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
+        vacuum_ref: bool = False,
         type_map: list[str] | None = None,
         default_fparam: list | None = None,
         distinguish_types: bool = True,
@@ -114,6 +115,7 @@ class PropertyFittingNet(InvarFitting):
             precision=precision,
             mixed_types=mixed_types,
             exclude_types=exclude_types,
+            vacuum_ref=vacuum_ref,
             type_map=type_map,
             default_fparam=default_fparam,
         )
@@ -136,7 +138,7 @@ class PropertyFittingNet(InvarFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 6, 1)
+        check_version_compatibility(data.pop("@version"), 7, 1)
         data.setdefault("distinguish_types", False)
         data.pop("dim_out")
         data["property_name"] = data.pop("var_name")
@@ -158,7 +160,7 @@ class PropertyFittingNet(InvarFitting):
             "intensive": self.intensive,
             "distinguish_types": self.distinguish_types,
         }
-        dd["@version"] = 6
+        dd["@version"] = 7
 
         return dd
 

@@ -418,6 +418,9 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         Whether the `dens` fitting parameters are trainable.
     atom_ener
         Optional vacuum atomic energy contribution for the scalar energy branch.
+    vacuum_ref
+        Whether the scalar energy branch references every atom to the isolated
+        atom of its type.
     use_aparam_as_mask
         Whether atomic parameters act as masks in the scalar energy branch.
     """
@@ -448,6 +451,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         exclude_types: list[int] | None = None,
         trainable: bool | list[bool] = True,
         atom_ener: list[torch.Tensor | None] | None = None,
+        vacuum_ref: bool = False,
         use_aparam_as_mask: bool = False,
     ) -> None:
         super().__init__()
@@ -505,6 +509,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             exclude_types=self.exclude_types,
             trainable=self.trainable,
             atom_ener=self.atom_ener,
+            vacuum_ref=bool(vacuum_ref),
             use_aparam_as_mask=self.use_aparam_as_mask,
         )
 
@@ -575,6 +580,24 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         """Return default frame parameters of the energy branch."""
         return self.energy_head.get_default_fparam()
 
+    def needs_vacuum_descriptor(self) -> bool:
+        """Whether the energy head takes the vacuum descriptor of every type from the descriptor."""
+        return self.energy_head.needs_vacuum_descriptor()
+
+    @property
+    def vacuum_ref(self) -> bool:
+        """Whether the scalar energy branch references every atom to the isolated atom of its type."""
+        return self.energy_head.vacuum_ref
+
+    @vacuum_ref.setter
+    def vacuum_ref(self, value: bool) -> None:
+        self.energy_head.vacuum_ref = bool(value)
+
+    @property
+    def var_name(self) -> str:
+        """Output name of the scalar energy branch."""
+        return self.energy_head.var_name
+
     def get_dim_aparam(self) -> int:
         """Return the atomic-parameter width of the energy branch."""
         return self.energy_head.get_dim_aparam()
@@ -644,6 +667,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         noise_mask: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        vacuum_descriptor: torch.Tensor | None = None,
         return_components: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
@@ -663,6 +687,9 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             Optional frame parameters.
         aparam
             Optional atomic parameters.
+        vacuum_descriptor
+            Descriptor of an isolated atom of every type with shape
+            `(ntypes, dim_descrpt)`, required by ``vacuum_ref``.
         return_components
             If true, also return the clean-force and denoising branches.
 
@@ -681,6 +708,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
             atype,
             fparam=fparam,
             aparam=aparam,
+            vacuum_descriptor=vacuum_descriptor,
         )
         clean_force = self.direct_force_head(latent).view(nf, nloc, 3)
         denoising_force = self.denoising_head(latent).view(nf, nloc, 3)
@@ -730,6 +758,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
                 "exclude_types": self.exclude_types.copy(),
                 "trainable": self.trainable,
                 "atom_ener": self.atom_ener,
+                "vacuum_ref": self.vacuum_ref,
                 "use_aparam_as_mask": self.use_aparam_as_mask,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},

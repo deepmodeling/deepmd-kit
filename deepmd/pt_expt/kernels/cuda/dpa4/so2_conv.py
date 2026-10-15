@@ -61,6 +61,9 @@ from typing import (
 )
 
 import torch
+from torch._subclasses.fake_tensor import (
+    FakeTensor,
+)
 
 __all__ = [
     "SO2ConvCuda",
@@ -183,7 +186,10 @@ def wigner_run_tables(lmax: int) -> tuple[torch.Tensor, ...]:
         exps.to(torch.int8).contiguous(),
         dexps.to(torch.int8).contiguous(),
     )
-    _RUN_TABLE_CACHE[lmax] = tables
+    # Tables built under a tracing mode are fake tensors bound to that trace;
+    # only real tables are shared across calls.
+    if not any(isinstance(table, FakeTensor) for table in tables):
+        _RUN_TABLE_CACHE[lmax] = tables
     return tables
 
 

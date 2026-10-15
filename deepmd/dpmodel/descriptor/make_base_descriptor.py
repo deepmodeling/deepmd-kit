@@ -105,6 +105,10 @@ def make_base_descriptor(
             """Returns the embedding dimension of g2."""
             pass
 
+        def adam_route_patterns(self) -> list[str]:
+            """Return descriptor-relative parameter name patterns for HybridMuon's AdamW path."""
+            return []
+
         def get_dim_chg_spin(self) -> int:
             """Returns the dimension of charge_spin input (0 if not supported)."""
             return 0

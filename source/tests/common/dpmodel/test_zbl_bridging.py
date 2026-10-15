@@ -76,6 +76,37 @@ def test_builder_composes_linear_model():
     assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
 
 
+def test_bridged_preset_belongs_to_output_statistics() -> None:
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["preset_out_bias"] = {"energy": {"Ni": 2.0, "O": 1.0}}
+    model = get_model(cfg)
+    am = model.atomic_model
+    assert am.preset_out_bias == {"energy": [[2.0], [1.0]]}
+    coord, atype, box = _close_pair_inputs()
+    before = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    sampled = [
+        {
+            "coord": coord,
+            "atype": atype,
+            "box": box,
+            "natoms": np.array([[6, 6, 3, 3]]),
+            "energy": np.array([[9.0]]),
+            "find_energy": 1.0,
+        }
+    ]
+    am.change_out_bias(sampled, bias_adjust_mode="set-by-statistic")
+    np.testing.assert_allclose(np.asarray(am.out_bias).reshape(-1), [2.0, 1.0])
+    after = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    np.testing.assert_allclose(after - before, 9.0, atol=1e-10)
+    loaded = BaseModel.deserialize(model.serialize())
+    assert loaded.atomic_model.preset_out_bias == am.preset_out_bias
+    np.testing.assert_allclose(loaded.atomic_model.out_bias, am.out_bias)
+
+
 def test_third_child_without_common_route_raises():
     """[learned, inner_potential, pairtab] has no common execution route
     (pairtab is dense-only, the bridged pair is graph-only): the builder

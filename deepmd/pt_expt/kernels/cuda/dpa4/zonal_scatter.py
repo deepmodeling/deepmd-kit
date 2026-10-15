@@ -65,7 +65,8 @@ def _backward_fake(
     node_scale: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     del grad_out, dst, node_scale
-    return torch.empty_like(zonal), torch.empty_like(radial)
+    # The CUDA implementation allocates gradients from contiguous operands.
+    return zonal.new_empty(zonal.shape), radial.new_empty(radial.shape)
 
 
 def _setup_context(ctx: Any, inputs: tuple[Any, ...], output: torch.Tensor) -> None:

@@ -106,6 +106,110 @@ The construction of the fitting net is given by section {ref}`fitting_net <model
 - If the option {ref}`resnet_dt <model[standard]/fitting_net[ener]/resnet_dt>` is set to `true`, then a timestep is used in the ResNet.
 - {ref}`seed <model[standard]/fitting_net[ener]/seed>` gives the random seed that is used to generate random numbers when initializing the model parameters.
 
+## Isolated-atom energy reference
+
+An atom without neighbors should contribute a known energy, for example the
+isolated-atom energy of the reference calculation, so that the dissociation
+limit of the model is pinned. Two model options provide this together:
+
+- `preset_out_bias` fixes the energy bias of every element to a given value
+  instead of fitting it from the data. The value may name a bundled table of
+  isolated-atom energies, be given as a dictionary keyed by element symbol, be
+  read from a JSON file holding such a dictionary, or be listed per type of
+  the `type_map`. Every element that occurs in the training data must be
+  assigned; elements of a table that are not in the `type_map` are ignored.
+  The elements that occur in the data are collected from the batches sampled
+  for the statistics, or from every frame with `data_stat_full`. An assigned
+  output takes no statistics: elements absent from the data get a zero bias
+  when the model is initialized and keep their bias when it is fine-tuned,
+  and the output std keeps its stored value.
+- `vacuum_ref` in the fitting network references the network output of every
+  atom to the output the same network gives an isolated atom of the same type,
+  under the same frame parameters, atomic parameters and case embedding. With
+  it, the energy of an atom without neighbors is exactly its bias, whatever the
+  network parameters are, so the preset value is the isolated-atom energy. The
+  reference applies to an output whose bias `preset_out_bias` fixes; an output
+  whose bias is fitted from the data keeps the plain network output. It cannot
+  be combined with the fitting option `atom_ener`.
+
+```json
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "preset_out_bias": {
+      "energy": "omat24"
+    },
+    "fitting_net": {
+      "vacuum_ref": true
+    }
+  }
+}
+```
+
+`omat24` is one of the bundled tables of isolated-atom energies in eV:
+
+| Name     | Reference calculation | Elements                                  |
+| -------- | --------------------- | ----------------------------------------- |
+| `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
+| `omc25`  | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
+| `odac25` | ODAC25                | 94, H to Pu                               |
+
+These four tables are the isolated-atom reference energies of the UMA training
+tasks published with fairchem
+(`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
+license). Each table is on the energy scale of its own reference calculation
+(the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a
+model takes the table of the calculation that produced its training data. A
+table of another reference calculation is given as a JSON file
+mapping element symbols to energies in eV, for instance `"energy": "e0.json"`
+with the file holding `{"O": -432.0, "H": -13.6}`; the path is relative to the
+working directory. In every form the table is resolved once when the input is
+processed and its values are stored in the model, so a trained model depends
+neither on the file nor on the bundled data.
+
+In multi-task training `preset_out_bias` is given in each branch, so a branch
+trained on another reference calculation names its own table; written once
+next to `model_dict`, it applies to every branch that does not set its own. A
+branch without a table takes its bias from the statistics and keeps the plain
+network output even when it shares a fitting network with `vacuum_ref`: the
+shared network then represents the same binding energy in every branch, the
+branches differ by a constant per element that the case embedding carries, and
+the isolated-atom energies of the branches with a table stay exactly their
+presets.
+`examples/water/dpa4/input_e0.json` and
+`examples/water/dpa4/input_multitask_e0.json` show the single-task and the
+multi-task setup on the water example, whose reference calculation is not one
+of the bundled tables: the first reads the table from `e0.json` next to the
+input, the second gives every branch an explicit dictionary.
+
+The reference atom is the neutral atom in its ground state. With charge/spin
+conditioning (`add_chg_spin_ebd`) the reference carries zero charge and the
+ground-state spin multiplicity of the element, and with
+[native spin](dpa4.md#native-scheme) it carries a spin vector of one Bohr
+magneton per unpaired electron; charged, excited or differently magnetized
+isolated atoms keep the deviation the network learns for them. The type names
+must then be element symbols.
+
+The reference follows the network parameters at every training step. Freezing
+evaluates the vacuum descriptor of every type once and removes the reference
+atoms from the exported model: a fitting without frame or atomic parameters
+folds the reference into its bias and runs at the speed of a model without the
+option, and a fitting with such parameters, whose reference output varies
+between atoms, stores the table and evaluates its references from it. The
+fused inference operators of the pt_expt backend take a per-type reference
+through the bias; a fitting whose reference varies between atoms is served by
+the autograd route instead.
+
+`vacuum_ref` is available for DPA4/SeZM on the PyTorch backend and for the
+graph-native models (DPA1, DPA2, DPA4 and DPA4C) on the pt_expt backend, whose
+flat node axis carries the reference atoms. Fine-tuning and `dp change-bias`
+keep the reference; a `preset_out_bias` given to them fixes the bias again
+without statistics.
+
 ## Loss
 
 The loss function $L$ for training energy is given by

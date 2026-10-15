@@ -1739,10 +1739,11 @@ class SO2Convolution(nn.Module):
         # destination-sorted view with the flash aggregation; its backward and
         # hand-derived second order keep the force-loss trace from expanding
         # the chain into materialized surfaces and serialized scatters. The
-        # source-gated (SFPG) form keeps the reference path.
+        # source-gated (SFPG) form and fp64 compute keep the reference path.
         self._segment_softmax_fn = None
         if (
             max(self.triton_infer_level, self.triton_train_level) >= 1
+            and self.compute_dtype is torch.float32
             and self.attn_n_focus * self.n_atten_head <= 16
         ):
             from deepmd.pt_expt.kernels.triton.sezm.segment_softmax import (

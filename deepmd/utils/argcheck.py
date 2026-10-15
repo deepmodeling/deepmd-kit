@@ -105,6 +105,14 @@ doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative c
 doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
 doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
 doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor."
+doc_vacuum_ref = (
+    "Reference the fitting network output of every atom to the output the same network gives "
+    "an isolated atom of the same type under the same frame parameters, atomic parameters and "
+    "case embedding, so that the energy of an atom without neighbors is exactly its output bias. "
+    "The reference applies to an output whose bias `preset_out_bias` fixes, which makes the preset value "
+    "the isolated-atom energy of every element; an output whose bias is fitted from the data keeps the "
+    "plain network output. It cannot be combined with `atom_ener`."
+)
 doc_se_atten = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor."
 doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor."
 doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms."
@@ -495,7 +503,12 @@ def descrpt_dpa4c_args() -> list[Argument]:
             str,
             optional=True,
             default="bessel",
-            doc="DPA4 radial basis type: `bessel` or `gaussian`.",
+            doc=(
+                "Radial basis type. Supported values are `bessel`, `gaussian`, "
+                "`bessel/fix` and `gaussian/fix`. The `/fix` forms keep the "
+                "Bessel frequencies or Gaussian centres at their initial "
+                "values instead of training them."
+            ),
         ),
         Argument(
             "n_radial",
@@ -608,13 +621,19 @@ def descrpt_se_zm_args() -> list[Argument]:
     - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
     doc_rcut = "The cut-off radius."
     doc_env_exp = (
-        "C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
-        "`rbf_env_exp` controls radial basis function envelope decay; "
-        "`edge_env_exp` controls message passing edge weight envelope decay. "
+        "C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]` "
+        "specifies the radial-basis and message-passing envelopes separately. "
+        "A zero radial-basis exponent disables that envelope. "
+        "An integer specifies only the message-passing envelope exponent and "
+        "disables the radial-basis envelope. "
         "Larger values give weaker suppression."
     )
     doc_channels = "Total channels per (l,m) coefficient."
-    doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
+    doc_basis_type = (
+        "Radial basis type. Supported values are `bessel`, `gaussian`, `bessel/fix` and `gaussian/fix`. "
+        "The `/fix` forms keep the Bessel frequencies or Gaussian centres at their initial values instead of training them, "
+        "so that separations no training frame constrains cannot move them."
+    )
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_edge_norm = "Channel RMSNorm on the cutoff-vanishing feature branches. A bool switches every site together: `false` removes the RMSNorm from the radial-network hidden layers, the environment-seed FiLM scale/shift logits and the cross-focus competition scalars, and uses unit-floor residual scaling for post-SO(2) messages. A list of three bools `[radial, film, focus]` switches the sites individually; the post-SO(2) treatment follows the first (radial) entry. Recommended: `[false, true, false]` — the radial-site norms amplify noise where the radial features vanish at the cutoff and produce a spurious long-range force step, while the FiLM and focus norms are safe to keep."
@@ -919,7 +938,7 @@ def descrpt_se_zm_args() -> list[Argument]:
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument(
             "env_exp",
-            list[int],
+            [int, list[int]],
             optional=True,
             default=[7, 5],
             doc=doc_env_exp,
@@ -2753,6 +2772,144 @@ def descrpt_se_a_mask_args() -> list[Argument]:
     ]
 
 
+doc_descrpt_unimol = (
+    "The Uni-Mol v1 transformer backbone. Every atom attends to every other atom, so the "
+    "descriptor is neither local nor extensive and does not support periodic boundaries; it is "
+    "intended for molecular property and self-supervised pretraining work."
+)
+doc_fitting_unimol_pretrain = (
+    "The three self-supervised heads of Uni-Mol v1 pretraining: element prediction, coordinate "
+    "denoising and pairwise distance prediction."
+)
+
+
+@descrpt_args_plugin.register(
+    "unimol", doc=supported_backends("pt_expt") + doc_descrpt_unimol
+)
+def descrpt_unimol_args() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_encoder_layers = "Number of transformer blocks."
+    doc_encoder_embed_dim = "Width of the node representation."
+    doc_encoder_ffn_embed_dim = "Width of the feed-forward hidden layer."
+    doc_encoder_attention_heads = (
+        "Number of attention heads, which is also the width of the pair channel."
+    )
+    doc_max_atoms = "Largest molecule accepted, which fixes the neighbor count."
+    doc_max_seq_len = (
+        "Upstream's sequence-length guard, including the two virtual tokens."
+    )
+    doc_activation_function = (
+        f"The activation function. Uni-Mol uses the exact GELU, `gelu_erf`. "
+        f"Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    )
+    doc_dropout = "Dropout on the residual branches, applied during training."
+    doc_emb_dropout = "Dropout on the token embedding, applied during training."
+    doc_attention_dropout = (
+        "Dropout on the attention probabilities, applied during training."
+    )
+    doc_activation_dropout = "Dropout after the feed-forward activation."
+    doc_no_final_head_layer_norm = "Skip the layer norm on the pair delta. Upstream builds it unless its loss weight is negative."
+    doc_single_precision_basis = "Evaluate the Gaussian basis in fp32, as upstream does. Required to reproduce the released weights."
+    doc_single_precision_distance = (
+        "Round pairwise distances to fp32 before the basis, matching upstream's precomputed distance "
+        "matrix. The default computes them in the working precision, which is more accurate."
+    )
+    doc_virtual_token_position = (
+        "Where the two virtual tokens sit: `centroid` of the real atoms, which keeps the sequence "
+        "translation invariant, or `origin`, which reproduces upstream for pre-centred data."
+    )
+    doc_gaussian_kernels = "Number of Gaussian radial basis functions."
+    return [
+        Argument(
+            "encoder_layers", int, optional=True, default=15, doc=doc_encoder_layers
+        ),
+        Argument(
+            "encoder_embed_dim",
+            int,
+            optional=True,
+            default=512,
+            doc=doc_encoder_embed_dim,
+        ),
+        Argument(
+            "encoder_ffn_embed_dim",
+            int,
+            optional=True,
+            default=2048,
+            doc=doc_encoder_ffn_embed_dim,
+        ),
+        Argument(
+            "encoder_attention_heads",
+            int,
+            optional=True,
+            default=64,
+            doc=doc_encoder_attention_heads,
+        ),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument("max_seq_len", int, optional=True, default=512, doc=doc_max_seq_len),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument("dropout", float, optional=True, default=0.1, doc=doc_dropout),
+        Argument("emb_dropout", float, optional=True, default=0.1, doc=doc_emb_dropout),
+        Argument(
+            "attention_dropout",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_attention_dropout,
+        ),
+        Argument(
+            "activation_dropout",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_activation_dropout,
+        ),
+        Argument(
+            "no_final_head_layer_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_no_final_head_layer_norm,
+        ),
+        Argument(
+            "single_precision_basis",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_single_precision_basis,
+        ),
+        Argument(
+            "single_precision_distance",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_single_precision_distance,
+        ),
+        Argument(
+            "virtual_token_position",
+            str,
+            optional=True,
+            default="centroid",
+            doc=doc_virtual_token_position,
+        ),
+        Argument(
+            "gaussian_kernels",
+            int,
+            optional=True,
+            default=128,
+            doc=doc_gaussian_kernels,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
 def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
     doc_descrpt_type = "The type of the descriptor."
 
@@ -2854,6 +3011,13 @@ def fitting_ener() -> list[Argument]:
             default=[],
             doc=doc_atom_ener,
         ),
+        Argument(
+            "vacuum_ref",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt") + doc_vacuum_ref,
+        ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
             "use_aparam_as_mask",
@@ -2949,6 +3113,13 @@ def fitting_sezm_ener() -> list[Argument]:
             optional=True,
             default=[],
             doc=doc_atom_ener,
+        ),
+        Argument(
+            "vacuum_ref",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt", "pt_expt") + doc_vacuum_ref,
         ),
         Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
         Argument(
@@ -3313,6 +3484,52 @@ def fitting_dipole() -> list[Argument]:
 
 
 #   YWolfeee: Delete global polar mode, merge it into polar mode and use loss setting to support.
+@fitting_args_plugin.register(
+    "unimol_pretrain", doc=supported_backends("pt_expt") + doc_fitting_unimol_pretrain
+)
+def fitting_unimol_pretrain() -> list[Argument]:
+    doc_seed = "Random seed for parameter initialization"
+    doc_precision = f"The precision of the parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_n_token = (
+        "Size of the Uni-Mol vocabulary, which is the width of the element head."
+    )
+    doc_attention_heads = (
+        "Width of the pair channel, which the two pair-reading heads consume."
+    )
+    doc_max_atoms = (
+        "Largest molecule accepted, which fixes the distance head's column count."
+    )
+    doc_activation_function = f"The activation function of the heads. Supported: {list_to_doc(ACTIVATION_FN_DICT.keys())}"
+    doc_mask_token_head = "Build the element-prediction head."
+    doc_coord_head = "Build the coordinate-denoising head."
+    doc_dist_head = "Build the distance-prediction head."
+    return [
+        Argument("n_token", int, optional=True, default=31, doc=doc_n_token),
+        Argument(
+            "attention_heads", int, optional=True, default=64, doc=doc_attention_heads
+        ),
+        Argument("max_atoms", int, optional=True, default=256, doc=doc_max_atoms),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="gelu_erf",
+            doc=doc_activation_function,
+        ),
+        Argument(
+            "mask_token_head",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_mask_token_head,
+        ),
+        Argument("coord_head", bool, optional=True, default=True, doc=doc_coord_head),
+        Argument("dist_head", bool, optional=True, default=True, doc=doc_dist_head),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("seed", [int, list, None], optional=True, doc=doc_seed),
+    ]
+
+
 def fitting_variant_type_args() -> Variant:
     doc_descrpt_type = "The type of the fitting."
 
@@ -3398,6 +3615,13 @@ def model_args(
     doc_type_map = "A list of strings. Give the name to each type of atoms. It is noted that the number of atom type of training system must be less than 128 in a GPU environment. If not given, type.raw in each system should use the same type indexes, and type_map.raw will take no effect."
     doc_data_stat_nbatch = "The model determines the normalization from the statistics of the data. This key specifies the number of `frames` in each `system` used for statistics."
     doc_data_stat_protect = "Protect parameter for atomic energy regression."
+    doc_data_stat_full = (
+        "Scan every frame of the training data to compute the output statistics "
+        "(bias and standard deviation of the fitting target) exactly, instead of "
+        "estimating them from `data_stat_nbatch` batches per system. Recommended "
+        "for datasets containing rare elements, whose bias is otherwise fitted "
+        "from too few frames. Input statistics still use `data_stat_nbatch`."
+    )
     doc_data_bias_nsample = "The number of training samples in a system to compute and change the energy bias."
     doc_type_embedding = "The type embedding. In other backends, the type embedding is already included in the descriptor."
     doc_modifier = "The modifier of model output."
@@ -3410,7 +3634,21 @@ def model_args(
     doc_spin = "The settings for systems with spin."
     doc_atom_exclude_types = "Exclude the atomic contribution of the listed atom types"
     doc_pair_exclude_types = "The atom pairs of the listed types are not treated to be neighbors, i.e. they do not see each other."
-    doc_preset_out_bias = "The preset bias of the atomic output. Note that the set_davg_zero should be set to true. The bias is provided as a dict. Taking the energy model that has three atom types for example, the `preset_out_bias` may be given as `{ 'energy': [null, 0., 1.] }`. In this case the energy bias of type 1 and 2 are set to 0. and 1., respectively. A dipole model with two atom types may set `preset_out_bias` as `{ 'dipole': [null, [0., 1., 2.]] }`"
+    doc_preset_out_bias = (
+        "Fix the atomic output bias of chosen elements instead of fitting it from the data, keyed by output name. "
+        "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
+        "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
+        "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
+        "`{'energy': 'omat24'}`, one of `omat24`, `omol25`, `omc25` and `odac25`, which takes precedence "
+        "over a file of the same name; "
+        "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
+        "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
+        "for tensor outputs, e.g. `{'dipole': [null, [0., 1., 2.]]}`. "
+        "Elements outside the `type_map` are ignored and every element that occurs in the data must be assigned. "
+        "A table is resolved once when the input is processed and its values are stored in the model. An assigned "
+        "output is taken from the preset without statistics, both when a model is initialized and when its bias is "
+        "changed by fine-tuning or `dp change-bias`. Dipole models apply no output bias and take no preset."
+    )
     doc_finetune_head = (
         "The chosen fitting net to fine-tune on, when doing multi-task fine-tuning. "
         "If not set or set to 'RANDOM', the fitting net will be randomly initialized."
@@ -3437,6 +3675,13 @@ def model_args(
                 optional=True,
                 default=1e-2,
                 doc=doc_data_stat_protect,
+            ),
+            Argument(
+                "data_stat_full",
+                bool,
+                optional=True,
+                default=False,
+                doc=supported_backends("pt", "pd") + doc_data_stat_full,
             ),
             Argument(
                 "data_bias_nsample",
@@ -3477,10 +3722,11 @@ def model_args(
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[float | list[float] | None]],
+                dict[str, list[float | list | None] | dict[str, float | list] | str],
                 optional=True,
                 default=None,
-                doc=supported_backends("pt", "pd") + doc_preset_out_bias,
+                doc=supported_backends("pt", "pd", "pt_expt", "jax")
+                + doc_preset_out_bias,
             ),
             Argument(
                 "srtab_add_bias",
@@ -4307,6 +4553,10 @@ opt_args_plugin = ArgsPlugin()
 def optimizer_adam() -> list[Argument]:
     doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
     doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "Adam epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = (
         "Weight decay coefficient for Adam, applied as an L2 penalty to gradients."
     )
@@ -4326,6 +4576,13 @@ def optimizer_adam() -> list[Argument]:
             doc=supported_backends("tf", "pt", "pd", "tf2") + doc_adam_beta2,
         ),
         Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
+        ),
+        Argument(
             "weight_decay",
             float,
             optional=True,
@@ -4339,6 +4596,10 @@ def optimizer_adam() -> list[Argument]:
 def optimizer_adamw() -> list[Argument]:
     doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
     doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
+    doc_adam_eps = (
+        "AdamW epsilon, added for numerical stability. The default is PyTorch's own; "
+        "recipes carried over from other frameworks sometimes assume a different one."
+    )
     doc_weight_decay = "Decoupled weight decay coefficient for the AdamW optimizer."
     return [
         Argument(
@@ -4354,6 +4615,13 @@ def optimizer_adamw() -> list[Argument]:
             optional=True,
             default=0.999,
             doc=supported_backends("pt", "pd", "tf2") + doc_adam_beta2,
+        ),
+        Argument(
+            "adam_eps",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=supported_backends("pt_expt") + doc_adam_eps,
         ),
         Argument(
             "weight_decay",
@@ -5332,6 +5600,98 @@ def loss_tensor() -> list[Argument]:
     ]
 
 
+@loss_args_plugin.register("unimol", doc=supported_backends("pt_expt"))
+def loss_unimol() -> list[Argument]:
+    doc_masked_token_loss = "Weight of the element-prediction term."
+    doc_masked_coord_loss = "Weight of the coordinate-denoising term."
+    doc_masked_dist_loss = "Weight of the distance-prediction term."
+    doc_x_norm_loss = "Weight of the node-norm regularizer."
+    doc_delta_pair_repr_norm_loss = "Weight of the pair-delta-norm regularizer."
+    doc_beta = (
+        "Transition point of the smooth L1 used by the coordinate and distance terms."
+    )
+    doc_mask_prob = "Expected fraction of atoms selected for corruption."
+    doc_leave_unmasked_prob = (
+        "Fraction of the selected atoms left with their true element, still predicted."
+    )
+    doc_random_token_prob = "Fraction of the selected atoms given a random element."
+    doc_noise_type = (
+        "Coordinate noise distribution: 'uniform', 'normal', 'trunc_normal' or 'none'."
+    )
+    doc_noise = "Scale of the coordinate noise, in the units of the coordinates."
+    doc_data_seed = (
+        "Seed of the corruption, combined with the frame index and a per-visit "
+        "draw so that a molecule is corrupted differently each time it comes "
+        "round. A run is reproducible from it only when one process decodes the "
+        "data (DP_LMDB_NUM_WORKERS=0); with decoder workers the draws follow how "
+        "frames were distributed."
+    )
+    return [
+        Argument(
+            "masked_token_loss",
+            [float, int],
+            optional=True,
+            default=1.0,
+            doc=doc_masked_token_loss,
+        ),
+        Argument(
+            "masked_coord_loss",
+            [float, int],
+            optional=True,
+            default=5.0,
+            doc=doc_masked_coord_loss,
+        ),
+        Argument(
+            "masked_dist_loss",
+            [float, int],
+            optional=True,
+            default=10.0,
+            doc=doc_masked_dist_loss,
+        ),
+        Argument(
+            "x_norm_loss",
+            [float, int],
+            optional=True,
+            default=0.01,
+            doc=doc_x_norm_loss,
+        ),
+        Argument(
+            "delta_pair_repr_norm_loss",
+            [float, int],
+            optional=True,
+            default=0.01,
+            doc=doc_delta_pair_repr_norm_loss,
+        ),
+        Argument("beta", [float, int], optional=True, default=1.0, doc=doc_beta),
+        Argument(
+            "mask_prob", [float, int], optional=True, default=0.15, doc=doc_mask_prob
+        ),
+        Argument(
+            "leave_unmasked_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_leave_unmasked_prob,
+        ),
+        Argument(
+            "random_token_prob",
+            [float, int],
+            optional=True,
+            default=0.05,
+            doc=doc_random_token_prob,
+        ),
+        Argument(
+            "noise_type",
+            str,
+            optional=True,
+            default="uniform",
+            doc=doc_noise_type,
+        ),
+        Argument("noise", [float, int], optional=True, default=1.0, doc=doc_noise),
+        Argument("data_seed", int, optional=True, default=1, doc=doc_data_seed),
+    ]
+
+
 def loss_variant_type_args() -> Variant:
     doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, its legacy alias `ener_hess`, `dens` (Only DPA4/SeZM supported), or left unset. Hessian supervision is configured through `start_pref_h` and `limit_pref_h` on the `ener` loss. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
@@ -5661,7 +6021,10 @@ def training_args(
     doc_disp_training = "Displaying verbose information during training."
     doc_time_training = "Timing during training."
     doc_disp_avg = (
-        "Display the average loss over the display interval for training sets."
+        "Display the arithmetic mean of per-step training metrics within each "
+        "display interval, separately for each task. Tasks with no training "
+        "steps in an interval display NaN. Validation metrics are evaluated "
+        "at the display step, not averaged over training steps."
     )
     doc_profiling = (
         "Enable performance profiling. TensorFlow and PyTorch can export a Chrome "
@@ -5862,7 +6225,7 @@ def training_args(
             bool,
             optional=True,
             default=False,
-            doc=supported_backends("pt") + doc_disp_avg,
+            doc=supported_backends("pt", "pt_expt") + doc_disp_avg,
         ),
         Argument(
             "profiling",
@@ -6454,13 +6817,21 @@ def gen_json_schema(multi_task: bool = False) -> str:
     str
         JSON schema.
     """
+    from deepmd.utils.json_schema import (
+        with_model_presets,
+    )
+
     arg = Argument(
         "DeePMD-kit",
         dict,
         gen_args(multi_task=multi_task),
         doc=f"DeePMD-kit {__version__}",
     )
-    return json.dumps(generate_json_schema(arg))
+    return json.dumps(
+        with_model_presets(
+            generate_json_schema(arg), generate_json_schema(model_args()), multi_task
+        )
+    )
 
 
 def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:

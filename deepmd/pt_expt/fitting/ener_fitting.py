@@ -42,6 +42,7 @@ class EnergyFittingNet(EnergyFittingNetDP):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        vacuum_descriptor: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Graph-native fitting forward, fused when the backend supports it.
 
@@ -50,7 +51,9 @@ class EnergyFittingNet(EnergyFittingNetDP):
         routes through the fused operator of the backend device; anything else
         keeps the dpmodel reference. Routing resolves against the backend
         device rather than a traced tensor, because every export traces on CPU
-        and moves the program afterwards.
+        and moves the program afterwards. A vacuum reference is a per-type
+        constant on the eligible configuration and enters the operator through
+        the bias.
         """
         if (
             not self.training
@@ -60,7 +63,12 @@ class EnergyFittingNet(EnergyFittingNetDP):
             and fused_fitting_available()
             and fitting_eligible(self)
         ):
-            return graph_fitting(self, descriptor, atype)
+            atom_bias = self.bias_atom_e
+            if self.vacuum_ref:
+                atom_bias = atom_bias - self.vacuum_property(vacuum_descriptor).to(
+                    atom_bias.dtype
+                )
+            return graph_fitting(self, descriptor, atype, atom_bias)
         return EnergyFittingNetDP.call_graph(
             self,
             descriptor,
@@ -70,4 +78,5 @@ class EnergyFittingNet(EnergyFittingNetDP):
             h2=h2,
             fparam=fparam,
             aparam=aparam,
+            vacuum_descriptor=vacuum_descriptor,
         )

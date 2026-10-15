@@ -121,7 +121,16 @@ carry the accuracy–cost trade-off:
 - **Radial basis** —
   {ref}`basis_type <model[standard]/descriptor[dpa4c]/basis_type>` and
   {ref}`n_radial <model[standard]/descriptor[dpa4c]/n_radial>` select the
-  analytic basis that feeds the radial network.
+  analytic basis that feeds the radial network; the `bessel/fix` and
+  `gaussian/fix` forms keep the frequencies or centres at their initial
+  values instead of training them.
+
+The fitting network is sized against the descriptor because the invariant
+output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
+trade against memory: it adds per-atom activations and the derivatives saved for
+the force backward pass, so widening or deepening it costs throughput and
+capacity together. Widen it only when validation error is limited by fitting
+capacity rather than by the descriptor.
 
 > [!IMPORTANT]
 > The compressed CUDA path is compiled for `channels` in `{8, 16, 32, 64, 128}`,
@@ -130,23 +139,23 @@ carry the accuracy–cost trade-off:
 > `dp --pt-expt compress` rejects it. Choose these values with deployment in
 > mind.
 
-### Recommended configurations and presets
+### Presets
 
-The released grades, Nano, Mini, Neo, Air and Plus in ascending cost, pair each
-descriptor width with a fitting width sized against it. They are good starting
-points; `Neo` is the general-purpose default. Each grade is available as a named
-model preset, `dpa4c-nano-v20260901`, `dpa4c-mini-v20260901`,
-`dpa4c-neo-v20260901`, `dpa4c-air-v20260901` and `dpa4c-plus-v20260901`:
-setting `model.preset` fills in `type_map` (all 118 elements), `descriptor` and
-`fitting_net` from the release configuration, and entries written next to the
-preset take precedence, as a whole for `type_map` and key by key inside
-`descriptor` and `fitting_net`. Run-specific options such as `use_amp` and
-`seed` are added alongside:
+DPA4C preset names use `dpa4c-<size>-<version>`. Available sizes are listed in
+ascending computational cost; `neo` is the general-purpose starting point:
+
+| Version     | Available sizes                      |
+| ----------- | ------------------------------------ |
+| `v20260911` | `nano`, `mini`, `neo`, `air`, `plus` |
+| `v20260901` | `nano`, `mini`, `neo`, `air`, `plus` |
+
+Setting `model.preset` supplies `type_map` (all 118 elements), `descriptor`
+and `fitting_net`. Run-specific settings are written alongside the preset:
 
 ```json
 {
   "model": {
-    "preset": "dpa4c-neo-v20260901",
+    "preset": "dpa4c-neo-v20260911",
     "type_map": [
       "O",
       "H"
@@ -161,17 +170,9 @@ preset take precedence, as a whole for `type_map` and key by key inside
 }
 ```
 
-The version tag identifies the release a preset reproduces: a later release
-with different settings gets a new version, and existing presets are never
-changed. The expansion and merge rules are described on the
-[DPA4 page](dpa4.md#presets).
-
-The fitting network is sized against the descriptor because the invariant
-output grows with `channels`. Unlike `radial_modes`, fitting width is not a free
-trade against memory: it adds per-atom activations and the derivatives saved for
-the force backward pass, so widening or deepening it costs throughput and
-capacity together. Widen it only when validation error is limited by fitting
-capacity rather than by the descriptor.
+Explicit settings override the preset: `type_map` is replaced as a whole,
+while `descriptor` and `fitting_net` are merged key by key. See the
+[DPA4 preset rules](dpa4.md#presets) for expansion details and multi-task use.
 
 ## Training
 

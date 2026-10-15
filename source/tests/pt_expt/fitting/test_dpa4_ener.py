@@ -107,3 +107,64 @@ class TestSeZMEnergyFittingNet(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             grad_t.detach().cpu().numpy(), grad_e.detach().cpu().numpy()
         )
+
+
+class TestSeZMEnergyFittingNetVacuumRef(TestCaseSingleFrameWithNlist):
+    """``vacuum_ref`` on the torch-backed SeZM fitting matches dpmodel."""
+
+    def setup_method(self) -> None:
+        TestCaseSingleFrameWithNlist.setUp(self)
+        self.device = env.DEVICE
+        rng = np.random.default_rng(GLOBAL_SEED)
+        self.descriptor = rng.normal(size=(self.nf, self.nloc, DIM_DESCRPT))
+        self.vacuum = rng.normal(size=(self.nt, DIM_DESCRPT))
+        self.atype = self.atype_ext[:, : self.nloc]
+        self.bias = rng.normal(size=(self.nt, 1))
+
+    @pytest.mark.parametrize("numb_fparam", [0, 2])  # per-type / per-atom references
+    @pytest.mark.parametrize(
+        "mixed_types", [True, False]
+    )  # shared vs per-type networks
+    def test_isolated_atom_gives_bias_and_matches_dpmodel(
+        self, numb_fparam, mixed_types
+    ) -> None:
+        ft = SeZMEnergyFittingNet(
+            self.nt,
+            DIM_DESCRPT,
+            neuron=[16],
+            bias_atom_e=self.bias,
+            numb_fparam=numb_fparam,
+            mixed_types=mixed_types,
+            precision="float64",
+            vacuum_ref=True,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        ft_dp = SeZMEnergyFittingNetDP.deserialize(ft.serialize())
+        assert ft_dp.vacuum_ref
+        rng = np.random.default_rng(GLOBAL_SEED + 1)
+        fparam = rng.normal(size=(self.nf, numb_fparam)) if numb_fparam else None
+        fparam_t = None if fparam is None else torch.from_numpy(fparam).to(self.device)
+        vacuum_t = torch.from_numpy(self.vacuum).to(self.device)
+        atype_t = torch.from_numpy(self.atype).to(self.device)
+
+        isolated = ft(
+            vacuum_t[atype_t], atype_t, fparam=fparam_t, vacuum_descriptor=vacuum_t
+        )["energy"]
+        np.testing.assert_allclose(
+            isolated.detach().cpu().numpy(),
+            self.bias[self.atype],
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        out = ft(
+            torch.from_numpy(self.descriptor).to(self.device),
+            atype_t,
+            fparam=fparam_t,
+            vacuum_descriptor=vacuum_t,
+        )["energy"]
+        out_dp = ft_dp.call(
+            self.descriptor, self.atype, fparam=fparam, vacuum_descriptor=self.vacuum
+        )["energy"]
+        np.testing.assert_allclose(
+            out.detach().cpu().numpy(), out_dp, rtol=1e-12, atol=1e-14
+        )
