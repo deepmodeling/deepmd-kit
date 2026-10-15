@@ -338,10 +338,17 @@ def test_dpa4spin_cartesian_fm_matches_energy_fd_and_keeps_zero_moment(
         assert sp[1, 3] > 0.0
         assert np.linalg.norm(fm[1]) > 1e-8
 
-        # Energy finite difference w.r.t. Sx of Ni atom 2 (1-based id 2).
+        # Energy FD on the largest |fm| component of Ni atom 2 (1-based id 2).
         # ``set atom ... spin`` takes magnitude then direction (mag > 0).
         s0 = sp[1, :3] * sp[1, 3]
         eps = 1e-5
+        comp = int(np.argmax(np.abs(fm[1])))
+        analytic0 = float(fm[1, comp])
+        assert abs(analytic0) > 1e-8, (
+            f"largest |fm[1]| component must be live for FD: fm[1]={fm[1]}"
+        )
+        ehat = np.zeros(3, dtype=np.float64)
+        ehat[comp] = 1.0
 
         def energy_at(moment: np.ndarray) -> float:
             mag = float(np.linalg.norm(moment))
@@ -353,15 +360,21 @@ def test_dpa4spin_cartesian_fm_matches_energy_fd_and_keeps_zero_moment(
             lmp.command("run 0")
             return float(lmp.get_thermo("pe"))
 
-        ep = energy_at(s0 + np.array([eps, 0.0, 0.0]))
-        em = energy_at(s0 - np.array([eps, 0.0, 0.0]))
+        ep = energy_at(s0 + eps * ehat)
+        em = energy_at(s0 - eps * ehat)
         energy_at(s0)
         fm_restored, _ = _gather_fm_sp(lmp)
         fd = -(ep - em) / (2.0 * eps)
-        analytic = fm_restored[1, 0]
+        analytic = float(fm_restored[1, comp])
+        assert abs(analytic) > 1e-8, (
+            f"analytic fm[{comp}] vanished after restore: analytic={analytic}"
+        )
+        # Relative only: an absolute escape of ~1e-8 would let a scatter
+        # sign flip (+= -> -=) pass when |fm| is tiny; with |analytic| > 1e-8,
+        # |analytic - (-analytic)| = 2|analytic| fails both rel and a tight abs.
         rel = abs(fd - analytic) / max(1e-12, abs(analytic) + abs(fd))
-        assert rel < 5e-3 or abs(analytic - fd) < 1e-8, (
-            f"cartesian fm_x vs energy FD: analytic={analytic}, fd={fd}, rel={rel}"
+        assert rel < 5e-3, (
+            f"cartesian fm[{comp}] vs energy FD: analytic={analytic}, fd={fd}, rel={rel}"
         )
     finally:
         lmp.close()
