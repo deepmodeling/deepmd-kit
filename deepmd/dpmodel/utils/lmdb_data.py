@@ -17,6 +17,7 @@ from collections.abc import (
     Callable,
     Iterable,
     Iterator,
+    Mapping,
     Sequence,
 )
 from concurrent.futures import (
@@ -1617,12 +1618,19 @@ class LmdbBatchIterator:
         self._reader = reader
         self._sampler = sampler
         self._epoch = 0
-        self._iterator = self._iter_epoch()
+        self._logical_epoch = 0
+        self._logical_batch_index = 0
+        self._logical_epoch_length = 0
+        # Length of a sampler epoch opened by prefetch before the logical
+        # cursor wraps. LmdbBatchSampler advances on ``__iter__``, so
+        # ``len(self._sampler)`` at wrap would observe the *following* epoch.
+        self._pending_logical_epoch_length: int | None = None
         self._num_workers = num_workers
         self._pool: _LmdbPoolEntry | None = None
         self._pending: _PendingBatch | None = None
         self._deferred_indices: list[int] | None = None
         self._closed = False
+        self._iterator = self._iter_epoch()
 
     def __iter__(self) -> "LmdbBatchIterator":
         return self
@@ -1641,7 +1649,90 @@ class LmdbBatchIterator:
             batch = self._decode(self._next_indices())
 
         self._schedule(self._next_indices())
+        self._advance_logical_cursor()
         return batch
+
+    def state_dict(self) -> dict[str, int]:
+        """Return the logical cursor of the next batch to consume.
+
+        Prefetched decoder work is excluded: only batches already returned to
+        the trainer advance this cursor.
+        """
+        return {
+            "epoch": self._logical_epoch,
+            "batch_index": self._logical_batch_index,
+        }
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        """Reposition to the saved logical cursor without decoding frames.
+
+        Parameters
+        ----------
+        state : Mapping[str, Any]
+            Progress previously returned by :meth:`state_dict`.
+        """
+        if self._closed:
+            raise RuntimeError(
+                "cannot restore progress on a closed LMDB batch iterator"
+            )
+        epoch = int(state["epoch"])
+        batch_index = int(state["batch_index"])
+        if epoch < 0 or batch_index < 0:
+            raise ValueError(
+                f"data-progress cursor must be non-negative, got epoch={epoch}, "
+                f"batch_index={batch_index}"
+            )
+        self._cancel_prefetch()
+        self._pending_logical_epoch_length = None
+        self._logical_epoch = epoch
+        self._logical_batch_index = batch_index
+        self._epoch = epoch
+        self._iterator = self._iter_epoch()
+        if self._logical_epoch_length == 0:
+            if batch_index != 0:
+                raise ValueError(
+                    "data-progress batch_index must be 0 for an empty epoch, "
+                    f"got {batch_index}"
+                )
+            return
+        if batch_index >= self._logical_epoch_length:
+            raise ValueError(
+                f"data-progress batch_index {batch_index} is out of range for "
+                f"epoch length {self._logical_epoch_length}"
+            )
+        for _ in range(batch_index):
+            self._next_indices()
+
+    def _advance_logical_cursor(self) -> None:
+        """Record that one batch was returned to the trainer.
+
+        Prefetch may already have opened the next sampler epoch. That open
+        stashes the next logical length in ``_pending_logical_epoch_length``;
+        the wrap applies it. Falling back to ``len(self._sampler)`` is only
+        correct when prefetch has not yet opened the successor (samplers such
+        as ``LmdbBatchSampler`` advance on ``__iter__``, so a post-prefetch
+        ``len`` would name the epoch after next).
+        """
+        if self._logical_epoch_length <= 0:
+            return
+        self._logical_batch_index += 1
+        if self._logical_batch_index < self._logical_epoch_length:
+            return
+        self._logical_epoch += 1
+        self._logical_batch_index = 0
+        if self._pending_logical_epoch_length is not None:
+            self._logical_epoch_length = self._pending_logical_epoch_length
+            self._pending_logical_epoch_length = None
+        else:
+            self._logical_epoch_length = len(self._sampler)
+
+    def _cancel_prefetch(self) -> None:
+        """Drop prefetched work so a seek can rebuild the sampler position."""
+        if self._pending is not None:
+            for future in self._pending.futures:
+                future.cancel()
+            self._pending = None
+        self._deferred_indices = None
 
     def _decode(self, indices: list[int]) -> dict[str, Any]:
         """Decode one batch, in the pool when that is worthwhile and possible."""
@@ -1733,6 +1824,17 @@ class LmdbBatchIterator:
         set_epoch = getattr(self._sampler, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self._epoch)
+        epoch_length = len(self._sampler)
+        # Prefetch may open the next sampler epoch before the trainer consumes
+        # the last batch of the logical epoch. Bind the active logical length
+        # only when reconstructing the epoch the cursor still names; otherwise
+        # stash the length for the upcoming wrap — ``iter(self._sampler)`` may
+        # already advance the sampler, so a later ``len`` would be wrong.
+        if self._epoch == self._logical_epoch:
+            self._logical_epoch_length = epoch_length
+            self._pending_logical_epoch_length = None
+        else:
+            self._pending_logical_epoch_length = epoch_length
         return iter(self._sampler)
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:

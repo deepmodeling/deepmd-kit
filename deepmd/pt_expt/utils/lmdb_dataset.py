@@ -9,6 +9,9 @@ wrapper around the framework-agnostic :class:`LmdbDataReader` that satisfies
 that interface.
 """
 
+from collections.abc import (
+    Mapping,
+)
 from typing import (
     Any,
 )
@@ -80,6 +83,10 @@ class LmdbDataSystem:
         rank: int = 0,
         world_size: int = 1,
     ) -> None:
+        self._seed = seed
+        self._batch_size_spec: int | str = batch_size
+        self._rank = rank
+        self._world_size = world_size
         self._reader = LmdbDataReader(lmdb_path, type_map, batch_size)
 
         block_targets = None
@@ -214,6 +221,62 @@ class LmdbDataSystem:
     def set_frame_transform(self, transform) -> None:  # noqa: ANN001
         """Install a per-frame transform on the underlying reader."""
         self._reader.set_frame_transform(transform)
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return logical training progress for checkpointing.
+
+        Returns
+        -------
+        dict[str, Any]
+            Versioned cursor plus the sampling identity needed to reject an
+            incompatible restart (world size, seed, retained frame count, and
+            batch-size rule).
+        """
+        progress = self._batch_iterator.state_dict()
+        return {
+            "version": 1,
+            "kind": "lmdb",
+            "epoch": progress["epoch"],
+            "batch_index": progress["batch_index"],
+            "world_size": self._world_size,
+            "seed": self._seed,
+            "nframes": len(self._reader),
+            "batch_size": self._batch_size_spec,
+        }
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        """Restore logical training progress before the next ``get_batch``.
+
+        Parameters
+        ----------
+        state : Mapping[str, Any]
+            Progress previously returned by :meth:`state_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the payload does not describe this data source configuration.
+        """
+        if state.get("kind", "lmdb") != "lmdb":
+            raise ValueError(
+                f"Cannot restore {state.get('kind')!r} data progress into an LMDB "
+                "data source."
+            )
+        expected = {
+            "world_size": self._world_size,
+            "seed": self._seed,
+            "nframes": len(self._reader),
+            "batch_size": self._batch_size_spec,
+        }
+        for key, value in expected.items():
+            if key not in state:
+                raise ValueError(f"LMDB data-progress checkpoint is missing {key!r}.")
+            if state[key] != value:
+                raise ValueError(
+                    f"LMDB data-progress {key} mismatch: checkpoint has "
+                    f"{state[key]!r}, current data source has {value!r}."
+                )
+        self._batch_iterator.load_state_dict(state)
 
     def close(self) -> None:
         """Cancel prefetched work and release decoder processes."""
