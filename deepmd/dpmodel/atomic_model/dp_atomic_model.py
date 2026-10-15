@@ -403,6 +403,10 @@ class DPAtomicModel(BaseAtomicModel):
         condition, and a spin vector of one Bohr magneton per unpaired
         electron when it takes the native spin.
 
+        Descriptors that opt into graph vacuum evaluation use isolated nodes,
+        independently of their advertised neighbor capacity; other descriptors
+        retain their configured all-masked dense neighbor list.
+
         Returns
         -------
         Array
@@ -413,10 +417,36 @@ class DPAtomicModel(BaseAtomicModel):
         xp = array_api_compat.array_namespace(bias)
         device = array_api_compat.device(bias)
         ntypes = self.get_ntypes()
+        atype = xp.arange(ntypes, dtype=xp.int64, device=device)
+        conditions = {
+            name: xp.asarray(table, dtype=bias.dtype, device=device)
+            for name, table in self.vacuum_conditions().items()
+        }
+        if self.uses_graph_lower() and self.descriptor.supports_graph_vacuum():
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                NeighborGraph,
+            )
+
+            # One isolated node per frame, with the same two masked guard
+            # edges as the graph builders. Never size this graph from sel:
+            # graph-only descriptors may report an unbounded sentinel there.
+            # The graph interface also carries native spin, which the dense
+            # compatibility adapters need not support.
+            graph = NeighborGraph(
+                n_node=xp.ones((ntypes,), dtype=xp.int64, device=device),
+                edge_index=xp.zeros((2, 2), dtype=xp.int64, device=device),
+                edge_vec=xp.zeros((2, 3), dtype=bias.dtype, device=device),
+                edge_mask=xp.zeros((2,), dtype=xp.bool, device=device),
+            )
+            return self.descriptor.call_graph(
+                graph,
+                atype,
+                type_embedding=self.descriptor.graph_type_embedding_table(),
+                **conditions,
+            )[0]
+
         coord = xp.zeros((ntypes, 1, 3), dtype=bias.dtype, device=device)
-        atype = xp.reshape(
-            xp.arange(ntypes, dtype=xp.int64, device=device), (ntypes, 1)
-        )
+        atype = xp.reshape(atype, (ntypes, 1))
         nlist = xp.full(
             (ntypes, 1, self.descriptor.get_nnei()),
             -1,
@@ -424,10 +454,6 @@ class DPAtomicModel(BaseAtomicModel):
             device=device,
         )
         mapping = xp.zeros((ntypes, 1), dtype=xp.int64, device=device)
-        conditions = {
-            name: xp.asarray(table, dtype=bias.dtype, device=device)
-            for name, table in self.vacuum_conditions().items()
-        }
         if "spin" in conditions:
             conditions["spin"] = conditions["spin"][:, None, :]
         descriptor = self.descriptor(
