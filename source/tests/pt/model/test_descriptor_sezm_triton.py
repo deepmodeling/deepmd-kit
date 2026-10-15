@@ -2071,8 +2071,11 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         # (lmax, channels, n_focus, rank)
         (1, 32, 1, 0),
         (2, 32, 1, 1),
-        (3, 64, 2, 1),  # production shape (C_wide = 64, lmax = 3)
+        (3, 64, 2, 1),  # production shape (C_wide = 128, lmax = 3)
         (4, 64, 1, 1),
+        # non-power-of-two C_wide exercises the PADDED channel lanes
+        (2, 24, 2, 1),  # C_wide = 48
+        (1, 40, 1, 0),
     ]
 
     N_NODE = 512
