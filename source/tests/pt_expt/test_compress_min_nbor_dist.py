@@ -278,6 +278,8 @@ def test_unused_statistic_warns_the_flag_is_inapplicable(
         (1.25, True, 9.99, True),
         # nothing saved leaves measuring as the only option
         (None, False, 9.99, True),
+        # an explicit request with nothing saved measures just the same
+        (None, True, 9.99, True),
     ],
 )
 def test_consumed_statistic_paths(
