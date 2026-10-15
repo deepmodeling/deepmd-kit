@@ -850,7 +850,10 @@ class TestDDPZeroStage(unittest.TestCase):
             shutil.rmtree(run_dir, ignore_errors=True)
 
         self.assertNotIn("named_parameters", chief["group_keys"])
-        self.assertEqual(chief["tensor_valued_keys"], [])
+        self.assertEqual(
+            chief["tensor_valued_keys"],
+            ["beta1_pow_device", "beta2_pow_device", "lr_device"],
+        )
 
 
 class TestDDPEpochSchedule(unittest.TestCase):

@@ -146,26 +146,36 @@ def test_explicit_nv_rejects_cpu():
 
 
 @pytest.mark.parametrize(
-    ("device", "nv", "vesin", "nf", "expected"),
+    ("device", "nv", "cell", "vesin", "nf", "expected"),
     [
-        ("cpu", False, True, 1, "vesin"),
-        ("cpu", False, True, 4, "dense"),
-        ("cpu", True, False, 1, "dense"),
-        ("cuda", True, True, 1, "nv"),
-        ("cuda", True, True, 4, "nv"),
-        ("cuda", False, True, 1, "vesin"),
-        ("cuda", False, True, 4, "dense"),
-        ("cuda", False, False, 1, "dense"),
+        ("cpu", False, True, True, 1, "cell"),
+        ("cpu", False, False, True, 1, "vesin"),
+        ("cpu", False, False, True, 4, "dense"),
+        ("cpu", True, False, False, 1, "dense"),
+        ("cuda", True, True, True, 1, "nv"),
+        ("cuda", True, True, True, 4, "nv"),
+        ("cuda", False, True, True, 1, "vesin"),
+        ("cuda", False, True, True, 4, "dense"),
+        ("cuda", False, False, False, 1, "dense"),
     ],
 )
 def test_resolve_auto_graph_builder_ladder(
-    device: str, nv: bool, vesin: bool, nf: int, expected: str
+    device: str,
+    nv: bool,
+    cell: bool,
+    vesin: bool,
+    nf: int,
+    expected: str,
 ) -> None:
     from deepmd.pt_expt.utils import graph_builder as gb
 
     gb._warned_auto_no_nv = False
     with (
         patch("deepmd.pt.utils.nv_nlist.is_nv_available", return_value=nv),
+        patch(
+            "deepmd.pt_expt.utils.cell_graph_builder.is_cell_search_available",
+            return_value=cell,
+        ),
         patch(
             "deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available",
             return_value=vesin,

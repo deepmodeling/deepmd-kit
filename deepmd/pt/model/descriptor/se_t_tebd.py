@@ -936,6 +936,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             self.rcut,
             self.rcut_smth,
             protection=self.env_protection,
+            training=self.training,
         )
         # dmatrix: [1/r, dx/r^2, dy/r^2, dz/r^2], sw: distance weighting
         # nb x nloc x nnei

@@ -422,6 +422,15 @@ class TestPtExptLoadPt(unittest.TestCase):
 class TestNeighborGraphMethodResolution(unittest.TestCase):
     """Auto graph-builder selection must cover each host policy explicitly."""
 
+    def test_explicit_resolution(self) -> None:
+        """Every implemented graph builder is accepted without rewriting."""
+        for method in ("dense", "ase", "cell", "vesin", "nv"):
+            with self.subTest(method=method):
+                self.assertEqual(
+                    PtExptDeepEval._resolve_neighbor_graph_method(method),
+                    method,
+                )
+
     def test_auto_deferred_until_nf_known(self) -> None:
         """Construction-time resolve leaves ``auto`` unresolved without ``nf``."""
         self.assertEqual(
@@ -430,21 +439,36 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
         )
 
     def test_auto_resolution(self) -> None:
-        # (device, nv, vesin, nf, expected, warns)
+        # (device, nv, cell, vesin, nf, expected, warns)
+        #
+        # ``cell`` is the native threaded CPU search; it takes precedence over
+        # ``vesin`` on a CPU host at any frame count, because it batches no
+        # worse and its search is an order of magnitude faster.
         cases = (
-            ("cpu", False, True, 1, "vesin", False),
-            ("cpu", False, True, 4, "dense", False),
-            ("cpu", False, False, 1, "dense", False),
-            ("cuda", True, True, 1, "nv", False),
-            ("cuda", True, True, 4, "nv", False),
-            ("cuda", False, True, 1, "vesin", False),
-            ("cuda", False, True, 4, "dense", True),
-            ("cuda", False, False, 1, "dense", True),
+            ("cpu", False, True, True, 1, "cell", False),
+            ("cpu", False, True, True, 4, "cell", False),
+            ("cpu", False, False, True, 1, "vesin", False),
+            ("cpu", False, False, True, 4, "dense", False),
+            ("cpu", False, False, False, 1, "dense", False),
+            ("cuda", True, True, True, 1, "nv", False),
+            ("cuda", True, True, True, 4, "nv", False),
+            ("cuda", False, True, True, 1, "vesin", False),
+            ("cuda", False, True, True, 4, "dense", True),
+            ("cuda", False, True, False, 1, "dense", True),
         )
-        for device_type, nv_available, vesin_available, nf, expected, warns in cases:
+        for (
+            device_type,
+            nv_available,
+            cell_available,
+            vesin_available,
+            nf,
+            expected,
+            warns,
+        ) in cases:
             with self.subTest(
                 device_type=device_type,
                 nv_available=nv_available,
+                cell_available=cell_available,
                 vesin_available=vesin_available,
                 nf=nf,
             ):
@@ -456,6 +480,10 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                     mock.patch(
                         "deepmd.pt.utils.nv_nlist.is_nv_available",
                         return_value=nv_available,
+                    ),
+                    mock.patch(
+                        "deepmd.pt_expt.utils.cell_graph_builder.is_cell_search_available",
+                        return_value=cell_available,
                     ),
                     mock.patch(
                         "deepmd.pt_expt.utils.vesin_neighbor_list.is_vesin_torch_available",
@@ -479,6 +507,62 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                             "auto", nf=nf
                         )
                 self.assertEqual(actual, expected)
+
+
+class TestCellGraphDeviceRouting(unittest.TestCase):
+    """The CPU-only cell search must not receive CUDA tensors."""
+
+    @staticmethod
+    def _make_evaluator() -> PtExptDeepEval:
+        evaluator = object.__new__(PtExptDeepEval)
+        evaluator._neighbor_graph_method = "cell"
+        evaluator._rcut = 3.0
+        evaluator.metadata = {"graph_edge_dtype": "float32"}
+        return evaluator
+
+    def test_fused_cell_builder_uses_cpu(self) -> None:
+        """The single-frame fused cell builder receives CPU inputs."""
+        evaluator = self._make_evaluator()
+        expected = mock.sentinel.graph
+        with (
+            mock.patch.object(evaluator, "_model_pair_excl", return_value=None),
+            mock.patch(
+                "deepmd.pt_expt.utils.cell_graph_builder.build_neighbor_graph_fused",
+                return_value=expected,
+            ) as builder,
+        ):
+            actual = evaluator._build_eval_graph(
+                np.zeros((1, 6)),
+                np.zeros((1, 2), dtype=np.int64),
+                np.eye(3).reshape(1, 9),
+                torch.device("cuda"),
+            )
+
+        self.assertIs(actual, expected)
+        for value in builder.call_args.args[:3]:
+            self.assertEqual(value.device.type, "cpu")
+
+    def test_general_cell_builder_uses_cpu(self) -> None:
+        """The batched cell builder receives CPU inputs."""
+        evaluator = self._make_evaluator()
+        expected = mock.sentinel.graph
+        with (
+            mock.patch.object(evaluator, "_model_pair_excl", return_value=None),
+            mock.patch(
+                "deepmd.pt_expt.utils.cell_graph_builder.build_neighbor_graph_cell",
+                return_value=expected,
+            ) as builder,
+        ):
+            actual = evaluator._build_eval_graph(
+                np.zeros((2, 6)),
+                np.zeros((2, 2), dtype=np.int64),
+                np.tile(np.eye(3).reshape(1, 9), (2, 1)),
+                torch.device("cuda"),
+            )
+
+        self.assertIs(actual, expected)
+        for value in builder.call_args.args[:3]:
+            self.assertEqual(value.device.type, "cpu")
 
 
 class TestPtExptLoadPtGraphDPA1(unittest.TestCase):

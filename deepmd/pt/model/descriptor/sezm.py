@@ -52,9 +52,6 @@ from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
-from deepmd.kernels.utils import (
-    use_amp_infer,
-)
 from deepmd.pt.utils import (
     env,
 )
@@ -67,6 +64,10 @@ from deepmd.pt.utils.exclude_mask import (
 )
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
+)
+from deepmd.pt_expt.kernels.utils import (
+    cuda_infer_level,
+    use_amp_infer,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -147,28 +148,34 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     rcut
         Cutoff radius in Å.
     env_exp
-        C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`.
-        - `rbf_env_exp`: Controls radial basis function envelope decay.
-        - `edge_env_exp`: Controls message passing edge weight envelope decay.
+        C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]`
+        specifies the radial-basis and message-passing envelopes separately.
+        A zero radial-basis exponent disables that envelope.
+        An integer specifies only the message-passing envelope exponent and
+        disables the radial-basis envelope.
         Larger values give weaker suppression (values stay near 1.0 longer).
     channels
         Total channels per (l,m) coefficient.
     basis_type
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``; the ``/fix`` forms keep the
+        frequencies or centres fixed during training.
     n_radial
         Number of radial basis functions.
     radial_mlp
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
     edge_norm
-        Whether to apply channel RMSNorm on the descriptor's cutoff-vanishing
-        branches: the radial network hidden layers, the environment-seed FiLM
-        scale/shift logits, the cross-focus competition scalars, and the
-        post-SO(2) residual messages. ``False`` replaces the first three norms
-        with identity and changes only the post-SO(2) norm to unit-floor residual
-        scaling. The unit floor uses ``sqrt(1 + variance)`` so small messages
-        retain their cutoff envelope instead of receiving the standard
-        ``1/sqrt(eps)`` small-signal gain.
+        Channel RMSNorm on the descriptor's cutoff-vanishing branches: the
+        radial network hidden layers, the environment-seed FiLM scale/shift
+        logits, and the cross-focus competition scalars. A bool switches all
+        three together; a list of three bools ``[radial, film, focus]``
+        switches them individually. Disabled norms are identity
+        pass-throughs. The post-SO(2) residual scaling follows the ``radial``
+        entry: with it disabled the norm uses the unit floor
+        ``sqrt(1 + variance)``, so small messages retain their cutoff
+        envelope instead of receiving the standard ``1/sqrt(eps)``
+        small-signal gain.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
@@ -446,12 +453,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ntypes: int,
         sel: list[int] | int,
         rcut: float = 6.0,
-        env_exp: list[int] | None = None,
+        env_exp: int | list[int] | None = None,
         channels: int = 64,
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
-        edge_norm: bool = True,
+        edge_norm: bool | list[bool] = True,
         use_env_seed: bool = True,
         random_gamma: bool = True,
         edge_cartesian: bool = False,
@@ -520,11 +527,17 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.rcut = float(rcut)
         if env_exp is None:
             env_exp = [7, 5]
-        if len(env_exp) != 2:
-            raise ValueError(
-                "`env_exp` must be a list of two integers: [rbf_env_exp, edge_env_exp]"
-            )
-        self.env_exp = [int(x) for x in env_exp]
+        if isinstance(env_exp, int):
+            self.env_exp = env_exp
+            edge_env_exp = env_exp
+        else:
+            if len(env_exp) != 2:
+                raise ValueError(
+                    "`env_exp` must be an integer or a list of two integers: "
+                    "[rbf_env_exp, edge_env_exp]"
+                )
+            self.env_exp = [int(x) for x in env_exp]
+            edge_env_exp = self.env_exp[1]
         self.eps = float(eps)
         # Floor for the envelope-squared degree normalization (GIE / env_seed).
         # version < 1.1 keeps the tiny ``eps`` floor (legacy path, untouched);
@@ -553,7 +566,22 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if radial_mlp is None:
             radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
-        self.edge_norm = bool(edge_norm)
+        if isinstance(edge_norm, bool):
+            self.radial_norm = edge_norm
+            self.film_norm = edge_norm
+            self.focus_norm = edge_norm
+        elif (
+            isinstance(edge_norm, (list, tuple))
+            and len(edge_norm) == 3
+            and all(isinstance(v, bool) for v in edge_norm)
+        ):
+            self.radial_norm = bool(edge_norm[0])
+            self.film_norm = bool(edge_norm[1])
+            self.focus_norm = bool(edge_norm[2])
+        else:
+            raise ValueError(
+                "edge_norm must be a bool or a list[bool] of length 3: [radial, film, focus]"
+            )
         if sandwich_norm is None:
             sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
@@ -861,7 +889,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             # vanishes at rcut; normalizing them shares the radial network's
             # cutoff-smoothness issue, so ``edge_norm=False`` also drops these
             # norms (identity pass-through) to keep the FiLM scale/shift smooth.
-            if self.edge_norm:
+            if self.film_norm:
                 self.film_scale_norm: nn.Module = ScalarRMSNorm(
                     channels=self.channels,
                     n_focus=1,
@@ -911,7 +939,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             basis_type=self.basis_type,
             n_radial=self.n_radial,
             dtype=self.compute_dtype,  # force fp32+
-            exponent=self.env_exp[0],
+            exponent=0 if isinstance(self.env_exp, int) else self.env_exp[0],
+            trainable=self.trainable,
         )
 
         # === Shared radial embedding: RBF -> per-l radial features ===
@@ -926,12 +955,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             activation_function=self.activation_function,
             dtype=self.compute_dtype,  # force fp32+
             trainable=self.trainable,
-            radial_norm=self.edge_norm,
+            radial_norm=self.radial_norm,
             seed=seed_radial_embedding,
         )
 
         # === C^3 cutoff envelope for edge weight ===
-        self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=self.env_exp[1])
+        self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=edge_env_exp)
 
         # === Edge-aligned Wigner-D calculator ===
         # Cartesian blocks (degree 1 or 2) skip the SO(2) rotations, so the full
@@ -989,7 +1018,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
-                    focus_norm=self.edge_norm,
+                    focus_norm=self.focus_norm,
                     so2_norm=self.so2_norm,
                     mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
@@ -1024,7 +1053,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     atten_o_proj=self.use_atten_o_proj,
                     so2_pre_norm=self.so2_pre_norm,
                     so2_post_norm=self.so2_post_norm,
-                    so2_post_norm_eps=1.0e-5 if self.edge_norm else 1.0,
+                    so2_post_norm_eps=1.0e-5 if self.radial_norm else 1.0,
                     so2_activation_function=self.so2_activation_function,
                     ffn_pre_norm=self.ffn_pre_norm,
                     ffn_post_norm=self.ffn_post_norm,
@@ -1038,6 +1067,49 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 )
             )
         self.blocks = nn.ModuleList(blocks)
+
+        # The fused convolution paths consume only the three structural rows of
+        # each Wigner degree block. Source-gated attention bypasses that fused
+        # convolution, so its dense per-edge rotations remain available.
+        self._wigner_free_conv = (
+            self.bridging_switch is None
+            and bool(self.blocks)
+            and all(
+                getattr(block.so2_conv, "_cuda_conv_fn", None) is not None
+                and not block.so2_conv._cuda_conv_fn._compete
+                for block in self.blocks
+            )
+        )
+        self._packed_wigner_train = bool(self.blocks) and all(
+            getattr(block.so2_conv, "_cuda_value_train", None) is not None
+            and block.so2_conv._flash_atten_fn is not None
+            and block.so2_conv._flash_atten_trains
+            for block in self.blocks
+        )
+
+        # The envelope and the radial basis are both functions of the pair
+        # distance and are cheap enough that the compiler inlines them into
+        # every consumer and re-evaluates them there. Behind an operator
+        # boundary the chain runs once per step.
+        self._cuda_radial_fn = None
+        self._cuda_wigner_fn = None
+        if cuda_infer_level() >= 1:
+            from deepmd.pt_expt.kernels.cuda.dpa4.edge_radial import (
+                make_cuda_edge_radial,
+            )
+            from deepmd.pt_expt.kernels.cuda.dpa4.wigner_dense import (
+                make_cuda_wigner_dense,
+            )
+
+            self._cuda_radial_fn = make_cuda_edge_radial(
+                self.edge_envelope, self.radial_basis
+            )
+            # The dense Wigner pair otherwise costs five full-size passes
+            # over the (E, D, D) tensors; the fused build pays only the
+            # output writes.
+            self._cuda_wigner_fn = make_cuda_wigner_dense(
+                self.mp_init_lmax, self.compute_dtype
+            )
 
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
@@ -1091,9 +1163,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             for layer_index in range(self.readout_layers - 1)
         )
         self.output_ffn = EquivariantFFN(**readout_ffn_kwargs, seed=seed_out)
-
-        for p in self.parameters():
-            p.requires_grad = self.trainable
 
         # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP).
         self.register_buffer(
@@ -1199,7 +1268,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 dtype=extended_coord.dtype,
                 device=extended_coord.device,
             )
-            descriptor, _ = self.forward_with_edges(
+            descriptor, _, _ = self.forward_with_edges(
                 extended_coord=extended_coord,
                 extended_atype=extended_atype,
                 edge_index=edge_index,
@@ -1277,12 +1346,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 ),
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
-                n_radial=self.radial_basis.n_radial,
                 # Random local-Z roll is a training-only augmentation;
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                build_wigner=self._need_full_wigner,
+                build_wigner=self._build_full_wigner(),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1291,21 +1359,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 5. Compute radial features once (fp32+) ===
         # Shape: (E, (node_init_lmax+1)*C) -> (E, node_init_lmax+1, C)
-        radial_feat = None
         with nvtx_range("radial_embedding"):
-            if edge_cache.src.numel() > 0:
-                radial_feat = rearrange(
-                    self.radial_embedding(edge_cache.edge_rbf),
-                    "E (L C) -> E L C",
-                    L=self.node_init_lmax + 1,
-                    C=self.channels,
-                )  # (E, node_init_lmax+1, C)
-                if self.version >= 1.1:
-                    radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
+            radial_feat = rearrange(
+                self.radial_embedding(edge_cache.edge_rbf),
+                "E (L C) -> E L C",
+                L=self.node_init_lmax + 1,
+                C=self.channels,
+            )  # (E, node_init_lmax+1, C)
+            if self.version >= 1.1:
+                radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
 
         # === Step 6. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
-            if self.use_env_seed and edge_cache.src.numel() > 0:
+            if self.use_env_seed:
                 atype_flat = atype_loc.reshape(-1)  # (N,)
                 spin_flat = (
                     spin.reshape(n_nodes, 3)
@@ -1334,7 +1400,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 8. Geometric Initial Embedding (+ neighbor spin l=1) ===
         with nvtx_range("gie"):
-            if self.use_gie and radial_feat is not None:
+            if self.use_gie:
                 # GIE only needs l>=1, slice radial_feat[:, 1:, :]
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
                 spin_l1_message = (
@@ -1362,26 +1428,25 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         # === Step 10. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
-            if radial_feat is not None:
-                radial_feat = radial_feat + rearrange(
-                    edge_cache.edge_type_feat, "E C -> E 1 C"
-                )
-                radial_feat = radial_feat.to(dtype=self.dtype)
-                rad_feat_per_block = [
-                    radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
-                ]  # list of (E, lmax+1, C)
-            else:
-                rad_feat_per_block = []
+            radial_feat = radial_feat + rearrange(
+                edge_cache.edge_type_feat, "E C -> E 1 C"
+            )
+            radial_feat = radial_feat.to(dtype=self.dtype)
+            rad_feat_per_block = [
+                radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
+            ]  # list of (E, lmax+1, C)
 
         # === Step 11. Convert to self.dtype and run blocks ===
-        # The block stage is skipped entirely when there are no interaction
-        # blocks (zero-block descriptor) or no valid edges, sparing the working
-        # edge-cache dtype cast that only the blocks consume.
+        # The block stage is skipped entirely for the zero-block descriptor,
+        # sparing the working edge-cache dtype cast that only the blocks consume.
+        # A frame without valid edges takes the same path as any other, so an
+        # isolated atom is one function of its features whether or not the
+        # frame holds other edges.
         with nvtx_range("blocks"):
             x = x.to(dtype=self.dtype)  # (N, D, 1, C)
             if force_embedding is not None:
                 x = x + force_embedding.to(dtype=self.dtype)
-            if self.blocks and edge_cache.src.numel() > 0:
+            if self.blocks:
                 edge_cache = edge_cache_to_dtype(edge_cache, self.dtype)
                 with self._compute_mode_ctx(extended_coord.device):
                     x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
@@ -1415,7 +1480,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         nloc: int | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+        vacuum_conditions: dict[str, torch.Tensor] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """
         Compute the descriptor from a sparse edge list.
 
@@ -1457,12 +1523,21 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         nloc
             Number of owned (local) atoms per frame. Required when ``comm_dict``
             is provided; the final scalar read-out is restricted to these atoms.
+        vacuum_conditions
+            Conditioning inputs of one isolated atom per type, the neutral
+            ground-state atom, under ``charge_spin`` with shape (ntypes, 2)
+            and ``spin`` with shape (ntypes, 3) as the descriptor takes them.
+            When given, the reference atoms are carried through the same
+            forward as additional nodes and their vacuum descriptor is
+            returned.
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor]
-            The scalar descriptor with shape ``(nf, nloc, channels)`` and the
-            final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``.
+        tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]
+            The scalar descriptor with shape ``(nf, nloc, channels)``, the
+            final equivariant latent with shape ``(nf * nloc, D_final, 1, channels)``
+            and, with ``vacuum_conditions``, the vacuum descriptor with shape
+            ``(ntypes, channels)``; ``None`` otherwise.
         """
         # === Step 1. Setup dimensions ===
         # ``n_per_frame`` is the per-frame node count: ``nloc`` in the
@@ -1486,11 +1561,41 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
             ensure_comm_registered()
         out_nloc = nloc if parallel else n_per_frame
+        n_real_nodes = nf * n_per_frame
         atype_flat = extended_atype.reshape(-1)  # (N,)
+
+        # === Step 1b. Vacuum reference nodes ===
+        # One isolated atom of every type follows the real nodes, conditioned
+        # as the neutral ground-state atom. Every node-wise operation leaves
+        # the real nodes unaffected, so the read-out rows of the reference
+        # nodes are the vacuum descriptor of every type.
+        vacuum_ref = vacuum_conditions is not None
+        if vacuum_conditions is not None:
+            atype_flat = torch.cat(
+                [
+                    atype_flat,
+                    torch.arange(
+                        self.ntypes, dtype=atype_flat.dtype, device=atype_flat.device
+                    ),
+                ]
+            )
+            if spin is not None and self.spin_embedding is not None:
+                spin = torch.cat(
+                    [spin.reshape(-1, 3), vacuum_conditions["spin"].to(spin.dtype)]
+                )
+            if force_embedding is not None:
+                force_embedding = torch.cat(
+                    [
+                        force_embedding,
+                        force_embedding.new_zeros(
+                            (self.ntypes, *force_embedding.shape[1:])
+                        ),
+                    ]
+                )
 
         # === Step 2. Type embedding (l=0) ===
         with nvtx_range("type_embedding"):
-            type_ebed = self.type_embedding(extended_atype).reshape(
+            type_ebed = self.type_embedding(atype_flat).reshape(
                 -1, self.channels
             )  # (N, C)
             if self.charge_spin_embedding is not None:
@@ -1499,6 +1604,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     charge_spin,
                     nf=nf,
                     nloc=n_per_frame,
+                    vacuum_reference=None
+                    if vacuum_conditions is None
+                    else vacuum_conditions["charge_spin"],
                 )
             n_nodes = type_ebed.shape[0]
 
@@ -1535,13 +1643,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 bridging_switch=self.bridging_switch,
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
+                fused_radial=(None if self.training else self._cuda_radial_fn),
+                fused_wigner=(None if self.training else self._cuda_wigner_fn),
                 has_exclude_types=bool(self.exclude_types),
                 edge_type_keep_mask=self._edge_type_keep_mask,
                 # Random local-Z roll is a training-only augmentation;
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                build_wigner=self._need_full_wigner,
+                build_wigner=self._build_full_wigner(),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -1640,19 +1750,36 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === Step 11. Keep the owned-atom rows for the read-out ===
         # ``n_out_nodes`` is the owned-node count in the flattened layout
         # (``nf * nloc``). Single-domain: ``out_nloc == n_per_frame``, so this
-        # equals the whole node set and the slice is a no-op. Parallel
+        # equals the whole real node set and the slice is a no-op. Parallel
         # (single-frame): it drops the trailing ghost rows that only fed message
-        # passing -- LAMMPS orders owned atoms before ghosts, so they lead.
+        # passing -- LAMMPS orders owned atoms before ghosts, so they lead. The
+        # vacuum reference rows, when present, trail the real nodes and share
+        # the read-out with the owned rows.
         n_out_nodes = nf * out_nloc
-        x = x[:n_out_nodes]
+        latent = x[:n_out_nodes]
+        if vacuum_ref:
+            x = torch.cat([latent, x[n_real_nodes:]], dim=0)
+            n_readout = n_out_nodes + self.ntypes
+        else:
+            x = latent
+            n_readout = n_out_nodes
 
         # === Step 12. Final l=0 output mixing ===
         with nvtx_range("output_ffn"):
-            x_scalar = self._apply_readout(x, n_out_nodes)
+            x_scalar = self._apply_readout(x, n_readout).to(
+                dtype=env.GLOBAL_PT_FLOAT_PRECISION
+            )
 
         # === Step 13. Reshape to (nf, nloc, channels) and return ===
-        descriptor = x_scalar.reshape(nf, out_nloc, self.channels)  # (nf, nloc, C)
-        return descriptor.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), x.contiguous()
+        descriptor = x_scalar[:n_out_nodes].reshape(
+            nf, out_nloc, self.channels
+        )  # (nf, nloc, C)
+        vacuum = (
+            x_scalar[n_out_nodes:].reshape(self.ntypes, self.channels)
+            if vacuum_ref
+            else None
+        )
+        return descriptor, latent.contiguous(), vacuum
 
     def _forward_blocks(
         self,
@@ -1787,8 +1914,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ----------
         x
             Node features with shape ``(n_rows, D, 1, channels)``. With the
-            blocks skipped (zero-block or empty-edge path) ``D`` is the initial
-            degree; otherwise the pyramid has shrunk it, so the read-out slice to
+            blocks skipped (zero-block descriptor) ``D`` is the initial degree;
+            otherwise the pyramid has shrunk it, so the read-out slice to
             ``node_readout_dim`` is a no-op there.
         n_rows
             Number of node rows fed to the read-out.
@@ -1808,7 +1935,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             x_ro = x[:, : self.node_readout_dim, :, :].to(dtype=self.compute_dtype)
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
-        return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        if self.so3_readout == "none":
+            return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        return x_ro[:, 0:1, :, :] + self.output_ffn.forward_scalar(x_ro)
 
     def _edge_quaternion(self, edge_cache: EdgeFeatureCache) -> torch.Tensor:
         """
@@ -1835,6 +1964,57 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         return edge_quat
 
+    def _build_full_wigner(self) -> bool:
+        """Return whether the active execution path needs dense Wigner blocks."""
+        if not self._need_full_wigner:
+            return False
+        if self.training:
+            return not self._packed_wigner_train
+        return not self._wigner_free_conv
+
+    def _shared_wigner_runs(
+        self,
+        edge_cache: EdgeFeatureCache,
+        lmax: int,
+    ) -> torch.Tensor | None:
+        """
+        Zonal coupling taken from the packed runs the convolution already builds.
+
+        The fused convolution stages a packed block-diagonal Wigner run per
+        edge whose degree-``l`` ``m = 0`` row occupies entries ``l ** 2`` to
+        ``(l + 1) ** 2``. That is the same quantity as
+        ``Dt_full[:, row(l, m), col(l, 0)]``, so degrees ``1..lmax`` are one
+        contiguous slice and the rotation algebra runs once per step instead of
+        twice. The runs are cached on the edge cache, so whichever consumer
+        comes first pays for them.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            The step's edge feature cache.
+        lmax : int
+            Highest degree the coupling must cover.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
+            no convolution supplies runs of at least this degree.
+        """
+        if edge_cache.csr_cache is None:
+            return None
+        if self.training:
+            if not self._packed_wigner_train:
+                return None
+            fused = self.blocks[0].so2_conv._cuda_value_train
+        else:
+            if not self._wigner_free_conv:
+                return None
+            fused = self.blocks[0].so2_conv._cuda_conv_fn
+        if fused is None or lmax > self.lmax:
+            return None
+        return fused.edge_runs(edge_cache)[:, 1 : (lmax + 1) ** 2]
+
     def _build_gie_zonal_coupling(
         self,
         edge_cache: EdgeFeatureCache,
@@ -1853,6 +2033,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         """
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            shared = self._shared_wigner_runs(edge_cache, calc.lmax)
+            if shared is not None:
+                return shared
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None
@@ -1877,6 +2060,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         *,
         nf: int,
         nloc: int,
+        vacuum_reference: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Add frame-level charge and spin conditions to scalar type features.
@@ -1884,22 +2068,32 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Parameters
         ----------
         type_ebed
-            Flattened type embeddings with shape (nf * nloc, channels).
+            Flattened type embeddings with shape (nf * nloc, channels), followed
+            by one row per type when ``vacuum_reference`` is given.
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
         nf
             Number of frames.
         nloc
             Number of local atoms.
+        vacuum_reference
+            Charge and spin conditions of the vacuum reference nodes that trail
+            the real nodes, with shape (ntypes, 2), or None.
 
         Returns
         -------
         torch.Tensor
-            Conditioned type embeddings with shape (nf * nloc, channels).
+            Conditioned type embeddings with the shape of ``type_ebed``.
         """
         condition = self.charge_spin_embedding(charge_spin.to(dtype=type_ebed.dtype))
         condition = condition[:, None, :].expand(nf, nloc, self.channels)
-        return type_ebed + condition.reshape_as(type_ebed)
+        condition = condition.reshape(nf * nloc, self.channels)
+        if vacuum_reference is not None:
+            reference = self.charge_spin_embedding(
+                vacuum_reference.to(dtype=type_ebed.dtype)
+            )
+            condition = torch.cat([condition, reference], dim=0)
+        return type_ebed + condition
 
     def _apply_spin_embedding(
         self,
@@ -2227,6 +2421,19 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             yield
 
     # === DeePMD descriptor interface ===
+    def adam_route_patterns(self) -> list[str]:
+        """
+        Name patterns, relative to the descriptor, of the tensors that take the
+        AdamW path under HybridMuon: the first layer of the radial embedding and
+        the radial projection of the environment seed, which read the radial
+        basis and whose rows for rarely visited separations receive almost no
+        gradient.
+        """
+        return [
+            "radial_embedding.net.0.",
+            "env_seed_embedding.rbf_proj_layer1.",
+        ]
+
     def get_rcut(self) -> float:
         return self.rcut
 
@@ -2244,6 +2451,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
     def get_type_map(self) -> list[str]:
         return self.type_map if self.type_map is not None else []
+
+    def supports_native_spin(self) -> bool:
+        """SeZM accepts per-atom ``spin`` vectors (native magnetic conditioning)."""
+        return True
 
     def get_dim_chg_spin(self) -> int:
         """Return the charge/spin condition width."""
@@ -2517,7 +2728,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
-                "edge_norm": self.edge_norm,
+                "edge_norm": [
+                    self.radial_norm,
+                    self.film_norm,
+                    self.focus_norm,
+                ],
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "edge_cartesian": self.edge_cartesian,

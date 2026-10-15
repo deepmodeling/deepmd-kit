@@ -397,8 +397,8 @@ class TestRadialParity:
         np.testing.assert_array_equal(np.asarray(res)[r[:, 0] >= self.rcut], 0.0)
 
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
-    @pytest.mark.parametrize("exponent", [5, 7])  # envelope exponent
-    def test_radial_basis(self, basis_type, exponent) -> None:
+    @pytest.mark.parametrize("exponent", [0, 5, 7])
+    def test_radial_basis(self, basis_type: str, exponent: int) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
@@ -423,12 +423,100 @@ class TestRadialParity:
         # pt state_dict key contract: only the trainable frequencies
         assert list(serialized["@variables"]) == ["adam_freqs"]
         dp_mod = DPRadialBasis.deserialize(serialized)
+        assert dp_mod.exponent == exponent
+        assert (dp_mod.envelope is None) is (exponent == 0)
         r = self._r_grid()
         assert_parity(dp_mod.call(r), pt_mod(to_pt(r)))
 
+    @pytest.mark.parametrize("trainable", [True, False])
+    @pytest.mark.parametrize("exponent", [0, 7])
+    def test_radial_basis_roundtrip_preserves_trainable(
+        self, trainable: bool, exponent: int
+    ) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        radial_basis = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=8,
+            dtype=torch.float64,
+            trainable=trainable,
+            exponent=exponent,
+        )
+        restored = PTRadialBasis.deserialize(radial_basis.serialize())
+
+        assert restored.trainable is trainable
+        assert restored.adam_freqs.requires_grad is trainable
+        assert restored.exponent == exponent
+        assert (restored.envelope is None) is (exponent == 0)
+
+    def test_radial_basis_deserializes_version_one_without_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        radial_basis = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=8,
+            dtype=torch.float64,
+        )
+        data = radial_basis.serialize()
+        data["@version"] = 1
+        data["config"].pop("trainable")
+        restored = PTRadialBasis.deserialize(data)
+
+        assert restored.trainable is True
+        assert restored.adam_freqs.requires_grad is True
+        assert restored.exponent == 7
+        assert restored.envelope is not None
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    @pytest.mark.parametrize("apply_envelope", [None, True, False])
+    def test_radial_basis_version_one_envelope(
+        self, basis_type: str, apply_envelope: bool | None
+    ) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        exponent = 0 if apply_envelope is False else 5
+        reference = PTRadialBasis(
+            rcut=self.rcut,
+            n_radial=4,
+            basis_type=basis_type,
+            exponent=exponent,
+            dtype=torch.float64,
+        )
+        with torch.no_grad():
+            reference.adam_freqs.add_(0.01)
+        data = reference.serialize()
+        data["@version"] = 1
+        data["config"]["exponent"] = 5
+        if apply_envelope is not None:
+            data["config"]["apply_envelope"] = apply_envelope
+        r = self._r_grid()
+        expected = reference(to_pt(r))
+        dp_restored = DPRadialBasis.deserialize(data)
+        pt_restored = PTRadialBasis.deserialize(data)
+        assert_parity(dp_restored.call(r), expected)
+        torch.testing.assert_close(
+            pt_restored(to_pt(r)), expected, rtol=PT_RTOL, atol=PT_ATOL
+        )
+        for restored in (dp_restored, pt_restored):
+            assert restored.exponent == exponent
+            assert (restored.envelope is None) is (exponent == 0)
+            serialized = restored.serialize()
+            assert serialized["@version"] == 2
+            assert "apply_envelope" not in serialized["config"]
+        assert data["config"]["exponent"] == 5
+
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
-    @pytest.mark.parametrize("apply_envelope", [True, False])  # both envelope modes
-    def test_radial_basis_roundtrip(self, basis_type, apply_envelope) -> None:
+    @pytest.mark.parametrize("exponent", [0, 7])
+    def test_radial_basis_roundtrip(self, basis_type: str, exponent: int) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
@@ -438,11 +526,11 @@ class TestRadialParity:
             basis_type=basis_type,
             n_radial=12,
             precision="float64",
-            exponent=7,
-            apply_envelope=apply_envelope,
+            exponent=exponent,
         )
         dp_mod2 = DPRadialBasis.deserialize(dp_mod.serialize())
-        assert dp_mod2.apply_envelope is apply_envelope
+        assert dp_mod2.exponent == exponent
+        assert (dp_mod2.envelope is None) is (exponent == 0)
         r = self._r_grid()
         np.testing.assert_array_equal(
             np.asarray(dp_mod.call(r)), np.asarray(dp_mod2.call(r))
@@ -454,17 +542,17 @@ class TestRadialParity:
             RadialBasis as DPRadialBasis,
         )
 
-        def make(apply_envelope: bool) -> DPRadialBasis:
+        def make(exponent: int) -> DPRadialBasis:
             return DPRadialBasis(
                 rcut=self.rcut,
                 basis_type=basis_type,
                 n_radial=12,
                 precision="float64",
-                exponent=7,
-                apply_envelope=apply_envelope,
+                exponent=exponent,
             )
 
-        enveloped, raw = make(True), make(False)
+        enveloped, raw = make(7), make(0)
+        assert raw.envelope is None
         r = self._r_grid()
         enveloped_value = np.asarray(enveloped.call(r))
         raw_value = np.asarray(raw.call(r))
@@ -2638,6 +2726,32 @@ class TestSO2Parity:
         out2 = np.asarray(dp_mod2.call(x, dp_cache, radial))
         np.testing.assert_array_equal(out1, out2)
 
+    def test_so2_convolution_roundtrip_preserves_configured_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution as PTSO2Conv
+
+        module = PTSO2Conv(
+            **self._conv_kwargs(node_wise_grid_branch=1, node_wise_s2=True),
+            dtype=torch.float64,
+            seed=17,
+            trainable=True,
+        )
+        data = module.serialize()
+        restored = PTSO2Conv.deserialize(data)
+        routers = [
+            submodule.router
+            for submodule in restored.modules()
+            if isinstance(submodule, GridBranch)
+        ]
+
+        assert data["config"]["trainable"] is True
+        assert restored.trainable is True
+        assert routers
+        assert all(not router.weight.requires_grad for router in routers)
+        assert any(parameter.requires_grad for parameter in restored.parameters())
+
     def test_so2_convolution_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
 
@@ -3163,7 +3277,6 @@ def _build_real_edge_caches(
         deg_norm_floor=deg_norm_floor,
         edge_envelope=pt_env,
         radial_basis=pt_rb,
-        n_radial=n_radial,
         random_gamma=random_gamma,
         wigner_calc=pt_wig,
     )
@@ -3698,6 +3811,34 @@ class TestBlockParity:
         out2 = np.asarray(dp_mod2.call(x, dp_cache, radial)[0])
         np.testing.assert_array_equal(out1, out2)
 
+    def test_block_roundtrip_preserves_configured_trainable(self) -> None:
+        from deepmd.pt.model.descriptor.sezm_nn.block import (
+            SeZMInteractionBlock as PTBlock,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch,
+        )
+
+        module = PTBlock(
+            **self._block_kwargs(ffn_grid_branch=1),
+            dtype=torch.float64,
+            seed=31,
+            trainable=True,
+        )
+        data = module.serialize()
+        restored = PTBlock.deserialize(data)
+        routers = [
+            submodule.router
+            for submodule in restored.modules()
+            if isinstance(submodule, GridBranch)
+        ]
+
+        assert data["config"]["trainable"] is True
+        assert restored.trainable is True
+        assert routers
+        assert all(not router.weight.requires_grad for router in routers)
+        assert any(parameter.requires_grad for parameter in restored.parameters())
+
     def test_block_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.block import (
             SeZMInteractionBlock as DPBlock,
@@ -3841,20 +3982,73 @@ class TestDescriptorParity:
         )
         self._assert_descr_parity(pt_mod, dp_mod)
 
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
+    @pytest.mark.parametrize("env_exp", [5, [0, 5], [7, 5]])
+    def test_descriptor_env_exp(
+        self, basis_type: str, env_exp: int | list[int]
+    ) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            basis_type=basis_type, env_exp=env_exp
+        )
+        for module in (pt_mod, dp_mod):
+            assert module.env_exp == env_exp
+            exponent = env_exp[0] if isinstance(env_exp, list) else 0
+            assert module.radial_basis.exponent == exponent
+            assert (module.radial_basis.envelope is None) is (exponent == 0)
+            assert module.edge_envelope.p == 5
+        self._assert_descr_parity(pt_mod, dp_mod)
+        pt_restored = type(pt_mod).deserialize(pt_mod.serialize())
+        dp_restored = type(dp_mod).deserialize(dp_mod.serialize())
+        assert pt_restored.env_exp == dp_restored.env_exp == env_exp
+        self._assert_descr_parity(pt_restored, dp_restored)
+
     @pytest.mark.parametrize(
-        "edge_norm", [False, True]
-    )  # cutoff-vanishing normalization modes
+        "edge_norm", [False, True, [False, True, False]]
+    )  # cutoff-vanishing normalization modes: all off, all on, per-site
     def test_descriptor_edge_norm(self, edge_norm) -> None:
         # edge_norm=False drops the radial MLP RMSNorm, turns the FiLM scale/shift
         # norms into identity pass-throughs, drops the focus-compete norm, and
-        # selects unit-floor post-SO(2) residual scaling in both backends.
+        # selects unit-floor post-SO(2) residual scaling in both backends. A
+        # three-bool list [radial, film, focus] switches the sites individually,
+        # with the post-SO(2) scaling bound to the radial entry.
         pt_mod, dp_mod, _ = self._build_descr_pair(
             edge_norm=edge_norm, use_env_seed=True, n_focus=2
         )
-        assert dp_mod.edge_norm == edge_norm
-        expected_eps = 1.0e-5 if edge_norm else 1.0
+        radial_on = edge_norm if isinstance(edge_norm, bool) else edge_norm[0]
+        assert dp_mod.radial_norm == radial_on
+        expected_eps = 1.0e-5 if radial_on else 1.0
         assert pt_mod.blocks[0].post_so2_norm.eps == expected_eps
         assert dp_mod.blocks[0].post_so2_norm.eps == expected_eps
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize(
+        "stored_edge_norm", [None, True, False]
+    )  # legacy serialized data: no key (pre-option checkpoints) or a plain bool
+    def test_descriptor_edge_norm_legacy_serialized(self, stored_edge_norm) -> None:
+        # Checkpoints that predate the edge_norm option carry no such config
+        # key (their norms were always built, matching the default True), and
+        # intermediate checkpoints store a plain bool. Both forms must
+        # deserialize into the matching module structure and keep parity.
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+
+        build_edge_norm = True if stored_edge_norm is None else stored_edge_norm
+        pt_mod, _, _ = self._build_descr_pair(
+            edge_norm=build_edge_norm, use_env_seed=True, n_focus=2
+        )
+        data = pt_mod.serialize()
+        if stored_edge_norm is None:
+            data["config"].pop("edge_norm")
+        else:
+            data["config"]["edge_norm"] = stored_edge_norm
+        dp_mod = DescrptDPA4.deserialize(data)
+        expected = bool(build_edge_norm)
+        assert (dp_mod.radial_norm, dp_mod.film_norm, dp_mod.focus_norm) == (
+            expected,
+            expected,
+            expected,
+        )
         self._assert_descr_parity(pt_mod, dp_mod)
 
     @pytest.mark.parametrize(
@@ -3863,6 +4057,16 @@ class TestDescriptorParity:
     def test_descriptor_exclude_types(self, exclude_types) -> None:
         pt_mod, dp_mod, _ = self._build_descr_pair(exclude_types=exclude_types)
         self._assert_descr_parity(pt_mod, dp_mod)
+
+    def test_descriptor_without_edges(self) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair()
+        inp = self._inputs()
+        nlist = np.full_like(inp["nlist"], -1)
+        out_dp = dp_mod.call(
+            inp["coord"].reshape(self.nf, -1), inp["atype_ext"], nlist, mapping=None
+        )
+        out_pt = pt_mod(to_pt(inp["coord"]), to_pt(inp["atype_ext"]), to_pt(nlist))
+        assert_parity(out_dp[0], out_pt[0], rtol=1e-10, atol=1e-12)
 
     def test_descriptor_no_mapping(self) -> None:
         # pt forward accepts mapping=None when neighbor indices are local;

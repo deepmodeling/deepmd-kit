@@ -17,7 +17,6 @@ import torch
 from deepmd.infer import (
     DeepPot,
 )
-from deepmd.kernels.cuda.dpa4c.graph_compress import op_available as dpa4c_op_available
 from deepmd.pt_expt.descriptor.se_e2_a import (
     DescrptSeA,
 )
@@ -28,6 +27,9 @@ from deepmd.pt_expt.infer.charge_state import (
     charge_states,
     charge_states_per_frame,
     single_charge_state,
+)
+from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+    op_available as dpa4c_op_available,
 )
 from deepmd.pt_expt.model import (
     EnergyModel,

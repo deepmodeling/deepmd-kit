@@ -24,12 +24,13 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     compact_nodes,
     expand_node_values,
 )
-from deepmd.kernels.utils import (
-    cuda_infer_level,
-)
 from deepmd.pt_expt.common import (
     auto_wrapped_class,
     torch_module,
+)
+from deepmd.pt_expt.kernels.utils import (
+    fused_energy_force_enabled,
+    fused_operators_enabled,
 )
 from deepmd.pt_expt.utils.graph_builder import (
     build_neighbor_graph_for_method,
@@ -108,8 +109,16 @@ def _fused_energy_force_graph(
     fused = getattr(desc, "fused_energy_force_graph", None)
     if fused is None or fit is None:
         return None
+    if fit.vacuum_ref and not fit.uniform_conditioning():
+        # The reference varies between atoms while the operators take a
+        # per-type bias only, so such a model uses the autograd lower.
+        return None
     graph, atype, output_mask = am._prepare_graph_inputs(graph, atype)
     atom_bias = fit.bias_atom_e[:, 0] + am.out_bias[0, :, 0]
+    if fit.vacuum_ref:
+        # The fused operators see the real atoms alone; the vacuum reference
+        # of every type is a constant here and enters through the bias.
+        atom_bias = atom_bias - fit.vacuum_property(am.vacuum_descriptor())[:, 0]
     out = fused(
         fit,
         graph,
@@ -691,7 +700,7 @@ def make_model(
             # The fused pipeline emits the magnetic force as a value for a
             # descriptor that declares native spin, and returns nothing when it
             # cannot serve the request at all.
-            if not self.training and cuda_infer_level() >= 2:
+            if not self.training and fused_energy_force_enabled():
                 fused = _fused_energy_force_graph(
                     self, graph, atype, do_atomic_virial, spin
                 )
@@ -948,7 +957,7 @@ def make_model(
             _desc = getattr(self.atomic_model, "descriptor", None)
             with_csr = (
                 not self.training
-                and cuda_infer_level() >= 1
+                and fused_operators_enabled()
                 and _desc is not None
                 and _desc.get_geo_compress()
             )

@@ -8,6 +8,11 @@ backend:
 dp --pt-expt train input.json
 ```
 
+The model section selects the `Nano` grade with the named preset
+`dpa4c-nano-v20260911`. The preset supplies the 118-element `type_map`,
+`descriptor` and `fitting_net`; the explicit water `type_map` replaces the
+element list, while `use_amp` and `seed` supply run-specific settings.
+
 DPA4C is built for extreme-speed molecular dynamics, so its arguments are best
 read as a budget split between two quantities: inference throughput and the
 largest system that fits in memory.
@@ -38,10 +43,8 @@ still be evaluated under mixed precision.
 ## Choosing the fitting width
 
 The fitting network is sized against the descriptor, because the invariant
-output grows with `channels`. The released grades pair `channels` 8, 32, 64 and
-128 with hidden widths 96, 192, 256 and 384, at depth three as used here. This
-file is the `Neo` grade: `channels: 32` with `radial_modes: 4` and a hidden
-width of 192.
+output grows with `channels`. Every released grade pairs its descriptor width
+with a matching hidden width at depth three, as used here.
 
 Unlike `radial_modes`, fitting width is not a free trade against memory. It
 does not enlarge the persistent node state, but it does add per-atom

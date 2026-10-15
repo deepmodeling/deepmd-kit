@@ -65,6 +65,7 @@ from deepmd.dpmodel.utils.exclude_mask import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     apply_pair_exclusion,
+    frame_id_from_n_node,
     graph_from_dense_quartet,
 )
 from deepmd.dpmodel.utils.seed import (
@@ -307,28 +308,34 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
     rcut
         Cutoff radius in Å.
     env_exp
-        C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`.
-        - `rbf_env_exp`: Controls radial basis function envelope decay.
-        - `edge_env_exp`: Controls message passing edge weight envelope decay.
+        C^3 cutoff envelope exponents. A list `[rbf_env_exp, edge_env_exp]`
+        specifies the radial-basis and message-passing envelopes separately.
+        A zero radial-basis exponent disables that envelope.
+        An integer specifies only the message-passing envelope exponent and
+        disables the radial-basis envelope.
         Larger values give weaker suppression (values stay near 1.0 longer).
     channels
         Total channels per (l,m) coefficient.
     basis_type
-        Radial basis type. Supported values are ``"bessel"`` and ``"gaussian"``.
+        Radial basis type. Supported values are ``"bessel"``, ``"gaussian"``,
+        ``"bessel/fix"`` and ``"gaussian/fix"``; the ``/fix`` forms keep the
+        frequencies or centres fixed during training.
     n_radial
         Number of radial basis functions.
     radial_mlp
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+extra_node_l+1)*channels` will be automatically appended.
     edge_norm
-        Whether to apply channel RMSNorm on the descriptor's cutoff-vanishing
-        branches: the radial network hidden layers, the environment-seed FiLM
-        scale/shift logits, the cross-focus competition scalars, and the
-        post-SO(2) residual messages. ``False`` replaces the first three norms
-        with identity and changes only the post-SO(2) norm to unit-floor residual
-        scaling. The unit floor uses ``sqrt(1 + variance)`` so small messages
-        retain their cutoff envelope instead of receiving the standard
-        ``1/sqrt(eps)`` small-signal gain.
+        Channel RMSNorm on the descriptor's cutoff-vanishing branches: the
+        radial network hidden layers, the environment-seed FiLM scale/shift
+        logits, and the cross-focus competition scalars. A bool switches all
+        three together; a list of three bools ``[radial, film, focus]``
+        switches them individually. Disabled norms are identity
+        pass-throughs. The post-SO(2) residual scaling follows the ``radial``
+        entry: with it disabled the norm uses the unit floor
+        ``sqrt(1 + variance)``, so small messages retain their cutoff
+        envelope instead of receiving the standard ``1/sqrt(eps)``
+        small-signal gain.
     use_env_seed
         If True, seed the initial node state with local-environment information:
         apply environment matrix FiLM conditioning on l=0 features using 4D
@@ -605,12 +612,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         ntypes: int,
         sel: list[int] | int,
         rcut: float = 6.0,
-        env_exp: list[int] | None = None,
+        env_exp: int | list[int] | None = None,
         channels: int = 64,
         basis_type: str = "bessel",
         n_radial: int = 16,
         radial_mlp: list[int] | None = None,
-        edge_norm: bool = True,
+        edge_norm: bool | list[bool] = True,
         use_env_seed: bool = True,
         random_gamma: bool = True,
         edge_cartesian: bool = False,
@@ -673,11 +680,17 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.rcut = float(rcut)
         if env_exp is None:
             env_exp = [7, 5]
-        if len(env_exp) != 2:
-            raise ValueError(
-                "`env_exp` must be a list of two integers: [rbf_env_exp, edge_env_exp]"
-            )
-        self.env_exp = [int(x) for x in env_exp]
+        if isinstance(env_exp, int):
+            self.env_exp = env_exp
+            edge_env_exp = env_exp
+        else:
+            if len(env_exp) != 2:
+                raise ValueError(
+                    "`env_exp` must be an integer or a list of two integers: "
+                    "[rbf_env_exp, edge_env_exp]"
+                )
+            self.env_exp = [int(x) for x in env_exp]
+            edge_env_exp = self.env_exp[1]
         self.eps = float(eps)
         # Floor for the envelope-squared degree normalization (GIE / env_seed).
         # version < 1.1 keeps the tiny ``eps`` floor (legacy path, untouched);
@@ -706,7 +719,22 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if radial_mlp is None:
             radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
-        self.edge_norm = bool(edge_norm)
+        if isinstance(edge_norm, bool):
+            self.radial_norm = edge_norm
+            self.film_norm = edge_norm
+            self.focus_norm = edge_norm
+        elif (
+            isinstance(edge_norm, (list, tuple))
+            and len(edge_norm) == 3
+            and all(isinstance(v, bool) for v in edge_norm)
+        ):
+            self.radial_norm = bool(edge_norm[0])
+            self.film_norm = bool(edge_norm[1])
+            self.focus_norm = bool(edge_norm[2])
+        else:
+            raise ValueError(
+                "edge_norm must be a bool or a list[bool] of length 3: [radial, film, focus]"
+            )
         if sandwich_norm is None:
             sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
@@ -1009,7 +1037,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             # vanishes at rcut; normalizing them shares the radial network's
             # cutoff-smoothness issue, so ``edge_norm=False`` also drops these
             # norms (identity pass-through) to keep the FiLM scale/shift smooth.
-            if self.edge_norm:
+            if self.film_norm:
                 self.film_scale_norm = ScalarRMSNorm(
                     channels=self.channels,
                     n_focus=1,
@@ -1051,7 +1079,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             basis_type=self.basis_type,
             n_radial=self.n_radial,
             precision=self.compute_precision,  # force fp32+
-            exponent=self.env_exp[0],
+            exponent=0 if isinstance(self.env_exp, int) else self.env_exp[0],
         )
 
         # === Shared radial embedding: RBF -> per-l radial features ===
@@ -1066,12 +1094,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             activation_function=self.activation_function,
             precision=self.compute_precision,  # force fp32+
             trainable=self.trainable,
-            radial_norm=self.edge_norm,
+            radial_norm=self.radial_norm,
             seed=seed_radial_embedding,
         )
 
         # === C^3 cutoff envelope for edge weight ===
-        self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=self.env_exp[1])
+        self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=edge_env_exp)
 
         # === Edge-aligned Wigner-D calculator ===
         # Cartesian blocks (degree 1 or 2) skip the SO(2) rotations, so the full
@@ -1129,7 +1157,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     channels=self.channels,
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
-                    focus_norm=self.edge_norm,
+                    focus_norm=self.focus_norm,
                     so2_norm=self.so2_norm,
                     mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
@@ -1164,7 +1192,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     atten_o_proj=self.use_atten_o_proj,
                     so2_pre_norm=self.so2_pre_norm,
                     so2_post_norm=self.so2_post_norm,
-                    so2_post_norm_eps=1.0e-5 if self.edge_norm else 1.0,
+                    so2_post_norm_eps=1.0e-5 if self.radial_norm else 1.0,
                     so2_activation_function=self.so2_activation_function,
                     ffn_pre_norm=self.ffn_pre_norm,
                     ffn_post_norm=self.ffn_post_norm,
@@ -1178,6 +1206,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 )
             )
         self.blocks = blocks
+
+        # Accelerated backends may replace the distance-to-radial chain and the
+        # packed Wigner-D construction. The array-API reference leaves these
+        # hooks unbound and always retains the dense Wigner matrices.
+        self._cuda_radial_fn = None
+        self._cuda_wigner_fn = None
+        self._wigner_free_conv = False
+        self._packed_wigner_train = False
 
         # === Optional descriptor-level attention residuals ===
         self.final_block_attn_res = None
@@ -1348,7 +1384,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         x_scalar, _ = self._run_graph(
             graph,
             atype_flat,
-            nf=nf,
             n_out_nodes=nf * nloc,
             force_embedding=force_embedding,
             charge_spin=charge_spin,
@@ -1430,7 +1465,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ref=graph.edge_vec,
         )
         x_scalar, _ = self._run_graph(
-            graph, atype, nf=nf, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
+            graph, atype, charge_spin=charge_spin, spin=spin, comm_dict=comm_dict
         )
         # ``_run_graph`` returns the read-out with its SO(3) singleton
         # axes still attached, shape (n_nodes, 1, 1, channels); flatten to the
@@ -1444,7 +1479,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         graph: NeighborGraph,
         atype_flat: Array,
         *,
-        nf: int = 1,
         n_out_nodes: int | None = None,
         force_embedding: Array | None = None,
         charge_spin: Array | None = None,
@@ -1480,8 +1514,6 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             geometry/autograd leaf, ``edge_mask`` flags valid edges.
         atype_flat
             Flat node types with shape (N,).
-        nf
-            Frame count (only consumed by the charge/spin FiLM conditioning).
         n_out_nodes
             Leading node count kept for the read-out (owned atoms). ``None``
             keeps all nodes (``atype_flat.shape[0]``).
@@ -1530,10 +1562,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         )  # (N, C)
         if self.charge_spin_embedding is not None:
             type_ebed = self._apply_charge_spin_embedding(
-                type_ebed,
-                charge_spin,
-                nf=nf,
-                nloc=n_out_nodes // nf,
+                type_ebed, charge_spin, graph.n_node
             )
         n_nodes = type_ebed.shape[0]
 
@@ -1554,6 +1583,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 self._gate_partial_exchange, comm_dict=comm_dict
             )
         # === Step 3. Build edge cache once (sparse edges) ===
+        training = self._in_training_mode()
         edge_cache = _edge_cache_from_arrays(
             type_ebed=type_ebed,
             edge_index=edge_index,
@@ -1566,14 +1596,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             bridging_switch=self.bridging_switch,
             edge_envelope=self.edge_envelope,
             radial_basis=self.radial_basis,
+            fused_radial=None if training else self._cuda_radial_fn,
+            fused_wigner=None if training else self._cuda_wigner_fn,
             # Random local-Z roll is a training-only augmentation; the model
-            # is roll-equivariant, so inference fixes gamma. Mirrors pt's
-            # ``random_gamma=self.random_gamma and self.training`` via the
-            # ``_in_training_mode`` runtime hook (False here; the pt_expt
-            # wrapper overrides it with the torch module's training flag).
-            random_gamma=self.random_gamma and self._in_training_mode(),
+            # is roll-equivariant, so inference fixes gamma.
+            random_gamma=self.random_gamma and training,
             wigner_calc=self.wigner_calc,
-            build_wigner=self._need_full_wigner,
+            build_wigner=self._build_full_wigner(),
             node_partial_exchange=node_partial_exchange,
         )
 
@@ -1610,10 +1639,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             scale_logits = film[:, : self.channels]  # (N, C)
             shift_logits = film[:, self.channels :]  # (N, C)
             scale_hat = (
-                self.film_scale_norm(scale_logits) if self.edge_norm else scale_logits
+                self.film_scale_norm(scale_logits) if self.film_norm else scale_logits
             )  # (N, C)
             shift_hat = (
-                self.film_shift_norm(shift_logits) if self.edge_norm else shift_logits
+                self.film_shift_norm(shift_logits) if self.film_norm else shift_logits
             )  # (N, C)
             scale_strength = xp.exp(
                 xp_asarray_nodetach(
@@ -1872,7 +1901,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         for layer in self.readout_pre_layers:
             x_ro = x_ro + layer(x_ro)
-        return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        if self.so3_readout == "none":
+            return (x_ro + self.output_ffn(x_ro))[:, 0:1, :, :]
+        return x_ro[:, 0:1, :, :] + self.output_ffn.call_scalar(x_ro)
 
     def _edge_quaternion(self, edge_cache: EdgeCache) -> Array:
         """
@@ -1899,6 +1930,45 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             )
         return edge_quat
 
+    def _build_full_wigner(self) -> bool:
+        """Return whether the active execution path needs dense Wigner blocks."""
+        if not self._need_full_wigner:
+            return False
+        if self._in_training_mode():
+            return not self._packed_wigner_train
+        return not self._wigner_free_conv
+
+    def _shared_wigner_runs(
+        self,
+        edge_cache: EdgeCache,
+        lmax: int,
+    ) -> Array | None:
+        """
+        Zonal coupling taken from the packed runs the convolution already builds.
+
+        The fused convolution stages a packed block-diagonal Wigner run per
+        edge whose degree-``l`` ``m = 0`` row occupies entries ``l ** 2`` to
+        ``(l + 1) ** 2``. That is the same quantity as
+        ``Dt_full[:, row(l, m), col(l, 0)]``, so degrees ``1..lmax`` are one
+        contiguous slice and the rotation algebra runs once per step instead of
+        twice. The runs are cached on the edge cache, so whichever consumer
+        comes first pays for them.
+
+        Parameters
+        ----------
+        edge_cache : EdgeCache
+            The step's edge feature cache.
+        lmax : int
+            Highest degree the coupling must cover.
+
+        Returns
+        -------
+        Array or None
+            Coupling with shape ``(E, (lmax + 1) ** 2 - 1)``, or ``None`` when
+            no convolution supplies runs of at least this degree.
+        """
+        return None
+
     def _build_gie_zonal_coupling(
         self,
         edge_cache: EdgeCache,
@@ -1917,6 +1987,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         if edge_cache.Dt_full is None:
             calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            shared = self._shared_wigner_runs(edge_cache, calc.lmax)
+            if shared is not None:
+                return shared
             return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None
@@ -1943,9 +2016,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self,
         type_ebed: Array,
         charge_spin: Array,
-        *,
-        nf: int,
-        nloc: int,
+        n_node: Array,
     ) -> Array:
         """
         Add frame-level charge and spin conditions to scalar type features.
@@ -1953,23 +2024,22 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         Parameters
         ----------
         type_ebed
-            Flattened type embeddings with shape (nf * nloc, channels).
+            Flattened type embeddings with shape (N, channels).
         charge_spin
             Frame-level charge and spin conditions with shape (nf, 2).
-        nf
-            Number of frames.
-        nloc
-            Number of local atoms.
+        n_node
+            Node count of every frame with shape (nf,); the frames occupy
+            consecutive blocks of the node axis.
 
         Returns
         -------
         Array
-            Conditioned type embeddings with shape (nf * nloc, channels).
+            Conditioned type embeddings with shape (N, channels).
         """
         xp = array_api_compat.array_namespace(type_ebed, charge_spin)
         condition = self.charge_spin_embedding(xp.astype(charge_spin, type_ebed.dtype))
-        condition = xp.broadcast_to(condition[:, None, :], (nf, nloc, self.channels))
-        return type_ebed + xp.reshape(condition, type_ebed.shape)
+        frame_id = frame_id_from_n_node(n_node, n_total=type_ebed.shape[0])
+        return type_ebed + xp.take(condition, frame_id, axis=0)
 
     def _apply_spin_embedding(
         self,
@@ -2553,7 +2623,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         if self.use_env_seed:
             for key, value in self.env_seed_embedding.serialize()["@variables"].items():
                 variables[f"env_seed_embedding.{key}"] = value
-            if self.edge_norm:
+            if self.film_norm:
                 for key, value in self.film_scale_norm.serialize()[
                     "@variables"
                 ].items():
@@ -2660,7 +2730,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             self.env_seed_embedding = load(
                 self.env_seed_embedding, "env_seed_embedding."
             )
-            if self.edge_norm:
+            if self.film_norm:
                 self.film_scale_norm = load(self.film_scale_norm, "film_scale_norm.")
                 self.film_shift_norm = load(self.film_shift_norm, "film_shift_norm.")
             self.film_scale_strength_log = np.asarray(
@@ -2774,7 +2844,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "basis_type": self.basis_type,
                 "n_radial": self.n_radial,
                 "radial_mlp": self.radial_mlp,
-                "edge_norm": self.edge_norm,
+                "edge_norm": [
+                    self.radial_norm,
+                    self.film_norm,
+                    self.focus_norm,
+                ],
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "edge_cartesian": self.edge_cartesian,

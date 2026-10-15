@@ -53,6 +53,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_einsum,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -189,12 +190,7 @@ class LoRASO3(SO3Linear):
         )
         expand_index = xp_asarray_nodetach(xp, self.expand_index, device=device)
         weight_expanded = xp.take(weight, expand_index, axis=0)
-        # einsum "ndfi,difo->ndfo", batched over the small (D, F) axes rather
-        # than over N, which would broadcast the weight and make autograd
-        # reduce the expansion.  LoRA twin of the so3.py contraction.
-        weight_expanded = xp.permute_dims(weight_expanded, (0, 2, 1, 3))
-        out = xp.matmul(xp.permute_dims(x, (1, 2, 0, 3)), weight_expanded)
-        out = xp.permute_dims(out, (2, 0, 1, 3))  # (N, D, F, Cout)
+        out = xp_einsum("ndfi,difo->ndfo", x, weight_expanded)  # (N, D, F, Cout)
         if self.mlp_bias:
             bias = xp.reshape(
                 xp_asarray_nodetach(xp, self.bias[...], device=device),

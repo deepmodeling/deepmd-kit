@@ -93,6 +93,11 @@ class InvarFitting(GeneralFitting):
             this list is of length :math:`N_l + 1`, specifying if the hidden layers and the output layer are trainable.
     atom_ener
             Specifying atomic energy contribution in vacuum. The `set_davg_zero` key in the descriptor should be set.
+    vacuum_ref
+            Reference the network output of every atom to the output of the same
+            network for an isolated atom of the same type under the same
+            conditioning, so that an atom without neighbors contributes exactly
+            its output bias.
     activation_function
             The activation function :math:`\boldsymbol{\phi}` in the embedding net. Supported options are |ACTIVATION_FN|
     precision
@@ -131,6 +136,7 @@ class InvarFitting(GeneralFitting):
         tot_ener_zero: bool = False,
         trainable: list[bool] | None = None,
         atom_ener: list[float] | None = None,
+        vacuum_ref: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         layer_name: list[str | None] | None = None,
@@ -151,6 +157,15 @@ class InvarFitting(GeneralFitting):
 
         self.dim_out = dim_out
         self.atom_ener = atom_ener
+        if (
+            vacuum_ref
+            and atom_ener is not None
+            and any(x is not None for x in atom_ener)
+        ):
+            raise ValueError(
+                "atom_ener and vacuum_ref are exclusive; vacuum_ref references every "
+                "atom to the isolated atom of its type by itself"
+            )
         super().__init__(
             var_name=var_name,
             ntypes=ntypes,
@@ -174,6 +189,7 @@ class InvarFitting(GeneralFitting):
             remove_vaccum_contribution=None
             if atom_ener is None or len([x for x in atom_ener if x is not None]) == 0
             else [x is not None for x in atom_ener],
+            vacuum_ref=vacuum_ref,
             type_map=type_map,
             seed=seed,
             default_fparam=default_fparam,
@@ -189,7 +205,7 @@ class InvarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         return super().deserialize(data)
 
     def _net_out_dim(self) -> int:
@@ -224,6 +240,7 @@ class InvarFitting(GeneralFitting):
         h2: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        vacuum_descriptor: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -246,6 +263,18 @@ class InvarFitting(GeneralFitting):
             The frame parameter. shape: nf x nfp. nfp being `numb_fparam`
         aparam
             The atomic parameter. shape: nf x nloc x nap. nap being `numb_aparam`
+        vacuum_descriptor
+            The descriptor of an isolated atom of every type, required by
+            ``vacuum_ref``. shape: ntypes x nd
 
         """
-        return self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        return self._call_common(
+            descriptor,
+            atype,
+            gr,
+            g2,
+            h2,
+            fparam,
+            aparam,
+            vacuum_descriptor=vacuum_descriptor,
+        )

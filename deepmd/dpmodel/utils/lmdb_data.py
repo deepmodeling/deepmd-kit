@@ -9,10 +9,10 @@ import dataclasses
 import logging
 import math
 import multiprocessing
-import os
 import signal
 import threading
 import time
+import warnings
 from collections.abc import (
     Callable,
     Iterable,
@@ -49,6 +49,10 @@ from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.loggers import (
+    WorkerLogConfig,
+    is_node_main_process,
+)
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -56,11 +60,6 @@ from deepmd.utils.data import (
 )
 
 log = logging.getLogger(__name__)
-
-
-def _is_local_rank_zero() -> bool:
-    """Whether this process owns node-local operational logging."""
-    return int(os.environ.get("LOCAL_RANK", "0")) == 0
 
 
 # LMDB key → DeePMD convention
@@ -551,7 +550,7 @@ def _scan_availability_index(
     _AvailabilityIndex
         Compact signature IDs aligned with domain positions.
     """
-    report_progress = _is_local_rank_zero()
+    report_progress = is_node_main_process()
     if report_progress:
         log.info(
             "LMDB label-availability scan started: dataset=%s, frames=%d, labels=%s",
@@ -609,11 +608,10 @@ def _scan_availability_index(
 def _scan_lmdb_path_sequential(
     lmdb_path: str,
     availability_keys: Sequence[str],
-    log_level: int,
+    log_config: WorkerLogConfig,
 ) -> _AvailabilityIndex:
     """Scan a complete LMDB under a sequential-readahead environment."""
-    logging.basicConfig(level=log_level)
-    logging.getLogger().setLevel(log_level)
+    log_config.configure()
     environment = lmdb.open(
         lmdb_path,
         readonly=True,
@@ -651,7 +649,7 @@ def _scan_lmdb_path_in_worker(
             _scan_lmdb_path_sequential,
             lmdb_path,
             availability_keys,
-            log.getEffectiveLevel(),
+            WorkerLogConfig.capture(),
         ).result()
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
@@ -690,6 +688,12 @@ class LmdbDecodeConfig:
         Registered data requirements keyed by field name.
     dataset
         Dataset identifier used in frame-level diagnostics.
+    frame_transform
+        Optional callable applied to every decoded frame, as
+        ``transform(frame, frame_index)``. Self-supervised objectives corrupt
+        their inputs and derive their labels here, before the model runs, which
+        is the only place that works for a backend whose loss never sees the
+        model. ``None``, the default, leaves decoding unchanged.
     """
 
     ntypes: int
@@ -697,6 +701,7 @@ class LmdbDecodeConfig:
     type_remap: np.ndarray | None
     data_requirements: dict[str, Any]
     dataset: str = "<unknown LMDB>"
+    frame_transform: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -967,6 +972,12 @@ def decode_lmdb_frame(
             "fid",
         }
     )
+    if config.frame_transform is not None:
+        # Ahead of the requirement checks below: a self-supervised transform is
+        # what produces the fields those checks look for, by corrupting the
+        # input it was handed.
+        frame = config.frame_transform(frame, original_key)
+
     for key in list(frame):
         if key.startswith("find_") or key in structural_keys or key in requirements:
             continue
@@ -2458,7 +2469,7 @@ class LmdbDataReader:
             and cache_entry[1] == 1
         )
         if not owns_environment_exclusively:
-            if _is_local_rank_zero():
+            if is_node_main_process():
                 log.info(
                     "LMDB label-availability scan uses an isolated sequential "
                     "reader because the random-read environment is shared: %s",
@@ -2596,7 +2607,30 @@ class LmdbDataReader:
             log.info(f"  nloc groups: {row}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        """No-op for now."""
+        """Deprecated no-op kept for backward compatibility.
+
+        The denoising pipeline this hook belonged to was removed; the method
+        never did anything and is retained only so that existing callers do
+        not break. It will be removed in a future release.
+        """
+        warnings.warn(
+            "LmdbDataReader.set_noise() is deprecated and does nothing. "
+            "The denoising data pipeline it belonged to has been removed; "
+            "drop the call. This shim will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    def set_frame_transform(
+        self, transform: Callable[[dict[str, Any], int], dict[str, Any]] | None
+    ) -> None:
+        """Install a per-frame transform, or remove it with ``None``.
+
+        The transform runs on every decoded frame, in whichever process decodes
+        it, and receives ``(frame, frame_index)``. Self-supervised training uses
+        it to corrupt inputs and derive labels before the model runs.
+        """
+        self._decode_config.frame_transform = transform
 
     # --- Properties ---
 
