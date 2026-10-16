@@ -2296,6 +2296,13 @@ class Trainer(AbstractTrainer):
                 )
             else:
                 # --- Normal resume (init_model / restart) --------------------
+                # Keep the effective model parameters from the current
+                # construction.  Legacy checkpoints omit property
+                # ``distinguish_types``; restoring their extra state here
+                # would make a subsequent save lose an explicit config value.
+                state_dict["_extra_state"] = self._unwrapped.state_dict()[
+                    "_extra_state"
+                ]
                 self._unwrapped.load_state_dict(state_dict)
 
             if shared_links is not None:
