@@ -1096,7 +1096,9 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             cmask = chan < CW
             chan_c = tl.where(cmask, chan, 0)
         else:
-            cmask = None
+            # CP == CW here; a real always-true mask keeps the variable
+            # uniformly defined instead of a None placeholder.
+            cmask = chan < CP
             chan_c = chan
         didx = tl.arange(0, DP)
         # Every edge of the segment shares this source row, so ``x`` is

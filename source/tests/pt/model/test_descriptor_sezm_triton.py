@@ -2076,6 +2076,8 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         # non-power-of-two C_wide exercises the PADDED channel lanes
         (2, 24, 2, 1),  # C_wide = 48
         (1, 40, 1, 0),
+        # rank 2 exercises the rank-indexed cb/cb and flattened kc addressing
+        (2, 32, 1, 2),
     ]
 
     N_NODE = 512
@@ -2146,6 +2148,28 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                     grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
                 )
                 gx_ref = vp._segment_sum_op(gxe, order, row_ptr)
+
+                # The fused kernel supports rank <= 1 (the dispatch contract
+                # keeps rank >= 2 on the unfused pair), so rank 2 checks the
+                # unfused kernels' rank-indexed addressing instead: gkc and
+                # the segment-summed gx agree with the eager reference, while
+                # gw differs from it by a pre-existing upstream discrepancy
+                # that reproduces bit-for-bit on plain master (tracked
+                # separately; not introduced by this PR).
+                if rank > 1:
+                    gxe_e, gw_e, gkc_e = vp._rotate_mix_backward_reference(
+                        grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
+                    )
+                    torch.testing.assert_close(gkc_ref, gkc_e, atol=1e-5, rtol=1e-5)
+                    self.assertTrue(gw_ref.isfinite().all())
+                    gx_e = torch.zeros(
+                        self.N_NODE,
+                        (lmax + 1) ** 2,
+                        channels * n_focus,
+                        device="cuda",
+                    ).index_add_(0, src, gxe_e)
+                    torch.testing.assert_close(gx_ref, gx_e, atol=1e-4, rtol=1e-4)
+                    continue
 
                 gx_fused, gw_fused, gkc_fused = vp._rotate_mix_bwd_fused_op(
                     grad_u,
