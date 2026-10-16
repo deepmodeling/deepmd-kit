@@ -95,7 +95,14 @@ def _conformers(record: dict[str, Any], add_2d_conformer: bool) -> list[np.ndarr
             AllChem,
         )
 
-        mol = Chem.AddHs(Chem.MolFromSmiles(record["smi"]))
+        parsed = Chem.MolFromSmiles(record["smi"])
+        if parsed is None:
+            # RDKit returns None for a SMILES it cannot parse, and AddHs would
+            # raise on it, aborting the whole conversion. The 3D conformers
+            # are still good, so the molecule keeps them and goes without the
+            # 2D one.
+            return conformers
+        mol = Chem.AddHs(parsed)
         AllChem.Compute2DCoords(mol)
         coords = mol.GetConformer().GetPositions().astype(np.float32)
         conformers.append(coords[: len(record["atoms"])])
