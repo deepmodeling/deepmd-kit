@@ -44,6 +44,10 @@ from deepmd.pt_expt.utils.edge_schema import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -432,14 +436,20 @@ class SeZMSpinModel(SeZMModel):
         self,
         merged: Callable[[], list[dict[str, Any]]] | list[dict[str, Any]],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change output bias using spin-expanded sampled data."""
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         super().change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(

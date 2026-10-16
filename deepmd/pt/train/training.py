@@ -2600,6 +2600,7 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Callable[[], Any],
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> Any:
     from deepmd.pt.model.model.dp_model import (
         DPModelCommon,
@@ -2610,4 +2611,5 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
+        preset_out_bias=preset_out_bias,
     )

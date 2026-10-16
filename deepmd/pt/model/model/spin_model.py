@@ -27,6 +27,10 @@ from deepmd.pt.utils.utils import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -518,6 +522,7 @@ class SpinModel(torch.nn.Module):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
         """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -536,12 +541,17 @@ class SpinModel(torch.nn.Module):
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
         """
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         self.backbone_model.change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(
