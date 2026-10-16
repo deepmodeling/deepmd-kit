@@ -1440,10 +1440,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             ``default_chg_spin`` when configured, shape validation,
             broadcast to ``nf``); ``call_graph`` is the one owner of that
             step on the graph route. ``nf`` is recovered from
-            ``graph.n_node.shape[0]`` (a static shape, safe under
-            ``torch.export``); each frame's node block must therefore hold
-            exactly ``N // nf`` nodes, which single-rank carry-all graphs
-            built from a rectangular ``(nf, nloc)`` input always satisfy.
+            ``graph.n_node.shape[0]``; each node receives the condition of
+            its frame according to the actual counts in ``graph.n_node``,
+            including when those counts differ between frames.
 
         Returns
         -------
