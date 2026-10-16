@@ -69,8 +69,8 @@ def _reference(
     n_slot = radial.shape[1]
     counts = [2 * ell + 1 for ell in range(1, n_slot + 1)]
     slot_of_row = torch.repeat_interleave(
-        torch.arange(n_slot, device=zonal.device),
-        torch.tensor(counts, device=zonal.device),
+        torch.arange(n_slot, device=zonal.device, dtype=torch.long),
+        torch.tensor(counts, device=zonal.device, dtype=torch.long),
     )
     msg = zonal.unsqueeze(-1) * radial[:, slot_of_row]  # (E, R, C)
     out = zonal.new_zeros(n_nodes, n_row + 1, radial.shape[2])
@@ -408,8 +408,8 @@ def _backward_reference(
     n_slot = radial.shape[1]
     counts = [2 * ell + 1 for ell in range(1, n_slot + 1)]
     slot_of_row = torch.repeat_interleave(
-        torch.arange(n_slot, device=zonal.device),
-        torch.tensor(counts, device=zonal.device),
+        torch.arange(n_slot, device=zonal.device, dtype=torch.long),
+        torch.tensor(counts, device=zonal.device, dtype=torch.long),
     )
     radial_rows = radial[:, slot_of_row]
     gz = (g_msg * radial_rows).sum(-1)

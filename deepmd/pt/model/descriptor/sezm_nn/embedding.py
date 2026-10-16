@@ -239,13 +239,14 @@ class GeometricInitialEmbedding(nn.Module):
                 gie_zonal_scatter,
             )
 
+            index_device = self.non_scalar_row_index.device
             packed_rows = torch.arange(
-                1, self.ebed_dim, device=self.non_scalar_row_index.device
+                1, self.ebed_dim, device=index_device, dtype=torch.long
             )
             counts = [2 * ell + 1 for ell in range(1, self.lmax + 1)]
             packed_slots = torch.repeat_interleave(
-                torch.arange(self.lmax, device=self.non_scalar_row_index.device),
-                torch.tensor(counts, device=self.non_scalar_row_index.device),
+                torch.arange(self.lmax, device=index_device, dtype=torch.long),
+                torch.tensor(counts, device=index_device, dtype=torch.long),
             )
             if (
                 GIE_SCATTER_TRITON_AVAILABLE
