@@ -8,8 +8,9 @@ backend:
 dp --pt-expt train input.json
 ```
 
-The model section selects the `Nano` grade with the named preset
-`dpa4c-nano-v20260911`. The preset supplies the 118-element `type_map`,
+The recommended new-training path selects the `Nano` grade with the named preset
+`dpa4c-nano-v20260911`. Available v20260911 grades are `nano`, `mini`, `neo`,
+`air`, and `plus`. The preset supplies the 118-element `type_map`,
 `descriptor` and `fitting_net`; the explicit water `type_map` replaces the
 element list, while `use_amp` and `seed` supply run-specific settings.
 
