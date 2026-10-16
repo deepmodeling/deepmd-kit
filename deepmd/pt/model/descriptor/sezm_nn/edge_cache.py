@@ -310,6 +310,7 @@ def build_edge_cache(
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
+    packed_wigner: bool = False,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from DeePMD padded neighbor list.
@@ -424,6 +425,7 @@ def build_edge_cache(
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
             build_full=build_wigner,
+            packed_wigner=packed_wigner,
         )  # (E, D, D), (E, D, D), (E, 4)
 
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)  # (E, C)
@@ -464,6 +466,7 @@ def build_edge_cache_from_edges(
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_wigner: bool = True,
+    packed_wigner: bool = False,
     node_partial_exchange: Callable[[torch.Tensor], torch.Tensor] | None = None,
     fused_radial: FusedRadialFn | None = None,
     fused_wigner: WignerCalculatorFn | None = None,
@@ -566,6 +569,7 @@ def build_edge_cache_from_edges(
             random_gamma=random_gamma,
             wigner_calc=fused_wigner if fused_wigner is not None else wigner_calc,
             build_full=build_wigner,
+            packed_wigner=packed_wigner,
         )  # (E, D, D), (E, D, D), (E, 4)
 
     # === Step 5. Edge type features ===
@@ -614,6 +618,7 @@ def _build_edge_wigner(
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
     build_full: bool = True,
+    packed_wigner: bool = False,
 ) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]:
     """
     Build packed Wigner-D blocks from edge vectors.
@@ -636,6 +641,12 @@ def _build_edge_wigner(
         False (all message-passing blocks take the Cartesian path), only the
         quaternion is returned and the blocks are ``None``; the geometric
         initial embedding reconstructs the zonal coupling from the quaternion.
+    packed_wigner
+        Whether every selected rotation consumer addresses the banded
+        layout. The banded storage is only chosen when this holds; any
+        dense-layout consumer (the cuTile value path, the fused CUDA
+        convolution, or the plain SO2 reference path) keeps the dense
+        surfaces even with ``DP_PACKED_D_INFER`` set.
 
     Returns
     -------
@@ -668,6 +679,7 @@ def _build_edge_wigner(
     calc = getattr(wigner_calc, "__self__", wigner_calc)
     if (
         use_packed_d_infer()
+        and packed_wigner
         and callable(getattr(calc, "forward_band", None))
         and calc.band_supported()
     ):

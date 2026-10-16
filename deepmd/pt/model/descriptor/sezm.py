@@ -123,6 +123,27 @@ if TYPE_CHECKING:
 
 
 @BaseDescriptor.register("SeZM")
+def block_supports_packed_wigner(so2_conv: Any) -> bool:
+    """Whether one block's selected rotation consumers address the band.
+
+    The banded layout serves the Triton value path and the Triton
+    rotate-mix path (whose kernels address the band directly), together
+    with the attention aggregation and the GIE coupling that read the same
+    tensor. Any dense-layout consumer -- the cuTile value path, the fused
+    CUDA convolution, the CUDA training value path, or the plain SO2
+    reference path (no Triton binding at all) -- keeps the dense surfaces.
+    """
+    return (
+        getattr(so2_conv, "_cutile_value_path", None) is None
+        and getattr(so2_conv, "_cuda_conv_fn", None) is None
+        and getattr(so2_conv, "_cuda_value_train", None) is None
+        and (
+            getattr(so2_conv, "_triton_value_path", None) is not None
+            or getattr(so2_conv, "_triton_rotate_mix", None) is not None
+        )
+    )
+
+
 @BaseDescriptor.register("sezm")
 @BaseDescriptor.register("DPA4")
 @BaseDescriptor.register("dpa4")
@@ -1086,6 +1107,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             and block.so2_conv._flash_atten_trains
             for block in self.blocks
         )
+        # Banded storage additionally requires every selected rotation
+        # consumer to address the band (see ``block_supports_packed_wigner``).
+        self._packed_wigner_consumers = bool(self.blocks) and all(
+            block_supports_packed_wigner(block.so2_conv) for block in self.blocks
+        )
 
         # The envelope and the radial basis are both functions of the pair
         # distance and are cheap enough that the compiler inlines them into
@@ -1351,6 +1377,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
+                packed_wigner=self._packed_wigner_consumers,
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1652,6 +1679,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
+                packed_wigner=self._packed_wigner_consumers,
                 node_partial_exchange=node_partial_exchange,
             )
 
