@@ -2,6 +2,9 @@
 from .base_fitting import (
     BaseFitting,
 )
+from .density import (
+    DensityFittingNet,
+)
 from .dipole import (
     DipoleFittingNet,
 )
@@ -31,6 +34,7 @@ from .sezm_ener import (
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",
+    "DensityFittingNet",
     "DipoleFittingNet",
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
