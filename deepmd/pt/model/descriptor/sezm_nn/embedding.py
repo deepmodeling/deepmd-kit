@@ -326,8 +326,13 @@ class GeometricInitialEmbedding(nn.Module):
         # scale stays outside so its cotangent keeps flowing through the
         # traced graph, while the (E, D-1, C) message itself never leaves the
         # kernel's registers in either direction.
+        # Training keeps the reference composition: its autograd is exact
+        # to all orders, while the fused operator's backward registers no
+        # next-derivative formula (force-loss training differentiates the
+        # backward itself).
         if (
             self._triton_scatter is not None
+            and not self.training
             and spin_l1_message is None
             and edge_cache.edge_src_gate is None
             and edge_cache.csr_cache is not None

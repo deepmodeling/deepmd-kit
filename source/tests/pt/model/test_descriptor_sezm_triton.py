@@ -2060,10 +2060,10 @@ class TestSeZMGieScatter(unittest.TestCase):
 
     _ROWS = 15  # non-scalar rows at lmax=3: 3+5+7
 
-    def _make_case(self, n_edge, n_nodes, generator, view_radial=False):
+    def _make_case(self, n_edge, n_nodes, generator, view_radial=False, channels=32):
         """Random operator inputs; a sliced radial view when asked."""
         zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
-        parent = torch.randn(n_edge, 4, 32, device="cuda", generator=generator)
+        parent = torch.randn(n_edge, 4, channels, device="cuda", generator=generator)
         radial = parent[:, 1:, :] if view_radial else parent[:, 1:, :].contiguous()
         dst = torch.randint(0, n_nodes, (n_edge,), device="cuda", generator=generator)
         order = torch.argsort(dst, dim=0, stable=True)
@@ -2084,7 +2084,7 @@ class TestSeZMGieScatter(unittest.TestCase):
             torch.tensor(counts, device=zonal.device),
         )
         msg = zonal.unsqueeze(-1) * radial[:, slot_of_row]
-        out = zonal.new_zeros(n_nodes, self._ROWS + 1, 32)
+        out = zonal.new_zeros(n_nodes, self._ROWS + 1, radial.shape[2])
         out[:, 1:, :].index_add_(0, dst, msg)
         return out
 
@@ -2095,11 +2095,12 @@ class TestSeZMGieScatter(unittest.TestCase):
         )
 
         generator = torch.Generator(device="cuda").manual_seed(5)
-        for n_edge, n_nodes in ((4096, 128), (777, 33)):
+        # channels = 40 (non-power-of-two) rides the padded channel block
+        for n_edge, n_nodes, channels in ((4096, 128, 32), (777, 33, 40)):
             for view_radial in (False, True):
                 with self.subTest(n_edge=n_edge, n_nodes=n_nodes, view=view_radial):
                     zonal, radial, dst, order, row_ptr = self._make_case(
-                        n_edge, n_nodes, generator, view_radial
+                        n_edge, n_nodes, generator, view_radial, channels
                     )
                     z1 = zonal.clone().requires_grad_(True)
                     r1 = radial.clone().requires_grad_(True)
@@ -2234,3 +2235,19 @@ class TestSeZMGieScatter(unittest.TestCase):
         torch.testing.assert_close(out_fused, out_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(gd_fused, gd_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(gr_fused, gr_ref, atol=1e-5, rtol=1e-5)
+
+        # Training keeps the reference composition even with the operator
+        # bound: its backward carries no next-derivative formula, so the
+        # dispatch must stay out of the fused path.
+        module.train()
+        dp = d_full.clone().requires_grad_(True)
+        rad = radial.clone().requires_grad_(True)
+        out_train = module(
+            n_nodes=n_nodes,
+            edge_cache=make_cache(dp),
+            radial_feat=rad,
+        )
+        gdp, grad_train = torch.autograd.grad(out_train, (dp, rad), cotangent)
+        torch.testing.assert_close(out_train, out_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gdp, gd_ref, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(grad_train, gr_ref, atol=1e-5, rtol=1e-5)
