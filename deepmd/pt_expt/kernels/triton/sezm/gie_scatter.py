@@ -100,11 +100,14 @@ def _gie_scatter_fwd_kernel(
     B1: tl.constexpr,
     B2: tl.constexpr,
     N_ROW: tl.constexpr,
+    BC: tl.constexpr,
 ):
+    # tl.arange needs a power-of-two extent, so channels ride a padded block
     n = tl.program_id(0)
     start = tl.load(row_ptr_ptr + n).to(tl.int64)
     end = tl.load(row_ptr_ptr + n + 1).to(tl.int64)
-    offs_c = tl.arange(0, C)
+    offs_c = tl.arange(0, BC)
+    cmask = offs_c < C
     # One register accumulator per degree group (row counts are
     # compile-time constants and each group's rows are contiguous)
     r0 = tl.arange(0, P0)
@@ -113,9 +116,9 @@ def _gie_scatter_fwd_kernel(
     m0 = r0 < R0
     m1 = r1 < R1
     m2 = r2 < R2
-    acc0 = tl.zeros((P0, C), dtype=tl.float32)
-    acc1 = tl.zeros((P1, C), dtype=tl.float32)
-    acc2 = tl.zeros((P2, C), dtype=tl.float32)
+    acc0 = tl.zeros((P0, BC), dtype=tl.float32)
+    acc1 = tl.zeros((P1, BC), dtype=tl.float32)
+    acc2 = tl.zeros((P2, BC), dtype=tl.float32)
     for e in range(start, end):
         # Edges inside a CSR segment map back to the original edge
         # order before zonal/radial can be read
@@ -127,28 +130,38 @@ def _gie_scatter_fwd_kernel(
         z0 = tl.load(zonal_ptr + z_base + B0 + r0, mask=m0, other=0.0)
         z1 = tl.load(zonal_ptr + z_base + B1 + r1, mask=m1, other=0.0)
         z2 = tl.load(zonal_ptr + z_base + B2 + r2, mask=m2, other=0.0)
-        rd0 = tl.load(radial_ptr + rad_base + 0 * r_stride1 + offs_c)
-        rd1 = tl.load(radial_ptr + rad_base + 1 * r_stride1 + offs_c)
-        rd2 = tl.load(radial_ptr + rad_base + 2 * r_stride1 + offs_c)
+        rd0 = tl.load(
+            radial_ptr + rad_base + 0 * r_stride1 + offs_c, mask=cmask, other=0.0
+        )
+        rd1 = tl.load(
+            radial_ptr + rad_base + 1 * r_stride1 + offs_c, mask=cmask, other=0.0
+        )
+        rd2 = tl.load(
+            radial_ptr + rad_base + 2 * r_stride1 + offs_c, mask=cmask, other=0.0
+        )
         acc0 += z0[:, None] * rd0[None, :]
         acc1 += z1[:, None] * rd1[None, :]
         acc2 += z2[:, None] * rd2[None, :]
     out_base = n * (N_ROW + 1) * C
-    tl.store(out_ptr + out_base + 0 * C + offs_c, tl.zeros((C,), dtype=tl.float32))
+    tl.store(
+        out_ptr + out_base + 0 * C + offs_c,
+        tl.zeros((BC,), dtype=tl.float32),
+        mask=cmask,
+    )
     tl.store(
         out_ptr + out_base + ((1 + B0 + r0) * C)[:, None] + offs_c[None, :],
         acc0,
-        mask=m0[:, None],
+        mask=m0[:, None] & cmask[None, :],
     )
     tl.store(
         out_ptr + out_base + ((1 + B1 + r1) * C)[:, None] + offs_c[None, :],
         acc1,
-        mask=m1[:, None],
+        mask=m1[:, None] & cmask[None, :],
     )
     tl.store(
         out_ptr + out_base + ((1 + B2 + r2) * C)[:, None] + offs_c[None, :],
         acc2,
-        mask=m2[:, None],
+        mask=m2[:, None] & cmask[None, :],
     )
 
 
@@ -179,11 +192,14 @@ def _gie_scatter_bwd_kernel(
     B2: tl.constexpr,
     N_ROW: tl.constexpr,
     BLOCK_E: tl.constexpr,
+    BC: tl.constexpr,
 ):
+    # tl.arange needs a power-of-two extent, so channels ride a padded block
     pid = tl.program_id(0)
     offs_e = (pid * BLOCK_E + tl.arange(0, BLOCK_E)).to(tl.int64)
     mask_e = offs_e < n_edge
-    offs_c = tl.arange(0, C)
+    offs_c = tl.arange(0, BC)
+    cmask = offs_c < C
     r0 = tl.arange(0, P0)
     r1 = tl.arange(0, P1)
     r2 = tl.arange(0, P2)
@@ -196,17 +212,17 @@ def _gie_scatter_bwd_kernel(
     g_base = (d * g_nstride + g_rstride)[:, None, None]
     g0 = tl.load(
         grad_ptr + g_base + ((B0 + r0) * C)[None, :, None] + offs_c[None, None, :],
-        mask=mask_e[:, None, None] & m0[None, :, None],
+        mask=mask_e[:, None, None] & m0[None, :, None] & cmask[None, None, :],
         other=0.0,
     )
     g1 = tl.load(
         grad_ptr + g_base + ((B1 + r1) * C)[None, :, None] + offs_c[None, None, :],
-        mask=mask_e[:, None, None] & m1[None, :, None],
+        mask=mask_e[:, None, None] & m1[None, :, None] & cmask[None, None, :],
         other=0.0,
     )
     g2 = tl.load(
         grad_ptr + g_base + ((B2 + r2) * C)[None, :, None] + offs_c[None, None, :],
-        mask=mask_e[:, None, None] & m2[None, :, None],
+        mask=mask_e[:, None, None] & m2[None, :, None] & cmask[None, None, :],
         other=0.0,
     )
     z_base = (offs_e * z_stride)[:, None]
@@ -252,9 +268,9 @@ def _gie_scatter_bwd_kernel(
         gz_ptr + gz_base + B2 + r2[None, :], gz2, mask=mask_e[:, None] & m2[None, :]
     )
     gr_store = (offs_e * SLOTS * C)[:, None] + offs_c[None, :]
-    tl.store(gr_ptr + gr_store + 0 * C, gr0, mask=mask_e[:, None])
-    tl.store(gr_ptr + gr_store + 1 * C, gr1, mask=mask_e[:, None])
-    tl.store(gr_ptr + gr_store + 2 * C, gr2, mask=mask_e[:, None])
+    tl.store(gr_ptr + gr_store + 0 * C, gr0, mask=mask_e[:, None] & cmask[None, :])
+    tl.store(gr_ptr + gr_store + 1 * C, gr1, mask=mask_e[:, None] & cmask[None, :])
+    tl.store(gr_ptr + gr_store + 2 * C, gr2, mask=mask_e[:, None] & cmask[None, :])
 
 
 def _forward_impl(
@@ -298,6 +314,7 @@ def _forward_impl(
         radial.stride(0),
         radial.stride(1),
         C=c,
+        BC=triton.next_power_of_2(c),
         SLOTS=len(counts),
         R0=counts[0],
         R1=counts[1],
@@ -359,6 +376,7 @@ def _backward_impl(
         radial.stride(0),
         radial.stride(1),
         C=c,
+        BC=triton.next_power_of_2(c),
         SLOTS=len(counts),
         R0=counts[0],
         R1=counts[1],
