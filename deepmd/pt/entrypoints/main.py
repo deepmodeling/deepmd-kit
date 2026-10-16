@@ -394,12 +394,15 @@ def train(
     # constructor default, so restart and init-model construction preserve the
     # checkpoint behavior.
     if init_model is not None or restart is not None:
-        resume_path = init_model or restart
-        resume_state_dict = torch.load(
-            resume_path, map_location=DEVICE, weights_only=True
-        )
-        if "model" in resume_state_dict:
-            resume_state_dict = resume_state_dict["model"]
+        if init_model is not None and use_pretrain_script:
+            resume_state_dict = init_state_dict
+        else:
+            resume_path = init_model or restart
+            resume_state_dict = torch.load(
+                resume_path, map_location=DEVICE, weights_only=True
+            )
+            if "model" in resume_state_dict:
+                resume_state_dict = resume_state_dict["model"]
         resume_model_params = resume_state_dict.get("_extra_state", {}).get(
             "model_params"
         )
