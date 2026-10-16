@@ -140,6 +140,7 @@ from deepmd.utils.out_stat import (
     ReduStatScanner,
 )
 from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
     normalize_pt_model_params,
 )
 
@@ -210,6 +211,17 @@ class Trainer:
         has_initial_state = resuming or init_frz_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
+        if resuming:
+            resume_state = torch.load(
+                resume_model, map_location="cpu", weights_only=True
+            )
+            if "model" in resume_state:
+                resume_state = resume_state["model"]
+            resume_model_params = resume_state.get("_extra_state", {}).get(
+                "model_params"
+            )
+            if isinstance(resume_model_params, dict):
+                apply_pt_checkpoint_defaults(model_params, resume_model_params)
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
 

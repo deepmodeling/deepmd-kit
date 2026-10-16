@@ -127,3 +127,102 @@ def normalize_pt_model_params(model_params: dict[str, Any]) -> dict[str, Any]:
             "compatibility."
         )
     return model_params
+
+
+def apply_pt_checkpoint_defaults(
+    model_params: dict[str, Any],
+    checkpoint_model_params: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Fill omitted compatibility fields in a model config from a checkpoint.
+
+    This is used before constructing a model for ``init_model`` and
+    ``restart_model``.  A checkpoint that predates the property fitting-net
+    metadata field represents ``distinguish_types=False``.  Only fields that
+    are omitted from both the current config and the checkpoint are filled, so
+    an explicit value in the current training input remains authoritative.
+
+    Parameters
+    ----------
+    model_params : dict[str, Any]
+        The model parameters that will be used to construct the new model.
+    checkpoint_model_params : Mapping[str, Any]
+        The raw ``_extra_state["model_params"]`` from the checkpoint.
+
+    Returns
+    -------
+    dict[str, Any]
+        ``model_params`` itself, after applying compatible defaults.
+    """
+    changed = False
+    seen: set[tuple[int, int]] = set()
+
+    def resolve_fitting_net(
+        fitting_net: Any,
+        shared_dict: Mapping[str, Any] | None,
+    ) -> Any:
+        if isinstance(fitting_net, str) and shared_dict is not None:
+            return shared_dict.get(fitting_net.split(":", 1)[0])
+        return fitting_net
+
+    def visit(
+        value: Any,
+        checkpoint_value: Any,
+        shared_dict: Mapping[str, Any] | None = None,
+        checkpoint_shared_dict: Mapping[str, Any] | None = None,
+    ) -> None:
+        nonlocal changed
+        if isinstance(value, MutableMapping) and isinstance(checkpoint_value, Mapping):
+            pair = (id(value), id(checkpoint_value))
+            if pair in seen:
+                return
+            seen.add(pair)
+
+            local_shared_dict = value.get("shared_dict")
+            if not isinstance(local_shared_dict, Mapping):
+                local_shared_dict = shared_dict
+            local_checkpoint_shared_dict = checkpoint_value.get("shared_dict")
+            if not isinstance(local_checkpoint_shared_dict, Mapping):
+                local_checkpoint_shared_dict = checkpoint_shared_dict
+
+            fitting_net = resolve_fitting_net(
+                value.get("fitting_net"), local_shared_dict
+            )
+            checkpoint_fitting_net = resolve_fitting_net(
+                checkpoint_value.get("fitting_net"), local_checkpoint_shared_dict
+            )
+            if (
+                isinstance(fitting_net, MutableMapping)
+                and isinstance(checkpoint_fitting_net, Mapping)
+                and str(fitting_net.get("type", "")).lower() == "property"
+                and str(checkpoint_fitting_net.get("type", "")).lower() == "property"
+                and "distinguish_types" not in fitting_net
+                and "distinguish_types" not in checkpoint_fitting_net
+            ):
+                fitting_net["distinguish_types"] = False
+                changed = True
+
+            for key, child in value.items():
+                if key in checkpoint_value:
+                    visit(
+                        child,
+                        checkpoint_value[key],
+                        local_shared_dict,
+                        local_checkpoint_shared_dict,
+                    )
+        elif isinstance(value, list) and isinstance(checkpoint_value, list):
+            for child, checkpoint_child in zip(value, checkpoint_value, strict=False):
+                visit(
+                    child,
+                    checkpoint_child,
+                    shared_dict,
+                    checkpoint_shared_dict,
+                )
+
+    visit(model_params, checkpoint_model_params)
+    if changed:
+        log.warning(
+            "The `distinguish_types` option is missing from a property fitting "
+            "network in the model config and checkpoint; defaulting to False "
+            "for backward compatibility."
+        )
+    return model_params

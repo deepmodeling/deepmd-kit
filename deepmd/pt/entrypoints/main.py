@@ -95,6 +95,7 @@ from deepmd.utils.model_preset import (
     expand_model_preset,
 )
 from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
     normalize_pt_model_params,
 )
 from deepmd.utils.stat_file import (
@@ -387,6 +388,23 @@ def train(
                     init_frz_model, map_location=DEVICE
                 ).get_model_def_script()
             )
+
+    # A legacy checkpoint may omit property ``distinguish_types``.  Apply its
+    # compatibility default before argcheck fills omitted input fields with the
+    # constructor default, so restart and init-model construction preserve the
+    # checkpoint behavior.
+    if init_model is not None or restart is not None:
+        resume_path = init_model or restart
+        resume_state_dict = torch.load(
+            resume_path, map_location=DEVICE, weights_only=True
+        )
+        if "model" in resume_state_dict:
+            resume_state_dict = resume_state_dict["model"]
+        resume_model_params = resume_state_dict.get("_extra_state", {}).get(
+            "model_params"
+        )
+        if isinstance(resume_model_params, dict):
+            apply_pt_checkpoint_defaults(config["model"], resume_model_params)
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")

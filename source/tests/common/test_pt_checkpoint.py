@@ -4,6 +4,7 @@
 import logging
 
 from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
     normalize_pt_model_params,
 )
 
@@ -59,3 +60,30 @@ def test_normalize_pt_model_params_preserves_explicit_and_non_property_values(
     assert model_params["fitting_net"]["distinguish_types"] is True
     assert "distinguish_types" not in model_params["other_fitting"]
     assert not caplog.records
+
+
+def test_apply_pt_checkpoint_defaults_preserves_explicit_config_values(caplog) -> None:
+    checkpoint_params = {
+        "fitting_net": {"type": "property", "property_name": "foo"},
+    }
+    model_params = {
+        "fitting_net": {"type": "property", "property_name": "foo"},
+    }
+
+    with caplog.at_level(logging.WARNING, logger="deepmd.utils.pt_checkpoint"):
+        apply_pt_checkpoint_defaults(model_params, checkpoint_params)
+
+    assert model_params["fitting_net"]["distinguish_types"] is False
+    assert "model config and checkpoint" in caplog.text
+
+    explicit_params = {
+        "fitting_net": {
+            "type": "property",
+            "property_name": "foo",
+            "distinguish_types": True,
+        },
+    }
+    with caplog.at_level(logging.WARNING, logger="deepmd.utils.pt_checkpoint"):
+        apply_pt_checkpoint_defaults(explicit_params, checkpoint_params)
+
+    assert explicit_params["fitting_net"]["distinguish_types"] is True

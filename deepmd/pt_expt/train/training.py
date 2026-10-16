@@ -152,6 +152,7 @@ from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
 from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
     normalize_pt_model_params,
 )
 from deepmd.utils.stat_file import (
@@ -1798,6 +1799,17 @@ class Trainer(AbstractTrainer):
         self.restart_training = restart_model is not None
 
         model_params = config["model"]
+        if resuming and not resume_model.endswith((".pte", ".pt2")):
+            resume_state = torch.load(
+                resume_model, map_location="cpu", weights_only=True
+            )
+            if "model" in resume_state:
+                resume_state = resume_state["model"]
+            resume_model_params = resume_state.get("_extra_state", {}).get(
+                "model_params"
+            )
+            if isinstance(resume_model_params, dict):
+                apply_pt_checkpoint_defaults(model_params, resume_model_params)
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}

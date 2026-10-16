@@ -40,6 +40,7 @@ from deepmd.utils.data_system import (
     process_systems,
 )
 from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
     normalize_pt_model_params,
 )
 from deepmd.utils.stat_file import (
@@ -356,6 +357,22 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             config["model"] = normalize_pt_model_params(
                 init_state_dict["_extra_state"]["model_params"]
             )
+
+        # Preserve legacy property-checkpoint semantics before argcheck adds
+        # the constructor default for an omitted ``distinguish_types`` field.
+        if options.init_model is not None or options.restart is not None:
+            resume_path = options.init_model or options.restart
+            if not resume_path.endswith((".pte", ".pt2")):
+                resume_state_dict = torch.load(
+                    resume_path, map_location=DEVICE, weights_only=True
+                )
+                if "model" in resume_state_dict:
+                    resume_state_dict = resume_state_dict["model"]
+                resume_model_params = resume_state_dict.get("_extra_state", {}).get(
+                    "model_params"
+                )
+                if isinstance(resume_model_params, dict):
+                    apply_pt_checkpoint_defaults(config["model"], resume_model_params)
 
         return config
 
