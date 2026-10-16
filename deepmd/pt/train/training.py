@@ -222,6 +222,7 @@ class Trainer:
             )
             if isinstance(resume_model_params, dict):
                 apply_pt_checkpoint_defaults(model_params, resume_model_params)
+            del resume_state
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
 
