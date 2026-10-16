@@ -2257,21 +2257,42 @@ class TestSeZMStackBwdFused(unittest.TestCase):
             if old is not None:
                 os.environ["DP_STACK_BWD_FUSED_INFER"] = old
 
-    def test_wide_channels_fall_back(self):
-        """``Cf >= GATE_BMM_MIN_FOCUS_DIM`` routes through cuBLAS, not fusion."""
+    def test_wide_channels_fall_back_with_flag_on(self):
+        """``Cf >= GATE_BMM_MIN_FOCUS_DIM`` routes through cuBLAS, not fusion.
+
+        The flag is enabled so the fallback is the guard's doing, not the
+        flag's: zero fused launches with the flag on is the contract.
+        """
         from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
             GATE_BMM_MIN_FOCUS_DIM,
         )
 
-        calls, out = self._record_launches(2, GATE_BMM_MIN_FOCUS_DIM)
-        self.assertEqual(calls, [])
-        self.assertTrue(torch.isfinite(out[0]).all())
+        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+        try:
+            os.environ["DP_STACK_BWD_FUSED_INFER"] = "1"
+            calls, out = self._record_launches(2, GATE_BMM_MIN_FOCUS_DIM)
+            self.assertEqual(calls, [])
+            self.assertTrue(torch.isfinite(out[0]).all())
+        finally:
+            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+            if old is not None:
+                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
 
-    def test_non_fp32_fall_back(self):
-        """The fused kernel assumes fp32 rounding; other dtypes keep the relay."""
-        calls, out = self._record_launches(3, 32, dtype=torch.bfloat16)
-        self.assertEqual(calls, [])
-        self.assertTrue(torch.isfinite(out[0]).all())
+    def test_non_fp32_fall_back_with_flag_on(self):
+        """The fused kernel assumes fp32 rounding; other dtypes keep the relay.
+
+        Scoped with the flag enabled for the same reason as above.
+        """
+        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+        try:
+            os.environ["DP_STACK_BWD_FUSED_INFER"] = "1"
+            calls, out = self._record_launches(3, 32, dtype=torch.bfloat16)
+            self.assertEqual(calls, [])
+            self.assertTrue(torch.isfinite(out[0]).all())
+        finally:
+            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+            if old is not None:
+                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
 
 
 class TestSeZMStackBwdFlagParser(unittest.TestCase):
