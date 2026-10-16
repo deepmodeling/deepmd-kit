@@ -2055,7 +2055,9 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
     """The banded layout requires every rotation consumer to address it."""
 
     def _conv(self, **kw):
-        from types import SimpleNamespace
+        from types import (
+            SimpleNamespace,
+        )
 
         base = {
             "_cutile_value_path": None,
