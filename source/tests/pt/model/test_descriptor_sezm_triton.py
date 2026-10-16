@@ -2051,6 +2051,55 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
         self.assertTrue(tc.has_tile_config("flash_bwd_block", key))
 
 
+class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
+    """The banded layout requires every rotation consumer to address it."""
+
+    def _conv(self, **kw):
+        from types import SimpleNamespace
+
+        base = {
+            "_cutile_value_path": None,
+            "_cuda_conv_fn": None,
+            "_cuda_value_train": None,
+            "_triton_value_path": None,
+            "_triton_rotate_mix": None,
+        }
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_gate_matrix(self):
+        from deepmd.pt.model.descriptor.sezm import (
+            block_supports_packed_wigner,
+        )
+
+        self.assertTrue(
+            block_supports_packed_wigner(self._conv(_triton_value_path=object()))
+        )
+        self.assertTrue(
+            block_supports_packed_wigner(self._conv(_triton_rotate_mix=object()))
+        )
+        # cuTile, the fused CUDA convolution and the CUDA training path all
+        # address the dense layout and must block the banded storage
+        self.assertFalse(
+            block_supports_packed_wigner(
+                self._conv(_triton_value_path=object(), _cutile_value_path=object())
+            )
+        )
+        self.assertFalse(
+            block_supports_packed_wigner(
+                self._conv(_triton_value_path=object(), _cuda_conv_fn=object())
+            )
+        )
+        self.assertFalse(
+            block_supports_packed_wigner(
+                self._conv(_triton_value_path=object(), _cuda_value_train=object())
+            )
+        )
+        # no accelerated binding: the plain SO2 reference path reads the
+        # dense surface
+        self.assertFalse(block_supports_packed_wigner(self._conv()))
+
+
 if __name__ == "__main__":
     unittest.main()
 
