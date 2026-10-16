@@ -139,6 +139,9 @@ from deepmd.utils.finetune import (
 from deepmd.utils.out_stat import (
     ReduStatScanner,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -834,7 +837,9 @@ class Trainer:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
-                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model_params = normalize_pt_model_params(
+                        state_dict["_extra_state"]["model_params"]
+                    )
                     with scoped_env_defaults(eval_env_defaults):
                         pretrained_model = get_model_for_wrapper(
                             pretrained_model_params

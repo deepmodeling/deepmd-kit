@@ -151,6 +151,9 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 from deepmd.utils.stat_file import (
     StatFileSpec,
     open_stat_file,
@@ -2150,7 +2153,9 @@ class Trainer(AbstractTrainer):
                     pretrained_model_params = data["model_def_script"]
                     pretrained_model = BaseModel.deserialize(data["model"]).to(DEVICE)
                 else:
-                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model_params = normalize_pt_model_params(
+                        state_dict["_extra_state"]["model_params"]
+                    )
 
                 # Build pretrained model (single-task or multi-task)
                 if "model_dict" not in pretrained_model_params:

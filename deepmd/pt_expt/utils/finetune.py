@@ -20,6 +20,9 @@ from deepmd.utils.finetune import get_finetune_rule_single as get_finetune_rule_
 from deepmd.utils.finetune import (
     get_finetune_rules_from_model_params,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 __all__ = ["get_finetune_rule_single", "get_finetune_rules"]
 
@@ -41,7 +44,7 @@ def _load_model_params(finetune_model: str) -> dict[str, Any]:
         state_dict = torch.load(finetune_model, map_location=DEVICE, weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        return state_dict["_extra_state"]["model_params"]
+        return normalize_pt_model_params(state_dict["_extra_state"]["model_params"])
 
 
 def get_finetune_rules(

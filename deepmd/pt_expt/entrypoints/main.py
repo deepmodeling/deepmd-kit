@@ -39,6 +39,9 @@ from deepmd.utils.data_system import (
     get_data,
     process_systems,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 from deepmd.utils.stat_file import (
     StatFileSpec,
 )
@@ -350,7 +353,9 @@ class PTExptTrainEntrypoint(AbstractTrainEntrypoint):
             )
             if "model" in init_state_dict:
                 init_state_dict = init_state_dict["model"]
-            config["model"] = init_state_dict["_extra_state"]["model_params"]
+            config["model"] = normalize_pt_model_params(
+                init_state_dict["_extra_state"]["model_params"]
+            )
 
         return config
 
@@ -578,7 +583,7 @@ def freeze(
             f"Unsupported checkpoint format at '{model}': missing "
             "'_extra_state.model_params' in model state dict."
         )
-    model_params = extra_state["model_params"]
+    model_params = normalize_pt_model_params(extra_state["model_params"])
 
     multi_task = "model_dict" in model_params
     if multi_task:
@@ -745,7 +750,7 @@ def change_bias(
                 f"Unsupported checkpoint format at '{input_file}': missing "
                 "'_extra_state.model_params' in model state dict."
             )
-        model_params = extra_state["model_params"]
+        model_params = normalize_pt_model_params(extra_state["model_params"])
     elif input_file.endswith((".pte", ".pt2")):
         pte_data = serialize_from_file(input_file)
         from deepmd.pt_expt.model.model import (

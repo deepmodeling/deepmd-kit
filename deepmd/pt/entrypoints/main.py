@@ -94,6 +94,9 @@ from deepmd.utils.data_system import (
 from deepmd.utils.model_preset import (
     expand_model_preset,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 from deepmd.utils.stat_file import (
     StatFileSpec,
 )
@@ -375,7 +378,9 @@ def train(
             )
             if "model" in init_state_dict:
                 init_state_dict = init_state_dict["model"]
-            config["model"] = init_state_dict["_extra_state"]["model_params"]
+            config["model"] = normalize_pt_model_params(
+                init_state_dict["_extra_state"]["model_params"]
+            )
         else:
             config["model"] = json.loads(
                 torch.jit.load(
@@ -541,7 +546,9 @@ def change_bias(
             input_file, map_location=env.DEVICE, weights_only=True
         )
         model_state_dict = old_state_dict.get("model", old_state_dict)
-        model_params = model_state_dict["_extra_state"]["model_params"]
+        model_params = normalize_pt_model_params(
+            model_state_dict["_extra_state"]["model_params"]
+        )
     elif input_file.endswith(".pth"):
         old_model = torch.jit.load(input_file, map_location=env.DEVICE)
         model_params_string = old_model.get_model_def_script()
