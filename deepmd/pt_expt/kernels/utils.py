@@ -380,3 +380,49 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_rot_mix_bwd_fused() -> bool:
+    """Return whether the rotate+mix backward fuses its segment reduction.
+
+    The flag is controlled by the ``DP_ROT_MIX_BWD_FUSED_INFER`` environment
+    variable and is read when the backward runs (not at import time), so it
+    takes effect whenever it is set before evaluation; a compiled graph
+    bakes in the value read at trace time.  The Triton rotate+mix
+    path itself also binds for training (``triton_train_level >= 1`` with
+    wide channels), so this gate is not inference-only: the fused backward
+    engages whenever no higher-order gradient graph is being built.  When
+    the backward is itself differentiated (``create_graph=True``, e.g.
+    force-loss training), the dispatch falls back to the unfused backward +
+    segment-sum pair, which carry next-derivative formulas the fused
+    operator does not register.
+
+    When enabled, the SO(2) rotate+mix backward
+    (``sezm_triton::so2_rotate_mix_bwd_fused`` in
+    :mod:`.triton.sezm.so2_value_path`) replaces the two-kernel sequence
+    "write the per-edge dense node gradient ``gxe`` ``(E, D, C_wide)`` to
+    HBM, then read it back in ``sezm_triton::segment_sum``" with a single
+    source-segmented kernel: each program owns one source node's CSR
+    segment, recomputes the per-edge rotation backward in registers (the
+    same math as the edge-block kernel), and accumulates the node gradient
+    on chip, so ``gxe`` is never materialized.  At N=4096 (E ~ 646k,
+    ``C_wide = 64``) this eliminates a multi-GB HBM round-trip plus the
+    transient allocation.
+
+    ``grad_wigner``/``grad_kc`` keep the unfused kernel's per-edge math
+    (agreeing to fp32 rounding; instruction scheduling differs);
+    ``grad_x`` changes its per-segment accumulation order (chunked
+    ``tl.sum`` instead of strict sequential adds), so it agrees with the
+    unfused path only to fp32 rounding.  The fused kernel requires
+    ``rank <= 1`` (same regime as the edge-block variant); other shapes
+    keep the unfused path.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_ROT_MIX_BWD_FUSED_INFER`` is set to a truthy
+        value.
+    """
+    return (
+        os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER", "0").strip().lower() in _INFER_TRUE
+    )
