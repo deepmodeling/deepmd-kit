@@ -380,3 +380,28 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_stack_bwd_fused() -> bool:
+    """Return whether the mixing-stack backward fuses its per-layer chain.
+
+    The flag is controlled by the ``DP_STACK_BWD_FUSED_INFER`` environment
+    variable and is read when the backward traversal runs, so it takes effect
+    whenever it is set before evaluation; a compiled graph bakes in the value
+    observed at trace time.  When enabled, each gated layer's backward chain
+    (gate-sigmoid recompute, pointwise backward, transposed-weight GEMM) runs
+    as one kernel and the intermediate sigmoid and pre-activation-gradient
+    surfaces never reach HBM.  The fused kernel registers no next-derivative
+    formula, so the dispatch additionally requires that no higher-order
+    gradient graph is being built (``create_graph=True``, e.g. force-loss
+    training) and falls back to the unfused chain otherwise; the Triton stack
+    itself also binds for training, so the gate is not inference-only.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_STACK_BWD_FUSED_INFER`` is set to a truthy value.
+    """
+    return (
+        os.environ.get("DP_STACK_BWD_FUSED_INFER", "0").strip().lower() in _INFER_TRUE
+    )
