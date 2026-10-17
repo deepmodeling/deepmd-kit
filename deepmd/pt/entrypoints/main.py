@@ -29,6 +29,7 @@ from deepmd.env import (
     GLOBAL_CONFIG,
 )
 from deepmd.loggers.loggers import (
+    is_node_main_process,
     set_log_handles,
 )
 from deepmd.main import (
@@ -63,7 +64,6 @@ from deepmd.pt.utils.dataloader import (
 )
 from deepmd.pt.utils.env import (
     DEVICE,
-    LOCAL_RANK,
 )
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
@@ -86,6 +86,9 @@ from deepmd.utils.argcheck import (
 )
 from deepmd.utils.compat import (
     update_deepmd_input,
+)
+from deepmd.utils.data import (
+    min_pair_dist_requirement,
 )
 from deepmd.utils.data_system import (
     get_data,
@@ -338,7 +341,7 @@ def train(
 ) -> None:
     log.info("Configuration path: %s", input_file)
     env.CUSTOM_OP_USE_JIT = True
-    if LOCAL_RANK == 0:
+    if is_node_main_process():
         SummaryPrinter()()
     config = j_loader(input_file)
     config["model"] = expand_model_preset(config["model"])
@@ -615,12 +618,23 @@ def change_bias(
         )
         data_requirement = mock_loss.label_requirement
         data_requirement += training.get_additional_data_requirement(model_to_change)
+        # A bridged model draws its statistics under the frame filter of its
+        # window, as training does; no other filter applies here.
+        pair_filter = min_pair_dist_requirement(
+            model_params
+            if not multi_task
+            else model_params["model_dict"][model_branch],
+            0.0,
+        )
+        if pair_filter is not None:
+            data_requirement.append(pair_filter)
         data_single.add_data_requirement(data_requirement)
         nbatches = numb_batch if numb_batch != 0 else float("inf")
         sampled_data = make_stat_input(
             data_single.systems,
             data_single.dataloaders,
             nbatches,
+            min_pair_dist=0.0 if pair_filter is None else float(pair_filter.default),
         )
         updated_model = training.model_change_out_bias(
             model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode

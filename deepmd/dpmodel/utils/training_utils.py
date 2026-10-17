@@ -7,6 +7,10 @@ from collections.abc import (
 
 import numpy as np
 
+from deepmd.loggers import (
+    is_node_main_process,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -82,7 +86,7 @@ def resolve_model_prob(
     model_training_data : dict[str, object]
         Training data for each model.
     rank : int, optional
-        Process rank for distributed training, by default 0.
+        Global rank used for reporting when the launcher supplies no local rank.
 
     Returns
     -------
@@ -105,7 +109,7 @@ def resolve_model_prob(
             if model_key in model_prob_config:
                 model_prob[ii] = float(model_prob_config[model_key])
     else:
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "training.model_prob is not set or empty; defaulting to the "
                 "number of systems per task."

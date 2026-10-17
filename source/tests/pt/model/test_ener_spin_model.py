@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import io
 import unittest
 
 import numpy as np
@@ -397,6 +398,16 @@ class TestEnergyModelSpinSeA(unittest.TestCase, SpinTest):
         self.nsel = sum(model_params["descriptor"]["sel"])
         self.type_map = model_params["type_map"]
         self.model = get_model(model_params).to(env.DEVICE)
+
+    def test_jit_public_methods(self) -> None:
+        scripted = torch.jit.script(self.model)
+        archive = io.BytesIO()
+        torch.jit.save(scripted, archive)
+        archive.seek(0)
+        restored = torch.jit.load(archive, map_location=env.DEVICE)
+        self.assertEqual(restored.get_type_map(), self.type_map)
+        self.assertEqual(restored.get_ntypes(), len(self.type_map))
+        self.assertFalse(hasattr(restored, "adam_route_patterns"))
 
 
 class TestEnergyModelSpinDPA1(unittest.TestCase, SpinTest):

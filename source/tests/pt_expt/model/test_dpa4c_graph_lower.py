@@ -239,14 +239,16 @@ def test_padding_never_reaches_the_network() -> None:
     assert out["force"].shape == (len(nlocs), pad_nloc, 3)
 
 
-def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
+@pytest.mark.parametrize("vacuum_ref", [False, True])  # isolated-atom reference
+def test_compiled_lower_accepts_a_compacted_node_axis(vacuum_ref: bool) -> None:
     """The compiled artifact must not carry ``N == nframes * nloc`` as a guard.
 
     Its trace is taken on a uniform system, where the flat node axis happens to
     be the product of the frame count and the atom count. Dropping the padding
     breaks that relation, so this exercises the compiled lower on a batch where
     it no longer holds, and holds the result against the eager graph path,
-    which takes the same compaction.
+    which takes the same compaction. Both public layouts preserve force-loss
+    gradients, including the isolated-atom reference when it is enabled.
     """
     from deepmd.pt_expt.train.training import (
         _CompiledModel,
@@ -255,9 +257,15 @@ def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
 
     torch.manual_seed(0)
     config = _config()
+    config["type_map"] = ["O", "H"]
+    config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
     config["descriptor"]["channels"] = 8
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    config["descriptor"]["default_chg_spin"] = [0.0, 1.0]
     config["fitting_net"]["neuron"] = [8, 8]
+    config["fitting_net"]["vacuum_ref"] = vacuum_ref
     model = get_model(config).to(env.DEVICE).train()
+    assert model.get_fitting_net().needs_vacuum_descriptor() == vacuum_ref
     compiled = _CompiledModel(model, _get_model_structure_key(model))
 
     rng = np.random.default_rng(0)
@@ -282,10 +290,139 @@ def test_compiled_lower_accepts_a_compacted_node_axis() -> None:
     expected = model(*args)
 
     assert got["force"].shape == (len(nlocs), pad_nloc, 3)
-    torch.testing.assert_close(got["energy"], expected["energy"])
-    torch.testing.assert_close(got["force"], expected["force"])
     phantom = args[1] < 0
     assert bool(torch.all(got["force"][phantom] == 0.0))
+    ragged = compiled.forward_ragged(
+        args[0][~phantom],
+        args[1][~phantom],
+        torch.tensor(nlocs, dtype=torch.int64, device=env.DEVICE),
+        box=args[2],
+    )
+    parameters = tuple(p for p in model.parameters() if p.requires_grad)
+    expected_gradients = torch.autograd.grad(
+        expected["energy"].sum() + expected["force"].square().sum(),
+        parameters,
+        allow_unused=True,
+    )
+    for result, force in (
+        (got, expected["force"]),
+        (ragged, expected["force"][~phantom]),
+    ):
+        torch.testing.assert_close(result["energy"], expected["energy"])
+        torch.testing.assert_close(result["virial"], expected["virial"])
+        torch.testing.assert_close(result["force"], force)
+        gradients = torch.autograd.grad(
+            result["energy"].sum() + result["force"].square().sum(),
+            parameters,
+            allow_unused=True,
+        )
+        for actual, reference in zip(gradients, expected_gradients, strict=True):
+            if reference is None:
+                assert actual is None
+            else:
+                torch.testing.assert_close(actual, reference)
+
+
+def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
+    """A referenced task cannot supply the compiled graph of a plain task."""
+    from deepmd.pt_expt.train.training import (
+        _CompiledModel,
+        _detect_task_buffers,
+        _get_model_structure_key,
+    )
+
+    models = []
+    for has_preset in (True, False):
+        config = _config()
+        config["type_map"] = ["O", "H"]
+        config["descriptor"].update({"channels": 8, "lmax": 2})
+        config["fitting_net"].update(
+            {"neuron": [8, 8], "dim_case_embd": 2, "vacuum_ref": True}
+        )
+        if has_preset:
+            config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
+        model = get_model(config).to(env.DEVICE).train()
+        assert model.get_fitting_net().vacuum_ref == has_preset
+        if models:
+            model.get_descriptor().share_params(
+                models[0].get_descriptor(), 0, resume=True
+            )
+            model.get_fitting_net().share_params(
+                models[0].get_fitting_net(), 0, resume=True
+            )
+        models.append(model)
+
+    coord = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    atype = torch.tensor([0, 1, 1], device=env.DEVICE)
+    n_node = torch.tensor([3], device=env.DEVICE)
+    shared_graphs = {}
+    for model in models:
+        key = _get_model_structure_key(model)
+        group = [other for other in models if _get_model_structure_key(other) == key]
+        buffers = _detect_task_buffers(model, group)
+        compiled = _CompiledModel(
+            model,
+            key,
+            task_buf_order=tuple(buffers),
+            task_buffers=buffers,
+            compiled_by_structure=shared_graphs,
+        )
+        expected = model.forward_ragged(coord, atype, n_node)
+        actual = compiled.forward_ragged(coord, atype, n_node)
+        for name in ("energy", "force", "virial"):
+            torch.testing.assert_close(actual[name], expected[name])
+
+
+def test_vacuum_descriptor_never_materializes_the_neighbor_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The isolated atoms are evaluated on the graph route, without padding.
+
+    DPA4C reports an unbounded neighbor capacity, so a dense neighbor list of
+    that width would hold one padded edge per slot and per type; the graph
+    route holds no real edge. The result must equal the reference rows the
+    training route appends to a real graph.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    config = _config()
+    config["type_map"] = ["O", "H"]
+    config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
+    config["descriptor"].update({"channels": 8, "lmax": 2})
+    config["fitting_net"].update({"neuron": [8, 8], "vacuum_ref": True})
+    model = get_model(config).to(env.DEVICE).eval()
+    am = model.atomic_model
+    assert am.fitting_net.needs_vacuum_descriptor()
+
+    def dense_call(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the dense adapter must not serve the vacuum descriptor")
+
+    monkeypatch.setattr(am.descriptor, "call", dense_call)
+    vacuum = am.vacuum_descriptor()
+    assert vacuum.shape == (2, am.descriptor.get_dim_out())
+
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.1, 0.2, -0.1], [-0.4, 0.9, 0.3]]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    atype = torch.tensor([[0, 1, 1]], dtype=torch.long, device=env.DEVICE)
+    graph = build_neighbor_graph(
+        coord, atype, None, config["descriptor"]["rcut"], with_csr=True
+    )
+    graph, atype_all, _, _ = am.append_vacuum_frames(
+        graph, atype.reshape(-1), None, None
+    )
+    gg, _ = am.descriptor.call_graph(
+        graph, atype_all, type_embedding=am.descriptor.graph_type_embedding_table()
+    )
+    torch.testing.assert_close(vacuum, gg[3:], rtol=0.0, atol=0.0)
 
 
 def test_ragged_and_padded_batches_agree() -> None:
@@ -426,7 +563,7 @@ def test_charge_state_with_comm_is_rejected_before_compilation(
 
 
 @_GPU
-@pytest.mark.parametrize("channels", [8, 64])
+@pytest.mark.parametrize("channels", [8, 64])  # compressed channel width
 def test_compact_canonical_graph_export(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
@@ -446,7 +583,7 @@ def test_compact_canonical_graph_export(
 
 
 @_GPU
-@pytest.mark.parametrize("channels", [8, 64, 128])
+@pytest.mark.parametrize("channels", [8, 64, 128])  # compressed channel width
 def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model = get_model(_compressed_config(channels)).to("cpu").eval()
     model.get_descriptor().enable_compression(min_nbor_dist=0.5)
@@ -571,16 +708,17 @@ def test_compact_canonical_eligibility_rejects_other_descriptors() -> None:
         canonical_model_eligible,
     )
 
+    learned = SimpleNamespace(
+        descriptor=SimpleNamespace(compress=True),
+        fitting_net=object(),
+    )
     model = SimpleNamespace(
-        atomic_model=SimpleNamespace(
-            descriptor=SimpleNamespace(compress=True),
-            fitting_net=object(),
-        )
+        atomic_model=SimpleNamespace(fused_decomposition=lambda: (learned, None))
     )
     assert not canonical_model_eligible(model)
 
 
-@pytest.mark.parametrize("channels", [8, 64])
+@pytest.mark.parametrize("channels", [8, 64])  # compressed channel width
 def test_compressed_level_two_matches_autograd(
     monkeypatch: pytest.MonkeyPatch,
     channels: int,
@@ -635,7 +773,7 @@ def _spin_sample(model: torch.nn.Module) -> tuple:
 
 
 @_GPU
-@pytest.mark.parametrize("gate", [0.8, 0.0])
+@pytest.mark.parametrize("gate", [0.8, 0.0])  # active vs inactive spin gate
 def test_compressed_spin_lowers_match_autograd(
     monkeypatch: pytest.MonkeyPatch,
     gate: float,

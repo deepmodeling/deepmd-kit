@@ -9,10 +9,10 @@ import dataclasses
 import logging
 import math
 import multiprocessing
-import os
 import signal
 import threading
 import time
+import warnings
 from collections.abc import (
     Callable,
     Iterable,
@@ -43,11 +43,17 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils.dist_check import (
-    compute_min_pair_dist_single,
+    compute_min_pair_margin_batch,
+    compute_min_pair_margin_single,
+    requirement_half_thresholds,
 )
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.loggers import (
+    WorkerLogConfig,
+    is_node_main_process,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
@@ -56,11 +62,6 @@ from deepmd.utils.data import (
 )
 
 log = logging.getLogger(__name__)
-
-
-def _is_local_rank_zero() -> bool:
-    """Whether this process owns node-local operational logging."""
-    return int(os.environ.get("LOCAL_RANK", "0")) == 0
 
 
 # LMDB key → DeePMD convention
@@ -126,7 +127,7 @@ _FRAME_LEVEL_KEYS = frozenset(
         "charge_spin",
         "natoms",
         "real_natoms_vec",
-        "min_pair_dist",
+        "pair_margin",
     }
 )
 
@@ -551,7 +552,7 @@ def _scan_availability_index(
     _AvailabilityIndex
         Compact signature IDs aligned with domain positions.
     """
-    report_progress = _is_local_rank_zero()
+    report_progress = is_node_main_process()
     if report_progress:
         log.info(
             "LMDB label-availability scan started: dataset=%s, frames=%d, labels=%s",
@@ -609,11 +610,10 @@ def _scan_availability_index(
 def _scan_lmdb_path_sequential(
     lmdb_path: str,
     availability_keys: Sequence[str],
-    log_level: int,
+    log_config: WorkerLogConfig,
 ) -> _AvailabilityIndex:
     """Scan a complete LMDB under a sequential-readahead environment."""
-    logging.basicConfig(level=log_level)
-    logging.getLogger().setLevel(log_level)
+    log_config.configure()
     environment = lmdb.open(
         lmdb_path,
         readonly=True,
@@ -651,7 +651,7 @@ def _scan_lmdb_path_in_worker(
             _scan_lmdb_path_sequential,
             lmdb_path,
             availability_keys,
-            log.getEffectiveLevel(),
+            WorkerLogConfig.capture(),
         ).result()
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
@@ -690,6 +690,15 @@ class LmdbDecodeConfig:
         Registered data requirements keyed by field name.
     dataset
         Dataset identifier used in frame-level diagnostics.
+    type_map
+        Element symbols of the model types, from which a derived field sizes
+        the per-type length scale it measures against.
+    frame_transform
+        Optional callable applied to every decoded frame, as
+        ``transform(frame, frame_index)``. Self-supervised objectives corrupt
+        their inputs and derive their labels here, before the model runs, which
+        is the only place that works for a backend whose loss never sees the
+        model. ``None``, the default, leaves decoding unchanged.
     """
 
     ntypes: int
@@ -697,6 +706,8 @@ class LmdbDecodeConfig:
     type_remap: np.ndarray | None
     data_requirements: dict[str, Any]
     dataset: str = "<unknown LMDB>"
+    type_map: list[str] | None = None
+    frame_transform: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -840,6 +851,92 @@ def _compute_frame_natoms(atype: np.ndarray, ntypes: int) -> np.ndarray:
     return natoms
 
 
+def _resolve_derived_batch(
+    batch: dict[str, Any],
+    key: str,
+    requirement: Any,
+    config: LmdbDecodeConfig,
+    layout: "BatchLayout",
+) -> None:
+    """Resolve one derived field from the assembled arrays of a batch.
+
+    The batch holds the same structural data as its frames, and taking the
+    field here lets the geometric scan cross the frames of the batch in one
+    pass. The value settles the frame against the window the requirement
+    declares, exactly as the per-frame
+    :func:`_resolve_derived_requirement` does, and equals the minimum pair
+    margin whenever that margin decides the frame; a frame the window accepts
+    may carry a larger margin that it reaches, because the scan stops once
+    the side is known.
+
+    Parameters
+    ----------
+    batch : dict[str, Any]
+        Assembled batch, modified in place.
+    key : str
+        Name of the derived field.
+    requirement : Any
+        Its data requirement.
+    config : LmdbDecodeConfig
+        Decoder state, which fixes the field dtype and the pair length scale.
+    layout : BatchLayout
+        Where each frame's per-atom rows are, which tells a ragged batch from
+        a rectangular one.
+    """
+    if key != "pair_margin":
+        raise ValueError(f"Unsupported derived LMDB field {key!r}")
+
+    coord = batch.get("coord")
+    atype = batch.get("atype")
+    if not isinstance(coord, np.ndarray) or not isinstance(atype, np.ndarray):
+        batch.pop(key, None)
+        batch[f"find_{key}"] = np.float32(0.0)
+        return
+
+    # A frame without periodicity carries a cell of zeros, which the scan
+    # reads frame by frame; the batch may hold both kinds.
+    margins = compute_min_pair_margin_batch(
+        coord,
+        batch.get("box"),
+        atype,
+        _derived_half_thresholds(requirement, config),
+        n_node=layout.n_node if layout.ragged else None,
+        screened=True,
+    )
+    batch[key] = margins.reshape(-1, 1).astype(
+        _resolve_frame_dtype(config, key), copy=False
+    )
+    batch[f"find_{key}"] = np.float32(1.0)
+
+
+def _derived_half_thresholds(
+    requirement: Any,
+    config: LmdbDecodeConfig,
+) -> np.ndarray:
+    """Resolve the per-type half-thresholds a derived margin measures against.
+
+    Parameters
+    ----------
+    requirement : Any
+        The data requirement, whose default carries the filter radius and
+        whose length scale names the per-element radii it multiplies.
+    config : LmdbDecodeConfig
+        Decoder state, which carries the model type map.
+
+    Returns
+    -------
+    np.ndarray
+        Half-thresholds in Å with shape ``(ntypes,)``, read-only because every
+        frame of a decoder shares one table.
+    """
+    return requirement_half_thresholds(
+        float(_requirement_value(requirement, "default", 0.0)),
+        str(_requirement_value(requirement, "length_scale", "absolute")),
+        None if config.type_map is None else tuple(config.type_map),
+        config.ntypes,
+    )
+
+
 def _resolve_derived_requirement(
     frame: dict[str, Any],
     key: str,
@@ -847,7 +944,7 @@ def _resolve_derived_requirement(
     config: LmdbDecodeConfig,
 ) -> None:
     """Resolve one derived field from normalized structural frame data."""
-    if key != "min_pair_dist":
+    if key != "pair_margin":
         raise ValueError(f"Unsupported derived LMDB field {key!r}")
 
     coord = frame.get("coord")
@@ -860,9 +957,16 @@ def _resolve_derived_requirement(
     box = frame.get("box")
     if box is not None and np.allclose(box, 0.0):
         box = None
-    threshold = float(_requirement_value(requirement, "default", 0.0))
     frame[key] = np.array(
-        [compute_min_pair_dist_single(coord, box, atype, stop_below=threshold)],
+        [
+            compute_min_pair_margin_single(
+                coord,
+                box,
+                atype,
+                _derived_half_thresholds(requirement, config),
+                screened=True,
+            )
+        ],
         dtype=_resolve_frame_dtype(config, key),
     )
     frame[f"find_{key}"] = np.float32(1.0)
@@ -874,6 +978,7 @@ def decode_lmdb_frame(
     config: LmdbDecodeConfig,
     *,
     copy_arrays: bool,
+    derive: bool = True,
 ) -> dict[str, Any]:
     """Decode and normalize one LMDB record.
 
@@ -889,6 +994,11 @@ def decode_lmdb_frame(
         Whether encoded arrays are copied while unpacking. Batch decoding sets
         this to ``False`` because every value is copied exactly once into its
         preallocated batch destination.
+    derive
+        Whether the derived data requirements are resolved on this frame.
+        Batch decoding sets this to ``False`` and resolves them once on the
+        assembled batch, where the geometric scan they need runs over all
+        frames at once.
 
     Returns
     -------
@@ -954,7 +1064,7 @@ def decode_lmdb_frame(
 
     requirements = config.data_requirements
     for key, requirement in requirements.items():
-        if _requirement_source_policy(requirement) == "derived":
+        if derive and _requirement_source_policy(requirement) == "derived":
             _resolve_derived_requirement(frame, key, requirement, config)
 
     structural_keys = frozenset(
@@ -967,6 +1077,12 @@ def decode_lmdb_frame(
             "fid",
         }
     )
+    if config.frame_transform is not None:
+        # Ahead of the requirement checks below: a self-supervised transform is
+        # what produces the fields those checks look for, by corrupting the
+        # input it was handed.
+        frame = config.frame_transform(frame, original_key)
+
     for key in list(frame):
         if key.startswith("find_") or key in structural_keys or key in requirements:
             continue
@@ -1291,6 +1407,7 @@ def decode_lmdb_batch(
             int(original_key),
             config,
             copy_arrays=False,
+            derive=False,
         )
         frame_nloc = frame["coord"].shape[0]
         if layout is None:
@@ -1369,6 +1486,9 @@ def decode_lmdb_batch(
             batch.pop(field, None)
     if layout.ragged:
         batch["n_node"] = layout.n_node
+    for key, requirement in config.data_requirements.items():
+        if _requirement_source_policy(requirement) == "derived":
+            _resolve_derived_batch(batch, key, requirement, config, layout)
     batch["sid"] = np.asarray([0], dtype=np.int64)
     return batch
 
@@ -1590,7 +1710,7 @@ class LmdbBatchIterator:
     reader
         LMDB reader that owns metadata and the synchronous transaction.
     sampler
-        Finite iterator yielding same-nloc dataset-index batches.
+        Finite sized iterable yielding dataset-index batches.
     num_workers
         Decoder process count. Zero or one selects synchronous decoding.
     """
@@ -1606,6 +1726,8 @@ class LmdbBatchIterator:
         self._reader = reader
         self._sampler = sampler
         self._epoch = 0
+        self._queued_pass_length = 0
+        self._last_pass_length: int | None = None
         self._iterator = self._iter_epoch()
         self._num_workers = num_workers
         self._pool: _LmdbPoolEntry | None = None
@@ -1627,9 +1749,12 @@ class LmdbBatchIterator:
             indices, self._deferred_indices = self._deferred_indices, None
             batch = self._reader.decode_batch(indices)
         else:
-            batch = self._decode(self._next_indices())
+            indices, self._queued_pass_length = self._next_indices()
+            batch = self._decode(indices)
 
-        self._schedule(self._next_indices())
+        self._last_pass_length = self._queued_pass_length
+        indices, self._queued_pass_length = self._next_indices()
+        self._schedule(indices)
         return batch
 
     def _decode(self, indices: list[int]) -> dict[str, Any]:
@@ -1708,7 +1833,7 @@ class LmdbBatchIterator:
             "decoders outlive the session that started it."
         )
 
-    def _next_indices(self) -> list[int]:
+    def _next_indices(self) -> tuple[list[int], int]:
         """Return the next sampler batch and restart after exhaustion."""
         try:
             return next(self._iterator)
@@ -1717,12 +1842,17 @@ class LmdbBatchIterator:
             self._iterator = self._iter_epoch()
             return next(self._iterator)
 
-    def _iter_epoch(self) -> Iterator[list[int]]:
-        """Create a sampler iterator for the current epoch."""
+    def _iter_epoch(self) -> Iterator[tuple[list[int], int]]:
+        """Tag batches with the length of the sampler pass that owns them."""
         set_epoch = getattr(self._sampler, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self._epoch)
-        return iter(self._sampler)
+        # Samplers can advance before their first yield, and prefetch can
+        # enter another pass before the current batch reaches its consumer.
+        # Snapshot the length lazily, after data requirements and layout are set.
+        pass_length = len(self._sampler)
+        for indices in self._sampler:
+            yield indices, pass_length
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
         """Submit one batch as balanced contiguous chunks.
@@ -1762,6 +1892,13 @@ class LmdbBatchIterator:
         futures = self._offer(indices)
         self._pending = _PendingBatch(indices, futures) if futures else None
         self._deferred_indices = None if futures else indices
+
+    @property
+    def batch_pass_length(self) -> int:
+        """Length of the last returned batch's pass, or the first pending pass."""
+        if self._last_pass_length is None:
+            return len(self._sampler)
+        return self._last_pass_length
 
     @property
     def started(self) -> bool:
@@ -2165,6 +2302,7 @@ class LmdbDataReader:
             type_remap=self._type_remap,
             data_requirements=self._data_requirements,
             dataset=self.lmdb_path,
+            type_map=self._type_map,
         )
         # Which fields carry an atom axis follows from the registered
         # requirements, so this cache is invalidated when they change.
@@ -2458,7 +2596,7 @@ class LmdbDataReader:
             and cache_entry[1] == 1
         )
         if not owns_environment_exclusively:
-            if _is_local_rank_zero():
+            if is_node_main_process():
                 log.info(
                     "LMDB label-availability scan uses an isolated sequential "
                     "reader because the random-read environment is shared: %s",
@@ -2596,7 +2734,30 @@ class LmdbDataReader:
             log.info(f"  nloc groups: {row}")
 
     def set_noise(self, noise_settings: dict[str, Any]) -> None:
-        """No-op for now."""
+        """Deprecated no-op kept for backward compatibility.
+
+        The denoising pipeline this hook belonged to was removed; the method
+        never did anything and is retained only so that existing callers do
+        not break. It will be removed in a future release.
+        """
+        warnings.warn(
+            "LmdbDataReader.set_noise() is deprecated and does nothing. "
+            "The denoising data pipeline it belonged to has been removed; "
+            "drop the call. This shim will be removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    def set_frame_transform(
+        self, transform: Callable[[dict[str, Any], int], dict[str, Any]] | None
+    ) -> None:
+        """Install a per-frame transform, or remove it with ``None``.
+
+        The transform runs on every decoded frame, in whichever process decodes
+        it, and receives ``(frame, frame_index)``. Self-supervised training uses
+        it to corrupt inputs and derive labels before the model runs.
+        """
+        self._decode_config.frame_transform = transform
 
     # --- Properties ---
 
@@ -3792,6 +3953,7 @@ class LmdbTestData:
             type_remap=self._type_remap,
             data_requirements=self._requirements,
             dataset=self.lmdb_path,
+            type_map=self._type_map,
         )
 
         # Detect PBC from the first retained frame.

@@ -83,6 +83,7 @@ def _make_descriptor(
     rcut: float,
     *,
     source_gated: bool = False,
+    precision: str = "float32",
 ) -> DescrptSeZM:
     """Build a small SeZM descriptor in the deployed layout."""
     return DescrptSeZM(
@@ -101,10 +102,13 @@ def _make_descriptor(
         grid_branch=[1, 1, 1],
         s2_activation=[False, True],
         random_gamma=False,
-        precision="float32",
+        precision=precision,
         seed=7,
-        inner_clamp_r_inner=0.8 if source_gated else None,
-        inner_clamp_r_outer=1.2 if source_gated else None,
+        # The absolute scale gives every pair the unit length scale, so the two
+        # fractions are the window radii in Å.
+        inner_clamp_f_inner=0.8 if source_gated else None,
+        inner_clamp_f_outer=1.2 if source_gated else None,
+        inner_clamp_scale="absolute",
     )
 
 
@@ -120,8 +124,9 @@ def _clear_gates(monkeypatch) -> None:
     ids=("training", "inference"),
 )
 @pytest.mark.parametrize("enabled", [0, 1])
+@pytest.mark.parametrize("precision", ["float32", "float64"])
 def test_triton_mode_gate_binds_each_stage(
-    monkeypatch, gate_name: str, training: bool, enabled: int
+    monkeypatch, gate_name: str, training: bool, enabled: int, precision: str
 ) -> None:
     """Each Triton gate binds every supported stage for only its own mode."""
     _clear_gates(monkeypatch)
@@ -130,7 +135,7 @@ def test_triton_mode_gate_binds_each_stage(
     train_level = enabled if training else 0
     infer_level = enabled if not training else 0
 
-    descriptor = _make_descriptor(2, [20], 4.0)
+    descriptor = _make_descriptor(2, [20], 4.0, precision=precision)
     convolutions = [
         module for module in descriptor.modules() if isinstance(module, SO2Convolution)
     ]
@@ -145,10 +150,10 @@ def test_triton_mode_gate_binds_each_stage(
         assert (conv._rotate_back_fn is not None) is requested
         assert (conv._flash_atten_fn is not None) is requested
         assert conv._flash_atten_trains is (requested and training)
-        # Segment softmax has no wrapper-level fallback and binds only when its
-        # own Triton implementation is importable.
+        # Segment softmax uses fp32 accumulation and preserves fp64 compute
+        # through the descriptor's reference path.
         assert (conv._segment_softmax_fn is not None) is (
-            requested and SEGMENT_SOFTMAX_TRITON_AVAILABLE
+            requested and SEGMENT_SOFTMAX_TRITON_AVAILABLE and precision == "float32"
         )
         # The rotate-mix front end is bound by a profitability bound on the
         # hidden width, which this narrow block sits below.
@@ -301,8 +306,15 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
         gradient = torch.autograd.grad(output.sum(), coord)[0]
         return output.detach().cpu().numpy(), gradient.detach().cpu().numpy()
 
-    def test_source_gated_flash_retains_dense_rotations(self, monkeypatch) -> None:
-        """Source-gated flash inference retains the rotations its fallback uses."""
+    def test_source_gated_inference_takes_the_fused_convolution(
+        self, monkeypatch
+    ) -> None:
+        """A bridged descriptor runs the fused convolution and matches the dense path.
+
+        The source gate is folded into the edge envelope, so the fused
+        convolution and the flash attention see it through the one factor they
+        already weight by, and the dense per-edge rotations are not built.
+        """
         if not cuda_infer_available():
             pytest.skip("the DPA4 CUDA inference operators are unavailable")
         if not SO2_VALUE_PATH_TRITON_AVAILABLE:
@@ -330,8 +342,8 @@ class TestSeZMTrainPathParity(TestCaseSingleFrameWithNlist):
             pytest.skip("the descriptor layout has no fused CUDA convolution")
         assert conv._flash_atten_fn is not None
         assert conv._cuda_value_train is None
-        assert not accelerated._wigner_free_conv
-        assert accelerated._build_full_wigner()
+        assert accelerated._wigner_free_conv
+        assert not accelerated._build_full_wigner()
 
         output, gradient = self._inference_step(accelerated)
         np.testing.assert_allclose(output, dense_output, rtol=2e-4, atol=2e-5)

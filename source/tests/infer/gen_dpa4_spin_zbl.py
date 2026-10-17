@@ -23,9 +23,11 @@ the linear composition -- neither single-feature fixture exercises that.
 
 Multi-rank capable, and this fixture PINS that contract
 -------------------------------------------------------
-Bridging enables the descriptor's Source Freeze Propagation Gate, whose
-per-node ``eta_j = prod_{e: src_e = j} w_e`` folds a node's FULL outgoing-edge
-set.  Edges exist only for owned centres, so the per-node partials are
+Bridging enables the descriptor's Source Freeze Propagation Gate, which folds
+into the envelope of an edge the amplitudes ``w`` of every pair of that edge's
+source OTHER than its own, and hands the full per-node product
+``eta_j = prod_{e: src_e = j} w_e`` to the model as the readout gate.
+Edges exist only for owned centres, so the per-node partials are
 rank-incomplete; the with-comm artifact completes them with one
 reverse-accumulate + forward-broadcast border exchange before the gate is
 applied (issue #5906).  ``_check_metadata`` asserts BOTH

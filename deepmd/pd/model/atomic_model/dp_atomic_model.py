@@ -149,11 +149,7 @@ class DPAtomicModel(BaseAtomicModel):
 
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
-        return (
-            self.fitting_net.output_def()
-            if self.fitting_net is not None
-            else self.coord_denoise_net.output_def()
-        )
+        return self.fitting_net.output_def()
 
     def get_rcut(self) -> float:
         """Get the cut-off radius."""

@@ -12,6 +12,7 @@ from __future__ import (
     annotations,
 )
 
+import dataclasses
 from dataclasses import (
     dataclass,
     field,
@@ -233,6 +234,54 @@ def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     # every downstream per-frame reduction and breaking dynamic-``nf`` inference.
     last_frame = xp.sum(xp.ones_like(n_node)) - 1  # 0-d int == nf - 1
     return xp.minimum(frame_id, xp.astype(last_frame, xp.int64))
+
+
+def append_isolated_frames(
+    graph: NeighborGraph, n_total: int, count: int
+) -> NeighborGraph:
+    """Append ``count`` single-node frames without edges after the node axis.
+
+    The new nodes take the positions ``[n_total, n_total + count)`` of the
+    flat node axis, each as a frame of one owned node and no neighbors, so
+    every edge-indexed field of the graph stays valid unchanged. A padding
+    suffix of the compact-prefix layout, ``[sum(n_node), n_total)``, becomes
+    one frame of its own without owned nodes, so that the frame bookkeeping
+    keeps assigning every position of the extended axis to its frame. The
+    compressed-sparse-row offsets, when present, gain empty rows.
+
+    Parameters
+    ----------
+    graph
+        Neighbor graph of the real frames.
+    n_total
+        Size of the flat node axis of ``graph``, padding included.
+    count
+        Number of isolated nodes to append.
+
+    Returns
+    -------
+    NeighborGraph
+        A ``dataclasses.replace`` copy with the extended frame bookkeeping.
+    """
+    xp = array_api_compat.array_namespace(graph.n_node)
+    device = array_api_compat.device(graph.n_node)
+    n_node = graph.n_node
+    padding = xp.reshape(n_total - xp.sum(n_node), (1,))
+    ones = xp.ones((count,), dtype=n_node.dtype, device=device)
+    fields = {"n_node": xp.concat([n_node, xp.astype(padding, n_node.dtype), ones])}
+    if graph.n_local is not None:
+        fields["n_local"] = xp.concat(
+            [
+                graph.n_local,
+                xp.zeros((1,), dtype=graph.n_local.dtype, device=device),
+                xp.ones((count,), dtype=graph.n_local.dtype, device=device),
+            ]
+        )
+    for name in ("destination_row_ptr", "source_row_ptr"):
+        row_ptr = getattr(graph, name)
+        if row_ptr is not None:
+            fields[name] = xp.concat([row_ptr, xp.broadcast_to(row_ptr[-1:], (count,))])
+    return dataclasses.replace(graph, **fields)
 
 
 def node_ownership_mask(n_node: Array, n_local: Array, n_total: int) -> Array:

@@ -571,6 +571,15 @@ There's no need for downloading PyTorch's C++ libraries.
 This helps CPU-only PyTorch builds use CUDA-enabled PyTorch wheels without requiring a local CUDA compiler.
 :::
 
+:::{cmake:variable} DEEPMD_ENABLE_DPA4_FP64
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+{{ pytorch_icon }} If `TRUE`, also compile the float64 variants of the CUDA kernels that accelerate DPA4 training.
+Training runs these kernels in float32 or bfloat16 only; the float64 variants serve the numerical consistency tests of the fused operators and add substantial build time.
+When installing with `pip`, pass the option through {envvar}`CMAKE_ARGS`, for example `CMAKE_ARGS="-DDEEPMD_ENABLE_DPA4_FP64=ON"`.
+:::
+
 :::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`

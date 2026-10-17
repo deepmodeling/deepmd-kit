@@ -26,6 +26,9 @@ from typing import (
 from deepmd.common import (
     symlink_prefix_files,
 )
+from deepmd.loggers import (
+    is_node_main_process,
+)
 
 if TYPE_CHECKING:
     from collections.abc import (
@@ -263,8 +266,8 @@ def build_checkpoint_stores(
         Checkpoint prefix of the EMA family, derived by the backend from
         ``save_ckpt``.
     rank : int, optional
-        Process rank. Only the chief creates directories and reports the
-        resolved retention.
+        Global rank. Only the chief creates directories. The resolved
+        retention is reported by each node's local chief when available.
 
     Returns
     -------
@@ -284,7 +287,7 @@ def build_checkpoint_stores(
     if keep_ckpt_count is not None:
         max_keep = keep_ckpt_count
         ema_max_keep = keep_ckpt_count
-        if rank == 0:
+        if is_node_main_process(rank):
             log.info(
                 "Resolved checkpoint retention to %d from ckpt_keep_ratio=%s "
                 "(num_steps=%d, save_freq=%d).",

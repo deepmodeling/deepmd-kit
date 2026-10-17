@@ -12,16 +12,24 @@
 
 #include <tuple>
 
-// Accumulator precision of the SeZM training kernels: the reduced-precision
-// working types accumulate in float, and float64 keeps its own width.
-template <typename scalar_t>
-struct acc_type {
-  using type = float;
-};
-template <>
-struct acc_type<double> {
-  using type = double;
-};
+#include "sezm_types.cuh"
+
+// Dispatches a body over the working types the build compiles: float32 and
+// bfloat16 always, float64 when DEEPMD_ENABLE_DPA4_FP64 is enabled.
+#if DEEPMD_ENABLE_DPA4_FP64
+#define DPA4_SEZM_DISPATCH_CASE_FLOAT64(...) \
+  AT_DISPATCH_CASE(at::ScalarType::Double, __VA_ARGS__)
+#else
+#define DPA4_SEZM_DISPATCH_CASE_FLOAT64(...)
+#endif
+
+#define DPA4_SEZM_DISPATCH_CASE_TYPES(...)                \
+  AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)    \
+  AT_DISPATCH_CASE(at::ScalarType::BFloat16, __VA_ARGS__) \
+  DPA4_SEZM_DISPATCH_CASE_FLOAT64(__VA_ARGS__)
+
+#define DPA4_SEZM_DISPATCH_TYPES(TYPE, NAME, ...) \
+  AT_DISPATCH_SWITCH(TYPE, NAME, DPA4_SEZM_DISPATCH_CASE_TYPES(__VA_ARGS__))
 
 namespace dpa4_sezm {
 
