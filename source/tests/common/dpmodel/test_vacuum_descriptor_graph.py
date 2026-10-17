@@ -122,7 +122,10 @@ def bounded_reference(model: DPAtomicModel):
     )[0]
     if not model.add_spin_ebd:
         dense = descriptor(coord, atype, nlist, mapping=mapping, **conditions)[0]
-        np.testing.assert_allclose(dense.reshape(expected.shape), expected, atol=2e-6)
+        rtol, atol = (1e-7, 2e-6) if dtype == np.float32 else (1e-12, 1e-12)
+        np.testing.assert_allclose(
+            dense.reshape(expected.shape), expected, rtol=rtol, atol=atol
+        )
     return expected, graph, flat_atype, conditions
 
 
@@ -132,6 +135,7 @@ def bounded_reference(model: DPAtomicModel):
 )
 @pytest.mark.parametrize("precision", ["float32", "float64"])
 def test_vacuum_uses_bounded_graph(kind, charge, spin, precision) -> None:
+    tol = 2e-6 if precision == "float32" else 1e-12
     model = make_model(kind, charge, spin, precision)
     expected, _, _, conditions = bounded_reference(model)
     descriptor = model.descriptor
@@ -171,7 +175,7 @@ def test_vacuum_uses_bounded_graph(kind, charge, spin, precision) -> None:
                 actual = model.vacuum_descriptor()
             assert actual.shape == (2, descriptor.get_dim_out())
             assert actual.dtype == model.fitting_net.bias_atom_e.dtype
-            np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
+            np.testing.assert_allclose(actual, expected, rtol=tol, atol=tol)
         assert graph_call.call_count == 2
     assert np.max(np.abs(actual)) > 1e-5
     assert not np.allclose(actual[0], actual[1])

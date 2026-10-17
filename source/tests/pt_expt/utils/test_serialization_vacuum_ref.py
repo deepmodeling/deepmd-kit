@@ -76,7 +76,9 @@ def reference_model(monkeypatch, numb_fparam=0, numb_aparam=0, vacuum_ref=True):
     return get_model(config).eval()
 
 
-@pytest.mark.parametrize(("numb_fparam", "numb_aparam"), [(0, 0), (1, 0), (0, 1)])
+@pytest.mark.parametrize(
+    ("numb_fparam", "numb_aparam"), [(0, 0), (1, 0), (0, 1)]
+)  # frame/atomic parameter dimensions
 def test_cuda_export_folds_on_cpu_before_restoring_deployment_dispatch(
     monkeypatch, numb_fparam, numb_aparam
 ) -> None:
@@ -166,7 +168,7 @@ def test_cuda_export_folds_on_cpu_before_restoring_deployment_dispatch(
     assert any(node.target == cuda_radial._opoverload for node in traced.graph.nodes)
 
 
-@pytest.mark.parametrize("failure", ["construction", "fold"])
+@pytest.mark.parametrize("failure", ["construction", "fold"])  # failing stage
 def test_reference_context_restores_state_after_failure(monkeypatch, failure) -> None:
     model = reference_model(monkeypatch)
     am = model.atomic_model
@@ -195,7 +197,7 @@ def test_reference_context_restores_state_after_failure(monkeypatch, failure) ->
     assert {name: os.environ.get(name) for name in LEVELS} == saved
 
 
-@pytest.mark.parametrize("folded_table", [False, True])
+@pytest.mark.parametrize("folded_table", [False, True])  # disabled vs already folded
 def test_unneeded_reference_does_not_rebuild_descriptor(
     monkeypatch, folded_table
 ) -> None:
