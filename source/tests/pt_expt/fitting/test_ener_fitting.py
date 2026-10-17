@@ -44,8 +44,10 @@ from ..export_helpers import (
     not ENABLE_CUSTOMIZED_OP or not op_available(),
     reason="the fused fitting operator is unavailable",
 )
-@pytest.mark.parametrize("activation", ["tanh", "silu"])
-@pytest.mark.parametrize("reference_mode", ["none", "vacuum", "folded"])
+@pytest.mark.parametrize("activation", ["tanh", "silu"])  # activation_function
+@pytest.mark.parametrize(
+    "reference_mode", ["none", "vacuum", "folded"]
+)  # vacuum reference: none / passed per call / folded into the bias
 def test_fused_node_gate_matches_portable(
     monkeypatch: pytest.MonkeyPatch, activation: str, reference_mode: str
 ) -> None:

@@ -10,6 +10,9 @@ Both spellings must therefore build the same model.
 """
 
 import copy
+from pathlib import (
+    Path,
+)
 
 import pytest
 
@@ -251,6 +254,46 @@ def test_is_sezm_checkpoint_recognizes_canonical_params(tmp_path) -> None:
         ckpt2,
     )
     assert is_sezm_checkpoint(ckpt2)
+
+
+@pytest.mark.parametrize("method", ["none", "ZBL"])  # bridging disabled / enabled
+def test_normalized_checkpoint_with_optional_radii_loads(
+    tmp_path: Path, method: str
+) -> None:
+    """Checkpoint loading preserves the normalized optional window radii."""
+    import numpy as np
+    import torch
+
+    from deepmd.infer import (
+        DeepPot,
+    )
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
+    from deepmd.utils.argcheck import (
+        model_args,
+    )
+
+    config = _sugar_config()
+    config["bridging_method"] = method
+    config.pop("bridging_r_inner")
+    config.pop("bridging_r_outer")
+    config["descriptor"].update(channels=4, n_radial=3, lmax=1, mmax=1, n_blocks=1)
+    config["use_compile"] = False
+    params = model_args().normalize_value(config, trim_pattern="_*")
+    model_args().check_value(params, strict=True)
+    assert params["bridging_r_inner"] is None
+    assert params["bridging_r_outer"] is None
+    model = get_model(copy.deepcopy(params)).eval()
+    wrapper = ModelWrapper(model, model_params=params)
+    checkpoint = tmp_path / "model.pt"
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+
+    evaluator = DeepPot(str(checkpoint))
+    assert evaluator.get_type_map() == params["type_map"]
+    results = evaluator.eval([[0.0, 0.0, 0.0, 0.9, 0.0, 0.0]], None, [0, 1])
+    assert all(np.isfinite(value).all() for value in results)
+    evaluator.close()
 
 
 def test_sugar_with_top_level_lora_builds() -> None:

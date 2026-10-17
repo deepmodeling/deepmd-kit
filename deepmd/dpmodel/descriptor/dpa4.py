@@ -2859,8 +2859,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         module's own buffers before descending into its children, so a
         migration applied to live attributes would rewrite values the child
         load is about to overwrite. Both checkpoints and portable records
-        pass through this migration. Incompatible bridging states are rejected
-        before the descriptor's tensors are restored. Other differences that
+        pass through this migration. A bridged receiving descriptor rejects
+        legacy states before its tensors are restored. Other differences that
         no rewrite can absorb stay forward-time branches on :attr:`version`,
         so a migrated descriptor never changes its own math.
 
@@ -2873,10 +2873,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         be activated by fine-tuning. Versions below 1.1 predate the
         native-spin route and retain their original forward semantics.
 
-        Version 1.3 changes only bridging. An unbridged state at version 1.2
-        therefore adopts the current record version without changing its
-        function, so later fine-tuning can enable the current window. An older
-        bridged state cannot be upgraded this way and is refused.
+        Version 1.3 changes only bridging. A version-1.2 state loaded into an
+        unbridged descriptor adopts the current record version without changing
+        its function. A bridged receiving descriptor rejects every pre-1.3 state:
+        state dictionaries do not identify the source's bridging configuration.
+        Fine-tuning first loads a compatible plain checkpoint into its original
+        unbridged model, migrates it, then transfers the state to the bridged
+        target. Legacy bridged checkpoints cannot be migrated this way.
 
         Parameters
         ----------

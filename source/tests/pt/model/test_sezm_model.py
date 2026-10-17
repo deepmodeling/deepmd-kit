@@ -2286,6 +2286,19 @@ class TestSeZMModelBridging(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Retrain the bridged model"):
                     model.load_state_dict(state)
 
+    def test_legacy_plain_state_into_bridged_model_requires_finetune(self) -> None:
+        """Direct loading rejects legacy plain weights without misidentifying them."""
+        plain = get_sezm_model(self._build_model_params(bridging_method="none"))
+        bridged = get_sezm_model(self._build_model_params(bridging_method="ZBL"))
+        state = plain.state_dict()
+        version_key = "atomic_model.descriptor.version_tensor"
+        state[version_key] = torch.full_like(state[version_key], 1.2)
+        with self.assertRaisesRegex(
+            ValueError,
+            r"format version 1\.2 into a bridged descriptor.*--finetune",
+        ):
+            bridged.load_state_dict(state, strict=False)
+
     def test_current_bridged_state_round_trips(self) -> None:
         """The state-dict and portable representations retain the same tensors."""
         params = self._build_model_params(bridging_method="ZBL")

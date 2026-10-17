@@ -506,34 +506,42 @@ def check_window_inside_cutoff(
 
 
 def check_bridging_record_version(config: dict, version: float) -> None:
-    """Refuse a bridged descriptor record written before the current window.
+    """Refuse legacy state when the receiving descriptor enables bridging.
 
-    Records before :data:`BRIDGING_RECORD_VERSION` froze the clamp at the inner
-    radius, muted a closing pair through a full product of switch amplitudes on
-    the messages and carried no readout gate, so their weights were trained
+    Bridged records before :data:`BRIDGING_RECORD_VERSION` froze the clamp at the
+    inner radius, muted a closing pair through a full product of switch amplitudes
+    on the messages and carried no readout gate, so their weights were trained
     under a different function of the geometry than the one this code builds.
-    An unbridged record of any version is unaffected.
+    State dictionaries do not encode whether the source used bridging, so the
+    guard uses the receiving descriptor's configuration. It also rejects a
+    legacy plain state loaded directly into a bridged descriptor. An unbridged
+    receiving descriptor passes this guard; its version migrations still apply.
 
     Parameters
     ----------
     config : dict
-        The constructor arguments read back from a serialized descriptor, with
-        the window keys already in their current spelling.
+        The receiving descriptor's constructor arguments, with the window keys
+        in their current spelling. These come from the record for portable
+        deserialization, or from the target model for state-dict loading.
     version : float
-        The ``@version`` the record was written at.
+        The stored descriptor version, from ``@version`` or ``version_tensor``.
 
     Raises
     ------
     ValueError
-        If the record is bridged and older than the current window mechanics.
+        If the receiving descriptor is bridged and the state predates the
+        current window mechanics.
     """
     if (
         version < BRIDGING_RECORD_VERSION
         and config.get("inner_clamp_f_inner") is not None
     ):
         raise ValueError(
-            f"This bridged DPA4 record was written at format version {version}, "
-            "before the current bridging window (clamp freeze point, leave-one-out "
-            "source gate and readout gate); its weights were trained under a "
-            "different function of the geometry. Retrain the bridged model."
+            f"Cannot load DPA4/SeZM state at format version {version} into a bridged "
+            f"descriptor; bridging requires version {BRIDGING_RECORD_VERSION} or "
+            "later. State dictionaries do not identify whether the source used "
+            "bridging. For a plain version-1.1 or version-1.2 checkpoint, use "
+            "--finetune to migrate the source in its original unbridged model "
+            "before enabling bridging. If the source was already bridged, its "
+            "window mechanics are incompatible. Retrain the bridged model."
         )
