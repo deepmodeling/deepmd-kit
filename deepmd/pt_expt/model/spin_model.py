@@ -48,6 +48,20 @@ class SpinModel(SpinModelDP):
             return getattr(backbone, name)
         raise AttributeError(name)
 
+    @property
+    def min_nbor_dist(self) -> float | None:
+        """Minimal neighbor distance, stored on the backbone model.
+
+        ``__getattr__`` only delegates reads, so without this property an
+        assignment would land on the wrapper while ``get_min_nbor_dist`` and
+        ``enable_compression`` keep reading the backbone.
+        """
+        return self.backbone_model.min_nbor_dist
+
+    @min_nbor_dist.setter
+    def min_nbor_dist(self, value: float | None) -> None:
+        self.backbone_model.min_nbor_dist = value
+
     def forward_common_lower_exportable(
         self,
         extended_coord: torch.Tensor,

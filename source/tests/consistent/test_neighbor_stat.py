@@ -82,6 +82,10 @@ class TestNeighborStat(unittest.TestCase):
     def test_neighbor_stat_pt(self) -> None:
         self.run_neighbor_stat("pytorch")
 
+    @unittest.skipUnless(INSTALLED_PT, "pytorch is not installed")
+    def test_neighbor_stat_pt_expt(self) -> None:
+        self.run_neighbor_stat("pt-expt")
+
     def test_neighbor_stat_dp(self) -> None:
         self.run_neighbor_stat("numpy")
 
