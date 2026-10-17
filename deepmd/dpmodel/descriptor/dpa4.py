@@ -2426,6 +2426,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         """
         return False
 
+    def supports_graph_vacuum(self) -> bool:
+        """The dense adapter uses the same graph core; native spin needs it."""
+        return True
+
     def uses_graph_lower(self) -> bool:
         """Whether this descriptor supports the sel-free NeighborGraph lower.
 
