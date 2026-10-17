@@ -131,6 +131,7 @@ def _run(tmp_path, data, model, *, ranks, kokkos):
             try:
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
+                # The process group already exited between timeout and cleanup.
                 pass
             stdout, stderr = process.communicate()
             pytest.fail(
