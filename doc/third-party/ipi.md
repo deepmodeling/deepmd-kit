@@ -41,3 +41,17 @@ The option **`port`** should be the same as that in input.xml:
 The option **`graph_file`** provides the file name of the frozen model. The model can have either double or single float precision interface.
 
 The `dp_ipi` gets the atom names from an [XYZ file](https://en.wikipedia.org/wiki/XYZ_file_format) provided by **`coord_file`** (meanwhile ignores all coordinates in it) and translates the names to atom types by rules provided by **`atom_type`**.
+
+The client accepts the standard i-PI `INIT` message (replica ID, payload length,
+and payload). Its model and atom types remain configured by the JSON input;
+initialization payloads are read in chunks with no additional size cap beyond
+the signed 32-bit protocol length limit. Negative payload lengths are rejected
+with an error.
+
+Socket reads assemble each requested protocol field completely, including when
+its bytes arrive in separate packets. Interrupted reads are retried. If the
+server closes the connection before a field is complete, the client rejects the
+incomplete read and exits with an error. Bytes received before EOF have already
+been read from the socket, and verbose mode may have printed earlier complete
+INIT chunks. To request a successful client shutdown, send the standard `EXIT`
+message rather than closing the socket without it.
