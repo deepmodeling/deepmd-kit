@@ -68,7 +68,9 @@ jobs:
       - name: Fix kernel mmap rnd bits
         run: sudo sysctl vm.mmap_rnd_bits=28
         if: ${{ matrix.check_memleak }}
-      - run: |
+      - name: Test native interfaces
+        id: native_tests
+        run: |
           source/install/test_cc_local.sh
         env:
           OMP_NUM_THREADS: 1
@@ -88,7 +90,7 @@ jobs:
         if: matrix.enable_paddle
       - run: |
           export LD_LIBRARY_PATH=${{ github.workspace }}/dp_test/lib:$LD_LIBRARY_PATH
-          source/install/retry_on_sigterm.sh 3 pytest --cov=deepmd source/lmp/tests
+          source/install/retry_on_sigterm.sh 3 python -X faulthandler -m pytest -vv --capture=tee-sys --cov=deepmd source/lmp/tests
         env:
           OMP_NUM_THREADS: 1
           TF_INTRA_OP_PARALLELISM_THREADS: 1
@@ -99,8 +101,9 @@ jobs:
           ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
-      # test ipi
-      - run: |
+      # Keep i-PI coverage independent of the preceding LAMMPS test result.
+      - name: Test i-PI interfaces
+        run: |
           export PATH=${{ github.workspace }}/dp_test/bin:$PATH
           pytest --cov=deepmd source/ipi/tests
         env:
@@ -112,7 +115,7 @@ jobs:
           ENABLE_PYTORCH: ${{ matrix.enable_pytorch && '1' || '0' }}
           ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
-        if: ${{ !matrix.check_memleak }}
+        if: ${{ !cancelled() && !matrix.check_memleak && steps.native_tests.outcome == 'success' }}
       - name: Upload coverage to Codecov (non-blocking)
         uses: codecov/codecov-action@v7
         continue-on-error: true
