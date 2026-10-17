@@ -52,12 +52,9 @@ def _snapshot(lmp):
     }
 
 
-def _run(args, selection, overlay=False):
-    comm = MPI.COMM_WORLD
-    pair = "dpa4spin/kk" if args.kokkos else "dpa4spin"
-    atom = "spin/kk" if args.kokkos else "spin"
+def _cmdargs(kokkos):
     cmdargs = ["-log", "none", "-screen", "none"]
-    if args.kokkos:
+    if kokkos:
         cmdargs += [
             "-k",
             "on",
@@ -74,61 +71,71 @@ def _run(args, selection, overlay=False):
             "gpu/aware",
             "off",
         ]
-    with lammps(cmdargs=cmdargs, comm=comm) as lmp:
-        assert lmp.has_style("pair", pair), f"Missing plugin pair style {pair}"
-        pair_args = "" if selection == "default" else f" magnetic_force {selection}"
-        substyle = f"{pair} {args.model.resolve()}{pair_args}"
-        if overlay:
-            style = "hybrid/overlay/kk" if args.kokkos else "hybrid/overlay"
-            pair_command = f"pair_style {style} {substyle} {substyle}"
-            coefficients = [f"pair_coeff * * {pair} {i} Ni O" for i in (1, 2)]
-        else:
-            style = pair
-            pair_command = f"pair_style {substyle}"
-            coefficients = ["pair_coeff * * Ni O"]
-        for command in (
-            "units metal",
-            f"processors {comm.size} 1 1",
-            f"atom_style {atom}",
-            "atom_modify map yes",
-            f"read_data {args.data.resolve()}",
-            "mass 1 58.6934",
-            "mass 2 15.9994",
-            pair_command,
-            *coefficients,
-            "neighbor 1.0 bin",
-            "compute fmprop all property/atom fmx fmy fmz",
-            "compute spprop all property/atom spx spy spz sp",
-            "run 0",
-        ):
-            lmp.command(command)
-        assert lmp.extract_pair_dimension("fm_cartesian_force") == 0
-        flag = _pair_pointer(lmp, "fm_cartesian_force", ctypes.POINTER(ctypes.c_int))[0]
-        result = {
-            "convention": flag,
-            "pair_style": lmp.extract_global("pair_style"),
-            "atom_style": lmp.extract_global("atom_style"),
-            "kokkos_active": lmp.extract_setting("kokkos_active"),
-            "kokkos_ngpus": lmp.extract_setting("kokkos_ngpus"),
-            "newton_pair": lmp.extract_setting("newton_pair"),
-            "local_counts": comm.allgather(lmp.extract_setting("nlocal")),
-            "ghost_counts": comm.allgather(lmp.extract_setting("nghost")),
-            "snapshots": [_snapshot(lmp)],
-        }
-        assert result["pair_style"] == style
-        assert result["atom_style"] == atom
-        # Repeated computes expose stale ghost magnetic-force accumulation.
-        for _ in range(2):
-            lmp.command("run 0")
-            result["snapshots"].append(_snapshot(lmp))
-        if not overlay:
-            scale = _pair_pointer(
-                lmp, "scale", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))
-            )
-            scale[1][1] = 2.75
-            lmp.command("run 0")
-            result["scaled"] = _snapshot(lmp)
-        return result, lmp.lib
+    return cmdargs
+
+
+def _run(lmp, args, selection, overlay=False):
+    comm = MPI.COMM_WORLD
+    pair = "dpa4spin/kk" if args.kokkos else "dpa4spin"
+    atom = "spin/kk" if args.kokkos else "spin"
+    integrator = "verlet/kk" if args.kokkos else "verlet"
+    assert lmp.has_style("pair", pair), f"Missing plugin pair style {pair}"
+    pair_args = "" if selection == "default" else f" magnetic_force {selection}"
+    substyle = f"{pair} {args.model.resolve()}{pair_args}"
+    if overlay:
+        style = "hybrid/overlay/kk" if args.kokkos else "hybrid/overlay"
+        pair_command = f"pair_style {style} {substyle} {substyle}"
+        coefficients = [f"pair_coeff * * {pair} {i} Ni O" for i in (1, 2)]
+    else:
+        style = pair
+        pair_command = f"pair_style {substyle}"
+        coefficients = ["pair_coeff * * Ni O"]
+    for command in (
+        "units metal",
+        f"processors {comm.size} 1 1",
+        f"atom_style {atom}",
+        "atom_modify map yes",
+        f"read_data {args.data.resolve()}",
+        # No global -sf kk: select the matching integrator explicitly too.
+        f"run_style {integrator}",
+        "mass 1 58.6934",
+        "mass 2 15.9994",
+        pair_command,
+        *coefficients,
+        "neighbor 1.0 bin",
+        "compute fmprop all property/atom fmx fmy fmz",
+        "compute spprop all property/atom spx spy spz sp",
+        "run 0",
+    ):
+        lmp.command(command)
+    assert lmp.extract_pair_dimension("fm_cartesian_force") == 0
+    flag = _pair_pointer(lmp, "fm_cartesian_force", ctypes.POINTER(ctypes.c_int))[0]
+    result = {
+        "convention": flag,
+        "pair_style": lmp.extract_global("pair_style"),
+        "run_style_active": lmp.eval(f"is_active(run_style,{integrator})"),
+        "atom_style": lmp.extract_global("atom_style"),
+        "kokkos_active": lmp.extract_setting("kokkos_active"),
+        "kokkos_ngpus": lmp.extract_setting("kokkos_ngpus"),
+        "newton_pair": lmp.extract_setting("newton_pair"),
+        "local_counts": comm.allgather(lmp.extract_setting("nlocal")),
+        "ghost_counts": comm.allgather(lmp.extract_setting("nghost")),
+        "snapshots": [_snapshot(lmp)],
+    }
+    assert result["pair_style"] == style
+    assert result["atom_style"] == atom
+    # Repeated computes expose stale ghost magnetic-force accumulation.
+    for _ in range(2):
+        lmp.command("run 0")
+        result["snapshots"].append(_snapshot(lmp))
+    if not overlay:
+        scale = _pair_pointer(
+            lmp, "scale", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))
+        )
+        scale[1][1] = 2.75
+        lmp.command("run 0")
+        result["scaled"] = _snapshot(lmp)
+    return result
 
 
 def main():
@@ -140,17 +147,25 @@ def main():
     args = parser.parse_args()
     results = {}
     library = None
-    for selection in ("default", "precession", "cartesian"):
-        results[selection], library = _run(args, selection)
-    for selection in ("precession", "cartesian"):
-        results[f"overlay_{selection}"], library = _run(args, selection, overlay=True)
-    if MPI.COMM_WORLD.rank == 0:
-        args.output.write_text(json.dumps(results))
-    # close() destroys each instance but intentionally keeps Kokkos initialized
-    # for subsequent instances. Finalize it once, before mpi4py finalizes MPI.
-    if args.kokkos:
-        assert library is not None
-        library.lammps_kokkos_finalize()
+    try:
+        for selection, overlay in (
+            ("default", False),
+            ("precession", False),
+            ("cartesian", False),
+            ("precession", True),
+            ("cartesian", True),
+        ):
+            with lammps(cmdargs=_cmdargs(args.kokkos), comm=MPI.COMM_WORLD) as lmp:
+                library = lmp.lib
+                key = f"overlay_{selection}" if overlay else selection
+                results[key] = _run(lmp, args, selection, overlay)
+        if MPI.COMM_WORLD.rank == 0:
+            args.output.write_text(json.dumps(results))
+    finally:
+        # close() destroys each instance but keeps Kokkos initialized for later
+        # instances. Finalize once, even on error, before mpi4py finalizes MPI.
+        if args.kokkos and library is not None:
+            library.lammps_kokkos_finalize()
 
 
 if __name__ == "__main__":

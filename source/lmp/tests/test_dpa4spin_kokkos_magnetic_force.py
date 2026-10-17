@@ -185,6 +185,7 @@ def test_kokkos_conventions_and_mpi(samples):
             assert sample["convention"] == int(selection == "cartesian")
             assert sample["pair_style"] == "dpa4spin/kk"
             assert sample["atom_style"] == "spin/kk"
+            assert sample["run_style_active"] == 1
             assert sample["kokkos_active"] == sample["kokkos_ngpus"] == 1
             assert sample["newton_pair"] == 0
             assert len(sample["local_counts"]) == ranks
@@ -219,6 +220,7 @@ def test_kokkos_overlay_accumulates(samples):
         for selection in ("precession", "cartesian"):
             overlay = result[f"overlay_{selection}"]
             assert overlay["pair_style"] == "hybrid/overlay/kk"
+            assert overlay["run_style_active"] == 1
             assert overlay["convention"] == int(selection == "cartesian")
             for snapshot in overlay["snapshots"]:
                 _assert_snapshot(snapshot, host[selection]["snapshots"][0], scale=2.0)
