@@ -213,3 +213,22 @@ def test_nv_matches_native_nonperiodic(pt_files, name: str) -> None:
     dp_native = DeepPot(pt_files[name], nlist_backend="native")
     dp_nv = DeepPot(pt_files[name], nlist_backend="nv")
     _assert_eval_close(dp_native, dp_nv, coords, None, atype, f"{name} nv nopbc")
+
+
+@_BACKEND_MARKS["vesin"]
+def test_legacy_scripted_model_without_charge_spin():
+    """External neighbor lists must accept older scripted method schemas."""
+    from pathlib import (
+        Path,
+    )
+
+    model = Path(__file__).resolve().parents[2] / "infer/deeppot_sea.pth"
+    native = DeepPot(str(model), nlist_backend="native")
+    external = DeepPot(str(model), nlist_backend="vesin")
+    coordinates = np.array([[0.0, 0.0, 0.0, 0.9, 0.1, 0.0, -0.2, 0.85, 0.1]])
+    box = (np.eye(3) * 10.0).reshape(1, 9)
+    types = np.array([0, 1, 1])
+    expected = native.eval(coordinates, box, types)
+    actual = external.eval(coordinates, box, types)
+    for reference, result in zip(expected, actual, strict=True):
+        np.testing.assert_allclose(result, reference, rtol=1e-10, atol=1e-10)
