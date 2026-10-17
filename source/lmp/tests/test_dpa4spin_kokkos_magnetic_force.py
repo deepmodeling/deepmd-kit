@@ -113,6 +113,8 @@ def _run(tmp_path, data, model, *, ranks, kokkos):
         str(data),
         str(model),
         str(output),
+        "--ranks",
+        str(ranks),
     ]
     if kokkos:
         command.append("--kokkos")

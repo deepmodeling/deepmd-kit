@@ -25,17 +25,15 @@ test -x "${NVCC_WRAPPER}"
 command -v nvcc
 python -c 'import torch; assert torch.cuda.is_available(), "CUDA device is required"'
 
-# Use the same MPI implementation for LAMMPS and its plugin. In CUDA CI this
-# is MPICH, also selected for the ordinary plugin by test_cc_local.sh.
-MPI_SUFFIX=
-if [[ ${DP_USE_MPICH2:-0} == 1 ]]; then
-	MPI_SUFFIX=.mpich
-	export MPI4PY_MPIABI=mpich
-fi
-MPI_C_COMPILER=$(command -v "mpicc${MPI_SUFFIX}")
-MPI_CXX_COMPILER=$(command -v "mpicxx${MPI_SUFFIX}")
+# Use one MPI prefix for headers, libraries, Python bindings and launcher.
+# The CUDA job installs the MPICH wheel before building mpi4py and DeePMD.
+MPI_ROOT=${MPI_HOME:-$(python -c 'import sys; print(sys.prefix)')}
+MPI_C_COMPILER=$(command -v "${MPI_ROOT}/bin/mpicc")
+MPI_CXX_COMPILER=$(command -v "${MPI_ROOT}/bin/mpicxx")
+export MPI4PY_MPIABI=mpich
+export LD_LIBRARY_PATH=${MPI_ROOT}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 export DPA4SPIN_KOKKOS_MPIEXEC
-DPA4SPIN_KOKKOS_MPIEXEC=$(command -v "mpirun${MPI_SUFFIX}")
+DPA4SPIN_KOKKOS_MPIEXEC=$(command -v "${MPI_ROOT}/bin/mpiexec")
 MPI_ARGS=(
 	"-DMPI_C_COMPILER=${MPI_C_COMPILER}"
 	"-DMPI_CXX_COMPILER=${MPI_CXX_COMPILER}"

@@ -76,6 +76,7 @@ def _cmdargs(kokkos):
 
 def _run(lmp, args, selection, overlay=False):
     comm = MPI.COMM_WORLD
+    assert lmp.get_mpi_comm().size == args.ranks
     pair = "dpa4spin/kk" if args.kokkos else "dpa4spin"
     atom = "spin/kk" if args.kokkos else "spin"
     integrator = "verlet/kk" if args.kokkos else "verlet"
@@ -144,7 +145,12 @@ def main():
     parser.add_argument("model", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--kokkos", action="store_true")
+    parser.add_argument("--ranks", type=int, default=1)
     args = parser.parse_args()
+    assert MPI.COMM_WORLD.size == args.ranks, (
+        f"Expected {args.ranks} MPI ranks, got {MPI.COMM_WORLD.size}: "
+        f"{MPI.Get_library_version()}"
+    )
     results = {}
     library = None
     try:
