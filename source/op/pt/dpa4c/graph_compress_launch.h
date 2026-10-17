@@ -160,22 +160,13 @@ constexpr int bispectrum_prefix(int lmax, int k1, int k2, int a, int b, int c) {
 // Degree triples that the sparse coupling artifact must describe, that is
 // every allowed triple except the two the kernel contracts in closed form.
 constexpr int coupling_record_count(int lmax) {
-  int total = 0;
-  for (int l1 = 1; l1 <= lmax; ++l1) {
-    for (int l2 = l1; l2 <= lmax; ++l2) {
-      for (int l3 = l2; l3 <= lmax; ++l3) {
-        if (l3 > l1 + l2 || (l1 + l2 + l3) % 2 != 0) {
-          continue;
-        }
-        if ((l1 == 1 && l2 == 1 && l3 == 2) ||
-            (l1 == 2 && l2 == 2 && l3 == 2)) {
-          continue;
-        }
-        ++total;
-      }
-    }
+  if (lmax < 2) {
+    return 0;
   }
-  return total;
+  if (lmax % 2 == 0) {
+    return ((lmax * lmax * lmax) + (9 * lmax * lmax) + (2 * lmax) - 48) / 24;
+  }
+  return ((lmax * lmax * lmax) + (9 * lmax * lmax) - lmax - 57) / 24;
 }
 
 // Number of lanes that cooperate on one edge. A warp therefore keeps
