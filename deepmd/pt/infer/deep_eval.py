@@ -93,6 +93,9 @@ from deepmd.utils.econf_embd import (
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -170,7 +173,9 @@ class DeepEval(DeepEvalBackend):
             )
             if "model" in state_dict:
                 state_dict = state_dict["model"]
-            self.input_param = state_dict["_extra_state"]["model_params"]
+            self.input_param = normalize_pt_model_params(
+                state_dict["_extra_state"]["model_params"]
+            )
             self.model_def_script = self.input_param
             self.multi_task = "model_dict" in self.input_param
             if self.multi_task:

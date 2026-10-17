@@ -139,6 +139,10 @@ from deepmd.utils.finetune import (
 from deepmd.utils.out_stat import (
     ReduStatScanner,
 )
+from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
+    normalize_pt_model_params,
+)
 
 if torch.__version__.startswith("2"):
     import torch._dynamo
@@ -207,6 +211,18 @@ class Trainer:
         has_initial_state = resuming or init_frz_model is not None
         self.restart_training = restart_model is not None
         model_params = config["model"]
+        if resuming:
+            resume_state = torch.load(
+                resume_model, map_location="cpu", weights_only=True
+            )
+            if "model" in resume_state:
+                resume_state = resume_state["model"]
+            resume_model_params = resume_state.get("_extra_state", {}).get(
+                "model_params"
+            )
+            if isinstance(resume_model_params, dict):
+                apply_pt_checkpoint_defaults(model_params, resume_model_params)
+            del resume_state
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
 
@@ -834,7 +850,9 @@ class Trainer:
                     new_state_dict = {}
                     target_state_dict = self.wrapper.state_dict()
                     # pretrained_model
-                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model_params = normalize_pt_model_params(
+                        state_dict["_extra_state"]["model_params"]
+                    )
                     with scoped_env_defaults(eval_env_defaults):
                         pretrained_model = get_model_for_wrapper(
                             pretrained_model_params
