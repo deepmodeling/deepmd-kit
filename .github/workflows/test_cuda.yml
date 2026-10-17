@@ -92,8 +92,8 @@ jobs:
         with:
           python-version: "3.11"
           # cache: 'pip'
-      - name: Install wget and unzip
-        run: sudo apt-get update && sudo apt-get install -y wget unzip
+      - name: Install build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y wget unzip mpich libmpich-dev
       - uses: lukka/get-cmake@latest
         with:
           useLocalCache: true
@@ -115,13 +115,16 @@ jobs:
       - run: |
           export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit
+          # Compile mpi4py with the same MPICH used by LAMMPS and its plugins.
+          # This also avoids the libmpi/libmpich SONAME mismatch on Ubuntu 22.04.
+          source/install/uv_with_retry.sh pip install --system -v -e .[gpu,test,lmp,cu12,torch,jax] mpi4py --reinstall-package deepmd-kit --reinstall-package mpi4py --no-binary mpi4py
           # See https://github.com/jax-ml/jax/issues/29042
           source/install/uv_with_retry.sh pip install --system -U 'nvidia-cublas-cu12>=12.9.0.13'
         env:
           DP_VARIANT: cuda
           DP_ENABLE_NATIVE_OPTIMIZATION: 1
           DP_ENABLE_PYTORCH: 1
+          MPICC: mpicc.mpich
       - run: dp --version
       - name: Test the default CUDA dtype contract
         run: |
@@ -143,6 +146,18 @@ jobs:
           DP_VARIANT: cuda
           DP_USE_MPICH2: 1
           ENABLE_PADDLE: FALSE
+      - name: Test native-spin magnetic forces with CUDA Kokkos LAMMPS
+        run: |
+          export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:${LD_LIBRARY_PATH:-}
+          source/install/test_lammps_kokkos.sh
+        env:
+          CMAKE_GENERATOR: Ninja
+          DP_VARIANT: cuda
+          DP_USE_MPICH2: 1
+          CUDA_VISIBLE_DEVICES: 0
+          OMP_NUM_THREADS: 1
+          TF_INTRA_OP_PARALLELISM_THREADS: 1
+          TF_INTER_OP_PARALLELISM_THREADS: 1
       - run: |
           export LD_LIBRARY_PATH=$CUDA_PATH/lib64:/usr/lib/x86_64-linux-gnu/:$GITHUB_WORKSPACE/dp_test/lib:$LD_LIBRARY_PATH
           export PATH=$GITHUB_WORKSPACE/dp_test/bin:$PATH
