@@ -146,6 +146,24 @@ def _make_dpa2_descriptor(
     )
 
 
+def _empty_lr_edges(
+    *, dtype: torch.dtype, device: torch.device
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Empty long-range edge placeholders for models without an LR term.
+
+    ``_trace_and_compile_graph`` makes ``lr_edge_index`` / ``lr_edge_vec`` /
+    ``lr_edge_mask`` unconditional positional inputs of the compiled graph
+    lower; a DPA2 model has no long-range term, so the runtime caller
+    (``_CompiledModel`` in ``deepmd/pt_expt/train/training.py``) feeds these
+    empty tensors.  The tests must do the same.
+    """
+    return (
+        torch.empty((2, 0), dtype=torch.int64, device=device),
+        torch.empty((0, 3), dtype=dtype, device=device),
+        torch.empty((0,), dtype=torch.bool, device=device),
+    )
+
+
 class TestDpa2GraphLower:
     def setup_method(self) -> None:
         self.device = env.DEVICE
@@ -689,8 +707,27 @@ class TestDpa2GraphLower:
         )
         atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
 
+        lr_ei, lr_ev, lr_em = _empty_lr_edges(
+            dtype=torch.float64, device=torch.device("cpu")
+        )
         compiled_out = compiled_lower(
-            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs, None
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            fp,
+            ap,
+            cs,
+            None,
+            lr_ei,
+            lr_ev,
+            lr_em,
         )
         eager = model.forward_common_lower_graph(
             atype,
@@ -977,8 +1014,27 @@ class TestDpa2GraphLower:
             want_charge_spin=False,
         )
         atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs = sample
+        lr_ei, lr_ev, lr_em = _empty_lr_edges(
+            dtype=torch.float64, device=torch.device("cpu")
+        )
         compiled_out = compiled_lower(
-            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs, None
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            fp,
+            ap,
+            cs,
+            None,
+            lr_ei,
+            lr_ev,
+            lr_em,
         )
         eager = model.forward_common_lower_graph(
             atype,
@@ -1083,8 +1139,27 @@ class TestDpa2GraphLower:
 
         # (b) compiled-training path (fparam threaded through the compile)
         compiled_lower, _ = _trace_and_compile_graph(model, fp, None, None, None)
+        lr_ei, lr_ev, lr_em = _empty_lr_edges(
+            dtype=torch.float64, device=torch.device("cpu")
+        )
         compiled_out = compiled_lower(
-            atype, n_node, nl, ei, ev, em, do, drp, so, srp, fp, ap, cs, None
+            atype,
+            n_node,
+            nl,
+            ei,
+            ev,
+            em,
+            do,
+            drp,
+            so,
+            srp,
+            fp,
+            ap,
+            cs,
+            None,
+            lr_ei,
+            lr_ev,
+            lr_em,
         )
         ctol = {"rtol": 1e-10, "atol": 1e-10}
         torch.testing.assert_close(compiled_out["energy"], ref["energy_redu"], **ctol)

@@ -51,6 +51,9 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     compact_nodes,
     expand_node_values,
 )
+from deepmd.dpmodel.utils.nlist import (
+    UNBOUNDED_NSEL,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -131,6 +134,21 @@ def model_call_from_call_lower(
     nframes, nloc = atype.shape[:2]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
+    # Non-periodic datasets may carry an all-zero cell; treat it as no box.
+    if bb is not None:
+        xp_bb = array_api_compat.array_namespace(bb)
+        try:
+            zero_box = bool(xp_bb.all(bb == 0))
+        except Exception:
+            # Traced/symbolic arrays (e.g. jax2tf export) cannot be evaluated
+            # to a Python bool, so this rewrite cannot be baked into an
+            # exported graph: the periodic topology is fixed at trace time.
+            # Callers exporting a non-periodic model must pass ``box=None``
+            # at export time; a dynamic all-zero box at runtime is not
+            # representable and keeps the periodic path.
+            zero_box = False
+        if zero_box:
+            bb = None
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
     # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
     # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
@@ -1069,12 +1087,24 @@ def make_model(
                 the formatted nlist.
 
             """
-            n_nf, n_nloc, n_nnei = nlist.shape
             mixed_types = self.mixed_types()
+            # Sentinel capacities (e.g. DPA4C's effectively-unbounded sel)
+            # would allocate absurd padding; a frame can never contribute
+            # more than nall neighbors, so cap them.  Normal capacities must
+            # NOT be capped: type-distinguished descriptors REQUIRE exactly
+            # sum(sel) columns (their statistics and
+            # ``nlist_distinguish_types`` depend on it), so they must never
+            # be capped.  Skip the cap when nall is symbolic (e.g. jax2tf
+            # export), where the comparison would be inconclusive; sentinel
+            # capacities only occur on backends with concrete shapes.
+            nall = extended_atype.shape[1]
+            nnei = sum(self.get_sel())
+            if nnei >= UNBOUNDED_NSEL and isinstance(nall, int) and nnei > nall:
+                nnei = nall
             ret = self._format_nlist(
                 extended_coord,
                 nlist,
-                sum(self.get_sel()),
+                nnei,
                 extra_nlist_sort=extra_nlist_sort,
             )
             if not mixed_types:
