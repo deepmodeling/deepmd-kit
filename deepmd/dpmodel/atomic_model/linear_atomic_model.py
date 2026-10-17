@@ -3,8 +3,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
 
 import array_api_compat
 import numpy as np
@@ -324,6 +330,25 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         neighbor-statistics pass for the whole composition.
         """
         return any(m.compression_needs_min_nbor_dist() for m in self.models)
+
+    def get_neighbor_contract(self) -> "NeighborContract":
+        """Merge child neighbor contracts into one consistent contract.
+
+        Mixed dense compositions (e.g. standard DP+ZBL with ``PairTab``) do
+        not share one representation; publish the composition's dense
+        ``get_sel()`` instead of asking incompatible children to merge.
+        """
+        from deepmd.dpmodel.utils.neighbor_contract import (
+            NeighborContract,
+        )
+
+        if not self.uses_graph_lower():
+            return NeighborContract.dense(self.get_sel(), requires_capacity=False)
+        contracts = [m.get_neighbor_contract() for m in self.models]
+        contract = contracts[0]
+        for other in contracts[1:]:
+            contract = contract.merge(other)
+        return contract
 
     def uses_graph_lower(self) -> bool:
         """Graph-capable iff EVERY child supports the graph lower.

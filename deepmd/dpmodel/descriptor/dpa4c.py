@@ -49,6 +49,9 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils import (
     PairExcludeMask,
 )
+from deepmd.dpmodel.utils.neighbor_contract import (
+    NeighborContract,
+)
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
 )
@@ -2029,6 +2032,22 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     def uses_graph_lower(self) -> bool:
         """Return whether graph-native lowering is supported."""
         return True
+
+    @classmethod
+    def neighbor_contract_from_jdata(cls, local_jdata: dict) -> NeighborContract:
+        """DPA4C is always carry-all graph-native and has no capacity."""
+        del local_jdata
+        return NeighborContract.graph()
+
+    @classmethod
+    def prepare_jdata_for_neighbor_contract(
+        cls,
+        local_jdata: dict,
+        contract: NeighborContract,
+    ) -> dict:
+        """No ``sel`` field to rewrite."""
+        del contract
+        return dict(local_jdata)
 
     def disable_graph_lower(self) -> None:
         """Reject the dense lower, which this descriptor cannot serve.

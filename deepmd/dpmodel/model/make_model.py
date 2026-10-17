@@ -14,6 +14,9 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.utils.exclude_mask import (
         PairExcludeMask,
     )
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
 
 import array_api_compat
 import numpy as np
@@ -1219,6 +1222,10 @@ def make_model(
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
             return self.atomic_model.get_sel()
+
+        def get_neighbor_contract(self) -> "NeighborContract":
+            """Return the neighbor representation contract of this model."""
+            return self.atomic_model.get_neighbor_contract()
 
         def mixed_types(self) -> bool:
             """If true, the model

@@ -411,7 +411,7 @@ def train(
                 train_data = get_data(
                     config["training"]["training_data"], 0, type_map, None
                 )
-            config["model"], min_nbor_dist = BaseModel.update_sel(
+            config["model"], min_nbor_dist = BaseModel.prepare_neighbors(
                 train_data, type_map, config["model"]
             )
         else:
@@ -439,7 +439,7 @@ def train(
                         None,
                     )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
-                    BaseModel.update_sel(
+                    BaseModel.prepare_neighbors(
                         train_data, type_map, config["model"]["model_dict"][model_item]
                     )
                 )

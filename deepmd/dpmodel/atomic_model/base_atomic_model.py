@@ -10,6 +10,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -198,6 +201,21 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         children do).
         """
         return False
+
+    def get_neighbor_contract(self) -> "NeighborContract":
+        """Return the neighbor representation contract of this atomic model.
+
+        Default matches :meth:`uses_graph_lower`: graph-capable models publish
+        a capacity-free graph contract; dense models publish ``get_sel()``.
+        Compositions override to merge or short-circuit child contracts.
+        """
+        from deepmd.dpmodel.utils.neighbor_contract import (
+            NeighborContract,
+        )
+
+        if self.uses_graph_lower():
+            return NeighborContract.graph()
+        return NeighborContract.dense(self.get_sel(), requires_capacity=False)
 
     def supports_native_spin(self) -> bool:
         """Returns whether this atomic model consumes a per-atom spin input.

@@ -8,6 +8,9 @@ from typing import (
 )
 
 if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_contract import (
+        NeighborContract,
+    )
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
     )
@@ -256,6 +259,19 @@ class DPAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         """Get the neighbor selection."""
         return self.descriptor.get_sel()
+
+    def get_neighbor_contract(self) -> "NeighborContract":
+        """Return the neighbor representation contract of this atomic model."""
+        getter = getattr(self.descriptor, "get_neighbor_contract", None)
+        if callable(getter):
+            return getter()
+        from deepmd.dpmodel.utils.neighbor_contract import (
+            NeighborContract,
+        )
+
+        if self.uses_graph_lower():
+            return NeighborContract.graph()
+        return NeighborContract.dense(self.get_sel(), requires_capacity=False)
 
     def set_case_embd(self, case_idx: int) -> None:
         """
