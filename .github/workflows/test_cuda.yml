@@ -83,6 +83,12 @@ jobs:
   test_cc:
     name: Test C++ on CUDA
     runs-on: gpu
+    env:
+      # Ubuntu MPICH leaks host -flto through FindMPI's compile options. NVCC's
+      # fatbin assembly cannot be merged by GCC LTO; override only CUDA host
+      # compilation, after inherited flags. Device optimization and direct C++
+      # compiler invocations are unchanged, as are production build defaults.
+      NVCC_APPEND_FLAGS: --forward-unknown-to-host-compiler -fno-lto
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
       # Jobs run on separate runners, so the C++ job needs its own complete
