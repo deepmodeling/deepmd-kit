@@ -123,10 +123,10 @@ class GeneralFitting(NativeOP, BaseFitting):
         this value will be used as the default value for the frame parameter in the fitting net.
     """
 
-    # A deployment constant kept out of checkpoints; see
+    # Deployment constants kept out of checkpoints; see
     # :meth:`fold_vacuum_reference`. A subclass extends this tuple rather than
     # replacing it.
-    CONFIG_DERIVED_ARRAYS = ("vacuum_table",)
+    CONFIG_DERIVED_ARRAYS = ("vacuum_table", "folded_reference")
 
     def __init__(
         self,
@@ -215,6 +215,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         else:
             self.case_embd = None
         self.vacuum_table = None
+        self.folded_reference = None
 
         if self.default_fparam is not None:
             if self.numb_fparam > 0:
@@ -528,6 +529,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.bias_atom_e = self.bias_atom_e[remap_index]
         # the stored references belong to the old type map
         self.vacuum_table = None
+        self.folded_reference = None
 
     def __setitem__(self, key: str, value: Any) -> None:
         if key in ["bias_atom_e"]:
@@ -892,12 +894,14 @@ class GeneralFitting(NativeOP, BaseFitting):
         Under uniform conditioning the reference output of an atom is a
         constant of its type, so subtracting it from ``bias_atom_e`` yields
         the same outputs as the referenced call and the option is switched
-        off. With frame or atomic parameters the reference output varies
-        between atoms, so the vacuum descriptor is stored instead and the call
-        evaluates the references from the stored table. The table is a
-        deployment constant: an exported model bakes it, checkpoints leave it
-        out, and a fitting loaded from a checkpoint takes the reference from
-        the descriptor again.
+        off; the subtracted outputs are kept as ``folded_reference`` so that
+        :meth:`readout_reference` still knows the bias the fold moved. With
+        frame or atomic parameters the reference output varies between atoms,
+        so the vacuum descriptor is stored instead and the call evaluates the
+        references from the stored table. Both are deployment constants: an
+        exported model bakes them, checkpoints leave them out, and a fitting
+        loaded from a checkpoint takes the reference from the descriptor
+        again.
 
         Parameters
         ----------
@@ -910,11 +914,35 @@ class GeneralFitting(NativeOP, BaseFitting):
         if not self.uniform_conditioning():
             self.vacuum_table = to_numpy_array(vacuum_descriptor)
             return
-        reference = to_numpy_array(self.vacuum_property(vacuum_descriptor))
-        self["bias_atom_e"] = to_numpy_array(self.bias_atom_e) - reference.astype(
+        reference = to_numpy_array(self.vacuum_property(vacuum_descriptor)).astype(
             GLOBAL_NP_FLOAT_PRECISION
         )
+        self.folded_reference = reference
+        self["bias_atom_e"] = to_numpy_array(self.bias_atom_e) - reference
         self.vacuum_ref = False
+
+    def readout_reference(self) -> Array:
+        """Per-type constant the readout gate of a bridging window fades to.
+
+        It is the fitting bias ``bias_atom_e`` of every type, which under the
+        vacuum reference is the output of an isolated atom of that type. A
+        fold under uniform conditioning moves the reference outputs out of the
+        bias; the stored copy restores the bias the gate reads, so the gate
+        is the same function of the atom before and after the fold.
+
+        Returns
+        -------
+        Array
+            The reference of every type with shape (ntypes, dim_out).
+        """
+        if self.folded_reference is None:
+            return self.bias_atom_e
+        xp = array_api_compat.array_namespace(self.bias_atom_e)
+        return self.bias_atom_e + xp.asarray(
+            self.folded_reference,
+            dtype=self.bias_atom_e.dtype,
+            device=array_api_compat.device(self.bias_atom_e),
+        )
 
     def _call_common(
         self,
@@ -926,6 +954,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         fparam: Array | None = None,
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
+        node_gate: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -951,6 +980,9 @@ class GeneralFitting(NativeOP, BaseFitting):
         vacuum_descriptor
             The descriptor of an isolated atom of every type, required by
             ``vacuum_ref``. shape: ntypes x nd
+        node_gate
+            Per-atom source gate of a bridged descriptor; the learned part of
+            the output fades with it. shape: nf x nloc x 1
 
         """
         xp = array_api_compat.array_namespace(descriptor, atype)
@@ -1050,6 +1082,27 @@ class GeneralFitting(NativeOP, BaseFitting):
             ),
             (nf, nloc, net_dim_out),
         )
+        # === Step 3. Readout gate of a bridging window ===
+        # The learned part of the output is its deviation from the bias of
+        # the type (see :meth:`readout_reference`), which is the output of an
+        # isolated atom whenever the fitting references its atoms. A bridged
+        # descriptor hands over the per-atom source gate, and the learned part
+        # fades with it: an atom of a frozen pair keeps only the bias of its
+        # type.
+        if node_gate is not None:
+            reference = xp.reshape(
+                xp.take(
+                    xp.asarray(
+                        self.readout_reference(),
+                        dtype=outs.dtype,
+                        device=array_api_compat.device(outs),
+                    ),
+                    xp.reshape(atype, (-1,)),
+                    axis=0,
+                ),
+                (nf, nloc, net_dim_out),
+            )
+            outs = reference + xp.astype(node_gate, outs.dtype) * (outs - reference)
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         exclude_mask = xp.astype(exclude_mask, xp.bool)
@@ -1070,6 +1123,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         fparam: Array | None = None,
         aparam: Array | None = None,
         vacuum_descriptor: Array | None = None,
+        node_gate: Array | None = None,
     ) -> dict[str, Array]:
         """Graph-native (flat node axis) fitting forward.
 
@@ -1098,6 +1152,9 @@ class GeneralFitting(NativeOP, BaseFitting):
         vacuum_descriptor
             the descriptor of an isolated atom of every type, required by
             ``vacuum_ref``. ntypes x nd
+        node_gate
+            per-atom source gate of a bridged descriptor; the learned part of
+            the output fades with it. N
 
         Returns
         -------
@@ -1130,6 +1187,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             if vacuum_descriptor is None
             else {"vacuum_descriptor": vacuum_descriptor}
         )
+        gate_kwargs = (
+            {} if node_gate is None else {"node_gate": xp.reshape(node_gate, (n, 1, 1))}
+        )
         ret = self.__call__(
             d1,
             a1,
@@ -1139,5 +1199,6 @@ class GeneralFitting(NativeOP, BaseFitting):
             fparam=fparam,
             aparam=ap1,
             **vacuum_kwargs,
+            **gate_kwargs,
         )
         return {kk: xp.reshape(vv, (n, *vv.shape[2:])) for kk, vv in ret.items()}

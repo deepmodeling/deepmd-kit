@@ -3,17 +3,18 @@
 // Kernel body of the fused SO(2) value-path training forward. Included by
 // the per-degree instantiation units and by the host file; the kernel lives
 // in a named namespace so explicit instantiations link across translation
-// units.
+// units. The header carries device code and its launcher only and stays free
+// of ATen, so the instantiation units compile without the framework headers;
+// the launcher reports failures as CUDA status codes for the host to raise.
 
 #pragma once
 
-#include <ATen/ATen.h>
 #include <cuda_bf16.h>
 #include <cuda_runtime.h>
 
 #include <type_traits>
 
-#include "../sezm_train_ops.cuh"
+#include "../sezm_types.cuh"
 
 namespace dpa4_sezm_kernels {
 
@@ -85,9 +86,9 @@ __global__ void so2_value_fwd_kernel(
     int n_gated,
     bool apply_alpha,
     bool has_bias,
-    float inv_tau,
-    float label_smooth,
-    float norm_eps) {
+    typename acc_type<scalar_t>::type inv_tau,
+    typename acc_type<scalar_t>::type label_smooth,
+    typename acc_type<scalar_t>::type norm_eps) {
   using acc_t = typename acc_type<scalar_t>::type;
   constexpr int NS0 = L + 1;
   constexpr int RED = 3 * L + 1;
@@ -278,7 +279,7 @@ __global__ void so2_value_fwd_kernel(
           sq += __shfl_down_sync(0xffffffff, sq, off);
         }
         if (norm_scale != nullptr) {
-          part /= sqrt(sq / (acc_t)cf + (acc_t)norm_eps);
+          part /= sqrt(sq / (acc_t)cf + norm_eps);
         }
         logits[g] = part;
       }
@@ -288,7 +289,7 @@ __global__ void so2_value_fwd_kernel(
           if (has_bias) {
             logits[g] += (acc_t)fc_bias[g];
           }
-          logits[g] *= (acc_t)inv_tau;
+          logits[g] *= inv_tau;
           mx = max(mx, logits[g]);
         }
         acc_t denom = 0;
@@ -296,8 +297,8 @@ __global__ void so2_value_fwd_kernel(
           logits[g] = exp_a(logits[g] - mx);
           denom += logits[g];
         }
-        const acc_t a = logits[f] / denom * (acc_t(1) - (acc_t)label_smooth) +
-                        (acc_t)label_smooth / (acc_t)n_focus;
+        const acc_t a = logits[f] / denom * (acc_t(1) - label_smooth) +
+                        label_smooth / (acc_t)n_focus;
         alp[e * n_focus + f] = a;
         alpha_out[edge * n_focus + f] = a;
       }
@@ -490,75 +491,75 @@ __global__ void so2_value_fwd_kernel(
 // ---------------------------------------------------------------------------
 // Host launcher: rank and tile width switch inside the per-degree unit so
 // the device code of each degree is compiled and launched within one
-// translation unit (no relocatable device code required).
+// translation unit (no relocatable device code required). Returns the status
+// of the dynamic shared-memory request, or cudaErrorInvalidValue for a rank
+// outside the compiled grid; errors of the launch itself surface through
+// cudaGetLastError at the caller.
 // ---------------------------------------------------------------------------
 template <typename scalar_t, int L>
-void launch_so2_value_fwd(const scalar_t* x,
-                          const long* src,
-                          const scalar_t* wig,
-                          const scalar_t* kc,
-                          const scalar_t* cb,
-                          const scalar_t* w_fc,
-                          const scalar_t* fc_bias,
-                          const scalar_t* norm_scale,
-                          const scalar_t* w0_all,
-                          const scalar_t* w1_all,
-                          const scalar_t* gw_all,
-                          scalar_t* x_out,
-                          scalar_t* z_all,
-                          scalar_t* u_final,
-                          typename acc_type<scalar_t>::type* alpha_out,
-                          long n_edge,
-                          long x_sn,
-                          long x_sd,
-                          int cf,
-                          int n_focus,
-                          int n_gated,
-                          bool apply_alpha,
-                          bool has_bias,
-                          float inv_tau,
-                          float label_smooth,
-                          float norm_eps,
-                          int rank,
-                          int te,
-                          long n_blocks,
-                          size_t smem_bytes,
-                          cudaStream_t stream) {
-  auto run = [&](auto rc, auto tc) {
+cudaError_t launch_so2_value_fwd(const scalar_t* x,
+                                 const long* src,
+                                 const scalar_t* wig,
+                                 const scalar_t* kc,
+                                 const scalar_t* cb,
+                                 const scalar_t* w_fc,
+                                 const scalar_t* fc_bias,
+                                 const scalar_t* norm_scale,
+                                 const scalar_t* w0_all,
+                                 const scalar_t* w1_all,
+                                 const scalar_t* gw_all,
+                                 scalar_t* x_out,
+                                 scalar_t* z_all,
+                                 scalar_t* u_final,
+                                 typename acc_type<scalar_t>::type* alpha_out,
+                                 long n_edge,
+                                 long x_sn,
+                                 long x_sd,
+                                 int cf,
+                                 int n_focus,
+                                 int n_gated,
+                                 bool apply_alpha,
+                                 bool has_bias,
+                                 typename acc_type<scalar_t>::type inv_tau,
+                                 typename acc_type<scalar_t>::type label_smooth,
+                                 typename acc_type<scalar_t>::type norm_eps,
+                                 int rank,
+                                 int te,
+                                 long n_blocks,
+                                 size_t smem_bytes,
+                                 cudaStream_t stream) {
+  auto run = [&](auto rc, auto tc) -> cudaError_t {
     auto kernel = so2_value_fwd_kernel<scalar_t, L, decltype(rc)::value,
                                        decltype(tc)::value>;
     if (smem_bytes > 48 * 1024) {
       const cudaError_t error = cudaFuncSetAttribute(
           kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem_bytes);
-      TORCH_CHECK(error == cudaSuccess, "launch_so2_value_fwd: requesting ",
-                  smem_bytes, " bytes of dynamic shared memory failed: ",
-                  cudaGetErrorString(error));
+      if (error != cudaSuccess) {
+        return error;
+      }
     }
     kernel<<<n_blocks, kThreads, smem_bytes, stream>>>(
         x, src, wig, kc, cb, w_fc, fc_bias, norm_scale, w0_all, w1_all, gw_all,
         x_out, z_all, u_final, alpha_out, n_edge, x_sn, x_sd, cf, n_focus,
         n_gated, apply_alpha, has_bias, inv_tau, label_smooth, norm_eps);
+    return cudaSuccess;
   };
-  auto by_te = [&](auto rc) {
+  auto by_te = [&](auto rc) -> cudaError_t {
     switch (te) {
       case 8:
-        run(rc, std::integral_constant<int, 8>{});
-        break;
+        return run(rc, std::integral_constant<int, 8>{});
       case 4:
-        run(rc, std::integral_constant<int, 4>{});
-        break;
+        return run(rc, std::integral_constant<int, 4>{});
       case 2:
-        run(rc, std::integral_constant<int, 2>{});
-        break;
+        return run(rc, std::integral_constant<int, 2>{});
       default:
-        run(rc, std::integral_constant<int, 1>{});
+        return run(rc, std::integral_constant<int, 1>{});
     }
   };
   switch (rank) {
-#define DPA4_SCT_CASE(R)                     \
-  case R:                                    \
-    by_te(std::integral_constant<int, R>{}); \
-    break;
+#define DPA4_SCT_CASE(R) \
+  case R:                \
+    return by_te(std::integral_constant<int, R>{});
     DPA4_SCT_CASE(0)
     DPA4_SCT_CASE(1)
     DPA4_SCT_CASE(2)
@@ -566,7 +567,7 @@ void launch_so2_value_fwd(const scalar_t* x,
     DPA4_SCT_CASE(4)
 #undef DPA4_SCT_CASE
     default:
-      TORCH_CHECK(false, "launch_so2_value_fwd: unsupported rank ", rank);
+      return cudaErrorInvalidValue;
   }
 }
 
