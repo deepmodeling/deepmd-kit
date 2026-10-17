@@ -440,7 +440,12 @@ class FullValidatorBase(ABC):
         }
 
     def _reconcile_best_checkpoints(self) -> None:
-        """Rename retained best checkpoints to ranked names and delete stale ones."""
+        """Rename retained best checkpoints to ranked names and delete stale ones.
+
+        Ranked renames complete before any stale deletion so a mid-reconcile
+        failure cannot leave retained steps missing from disk while bookkeeping
+        still names them.
+        """
         expected_names = self._expected_topk_checkpoint_names()
         current_files = self._list_best_checkpoints()
         files_by_step: dict[int, list[Path]] = {}
@@ -454,33 +459,43 @@ class FullValidatorBase(ABC):
             files_by_step.setdefault(step, []).append(checkpoint_path)
 
         temp_moves: list[tuple[Path, Path]] = []
-        for step, checkpoint_paths in files_by_step.items():
-            expected_name = expected_names.get(step)
-            if expected_name is None:
-                stale_files.extend(checkpoint_paths)
-                continue
+        try:
+            for step, checkpoint_paths in files_by_step.items():
+                expected_name = expected_names.get(step)
+                if expected_name is None:
+                    stale_files.extend(checkpoint_paths)
+                    continue
 
-            keep_path = next(
-                (
-                    checkpoint_path
-                    for checkpoint_path in checkpoint_paths
-                    if checkpoint_path.name == expected_name
-                ),
-                checkpoint_paths[0],
-            )
-            for checkpoint_path in checkpoint_paths:
-                if checkpoint_path != keep_path:
-                    stale_files.append(checkpoint_path)
-            if keep_path.name != expected_name:
-                temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
-                keep_path.rename(temp_path)
-                temp_moves.append((temp_path, keep_path.with_name(expected_name)))
+                keep_path = next(
+                    (
+                        checkpoint_path
+                        for checkpoint_path in checkpoint_paths
+                        if checkpoint_path.name == expected_name
+                    ),
+                    checkpoint_paths[0],
+                )
+                for checkpoint_path in checkpoint_paths:
+                    if checkpoint_path != keep_path:
+                        stale_files.append(checkpoint_path)
+                if keep_path.name != expected_name:
+                    temp_path = keep_path.with_name(f"{keep_path.name}.tmp")
+                    keep_path.rename(temp_path)
+                    temp_moves.append((temp_path, keep_path.with_name(expected_name)))
 
-        for checkpoint_path in stale_files:
-            self._remove_checkpoint_path(checkpoint_path)
-        for temp_path, final_path in temp_moves:
-            self._remove_checkpoint_path(final_path)
-            temp_path.rename(final_path)
+            for temp_path, final_path in temp_moves:
+                self._remove_checkpoint_path(final_path)
+                temp_path.rename(final_path)
+            temp_moves.clear()
+
+            for checkpoint_path in stale_files:
+                self._remove_checkpoint_path(checkpoint_path)
+        except Exception:
+            for temp_path, _final_path in temp_moves:
+                if temp_path.exists():
+                    original = temp_path.with_name(temp_path.name.removesuffix(".tmp"))
+                    if not original.exists():
+                        temp_path.rename(original)
+            raise
 
     def _initialize_best_checkpoints(self, restart_training: bool) -> None:
         """Align on-disk best checkpoints with the current training mode."""

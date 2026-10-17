@@ -2955,10 +2955,21 @@ class Trainer(AbstractTrainer):
         """Whether assembling a checkpoint needs every rank."""
         return self.sharding.enabled
 
-    def save_checkpoint(self, step: int) -> None:
-        # Abort before writing if any gradient norm since the previous
-        # checkpoint was non-finite, so a diverged interval is not persisted.
+    def ensure_finite_gradients_for_checkpoint(self) -> None:
+        """Validate and reset non-finite gradient state before publication.
+
+        Every training-side checkpoint boundary — regular, EMA, validation-best,
+        and EMA-validation-best — must call this once before any checkpoint
+        bytes or publication metadata are written. A regular checkpoint that
+        materializes both live and EMA weights is one logical boundary: the
+        check runs before either file is written and is not repeated between
+        them.
+        """
         self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
+
+    def save_checkpoint(self, step: int) -> None:
+        # One logical publication boundary for live (+ EMA) weights.
+        self.ensure_finite_gradients_for_checkpoint()
         ckpt_path = self.ckpt_store.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
         if self.rank == 0:
@@ -2980,6 +2991,7 @@ class Trainer(AbstractTrainer):
     ) -> None:
         """Save a checkpoint selected by full validation."""
         del lr
+        self.ensure_finite_gradients_for_checkpoint()
         self._save_checkpoint_to_path(save_path, step=step)
 
     def _save_full_validation_ema_checkpoint(
@@ -2994,6 +3006,7 @@ class Trainer(AbstractTrainer):
         so the shadow has to be applied again while writing it.
         """
         del lr
+        self.ensure_finite_gradients_for_checkpoint()
         self._save_checkpoint_to_path(save_path, step=step, use_ema_weights=True)
 
     def _save_checkpoint_to_path(

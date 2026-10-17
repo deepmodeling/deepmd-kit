@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from pathlib import (
+    Path,
+)
 
 import torch
 
@@ -109,6 +112,101 @@ class TestNonFiniteGradGuard(unittest.TestCase):
         # The flag is cleared on inspection, so a later finite interval is clean.
         guard.update(torch.tensor(1.0, device="cpu"))
         guard.raise_if_nonfinite(self._named(1.0))
+
+
+class TestCheckpointPublicationGuard(unittest.TestCase):
+    """Publication-boundary contract via real Trainer save entry points (#5816)."""
+
+    @staticmethod
+    def _named_parameters(grad_value: float = 1.0):
+        p = torch.nn.Parameter(torch.zeros(2, device="cpu"))
+        p.grad = torch.full((2,), grad_value, device="cpu")
+        return lambda: [("layer.weight", p)]
+
+    def _bare_trainer(self, *, with_ema: bool = False):
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt_expt.train.training import (
+            Trainer,
+        )
+
+        trainer = Trainer.__new__(Trainer)
+        trainer.nonfinite_grad_guard = NonFiniteGradGuard()
+        trainer.wrapper = SimpleNamespace(named_parameters=self._named_parameters(1.0))
+        trainer.rank = 0
+        trainer.model_ema = object() if with_ema else None
+        trainer.ckpt_store = SimpleNamespace(
+            path_for=lambda step: Path(f"model.ckpt-{step}.pt"),
+            publish=lambda path: None,
+            prune=lambda path: None,
+        )
+        trainer.ema_ckpt_store = SimpleNamespace(
+            path_for=lambda step: Path(f"model.ckpt-ema-{step}.pt"),
+            publish=lambda path: None,
+            prune=lambda path: None,
+        )
+        return trainer
+
+    def test_validation_best_raises_before_serialize(self) -> None:
+        # Sticky non-finite after a later finite update must still abort
+        # validation-best publication before any serialize callback runs.
+        trainer = self._bare_trainer()
+        trainer.nonfinite_grad_guard.update(torch.tensor(float("nan"), device="cpu"))
+        trainer.nonfinite_grad_guard.update(torch.tensor(1.0, device="cpu"))
+        writes: list[object] = []
+
+        def fake_write(path, *, step: int, use_ema_weights: bool = False) -> None:
+            del step, use_ema_weights
+            writes.append(path)
+
+        trainer._save_checkpoint_to_path = fake_write  # type: ignore[method-assign]
+        with self.assertRaises(RuntimeError):
+            trainer._save_full_validation_checkpoint(Path("best.pt"), step=3)
+        self.assertEqual(writes, [])
+
+    def test_ema_validation_best_raises_before_serialize(self) -> None:
+        trainer = self._bare_trainer()
+        trainer.nonfinite_grad_guard.update(torch.tensor(float("inf"), device="cpu"))
+        writes: list[object] = []
+
+        def fake_write(path, *, step: int, use_ema_weights: bool = False) -> None:
+            del step
+            writes.append((path, use_ema_weights))
+
+        trainer._save_checkpoint_to_path = fake_write  # type: ignore[method-assign]
+        with self.assertRaises(RuntimeError):
+            trainer._save_full_validation_ema_checkpoint(Path("best-ema.pt"), step=4)
+        self.assertEqual(writes, [])
+
+    def test_regular_boundary_validates_once_for_live_and_ema(self) -> None:
+        trainer = self._bare_trainer(with_ema=True)
+        trainer.nonfinite_grad_guard.update(torch.tensor(1.0, device="cpu"))
+        checks = {"count": 0}
+        writes: list[bool] = []
+        real_ensure = trainer.ensure_finite_gradients_for_checkpoint
+
+        def counting_ensure() -> None:
+            checks["count"] += 1
+            real_ensure()
+
+        def fake_write(path, *, step: int, use_ema_weights: bool = False) -> None:
+            del path, step
+            writes.append(use_ema_weights)
+
+        trainer.ensure_finite_gradients_for_checkpoint = (  # type: ignore[method-assign]
+            counting_ensure
+        )
+        trainer._save_checkpoint_to_path = fake_write  # type: ignore[method-assign]
+
+        trainer.save_checkpoint(5)
+
+        self.assertEqual(checks["count"], 1)
+        self.assertEqual(writes, [False, True])
+        # Successful boundary cleared the flag; a later gate is a no-op.
+        trainer.ensure_finite_gradients_for_checkpoint()
+        self.assertEqual(checks["count"], 2)
 
 
 if __name__ == "__main__":
