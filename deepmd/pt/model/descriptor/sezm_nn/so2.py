@@ -2027,7 +2027,12 @@ class SO2Convolution(nn.Module):
         dst = edge_cache.dst
         n_node = x.shape[0]
         order, row_ptr = cached_edge_csr(edge_cache, "dst", n_node)
-        rotation = edge_cache.Dt_full
+        # The banded inference storage serves both rotation directions: the
+        # flash packed convention stores the structural band of D, whose
+        # entries are exactly the Dt columns the aggregation reads.
+        rotation = getattr(edge_cache, "D_packed", None)
+        if rotation is None:
+            rotation = edge_cache.Dt_full
         if rotation is None:
             rotation = self._cuda_value_train.edge_runs(edge_cache)
         pre_gate = self._flash_atten_fn(
