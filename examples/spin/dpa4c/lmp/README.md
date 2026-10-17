@@ -67,3 +67,12 @@ they stay fixed through that stage.
 Spin dynamics through `fix nve/spin` requires a LAMMPS build whose fix
 recognizes this pair style, because the stock fix accumulates the magnetic
 force only from pair styles matching its own name pattern.
+
+The default magnetic-force convention is precession (`|m| / hbar` scaling of
+the model energy gradient). A separately maintained Newtonian Cartesian
+integrator can request `-dE/dS` with only the energy-per-model-spin unit
+conversion via `magnetic_force cartesian` on the `pair_style` line
+(`units metal`) and can confirm the choice through
+`Pair::extract("fm_cartesian_force", dim)`. On `dpa4spin/kk`, pair that keyword
+with the compressed compact-canonical archive (not the graph-lower freeze
+output); host `dpa4spin` may use either archive.

@@ -604,6 +604,20 @@ already performs, and the magnetic force is reduced back onto owning atoms
 alongside the conservative force, so domain decomposition needs no additional
 exchange.
 
+By default the pair styles store the precession magnetic force expected by the
+LAMMPS SPIN package (the model energy gradient scaled by the moment magnitude
+over `hbar`). A Newtonian Cartesian integrator instead needs the raw energy
+gradient `-dE/dS`. Select it with `magnetic_force cartesian` (requires
+`units metal`); the default is `magnetic_force precession`:
+
+```lammps
+pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+```
+
+The selected convention is exposed as the scalar integer
+`Pair::extract("fm_cartesian_force", dim)` (zero for precession, one for
+Cartesian) so a consuming integrator can reject an incompatible configuration.
+
 `min_style spin` reads the magnetic force from the pair style and relaxes the
 moment directions. Spin dynamics through `fix nve/spin` requires a LAMMPS build
 whose fix recognizes this pair style, because the stock fix accumulates the
