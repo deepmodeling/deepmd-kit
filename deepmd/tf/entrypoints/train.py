@@ -52,6 +52,7 @@ from deepmd.tf.utils.finetune import (
     replace_model_params_with_pretrained_model,
 )
 from deepmd.utils.data_system import (
+    close_data_systems,
     get_data,
 )
 from deepmd.utils.path import (
@@ -257,77 +258,84 @@ def _do_work(
     # decouple the training data from the model compress process
     train_data = None
     valid_data = None
-    if not is_compress:
-        # init data
-        train_data = get_data(
-            jdata["training"]["training_data"], rcut, ipt_type_map, modifier
-        )
-        train_data.add_data_requirements(model.data_requirements)
-        train_data.print_summary("training")
-        if jdata["training"].get("validation_data", None) is not None:
-            valid_data = get_data(
-                jdata["training"]["validation_data"],
-                rcut,
-                train_data.type_map,
-                modifier,
+    try:
+        if not is_compress:
+            # init data
+            train_data = get_data(
+                jdata["training"]["training_data"], rcut, ipt_type_map, modifier
             )
-            valid_data.add_data_requirements(model.data_requirements)
-            valid_data.print_summary("validation")
-    else:
-        if modifier is not None:
-            modifier.build_fv_graph()
+            train_data.add_data_requirements(model.data_requirements)
+            train_data.print_summary("training")
+            if jdata["training"].get("validation_data", None) is not None:
+                valid_data = get_data(
+                    jdata["training"]["validation_data"],
+                    rcut,
+                    train_data.type_map,
+                    modifier,
+                )
+                valid_data.add_data_requirements(model.data_requirements)
+                valid_data.print_summary("validation")
+        else:
+            if modifier is not None:
+                modifier.build_fv_graph()
 
-    # get training info
-    training_params = jdata["training"]
-    stop_batch = training_params.get("numb_steps")
-    num_epoch = training_params.get("numb_epoch")
-    if stop_batch is None:
-        if num_epoch is None:
-            raise ValueError(
-                "Either training.numb_steps or training.num_epoch must be set."
+        # get training info
+        training_params = jdata["training"]
+        stop_batch = training_params.get("numb_steps")
+        num_epoch = training_params.get("numb_epoch")
+        if stop_batch is None:
+            if num_epoch is None:
+                raise ValueError(
+                    "Either training.numb_steps or training.num_epoch must be set."
+                )
+            if num_epoch <= 0:
+                raise ValueError("training.num_epoch must be positive.")
+            if train_data is None:
+                raise ValueError(
+                    "training.num_epoch requires training data to compute total_numb_batch."
+                )
+            total_numb_batch = compute_total_numb_batch(
+                train_data.nbatches, train_data.sys_probs
             )
-        if num_epoch <= 0:
-            raise ValueError("training.num_epoch must be positive.")
-        if train_data is None:
-            raise ValueError(
-                "training.num_epoch requires training data to compute total_numb_batch."
+            if total_numb_batch <= 0:
+                raise ValueError("Total number of training batches must be positive.")
+            stop_batch = int(np.ceil(num_epoch * total_numb_batch))
+            log.info(
+                "Computed numb_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                stop_batch,
+                num_epoch,
+                total_numb_batch,
             )
-        total_numb_batch = compute_total_numb_batch(
-            train_data.nbatches, train_data.sys_probs
-        )
-        if total_numb_batch <= 0:
-            raise ValueError("Total number of training batches must be positive.")
-        stop_batch = int(np.ceil(num_epoch * total_numb_batch))
-        log.info(
-            "Computed numb_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+        origin_type_map = jdata["model"].get("origin_type_map", None)
+        if (
+            origin_type_map is not None and not origin_type_map
+        ):  # get the type_map from data if not provided
+            origin_data = get_data(
+                jdata["training"]["training_data"], rcut, None, modifier
+            )
+            try:
+                origin_type_map = origin_data.get_type_map()
+            finally:
+                close_data_systems(origin_data)
+        model.build(
+            train_data,
             stop_batch,
-            num_epoch,
-            total_numb_batch,
+            origin_type_map=origin_type_map,
+            stat_file_path=stat_file_path,
         )
-    origin_type_map = jdata["model"].get("origin_type_map", None)
-    if (
-        origin_type_map is not None and not origin_type_map
-    ):  # get the type_map from data if not provided
-        origin_type_map = get_data(
-            jdata["training"]["training_data"], rcut, None, modifier
-        ).get_type_map()
-    model.build(
-        train_data,
-        stop_batch,
-        origin_type_map=origin_type_map,
-        stat_file_path=stat_file_path,
-    )
 
-    if not is_compress:
-        # train the model with the provided systems in a cyclic way
-        start_time = time.time()
-        model.train(train_data, valid_data)
-        end_time = time.time()
-        log.info("finished training")
-        log.info(f"wall time: {(end_time - start_time):.3f} s")
-    else:
-        model.save_compressed()
-        log.info("finished compressing")
+        if not is_compress:
+            # train the model with the provided systems in a cyclic way
+            start_time = time.time()
+            model.train(train_data, valid_data)
+            end_time = time.time()
+            log.info("finished training")
+            log.info(f"wall time: {(end_time - start_time):.3f} s")
+        else:
+            model.save_compressed()
+            log.info("finished compressing")
+    finally:
+        close_data_systems(train_data, valid_data)
 
 
 def get_modifier(modi_data: dict | None = None) -> BaseModifier | None:
@@ -355,9 +363,12 @@ def update_sel(jdata: dict) -> dict:
         type_map,
         None,  # not used
     )
-    jdata_cpy["model"], min_nbor_dist = Model.update_sel(
-        train_data, type_map, jdata["model"]
-    )
+    try:
+        jdata_cpy["model"], min_nbor_dist = Model.update_sel(
+            train_data, type_map, jdata["model"]
+        )
+    finally:
+        close_data_systems(train_data)
 
     if min_nbor_dist is not None:
         tf.constant(
