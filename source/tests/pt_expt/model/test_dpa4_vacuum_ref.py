@@ -228,7 +228,7 @@ def test_dense_and_graph_routes_share_the_vacuum_descriptor() -> None:
     graph, atype_all, charge_spin, spin = am.append_vacuum_frames(
         graph, atype.reshape(-1), charge_spin, spin
     )
-    gg, _ = am.descriptor.call_graph(
+    gg, _, _ = am.descriptor.call_graph(
         graph,
         atype_all,
         type_embedding=am.descriptor.graph_type_embedding_table(),

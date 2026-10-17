@@ -29,12 +29,21 @@ from deepmd.pt_expt.utils import (
 )
 
 # Structural variants exercised by the backend-agnostic contracts. They span
-# both angular profiles and both radial function classes.
+# both angular profiles and both radial function classes, and one bridging
+# window whose transition zone holds several pairs of the test cluster.
 STRUCTURES = [
     {"channels": 16, "lmax": 2, "radial_modes": 0},
     {"channels": 32, "lmax": 4, "radial_modes": 0},
     {"channels": 32, "lmax": 2, "radial_modes": 3},
     {"channels": 16, "lmax": 3, "radial_modes": 3},
+    {
+        "channels": 16,
+        "lmax": 3,
+        "radial_modes": 3,
+        "inner_clamp_f_inner": 1.0,
+        "inner_clamp_f_outer": 1.25,
+        "inner_clamp_scale": "absolute",
+    },
 ]
 
 
@@ -239,7 +248,11 @@ class TestDPA4C:
         assert restored.compress
         assert not tuple(restored.radial_embedding.parameters())
         assert not any(parameter.requires_grad for parameter in restored.parameters())
-        torch.testing.assert_close(self._evaluate(restored, self.coord), reference)
+        # The descriptor computes in single precision, so the comparison takes
+        # the single-precision tolerances whatever the dtype of the output.
+        torch.testing.assert_close(
+            self._evaluate(restored, self.coord), reference, rtol=1.3e-6, atol=1e-5
+        )
 
     def test_serialization_preserves_parameters(self) -> None:
         restored = DescrptDPA4C.deserialize(self.descriptor.serialize()).to(env.DEVICE)
@@ -453,6 +466,56 @@ class TestDPA4C:
             self._dimer_probe(descriptor, radius, active=True),
             self._dimer_probe(descriptor, radius, active=False),
             atol=1e-14,
+            rtol=0.0,
+        )
+
+    def test_bridging_window_is_c3_continuous(self) -> None:
+        window = {
+            "inner_clamp_f_inner": 0.5,
+            "inner_clamp_f_outer": 0.8,
+            "inner_clamp_scale": "absolute",
+        }
+        descriptor = self.build(channels=16, lmax=4, **window).eval()
+        plain = self.build(channels=16, lmax=4).eval()
+        # The septic switch meets both radii with three vanishing derivatives:
+        # at the inner radius the probe joins the constant of the removed
+        # edge, at the outer radius it joins the plain descriptor. The
+        # regularized distance exceeds the separation by 1e-14 Å, which the
+        # fourth derivative of the switch turns into the tolerance below.
+        inner = self._dimer_derivatives(descriptor, 0.5)
+        for order in (1, 2, 3):
+            torch.testing.assert_close(
+                inner[order],
+                torch.zeros_like(inner[order]),
+                atol=1e-8,
+                rtol=0.0,
+            )
+        outer = self._dimer_derivatives(descriptor, 0.8)
+        reference = self._dimer_derivatives(plain, 0.8)
+        assert reference[3].abs() > 1e-3
+        for order in range(4):
+            torch.testing.assert_close(
+                outer[order],
+                reference[order],
+                atol=1e-8,
+                rtol=0.0,
+            )
+
+    def test_frozen_edge_matches_removed_topology(self) -> None:
+        descriptor = self.build(
+            inner_clamp_f_inner=0.5,
+            inner_clamp_f_outer=0.8,
+            inner_clamp_scale="absolute",
+        ).eval()
+        plain = self.build().eval()
+        radius = torch.tensor(0.5, dtype=torch.float64, device=env.DEVICE)
+        removed = self._dimer_probe(descriptor, radius, active=False)
+        # The plain descriptor must see the pair, or the comparison is vacuous.
+        assert (self._dimer_probe(plain, radius) - removed).abs() > 1e-3
+        torch.testing.assert_close(
+            self._dimer_probe(descriptor, radius, active=True),
+            removed,
+            atol=0.0,
             rtol=0.0,
         )
 

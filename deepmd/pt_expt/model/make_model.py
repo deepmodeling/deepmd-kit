@@ -84,6 +84,32 @@ def _translate_energy_keys(
     return out
 
 
+def fused_atom_bias(atomic_model: Any, learned: Any) -> torch.Tensor:
+    """Collect the per-type energy bias a fused pipeline adds to every atom.
+
+    The fitting net carries its own bias and every atomic model an output
+    bias; a bridged composition keeps the statistics on the composition and
+    leaves the one of its learned part at zero, so the sum covers both forms.
+
+    Parameters
+    ----------
+    atomic_model : BaseAtomicModel
+        Atomic model of the evaluated model.
+    learned : DPAtomicModel
+        Its learned descriptor-fitting part, which is ``atomic_model`` itself
+        unless the model is a bridged composition.
+
+    Returns
+    -------
+    torch.Tensor
+        Energy bias with shape ``(ntypes,)`` in eV.
+    """
+    atom_bias = learned.fitting_net.bias_atom_e[:, 0] + atomic_model.out_bias[0, :, 0]
+    if learned is not atomic_model:
+        atom_bias = atom_bias + learned.out_bias[0, :, 0]
+    return atom_bias
+
+
 def _fused_energy_force_graph(
     model: Any,
     graph: Any,
@@ -102,23 +128,33 @@ def _fused_energy_force_graph(
     model dict. Returns the same keys as
     :func:`fit_output_to_model_output_graph`, or ``None`` when no descriptor
     fused path applies -- the caller then uses the level-1 autograd lower.
+
+    The atomic model answers what the pipeline evaluates
+    (``fused_decomposition``): its learned descriptor-fitting part and, for a
+    bridged composition, the analytical pair potential that the descriptor's
+    edge scan evaluates alongside. Masks and graph preparation stay with the
+    atomic model itself, which owns the exclusions.
     """
     am = model.atomic_model
-    desc = getattr(am, "descriptor", None)
-    fit = getattr(am, "fitting_net", None)
+    parts = am.fused_decomposition()
+    if parts is None:
+        return None
+    learned, pair_potential = parts
+    desc, fit = learned.descriptor, learned.fitting_net
     fused = getattr(desc, "fused_energy_force_graph", None)
-    if fused is None or fit is None:
+    if fused is None:
         return None
     if fit.vacuum_ref and not fit.uniform_conditioning():
         # The reference varies between atoms while the operators take a
         # per-type bias only, so such a model uses the autograd lower.
         return None
     graph, atype, output_mask = am._prepare_graph_inputs(graph, atype)
-    atom_bias = fit.bias_atom_e[:, 0] + am.out_bias[0, :, 0]
+    atom_bias = fused_atom_bias(am, learned)
     if fit.vacuum_ref:
         # The fused operators see the real atoms alone; the vacuum reference
         # of every type is a constant here and enters through the bias.
-        atom_bias = atom_bias - fit.vacuum_property(am.vacuum_descriptor())[:, 0]
+        atom_bias = atom_bias - fit.vacuum_property(learned.vacuum_descriptor())[:, 0]
+    pair = {} if pair_potential is None else {"pair_table": pair_potential.pair_table}
     out = fused(
         fit,
         graph,
@@ -127,6 +163,7 @@ def _fused_energy_force_graph(
         atom_bias,
         do_atomic_virial,
         spin,
+        **pair,
     )
     if out is None:
         return None
@@ -951,9 +988,9 @@ def make_model(
                     "graph lower (e.g. dpa1 attn_layer=0)"
                 )
             rcut = self.get_rcut()
-            # CSR pre-sort serves the compressed-DPA1 fused kernels only;
-            # probe via the atomic model's own descriptor when it has one
-            # (compositions have none and never take the fused path).
+            # CSR pre-sort serves the compressed-DPA1 fused kernels only,
+            # which run for plain models alone; probe via the atomic model's
+            # own descriptor, which a composition does not have.
             _desc = getattr(self.atomic_model, "descriptor", None)
             with_csr = (
                 not self.training

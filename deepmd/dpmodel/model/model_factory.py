@@ -11,10 +11,12 @@ from typing import (
 )
 
 from deepmd.utils.bridging import (
+    resolve_bridging_window,
     route_canonical_learned_options,
 )
 from deepmd.utils.spin import (
     Spin,
+    env_protection_descriptors,
 )
 
 ModelBuilder = Callable[[dict], Any]
@@ -147,9 +149,9 @@ def get_linear_atomic_model(
     atomic models; an ``inner_potential`` child builds the analytical
     bridging term. The composition is the ONE owner of the bridging
     coupling: it derives the learned sibling descriptor's
-    ``inner_clamp_r_inner``/``_outer`` from the ``inner_potential``
-    child's ``r_inner``/``r_outer``, so the radii are written once in the
-    config (issue #5948).
+    ``inner_clamp_f_inner``/``_f_outer``/``_scale`` from the
+    ``inner_potential`` child's window, so the window is written once in
+    the config (issue #5948).
 
     Parameters
     ----------
@@ -266,21 +268,27 @@ def get_linear_atomic_model(
         learned_descriptor_type = str(
             children[learned_indices[0]]["descriptor"].get("type", "dpa4")
         )
-        if learned_descriptor_type not in ("dpa4", "DPA4", "sezm", "SeZM"):
-            # same family restriction as the pt builder: the clamp window
-            # below only exists on DPA4/SeZM descriptors, so any other
+        if learned_descriptor_type not in (
+            "dpa4",
+            "DPA4",
+            "sezm",
+            "SeZM",
+            "dpa4c",
+            "DPA4C",
+        ):
+            # same family restriction as the pt builder: the bridging window
+            # below only exists on DPA4-family descriptors, so any other
             # family would die on an obscure unknown-kwarg TypeError
             raise NotImplementedError(
                 f"The {backend_name} backend implements `inner_potential` "
-                "bridging only for the DPA4/SeZM descriptor family, but got "
-                f"{learned_descriptor_type!r}."
+                "bridging only for the DPA4 descriptor family (DPA4/SeZM and "
+                f"DPA4C), but got {learned_descriptor_type!r}."
             )
         # The composition derives the sibling descriptor's clamp window from
-        # the inner_potential child: one source of truth for the radii.
+        # the inner_potential child: one source of truth for the window.
         inner_cfg = children[inner_indices[0]]
         learned_descriptor = children[learned_indices[0]]["descriptor"]
-        learned_descriptor["inner_clamp_r_inner"] = float(inner_cfg.get("r_inner", 0.5))
-        learned_descriptor["inner_clamp_r_outer"] = float(inner_cfg.get("r_outer", 0.8))
+        learned_descriptor.update(resolve_bridging_window(inner_cfg))
         route_canonical_learned_options(data, children[learned_indices[0]])
         preset_out_bias = children[learned_indices[0]].get("preset_out_bias")
 
@@ -309,7 +317,15 @@ def get_linear_atomic_model(
                     fitting_base=fitting_base,
                     backend_name=backend_name,
                 )
-                child = atomic_model(descriptor, fitting, type_map=sub["type_map"])
+                # The composition computes the output bias, so its preset
+                # decides whether the fitting of a child references the
+                # isolated atoms.
+                child = atomic_model(
+                    descriptor,
+                    fitting,
+                    type_map=sub["type_map"],
+                    preset_out_bias=preset_out_bias,
+                )
             built[i] = child
         else:
             if sub.get("type") != "pairtab":
@@ -366,7 +382,8 @@ def get_spin_model(
     data["atom_exclude_types"] = spin.get_atom_exclude_types(
         exclude_types=data.get("atom_exclude_types")
     )
-    data["descriptor"].setdefault("env_protection", 1e-6)
+    for descriptor in env_protection_descriptors(data["descriptor"]):
+        descriptor.setdefault("env_protection", 1e-6)
     if data["descriptor"]["type"] == "se_e2_a":
         data["descriptor"]["sel"] += data["descriptor"]["sel"]
     backbone_model = standard_model_factory(data)
