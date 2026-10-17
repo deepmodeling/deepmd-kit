@@ -380,3 +380,23 @@ def use_amp_infer() -> bool:
         ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
     """
     return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_gie_scatter_infer() -> bool:
+    """Return whether the GIE head message runs the fused scatter operator.
+
+    The flag is controlled by the ``DP_GIE_SCATTER_INFER`` environment
+    variable and is read when the geometric initial embedding module is
+    constructed. When truthy (CUDA fp32 inference with the packed contiguous
+    row layout), the per-edge zonal message is built and destination-reduced
+    inside one Triton operator instead of the reference composition, so the
+    ``(E, D-1, C)`` edge message surface is never materialized in either
+    direction. The reduction walks the stable destination CSR, matching the
+    eager ``index_add_`` addition order.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_GIE_SCATTER_INFER`` is set to a truthy value.
+    """
+    return os.environ.get("DP_GIE_SCATTER_INFER", "0").strip().lower() in _INFER_TRUE
