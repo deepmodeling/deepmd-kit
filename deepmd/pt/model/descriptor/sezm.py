@@ -67,6 +67,8 @@ from deepmd.pt.utils.update_sel import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
+    triton_infer_level,
+    triton_train_level,
     use_amp_infer,
 )
 from deepmd.utils.bridging import (
@@ -132,24 +134,41 @@ if TYPE_CHECKING:
 
 
 @BaseDescriptor.register("SeZM")
-def block_supports_packed_wigner(so2_conv: Any) -> bool:
-    """Whether one block's selected rotation consumers address the band.
+def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
+    """Whether one block's *currently selected* rotation consumers address
+    the band.
 
     The banded layout serves the Triton value path and the Triton
-    rotate-mix path (whose kernels address the band directly), together
-    with the attention aggregation and the GIE coupling that read the same
-    tensor. Any dense-layout consumer -- the cuTile value path, the fused
-    CUDA convolution, the CUDA training value path, or the plain SO2
-    reference path (no Triton binding at all) -- keeps the dense surfaces.
+    rotate-mix path (whose kernels address the band directly) together
+    with the Triton flash aggregation and the GIE coupling that read the
+    same tensor.  Every dense-layout consumer keeps the dense surfaces:
+    the cuTile value path, the fused CUDA convolution, the CUDA training
+    value path, the plain SO2 reference path (no Triton binding selected
+    at the *current* level and mode), and the aggregation routes that
+    rotate messages back through ``Dt_full`` (no attention heads, or an
+    attention layout with value/output projections, where the flash
+    operator does not bind).  The check is evaluated per cache build, so
+    mode and level changes between builds are honored.
     """
-    return (
-        getattr(so2_conv, "_cutile_value_path", None) is None
-        and getattr(so2_conv, "_cuda_conv_fn", None) is None
-        and getattr(so2_conv, "_cuda_value_train", None) is None
-        and (
-            getattr(so2_conv, "_triton_value_path", None) is not None
-            or getattr(so2_conv, "_triton_rotate_mix", None) is not None
-        )
+    if getattr(so2_conv, "_cutile_value_path", None) is not None:
+        return False
+    if getattr(so2_conv, "_cuda_conv_fn", None) is not None:
+        return False
+    if getattr(so2_conv, "_cuda_value_train", None) is not None:
+        return False
+    # Inverse-rotation consumer: without a bound flash aggregation the
+    # message is rotated back through the dense inverse matrix.
+    if getattr(so2_conv, "_flash_atten_fn", None) is None:
+        return False
+    level = triton_train_level() if training else triton_infer_level()
+    if level < 1:
+        return False
+    # Forward-rotation consumer selected at the current level.
+    if training:
+        return getattr(so2_conv, "_triton_rotate_mix", None) is not None
+    return getattr(so2_conv, "_triton_value_path", None) is not None or (
+        getattr(so2_conv, "_triton_value_path", None) is None
+        and getattr(so2_conv, "_triton_rotate_mix", None) is not None
     )
 
 
@@ -1148,9 +1167,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             for block in self.blocks
         )
         # Banded storage additionally requires every selected rotation
-        # consumer to address the band (see ``block_supports_packed_wigner``).
-        self._packed_wigner_consumers = bool(self.blocks) and all(
-            block_supports_packed_wigner(block.so2_conv) for block in self.blocks
+        # consumer to address the band; the decision is re-evaluated at
+        # each cache build so train/eval and level changes are honored
+        # (see ``block_supports_packed_wigner``).
+        self._blocks_have_so2_conv = bool(self.blocks) and all(
+            hasattr(block, "so2_conv") for block in self.blocks
         )
 
         # The envelope and the radial basis are both functions of the pair
@@ -1453,7 +1474,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
-                packed_wigner=self._packed_wigner_consumers,
+                packed_wigner=self._packed_wigner_ok(),
             )
 
         ebed_dim_0 = self.node_init_dim  # (node_init_lmax+1)^2
@@ -1770,7 +1791,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
                 build_wigner=self._build_full_wigner(),
-                packed_wigner=self._packed_wigner_consumers,
+                packed_wigner=self._packed_wigner_ok(),
                 node_partial_exchange=node_partial_exchange,
             )
 
@@ -2089,6 +2110,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 eps=self.eps,
             )
         return edge_quat
+
+    def _packed_wigner_ok(self) -> bool:
+        """Every block's currently selected consumers address the band."""
+        if not self._blocks_have_so2_conv:
+            return False
+        return all(
+            block_supports_packed_wigner(block.so2_conv, self.training)
+            for block in self.blocks
+        )
 
     def _build_full_wigner(self) -> bool:
         """Return whether the active execution path needs dense Wigner blocks."""

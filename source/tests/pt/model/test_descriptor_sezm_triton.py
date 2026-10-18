@@ -23,6 +23,7 @@ reference:
 """
 
 import math
+import os
 import typing
 import unittest
 from unittest import (
@@ -2052,7 +2053,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 
 class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
-    """The banded layout requires every rotation consumer to address it."""
+    """The banded layout requires every *currently selected* consumer."""
 
     def _conv(self, **kw):
         from types import (
@@ -2065,41 +2066,95 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
             "_cuda_value_train": None,
             "_triton_value_path": None,
             "_triton_rotate_mix": None,
+            "_flash_atten_fn": None,
         }
         base.update(kw)
         return SimpleNamespace(**base)
+
+    def _with_levels(self, infer, train):
+        old_i = os.environ.get("DP_TRITON_INFER")
+        old_t = os.environ.get("DP_TRITON_TRAIN")
+        os.environ["DP_TRITON_INFER"] = infer
+        os.environ["DP_TRITON_TRAIN"] = train
+
+        def restore():
+            for key, old in (("DP_TRITON_INFER", old_i), ("DP_TRITON_TRAIN", old_t)):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        self.addCleanup(restore)
 
     def test_gate_matrix(self):
         from deepmd.pt.model.descriptor.sezm import (
             block_supports_packed_wigner,
         )
 
-        self.assertTrue(
-            block_supports_packed_wigner(self._conv(_triton_value_path=object()))
+        self._with_levels("2", "0")
+        # Dense-layout value/aggregation consumers block the band.
+        self.assertFalse(
+            block_supports_packed_wigner(self._conv(_triton_value_path=object()), False)
         )
-        self.assertTrue(
-            block_supports_packed_wigner(self._conv(_triton_rotate_mix=object()))
+        # The envelope aggregation (no attention heads) rotates back
+        # through Dt_full even with a packed-capable forward path.
+        self.assertFalse(
+            block_supports_packed_wigner(
+                self._conv(
+                    _triton_value_path=object(),
+                    _flash_atten_fn=None,
+                ),
+                False,
+            )
         )
         # cuTile, the fused CUDA convolution and the CUDA training path all
-        # address the dense layout and must block the banded storage
-        self.assertFalse(
+        # address the dense layout and must block the banded storage.
+        for dense in (
+            "_cutile_value_path",
+            "_cuda_conv_fn",
+            "_cuda_value_train",
+        ):
+            with self.subTest(dense=dense):
+                kw = {
+                    "_triton_value_path": object(),
+                    "_flash_atten_fn": object(),
+                    dense: object(),
+                }
+                self.assertFalse(block_supports_packed_wigner(self._conv(**kw), False))
+        # The plain SO2 reference path (no Triton binding at all) reads the
+        # dense surface.
+        self.assertFalse(block_supports_packed_wigner(self._conv(), False))
+        # A fully packed-capable selection passes in eval.
+        self.assertTrue(
             block_supports_packed_wigner(
-                self._conv(_triton_value_path=object(), _cutile_value_path=object())
+                self._conv(_triton_value_path=object(), _flash_atten_fn=object()),
+                False,
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             block_supports_packed_wigner(
-                self._conv(_triton_value_path=object(), _cuda_conv_fn=object())
+                self._conv(_triton_rotate_mix=object(), _flash_atten_fn=object()),
+                False,
             )
         )
-        self.assertFalse(
-            block_supports_packed_wigner(
-                self._conv(_triton_value_path=object(), _cuda_value_train=object())
-            )
+
+    def test_gate_follows_mode_and_levels(self):
+        """The gate is evaluated against the current mode and levels."""
+        from deepmd.pt.model.descriptor.sezm import (
+            block_supports_packed_wigner,
         )
-        # no accelerated binding: the plain SO2 reference path reads the
-        # dense surface
-        self.assertFalse(block_supports_packed_wigner(self._conv()))
+
+        packed_conv = self._conv(_triton_value_path=object(), _flash_atten_fn=object())
+        # Inference level 2, training level 0: eval passes, train rejects.
+        self._with_levels("2", "0")
+        self.assertTrue(block_supports_packed_wigner(packed_conv, False))
+        self.assertFalse(block_supports_packed_wigner(packed_conv, True))
+        # Inference level 0, training level 1: eval rejects; a
+        # training-bound rotate-mix block passes in train mode.
+        self._with_levels("0", "1")
+        self.assertFalse(block_supports_packed_wigner(packed_conv, False))
+        train_conv = self._conv(_triton_rotate_mix=object(), _flash_atten_fn=object())
+        self.assertTrue(block_supports_packed_wigner(train_conv, True))
 
 
 if __name__ == "__main__":
