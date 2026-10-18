@@ -30,6 +30,9 @@ from deepmd.pt_expt.train.wrapper import (
 from deepmd.pt_expt.utils import (
     env,
 )
+from deepmd.pt_expt.utils.serialization import (
+    deserialize_to_file,
+)
 
 from ..compile_utils import (
     REQUIRES_SUPPORTED_COMPILE,
@@ -539,6 +542,67 @@ def test_checkpoint_inference_matches_direct_forward(tmp_path, kernel: str) -> N
     np.testing.assert_allclose(moved[0], actual["energy"], rtol=0, atol=1e-12)
 
 
+@pytest.mark.parametrize(
+    ("kernel", "source", "suffix"),
+    [("les", "neutral", ".pt2"), ("sog", "neutral", ".pte"), ("les", "fparam", ".pte")],
+)
+def test_frozen_model_matches_direct_forward(
+    tmp_path, kernel: str, source: str, suffix: str
+) -> None:
+    """A frozen model reads the pair topology as named inputs of any length."""
+    config = _config(kernel, constraint={"source": source, "fparam_index": 0})
+    frame = {}
+    if source == "fparam":
+        config["fitting_net"]["numb_fparam"] = 1
+        frame["fparam"] = np.array([[1.0], [-0.5], [2.0]])
+    model = get_model(config).to(env.DEVICE).eval()
+    frozen = tmp_path / f"long_range_{kernel}{suffix}"
+    deserialize_to_file(
+        str(frozen),
+        {"model": model.serialize(), "model_def_script": config},
+        do_atomic_virial=True,
+        lower_kind="graph",
+    )
+    dp = DeepPot(str(frozen), auto_batch_size=False)
+    assert dp.deep_eval.metadata["topologies"] == ["all_pairs"]
+    if suffix == ".pte":
+        names = [
+            node.name
+            for node in torch.export.load(str(frozen)).graph_module.graph.nodes
+            if node.op == "placeholder"
+        ]
+        for name, expected_name in zip(
+            names[-3:], ("pair_index", "pair_vec", "pair_mask"), strict=True
+        ):
+            assert name.startswith(expected_name), names
+    names = ("energy", "force", "virial", "atom_energy", "atom_virial")
+    for seed, nloc in ((7, 6), (8, 4)):
+        coord, atype = _batch(seed=seed)
+        coord, atype = coord[:, :nloc], atype[:, :nloc]
+        expected = model(
+            coord,
+            atype,
+            do_atomic_virial=True,
+            **{key: _tensor(value) for key, value in frame.items()},
+        )
+        actual = dp.eval(
+            coord.cpu().numpy(),
+            None,
+            atype.cpu().numpy(),
+            atomic=True,
+            mixed_type=True,
+            **frame,
+        )
+        for name, value in zip(names, actual, strict=True):
+            np.testing.assert_allclose(
+                value,
+                expected[name].detach().cpu().numpy().reshape(value.shape),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=name,
+            )
+
+
 @pytest.mark.parametrize("kernel", ["les", "sog"])
 @REQUIRES_SUPPORTED_COMPILE
 def test_compiled_matches_eager(kernel: str) -> None:
@@ -625,12 +689,6 @@ def test_unsupported_combinations_fail() -> None:
     }
     with pytest.raises(NotImplementedError, match="DPA4C"):
         get_model(config)
-    from deepmd.pt_expt.utils.serialization import (
-        _trace_and_export,
-    )
-
-    with pytest.raises(NotImplementedError, match="deployable"):
-        _trace_and_export({"model": model.serialize()})
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])

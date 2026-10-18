@@ -61,6 +61,8 @@ from .pair_graph import (
     PairGraph,
     build_pair_graph,
     build_topologies,
+    flatten_topologies,
+    unflatten_topologies,
     unordered_pair_index,
 )
 from .pairs import (
@@ -97,6 +99,7 @@ __all__ = [
     "edge_env_mat",
     "edge_force_virial",
     "expand_node_values",
+    "flatten_topologies",
     "frame_id_from_n_node",
     "from_dense_quartet",
     "graph_angle_cos",
@@ -111,5 +114,6 @@ __all__ = [
     "segment_mean",
     "segment_softmax",
     "segment_sum",
+    "unflatten_topologies",
     "unordered_pair_index",
 ]

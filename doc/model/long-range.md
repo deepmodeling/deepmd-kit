@@ -121,8 +121,12 @@ long-range interaction is part of the compiled model: the pairs of each frame
 are listed outside the compiled region and enter it as inputs of dynamic
 length.
 
-A trained checkpoint (`.pt`) is evaluated by `dp test` and the Python
-inference interface. The following are not supported for a model with a
-long-range module: freezing to `.pt2` or `.pte`, compression, multi-rank
-(domain-decomposed) inference, spin models, the tabulated ZBL potential,
-and short-range bridging.
+`dp --pt-expt freeze` exports the model, long-range module included, to
+`.pt2` or `.pte`. A trained checkpoint (`.pt`) and the frozen model are
+evaluated by `dp test` and the Python inference interface, which list the
+pairs of each frame before calling the model. The C++ interface, and with it
+LAMMPS, does not evaluate a model with a long-range module.
+
+The following are not supported for a model with a long-range module:
+compression, multi-rank (domain-decomposed) inference, spin models, the
+tabulated ZBL potential, and short-range bridging.

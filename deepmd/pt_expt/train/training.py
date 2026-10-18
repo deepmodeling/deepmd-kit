@@ -73,8 +73,9 @@ from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
-    PairGraph,
     build_topologies,
+    flatten_topologies,
+    unflatten_topologies,
 )
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
@@ -865,6 +866,7 @@ def _trace_and_compile_graph(
     # its graph builders omit the CSR metadata carried by deployment inputs.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
+        build_synthetic_topologies,
         check_graph_trace_torch_version,
         count_synthetic_graph_edges,
     )
@@ -922,22 +924,19 @@ def _trace_and_compile_graph(
     # tensors, while forward_common_lower_graph takes it after them.
     s_spin = s_conditioning.pop(0) if spin is not None else None
     s_fparam, s_aparam, s_charge_spin = s_conditioning
-    # The trace reads only the shapes of the pair topologies, so the synthetic
-    # pairs join fixed nodes over a pair count distinct from the other axes.
-    topology_names = model.atomic_model.required_topologies()
-    s_topology_vals: list[torch.Tensor] = []
-    if topology_names:
-        p_trace = _next_safe_prime(e_max + 2, _forbidden | {trace_nf, trace_N, e_max})
-        for _ in topology_names:
-            s_topology_vals += [
-                torch.arange(2 * p_trace, dtype=torch.int64, device=_trace_device)
-                .reshape(2, p_trace)
-                .remainder(trace_N),
-                torch.ones(
-                    p_trace, 3, dtype=GLOBAL_PT_FLOAT_PRECISION, device=_trace_device
-                ),
-                torch.ones(p_trace, dtype=torch.bool, device=_trace_device),
-            ]
+    # The pair axis of every topology is a fourth dynamic axis, its sample
+    # length distinct from the other three and from the CSR offsets.
+    s_topologies = build_synthetic_topologies(
+        model,
+        trace_N,
+        _next_safe_prime(
+            e_max + 2, _forbidden | {trace_nf, trace_N, trace_N + 1, e_max}
+        ),
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=_trace_device,
+    )
+    topology_names = tuple(s_topologies)
+    s_topology_vals = flatten_topologies(s_topologies)
     n_topology_vals = len(s_topology_vals)
 
     def fn(
@@ -957,12 +956,8 @@ def _trace_and_compile_graph(
         spin: torch.Tensor | None,
         *extra_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
-        topology_vals = extra_vals[:n_topology_vals]
+        topologies = unflatten_topologies(topology_names, extra_vals[:n_topology_vals])
         task_buf_vals = extra_vals[n_topology_vals:]
-        topologies = {
-            name: PairGraph(*topology_vals[3 * ii : 3 * ii + 3])
-            for ii, name in enumerate(topology_names)
-        }
         # Patch task-specific buffers with the proxy tensors so make_fx records
         # them as FX placeholders (mirrors the dense ``_trace_and_compile``).
         originals: dict[str, torch.Tensor | None] = {}

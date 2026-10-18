@@ -256,6 +256,13 @@ void DeepPotPTExpt::init(const std::string& model,
     lower_input_is_graph_ = false;
     lower_input_is_canonical_ = false;
   }
+  // A model with a long-range module reads pair topologies after the neighbor
+  // graph, which this interface does not build.
+  if (metadata.obj_val.count("topologies")) {
+    throw deepmd::deepmd_exception(
+        "this .pt2 holds a model with a long-range module, which the C++ "
+        "interface does not evaluate; use the Python inference interface.");
+  }
   if (lower_input_is_edge_) {
     std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
                  "schema (pt-backend SeZM/DPA4 freeze). Support will be "

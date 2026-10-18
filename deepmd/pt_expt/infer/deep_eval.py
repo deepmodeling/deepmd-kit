@@ -23,8 +23,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
-    PairGraph,
     build_topologies,
+    flatten_topologies,
+    unflatten_topologies,
 )
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
@@ -227,10 +228,6 @@ class DeepEval(DeepEvalBackend):
         # Only a compressed ``.pt2`` folds its charge state into constants; a
         # model that reads the condition as an ordinary input needs no rebuild.
         self._charge_state_fold: ChargeStateFold | None = None
-        # Topologies the graph lower reads beside the neighbor graph; only a
-        # checkpoint can declare them, since no deployable archive holds a
-        # model that does.
-        self._required_topologies: tuple[str, ...] = ()
 
         if self._is_pt2:
             self._load_pt2(model_file)
@@ -672,7 +669,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         use_graph_lower = model_uses_graph_lower(model)
-        self._required_topologies = model.atomic_model.required_topologies()
+        topology_names = model.atomic_model.required_topologies()
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -727,6 +724,8 @@ class DeepEval(DeepEvalBackend):
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
+        if topology_names:
+            self.metadata["topologies"] = list(topology_names)
         if use_graph_lower:
             from deepmd.pt_expt.model.graph_lower import (
                 graph_edge_dtype,
@@ -744,7 +743,8 @@ class DeepEval(DeepEvalBackend):
         # ``communicate_extended_output``, while the graph runner emits local
         # public keys consumed directly by ``_eval_model_graph``.
         #
-        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
+        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin,
+        #              *topology inputs)
         # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
         # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
         # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
@@ -814,7 +814,7 @@ class DeepEval(DeepEvalBackend):
                     fparam: torch.Tensor | None,
                     aparam: torch.Tensor | None,
                     charge_spin: torch.Tensor | None = None,
-                    topologies: dict[str, PairGraph] | None = None,
+                    *topology_vals: torch.Tensor,
                 ) -> dict[str, torch.Tensor]:
                     model_ret = model.forward_common_lower_graph(
                         atype,
@@ -832,7 +832,7 @@ class DeepEval(DeepEvalBackend):
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
-                        topologies=topologies,
+                        topologies=unflatten_topologies(topology_names, topology_vals),
                     )
                     return _translate_energy_keys(
                         model_ret,
@@ -2398,9 +2398,10 @@ class DeepEval(DeepEvalBackend):
         positional schema
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
         destination_order, destination_row_ptr, source_order, source_row_ptr,
-        fparam, aparam, charge_spin)`` to the graph forward. Exported AOTI
-        artifacts use a dynamic edge axis, so no ``edge_capacity`` padding is
-        needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
+        fparam, aparam, charge_spin)`` to the graph forward, followed by the
+        ``(index, vec, mask)`` of every topology the ``topologies`` metadata
+        names. Exported AOTI artifacts use dynamic edge and pair axes, so no
+        ``edge_capacity`` padding is needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
         compressed DPA1 and float64 for generic graph descriptors. The forward
         returns local public keys directly, so results are reshaped without
         ``communicate_extended_output``.
@@ -2539,12 +2540,13 @@ class DeepEval(DeepEvalBackend):
                 aparam_t,
                 charge_spin_t,
             )
-            if self._required_topologies:
+            topology_names = self.metadata.get("topologies", ())
+            if topology_names:
                 # Padding slots of a mixed-type batch are no atoms and join
                 # no pair.
-                model_inputs += (
+                model_inputs += flatten_topologies(
                     build_topologies(
-                        self._required_topologies,
+                        topology_names,
                         torch.as_tensor(
                             coord_input.reshape(-1, 3), dtype=edge_dtype, device=DEVICE
                         ),
@@ -2553,7 +2555,7 @@ class DeepEval(DeepEvalBackend):
                         node_mask=atype_t >= 0,
                         atype=atype_t,
                         pair_excl=self._model_pair_excl(),
-                    ),
+                    )
                 )
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)

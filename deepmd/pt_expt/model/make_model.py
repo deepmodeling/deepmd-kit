@@ -25,6 +25,8 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     build_topologies,
     compact_nodes,
     expand_node_values,
+    flatten_topologies,
+    unflatten_topologies,
 )
 from deepmd.pt_expt.common import (
     auto_wrapped_class,
@@ -1306,6 +1308,7 @@ def make_model(
             charge_spin: torch.Tensor | None = None,
             spin: torch.Tensor | None = None,
             destination_sorted: bool = False,
+            topologies: dict[str, PairGraph] | None = None,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
             """make_fx trace of ``forward_common_lower_graph`` with ``edge_vec``
@@ -1346,6 +1349,13 @@ def make_model(
                 output. ``None`` (default) is the existing, unconditioned
                 trace with no mag output -- used by every non-spin caller of
                 this generic (descriptor-agnostic) exportable.
+            topologies
+                Sample topologies the atomic model declares by
+                ``required_topologies()``, or ``None``. When given, they are
+                traced inputs laid out by
+                :func:`~deepmd.dpmodel.utils.neighbor_graph.flatten_topologies`
+                after ``charge_spin``; a model reading topologies carries no
+                native spin.
             **make_fx_kwargs
                 Extra keyword arguments forwarded to ``make_fx``
                 (e.g. ``tracing_mode="symbolic"``).
@@ -1356,8 +1366,9 @@ def make_model(
                 A traced module whose ``forward`` accepts
                 ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
                 destination_order, destination_row_ptr, source_order,
-                source_row_ptr, fparam, aparam, charge_spin, spin)`` and
-                returns a dict with the same internal keys as
+                source_row_ptr, fparam, aparam, charge_spin, spin)`` -- or,
+                with topologies, ``spin`` replaced by the topology inputs --
+                and returns a dict with the same internal keys as
                 ``forward_common_lower_graph``.
             """
             validate_graph_csr_for_export(
@@ -1371,6 +1382,61 @@ def make_model(
                 destination_sorted=destination_sorted,
             )
             model = self
+
+            if topologies:
+                topology_names = tuple(topologies)
+
+                def fn_topologies(
+                    atype: torch.Tensor,
+                    n_node: torch.Tensor,
+                    n_local: torch.Tensor,
+                    edge_index: torch.Tensor,
+                    edge_vec: torch.Tensor,
+                    edge_mask: torch.Tensor,
+                    destination_order: torch.Tensor,
+                    destination_row_ptr: torch.Tensor,
+                    source_order: torch.Tensor,
+                    source_row_ptr: torch.Tensor,
+                    fparam: torch.Tensor | None,
+                    aparam: torch.Tensor | None,
+                    charge_spin: torch.Tensor | None,
+                    *topology_vals: torch.Tensor,
+                ) -> dict[str, torch.Tensor]:
+                    return model.forward_common_lower_graph(
+                        atype,
+                        n_node,
+                        n_local,
+                        edge_index,
+                        edge_vec,
+                        edge_mask,
+                        destination_order,
+                        destination_row_ptr,
+                        source_order,
+                        source_row_ptr,
+                        destination_sorted=destination_sorted,
+                        do_atomic_virial=do_atomic_virial,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                        topologies=unflatten_topologies(topology_names, topology_vals),
+                    )
+
+                return make_fx(fn_topologies, **make_fx_kwargs)(
+                    atype,
+                    n_node,
+                    n_local,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                    *flatten_topologies(topologies),
+                )
 
             # ``spin`` is a traced INPUT only when a real spin tensor is
             # given (native-spin models). For every non-spin caller

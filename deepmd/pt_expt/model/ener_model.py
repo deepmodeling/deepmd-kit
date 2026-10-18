@@ -18,6 +18,9 @@ from deepmd.dpmodel.model.dp_model import (
 from deepmd.dpmodel.model.make_hessian_model import (
     make_hessian_model,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PairGraph,
+)
 from deepmd.dpmodel.utils.neighbor_list import (
     NeighborList,
 )
@@ -613,6 +616,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
         destination_sorted: bool = False,
+        topologies: dict[str, PairGraph] | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower_graph`` into an exportable module with
@@ -646,6 +650,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             and ``destination_order`` is identity.
         fparam, aparam, do_atomic_virial, charge_spin
             As in ``forward_lower``.
+        topologies
+            The sample pair topology the atomic model declares, or ``None``;
+            its ``index``, ``vec`` and ``mask`` become the inputs
+            ``pair_index``, ``pair_vec`` and ``pair_mask`` after
+            ``charge_spin``.
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).
@@ -680,6 +689,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             destination_sorted=destination_sorted,
+            topologies=topologies,
             **make_fx_kwargs,
         )
 
@@ -687,6 +697,80 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         # Capture model config at trace time via closures.
         do_grad_r = self.do_grad_r("energy")
         do_grad_c = self.do_grad_c("energy")
+
+        if topologies:
+            # The inputs of the deployed lower keep their names, which the
+            # export reads, so the traced signature spells out the one pair
+            # topology a long-range module declares.
+            if len(topologies) != 1:
+                raise NotImplementedError(
+                    "the deployed graph lower takes one pair topology, got "
+                    f"{list(topologies)}"
+                )
+            (pairs,) = topologies.values()
+
+            def fn_pairs(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                n_local: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_mask: torch.Tensor,
+                destination_order: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None,
+                pair_index: torch.Tensor,
+                pair_vec: torch.Tensor,
+                pair_mask: torch.Tensor,
+            ) -> dict[str, torch.Tensor]:
+                model_ret = traced(
+                    atype,
+                    n_node,
+                    n_local,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    destination_order,
+                    destination_row_ptr,
+                    source_order,
+                    source_row_ptr,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                    pair_index,
+                    pair_vec,
+                    pair_mask,
+                )
+                return _translate_energy_keys(
+                    model_ret,
+                    do_grad_r=do_grad_r,
+                    do_grad_c=do_grad_c,
+                    do_atomic_virial=do_atomic_virial,
+                    local=True,
+                )
+
+            return make_fx(fn_pairs, **make_fx_kwargs)(
+                atype,
+                n_node,
+                n_local,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                destination_order,
+                destination_row_ptr,
+                source_order,
+                source_row_ptr,
+                fparam,
+                aparam,
+                charge_spin,
+                pairs.index,
+                pairs.vec,
+                pairs.mask,
+            )
 
         def fn(
             atype: torch.Tensor,

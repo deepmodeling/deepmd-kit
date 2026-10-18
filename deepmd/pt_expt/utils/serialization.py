@@ -14,6 +14,10 @@ from typing import (
 import numpy as np
 import torch
 
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PairGraph,
+    flatten_topologies,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -674,6 +678,53 @@ def build_synthetic_graph_inputs(
     )
 
 
+def build_synthetic_topologies(
+    model: torch.nn.Module,
+    n_node_total: int,
+    n_pair: int,
+    *,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> dict[str, PairGraph]:
+    """Build trace-time samples of the topologies a model declares.
+
+    Single source of the trace-time topology inputs, shared by graph export
+    and compiled training. Tracing reads only their shapes, so every topology
+    joins fixed nodes over ``n_pair`` pairs, a length the caller keeps
+    distinct from the other dynamic axes.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model; its atomic model declares the topologies.
+    n_node_total : int
+        Length of the node axis the pairs index.
+    n_pair : int
+        Length of the pair axis of every sample.
+    dtype : torch.dtype
+        Precision of the pair vectors.
+    device : torch.device
+        Target device.
+
+    Returns
+    -------
+    dict[str, PairGraph]
+        A sample of every declared topology; empty when none is declared.
+    """
+    index = (
+        torch.arange(2 * n_pair, dtype=torch.int64, device=device).reshape(2, n_pair)
+        % n_node_total
+    )
+    return {
+        name: PairGraph(
+            index=index,
+            vec=torch.ones(n_pair, 3, dtype=dtype, device=device),
+            mask=torch.ones(n_pair, dtype=torch.bool, device=device),
+        )
+        for name in model.atomic_model.required_topologies()
+    }
+
+
 def build_synthetic_canonical_graph_inputs(
     model: torch.nn.Module,
     e_max: int,
@@ -830,6 +881,7 @@ def count_synthetic_graph_edges(
 def _build_graph_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     is_native_spin: bool = False,
+    topology_names: tuple[str, ...] = (),
 ) -> tuple:
     """Build dynamic-shape specifications for the graph-form forward_lower export.
 
@@ -857,6 +909,10 @@ def _build_graph_dynamic_shapes(
         Whether ``sample_inputs`` follows the native-spin positional ABI
         (spin at slot 10) instead of the regular energy ABI (charge_spin at
         slot 12).
+    topology_names : tuple[str, ...]
+        Topologies whose ``(index, vec, mask)`` follow the inputs above, each
+        with a dynamic pair axis of its own; the guard pairs of a topology
+        bound it below by two.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
@@ -873,6 +929,10 @@ def _build_graph_dynamic_shapes(
         {0: nedge_dim},  # source_order: (E,)
         {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
     )
+    topologies = []
+    for name in topology_names:
+        npair_dim = torch.export.Dim(f"npair_{name}", min=2)
+        topologies += [{1: npair_dim}, {0: npair_dim}, {0: npair_dim}]
     if is_native_spin:
         spin = sample_inputs[10]
         fparam = sample_inputs[11]
@@ -886,6 +946,7 @@ def _build_graph_dynamic_shapes(
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: n_node_total_dim} if aparam is not None else None,  # aparam
             {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+            *topologies,
         )
     fparam = sample_inputs[10]
     aparam = sample_inputs[11]
@@ -898,6 +959,7 @@ def _build_graph_dynamic_shapes(
         # dim would make torch.export prove/reject the equality).
         {0: n_node_total_dim} if aparam is not None else None,  # aparam
         {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+        *topologies,
     )
 
 
@@ -1286,6 +1348,13 @@ def _collect_metadata(
             pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
             break
     meta["pair_exclude_types"] = pair_exclude_types
+    # Topologies the graph lower reads beside the neighbor graph, laid out
+    # after its other inputs (see ``flatten_topologies``); the caller of the
+    # lower builds them from the coordinates of each frame. Absent when the
+    # model reads none.
+    topologies = model.atomic_model.required_topologies()
+    if topologies:
+        meta["topologies"] = list(topologies)
     return meta
 
 
@@ -1832,11 +1901,6 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
-        if model.atomic_model.has_long_range():
-            raise NotImplementedError(
-                "a model with a long-range module cannot be exported to a "
-                "deployable archive; evaluate its training checkpoint (.pt)"
-            )
     model.eval()
     # The vacuum reference is resolved on the export object, folded into the
     # fitting bias or stored as a per-type table, so the exported graph
@@ -2090,6 +2154,18 @@ def _trace_and_export_impl(
                 device=torch.device("cpu"),
                 want_spin=is_native_spin,
             )
+            # The pair axis of every topology is dynamic; its sample length
+            # is kept distinct from the other axes and from the CSR offsets.
+            topologies = build_synthetic_topologies(
+                model,
+                n_sample,
+                next_safe_prime(
+                    e_sample + 2,
+                    _forbidden | {nframes_sample, n_sample, n_sample + 1, e_sample},
+                ),
+                dtype=edge_dtype,
+                device=torch.device("cpu"),
+            )
             if is_native_spin:
                 # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable):
                 # slot 10 is ``spin`` (mandatory), slots 11/12 are
@@ -2115,12 +2191,16 @@ def _trace_and_export_impl(
                     do_atomic_virial=do_atomic_virial,
                     charge_spin=sample_inputs[12],
                     destination_sorted=True,
+                    topologies=topologies,
                     tracing_mode="symbolic",
                     _allow_non_fake_inputs=True,
                 )
             dynamic_shapes = _build_graph_dynamic_shapes(
-                *sample_inputs, is_native_spin=is_native_spin
+                *sample_inputs,
+                is_native_spin=is_native_spin,
+                topology_names=tuple(topologies),
             )
+            sample_inputs = (*sample_inputs, *flatten_topologies(topologies))
         output_keys = traced_output_keys(traced)
         exported = torch.export.export(
             traced,

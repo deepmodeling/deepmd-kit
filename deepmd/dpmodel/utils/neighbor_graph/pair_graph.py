@@ -42,6 +42,7 @@ from .segment import (
 if TYPE_CHECKING:
     from collections.abc import (
         Iterable,
+        Sequence,
     )
 
     from deepmd.dpmodel.array_api import (
@@ -229,3 +230,58 @@ def build_topologies(
             )
         topologies[name] = build_pair_graph(coord, n_node, atype, node_mask, pair_excl)
     return topologies
+
+
+def flatten_topologies(topologies: dict[str, PairGraph]) -> tuple[Array, ...]:
+    """Lay topologies out as positional inputs of a graph lower.
+
+    A compiled or exported graph lower receives every topology as three
+    inputs, ``(index, vec, mask)``, in the order of the dict, after its other
+    inputs; :func:`unflatten_topologies` restores them.
+
+    Parameters
+    ----------
+    topologies
+        The topologies by name.
+
+    Returns
+    -------
+    tuple
+        ``(index, vec, mask)`` of every topology, concatenated.
+    """
+    return tuple(
+        value
+        for pairs in topologies.values()
+        for value in (pairs.index, pairs.vec, pairs.mask)
+    )
+
+
+def unflatten_topologies(
+    names: Sequence[str], values: Sequence[Array]
+) -> dict[str, PairGraph]:
+    """Restore topologies laid out by :func:`flatten_topologies`.
+
+    Parameters
+    ----------
+    names
+        The topology names, in the order they were laid out.
+    values
+        ``(index, vec, mask)`` of every topology, concatenated.
+
+    Returns
+    -------
+    dict[str, PairGraph]
+        The topologies by name.
+
+    Raises
+    ------
+    ValueError
+        If the number of values is not three per name.
+    """
+    if len(values) != 3 * len(names):
+        raise ValueError(
+            f"expected three inputs per topology for {tuple(names)}, got {len(values)}"
+        )
+    return {
+        name: PairGraph(*values[3 * ii : 3 * ii + 3]) for ii, name in enumerate(names)
+    }
