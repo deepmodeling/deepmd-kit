@@ -105,7 +105,8 @@ from torch.library import (
 )
 
 from ...utils import (
-    use_rot_mix_bwd_fused,
+    triton_infer_level,
+    triton_train_level,
 )
 from .gated_activation import (
     gated_activation_second_order,
@@ -565,10 +566,10 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             accp = tl.zeros((BC,), dtype=tl.float32)
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[l * l + j]
-                acc0 += tl.load(d_base + r0 * DIM + base + j) * xv
+                acc0 += tl.load(_wigner_row_ptr(d_base, r0, base + j, DIM)) * xv
                 if l >= 1:
-                    accm += tl.load(d_base + (r0 - 1) * DIM + base + j) * xv
-                    accp += tl.load(d_base + (r0 + 1) * DIM + base + j) * xv
+                    accm += tl.load(_wigner_row_ptr(d_base, r0 - 1, base + j, DIM)) * xv
+                    accp += tl.load(_wigner_row_ptr(d_base, r0 + 1, base + j, DIM)) * xv
             rows0 = rows0 + (acc0,)
             if l >= 1:
                 rows_m = rows_m + (accm,)
@@ -708,10 +709,10 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             accp = tl.zeros((BC,), dtype=tl.float32)
             for j in tl.static_range(2 * l + 1):
                 xv = xrows[l * l + j]
-                acc0 += tl.load(d_base + r0 * DIM + base + j) * xv
+                acc0 += tl.load(_wigner_row_ptr(d_base, r0, base + j, DIM)) * xv
                 if l >= 1:
-                    accm += tl.load(d_base + (r0 - 1) * DIM + base + j) * xv
-                    accp += tl.load(d_base + (r0 + 1) * DIM + base + j) * xv
+                    accm += tl.load(_wigner_row_ptr(d_base, r0 - 1, base + j, DIM)) * xv
+                    accp += tl.load(_wigner_row_ptr(d_base, r0 + 1, base + j, DIM)) * xv
             rows0 = rows0 + (acc0,)
             if l >= 1:
                 rows_m = rows_m + (accm,)
@@ -1037,6 +1038,11 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         tl.store(out_ptr + node * P + cols, acc, mask=col_mask)
 
     @triton.jit
+    def _wigner_row_ptr(d_base, row, col, DIM: tl.constexpr):
+        """Address of one Wigner entry; shared row/column arithmetic."""
+        return d_base + row * DIM + col
+
+    @triton.jit
     def _rotate_mix_bwd_fused_kernel(
         gu_ptr,  # (F, E, ROW) upstream gradient (focus-major)
         x_ptr,  # (N, D, CW) node features
@@ -1151,7 +1157,11 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                         )
                     else:
                         xv = tl.load(x_node + (base + j) * x_sd + chan_c)
-                    w0 = tl.load(d_base + r0 * DIM + base + j, mask=e_mask, other=0.0)
+                    w0 = tl.load(
+                        _wigner_row_ptr(d_base, r0, base + j, DIM),
+                        mask=e_mask,
+                        other=0.0,
+                    )
                     xl0 += w0[:, None] * xv[None, :]
                     if l >= 1:
                         wm = tl.load(
@@ -3195,12 +3205,7 @@ def _rotate_mix_bwd_fused_impl(
         grad_x_edge, grad_wigner, grad_kc = _rotate_mix_backward_reference(
             grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
         )
-        counts = row_ptr[1:] - row_ptr[:-1]
-        seg_of_sorted = torch.repeat_interleave(
-            torch.arange(n_node, device=x.device, dtype=order.dtype), counts
-        )
-        grad_x = grad_x_edge.new_zeros((n_node, dim, c_wide))
-        grad_x.index_add_(0, seg_of_sorted, grad_x_edge.index_select(0, order))
+        grad_x = _segment_sum_impl(grad_x_edge, order, row_ptr)
         return grad_x, grad_wigner, grad_kc
     grad_x = torch.empty(n_node, dim, c_wide, device=x.device, dtype=x.dtype)
     grad_wigner = torch.zeros_like(wigner)
@@ -4206,7 +4211,16 @@ def _rotate_mix_backward(ctx, grad_u):
     # convention for these switches is construction/call time, not import
     # time, and a read here is baked into the traced graph at trace time
     # just the same (one environment lookup per backward invocation).
-    if use_rot_mix_bwd_fused() and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
+    # The fused backward rides the level-1 universal-kernel contract of
+    # the rotate-mix family (no tunable configuration; it strictly removes
+    # the (E, D, C_wide) node-gradient round-trip).  The existing
+    # inference/training boundary is preserved: whichever level selected
+    # this operator's forward governs its backward too.
+    if (
+        max(triton_infer_level(), triton_train_level()) >= 1
+        and int(ctx.rank) <= 1
+        and not torch.is_grad_enabled()
+    ):
         # Fused path: the node gradient accumulates on chip inside the
         # kernel; the (E, D, C_wide) ``gxe`` HBM round-trip never exists.
         grad_x, grad_wigner, grad_kc = _rotate_mix_bwd_fused_op(
