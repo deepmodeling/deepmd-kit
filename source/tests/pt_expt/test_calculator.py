@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """ASE checkpoint export and eager-inference behavior."""
 
+import contextlib
 import copy
 import json
 import logging
 import os
 import zipfile
+from collections.abc import (
+    Iterator,
+)
 from pathlib import (
     Path,
 )
@@ -35,7 +39,7 @@ from deepmd.pt_expt.utils import (
     serialization,
 )
 
-from ..pt.model.test_sezm_export import (
+from ..common.sezm_config import (
     _tiny_sezm_model_params,
     _tiny_sezm_native_spin_model_params,
 )
@@ -300,8 +304,20 @@ def test_automatic_freeze_reuses_kernel_policy(
 ) -> None:
     checkpoint = _write_checkpoint(tmp_path / "model.pt", kind, head=head or "Default")
     monkeypatch.setattr(freeze_pt2, "DEVICE", torch.device("cuda"))
+    export_policy = serialization._fused_operators_for_export
+
+    @contextlib.contextmanager
+    def cuda_export_policy() -> Iterator[None]:
+        # Only policy selection sees CUDA; lazy imports retain the real query.
+        with contextlib.ExitStack() as stack:
+            with mock.patch(
+                "deepmd.pt_expt.kernels.utils.backend_device_type", return_value="cuda"
+            ):
+                stack.enter_context(export_policy())
+            yield
+
     monkeypatch.setattr(
-        "deepmd.pt_expt.kernels.utils.backend_device_type", lambda: "cuda"
+        serialization, "_fused_operators_for_export", cuda_export_policy
     )
     if override is not None:
         for name, value in zip(_LEVELS[:2], override, strict=True):
