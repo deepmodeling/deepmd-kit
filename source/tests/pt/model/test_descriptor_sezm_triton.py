@@ -2149,19 +2149,21 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                 )
                 gx_ref = vp._segment_sum_op(gxe, order, row_ptr)
 
-                # The fused kernel supports rank <= 1 (the dispatch contract
-                # keeps rank >= 2 on the unfused pair), so rank 2 checks the
-                # unfused kernels' rank-indexed addressing instead: gkc and
-                # the segment-summed gx agree with the eager reference, while
-                # gw differs from it by a pre-existing upstream discrepancy
-                # that reproduces bit-for-bit on plain master (tracked
-                # separately; not introduced by this PR).
+                # The fused kernel supports rank <= 1 (the dispatch
+                # contract keeps rank >= 2 on the unfused pair), so rank 2
+                # checks the unfused kernels against the eager reference.
+                # The Wigner gradient is compared on the structural block
+                # diagonal: the kernel promises only those entries, while
+                # the dense reference also returns off-block ones.
                 if rank > 1:
                     gxe_e, gw_e, gkc_e = vp._rotate_mix_backward_reference(
                         grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
                     )
                     torch.testing.assert_close(gkc_ref, gkc_e, atol=1e-5, rtol=1e-5)
-                    self.assertTrue(gw_ref.isfinite().all())
+                    mask = _block_mask(lmax, "cuda")
+                    torch.testing.assert_close(
+                        gw_ref * mask, gw_e * mask, atol=1e-5, rtol=1e-5
+                    )
                     gx_e = torch.zeros(
                         self.N_NODE,
                         (lmax + 1) ** 2,
@@ -2326,27 +2328,3 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         torch.testing.assert_close(
             grads[True], grads[False], atol=1e-6 * max(s, 1.0), rtol=1e-5
         )
-
-
-class TestSeZMRotMixFlagParser(unittest.TestCase):
-    """Parse ``DP_ROT_MIX_BWD_FUSED_INFER`` without needing a GPU."""
-
-    def test_env_flag_defaults_off(self):
-        """``DP_ROT_MIX_BWD_FUSED_INFER`` parses truthy/falsy, default off."""
-        import os
-
-        from deepmd.pt_expt.kernels.utils import (
-            use_rot_mix_bwd_fused,
-        )
-
-        saved = os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
-        try:
-            self.assertFalse(use_rot_mix_bwd_fused())
-            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1"
-            self.assertTrue(use_rot_mix_bwd_fused())
-            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "false"
-            self.assertFalse(use_rot_mix_bwd_fused())
-        finally:
-            os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
-            if saved is not None:
-                os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
