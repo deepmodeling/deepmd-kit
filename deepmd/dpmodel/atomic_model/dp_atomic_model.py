@@ -254,14 +254,13 @@ class DPAtomicModel(BaseAtomicModel):
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())
 
-    def fused_decomposition(self) -> "tuple[DPAtomicModel, None] | None":
+    def fused_decomposition(self) -> "tuple[DPAtomicModel, None]":
         """A descriptor-fitting model is its own learned part.
 
-        A model with a long-range module is more than a learned part and a
-        pair potential, so no fused pipeline evaluates it.
+        The learned part carries the long-range module of the model, if any;
+        a fused pipeline that does not evaluate long-range modules declines a
+        learned part with one.
         """
-        if self.long_range is not None:
-            return None
         return self, None
 
     def has_long_range(self) -> bool:
@@ -365,6 +364,12 @@ class DPAtomicModel(BaseAtomicModel):
     ) -> None:
         """Call descriptor enable_compression().
 
+        A long-range module keeps its networks: it reads the output of the
+        compressed descriptor like that of the uncompressed one. A compressed
+        descriptor folds the charge/spin condition into its tables, so a
+        constraint that reads the total charge from the condition is folded
+        to the same state, the default condition of the descriptor.
+
         Parameters
         ----------
         min_nbor_dist
@@ -378,10 +383,6 @@ class DPAtomicModel(BaseAtomicModel):
         check_frequency
             The overflow check frequency
         """
-        if self.long_range is not None:
-            raise NotImplementedError(
-                "compression of a model with a long-range module is not supported"
-            )
         self.descriptor.enable_compression(
             min_nbor_dist,
             table_extrapolate,
@@ -389,6 +390,8 @@ class DPAtomicModel(BaseAtomicModel):
             table_stride_2,
             check_frequency,
         )
+        if self.long_range is not None and self.long_range.uses_charge_spin():
+            self.long_range.fold_charge_state(self.descriptor.get_default_chg_spin())
 
     def forward_atomic(
         self,
@@ -726,6 +729,15 @@ class DPAtomicModel(BaseAtomicModel):
         # with the defaults the descriptor and fitting fall back on.
         n_node = graph.n_node
         if self.long_range is not None:
+            # The constraint and a compressed descriptor serve one charge
+            # state; compressing the atomic model folds both to it.
+            if self.long_range.uses_charge_spin() and self.get_dim_chg_spin() == 0:
+                raise ValueError(
+                    "the descriptor folds the charge/spin condition into its "
+                    "compressed tables, while the long-range charge constraint "
+                    "still reads it; compress the atomic model, which folds "
+                    "both to one state"
+                )
             fparam, charge_spin_frame = self._frame_conditions(
                 fparam, charge_spin, n_node.shape[0], graph.edge_vec
             )

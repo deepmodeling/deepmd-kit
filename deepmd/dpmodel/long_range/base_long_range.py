@@ -139,6 +139,41 @@ def make_base_long_range(t_tensor: Any) -> type:
         def set_case_embd(self, case_idx: int) -> None:
             """Select the case embedding of the networks of the module."""
 
+        def fold_charge_state(self, charge_spin: list[float]) -> None:
+            """Specialize the module to one frame charge/spin condition.
+
+            Called when the descriptor of the model is compressed, which folds
+            the condition into its tables, for a module whose
+            :meth:`uses_charge_spin` holds.
+
+            Raises
+            ------
+            NotImplementedError
+                If the module cannot be specialized.
+            """
+            raise NotImplementedError(
+                f"{type(self).__name__} cannot be specialized to a charge/spin "
+                "condition, which the compression of the model requires"
+            )
+
+        def charge_state_constants(self) -> list[t_tensor]:
+            """The tensors that carry the folded charge/spin condition.
+
+            A deployment that serves another condition writes the outputs of
+            :meth:`rebuild_charge_state` over them, in this order.
+            """
+            return []
+
+        def rebuild_charge_state(self, charge_spin: t_tensor) -> list[t_tensor]:
+            """Build the tensors of :meth:`charge_state_constants` for a condition.
+
+            Parameters
+            ----------
+            charge_spin
+                The condition with shape ``(1, 2)``.
+            """
+            return []
+
         @abstractmethod
         def serialize(self) -> dict:
             """Serialize the module to a dict."""

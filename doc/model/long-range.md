@@ -122,11 +122,27 @@ are listed outside the compiled region and enter it as inputs of dynamic
 length.
 
 `dp --pt-expt freeze` exports the model, long-range module included, to
-`.pt2` or `.pte`. A trained checkpoint (`.pt`) and the frozen model are
-evaluated by `dp test` and the Python inference interface, which list the
-pairs of each frame before calling the model. The C++ interface, and with it
-LAMMPS, does not evaluate a model with a long-range module.
+`.pt2` or `.pte`, and `dp --pt-expt compress` compresses its descriptor into a
+`.pt2` archive while the networks of the long-range module stay as they are.
+A trained checkpoint (`.pt`) and the frozen model are evaluated by `dp test`
+and the Python inference interface. The C++ interface, and with it LAMMPS,
+does not evaluate a model with a long-range module.
+
+Compressing a descriptor conditioned on `charge_spin` specializes the model
+to one charge state at a time, and a constraint that reads its total charge
+from `charge_spin` follows the same state. The compressed archive serves any
+charge state, which the Python interface applies at each call.
+
+A compressed DPA4C model frozen for a CUDA device evaluates the pair sum with
+a dedicated operator, which reads the positions of the atoms and enumerates
+their pairs itself: its memory grows linearly with the number of atoms, and
+its cost with their square. The operator serves the `les` kernel and the
+`sog` kernel of up to 32 Gaussians, with up to 8 charge channels, a charge
+network without frame or atomic parameters, and no `pair_exclude_types`. Any
+other model, like an uncompressed one, lists the pairs of each frame before
+calling the model, so its memory grows with the square of the number of
+atoms.
 
 The following are not supported for a model with a long-range module:
-compression, multi-rank (domain-decomposed) inference, spin models, the
-tabulated ZBL potential, and short-range bridging.
+multi-rank (domain-decomposed) inference, spin models, the tabulated ZBL
+potential, and short-range bridging.

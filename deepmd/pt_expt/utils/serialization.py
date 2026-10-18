@@ -731,12 +731,15 @@ def build_synthetic_canonical_graph_inputs(
     *,
     device: torch.device,
     want_spin: bool = False,
+    want_coord: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     """Build compact canonical trace inputs for compressed CUDA descriptors.
 
     ``want_spin`` appends the per-node moment at slot 8, the last slot of the
     compact ABI, matching
     :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
+    ``want_coord`` appends the float64 node positions at the same slot, which
+    the compact lower of a model with a long-range module reads.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
@@ -793,7 +796,16 @@ def build_synthetic_canonical_graph_inputs(
         compact.source_row_ptr,
         compact.source_order,
     )
-    return compact_sample if spin is None else (*compact_sample, spin)
+    if spin is not None:
+        return (*compact_sample, spin)
+    if want_coord:
+        # Tracing reads the shape of the positions alone; distinct values keep
+        # the sample nodes apart.
+        coord = 0.7 * torch.arange(
+            3 * atype.shape[0], dtype=torch.float64, device=device
+        ).reshape(-1, 3)
+        return (*compact_sample, coord)
+    return compact_sample
 
 
 def _build_canonical_graph_dynamic_shapes(
@@ -801,8 +813,9 @@ def _build_canonical_graph_dynamic_shapes(
 ) -> tuple:
     """Build dynamic shapes for the compact deployment ABI.
 
-    The trailing spin slot is present only for a native-spin model, so the
-    sample length selects the shape tuple.
+    The trailing node slot, the moments of a native-spin model or the
+    positions of a model with a long-range module, is present only for such
+    models, so the sample length selects the shape tuple.
     """
     from deepmd.pt_expt.utils.canonical_graph import (
         UINT32_MAX,
@@ -1348,10 +1361,12 @@ def _collect_metadata(
             pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
             break
     meta["pair_exclude_types"] = pair_exclude_types
-    # Topologies the graph lower reads beside the neighbor graph, laid out
-    # after its other inputs (see ``flatten_topologies``); the caller of the
-    # lower builds them from the coordinates of each frame. Absent when the
-    # model reads none.
+    # Topologies the lower reads beside the neighbor graph; absent when the
+    # model reads none. The graph lower takes each as its ``(index, vec,
+    # mask)`` after its other inputs (see ``flatten_topologies``), built by the
+    # caller from the coordinates of each frame. The compact canonical lower
+    # takes the node positions instead, from which its operators enumerate the
+    # pairs.
     topologies = model.atomic_model.required_topologies()
     if topologies:
         meta["topologies"] = list(topologies)
@@ -2068,11 +2083,15 @@ def _trace_and_export_impl(
         while e_sample in (_forbidden | {nframes_sample, n_sample}):
             e_sample += 1
         if canonical:
+            # The compact lower of a model with a long-range module reads the
+            # node positions, from which its operators enumerate the pairs.
+            want_coord = bool(model.atomic_model.required_topologies())
             sample_inputs = build_synthetic_canonical_graph_inputs(
                 model,
                 e_sample,
                 device=torch.device("cpu"),
                 want_spin=is_native_spin,
+                want_coord=want_coord,
             )
             traced = model.forward_lower_canonical_graph_exportable(
                 *sample_inputs,
@@ -2531,7 +2550,81 @@ def _charge_state_descriptor(data: dict, metadata: dict) -> Any | None:
     return descriptor
 
 
-def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
+def _charge_state_long_range(data: dict, metadata: dict) -> Any | None:
+    """Return the long-range module folded to the charge state, if any.
+
+    Compressing the atomic model folds a long-range charge constraint that
+    reads its total charge from the charge state to the condition of the
+    descriptor, so the fold rebuilds the state of the module with the
+    artifacts of the descriptor. Only a model with a long-range module, which
+    the collected metadata names by its topologies, pays for rebuilding the
+    model.
+
+    Parameters
+    ----------
+    data
+        Serialized model dictionary, as passed to the export entry point.
+    metadata
+        Archive metadata collected from that same model.
+
+    Returns
+    -------
+    Any or None
+        The evaluated long-range module, or ``None`` when the model folds no
+        long-range state.
+    """
+    if not metadata.get("topologies"):
+        return None
+
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    model = BaseModel.deserialize(data["model"])
+    parts = model.atomic_model.fused_decomposition()
+    long_range = None if parts is None else parts[0].long_range
+    if long_range is None or not long_range.charge_state_constants():
+        return None
+    model.to("cpu")
+    model.eval()
+    return long_range
+
+
+class _ChargeStateRebuild(torch.nn.Module):
+    """Rebuild the charge state of a descriptor and of a long-range module.
+
+    The outputs are those of the descriptor fold followed by the folded state
+    of the long-range module.
+
+    Parameters
+    ----------
+    descriptor
+        Compressed charge-conditioned descriptor, as returned by
+        :func:`_charge_state_descriptor`.
+    long_range
+        Long-range module folded to the same state, as returned by
+        :func:`_charge_state_long_range`.
+    """
+
+    def __init__(self, descriptor: Any, long_range: Any) -> None:
+        super().__init__()
+        from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+            ChargeStateFold,
+        )
+
+        self.descriptor = ChargeStateFold(descriptor)
+        self.long_range = long_range
+
+    def forward(self, charge_spin: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return (
+            *self.descriptor(charge_spin),
+            *self.long_range.rebuild_charge_state(charge_spin),
+        )
+
+
+def _match_charge_state_constants(
+    descriptor: Any, exported: Any, long_range: Any | None = None
+) -> list[str]:
     """Name, per fold output, the constant of ``exported`` it replaces.
 
     A compressed charge-conditioned descriptor carries its frame condition in
@@ -2564,6 +2657,10 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
         :func:`_charge_state_descriptor`.
     exported
         Exported lower whose constants are to be named.
+    long_range
+        Long-range module folded to the same state, as returned by
+        :func:`_charge_state_long_range`, whose state is matched after the
+        artifacts of the descriptor; ``None`` when there is none.
 
     Returns
     -------
@@ -2584,9 +2681,18 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
         for name, tensor in exported.state_dict.items()
         if isinstance(tensor, torch.Tensor)
     }
+    artifacts = [
+        (name, getattr(descriptor, f"compress_{name}"))
+        for name in CHARGE_STATE_ARTIFACTS
+    ]
+    if long_range is not None:
+        artifacts += [
+            ("long-range charge state", state)
+            for state in long_range.charge_state_constants()
+        ]
     constants: list[str] = []
-    for name in CHARGE_STATE_ARTIFACTS:
-        artifact = getattr(descriptor, f"compress_{name}").detach().cpu()
+    for name, tensor in artifacts:
+        artifact = tensor.detach().cpu()
         if artifact.numel() == 0:
             constants.append("")
             continue
@@ -2611,6 +2717,7 @@ def _match_charge_state_constants(descriptor: Any, exported: Any) -> list[str]:
 def _compile_charge_state_fold(
     descriptor: Any,
     aoti_configs: dict,
+    long_range: Any | None = None,
 ) -> bytes:
     """Compile the rebuild of the charge-state artifacts as its own archive.
 
@@ -2626,6 +2733,10 @@ def _compile_charge_state_fold(
         :func:`_charge_state_descriptor`.
     aoti_configs
         Inductor options the inference lower was compiled with.
+    long_range
+        Long-range module folded to the same state, as returned by
+        :func:`_charge_state_long_range`, whose state the fold rebuilds after
+        the artifacts of the descriptor; ``None`` when there is none.
 
     Returns
     -------
@@ -2652,7 +2763,12 @@ def _compile_charge_state_fold(
         dtype=torch.float32,
         device="cpu",
     )
-    fold = torch.export.export(ChargeStateFold(descriptor), (sample,))
+    module = (
+        ChargeStateFold(descriptor)
+        if long_range is None
+        else _ChargeStateRebuild(descriptor, long_range)
+    )
+    fold = torch.export.export(module, (sample,))
     if _env.DEVICE.type != "cpu":
         from torch.export.passes import (
             move_to_device_pass,
@@ -2785,11 +2901,12 @@ def _deserialize_to_file_pt2(
     # state becomes known.
     charge_state_bytes: bytes | None = None
     if charge_state_descriptor is not None:
+        long_range = _charge_state_long_range(data, metadata)
         metadata["charge_state_constants"] = _match_charge_state_constants(
-            charge_state_descriptor, exported
+            charge_state_descriptor, exported, long_range
         )
         charge_state_bytes = _compile_charge_state_fold(
-            charge_state_descriptor, aoti_configs
+            charge_state_descriptor, aoti_configs, long_range
         )
 
     # Second artifact: with-comm. Only for descriptors whose message

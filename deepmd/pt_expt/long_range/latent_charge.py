@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import torch
 
+from deepmd.dpmodel.long_range.kernel import (
+    COULOMB_CONSTANT,
+)
 from deepmd.dpmodel.long_range.latent_charge import (
     LatentChargeLongRange as LatentChargeLongRangeDP,
 )
@@ -40,3 +43,109 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             for name, value in self.kernel.coefficients(r_sq).items()
         }
         return self.kernel.evaluate(r_sq, coefficients)
+
+    def direct_sum_eligible(self) -> bool:
+        """Whether :meth:`energy_force_from_coord` evaluates this module.
+
+        The direct-sum operator evaluates the kernels and channel counts it is
+        instantiated for. The compact lower that calls it reads no frame
+        input: the charges depend on the descriptor alone, and a constrained
+        channel sums to zero or to the total charge of a folded charge state.
+        """
+        from deepmd.pt_expt.kernels.long_range import (
+            MAX_CHANNELS,
+            kernel_eligible,
+            op_available,
+        )
+
+        return (
+            op_available()
+            and kernel_eligible(self.kernel)
+            and self.charge_net.dim_out <= MAX_CHANNELS
+            and self.charge_net.numb_fparam == 0
+            and self.charge_net.numb_aparam == 0
+            and not self.uses_charge_spin()
+        )
+
+    def energy_force_from_coord(
+        self,
+        descriptor: torch.Tensor,
+        atype: torch.Tensor,
+        node_mask: torch.Tensor,
+        n_node: torch.Tensor,
+        coord: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Evaluate the module for inference from the positions of the nodes.
+
+        The direct-sum operator enumerates the pairs of every frame itself,
+        so the memory is linear in the node count. It applies the constraint
+        and returns the force at fixed charges and the derivative of the
+        energy with respect to the charges the network predicts; pulled back
+        through the charge network, that derivative is the derivative of the
+        energy with respect to the descriptor, through which the caller adds
+        the response of the charges to the positions.
+
+        Parameters
+        ----------
+        descriptor
+            Invariant node features with shape ``(N, dim_descrpt)``.
+        atype
+            Node types with shape ``(N,)``.
+        node_mask
+            Nodes carrying charges with shape ``(N,)``.
+        n_node
+            Per-frame node counts with shape ``(nf,)``; the frames occupy
+            contiguous spans of the node axis.
+        coord
+            Node positions with shape ``(N, 3)`` in Å.
+
+        Returns
+        -------
+        atom_energy
+            Per-node energy with shape ``(N, 1)`` in eV, float64.
+        descriptor_gradient
+            Derivative of the energy with respect to the descriptor through
+            the charges, with the shape and precision of ``descriptor``.
+        force
+            Force at fixed charges with shape ``(N, 3)`` in eV/Å, float32.
+        atom_virial
+            Per-node virial at fixed charges with shape ``(N, 9)`` in eV,
+            float32, each pair term split half to each of its nodes.
+        virial
+            Per-frame virial at fixed charges with shape ``(nf, 9)`` in eV,
+            float32.
+        """
+        from deepmd.pt_expt.kernels.long_range import (
+            latent_charge_direct_sum,
+        )
+
+        leaf = descriptor.detach().requires_grad_(True)
+        with torch.enable_grad():
+            charge = self.charge_net.call_graph(leaf, atype)["latent_charge"]
+        total_charge = coord.new_zeros(n_node.shape[0], dtype=torch.float64)
+        channel = -1
+        if self.charge_constraint is not None:
+            channel = self.charge_constraint["channel"]
+            total_charge = self._total_charge(n_node.shape[0], total_charge, None, None)
+        atom_energy, charge_gradient, force, atom_virial, virial = (
+            latent_charge_direct_sum(
+                coord.to(torch.float64).contiguous(),
+                charge.detach().to(torch.float32).contiguous(),
+                node_mask.contiguous(),
+                n_node,
+                total_charge.contiguous(),
+                self.kernel,
+                channel,
+                COULOMB_CONSTANT,
+            )
+        )
+        (descriptor_gradient,) = torch.autograd.grad(
+            charge, leaf, charge_gradient.to(charge.dtype)
+        )
+        return (
+            atom_energy,
+            descriptor_gradient.to(descriptor.dtype),
+            force,
+            atom_virial,
+            virial,
+        )

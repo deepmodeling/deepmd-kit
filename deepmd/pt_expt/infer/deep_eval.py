@@ -24,6 +24,7 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     build_topologies,
+    check_complete_frames,
     flatten_topologies,
     unflatten_topologies,
 )
@@ -2515,6 +2516,15 @@ class DeepEval(DeepEvalBackend):
                 compact.source_row_ptr,
                 compact.source_order,
             )
+            if self.metadata.get("topologies"):
+                # The compact lower of a model with a long-range module reads
+                # the positions of complete non-periodic frames.
+                check_complete_frames(box_input)
+                model_inputs += (
+                    torch.as_tensor(
+                        coord_input.reshape(-1, 3), dtype=torch.float64, device=DEVICE
+                    ),
+                )
         else:
             fparam_t, aparam_t = self._prepare_optional_lower_inputs(
                 fparam, aparam, nframes, natoms, DEVICE

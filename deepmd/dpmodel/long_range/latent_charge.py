@@ -7,12 +7,15 @@ from typing import (
 )
 
 import array_api_compat
+import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
 )
 from deepmd.dpmodel.common import (
+    GLOBAL_NP_FLOAT_PRECISION,
     NativeOP,
+    to_numpy_array,
 )
 from deepmd.dpmodel.fitting.latent_charge import (
     LatentChargeFitting,
@@ -110,6 +113,9 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         self.charge_constraint = self._normalize_constraint(
             charge_constraint, charge_net
         )
+        # The frame charge/spin condition a compressed model is specialized
+        # to; see :meth:`fold_charge_state`.
+        self.charge_state = None
 
     @staticmethod
     def _normalize_constraint(
@@ -203,10 +209,40 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         return (ALL_PAIRS,)
 
     def uses_charge_spin(self) -> bool:
+        # A folded state stands in for the condition.
         return (
             self.charge_constraint is not None
             and self.charge_constraint["source"] == "charge_spin"
+            and self.charge_state is None
         )
+
+    def fold_charge_state(self, charge_spin: list[float]) -> None:
+        """Specialize the constraint to one frame charge/spin condition.
+
+        A compressed descriptor folds the condition into its tables and reads
+        none at run time, so a constraint that reads its total charge from the
+        condition takes it from this state instead. The state is a constant
+        of the deployed model that a deployment rewrites, together with the
+        tables of the descriptor, when it serves another condition.
+
+        Parameters
+        ----------
+        charge_spin
+            The condition ``[charge, spin multiplicity]``.
+        """
+        self.charge_state = np.asarray(
+            charge_spin, dtype=GLOBAL_NP_FLOAT_PRECISION
+        ).reshape(1, 2)
+
+    def charge_state_constants(self) -> list[Array]:
+        return [] if self.charge_state is None else [self.charge_state]
+
+    def rebuild_charge_state(self, charge_spin: Array) -> list[Array]:
+        if self.charge_state is None:
+            return []
+        xp = array_api_compat.array_namespace(charge_spin)
+        state = xp.astype(charge_spin, self.charge_state.dtype)
+        return [xp.reshape(state, (1, 2))]
 
     def call(self, *args: Any, **kwargs: Any) -> Array:
         return self.call_graph(*args, **kwargs)
@@ -285,9 +321,49 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         """Shift the constrained channel so that it sums to the frame total charge."""
         xp = array_api_compat.array_namespace(charge)
         nf = n_node.shape[0]
-        source = self.charge_constraint["source"]
         channel = self.charge_constraint["channel"]
-        if source == "charge_spin":
+        target = self._total_charge(nf, charge, fparam, charge_spin)
+        weight = xp.astype(node_mask, charge.dtype)
+        count = segment_sum(weight, frame_id, nf)
+        total = segment_sum(charge[:, channel], frame_id, nf)
+        # A frame without a charged atom has nothing to shift.
+        shift = (total - target) / xp.maximum(count, xp.ones_like(count))
+        constrained = charge[:, channel] - xp.take(shift, frame_id, axis=0) * weight
+        return xp.concat(
+            [charge[:, :channel], constrained[:, None], charge[:, channel + 1 :]],
+            axis=-1,
+        )
+
+    def _total_charge(
+        self,
+        nf: int,
+        like: Array,
+        fparam: Array | None,
+        charge_spin: Array | None,
+    ) -> Array:
+        """The total charge of every frame, which the constrained channel sums to.
+
+        Parameters
+        ----------
+        nf
+            The number of frames.
+        like
+            An array giving the namespace, dtype and device of the result.
+        fparam, charge_spin
+            As in :meth:`call_graph`.
+
+        Returns
+        -------
+        Array
+            The total charges with shape ``(nf,)``, in units of :math:`e`.
+        """
+        xp = array_api_compat.array_namespace(like)
+        device = array_api_compat.device(like)
+        source = self.charge_constraint["source"]
+        if source == "charge_spin" and self.charge_state is not None:
+            state = xp.asarray(self.charge_state, device=device)
+            target = xp.broadcast_to(state[:, 0], (nf,))
+        elif source == "charge_spin":
             if charge_spin is None:
                 raise ValueError(
                     "the charge constraint reads the total charge from "
@@ -302,20 +378,8 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
                 )
             target = fparam[:, self.charge_constraint["fparam_index"]]
         else:
-            target = xp.zeros(
-                (nf,), dtype=charge.dtype, device=array_api_compat.device(charge)
-            )
-        target = xp.astype(target, charge.dtype)
-        weight = xp.astype(node_mask, charge.dtype)
-        count = segment_sum(weight, frame_id, nf)
-        total = segment_sum(charge[:, channel], frame_id, nf)
-        # A frame without a charged atom has nothing to shift.
-        shift = (total - target) / xp.maximum(count, xp.ones_like(count))
-        constrained = charge[:, channel] - xp.take(shift, frame_id, axis=0) * weight
-        return xp.concat(
-            [charge[:, :channel], constrained[:, None], charge[:, channel + 1 :]],
-            axis=-1,
-        )
+            target = xp.zeros((nf,), dtype=like.dtype, device=device)
+        return xp.astype(target, like.dtype)
 
     def compute_input_stats(
         self,
@@ -334,7 +398,7 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         self.charge_net.set_case_embd(case_idx)
 
     def serialize(self) -> dict:
-        return {
+        data = {
             "@class": "LongRange",
             "type": "latent_charge",
             "@version": 1,
@@ -342,13 +406,19 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             "kernel": self.kernel.serialize(),
             "charge_constraint": self.charge_constraint,
         }
+        if self.charge_state is not None:
+            data["charge_state"] = to_numpy_array(self.charge_state).tolist()
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "LatentChargeLongRange":
         data = data.copy()
         check_version_compatibility(data.pop("@version"), 1, 1)
-        return cls(
+        obj = cls(
             LatentChargeFitting.deserialize(data["charge_net"]),
             BaseInteractionKernel.deserialize(data["kernel"]),
             data["charge_constraint"],
         )
+        if data.get("charge_state") is not None:
+            obj.fold_charge_state(np.asarray(data["charge_state"]).reshape(-1).tolist())
+        return obj

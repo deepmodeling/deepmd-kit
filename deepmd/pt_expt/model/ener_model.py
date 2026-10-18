@@ -141,6 +141,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         *,
         do_atomic_virial: bool,
         spin: torch.Tensor | None = None,
+        coord: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate an eligible compressed canonical deployment graph.
 
@@ -168,6 +169,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         spin
             Per-node magnetic moments with shape ``(N, 3)`` for a native-spin
             model, or ``None``. Ghost rows carry their owner's moment.
+        coord
+            Node positions with shape ``(N, 3)`` in Å, float64, for a model
+            with a long-range module, whose frames are complete non-periodic
+            systems; ``None`` otherwise.
 
         Returns
         -------
@@ -214,7 +219,30 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         descriptor = learned.descriptor
         fitting = learned.fitting_net
         atom_bias = fused_atom_bias(self.atomic_model, learned)
-        if use_dpa4c:
+        if learned.has_long_range():
+            from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+                dpa4c_canonical_long_range_energy_force,
+            )
+
+            if coord is None:
+                raise ValueError(
+                    "a model with a long-range module reads the node positions"
+                )
+            force_mag = None
+            energy, atom_energy, force, virial, atom_virial = (
+                dpa4c_canonical_long_range_energy_force(
+                    descriptor,
+                    fitting,
+                    learned.long_range,
+                    graph,
+                    atype,
+                    coord,
+                    output_mask,
+                    atom_bias,
+                    do_atomic_virial,
+                )
+            )
+        elif use_dpa4c:
             energy, atom_energy, force, virial, atom_virial, force_mag = (
                 dpa4c_canonical_compress_energy_force(
                     descriptor,
@@ -274,6 +302,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         destination_row_ptr: torch.Tensor,
         source_row_ptr: torch.Tensor,
         source_order: torch.Tensor,
+        coord: torch.Tensor | None = None,
         *,
         do_atomic_virial: bool,
         **make_fx_kwargs: Any,
@@ -286,6 +315,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Compact graph node and edge tensors.
         destination_row_ptr, source_row_ptr, source_order
             Compact dual-CSR topology.
+        coord
+            Sample node positions with shape ``(N, 3)``, float64, for a model
+            with a long-range module, which then takes them as a ninth input;
+            ``None`` otherwise.
         do_atomic_virial
             Whether the traced output includes per-node virial.
         **make_fx_kwargs
@@ -294,9 +327,48 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         Returns
         -------
         torch.nn.Module
-            Traced eight-input compact deployment module.
+            Traced compact deployment module of eight inputs, or nine with
+            the node positions.
         """
         model = self
+
+        if coord is not None:
+
+            def fn_coord(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                n_local: torch.Tensor,
+                source: torch.Tensor,
+                edge_vec: torch.Tensor,
+                destination_row_ptr: torch.Tensor,
+                source_row_ptr: torch.Tensor,
+                source_order: torch.Tensor,
+                coord: torch.Tensor,
+            ) -> dict[str, torch.Tensor]:
+                return model.forward_lower_canonical_graph(
+                    atype,
+                    n_node,
+                    n_local,
+                    source,
+                    edge_vec,
+                    destination_row_ptr,
+                    source_row_ptr,
+                    source_order,
+                    do_atomic_virial=do_atomic_virial,
+                    coord=coord,
+                )
+
+            return make_fx(fn_coord, **make_fx_kwargs)(
+                atype,
+                n_node,
+                n_local,
+                source,
+                edge_vec,
+                destination_row_ptr,
+                source_row_ptr,
+                source_order,
+                coord,
+            )
 
         def fn(
             atype: torch.Tensor,

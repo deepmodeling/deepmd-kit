@@ -141,7 +141,8 @@ def _fused_energy_force_graph(
     """
     am = model.atomic_model
     parts = am.fused_decomposition()
-    if parts is None:
+    if parts is None or parts[0].has_long_range():
+        # The descriptor pipelines evaluate no long-range module.
         return None
     learned, pair_potential = parts
     desc, fit = learned.descriptor, learned.fitting_net

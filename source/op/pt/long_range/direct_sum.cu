@@ -1,0 +1,1058 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// CUDA kernel of the latent-charge long-range direct sum (schema and
+// formulas in ops.cc).
+//
+// Every node reads every node of its frame, so the memory is linear in the
+// node count while the work is quadratic. One thread owns one node and walks
+// the nodes of its frame in tiles staged in shared memory; the partner of a
+// thread at a given step is the same for the whole block, so each tile entry
+// is a broadcast read. Each pair is evaluated by both of its nodes, which
+// keeps every sum in the registers of its owner: no atomic operation is
+// needed, and the result does not depend on scheduling.
+//
+// Positions are carried relative to the first node of their frame as a
+// double-float pair: a float32 head and the float32 tail of the remainder.
+// The displacement of two nodes, formed as the difference of the heads plus
+// the difference of the tails, keeps the float32 precision of the
+// displacement itself wherever the frame lies, while every pair evaluates in
+// float32; the far field of the erf kernel forms it from the heads alone (see
+// evaluate_kernel). For the erf kernel the positions are scaled by alpha, so
+// that the pair loop evaluates erf(x) / x and its slope without a
+// coefficient, and the reduction restores the units.
+//
+// A thread sums one tile in float32 and adds the tile sums with compensated
+// float32 arithmetic. The partner axis is split into contiguous chunks, so
+// that a launch fills the device several times over; every chunk writes its
+// sums, and a second pass adds the chunks in a fixed order in float64.
+//
+// The charge constraint and the per-frame virial reduce over the nodes of
+// every frame, in slices whose float64 sums are added in a fixed order, so
+// that every output is independent of scheduling.
+
+#include <ATen/cuda/CUDAContext.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <cuda_runtime.h>
+#include <torch/library.h>
+#include <torch/types.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <tuple>
+
+namespace {
+
+// Nodes per block, which is also the length of a tile of partners.
+constexpr int kThreads = 128;
+// Partners evaluated together, which share every coefficient load.
+constexpr int kBatch = 4;
+constexpr int kMaxChannels = 8;
+constexpr int kMaxGaussians = 32;
+// Squared distances are evaluated no shorter than this, in the units of the
+// staged positions, which keeps the kernels finite for a node paired with
+// itself and for coincident padding nodes; both carry a zero weight.
+constexpr float kMinSquaredDistance = 1e-12f;
+// Fills of the resident block slots of the device that one launch aims for.
+constexpr int kWaves = 8;
+// Shortest chunk of the partner axis, in tiles.
+constexpr int kMinChunkTiles = 2;
+
+enum KernelKind : int { kLes = 0, kSog = 1 };
+
+// Sums of one node: the potential of every channel, the force direction and
+// the six independent components of the virial.
+template <int kChannels>
+constexpr int sum_width() {
+  return kChannels + 3 + 6;
+}
+
+// Running sum with Kahan compensation.
+struct CompensatedSum {
+  float sum = 0.f;
+  float error = 0.f;
+
+  __device__ __forceinline__ void add(float value) {
+    const float corrected = value - error;
+    const float total = sum + corrected;
+    error = (total - sum) - corrected;
+    sum = total;
+  }
+};
+
+// Index of the frame holding ``node``, or -1 for a padding node past every
+// frame. ``frame_ptr`` holds ``frame_count + 1`` offsets.
+__device__ __forceinline__ int frame_of(const int64_t* frame_ptr,
+                                        int frame_count,
+                                        int64_t node) {
+  if (node >= frame_ptr[frame_count]) {
+    return -1;
+  }
+  int low = 0;
+  int high = frame_count;
+  while (high - low > 1) {
+    const int middle = (low + high) / 2;
+    if (frame_ptr[middle] <= node) {
+      low = middle;
+    } else {
+      high = middle;
+    }
+  }
+  return low;
+}
+
+// Writes the offsets of the frames on the node axis: frame_ptr[f] counts the
+// nodes of the frames before f, for f in [0, frame_count]. One block scans
+// the counts, each thread a contiguous run of frames.
+constexpr int kOffsetThreads = 256;
+
+__global__ void __launch_bounds__(kOffsetThreads)
+    frame_offsets(const int64_t* __restrict__ n_node_per_frame,
+                  int frame_count,
+                  int64_t* __restrict__ frame_ptr) {
+  __shared__ int64_t run_total[kOffsetThreads];
+  const int run = (frame_count + kOffsetThreads - 1) / kOffsetThreads;
+  const int begin = min(frame_count, static_cast<int>(threadIdx.x) * run);
+  const int end = min(frame_count, begin + run);
+  int64_t total = 0;
+  for (int f = begin; f < end; ++f) {
+    total += n_node_per_frame[f];
+  }
+  run_total[threadIdx.x] = total;
+  __syncthreads();
+  // Inclusive scan of the run totals.
+  for (int stride = 1; stride < kOffsetThreads; stride *= 2) {
+    const int64_t addend =
+        threadIdx.x >= stride ? run_total[threadIdx.x - stride] : 0;
+    __syncthreads();
+    run_total[threadIdx.x] += addend;
+    __syncthreads();
+  }
+  int64_t offset = threadIdx.x == 0 ? 0 : run_total[threadIdx.x - 1];
+  for (int f = begin; f < end; ++f) {
+    frame_ptr[f] = offset;
+    offset += n_node_per_frame[f];
+  }
+  if (threadIdx.x == kOffsetThreads - 1) {
+    frame_ptr[frame_count] = run_total[kOffsetThreads - 1];
+  }
+}
+
+// Per-frame sums. The nodes of a frame are split into ``gridDim.y``
+// contiguous slices, one block of kFrameThreads each, and a finalizing kernel
+// adds the float64 sums of the slices in slice order.
+constexpr int kFrameThreads = 256;
+// Nodes per slice of a frame that a slice pass aims for.
+constexpr int kSliceNodes = 2048;
+constexpr int kMaxSlices = 256;
+
+struct NodeRange {
+  int64_t begin;
+  int64_t end;
+};
+
+// The nodes of the slice of the frame that this block sums.
+__device__ __forceinline__ NodeRange
+slice_of_frame(const int64_t* __restrict__ frame_ptr) {
+  const int64_t frame_begin = frame_ptr[blockIdx.x];
+  const int64_t frame_end = frame_ptr[blockIdx.x + 1];
+  const int64_t length = (frame_end - frame_begin + gridDim.y - 1) / gridDim.y;
+  const int64_t begin = frame_begin + blockIdx.y * length;
+  return {begin, min(frame_end, begin + length)};
+}
+
+// Adds ``value`` over the threads of the block in a fixed order and writes the
+// totals to the entry of this slice in ``slice_sum``.
+template <int kComponents>
+__device__ __forceinline__ void write_slice_sum(
+    const double (&value)[kComponents], double* __restrict__ slice_sum) {
+  __shared__ double partial[kComponents][kFrameThreads];
+#pragma unroll
+  for (int k = 0; k < kComponents; ++k) {
+    partial[k][threadIdx.x] = value[k];
+  }
+  __syncthreads();
+  for (int stride = kFrameThreads / 2; stride > 0; stride /= 2) {
+    if (threadIdx.x < stride) {
+#pragma unroll
+      for (int k = 0; k < kComponents; ++k) {
+        partial[k][threadIdx.x] += partial[k][threadIdx.x + stride];
+      }
+    }
+    __syncthreads();
+  }
+  if (threadIdx.x < kComponents) {
+    slice_sum[(static_cast<int64_t>(blockIdx.x) * gridDim.y + blockIdx.y) *
+                  kComponents +
+              threadIdx.x] = partial[threadIdx.x][0];
+  }
+}
+
+// Per-frame statistics of the charge constraint: the shift of the
+// constrained channel, the number of charged nodes, and the mean potential of
+// the charged nodes in that channel.
+constexpr int kStatShift = 0;
+constexpr int kStatCount = 1;
+constexpr int kStatMean = 2;
+constexpr int kStatWidth = 3;
+
+// Sums, over one slice of one frame, the number of charged nodes and their raw
+// charges in the constrained channel.
+__global__ void __launch_bounds__(kFrameThreads)
+    charge_slices(const float* __restrict__ charge,
+                  const bool* __restrict__ node_mask,
+                  const int64_t* __restrict__ frame_ptr,
+                  int channels,
+                  int channel,
+                  double* __restrict__ slice_sum) {
+  const NodeRange slice = slice_of_frame(frame_ptr);
+  double value[2] = {0.0, 0.0};
+  for (int64_t node = slice.begin + threadIdx.x; node < slice.end;
+       node += kFrameThreads) {
+    if (node_mask[node]) {
+      value[0] += 1.0;
+      value[1] += charge[node * channels + channel];
+    }
+  }
+  write_slice_sum<2>(value, slice_sum);
+}
+
+// The shift s_f = (sum_f c - Q_f) / max(n_f, 1) of the constrained channel of
+// every frame, from the slice sums of charge_slices.
+__global__ void charge_shift(const double* __restrict__ slice_sum,
+                             int slice_count,
+                             int frame_count,
+                             const double* __restrict__ total_charge,
+                             double* __restrict__ frame_stat) {
+  const int f = blockIdx.x * blockDim.x + threadIdx.x;
+  if (f >= frame_count) {
+    return;
+  }
+  double count = 0.0;
+  double sum = 0.0;
+  for (int slice = 0; slice < slice_count; ++slice) {
+    const double* entry =
+        slice_sum + (static_cast<int64_t>(f) * slice_count + slice) * 2;
+    count += entry[0];
+    sum += entry[1];
+  }
+  // A frame without a charged node has nothing to shift.
+  count = fmax(count, 1.0);
+  frame_stat[f * kStatWidth + kStatShift] = (sum - total_charge[f]) / count;
+  frame_stat[f * kStatWidth + kStatCount] = count;
+}
+
+// Writes the double-float positions relative to the first node of each
+// frame, scaled by alpha for the erf kernel, the frame of every node, and the
+// charges of the pairs: the raw charges of the charged nodes, shifted in the
+// constrained channel, and zero for every other node. ``alpha`` is a device
+// scalar, or null for a kernel read in plain units; ``frame_stat`` is null
+// without a constraint.
+__global__ void prepare_nodes(const double* __restrict__ coord,
+                              const float* __restrict__ charge,
+                              const bool* __restrict__ node_mask,
+                              const int64_t* __restrict__ frame_ptr,
+                              int frame_count,
+                              int node_count,
+                              int channels,
+                              int channel,
+                              const float* __restrict__ alpha,
+                              const double* __restrict__ frame_stat,
+                              float4* __restrict__ head,
+                              float4* __restrict__ tail,
+                              int* __restrict__ frame,
+                              float* __restrict__ pair_charge) {
+  const int node = blockIdx.x * blockDim.x + threadIdx.x;
+  if (node >= node_count) {
+    return;
+  }
+  const double scale = alpha == nullptr ? 1.0 : static_cast<double>(*alpha);
+  const int f = frame_of(frame_ptr, frame_count, node);
+  double3 offset = make_double3(0.0, 0.0, 0.0);
+  if (f >= 0) {
+    const int64_t first = frame_ptr[f];
+    offset.x = scale * (coord[3 * node + 0] - coord[3 * first + 0]);
+    offset.y = scale * (coord[3 * node + 1] - coord[3 * first + 1]);
+    offset.z = scale * (coord[3 * node + 2] - coord[3 * first + 2]);
+  }
+  const float hx = __double2float_rn(offset.x);
+  const float hy = __double2float_rn(offset.y);
+  const float hz = __double2float_rn(offset.z);
+  head[node] = make_float4(hx, hy, hz, 0.f);
+  tail[node] = make_float4(__double2float_rn(offset.x - hx),
+                           __double2float_rn(offset.y - hy),
+                           __double2float_rn(offset.z - hz), 0.f);
+  frame[node] = f;
+  const bool charged = f >= 0 && node_mask[node];
+  const double shift = charged && frame_stat != nullptr
+                           ? frame_stat[f * kStatWidth + kStatShift]
+                           : 0.0;
+  for (int c = 0; c < channels; ++c) {
+    const int64_t index = static_cast<int64_t>(node) * channels + c;
+    const double value = charged ? static_cast<double>(charge[index]) : 0.0;
+    pair_charge[index] =
+        static_cast<float>(c == channel ? value - shift : value);
+  }
+}
+
+// K and K'(r) / r of a batch of pairs at the squared distances ``r2``.
+//
+// The erf kernel reads positions scaled by alpha, x = alpha r, and evaluates
+// erf(x) / x and its slope (2 / sqrt(pi) exp(-x^2) - erf(x) / x) / x^2, with
+// erf(x) = 1 - t P(t) exp(-x^2), t = 1 / (1 + p x), and the coefficients of
+// Abramowitz and Stegun 7.1.26 (absolute error below 1.5e-7), so that one
+// exponential serves the kernel and its slope.
+//
+// Beyond x^2 = kFarSquared the float32 kernel equals 1 / x and its slope
+// -1 / x^3 bit for bit: exp(-x^2) and erfc(x) fall below half a unit in the
+// last place of the terms they would correct. A warp whose batch lies there
+// entirely skips the evaluation of erf, which most pairs of a large system
+// do, and forms the displacements of the batch from the heads alone. The
+// omitted tails move a displacement by at most 2^-24 (|x_i| + |x_j|), with x
+// the alpha-scaled offset of a node from the first node of its frame: the
+// rounding of float32 positions over the extent of the frame, against a
+// distance of at least sqrt(kFarSquared). For a cluster of 100,000 carbon
+// atoms at alpha = 0.5 per angstrom, with offsets of up to 26 units, the
+// potential and the force keep the error of the exact displacements.
+//
+// The sum of Gaussians evaluates sum_k a_k 2^(-c_k r^2) and its slope
+// sum_k s_k 2^(-c_k r^2), s_k = -2 ln(2) c_k a_k, from the staged
+// coefficients ``{a_k, -c_k, s_k}``.
+constexpr float kFarSquared = 20.25f;
+
+// Whether every pair of the batch of every thread of the warp lies in the far
+// field of the erf kernel, judged from the head displacements, whose squared
+// lengths it writes to ``r2``. The sum of Gaussians has no far field.
+template <int kKernel>
+__device__ __forceinline__ bool far_batch(const float (&dx)[kBatch],
+                                          const float (&dy)[kBatch],
+                                          const float (&dz)[kBatch],
+                                          float (&r2)[kBatch]) {
+  if constexpr (kKernel == kSog) {
+    return false;
+  } else {
+    float nearest = std::numeric_limits<float>::infinity();
+#pragma unroll
+    for (int b = 0; b < kBatch; ++b) {
+      r2[b] = fmaf(dx[b], dx[b], fmaf(dy[b], dy[b], dz[b] * dz[b]));
+      nearest = fminf(nearest, r2[b]);
+    }
+    return __all_sync(0xffffffffu, nearest >= kFarSquared);
+  }
+}
+
+template <int kKernel>
+__device__ __forceinline__ void evaluate_kernel(const float (&r2)[kBatch],
+                                                const float4* gaussians,
+                                                int gaussian_count,
+                                                float (&value)[kBatch],
+                                                float (&slope)[kBatch]) {
+  if constexpr (kKernel == kLes) {
+#pragma unroll
+    for (int b = 0; b < kBatch; ++b) {
+      const float inverse = rsqrtf(r2[b]);
+      const float x = r2[b] * inverse;
+      const float t = __fdividef(1.f, fmaf(0.3275911f, x, 1.f));
+      const float poly =
+          t *
+          fmaf(t,
+               fmaf(t,
+                    fmaf(t, fmaf(t, 1.061405429f, -1.453152027f), 1.421413741f),
+                    -0.284496736f),
+               0.254829592f);
+      const float gaussian = exp2f(-1.44269504088896341f * r2[b]);
+      value[b] = fmaf(-poly, gaussian, 1.f) * inverse;
+      slope[b] =
+          fmaf(1.12837916709551257f, gaussian, -value[b]) * (inverse * inverse);
+    }
+  } else {
+#pragma unroll
+    for (int b = 0; b < kBatch; ++b) {
+      value[b] = 0.f;
+      slope[b] = 0.f;
+    }
+    for (int k = 0; k < gaussian_count; ++k) {
+      const float4 coefficient = gaussians[k];
+#pragma unroll
+      for (int b = 0; b < kBatch; ++b) {
+        const float weight = exp2f(coefficient.y * r2[b]);
+        value[b] = fmaf(coefficient.x, weight, value[b]);
+        slope[b] = fmaf(coefficient.z, weight, slope[b]);
+      }
+    }
+  }
+}
+
+// Partners a tile holds besides those of the frame of the node.
+enum Exclusion : int {
+  // Every partner belongs to the frame and differs from the node.
+  kNoExclusion = 0,
+  // The node itself is among the partners.
+  kExcludeSelf = 1,
+  // The partners may also lie in other frames.
+  kExcludeOutsideFrame = 2,
+};
+
+// The state of the node a thread owns.
+template <int kChannels>
+struct OwnNode {
+  int index;
+  int low;   // first node of its frame
+  int high;  // past the last node of its frame
+  float4 head;
+  float4 tail;
+  float charge[kChannels];
+};
+
+// Adds the unscaled potential, force direction and virial that the partners
+// of one staged tile give the node to ``sum``.
+template <int kKernel, int kChannels, int kExclusion>
+__device__ __forceinline__ void accumulate_tile(
+    const float4* __restrict__ tile_head,
+    const float4* __restrict__ tile_tail,
+    const float* __restrict__ tile_charge,
+    const float4* __restrict__ gaussians,
+    int gaussian_count,
+    int start,
+    const OwnNode<kChannels>& own,
+    float (&sum)[sum_width<kChannels>()]) {
+#pragma unroll 4
+  for (int base = 0; base < kThreads; base += kBatch) {
+    float dx[kBatch];
+    float dy[kBatch];
+    float dz[kBatch];
+    float r2[kBatch];
+#pragma unroll
+    for (int b = 0; b < kBatch; ++b) {
+      const float4 other_head = tile_head[base + b];
+      dx[b] = own.head.x - other_head.x;
+      dy[b] = own.head.y - other_head.y;
+      dz[b] = own.head.z - other_head.z;
+    }
+    float value[kBatch];
+    float slope[kBatch];
+    if (far_batch<kKernel>(dx, dy, dz, r2)) {
+#pragma unroll
+      for (int b = 0; b < kBatch; ++b) {
+        const float inverse = rsqrtf(r2[b]);
+        value[b] = inverse;
+        slope[b] = -inverse * (inverse * inverse);
+      }
+    } else {
+#pragma unroll
+      for (int b = 0; b < kBatch; ++b) {
+        const float4 other_tail = tile_tail[base + b];
+        dx[b] += own.tail.x - other_tail.x;
+        dy[b] += own.tail.y - other_tail.y;
+        dz[b] += own.tail.z - other_tail.z;
+        r2[b] = fmaxf(fmaf(dx[b], dx[b], fmaf(dy[b], dy[b], dz[b] * dz[b])),
+                      kMinSquaredDistance);
+      }
+      evaluate_kernel<kKernel>(r2, gaussians, gaussian_count, value, slope);
+    }
+#pragma unroll
+    for (int b = 0; b < kBatch; ++b) {
+      const int other = start + base + b;
+      float weight = 1.f;
+      if constexpr (kExclusion == kExcludeSelf) {
+        weight = other != own.index ? 1.f : 0.f;
+      } else if constexpr (kExclusion == kExcludeOutsideFrame) {
+        weight = (other != own.index &&
+                  static_cast<unsigned>(other - own.low) <
+                      static_cast<unsigned>(own.high - own.low))
+                     ? 1.f
+                     : 0.f;
+      }
+      float product = 0.f;
+#pragma unroll
+      for (int c = 0; c < kChannels; ++c) {
+        const float other_charge =
+            kExclusion == kNoExclusion
+                ? tile_charge[(base + b) * kChannels + c]
+                : weight * tile_charge[(base + b) * kChannels + c];
+        sum[c] = fmaf(other_charge, value[b], sum[c]);
+        product = fmaf(own.charge[c], other_charge, product);
+      }
+      const float strength = product * slope[b];
+      const float sx = strength * dx[b];
+      const float sy = strength * dy[b];
+      const float sz = strength * dz[b];
+      sum[kChannels + 0] += sx;
+      sum[kChannels + 1] += sy;
+      sum[kChannels + 2] += sz;
+      sum[kChannels + 3] = fmaf(sx, dx[b], sum[kChannels + 3]);
+      sum[kChannels + 4] = fmaf(sy, dy[b], sum[kChannels + 4]);
+      sum[kChannels + 5] = fmaf(sz, dz[b], sum[kChannels + 5]);
+      sum[kChannels + 6] = fmaf(sx, dy[b], sum[kChannels + 6]);
+      sum[kChannels + 7] = fmaf(sx, dz[b], sum[kChannels + 7]);
+      sum[kChannels + 8] = fmaf(sy, dz[b], sum[kChannels + 8]);
+    }
+  }
+}
+
+// Sums, for every node of one block and every partner of one chunk, the
+// unscaled potential, force direction and virial of the node, and writes them
+// to ``partial[chunk][component][node]``.
+template <int kKernel, int kChannels>
+__global__ void __launch_bounds__(kThreads)
+    direct_sum_kernel(const float4* __restrict__ head,
+                      const float4* __restrict__ tail,
+                      const float* __restrict__ charge,
+                      const int* __restrict__ frame,
+                      const int64_t* __restrict__ frame_ptr,
+                      int node_count,
+                      const float* __restrict__ coefficient,
+                      int gaussian_count,
+                      float* __restrict__ partial) {
+  constexpr int kWidth = sum_width<kChannels>();
+  __shared__ float4 tile_head[kThreads];
+  __shared__ float4 tile_tail[kThreads];
+  __shared__ float tile_charge[kThreads * kChannels];
+  __shared__ float4 gaussians[kMaxGaussians];
+  __shared__ int range[2];
+  __shared__ bool single_frame;
+
+  const int first = blockIdx.x * kThreads;
+  const int node = first + threadIdx.x;
+  const int own_frame = node < node_count ? frame[node] : -1;
+
+  if constexpr (kKernel == kSog) {
+    for (int k = threadIdx.x; k < gaussian_count; k += kThreads) {
+      const float amplitude = coefficient[k];
+      const float rate = coefficient[gaussian_count + k];
+      gaussians[k] = make_float4(amplitude, -rate,
+                                 -1.38629436111989061f * rate * amplitude, 0.f);
+    }
+  }
+  // The partners of the block are the nodes of the frames its nodes belong
+  // to: a contiguous range, since frames are contiguous on the node axis and
+  // padding nodes trail them.
+  if (threadIdx.x == 0) {
+    int last = min(first + kThreads, node_count) - 1;
+    while (last > first && frame[last] < 0) {
+      --last;
+    }
+    const int low_frame = frame[first];
+    const int high_frame = frame[last];
+    range[0] = low_frame < 0 ? 0 : static_cast<int>(frame_ptr[low_frame]);
+    range[1] = low_frame < 0 ? 0 : static_cast<int>(frame_ptr[high_frame + 1]);
+    // A block whose nodes all lie in one frame finds every partner of its
+    // range in that frame, which spares the frame test of every pair.
+    single_frame = low_frame >= 0 && low_frame == high_frame &&
+                   min(first + kThreads, node_count) - 1 == last;
+  }
+  __syncthreads();
+
+  // The chunk of the partner range this block sums, in whole tiles.
+  const int64_t tile_count = (range[1] - range[0] + kThreads - 1) / kThreads;
+  const int begin =
+      range[0] +
+      static_cast<int>(tile_count * blockIdx.y / gridDim.y) * kThreads;
+  const int end = min(
+      range[1],
+      range[0] + static_cast<int>(tile_count * (blockIdx.y + 1) / gridDim.y) *
+                     kThreads);
+
+  OwnNode<kChannels> own;
+  own.index = node;
+  own.low = 0;
+  own.high = 0;
+  own.head = make_float4(0.f, 0.f, 0.f, 0.f);
+  own.tail = own.head;
+  if (own_frame >= 0) {
+    own.head = head[node];
+    own.tail = tail[node];
+    own.low = static_cast<int>(frame_ptr[own_frame]);
+    own.high = static_cast<int>(frame_ptr[own_frame + 1]);
+  }
+#pragma unroll
+  for (int c = 0; c < kChannels; ++c) {
+    own.charge[c] = own_frame >= 0 ? charge[node * kChannels + c] : 0.f;
+  }
+
+  CompensatedSum total[kWidth];
+  for (int start = begin; start < end; start += kThreads) {
+    const int partner = start + threadIdx.x;
+    const bool staged = partner < end;
+    // A slot past the chunk carries a zero charge and contributes nothing.
+    tile_head[threadIdx.x] =
+        staged ? head[partner] : make_float4(0.f, 0.f, 0.f, 0.f);
+    tile_tail[threadIdx.x] =
+        staged ? tail[partner] : make_float4(0.f, 0.f, 0.f, 0.f);
+#pragma unroll
+    for (int c = 0; c < kChannels; ++c) {
+      tile_charge[threadIdx.x * kChannels + c] =
+          staged ? charge[partner * kChannels + c] : 0.f;
+    }
+    __syncthreads();
+
+    float sum[kWidth];
+#pragma unroll
+    for (int k = 0; k < kWidth; ++k) {
+      sum[k] = 0.f;
+    }
+    // In a single-frame block only the tiles that overlap the block's own
+    // nodes hold a node itself, so the tests are confined to them and to the
+    // blocks that span frames; the choice is uniform over the block.
+    if (!single_frame) {
+      accumulate_tile<kKernel, kChannels, kExcludeOutsideFrame>(
+          tile_head, tile_tail, tile_charge, gaussians, gaussian_count, start,
+          own, sum);
+    } else if (start < first + kThreads && first < start + kThreads) {
+      accumulate_tile<kKernel, kChannels, kExcludeSelf>(
+          tile_head, tile_tail, tile_charge, gaussians, gaussian_count, start,
+          own, sum);
+    } else {
+      accumulate_tile<kKernel, kChannels, kNoExclusion>(
+          tile_head, tile_tail, tile_charge, gaussians, gaussian_count, start,
+          own, sum);
+    }
+#pragma unroll
+    for (int k = 0; k < kWidth; ++k) {
+      total[k].add(sum[k]);
+    }
+    __syncthreads();
+  }
+
+  if (node < node_count) {
+    float* out =
+        partial + static_cast<int64_t>(blockIdx.y) * kWidth * node_count + node;
+#pragma unroll
+    for (int k = 0; k < kWidth; ++k) {
+      out[static_cast<int64_t>(k) * node_count] = total[k].sum;
+    }
+  }
+}
+
+// Adds the chunk sums of one component of one node in chunk order, one
+// thread per component and node, and scales the result into the potential,
+// the force or the per-node virial. With positions scaled by alpha,
+// K(r) = alpha f(x), K'(r) / r = alpha^3 f'(x) / x and d = d' / alpha, so the
+// potential carries alpha, the force alpha^2 and the virial alpha.
+template <int kChannels>
+__global__ void reduce_chunks(const float* __restrict__ partial,
+                              int node_count,
+                              int chunk_count,
+                              double prefactor,
+                              const float* __restrict__ alpha,
+                              float* __restrict__ potential,
+                              float* __restrict__ force,
+                              float* __restrict__ atom_virial) {
+  constexpr int kWidth = sum_width<kChannels>();
+  const int64_t index =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (index >= static_cast<int64_t>(kWidth) * node_count) {
+    return;
+  }
+  const int component = static_cast<int>(index / node_count);
+  const int node = static_cast<int>(index - component * int64_t(node_count));
+  double value = 0.0;
+  for (int chunk = 0; chunk < chunk_count; ++chunk) {
+    value += partial[static_cast<int64_t>(chunk) * kWidth * node_count + index];
+  }
+  const double unit = alpha == nullptr ? 1.0 : static_cast<double>(*alpha);
+  if (component < kChannels) {
+    potential[node * kChannels + component] =
+        static_cast<float>(prefactor * unit * value);
+  } else if (component < kChannels + 3) {
+    force[node * 3 + component - kChannels] =
+        static_cast<float>(-prefactor * unit * unit * value);
+  } else {
+    // Each pair term is split half to each of its two nodes. The six sums
+    // are xx, yy, zz, xy, xz, yz.
+    constexpr int kRow[6] = {0, 1, 2, 0, 0, 1};
+    constexpr int kColumn[6] = {0, 1, 2, 1, 2, 2};
+    const int pair = component - kChannels - 3;
+    const float entry = static_cast<float>(-0.5 * prefactor * unit * value);
+    float* out = atom_virial + static_cast<int64_t>(node) * 9;
+    out[3 * kRow[pair] + kColumn[pair]] = entry;
+    out[3 * kColumn[pair] + kRow[pair]] = entry;
+  }
+}
+
+// Sums, over one slice of one frame, the per-node virial and, with a
+// constraint, the potential of the charged nodes in the constrained channel.
+template <bool kConstrained>
+__global__ void __launch_bounds__(kFrameThreads)
+    virial_slices(const float* __restrict__ atom_virial,
+                  const float* __restrict__ potential,
+                  const bool* __restrict__ node_mask,
+                  const int64_t* __restrict__ frame_ptr,
+                  int channels,
+                  int channel,
+                  double* __restrict__ slice_sum) {
+  constexpr int kComponents = kConstrained ? 10 : 9;
+  const NodeRange slice = slice_of_frame(frame_ptr);
+  double value[kComponents] = {};
+  for (int64_t node = slice.begin + threadIdx.x; node < slice.end;
+       node += kFrameThreads) {
+#pragma unroll
+    for (int k = 0; k < 9; ++k) {
+      value[k] += atom_virial[node * 9 + k];
+    }
+    if constexpr (kConstrained) {
+      if (node_mask[node]) {
+        value[9] += potential[node * channels + channel];
+      }
+    }
+  }
+  write_slice_sum<kComponents>(value, slice_sum);
+}
+
+// Adds the slice sums of virial_slices into the virial of every frame and,
+// with a constraint, the mean potential of its charged nodes.
+template <bool kConstrained>
+__global__ void virial_total(const double* __restrict__ slice_sum,
+                             int slice_count,
+                             float* __restrict__ virial,
+                             double* __restrict__ frame_stat) {
+  constexpr int kComponents = kConstrained ? 10 : 9;
+  if (threadIdx.x >= kComponents) {
+    return;
+  }
+  double value = 0.0;
+  for (int slice = 0; slice < slice_count; ++slice) {
+    value +=
+        slice_sum[(static_cast<int64_t>(blockIdx.x) * slice_count + slice) *
+                      kComponents +
+                  threadIdx.x];
+  }
+  if (threadIdx.x < 9) {
+    virial[blockIdx.x * 9 + threadIdx.x] = static_cast<float>(value);
+  } else {
+    double* stat = frame_stat + blockIdx.x * kStatWidth;
+    stat[kStatMean] = value / stat[kStatCount];
+  }
+}
+
+// Writes the atomic energy q_i . phi_i / 2 and the derivative of the energy
+// with respect to the raw charges: w_i (phi_i - mean_f) in the constrained
+// channel and w_i phi_i in the others, w_i marking the charged nodes.
+__global__ void project_charges(const float* __restrict__ potential,
+                                const float* __restrict__ pair_charge,
+                                const bool* __restrict__ node_mask,
+                                const int* __restrict__ frame,
+                                const double* __restrict__ frame_stat,
+                                int node_count,
+                                int channels,
+                                int channel,
+                                double* __restrict__ atom_energy,
+                                float* __restrict__ charge_gradient) {
+  const int node = blockIdx.x * blockDim.x + threadIdx.x;
+  if (node >= node_count) {
+    return;
+  }
+  const int f = frame[node];
+  const bool charged = f >= 0 && node_mask[node];
+  const double mean = charged && frame_stat != nullptr
+                          ? frame_stat[f * kStatWidth + kStatMean]
+                          : 0.0;
+  double energy = 0.0;
+  for (int c = 0; c < channels; ++c) {
+    const int64_t index = static_cast<int64_t>(node) * channels + c;
+    const double phi = potential[index];
+    energy += static_cast<double>(pair_charge[index]) * phi;
+    const double gradient = charged ? phi : 0.0;
+    charge_gradient[index] =
+        static_cast<float>(c == channel ? gradient - mean : gradient);
+  }
+  atom_energy[node] = 0.5 * energy;
+}
+
+// Chunks of the partner axis for the given node count. The blocks of one
+// launch all carry the same work, so the launch fills the resident block
+// slots of the device several times over, which bounds the idle share of the
+// last wave; no chunk is shorter than kMinChunkTiles tiles of a frame that
+// spans every node.
+int chunk_count_for(int node_count, int resident_blocks_per_multiprocessor) {
+  const int multiprocessors =
+      at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
+  const int node_blocks = (node_count + kThreads - 1) / kThreads;
+  const int64_t wanted_blocks = static_cast<int64_t>(kWaves) *
+                                resident_blocks_per_multiprocessor *
+                                multiprocessors;
+  const int wanted =
+      static_cast<int>((wanted_blocks + node_blocks - 1) / node_blocks);
+  return std::max(1, std::min(wanted, node_blocks / kMinChunkTiles));
+}
+
+struct DirectSumBuffers {
+  const torch::Tensor& head;
+  const torch::Tensor& tail;
+  const torch::Tensor& charge;
+  const torch::Tensor& frame;
+  const torch::Tensor& frame_ptr;
+  const torch::Tensor& coefficient;
+  torch::Tensor& potential;
+  torch::Tensor& force;
+  torch::Tensor& atom_virial;
+};
+
+template <int kKernel, int kChannels>
+int resident_blocks_per_multiprocessor() {
+  // The occupancy is a property of the compiled kernel and of the device; a
+  // process drives one device architecture.
+  static const int blocks = [] {
+    int value = 0;
+    C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &value, direct_sum_kernel<kKernel, kChannels>, kThreads, 0));
+    return std::max(1, value);
+  }();
+  return blocks;
+}
+
+template <int kKernel, int kChannels>
+void launch(const DirectSumBuffers& buffers,
+            int node_count,
+            double prefactor,
+            cudaStream_t stream) {
+  constexpr int kWidth = sum_width<kChannels>();
+  const int chunk_count = chunk_count_for(
+      node_count, resident_blocks_per_multiprocessor<kKernel, kChannels>());
+  auto partial =
+      torch::empty({static_cast<int64_t>(chunk_count) * node_count * kWidth},
+                   buffers.charge.options());
+  const dim3 grid((node_count + kThreads - 1) / kThreads, chunk_count);
+  direct_sum_kernel<kKernel, kChannels><<<grid, kThreads, 0, stream>>>(
+      reinterpret_cast<const float4*>(buffers.head.data_ptr<float>()),
+      reinterpret_cast<const float4*>(buffers.tail.data_ptr<float>()),
+      buffers.charge.data_ptr<float>(), buffers.frame.data_ptr<int>(),
+      buffers.frame_ptr.data_ptr<int64_t>(), node_count,
+      buffers.coefficient.data_ptr<float>(),
+      static_cast<int>(buffers.coefficient.numel() / 2),
+      partial.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  const int64_t reduce_threads = static_cast<int64_t>(kWidth) * node_count;
+  reduce_chunks<kChannels>
+      <<<static_cast<unsigned>((reduce_threads + 255) / 256), 256, 0, stream>>>(
+          partial.data_ptr<float>(), node_count, chunk_count, prefactor,
+          kKernel == kLes ? buffers.coefficient.data_ptr<float>() : nullptr,
+          buffers.potential.data_ptr<float>(), buffers.force.data_ptr<float>(),
+          buffers.atom_virial.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
+template <int kKernel>
+void dispatch_channels(int channels,
+                       const DirectSumBuffers& buffers,
+                       int node_count,
+                       double prefactor,
+                       cudaStream_t stream) {
+  switch (channels) {
+    case 1:
+      return launch<kKernel, 1>(buffers, node_count, prefactor, stream);
+    case 2:
+      return launch<kKernel, 2>(buffers, node_count, prefactor, stream);
+    case 3:
+      return launch<kKernel, 3>(buffers, node_count, prefactor, stream);
+    case 4:
+      return launch<kKernel, 4>(buffers, node_count, prefactor, stream);
+    case 5:
+      return launch<kKernel, 5>(buffers, node_count, prefactor, stream);
+    case 6:
+      return launch<kKernel, 6>(buffers, node_count, prefactor, stream);
+    case 7:
+      return launch<kKernel, 7>(buffers, node_count, prefactor, stream);
+    case 8:
+      return launch<kKernel, 8>(buffers, node_count, prefactor, stream);
+    default:
+      TORCH_CHECK(false, "latent_charge_direct_sum: unsupported channel count ",
+                  channels);
+  }
+}
+
+std::tuple<torch::Tensor,
+           torch::Tensor,
+           torch::Tensor,
+           torch::Tensor,
+           torch::Tensor>
+latent_charge_direct_sum(torch::Tensor coord,
+                         torch::Tensor charge,
+                         torch::Tensor node_mask,
+                         torch::Tensor n_node_per_frame,
+                         torch::Tensor total_charge,
+                         torch::Tensor coefficient,
+                         int64_t kernel,
+                         int64_t channel,
+                         double prefactor) {
+  TORCH_CHECK(coord.is_cuda() && charge.is_cuda() && node_mask.is_cuda() &&
+                  n_node_per_frame.is_cuda() && total_charge.is_cuda() &&
+                  coefficient.is_cuda(),
+              "latent_charge_direct_sum: inputs must be CUDA tensors");
+  TORCH_CHECK(charge.device() == coord.device() &&
+                  node_mask.device() == coord.device() &&
+                  n_node_per_frame.device() == coord.device() &&
+                  total_charge.device() == coord.device() &&
+                  coefficient.device() == coord.device(),
+              "latent_charge_direct_sum: inputs must share one device");
+  TORCH_CHECK(coord.dim() == 2 && coord.size(1) == 3 &&
+                  coord.scalar_type() == torch::kFloat64,
+              "latent_charge_direct_sum: coord must be float64 with shape "
+              "(N, 3)");
+  TORCH_CHECK(charge.dim() == 2 && charge.size(0) == coord.size(0) &&
+                  charge.scalar_type() == torch::kFloat32,
+              "latent_charge_direct_sum: charge must be float32 with shape "
+              "(N, C)");
+  TORCH_CHECK(node_mask.dim() == 1 && node_mask.size(0) == coord.size(0) &&
+                  node_mask.scalar_type() == torch::kBool,
+              "latent_charge_direct_sum: node_mask must be bool with shape "
+              "(N,)");
+  TORCH_CHECK(n_node_per_frame.dim() == 1,
+              "latent_charge_direct_sum: n_node_per_frame must be "
+              "one-dimensional");
+  TORCH_CHECK(total_charge.dim() == 1 &&
+                  total_charge.size(0) == n_node_per_frame.size(0) &&
+                  total_charge.scalar_type() == torch::kFloat64,
+              "latent_charge_direct_sum: total_charge must be float64 with "
+              "one entry per frame");
+  TORCH_CHECK(
+      coefficient.dim() == 1 && coefficient.scalar_type() == torch::kFloat32,
+      "latent_charge_direct_sum: coefficient must be a float32 vector");
+  const int64_t channels = charge.size(1);
+  TORCH_CHECK(channels >= 1 && channels <= kMaxChannels,
+              "latent_charge_direct_sum: the channel count must lie in [1, ",
+              kMaxChannels, "], got ", channels);
+  TORCH_CHECK(channel >= -1 && channel < channels,
+              "latent_charge_direct_sum: the constrained channel must be -1 "
+              "or lie in [0, ",
+              channels, "), got ", channel);
+  TORCH_CHECK(coord.size(0) < std::numeric_limits<int>::max() / kThreads,
+              "latent_charge_direct_sum: too many nodes");
+  if (kernel == kLes) {
+    TORCH_CHECK(coefficient.numel() == 1,
+                "latent_charge_direct_sum: the erf kernel takes one "
+                "coefficient");
+  } else if (kernel == kSog) {
+    TORCH_CHECK(coefficient.numel() % 2 == 0 && coefficient.numel() > 0 &&
+                    coefficient.numel() <= 2 * kMaxGaussians,
+                "latent_charge_direct_sum: the Gaussian kernel takes two "
+                "coefficients per Gaussian, for at most ",
+                kMaxGaussians, " Gaussians");
+  } else {
+    TORCH_CHECK(false, "latent_charge_direct_sum: unknown kernel ", kernel);
+  }
+
+  const c10::cuda::CUDAGuard guard(coord.device());
+  const int node_count = static_cast<int>(coord.size(0));
+  const int frame_count = static_cast<int>(n_node_per_frame.size(0));
+  const auto float_options = charge.options();
+  const auto double_options = coord.options();
+  if (node_count == 0 || frame_count == 0) {
+    return {torch::zeros({node_count, 1}, double_options),
+            torch::zeros({node_count, channels}, float_options),
+            torch::zeros({node_count, 3}, float_options),
+            torch::zeros({node_count, 9}, float_options),
+            torch::zeros({frame_count, 9}, float_options)};
+  }
+  const bool constrained = channel >= 0;
+  const int constrained_channel = static_cast<int>(channel);
+  // The kernels write every entry of the outputs.
+  auto atom_energy = torch::empty({node_count, 1}, double_options);
+  auto charge_gradient = torch::empty({node_count, channels}, float_options);
+  auto force = torch::empty({node_count, 3}, float_options);
+  auto atom_virial = torch::empty({node_count, 9}, float_options);
+  auto virial = torch::empty({frame_count, 9}, float_options);
+
+  coord = coord.contiguous();
+  charge = charge.contiguous();
+  node_mask = node_mask.contiguous();
+  total_charge = total_charge.contiguous();
+  coefficient = coefficient.contiguous();
+  const auto counts = n_node_per_frame.to(torch::kInt64).contiguous();
+  auto frame_ptr = torch::empty({frame_count + 1}, counts.options());
+  auto head = torch::empty({node_count, 4}, float_options);
+  auto tail = torch::empty({node_count, 4}, float_options);
+  auto frame = torch::empty({node_count}, coord.options().dtype(torch::kInt32));
+  auto pair_charge = torch::empty({node_count, channels}, float_options);
+  auto potential = torch::empty({node_count, channels}, float_options);
+  auto frame_stat = torch::empty({constrained ? frame_count * kStatWidth : 0},
+                                 double_options);
+  const int64_t average_nodes = (node_count + frame_count - 1) / frame_count;
+  const int slice_count = static_cast<int>(std::min<int64_t>(
+      kMaxSlices,
+      std::max<int64_t>(1, (average_nodes + kSliceNodes - 1) / kSliceNodes)));
+  const dim3 slice_grid(frame_count, slice_count);
+  const auto stream = at::cuda::getCurrentCUDAStream();
+  frame_offsets<<<1, kOffsetThreads, 0, stream>>>(
+      counts.data_ptr<int64_t>(), frame_count, frame_ptr.data_ptr<int64_t>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  if (constrained) {
+    auto slice_charge = torch::empty(
+        {static_cast<int64_t>(frame_count) * slice_count * 2}, double_options);
+    charge_slices<<<slice_grid, kFrameThreads, 0, stream>>>(
+        charge.data_ptr<float>(), node_mask.data_ptr<bool>(),
+        frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
+        constrained_channel, slice_charge.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    charge_shift<<<(frame_count + kFrameThreads - 1) / kFrameThreads,
+                   kFrameThreads, 0, stream>>>(
+        slice_charge.data_ptr<double>(), slice_count, frame_count,
+        total_charge.data_ptr<double>(), frame_stat.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+  }
+  // Alpha stays on the device, so that a call never waits for it.
+  prepare_nodes<<<(node_count + kThreads - 1) / kThreads, kThreads, 0,
+                  stream>>>(
+      coord.data_ptr<double>(), charge.data_ptr<float>(),
+      node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(), frame_count,
+      node_count, static_cast<int>(channels), constrained_channel,
+      kernel == kLes ? coefficient.data_ptr<float>() : nullptr,
+      constrained ? frame_stat.data_ptr<double>() : nullptr,
+      reinterpret_cast<float4*>(head.data_ptr<float>()),
+      reinterpret_cast<float4*>(tail.data_ptr<float>()), frame.data_ptr<int>(),
+      pair_charge.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+  const DirectSumBuffers buffers{head,      tail,      pair_charge,
+                                 frame,     frame_ptr, coefficient,
+                                 potential, force,     atom_virial};
+  if (kernel == kLes) {
+    dispatch_channels<kLes>(static_cast<int>(channels), buffers, node_count,
+                            prefactor, stream.stream());
+  } else {
+    dispatch_channels<kSog>(static_cast<int>(channels), buffers, node_count,
+                            prefactor, stream.stream());
+  }
+  const int components = constrained ? 10 : 9;
+  auto slice_virial = torch::empty(
+      {static_cast<int64_t>(frame_count) * slice_count * components},
+      double_options);
+  if (constrained) {
+    virial_slices<true><<<slice_grid, kFrameThreads, 0, stream>>>(
+        atom_virial.data_ptr<float>(), potential.data_ptr<float>(),
+        node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(),
+        static_cast<int>(channels), constrained_channel,
+        slice_virial.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    virial_total<true><<<frame_count, 32, 0, stream>>>(
+        slice_virial.data_ptr<double>(), slice_count, virial.data_ptr<float>(),
+        frame_stat.data_ptr<double>());
+  } else {
+    virial_slices<false><<<slice_grid, kFrameThreads, 0, stream>>>(
+        atom_virial.data_ptr<float>(), potential.data_ptr<float>(),
+        node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(),
+        static_cast<int>(channels), constrained_channel,
+        slice_virial.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    virial_total<false><<<frame_count, 32, 0, stream>>>(
+        slice_virial.data_ptr<double>(), slice_count, virial.data_ptr<float>(),
+        nullptr);
+  }
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  project_charges<<<(node_count + kThreads - 1) / kThreads, kThreads, 0,
+                    stream>>>(
+      potential.data_ptr<float>(), pair_charge.data_ptr<float>(),
+      node_mask.data_ptr<bool>(), frame.data_ptr<int>(),
+      constrained ? frame_stat.data_ptr<double>() : nullptr, node_count,
+      static_cast<int>(channels), constrained_channel,
+      atom_energy.data_ptr<double>(), charge_gradient.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  return {atom_energy, charge_gradient, force, atom_virial, virial};
+}
+
+}  // namespace
+
+TORCH_LIBRARY_FRAGMENT(deepmd, library) {
+  library.impl("latent_charge_direct_sum", torch::kCUDA,
+               &latent_charge_direct_sum);
+}

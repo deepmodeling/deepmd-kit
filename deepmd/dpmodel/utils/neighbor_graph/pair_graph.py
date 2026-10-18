@@ -222,14 +222,30 @@ def build_topologies(
     for name in names:
         if name != ALL_PAIRS:
             raise ValueError(f"unknown topology {name!r}; expected {ALL_PAIRS!r}")
-        if box is not None:
-            raise NotImplementedError(
-                "the all-pairs topology of the long-range modules describes "
-                "complete non-periodic systems only; periodic cells are not "
-                "supported (pass box=None for a non-periodic system)"
-            )
+        check_complete_frames(box)
         topologies[name] = build_pair_graph(coord, n_node, atype, node_mask, pair_excl)
     return topologies
+
+
+def check_complete_frames(box: Array | None) -> None:
+    """Reject a cell, since the all-pairs topology covers non-periodic frames.
+
+    Parameters
+    ----------
+    box
+        Simulation cells, or ``None`` for non-periodic systems.
+
+    Raises
+    ------
+    NotImplementedError
+        If a cell is given.
+    """
+    if box is not None:
+        raise NotImplementedError(
+            "the all-pairs topology of the long-range modules describes "
+            "complete non-periodic systems only; periodic cells are not "
+            "supported (pass box=None for a non-periodic system)"
+        )
 
 
 def flatten_topologies(topologies: dict[str, PairGraph]) -> tuple[Array, ...]:

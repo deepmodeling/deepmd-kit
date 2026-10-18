@@ -11,6 +11,7 @@ from deepmd.dpmodel.long_range import (
     COULOMB_CONSTANT,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    ALL_PAIRS,
     build_pair_graph,
 )
 from deepmd.infer import (
@@ -603,6 +604,139 @@ def test_frozen_model_matches_direct_forward(
             )
 
 
+@pytest.mark.parametrize(
+    ("kernel", "source"), [("les", None), ("les", "neutral"), ("sog", "charge_spin")]
+)
+def test_coordinate_evaluation_matches_pair_graph(
+    kernel: str, source: str | None
+) -> None:
+    """The evaluation from node positions matches the pair-graph evaluation.
+
+    It returns the atomic energy, the derivative of the energy with respect to
+    the descriptor through the constrained charges, and the force at a fixed
+    descriptor, all of which the pair graph yields by automatic
+    differentiation. Two frames, an uncharged node and trailing padding nodes
+    exercise the frame sums of the constraint.
+    """
+    from deepmd.pt_expt.kernels.long_range import (
+        op_available,
+    )
+
+    if not op_available():
+        pytest.skip("the direct-sum operator is not available")
+    config = _config(kernel, constraint=None if source is None else {"source": source})
+    if source == "charge_spin":
+        config["descriptor"]["add_chg_spin_ebd"] = True
+    long_range = get_model(config).atomic_model.long_range.eval()
+    if source == "charge_spin":
+        long_range.fold_charge_state([2.0, 1.0])
+    rng = np.random.default_rng(7)
+    n_node = torch.tensor([9, 6], device=env.DEVICE)
+    node_mask = torch.ones(17, dtype=torch.bool, device=env.DEVICE)
+    node_mask[4] = False
+    node_mask[15:] = False
+    coord = _tensor(rng.uniform(0.0, 6.0, (17, 3)))
+    descriptor = _tensor(rng.normal(size=(17, long_range.charge_net.dim_descrpt)))
+    atype = _tensor(rng.integers(0, 2, 17), torch.int64)
+
+    atom_energy, descriptor_gradient, force, _, _ = long_range.energy_force_from_coord(
+        descriptor, atype, node_mask, n_node, coord
+    )
+
+    leaf_descriptor = descriptor.clone().requires_grad_(True)
+    leaf_coord = coord.clone().requires_grad_(True)
+    pairs = build_pair_graph(leaf_coord, n_node, atype, node_mask)
+    expected = long_range.call_graph(
+        leaf_descriptor, atype, node_mask, n_node, {ALL_PAIRS: pairs}
+    )
+    expected_descriptor_gradient, expected_coord_gradient = torch.autograd.grad(
+        expected.sum(), (leaf_descriptor, leaf_coord)
+    )
+    for actual, target in (
+        (atom_energy, expected),
+        (descriptor_gradient, expected_descriptor_gradient),
+        (force, -expected_coord_gradient),
+    ):
+        target = target.detach()
+        scale = target.abs().max().item()
+        assert scale > 0.0
+        np.testing.assert_allclose(
+            actual.detach().to(torch.float64).cpu().numpy(),
+            target.cpu().numpy(),
+            rtol=0.0,
+            atol=2e-5 * scale,
+        )
+
+
+@pytest.mark.parametrize(
+    ("kernel", "source"), [("les", "charge_spin"), ("sog", "neutral")]
+)
+def test_compressed_frozen_model_matches_uncompressed(
+    tmp_path, kernel: str, source: str
+) -> None:
+    """A compressed model keeps its long-range module through the freeze.
+
+    On a CUDA device the freeze selects the compact canonical lower, whose
+    direct-sum operator reads the positions of the atoms; on the CPU the
+    graph lower reads the pair lists. A constraint that reads the total
+    charge from the charge state is folded with the descriptor and follows
+    the state the deployment serves. Both match the uncompressed model.
+    """
+    config = _config(kernel, constraint={"source": source})
+    config["descriptor"].update(n_radial=8, precision="float32")
+    if source == "charge_spin":
+        config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[0.0, 1.0])
+    config["fitting_net"].update(
+        neuron=[32, 32], activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    config["long_range"]["charge_net"] = {"neuron": [16, 16], "seed": 23}
+    model = get_model(config).to(env.DEVICE).eval()
+    generator = torch.Generator().manual_seed(5)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            noise = torch.randn(parameter.shape, generator=generator)
+            parameter.add_(0.05 * noise.to(parameter))
+    reference = copy.deepcopy(model)
+    model.atomic_model.enable_compression(0.5)
+    frozen = tmp_path / f"long_range_compressed_{kernel}.pt2"
+    deserialize_to_file(
+        str(frozen),
+        {"model": model.serialize(), "model_def_script": config},
+        do_atomic_virial=True,
+        lower_kind="auto",
+    )
+    dp = DeepPot(str(frozen), auto_batch_size=False)
+    expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
+    assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
+    rng = np.random.default_rng(3)
+    coord = rng.uniform(0.0, 7.0, (1, 40, 3)) + 100.0
+    atype = rng.integers(0, 2, (1, 40))
+    names = ("energy", "force", "virial", "atom_energy", "atom_virial")
+    # The tables of the compressed descriptor approximate its networks. On the
+    # graph lower the charges of this model amplify that error at a charged
+    # state, to about 1e-4 of the scale at [1, 2]; the compact canonical lower
+    # stays within a few 1e-6.
+    tolerance = 2e-5 if expected_lower == "dpa4c_canonical" else 5e-4
+    states = [[0.0, 1.0], [1.0, 2.0], [0.0, 1.0]] if source == "charge_spin" else [None]
+    for state in states:
+        condition = {} if state is None else {"charge_spin": np.array([state])}
+        expected = reference(
+            _tensor(coord),
+            _tensor(atype, torch.int64),
+            do_atomic_virial=True,
+            **{key: _tensor(value) for key, value in condition.items()},
+        )
+        actual = dp.eval(coord, None, atype, atomic=True, **condition)
+        for name, value in zip(names, actual, strict=True):
+            target = expected[name].detach().cpu().numpy().reshape(value.shape)
+            scale = np.abs(target).max()
+            assert np.abs(value - target).max() <= tolerance * scale + 1e-5, (
+                name,
+                state,
+            )
+
+
 @pytest.mark.parametrize("kernel", ["les", "sog"])
 @REQUIRES_SUPPORTED_COMPILE
 def test_compiled_matches_eager(kernel: str) -> None:
@@ -648,8 +782,6 @@ def test_unsupported_combinations_fail() -> None:
     nlist = torch.full((1, 6, 4), -1, dtype=torch.int64, device=env.DEVICE)
     with pytest.raises(NotImplementedError, match="NeighborGraph"):
         model.atomic_model.forward_atomic(coord[:1], atype[:1], nlist)
-    with pytest.raises(NotImplementedError, match="compression"):
-        model.atomic_model.enable_compression(0.5)
     config = _config("les")
     config["spin"] = {"use_spin": [True, False], "scheme": "native"}
     with pytest.raises(NotImplementedError):
@@ -689,6 +821,23 @@ def test_unsupported_combinations_fail() -> None:
     }
     with pytest.raises(NotImplementedError, match="DPA4C"):
         get_model(config)
+
+
+def test_compressing_the_descriptor_alone_is_rejected() -> None:
+    """A folded descriptor and a constraint reading the condition are rejected."""
+    config = _config("les", constraint={"source": "charge_spin"})
+    config["descriptor"].update(
+        n_radial=8,
+        precision="float32",
+        add_chg_spin_ebd=True,
+        default_chg_spin=[0.0, 1.0],
+    )
+    config["fitting_net"]["precision"] = "float32"
+    model = get_model(config).to(env.DEVICE).eval()
+    model.atomic_model.descriptor.enable_compression(0.5)
+    coord, atype = _batch()
+    with pytest.raises(ValueError, match="folds the charge/spin condition"):
+        model(coord[:1], atype[:1])
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])
