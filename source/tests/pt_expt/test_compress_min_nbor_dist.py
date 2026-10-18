@@ -95,6 +95,28 @@ def test_auto_batch_size_follows_the_selected_device() -> None:
     assert AutoBatchSize().is_gpu_available() == (DEVICE.type == "cuda")
 
 
+def test_auto_batch_size_ignores_cuda_when_cpu_is_selected(monkeypatch: Any) -> None:
+    """A CUDA host with ``DEVICE=cpu`` must still pin the CPU policy.
+
+    This is the combination the policy exists for, and the only one where
+    following ``torch.cuda.is_available()`` instead of the selected device
+    gives a different answer.
+    """
+    import torch
+
+    from deepmd.pt_expt.utils import (
+        env,
+    )
+    from deepmd.pt_expt.utils.auto_batch_size import (
+        AutoBatchSize,
+    )
+
+    monkeypatch.setattr(env, "DEVICE", torch.device("cpu"))
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+
+    assert AutoBatchSize(silent=True).is_gpu_available() is False
+
+
 def test_graph_lower_output_keeps_min_nbor_dist(monkeypatch: Any) -> None:
     """The graph-lower branch carries the value into the exported archive.
 
