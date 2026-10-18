@@ -17,6 +17,8 @@ new attributes.
 
 from collections.abc import (
     Callable,
+    Iterable,
+    Iterator,
 )
 from functools import (
     wraps,
@@ -193,8 +195,37 @@ def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
     return wrapped_cls.deserialize(value.serialize())
 
 
+class BufferList(torch.nn.Module):
+    """Hold tensors as persistent buffers behind the interface of a list.
+
+    An index table moves with its module and enters the ``state_dict``, but no
+    optimizer updates it, which makes it a buffer rather than a parameter. The
+    entries are registered under their positions, the keys a
+    ``torch.nn.ParameterList`` uses.
+
+    Parameters
+    ----------
+    tensors : Iterable[torch.Tensor]
+        The entries, in order.
+    """
+
+    def __init__(self, tensors: Iterable[torch.Tensor]) -> None:
+        super().__init__()
+        for index, tensor in enumerate(tensors):
+            self.register_buffer(str(index), tensor)
+
+    def __len__(self) -> int:
+        return len(self._buffers)
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        return self._buffers[str(range(len(self))[index])]
+
+    def __iter__(self) -> Iterator[torch.Tensor]:
+        return iter(self._buffers.values())
+
+
 def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
-    """Try to convert a plain list to ModuleList or ParameterList.
+    """Try to convert a plain list to ModuleList, ParameterList or BufferList.
 
     Returns the converted container, or None if no conversion is needed
     (e.g., empty list, list of scalars/strings).
@@ -222,19 +253,23 @@ def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
                 )
             converted.append(c)
         return torch.nn.ModuleList(converted)
-    # List of numpy arrays → ParameterList
+    # List of numpy arrays → ParameterList, or BufferList when every array is
+    # an index table: a module's parameters are what an optimizer receives, and
+    # sharded optimizers require them to share one floating-point type.
     if all(isinstance(v, np.ndarray) for v in value):
         from deepmd.pt_expt.utils import env  # deferred - avoids circular import
 
-        params = []
-        for v in value:
-            t = torch.as_tensor(v, device=env.DEVICE)
-            params.append(
+        tensors = [torch.as_tensor(v, device=env.DEVICE) for v in value]
+        if not any(t.is_floating_point() or t.is_complex() for t in tensors):
+            return BufferList(tensors)
+        return torch.nn.ParameterList(
+            [
                 torch.nn.Parameter(
                     t, requires_grad=t.is_floating_point() or t.is_complex()
                 )
-            )
-        return torch.nn.ParameterList(params)
+                for t in tensors
+            ]
+        )
     return None
 
 
@@ -344,7 +379,8 @@ def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, 
         obj._buffers[name] = None
         return True, None
 
-    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList
+    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList /
+    # BufferList
     if isinstance(value, list) and "_modules" in obj.__dict__:
         converted_list = _try_convert_list(name, value)
         if converted_list is not None:

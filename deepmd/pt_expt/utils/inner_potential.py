@@ -20,10 +20,9 @@ class InnerPotential(InnerPotentialDP):
         return self.call(*args, **kwargs)
 
 
-# InnerPotential carries no trainable state (only the constant per-type
-# atomic-number table, derived from the constructor arguments), so it
-# implements no serialize()/deserialize(); rebuild it fresh from
-# (type_map, mode).
+# InnerPotential carries no trainable state (only the per-pair series table,
+# derived from the constructor arguments), so it implements no
+# serialize()/deserialize(); rebuild it fresh from (type_map, mode).
 register_dpmodel_mapping(
     InnerPotentialDP,
     lambda v: InnerPotential(type_map=v.type_map, mode=v.mode),

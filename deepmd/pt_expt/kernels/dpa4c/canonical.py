@@ -37,10 +37,13 @@ def canonical_model_eligible(model: Any) -> bool:
     if backend_device_type() != "cuda":
         return False
     atomic_model = getattr(model, "atomic_model", None)
-    descriptor = getattr(atomic_model, "descriptor", None)
-    fitting = getattr(atomic_model, "fitting_net", None)
-    if descriptor is None or fitting is None:
+    # A bridged composition deploys like its learned part: the fused operator
+    # evaluates the analytical pair potential in the same edge scan.
+    parts = None if atomic_model is None else atomic_model.fused_decomposition()
+    if parts is None:
         return False
+    descriptor = parts[0].descriptor
+    fitting = parts[0].fitting_net
     from deepmd.pt_expt.descriptor.dpa4c import (
         DescrptDPA4C,
     )
@@ -96,12 +99,15 @@ def _forward_fake(
     spin: torch.Tensor,
     spin_pair: torch.Tensor,
     spin_type: torch.Tensor,
+    contact_radius: torch.Tensor,
     lmax: int,
     table_stride: float,
     table_max: float,
     rcut: float,
     eps: float,
     degree_floor: float,
+    f_inner: float,
+    f_outer: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     del (
         source,
@@ -117,11 +123,14 @@ def _forward_fake(
         output_inv_std,
         spin_pair,
         spin_type,
+        contact_radius,
         table_stride,
         table_max,
         rcut,
         eps,
         degree_floor,
+        f_inner,
+        f_outer,
     )
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         descriptor_profile,
@@ -206,24 +215,23 @@ def _cpu_energy_gradient(
     *args: Any,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Reference sequence of the fused operator, evaluated in one run."""
-    from deepmd.pt_expt.kernels.graph_fitting import _cpu_backward as fitting_backward
-    from deepmd.pt_expt.kernels.graph_fitting import _cpu_forward as fitting_forward
-
     descriptor_args = args[:_DESCRIPTOR_ARGUMENT_COUNT]
-    ws, bs, resnets, w_head, b_head, bias_atom_e, act, seed, _tile = args[
+    ws, bs, resnets, w_head, b_head, bias_atom_e, act, seed, _tile, pair_table = args[
         _DESCRIPTOR_ARGUMENT_COUNT:
     ]
     descriptor, state = _cpu_forward(*descriptor_args)
     atype = descriptor_args[3]
-    energy, saved = fitting_forward(
+    energy, saved = torch.ops.deepmd.graph_fitting(
         descriptor, atype, ws, bs, resnets, w_head, b_head, bias_atom_e, act
     )
-    gradient = fitting_backward(
+    gradient = torch.ops.deepmd.graph_fitting_backward(
         seed.reshape(-1, 1), saved, ws, bs, resnets, w_head, act
     )
-    edge_gradient, spin_gradient, edge_spin_gradient = _cpu_backward(
-        gradient, state, *descriptor_args
+    edge_gradient, spin_gradient, edge_spin_gradient, pair_energy = _generic_backward(
+        gradient, state, *descriptor_args, pair=(pair_table, seed)
     )
+    if pair_table.numel():
+        energy = energy + pair_energy
     return energy, edge_gradient, spin_gradient, edge_spin_gradient
 
 
@@ -257,12 +265,12 @@ def _generic_topology(
 
 # The compact ABI drops the three topology tensors of the generic ABI and its
 # leading ``canonical`` flag; the remaining trailing scalars are identical.
-_CANONICAL_SCALAR_COUNT = 6
+_CANONICAL_SCALAR_COUNT = 8
 
 #: Leading arguments of the fused operator that describe the descriptor:
 #: ``edge_vec`` plus the compact topology, the compression artifacts and the
-#: six trailing geometry scalars.
-_DESCRIPTOR_ARGUMENT_COUNT = 23
+#: eight trailing geometry scalars.
+_DESCRIPTOR_ARGUMENT_COUNT = 26
 
 
 def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
@@ -288,7 +296,15 @@ def _cpu_forward(*args: Any) -> tuple[torch.Tensor, torch.Tensor]:
     )
 
 
-def _cpu_backward(*args: Any) -> torch.Tensor:
+def _generic_backward(
+    *args: Any,
+    pair: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Run the generic reference backward on a compact payload.
+
+    ``pair`` is the series table and the energy cotangent of an analytical
+    pair potential; the compact descriptor operators carry none.
+    """
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         _reference_backward as generic_backward,
     )
@@ -300,6 +316,7 @@ def _cpu_backward(*args: Any) -> torch.Tensor:
         source,
         destination_row_ptr,
     )
+    no_pair = edge_vec.new_empty(0)
     return generic_backward(
         descriptor_gradient,
         state,
@@ -312,13 +329,20 @@ def _cpu_backward(*args: Any) -> torch.Tensor:
         *tail[:-_CANONICAL_SCALAR_COUNT],
         True,
         *tail[-_CANONICAL_SCALAR_COUNT:],
+        *((no_pair, no_pair) if pair is None else pair),
     )
 
 
-def _cpu_backward_inplace(*args: Any) -> torch.Tensor:
-    edge_gradient = _cpu_backward(*args)
+def _cpu_backward(*args: Any) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return _generic_backward(*args)[:3]
+
+
+def _cpu_backward_inplace(
+    *args: Any,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    gradients = _cpu_backward(*args)
     args[1].zero_()
-    return edge_gradient
+    return gradients
 
 
 def ensure_registered() -> None:
@@ -364,6 +388,7 @@ def dpa4c_canonical_compress_energy_force(
     atom_bias: torch.Tensor,
     do_atomic_virial: bool,
     spin: torch.Tensor | None = None,
+    pair_table: torch.Tensor | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -399,6 +424,10 @@ def dpa4c_canonical_compress_energy_force(
     spin
         Per-node magnetic moments with shape ``(N, 3)`` for a spin-conditioned
         descriptor, or ``None``.
+    pair_table
+        Series constants of an analytical pair potential with shape
+        ``((T + 1) ** 2, 8)``, or ``None``. The fused operator adds its energy
+        to the node energies and its slope to the edge gradient.
 
     Returns
     -------
@@ -474,6 +503,7 @@ def dpa4c_canonical_compress_energy_force(
         network.activation,
         ownership.to(torch.float64).reshape(-1).contiguous(),
         node_tile(),
+        graph.edge_vec.new_empty(0) if pair_table is None else pair_table,
     )
     atom_energy = atom_energy_raw * ownership[:, None].to(atom_energy_raw.dtype)
     energy = frame_scalar_sum(atom_energy, graph.n_node)

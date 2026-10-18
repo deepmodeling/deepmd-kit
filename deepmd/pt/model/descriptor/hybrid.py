@@ -64,6 +64,16 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
                 )
             else:
                 raise NotImplementedError
+        # A bridged child fades its fitting output through a readout gate,
+        # which a concatenated descriptor has no fitting output to apply to.
+        if any(
+            getattr(descrpt, "bridging_switch", None) is not None
+            for descrpt in formatted_descript_list
+        ):
+            raise NotImplementedError(
+                "A hybrid descriptor cannot carry a bridged child; bridge the "
+                "model with a single descriptor."
+            )
         self.descrpt_list = torch.nn.ModuleList(formatted_descript_list)
         self.numb_descrpt = len(self.descrpt_list)
         for ii in range(1, self.numb_descrpt):

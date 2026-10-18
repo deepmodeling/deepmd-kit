@@ -336,6 +336,48 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return all(m.uses_graph_lower() for m in self.models)
 
+    def fused_decomposition(self) -> "tuple[Any, Any] | None":
+        """Merge the children's parts when the composition is their plain sum.
+
+        A fused pipeline evaluates one learned model plus at most one pair
+        potential on the parent's node axis, under the parent's masks and
+        output bias. That describes this composition only with ``"sum"``
+        weights, shared type maps, and children that carry no exclusion of
+        their own; a bridged ``[learned, inner_potential]`` pair qualifies.
+        The analytical child contributes no output bias to the pipeline,
+        because its output statistics are never computed and remain zero.
+        """
+        if self.weights != "sum" or not self._graph_mapping_is_identity:
+            return None
+        parts = [model.fused_decomposition() for model in self.models]
+        if any(part is None for part in parts) or any(
+            model.atom_excl is not None or model.pair_excl is not None
+            for model in self.models
+        ):
+            return None
+        learned = [part[0] for part in parts if part[0] is not None]
+        potentials = [part[1] for part in parts if part[1] is not None]
+        if len(learned) != 1 or len(potentials) > 1:
+            return None
+        return learned[0], potentials[0] if potentials else None
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of every learned sub-model's fitting net.
+
+        Analytical and tabulated sub-models carry no fitting net and are left
+        alone.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        """
+        for model in self.models:
+            if isinstance(model, DPAtomicModel):
+                model.fitting_net.compute_input_stats(sampled_func)
+
     def supports_native_spin(self) -> bool:
         """Spin-capable when ANY child consumes the spin input.
 
