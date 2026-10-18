@@ -1407,6 +1407,40 @@ class DeepPot : public DeepBaseModel {
   }
 
   /**
+   * @brief Evaluate a compact canonical graph and the node positions on the
+   * model device; see DP_DeepPotComputeCanonicalGraphGPU2.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const int64_t* d_atype,
+                                   const double* d_coord,
+                                   const uint32_t* d_source,
+                                   const float* d_edge_vec,
+                                   const int64_t* d_destination_row_ptr,
+                                   const int64_t* d_source_row_ptr,
+                                   const uint32_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const int64_t edge_storage) {
+    DP_DeepPotComputeCanonicalGraphGPU2(
+        dp, d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, d_source,
+        d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
+        nloc, nall_nodes, edge_storage);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+  }
+
+  /**
+   * @brief Query whether the model carries a long-range module, which
+   * evaluates complete non-periodic systems in a single domain only.
+   */
+  bool has_long_range() const {
+    const bool result = DP_DeepPotHasLongRange(dp);
+    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
+    return result;
+  }
+
+  /**
    * @brief Evaluate the energy, force and virial by using this DP.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.

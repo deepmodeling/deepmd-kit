@@ -22,6 +22,7 @@
 #include "commonPTExpt.h"
 #include "device.h"
 #include "errors.h"
+#include "longRangePTExpt.h"
 #include "neighbor_list.h"
 
 using deepmd::ptexpt::check_call_charge_spin;
@@ -256,12 +257,22 @@ void DeepPotPTExpt::init(const std::string& model,
     lower_input_is_graph_ = false;
     lower_input_is_canonical_ = false;
   }
-  // A model with a long-range module reads pair topologies after the neighbor
-  // graph, which this interface does not build.
-  if (metadata.obj_val.count("topologies")) {
-    throw deepmd::deepmd_exception(
-        "this .pt2 holds a model with a long-range module, which the C++ "
-        "interface does not evaluate; use the Python inference interface.");
+  // A model with a long-range module reads the all-pairs topology of the
+  // frame after its other inputs.
+  long_range_ = metadata.obj_val.count("topologies") > 0;
+  if (long_range_) {
+    for (const auto& name : metadata["topologies"].as_array()) {
+      if (name.as_string() != "all_pairs") {
+        throw deepmd::deepmd_exception("unknown topology '" + name.as_string() +
+                                       "' in the .pt2 metadata; expected "
+                                       "'all_pairs'.");
+      }
+    }
+    if (!lower_input_is_graph_ && !lower_input_is_canonical_) {
+      throw deepmd::deepmd_exception(
+          "a model with a long-range module requires the graph or the "
+          "compact canonical lower.");
+    }
   }
   if (lower_input_is_edge_) {
     std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
@@ -520,7 +531,8 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
     const torch::Tensor& source_row_ptr,
     const torch::Tensor& fparam,
     const torch::Tensor& aparam,
-    const torch::Tensor& charge_spin) {
+    const torch::Tensor& charge_spin,
+    const torch::Tensor& coord) {
   // Graph-input ABI: original edge payload plus destination/source CSR views.
   check_graph_aparam_flat(aparam, daparam, "run_model_graph");
   std::vector<torch::Tensor> inputs = {
@@ -536,6 +548,12 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
   if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
+  if (long_range_) {
+    const auto pairs = deepmd::ptexpt::buildAllPairsTopology(
+        coord, atype, pair_exclude_table_, ntypes,
+        graph_edge_fp32_ ? torch::kFloat32 : torch::kFloat64);
+    inputs.insert(inputs.end(), pairs.begin(), pairs.end());
+  }
   return loader->run(inputs);
 }
 
@@ -547,9 +565,16 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_canonical_graph(
     const torch::Tensor& edge_vec,
     const torch::Tensor& destination_row_ptr,
     const torch::Tensor& source_row_ptr,
-    const torch::Tensor& source_order) {
-  return loader->run({atype, n_node, n_local, source, edge_vec,
-                      destination_row_ptr, source_row_ptr, source_order});
+    const torch::Tensor& source_order,
+    const torch::Tensor& coord) {
+  std::vector<torch::Tensor> inputs = {atype,          n_node,
+                                       n_local,        source,
+                                       edge_vec,       destination_row_ptr,
+                                       source_row_ptr, source_order};
+  if (long_range_) {
+    inputs.push_back(coord);
+  }
+  return loader->run(inputs);
 }
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
@@ -806,6 +831,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // A long-range module sums over every pair of atoms of the system, which
+  // therefore has to be complete in this call: without periodic images and
+  // without other domains, both of which appear as ghost atoms.
+  if (long_range_ && (multi_rank || nghost_real > 0)) {
+    throw deepmd::deepmd_exception(
+        "a model with a long-range module evaluates a complete non-periodic "
+        "system in a single domain, but this call carries " +
+        std::to_string(nghost_real) + " ghost atoms on " +
+        std::to_string(lmp_list.nprocs) +
+        " domain(s); use a non-periodic box on a single MPI rank.");
+  }
   // Whether the edge topology folds ghost neighbours onto their local owners,
   // which reads an owner for every extended atom out of ``mapping_``.  The
   // edge lower folds unless the with-comm artifact carries ghost features
@@ -1275,19 +1311,21 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       graph_pack.atype = node_atype;
       graph_pack.n_node = n_node_tensor;
       graph_pack.n_local = n_local_tensor;
+      const at::Tensor node_coord =
+          coord_Tensor.slice(1, 0, n_node_count).reshape({n_node_count, 3});
       if (lower_input_is_canonical_) {
         const auto compact = compactCanonicalGraph(graph_pack);
         flat_outputs = run_model_canonical_graph(
             compact.atype, compact.n_node, compact.n_local, compact.source,
             compact.edge_vec, compact.destination_row_ptr,
-            compact.source_row_ptr, compact.source_order);
+            compact.source_row_ptr, compact.source_order, node_coord);
       } else {
         flat_outputs = run_model_graph(
             node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
             graph_pack.edge_vec, graph_pack.edge_mask,
             graph_pack.destination_order, graph_pack.destination_row_ptr,
             graph_pack.source_order, graph_pack.source_row_ptr, fparam_tensor,
-            graph_aparam, charge_spin_tensor);
+            graph_aparam, charge_spin_tensor, node_coord);
       }
     } else {
       // Model-level pair exclusion is a BUILD-time transform (decision
@@ -1462,6 +1500,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   if (natoms == 0) {
     throw deepmd::deepmd_exception(
         "The coordinate-based inference interface requires at least one atom.");
+  }
+  // The long-range module sums over the atoms of the system alone.
+  if (long_range_ && !box.empty()) {
+    throw deepmd::deepmd_exception(
+        "a model with a long-range module evaluates complete non-periodic "
+        "systems only; pass an empty box.");
   }
   const std::size_t frame_coord_size = static_cast<std::size_t>(natoms) * 3;
   if (coord.empty() || coord.size() % frame_coord_size != 0) {
@@ -1655,12 +1699,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     if (graph_edge_fp32_) {
       graph_tensors.edge_vec = graph_tensors.edge_vec.to(torch::kFloat32);
     }
+    const at::Tensor node_coord =
+        coord_Tensor.slice(1, 0, nloc).reshape({nloc, 3});
     if (lower_input_is_canonical_) {
       const auto compact = compactCanonicalGraph(graph_tensors);
       flat_outputs = run_model_canonical_graph(
           compact.atype, compact.n_node, compact.n_local, compact.source,
           compact.edge_vec, compact.destination_row_ptr, compact.source_row_ptr,
-          compact.source_order);
+          compact.source_order, node_coord);
     } else {
       flat_outputs = run_model_graph(
           graph_tensors.atype, graph_tensors.n_node, graph_tensors.n_local,
@@ -1672,7 +1718,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           // normalizes the rectangular runtime aparam to the flat
           // (N, daparam) node axis of the graph ABI.
           extend_graph_aparam(aparam_tensor, natoms, natoms, daparam),
-          charge_spin_tensor);
+          charge_spin_tensor, node_coord);
     }
   } else {
     // Model-level pair exclusion is a BUILD-time transform (decision
@@ -2228,6 +2274,12 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
   const int nnode = (nall_nodes > 0) ? nall_nodes : nloc;
   const bool extended = nnode != nloc;
   const bool use_with_comm = has_comm_artifact_ && comm_nlist;
+  if (long_range_ && (extended || comm_nlist != nullptr)) {
+    throw deepmd::deepmd_exception(
+        "compute_edges_gpu: a model with a long-range module evaluates a "
+        "complete non-periodic system in a single domain (nall_nodes == nloc "
+        "and no comm_nlist).");
+  }
   if (lower_input_is_graph_ && extended && has_message_passing_) {
     throw deepmd::deepmd_exception(
         "compute_edges_gpu: message-passing graph-input inference requires an "
@@ -2455,7 +2507,7 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
               graph_pack.edge_index, graph_pack.edge_vec, graph_pack.edge_mask,
               graph_pack.destination_order, graph_pack.destination_row_ptr,
               graph_pack.source_order, graph_pack.source_row_ptr, fparam_tensor,
-              graph_aparam, charge_spin_tensor));
+              graph_aparam, charge_spin_tensor, coord_t.reshape({nloc, 3})));
       ae = out["atom_energy"].reshape({nnode}).slice(0, 0, nloc).contiguous();
       force_t = out["force"].reshape({nnode, 3}).contiguous();
       av = out["atom_virial"].reshape({nnode, 9}).contiguous();
@@ -2544,6 +2596,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     double* d_force,
     double* d_atom_virial,
     const std::int64_t* d_atype,
+    const double* d_coord,
     const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
@@ -2565,6 +2618,12 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
           std::numeric_limits<std::uint32_t>::max()) {
     throw deepmd::deepmd_exception(
         "invalid compact canonical graph dimensions.");
+  }
+  if (long_range_ && (d_coord == nullptr || nall_nodes != nloc)) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: a model with a long-range module reads "
+        "the node positions of a complete non-periodic system in a single "
+        "domain (d_coord given and nall_nodes == nloc).");
   }
 
   translate_error([&] {
@@ -2592,12 +2651,18 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         const_cast<std::uint32_t*>(d_source_order), {edge_storage}, opt_u32);
     auto n_node = torch::full({1}, nall_nodes, opt_i64);
     auto n_local = torch::full({1}, nloc, opt_i64);
+    const at::Tensor coord =
+        d_coord != nullptr
+            ? torch::from_blob(
+                  const_cast<double*>(d_coord), {nall_nodes, 3},
+                  torch::TensorOptions().dtype(torch::kFloat64).device(device))
+            : at::Tensor();
 
     std::map<std::string, torch::Tensor> output;
-    extract_outputs(output,
-                    run_model_canonical_graph(atype, n_node, n_local, source,
-                                              edge_vec, destination_row_ptr,
-                                              source_row_ptr, source_order));
+    extract_outputs(
+        output, run_model_canonical_graph(atype, n_node, n_local, source,
+                                          edge_vec, destination_row_ptr,
+                                          source_row_ptr, source_order, coord));
     auto atom_energy = output["atom_energy"]
                            .reshape({nall_nodes})
                            .slice(0, 0, nloc)
@@ -2679,6 +2744,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     double* d_force,
     double* d_atom_virial,
     const std::int64_t* d_atype,
+    const double* d_coord,
     const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
@@ -2688,9 +2754,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     const int nall_nodes,
     const std::int64_t edge_storage) {
   compute_canonical_graph_gpu_impl(
-      d_atom_energy, d_force, d_atom_virial, d_atype, d_source, d_edge_vec,
-      d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc, nall_nodes,
-      edge_storage);
+      d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, d_source,
+      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc,
+      nall_nodes, edge_storage);
 }
 
 bool DeepPotPTExpt::uses_fp32_edge_vectors() const {
@@ -2706,5 +2772,7 @@ bool DeepPotPTExpt::supports_device_edge_inference() const {
 bool DeepPotPTExpt::uses_canonical_graph_inference() const {
   return lower_input_is_canonical_;
 }
+
+bool DeepPotPTExpt::has_long_range() const { return long_range_; }
 
 #endif

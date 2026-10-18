@@ -34,6 +34,7 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
       edge_capacity(0),
       edge_vec_fp32(false),
       canonical_graph(false),
+      long_range(false),
       device_path_ok(false),
       reverse_virial(false),
       reverse_used_host(false) {
@@ -212,6 +213,9 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   request->enable_full();
   edge_vec_fp32 = deep_pot.uses_fp32_edge_vectors();
   canonical_graph = deep_pot.uses_canonical_graph_inference();
+  // PairDeepMD::init_style() has confined such a model to a complete
+  // non-periodic system on one rank.
+  long_range = deep_pot.has_long_range();
   // Force exchange transfers three values per atom. Centroid per-atom virial
   // uses nine values even though the Kokkos full-list request runs newton off,
   // so comm_reverse_off reserves the classic host buffer for the wider mode.
@@ -409,6 +413,35 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
 }
 
 template <class DeviceType>
+const double* PairDeepMDKokkos<DeviceType>::model_node_positions() {
+  atomKK->sync(execution_space, X_MASK);
+  auto x = atomKK->k_x.template view<DeviceType>();
+  // Without virtual atoms the model nodes are the leading local atoms, already
+  // in the length unit of the model.
+  if (!compact_graph.has_null_types && dist_unit_cvt_factor == 1.0) {
+    return x.data();
+  }
+  const int nnode_model = compact_graph.nnode_model;
+  if ((int)d_node_position.extent(0) < 3 * nnode_model) {
+    d_node_position = Kokkos::View<double*, DeviceType>(
+        "deepmd/kk:node_position", 3 * nnode_model);
+  }
+  auto node_position = d_node_position;
+  auto model2loc = compact_graph.d_model2loc;
+  const double inv_dist = 1.0 / dist_unit_cvt_factor;
+  Kokkos::parallel_for(
+      "deepmd/kk:node_position",
+      Kokkos::RangePolicy<DeviceType>(0, nnode_model),
+      KOKKOS_LAMBDA(const int m) {
+        const int i = model2loc(m);
+        node_position(3 * m + 0) = x(i, 0) * inv_dist;
+        node_position(3 * m + 1) = x(i, 1) * inv_dist;
+        node_position(3 * m + 2) = x(i, 2) * inv_dist;
+      });
+  return node_position.data();
+}
+
+template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   if (!device_path_ok) {
     error->all(FLERR,
@@ -528,18 +561,21 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     // the two runtimes are bracketed by explicit synchronization: fence the
     // Kokkos work before the model reads the edges, and synchronize the device
     // after so the scatter sees the finished model outputs.
-    Kokkos::fence();
     // Coordinates are model-node order: the compacted buffer when virtual atoms
     // are present, else the local coordinates directly (the graph lower ignores
-    // them; edge-input models consume them).
+    // them; edge-input models consume them). A long-range module reads the
+    // positions of its nodes in the length unit of the model.
     const double* coord_ptr =
-        compact_graph.has_null_types ? d_coord_model.data() : x.data();
+        long_range
+            ? model_node_positions()
+            : (compact_graph.has_null_types ? d_coord_model.data() : x.data());
+    Kokkos::fence();
     try {
       if (canonical_graph) {
         deep_pot.compute_canonical_graph_gpu(
             d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
-            compact_graph.d_model_type.data(), compact_graph.d_source.data(),
-            compact_graph.d_edge_vec.data(),
+            compact_graph.d_model_type.data(), long_range ? coord_ptr : nullptr,
+            compact_graph.d_source.data(), compact_graph.d_edge_vec.data(),
             compact_graph.d_destination_row_ptr.data(),
             compact_graph.d_source_row_ptr.data(),
             compact_graph.d_source_order.data(), nloc_m, nnode_m,

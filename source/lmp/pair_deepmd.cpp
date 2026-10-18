@@ -966,6 +966,19 @@ void PairDeepMD::settings(int narg, char** arg) {
   all_force.resize(numb_models);
 }
 
+void PairDeepMD::init_style() {
+  PairDeepBaseModel::init_style();
+  // A long-range module sums over every pair of atoms of the system, which a
+  // periodic image or another domain would leave incomplete.
+  if (deep_pot.has_long_range() && (domain->xperiodic || domain->yperiodic ||
+                                    domain->zperiodic || comm->nprocs > 1)) {
+    error->all(FLERR,
+               "pair style deepmd: a model with a long-range module evaluates "
+               "a complete non-periodic system; use a non-periodic boundary "
+               "(f, s or m) in every dimension on a single MPI rank.");
+  }
+}
+
 /* ----------------------------------------------------------------------
    set coeffs for one or more type pairs
 ------------------------------------------------------------------------- */

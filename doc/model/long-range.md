@@ -125,13 +125,17 @@ length.
 `.pt2` or `.pte`, and `dp --pt-expt compress` compresses its descriptor into a
 `.pt2` archive while the networks of the long-range module stay as they are.
 A trained checkpoint (`.pt`) and the frozen model are evaluated by `dp test`
-and the Python inference interface. The C++ interface, and with it LAMMPS,
-does not evaluate a model with a long-range module.
+and the Python inference interface; the C++ interface and LAMMPS, with
+`pair_style deepmd` and `pair_style deepmd/kk`, read the `.pt2` archive.
+Since the pair sum covers the complete system, LAMMPS runs such a model with
+non-periodic boundaries (`f`, `s` or `m`) in every dimension on a single MPI
+rank, and rejects any other setting.
 
 Compressing a descriptor conditioned on `charge_spin` specializes the model
 to one charge state at a time, and a constraint that reads its total charge
 from `charge_spin` follows the same state. The compressed archive serves any
-charge state, which the Python interface applies at each call.
+charge state: the Python interface applies the state of each call, and LAMMPS
+the one given by the `charge_spin` keyword of `pair_style deepmd`.
 
 A compressed DPA4C model frozen for a CUDA device evaluates the pair sum with
 a dedicated operator, which reads the positions of the atoms and enumerates

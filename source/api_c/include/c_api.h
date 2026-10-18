@@ -13,7 +13,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 30
+#define DP_C_API_VERSION 31
 
 /**
  * @brief Neighbor list.
@@ -478,6 +478,56 @@ extern bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp);
  * @since API version 28
  */
 extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
+
+/**
+ * @brief Evaluate a compact canonical graph and the node positions on the
+ * model device.
+ *
+ * A model with a long-range module reads the positions of the nodes, which
+ * must form a complete non-periodic system in a single domain
+ * (``nall_nodes == nloc``); any other model ignores them.
+ *
+ * @param[in] dp The DP to use.
+ * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
+ * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
+ * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``.
+ * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
+ * @param[in] d_coord Node positions in model-node order, shape
+ * ``(nall_nodes, 3)``, or NULL for a model without a long-range module.
+ * @param[in] d_source Source node per edge storage slot.
+ * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
+ * @param[in] d_destination_row_ptr Destination CSR offsets.
+ * @param[in] d_source_row_ptr Source CSR offsets.
+ * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] nloc Number of owned local nodes.
+ * @param[in] nall_nodes Total local-plus-halo node count.
+ * @param[in] edge_storage Number of edge storage slots.
+ * @note Supersedes DP_DeepPotComputeCanonicalGraphGPU, adding the node
+ * positions.
+ * @since API version 31
+ */
+extern void DP_DeepPotComputeCanonicalGraphGPU2(
+    DP_DeepPot* dp,
+    double* d_atom_energy,
+    double* d_force,
+    double* d_atom_virial,
+    const int64_t* d_atype,
+    const double* d_coord,
+    const uint32_t* d_source,
+    const float* d_edge_vec,
+    const int64_t* d_destination_row_ptr,
+    const int64_t* d_source_row_ptr,
+    const uint32_t* d_source_order,
+    int nloc,
+    int nall_nodes,
+    int64_t edge_storage);
+
+/**
+ * @brief Query whether the model carries a long-range module, which
+ * evaluates complete non-periodic systems in a single domain only.
+ * @since API version 31
+ */
+extern bool DP_DeepPotHasLongRange(DP_DeepPot* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)

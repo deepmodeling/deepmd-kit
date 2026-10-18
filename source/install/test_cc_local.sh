@@ -145,6 +145,12 @@ else:
 		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
 		PID15=$!
 	fi
+	# DPA4C with a latent-charge long-range module: the uncompressed archive
+	# takes the all-pairs topology of the graph lower; for the CUDA variant the
+	# script also writes the compressed archive, whose compact canonical lower
+	# reads the node positions.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py &
+	PID16=$!
 	wait $PID11
 	wait $PID12
 	wait $PID13
@@ -152,6 +158,7 @@ else:
 	if [ "${DP_VARIANT}" = "cuda" ]; then
 		wait $PID15
 	fi
+	wait $PID16
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir

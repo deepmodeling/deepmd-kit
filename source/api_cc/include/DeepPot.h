@@ -426,6 +426,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
       double* d_force,
       double* d_atom_virial,
       const std::int64_t* d_atype,
+      const double* d_coord,
       const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
@@ -437,6 +438,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
   virtual bool supports_device_edge_inference() const;
   virtual bool uses_fp32_edge_vectors() const;
   virtual bool uses_canonical_graph_inference() const;
+  virtual bool has_long_range() const;
 };
 
 /**
@@ -894,10 +896,48 @@ class DeepPot : public DeepBaseModel {
    */
   bool uses_canonical_graph_inference() const;
 
+  /**
+   * @brief Whether the model carries a long-range module.
+   *
+   * Such a model sums its long-range interaction over every pair of atoms of
+   * a complete non-periodic system, so it evaluates a system without a
+   * periodic cell in a single domain only, and the device entries take the
+   * positions of its atoms.
+   */
+  bool has_long_range() const;
+
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
+                                   const std::uint32_t* d_source,
+                                   const float* d_edge_vec,
+                                   const std::int64_t* d_destination_row_ptr,
+                                   const std::int64_t* d_source_row_ptr,
+                                   const std::uint32_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const std::int64_t edge_storage);
+
+  /**
+   * @brief Evaluate a compact canonical graph together with the positions of
+   * its nodes.
+   *
+   * Every pointer resides on the model device. A model with a long-range
+   * module reads the positions; any other model ignores them.
+   *
+   * @param[in] d_coord Node positions in model-node order, shape
+   * ``(nall_nodes, 3)``, in the length unit of the model. A model with a
+   * long-range module requires them and a single-domain node set
+   * (``nall_nodes == nloc``) of a system without a periodic cell.
+   *
+   * The other parameters are those of the overload without positions.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const std::int64_t* d_atype,
+                                   const double* d_coord,
                                    const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,

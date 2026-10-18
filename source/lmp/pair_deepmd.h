@@ -46,6 +46,7 @@ class PairDeepMD : public PairDeepBaseModel {
   ~PairDeepMD() override;
   void settings(int, char**) override;
   void coeff(int, char**) override;
+  void init_style() override;
   void compute(int, int) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
