@@ -1951,6 +1951,9 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
             "fp32": fake_sweep("fp32", "stack_fp32", (48, 2)),
             "m0_gate": fake_sweep("m0_gate", "stack_m0_gate", (48, 2)),
             "fp16x3": fake_sweep("fp16x3", "stack_fp16x3", (48, 2)),
+            "stack_bwd_fused": fake_sweep(
+                "stack_bwd_fused", "stack_bwd_fused", (48, 2)
+            ),
         }
         fake_specs = {
             name: replace(spec, sweep=fake_sweeps[name])
@@ -1973,6 +1976,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
                 "point_recompute",
                 "rotate_bwd",
                 "rotate_fwd",
+                "stack_bwd_fused",
             ],
         )
         self.assertEqual(
@@ -1983,6 +1987,7 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
                 "point_recompute",
                 "rotate_mix_bwd_block",
                 "rotate_mix_fwd",
+                "stack_bwd_fused",
                 "stack_fp32",
                 "stack_m0_gate",
             ],
@@ -2058,10 +2063,31 @@ class TestSeZMStackBwdFused(unittest.TestCase):
 
     The fused kernel keeps each layer's gate sigmoids and pre-activation
     gradient in registers, so its results must match the unfused
-    recompute/pointwise/GEMM relay bit-for-bit at fp32; the remaining tests
-    pin the dispatch contract (env flag, higher-order fallback, wide-channel
-    and non-fp32 fallback).
+    recompute/pointwise/GEMM relay bit-for-bit at fp32.  Engagement follows
+    the tuned table (a winning ``stack_bwd_fused`` entry) inside the
+    ``DP_TRITON_INFER >= 2`` level selection; the remaining tests pin the
+    internal guards (higher-order fallback, wide-channel and non-fp32
+    fallback, level and table gating).
     """
+
+    FUSED_CFG = (32, 64, 4, 3)
+
+    def _register_fused(self, key, entry):
+        """Register a fused table entry and restore the prior state."""
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
+            _runtime_tile_configs,
+            register_tile_configs,
+        )
+
+        runtime = _runtime_tile_configs("stack_bwd_fused")
+        saved = dict(runtime)
+
+        def restore():
+            runtime.clear()
+            runtime.update(saved)
+
+        register_tile_configs("stack_bwd_fused", {key: entry})
+        self.addCleanup(restore)
 
     N_EDGE = 20000
     N_FOCUS = 2
@@ -2143,28 +2169,24 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         for lmax, focus_dim, apply_alpha in self.CASES:
             with self.subTest(lmax=lmax, cf=focus_dim, alpha=apply_alpha):
                 inputs = self._bwd_inputs(lmax, focus_dim, generator)
-                old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-                try:
-                    ref = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
-                    os.environ["DP_STACK_BWD_FUSED_INFER"] = "1"
-                    fused = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
-                finally:
-                    os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-                    if old is not None:
-                        os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+                key = (focus_dim, lmax)
+                self._register_fused(key, None)
+                ref = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+                self._register_fused(key, self.FUSED_CFG)
+                fused = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
                 self.assertTrue(torch.equal(ref[0], fused[0]))
                 # grad_alpha is computed only when alpha was applied; the
                 # traversal leaves it uninitialized otherwise.
                 if apply_alpha:
                     self.assertTrue(torch.equal(ref[1], fused[1]))
 
-    def test_higher_order_backward_preserved_with_flag_on(self):
-        """``create_graph=True`` keeps the supported path with the flag on.
+    def test_higher_order_backward_preserved_with_winning_entry(self):
+        """``create_graph=True`` keeps the supported path with an entry present.
 
         The fused kernel registers no next-derivative formula; the backward
         of the backward must route through the operator that carries the
-        hand-derived second order even when the flag is enabled.  Both flag
-        settings take that same path here, so the second-order results
+        hand-derived second order even with a winning table entry.  Both
+        table states take that same path here, so the second-order results
         agree.
         """
         from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
@@ -2201,32 +2223,32 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         # double-backward replays the gate-logit surfaces only when the
         # weight-gradient channel carries a cotangent.
         results = {}
-        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-        try:
-            for flag in (False, True):
-                os.environ["DP_STACK_BWD_FUSED_INFER"] = "1" if flag else "0"
-                # Reseed so both states draw identical cotangent samples.
-                torch.manual_seed(99)
-                u0r = u0.clone().requires_grad_(True)
-                gwr = gw_all.clone().requires_grad_(True)
-                out = _mixing_stack_op(
-                    u0r, alpha, w0_all, w1_all, gwr, lmax, focus_dim, True
-                )
-                seed = torch.randn_like(out[0])
-                g_u0, g_gw = torch.autograd.grad(
-                    (out[0] * seed).sum(), (u0r, gwr), create_graph=True
-                )
-                seed_gw = torch.randn_like(g_gw)
-                (second,) = torch.autograd.grad((g_gw * seed_gw).sum(), u0r)
-                results[flag] = (g_u0.detach().clone(), second.detach().clone())
-        finally:
-            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-            if old is not None:
-                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+        key = (focus_dim, lmax)
+        for entry in (None, self.FUSED_CFG):
+            self._register_fused(key, entry)
+            # Reseed so both states draw identical cotangent samples.
+            torch.manual_seed(99)
+            u0r = u0.clone().requires_grad_(True)
+            gwr = gw_all.clone().requires_grad_(True)
+            out = _mixing_stack_op(
+                u0r, alpha, w0_all, w1_all, gwr, lmax, focus_dim, True
+            )
+            seed = torch.randn_like(out[0])
+            g_u0, g_gw = torch.autograd.grad(
+                (out[0] * seed).sum(), (u0r, gwr), create_graph=True
+            )
+            seed_gw = torch.randn_like(g_gw)
+            (second,) = torch.autograd.grad((g_gw * seed_gw).sum(), u0r)
+            results[entry is not None] = (
+                g_u0.detach().clone(),
+                second.detach().clone(),
+            )
         torch.testing.assert_close(results[False][0], results[True][0])
         torch.testing.assert_close(results[False][1], results[True][1])
 
-    def _record_launches(self, lmax, focus_dim, apply_alpha=False, dtype=torch.float32):
+    def _record_launches(
+        self, lmax, focus_dim, apply_alpha=False, dtype=torch.float32, n_edge=None
+    ):
         """Run the traversal with a recording stand-in for the fused launch."""
         import deepmd.pt_expt.kernels.triton.sezm.so2_value_path as vp
 
@@ -2238,87 +2260,67 @@ class TestSeZMStackBwdFused(unittest.TestCase):
             return original(*args, **kwargs)
 
         generator = torch.Generator(device="cuda").manual_seed(11)
-        inputs = self._bwd_inputs(lmax, focus_dim, generator)
+        saved_edges = self.N_EDGE
+        if n_edge is not None:
+            type(self).N_EDGE = n_edge
+        try:
+            inputs = self._bwd_inputs(lmax, focus_dim, generator)
+        finally:
+            type(self).N_EDGE = saved_edges
         inputs = tuple(t.to(dtype) for t in inputs)
         with mock.patch.object(vp, "_launch_stack_bwd_fused", side_effect=recorder):
             out = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
         return calls, out
 
-    def test_dispatch_follows_env_flag(self):
-        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
+    def test_dispatch_follows_table_and_level(self):
+        """A winning table entry engages at level >= 2; anything else relays.
+
+        Dispatch-only checks run on a small edge count (the guards are
+        scale-free), unlike the numerical fixtures above.
+        """
+        old_level = os.environ.get("DP_TRITON_INFER")
         try:
-            for flag, expected in (("1", 3), ("0", 0)):
-                with self.subTest(flag=flag):
-                    os.environ["DP_STACK_BWD_FUSED_INFER"] = flag
-                    calls, _ = self._record_launches(3, 32)
+            for level, entry, expected in (
+                ("2", self.FUSED_CFG, 3),
+                ("2", None, 0),
+                ("1", self.FUSED_CFG, 0),
+            ):
+                with self.subTest(level=level, entry=entry):
+                    os.environ["DP_TRITON_INFER"] = level
+                    self._register_fused((32, 3), entry)
+                    calls, _ = self._record_launches(3, 32, n_edge=512)
                     self.assertEqual(len(calls), expected)
         finally:
-            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-            if old is not None:
-                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+            os.environ.pop("DP_TRITON_INFER", None)
+            if old_level is not None:
+                os.environ["DP_TRITON_INFER"] = old_level
 
-    def test_wide_channels_fall_back_with_flag_on(self):
+    def test_wide_channels_fall_back_with_winning_entry(self):
         """``Cf >= GATE_BMM_MIN_FOCUS_DIM`` routes through cuBLAS, not fusion.
 
-        The flag is enabled so the fallback is the guard's doing, not the
-        flag's: zero fused launches with the flag on is the contract.
+        A winning table entry is registered for the wide key so the
+        fallback is the internal guard's doing: zero fused launches with
+        the entry present is the contract.  Dispatch-only, hence the small
+        edge count.
         """
         from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
             GATE_BMM_MIN_FOCUS_DIM,
         )
 
-        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-        try:
-            os.environ["DP_STACK_BWD_FUSED_INFER"] = "1"
-            calls, out = self._record_launches(2, GATE_BMM_MIN_FOCUS_DIM)
-            self.assertEqual(calls, [])
-            self.assertTrue(torch.isfinite(out[0]).all())
-        finally:
-            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-            if old is not None:
-                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+        self._register_fused((GATE_BMM_MIN_FOCUS_DIM, 2), self.FUSED_CFG)
+        calls, out = self._record_launches(2, GATE_BMM_MIN_FOCUS_DIM, n_edge=512)
+        self.assertEqual(calls, [])
+        self.assertTrue(torch.isfinite(out[0]).all())
 
-    def test_non_fp32_fall_back_with_flag_on(self):
+    def test_non_fp32_fall_back_with_winning_entry(self):
         """The fused kernel assumes fp32 rounding; other dtypes keep the relay.
 
-        Scoped with the flag enabled for the same reason as above.
+        Scoped with a winning entry registered for the same reason as above.
         """
-        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-        try:
-            os.environ["DP_STACK_BWD_FUSED_INFER"] = "1"
-            calls, out = self._record_launches(3, 32, dtype=torch.bfloat16)
-            self.assertEqual(calls, [])
-            self.assertTrue(torch.isfinite(out[0]).all())
-        finally:
-            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-            if old is not None:
-                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
-
-
-class TestSeZMStackBwdFlagParser(unittest.TestCase):
-    def test_values(self):
-        from deepmd.pt_expt.kernels.utils import (
-            use_stack_bwd_fused,
-        )
-
-        old = os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-        try:
-            for value, expected in (
-                ("1", True),
-                ("true", True),
-                ("ON", True),
-                ("0", False),
-                ("nope", False),
-            ):
-                with self.subTest(value=value):
-                    os.environ["DP_STACK_BWD_FUSED_INFER"] = value
-                    self.assertEqual(use_stack_bwd_fused(), expected)
-            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-            self.assertFalse(use_stack_bwd_fused())
-        finally:
-            os.environ.pop("DP_STACK_BWD_FUSED_INFER", None)
-            if old is not None:
-                os.environ["DP_STACK_BWD_FUSED_INFER"] = old
+        self._register_fused((32, 3), self.FUSED_CFG)
+        calls, out = self._record_launches(3, 32, dtype=torch.bfloat16, n_edge=512)
+        self.assertEqual(calls, [])
+        self.assertTrue(torch.isfinite(out[0]).all())
 
 
 if __name__ == "__main__":
