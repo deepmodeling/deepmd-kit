@@ -241,16 +241,14 @@ def _gie_scatter_bwd_kernel(
         mask=mask_e[:, None] & m2[None, :],
         other=0.0,
     )
+    # Joint edge/channel validity shared by every radial load: masked-out
+    # lanes must read zeros, because a padded-channel lane that reads past
+    # the tensor can drag NaN into a valid reduction (0 * NaN is NaN).
+    rmask = mask_e[:, None] & cmask[None, :]
     rad_base = (offs_e * r_stride0)[:, None] + offs_c[None, :]
-    rd0 = tl.load(
-        radial_ptr + rad_base + 0 * r_stride1, mask=mask_e[:, None], other=0.0
-    )
-    rd1 = tl.load(
-        radial_ptr + rad_base + 1 * r_stride1, mask=mask_e[:, None], other=0.0
-    )
-    rd2 = tl.load(
-        radial_ptr + rad_base + 2 * r_stride1, mask=mask_e[:, None], other=0.0
-    )
+    rd0 = tl.load(radial_ptr + rad_base + 0 * r_stride1, mask=rmask, other=0.0)
+    rd1 = tl.load(radial_ptr + rad_base + 1 * r_stride1, mask=rmask, other=0.0)
+    rd2 = tl.load(radial_ptr + rad_base + 2 * r_stride1, mask=rmask, other=0.0)
     gz0 = tl.sum(g0 * rd0[:, None, :], 2)
     gz1 = tl.sum(g1 * rd1[:, None, :], 2)
     gz2 = tl.sum(g2 * rd2[:, None, :], 2)

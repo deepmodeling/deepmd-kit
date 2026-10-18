@@ -2061,7 +2061,12 @@ class TestSeZMGieScatter(unittest.TestCase):
     _ROWS = 15  # non-scalar rows at lmax=3: 3+5+7
 
     def _make_case(self, n_edge, n_nodes, generator, view_radial=False, channels=32):
-        """Random operator inputs; a sliced radial view when asked."""
+        """Random operator inputs; a sliced radial view when asked.
+
+        Returns ``(zonal, radial, dst, order, row_ptr, parent)`` where
+        ``parent`` is the unsliced backing tensor (the leaf for the view
+        case, so the strided operand survives to the operator boundary).
+        """
         zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
         parent = torch.randn(n_edge, 4, channels, device="cuda", generator=generator)
         radial = parent[:, 1:, :] if view_radial else parent[:, 1:, :].contiguous()
@@ -2074,7 +2079,7 @@ class TestSeZMGieScatter(unittest.TestCase):
                 torch.cumsum(counts, 0).to(torch.int64),
             ]
         )
-        return zonal, radial, dst, order, row_ptr
+        return zonal, radial, dst, order, row_ptr, parent
 
     def _reference(self, zonal, radial, dst, n_nodes):
         """Composition reference: broadcast the message, then index_add."""
@@ -2099,12 +2104,28 @@ class TestSeZMGieScatter(unittest.TestCase):
         for n_edge, n_nodes, channels in ((4096, 128, 32), (777, 33, 40)):
             for view_radial in (False, True):
                 with self.subTest(n_edge=n_edge, n_nodes=n_nodes, view=view_radial):
-                    zonal, radial, dst, order, row_ptr = self._make_case(
+                    zonal, radial, dst, order, row_ptr, parent = self._make_case(
                         n_edge, n_nodes, generator, view_radial, channels
                     )
+                    # The view case must reach the operator boundary as a
+                    # real slice: the leaf is the parent and the operand is
+                    # the strided view (a clone here would hand the kernel a
+                    # contiguous copy and hide the strided addressing).
                     z1 = zonal.clone().requires_grad_(True)
-                    r1 = radial.clone().requires_grad_(True)
-                    out = gie_zonal_scatter(z1, r1, dst, order, row_ptr, n_nodes, 3)
+                    if view_radial:
+                        self.assertFalse(radial.is_contiguous())
+                        leaf = parent.requires_grad_(True)
+                        operand = leaf[:, 1:, :]
+                        grad_pair = (z1, leaf)
+                        grad_slice = slice(1, None)
+                    else:
+                        leaf = None
+                        operand = radial.clone().requires_grad_(True)
+                        grad_pair = (z1, operand)
+                        grad_slice = slice(None)
+                    out = gie_zonal_scatter(
+                        z1, operand, dst, order, row_ptr, n_nodes, 3
+                    )
                     z2 = zonal.clone().requires_grad_(True)
                     r2 = radial.clone().requires_grad_(True)
                     ref = self._reference(z2, r2, dst, n_nodes)
@@ -2117,10 +2138,12 @@ class TestSeZMGieScatter(unittest.TestCase):
                         device="cuda",
                         generator=torch.Generator(device="cuda").manual_seed(37),
                     )
-                    g1 = torch.autograd.grad(out, (z1, r1), cotangent)
+                    g1 = torch.autograd.grad(out, grad_pair, cotangent)
                     g2 = torch.autograd.grad(ref, (z2, r2), cotangent)
                     torch.testing.assert_close(g1[0], g2[0], atol=1e-5, rtol=1e-5)
-                    torch.testing.assert_close(g1[1], g2[1], atol=1e-5, rtol=1e-5)
+                    torch.testing.assert_close(
+                        g1[1][:, grad_slice], g2[1], atol=1e-5, rtol=1e-5
+                    )
 
     def test_reference_cpu_matches_manual(self):
         """CPU reference equals a hand-written sequential accumulation."""
@@ -2144,6 +2167,105 @@ class TestSeZMGieScatter(unittest.TestCase):
         torch.testing.assert_close(out, manual, atol=0.0, rtol=0.0)
 
     @_GPU_KERNELS
+    def test_small_deterministic_topology(self):
+        """Hand-built edges cover isolated nodes, short segments and a tile
+        boundary crossing (BLOCK_E = 16) with padded channels.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(47)
+        n_nodes, channels = 6, 40
+        # node0: a long segment; node1: isolated (no edges); node2: one
+        # edge; nodes 3-5: segments straddling the BLOCK_E boundary
+        dst = torch.tensor(
+            [0] * 18 + [2] + [3] * 7 + [4] * 8 + [5] * 9,
+            device="cuda",
+            dtype=torch.int64,
+        )
+        n_edge = dst.numel()
+        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
+        radial = torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_nodes)
+        row_ptr = torch.cat(
+            [
+                torch.zeros(1, dtype=torch.int64, device="cuda"),
+                torch.cumsum(counts, 0).to(torch.int64),
+            ]
+        )
+
+        z1 = zonal.clone().requires_grad_(True)
+        r1 = radial.clone().requires_grad_(True)
+        out = gie_zonal_scatter(z1, r1, dst, order, row_ptr, n_nodes, 3)
+        z2 = zonal.clone().requires_grad_(True)
+        r2 = radial.clone().requires_grad_(True)
+        ref = self._reference(z2, r2, dst, n_nodes)
+        torch.testing.assert_close(out, ref, atol=1e-5, rtol=1e-5)
+        # the isolated node keeps a zero row block
+        self.assertTrue(torch.equal(out[1], torch.zeros_like(out[1])))
+        cot = torch.randn_like(out)
+        g1 = torch.autograd.grad(out, (z1, r1), cot)
+        g2 = torch.autograd.grad(ref, (z2, r2), cot)
+        torch.testing.assert_close(g1[0], g2[0], atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(g1[1], g2[1], atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
+    def test_backward_respects_channel_padding_boundary(self):
+        """Padded channel lanes must not read past the radial tensor.
+
+        The radial operand is a slice of a NaN-filled parent sized to the
+        padded channel block: any out-of-bounds lane load reads a NaN and,
+        through ``0 * NaN``, surfaces in a valid zonal-gradient entry.  A
+        correct joint edge/channel mask keeps every gradient finite.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+            gie_zonal_scatter,
+        )
+
+        generator = torch.Generator(device="cuda").manual_seed(43)
+        n_edge, n_nodes, channels = 777, 33, 40
+        zonal = torch.randn(n_edge, self._ROWS, device="cuda", generator=generator)
+        parent = torch.full(
+            (n_edge, 3, 64), float("nan"), device="cuda", dtype=torch.float32
+        )
+        radial = parent[:, :, :channels]
+        radial.copy_(
+            torch.randn(n_edge, 3, channels, device="cuda", generator=generator)
+        )
+        self.assertFalse(radial.is_contiguous())
+        dst = torch.randint(0, n_nodes, (n_edge,), device="cuda", generator=generator)
+        order = torch.argsort(dst, dim=0, stable=True)
+        counts = torch.bincount(dst, minlength=n_nodes)
+        row_ptr = torch.cat(
+            [
+                torch.zeros(1, dtype=torch.int64, device="cuda"),
+                torch.cumsum(counts, 0).to(torch.int64),
+            ]
+        )
+
+        # The leaf is the parent: the operator receives the strided view
+        # itself, so the backward's radial loads walk the parent's NaN
+        # padding when the channel mask is missing (a clone here would
+        # hand the backward a contiguous copy and hide the overread).
+        parent_leaf = parent.requires_grad_(True)
+        radial_view = parent_leaf[:, :, :channels]
+        z1 = zonal.clone().requires_grad_(True)
+        out = gie_zonal_scatter(z1, radial_view, dst, order, row_ptr, n_nodes, 3)
+        cot = torch.randn_like(out)
+        gz, gr = torch.autograd.grad(out, (z1, parent_leaf), cot)
+        self.assertTrue(torch.isfinite(gz).all())
+        self.assertTrue(torch.isfinite(gr).all())
+        # The reference composition on the same inputs stays the oracle.
+        z2 = zonal.clone().requires_grad_(True)
+        r2 = radial.clone().requires_grad_(True)
+        ref = self._reference(z2, r2, dst, n_nodes)
+        ref_gz, ref_gr = torch.autograd.grad(ref, (z2, r2), cot)
+        torch.testing.assert_close(gz, ref_gz, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(gr[:, :, :channels], ref_gr, atol=1e-5, rtol=1e-5)
+
+    @_GPU_KERNELS
     def test_compile_matches_eager(self):
         """The compiled path must match eager (guards the launch-grid trap)."""
         from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
@@ -2151,7 +2273,7 @@ class TestSeZMGieScatter(unittest.TestCase):
         )
 
         generator = torch.Generator(device="cuda").manual_seed(11)
-        zonal, radial, dst, order, row_ptr = self._make_case(
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
             4096, 128, generator, view_radial=True
         )
 
@@ -2185,7 +2307,9 @@ class TestSeZMGieScatter(unittest.TestCase):
 
         generator = torch.Generator(device="cuda").manual_seed(13)
         n_edge, n_nodes, channels = 2048, 64, 32
-        zonal, radial, dst, order, row_ptr = self._make_case(n_edge, n_nodes, generator)
+        zonal, radial, dst, order, row_ptr, _parent = self._make_case(
+            n_edge, n_nodes, generator
+        )
         # Dense rotation surface the base layout gathers the coupling from
         d_full = torch.randn(n_edge, 16, 16, device="cuda", generator=generator)
         # Fixed per-test tensors so both states see identical inputs
@@ -2210,9 +2334,19 @@ class TestSeZMGieScatter(unittest.TestCase):
         ).cuda()
         module.eval()
         cotangent = None
+        calls = {"n": 0}
+        real_op = gie_zonal_scatter
+
+        def counting_op(*args, **kwargs):
+            calls["n"] += 1
+            return real_op(*args, **kwargs)
 
         def run(bound):
-            module._triton_scatter = gie_zonal_scatter if bound else None
+            # Counting wrapper: the assertions check which path was
+            # actually selected, not just that outputs agree (a silently
+            # reference-path run would also produce equal outputs).
+            module._triton_scatter = counting_op if bound else None
+            calls["n"] = 0
             df = d_full.clone().requires_grad_(True)
             rad = radial.clone().requires_grad_(True)
             out = module(
@@ -2231,7 +2365,9 @@ class TestSeZMGieScatter(unittest.TestCase):
             return out.detach(), grads
 
         out_ref, (gd_ref, gr_ref) = run(bound=False)
+        self.assertEqual(calls["n"], 0)
         out_fused, (gd_fused, gr_fused) = run(bound=True)
+        self.assertEqual(calls["n"], 1)
         torch.testing.assert_close(out_fused, out_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(gd_fused, gd_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(gr_fused, gr_ref, atol=1e-5, rtol=1e-5)
@@ -2240,6 +2376,7 @@ class TestSeZMGieScatter(unittest.TestCase):
         # bound: its backward carries no next-derivative formula, so the
         # dispatch must stay out of the fused path.
         module.train()
+        calls["n"] = 0
         dp = d_full.clone().requires_grad_(True)
         rad = radial.clone().requires_grad_(True)
         out_train = module(
@@ -2248,6 +2385,7 @@ class TestSeZMGieScatter(unittest.TestCase):
             radial_feat=rad,
         )
         gdp, grad_train = torch.autograd.grad(out_train, (dp, rad), cotangent)
+        self.assertEqual(calls["n"], 0)  # training keeps the reference path
         torch.testing.assert_close(out_train, out_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(gdp, gd_ref, atol=1e-5, rtol=1e-5)
         torch.testing.assert_close(grad_train, gr_ref, atol=1e-5, rtol=1e-5)
