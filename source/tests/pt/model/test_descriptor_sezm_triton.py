@@ -2072,6 +2072,20 @@ class TestSeZMStackBwdFused(unittest.TestCase):
 
     FUSED_CFG = (32, 64, 4, 3)
 
+    def setUp(self):
+        # The numerical and fallback tests need the level-2 selection
+        # active: at the default level 0 the traversal silently takes the
+        # relay for both table states and the comparisons go vacuous.
+        # (The dispatch matrix test manages the level itself.)
+        self._saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_TRITON_INFER"] = "2"
+
+    def tearDown(self):
+        if self._saved_level is None:
+            os.environ.pop("DP_TRITON_INFER", None)
+        else:
+            os.environ["DP_TRITON_INFER"] = self._saved_level
+
     def _register_fused(self, key, entry):
         """Register a fused table entry and restore the prior state."""
         from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
@@ -2164,6 +2178,21 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         torch.cuda.synchronize()
         return g, ga
 
+    def _recorded_traversal(self, inputs, lmax, focus_dim, apply_alpha):
+        """Run the traversal while counting fused launches; return outputs."""
+        import deepmd.pt_expt.kernels.triton.sezm.so2_value_path as vp
+
+        calls = []
+        original = vp._launch_stack_bwd_fused
+
+        def recorder(*args, **kwargs):
+            calls.append(args[8])
+            return original(*args, **kwargs)
+
+        with mock.patch.object(vp, "_launch_stack_bwd_fused", side_effect=recorder):
+            out = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+        return out, len(calls)
+
     def test_fused_matches_unfused_bitwise(self):
         generator = torch.Generator(device="cuda").manual_seed(42)
         for lmax, focus_dim, apply_alpha in self.CASES:
@@ -2171,9 +2200,18 @@ class TestSeZMStackBwdFused(unittest.TestCase):
                 inputs = self._bwd_inputs(lmax, focus_dim, generator)
                 key = (focus_dim, lmax)
                 self._register_fused(key, None)
-                ref = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+                ref, relay_launches = self._recorded_traversal(
+                    inputs, lmax, focus_dim, apply_alpha
+                )
+                self.assertEqual(relay_launches, 0)
                 self._register_fused(key, self.FUSED_CFG)
-                fused = self._run_traversal(inputs, lmax, focus_dim, apply_alpha)
+                fused, fused_launches = self._recorded_traversal(
+                    inputs, lmax, focus_dim, apply_alpha
+                )
+                # Counting the fused launch proves the selection happened;
+                # output equality alone could pass with both runs on the
+                # relay.
+                self.assertEqual(fused_launches, self.N_LAYERS - 1)
                 self.assertTrue(torch.equal(ref[0], fused[0]))
                 # grad_alpha is computed only when alpha was applied; the
                 # traversal leaves it uninitialized otherwise.

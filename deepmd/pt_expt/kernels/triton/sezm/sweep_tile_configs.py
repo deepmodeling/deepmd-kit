@@ -2219,15 +2219,19 @@ def sweep_stack_bwd_fused(
         for cfg in candidates:
             register_tile_configs("stack_bwd_fused", {key: cfg})
             try:
+                # Both the correctness call and the timing must run under
+                # no_grad: the traversal selects the fused kernel only when
+                # grad mode is off, so timing outside this context would
+                # silently benchmark the relay instead of the candidate.
                 with torch.no_grad():
                     got_g, got_ga = run_traversal()
-                if not (torch.equal(got_g, ref_g) and torch.equal(got_ga, ref_ga)):
-                    print(
-                        f"[stack_bwd_fused] ({cf},{lmax}) candidate "
-                        f"{cfg} rejected: outputs differ from the relay"
-                    )
-                    continue
-                fused_ms = _bench(run_traversal, iters=50)
+                    if not (torch.equal(got_g, ref_g) and torch.equal(got_ga, ref_ga)):
+                        print(
+                            f"[stack_bwd_fused] ({cf},{lmax}) candidate "
+                            f"{cfg} rejected: outputs differ from the relay"
+                        )
+                        continue
+                    fused_ms = _bench(run_traversal, iters=50)
             except Exception as err:
                 print(
                     f"[stack_bwd_fused] ({cf},{lmax}) candidate {cfg} "
