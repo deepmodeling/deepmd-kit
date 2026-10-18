@@ -2,13 +2,17 @@
 """Bindings for the fused energy fitting operator of the graph lower.
 
 The operator ``deepmd::graph_fitting`` evaluates the whole energy fitting
-network on the flat node axis -- GEMMs with the bias / activation / residual
-epilogues fused into the surrounding elementwise pass -- and returns the
-per-atom energy in fp64. The registered backward chains the layer dgrads from
-the saved pre-activations, exposing the descriptor gradient that the force /
-virial assembly differentiates through. The CUDA kernel is
+network on the flat node axis -- one fp32 SIMT GEMM kernel per layer, with the
+bias, activation, residual and energy head fused into its epilogue -- and
+returns the per-atom energy in fp64. The registered backward chains the layer
+dgrads from the saved pre-activations, exposing the descriptor gradient that
+the force / virial assembly differentiates through.
+``deepmd::graph_fitting_energy_gradient``
+evaluates the energy and the descriptor cotangent of an inference step
+together, in one kernel for the whole network where that kernel serves the
+run, with results bitwise those of the per-layer kernels. The CUDA kernels are
 ``source/op/pt/graph_fitting.cu`` and the CPU kernel
-``source/op/pt/graph_fitting_cpu.cc``.
+``source/op/pt/cpu/graph_fitting_cpu.cc``.
 
 The operator is descriptor-agnostic: any graph-lowered energy model whose
 fitting is a plain MLP over the flat node axis (see
@@ -73,8 +77,8 @@ __all__ = [
 
 #: Nodes evaluated per run of a tiled inference pipeline. The tile bounds
 #: every node-scale allocation that a run retires, and at this size the extra
-#: launches are a fraction of a percent of a saturated step while the GEMM
-#: shape stays far above the width at which cuBLAS loses efficiency.
+#: launches are a fraction of a percent of a saturated step while every GEMM
+#: grid still spans many waves of the device.
 #: ``DP_NODE_TILE`` overrides it; zero evaluates the whole node axis at once.
 _DEFAULT_TILE = 131072
 
@@ -102,10 +106,9 @@ def fitting_eligible(fit: Any) -> bool:
 
     Requires a single mixed-types energy net with tanh / silu on every hidden
     layer, fp32 weights and biases, no layer timestep, a linear scalar head
-    without residual, float4-aligned hidden widths of at most 4096, and no
-    frame / atomic parameters, case embedding or type exclusion. Hidden
-    identity residuals are supported; width-doubling residuals use the
-    reference path.
+    without residual, float4-aligned hidden widths, and no frame / atomic
+    parameters, case embedding or type exclusion. Hidden identity residuals
+    are supported; width-doubling residuals use the reference path.
 
     A per-layer timestep is a supported configuration of the reference
     network but not of this operator. Nothing prevents it technically -- the
@@ -155,12 +158,10 @@ def fitting_eligible(fit: Any) -> bool:
         layer.resnet and layer.w.shape[1] == 2 * layer.w.shape[0] for layer in hidden
     ):
         return False
-    # The elementwise epilogues map one float4 lane of a row to threadIdx.x,
-    # so a row must be non-empty and fit the 1024-thread block limit at four
-    # values per lane.
+    # The kernels address every hidden row, bias and head weight in aligned
+    # float4 quads, so each hidden width is a positive multiple of four.
     return all(
-        int(layer.w.shape[1]) % 4 == 0 and 0 < int(layer.w.shape[1]) <= 4096
-        for layer in hidden
+        int(layer.w.shape[1]) % 4 == 0 and int(layer.w.shape[1]) > 0 for layer in hidden
     )
 
 
@@ -231,9 +232,7 @@ def fitting_operator_arguments(fit: Any) -> FittingArguments:
         residuals=[1 if layer.resnet else 0 for layer in hidden],
         head_weight=head.w.reshape(-1).contiguous(),
         head_bias=(
-            head.b.reshape(-1).to(torch.float32).contiguous()
-            if head.b is not None
-            else empty
+            head.b.to(torch.float32).contiguous() if head.b is not None else empty
         ),
         activation=ACT_CODES[str(hidden[0].activation_function).lower()],
     )

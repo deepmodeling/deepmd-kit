@@ -245,6 +245,8 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
     _STAT_FRAMES_PER_SAMPLE = 64
     _COMPRESSION_BUFFER_NAMES = (
         "data",
+        "basis_table",
+        "basis_matrix",
         "info",
         "pair_film",
         "pair_mixing",
@@ -258,6 +260,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         "output_mean",
         "output_inv_std",
     )
+    # The low-rank radial table and its expansion, which a payload compressed
+    # without that table does not carry; empty artifacts select the radial
+    # table itself, so such a payload loads as the snapshot it was.
+    _OPTIONAL_COMPRESSION_BUFFER_NAMES = ("basis_table", "basis_matrix")
 
     def __init__(
         self,
@@ -1931,11 +1937,36 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
             obj._load_compression(compression)
         return obj
 
+    @classmethod
+    def _compression_variables(cls, compression: dict) -> dict:
+        """Return every compressed-inference artifact of a payload.
+
+        Parameters
+        ----------
+        compression
+            The ``compress`` entry of a serialized descriptor.
+
+        Returns
+        -------
+        dict
+            The artifact of every name in ``_COMPRESSION_BUFFER_NAMES``, an
+            empty float32 array for an optional one the payload omits.
+        """
+        variables = compression["@variables"]
+        return {
+            name: (
+                np.empty(0, dtype=np.float32)
+                if name in cls._OPTIONAL_COMPRESSION_BUFFER_NAMES
+                and name not in variables
+                else variables[name]
+            )
+            for name in cls._COMPRESSION_BUFFER_NAMES
+        }
+
     def _load_compression(self, compression: dict) -> None:
         """Restore the compressed-inference artifact payload."""
-        variables = compression["@variables"]
-        for name in self._COMPRESSION_BUFFER_NAMES:
-            setattr(self, f"compress_{name}", variables[name])
+        for name, value in self._compression_variables(compression).items():
+            setattr(self, f"compress_{name}", value)
         self.compress = True
 
     @classmethod

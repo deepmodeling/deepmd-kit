@@ -424,6 +424,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
   virtual void compute_canonical_graph_gpu(
       double* d_atom_energy,
       double* d_force,
+      double* d_virial,
       double* d_atom_virial,
       const std::int64_t* d_atype,
       const std::uint32_t* d_source,
@@ -433,10 +434,12 @@ class DeepPotBackend : public DeepBaseModelBackend {
       const std::uint32_t* d_source_order,
       const int nloc,
       const int nall_nodes,
-      const std::int64_t edge_storage);
+      const std::int64_t edge_storage,
+      void* stream);
   virtual bool supports_device_edge_inference() const;
   virtual bool uses_fp32_edge_vectors() const;
   virtual bool uses_canonical_graph_inference() const;
+  virtual bool canonical_graph_requires_source_csr() const;
 };
 
 /**
@@ -894,8 +897,59 @@ class DeepPot : public DeepBaseModel {
    */
   bool uses_canonical_graph_inference() const;
 
+  /**
+   * @brief Whether every compact canonical evaluation needs the source CSR.
+   *
+   * An artifact whose force assembly groups edges by source reads the source
+   * CSR on every call. Any other artifact reads it only for the per-atom
+   * virial and accepts null source CSR pointers when that is not requested.
+   */
+  bool canonical_graph_requires_source_csr() const;
+
+  /**
+   * @brief Evaluate a compact canonical graph from device-resident buffers.
+   *
+   * Every pointer resides on the model device.
+   *
+   * @param[out] d_atom_energy Per-local-node energy, shape ``(nloc)``.
+   * @param[out] d_force Per-node force, shape ``(nall_nodes, 3)``.
+   * @param[out] d_virial Virial of the graph, nine components, or null when
+   * it is not requested.
+   * @param[out] d_atom_virial Per-node virial, shape ``(nall_nodes, 9)``, or
+   * null when the per-atom virial is not requested.
+   * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
+   * @param[in] d_source Source node per edge storage slot.
+   * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
+   * @param[in] d_destination_row_ptr Destination CSR offsets.
+   * @param[in] d_source_row_ptr Source CSR offsets. May be null together with
+   * ``d_source_order`` and ``d_atom_virial`` unless
+   * canonical_graph_requires_source_csr().
+   * @param[in] d_source_order Source-grouped edge storage positions.
+   * @param[in] nloc Number of owned local nodes.
+   * @param[in] nall_nodes Total local-plus-halo node count.
+   * @param[in] edge_storage Number of edge storage slots.
+   * @param[in] stream Accelerator stream (``cudaStream_t``) of the model
+   * device on which the inputs were produced and the outputs will be
+   * consumed; a non-null stream requires a CUDA build. The evaluation is
+   * enqueued on it without a synchronization of the stream. A graph without
+   * halo nodes is captured into a CUDA graph on the second consecutive call
+   * with the same buffers and extents and replayed while they stay the same.
+   * The host waits for the device when a call captures or releases a graph,
+   * which happens on that second call and on a call whose buffers or extents
+   * change. set_charge_spin waits for the work in flight on the model device
+   * before it replaces the constants and for the replacement before it
+   * returns, and the caller completes the work on its stream before it
+   * destroys the model. A null stream runs on the current stream of the
+   * calling thread for the model device and waits for that stream before
+   * returning. Models in different threads of one process evaluate
+   * concurrently, and their captures, releases of graphs and charge-state
+   * updates, which wait for the whole device, take turns; CUDA work outside
+   * DeePMD-kit that waits for the whole device while a capture is under way
+   * invalidates it, and the model then evaluates without replay.
+   */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
                                    const std::uint32_t* d_source,
@@ -905,7 +959,8 @@ class DeepPot : public DeepBaseModel {
                                    const std::uint32_t* d_source_order,
                                    const int nloc,
                                    const int nall_nodes,
-                                   const std::int64_t edge_storage);
+                                   const std::int64_t edge_storage,
+                                   void* stream = nullptr);
 
   int dim_chg_spin() const;
 

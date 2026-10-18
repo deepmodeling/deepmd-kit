@@ -121,6 +121,12 @@ if(ENABLE_PYTORCH AND "${OP_CXX_ABI_PT}" EQUAL "${OP_CXX_ABI}")
   deepmd_configure_backend_plugin(deepmd_backend_ptexpt)
   target_link_libraries(deepmd_backend_ptexpt PRIVATE "${TORCH_LIBRARIES}")
   target_compile_definitions(deepmd_backend_ptexpt PRIVATE BUILD_PYTORCH)
+  # Device-resident inference enqueues on the caller's stream, which needs the
+  # c10 CUDA stream API of a CUDA-enabled PyTorch.
+  if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
+    target_compile_definitions(deepmd_backend_ptexpt
+                               PRIVATE DEEPMD_TORCH_HAS_CUDA)
+  endif()
 endif()
 
 if(ENABLE_JAX)

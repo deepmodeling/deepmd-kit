@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+import dataclasses
 from typing import (
     Any,
 )
@@ -156,10 +157,13 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         destination_row_ptr
             Destination CSR offsets with shape ``(N + 1,)``, int64.
         source_row_ptr
-            Source CSR offsets with shape ``(N + 1,)``, int64.
+            Source CSR offsets with shape ``(N + 1,)``, int64. A DPA4C model
+            also accepts a two-entry placeholder, which declines the
+            per-atom virial; that output is then zero.
         source_order
             Source-grouped edge positions with shape ``(S,)`` and the same
-            dtype as ``source``.
+            dtype as ``source``, or a two-entry placeholder alongside a
+            placeholder ``source_row_ptr``.
         do_atomic_virial
             Whether to return the per-node virial.
         spin
@@ -201,32 +205,42 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             source_order=source_order,
         )
         validate_canonical_graph_shapes(graph, atype.shape[0])
-        atype, output_mask = self.atomic_model._prepare_graph_nodes(
-            n_node,
-            n_local,
-            atype,
-            edge_vec,
-        )
         learned, pair_potential = self.atomic_model.fused_decomposition()
         descriptor = learned.descriptor
         fitting = learned.fitting_net
         atom_bias = fused_atom_bias(self.atomic_model, learned)
         if use_dpa4c:
-            energy, atom_energy, force, virial, atom_virial, force_mag = (
+            # A program without the per-atom virial declines it with the
+            # two-entry placeholders of the source CSR, so that the fused
+            # operator stores no edge cotangent whatever its caller passes.
+            if not do_atomic_virial:
+                graph = dataclasses.replace(
+                    graph,
+                    source_row_ptr=source_row_ptr.new_zeros(2),
+                    source_order=source_order.new_zeros(2),
+                )
+            # The fused operator derives the ownership mask from the frame
+            # counts itself, so nothing runs on the node axis around it.
+            energy, atom_energy, force, virial, atom_virial, force_mag, mask = (
                 dpa4c_canonical_compress_energy_force(
                     descriptor,
                     fitting,
                     graph,
                     atype,
-                    output_mask,
                     atom_bias,
-                    do_atomic_virial,
                     spin,
                     None if pair_potential is None else pair_potential.pair_table,
                 )
             )
         else:
+            atype, output_mask = self.atomic_model._prepare_graph_nodes(
+                n_node,
+                n_local,
+                atype,
+                edge_vec,
+            )
             force_mag = None
+            mask = output_mask.to(torch.int32)
             energy, atom_energy, force, virial, atom_virial = (
                 dpa1_canonical_compress_energy_force(
                     descriptor,
@@ -246,7 +260,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             "energy": energy,
             "force": force,
             "virial": virial,
-            "mask": output_mask.to(torch.int32),
+            "mask": mask,
         }
         if spin is not None:
             if force_mag is None or force_mag.ndim != 2:

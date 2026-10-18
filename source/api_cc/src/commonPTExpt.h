@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Shared utilities for pt_expt (.pt2 / AOTInductor) backend classes.
-// Provides: JSON parser, ZIP archive reader, type-sorted nlist builder,
-// and helpers for the with-comm dual-artifact layout.
+// Provides: the caller-stream scope and the CUDA graph replay of
+// device-resident evaluations, JSON parser, ZIP archive reader, type-sorted
+// nlist builder, and helpers for the with-comm dual-artifact layout.
 #pragma once
 
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
@@ -15,8 +16,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -27,8 +30,281 @@
 #include "errors.h"
 #include "neighbor_list.h"
 
+#ifdef DEEPMD_TORCH_HAS_CUDA
+#include <ATen/cuda/CUDAGraph.h>
+#include <c10/cuda/CUDACachingAllocator.h>
+#include <c10/cuda/CUDAFunctions.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
+
+#include <optional>
+#endif
+
 namespace deepmd {
 namespace ptexpt {
+
+/**
+ * @brief Make a caller's accelerator stream current for one scope.
+ *
+ * Device-resident entry points take the stream on which the caller produced
+ * their inputs and will consume their outputs. While the scope lives, every
+ * kernel the model launches is enqueued on that stream, so the evaluation is
+ * ordered after the inputs and before the outputs' consumers without a host
+ * synchronization. A null stream leaves the current stream in place.
+ */
+class CallerStreamScope {
+ public:
+  CallerStreamScope(void* stream, int device) {
+    if (stream == nullptr) {
+      return;
+    }
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    guard_.emplace(c10::cuda::getStreamFromExternal(
+        static_cast<cudaStream_t>(stream),
+        static_cast<c10::DeviceIndex>(device)));
+#else
+    (void)device;
+    throw deepmd::deepmd_exception(
+        "a caller stream requires deepmd-kit built with USE_CUDA_TOOLKIT "
+        "against a CUDA-enabled PyTorch.");
+#endif
+  }
+
+ private:
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  std::optional<c10::cuda::CUDAStreamGuard> guard_;
+#endif
+};
+
+/**
+ * @brief Lock of the operations of the backend that capture a CUDA graph or
+ * wait for a whole device.
+ *
+ * A wait for a whole device is invalid while any stream of the device
+ * captures, and it invalidates the capture. Every such operation of the
+ * backend holds this lock, so models in different threads of one process
+ * capture, release their graphs and replace their constants in turn. The
+ * lock outlives every model, including one destroyed with the static objects
+ * of the process.
+ */
+inline std::mutex& device_wide_mutex() {
+  static auto* const mutex = new std::mutex;
+  return *mutex;
+}
+
+/**
+ * @brief Wait for the work in flight on every stream of ``device``.
+ *
+ * An evaluation on a caller's stream may still read the constants of a model
+ * while the caller replaces them, so whoever replaces them waits for it first.
+ * A build without caller streams leaves no such work.
+ */
+inline void synchronize_device(const int device) {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  const std::lock_guard<std::mutex> device_wide(device_wide_mutex());
+  const c10::cuda::CUDAGuard device_guard(
+      static_cast<c10::DeviceIndex>(device));
+  c10::cuda::device_synchronize();
+#else
+  (void)device;
+#endif
+}
+
+/// Address of a buffer as an entry of a GraphReplay key.
+inline std::int64_t address_key(const void* pointer) {
+  return static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(pointer));
+}
+
+/**
+ * @brief Copy the results of an evaluation of ``nodes`` nodes into the
+ * caller's outputs, ``results[k]`` into ``targets[k]``; both lists hold the
+ * same number of tensors, at least one.
+ *
+ * Up to 8,192 nodes the results take one multi-tensor copy, which copies a
+ * list of results of one dtype in a single kernel. That copy serves every
+ * chunk of 65,536 elements with one block, so on the force of a larger graph
+ * it leaves most of the device idle; a larger graph therefore copies each
+ * tensor on its own, and each copy spreads over the whole device. Inside a
+ * graph replay on compute capability 12.0, the outputs of a DPA4C energy
+ * model take 10 us in one kernel and 6 us in separate copies at 16,384 nodes,
+ * and 18 and 8 us at 100,800.
+ */
+inline void copy_results(const std::vector<torch::Tensor>& targets,
+                         const std::vector<torch::Tensor>& results,
+                         const std::int64_t nodes) {
+  constexpr std::int64_t kMultiTensorNodes = 8192;
+  if (nodes <= kMultiTensorNodes) {
+    at::_foreach_copy_(targets, results);
+    return;
+  }
+  for (std::size_t k = 0; k < targets.size(); ++k) {
+    targets[k].copy_(results[k]);
+  }
+}
+
+/**
+ * @brief Replay repeated device-resident evaluations as one CUDA graph.
+ *
+ * Launching kernels dominates an evaluation of a small system. Two
+ * evaluations over the same buffers and extents launch the same kernels with
+ * the same arguments, so the evaluation is captured into a CUDA graph on the
+ * second consecutive call with the same key -- every buffer address and
+ * extent the evaluation depends on -- and relaunched as a whole while the key
+ * stays the same. A call with another key releases the graph and evaluates
+ * eagerly.
+ *
+ * The evaluation must be free of host synchronization, and every device
+ * tensor it uses beyond the caller's buffers must either be allocated inside
+ * it, so that the graph owns them, or persist at an address that the key
+ * covers. The constants of the model are read where they reside at capture,
+ * so whoever replaces them calls ``invalidate`` first. An evaluation that
+ * cannot be captured runs eagerly instead (see ``capture``).
+ *
+ * A capture, like the release of a graph, waits for the whole device, and
+ * both hold ``device_wide_mutex``, so the replays of different models capture
+ * in turn and the evaluations and replays of other threads proceed
+ * meanwhile. CUDA work outside the backend that waits for the whole device
+ * while a capture is under way invalidates that capture, and the replay then
+ * evaluates eagerly from there on.
+ */
+class GraphReplay {
+ public:
+  using Key = std::vector<std::int64_t>;
+
+  /**
+   * @brief Evaluate under ``key`` on the current stream of ``device``.
+   *
+   * @param key Every buffer address and extent ``evaluate`` depends on.
+   * @param device Index of the CUDA device.
+   * @param evaluate The evaluation, enqueued on the current stream.
+   */
+  template <class Evaluate>
+  void run(const Key& key, const int device, Evaluate&& evaluate) {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    if (graph_ && key == key_) {
+      graph_->replay();
+      return;
+    }
+    if (key != key_ || !capturable_) {
+      // The key is recorded once the evaluation has completed, so that a
+      // capture always follows an eager evaluation under the same key, which
+      // has run every one-time step of the program (such as the folding of
+      // its constants) outside the graph.
+      release();
+      key_.clear();
+      evaluate();
+      key_ = key;
+      return;
+    }
+    if (capture(device, evaluate)) {
+      graph_->replay();
+    } else {
+      evaluate();
+    }
+#else
+    (void)key;
+    (void)device;
+    evaluate();
+#endif
+  }
+
+  /**
+   * @brief Release the graph, so that the next call evaluates eagerly.
+   *
+   * Called before the constants that a captured evaluation reads change.
+   */
+  void invalidate() {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    release();
+    key_.clear();
+#endif
+  }
+
+ private:
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  void release() {
+    if (graph_) {
+      // Replays still in flight run in the private pool of the graph, on the
+      // device it was captured on.
+      const std::lock_guard<std::mutex> device_wide(device_wide_mutex());
+      const c10::cuda::CUDAGuard device_guard(
+          static_cast<c10::DeviceIndex>(device_));
+      c10::cuda::device_synchronize();
+      graph_.reset();
+    }
+  }
+
+  /**
+   * @brief Capture ``evaluate`` into a graph, which becomes the graph of the
+   * current key only once its capture has ended.
+   *
+   * A capture that fails at any stage -- its beginning, the evaluation, its
+   * end or the instantiation of the graph -- leaves no graph behind and turns
+   * capturing off for this replay, and the caller evaluates eagerly: an
+   * evaluation that has run eagerly under the same key fails in a capture for
+   * a reason of the capture, which a retry would meet again while holding
+   * another private memory pool. An error of the evaluation itself recurs in
+   * the eager evaluation, which reports it.
+   *
+   * @return Whether the capture succeeded.
+   */
+  template <class Evaluate>
+  bool capture(const int device, Evaluate& evaluate) {
+    const std::lock_guard<std::mutex> device_wide(device_wide_mutex());
+    // The cached blocks of the eager evaluations are released before the
+    // graph allocates its private pool, so the pool takes their place in
+    // device memory instead of adding to it.
+    c10::cuda::device_synchronize();
+    c10::cuda::CUDACachingAllocator::emptyCache();
+    auto graph = std::make_unique<at::cuda::CUDAGraph>();
+    try {
+      // A capture needs a stream other than the legacy default one, on which
+      // a caller may evaluate; the graph replays on the caller's stream.
+      const c10::cuda::CUDAStreamGuard capture_stream(
+          c10::cuda::getStreamFromPool(false,
+                                       static_cast<c10::DeviceIndex>(device)));
+      graph->capture_begin({0, 0}, cudaStreamCaptureModeThreadLocal);
+      try {
+        evaluate();
+      } catch (...) {
+        // End the capture the failure interrupted, so that the stream leaves
+        // capture mode; the failure of the evaluation is the one reported.
+        try {
+          graph->capture_end();
+        } catch (const c10::Error&) {
+        }
+        throw;
+      }
+      graph->capture_end();
+    } catch (const std::exception& error) {
+      // The graph of a failed capture is kept for the lifetime of the
+      // replay, since the caching allocator may still refer to it, and the
+      // memory its partial evaluation allocated may stay reserved in its
+      // private pool for the rest of the process. Capturing is off from here
+      // on, so at most one is kept.
+      abandoned_ = std::move(graph);
+      capturable_ = false;
+      const auto* const c10_error = dynamic_cast<const c10::Error*>(&error);
+      std::cerr << "WARNING: deepmd-kit could not capture the evaluation into "
+                   "a CUDA graph ("
+                << (c10_error != nullptr ? c10_error->what_without_backtrace()
+                                         : error.what())
+                << "); later evaluations run without graph replay."
+                << std::endl;
+      return false;
+    }
+    graph_ = std::move(graph);
+    device_ = device;
+    return true;
+  }
+
+  Key key_;
+  int device_ = 0;
+  bool capturable_ = true;
+  std::unique_ptr<at::cuda::CUDAGraph> graph_;
+  std::unique_ptr<at::cuda::CUDAGraph> abandoned_;
+#endif
+};
 
 // ============================================================================
 // Minimal JSON value parser for reading metadata from .pt2 archives.
@@ -941,22 +1217,20 @@ class ChargeStateFold {
           " tables but the archive names " + std::to_string(constants_.size()) +
           " constants; it cannot serve a runtime charge state");
     }
-    // The inactive buffer is a complete model image. A partial inactive update
-    // copies tensor constants and buffers but omits ordinary parameters, so it
-    // cannot be swapped into service safely.
-    auto* runner = target.get_runner();
-    auto constants = runner->extract_constants_map(/*use_inactive=*/false);
+    // The tables are copied into the active constants in place, which keeps
+    // their addresses and marks the constants for folding again at the next
+    // run. The caller waits for the device on both sides of the update, so no
+    // evaluation reads the constants while they change.
+    std::unordered_map<std::string, torch::Tensor> updated;
     for (size_t ii = 0; ii < tables.size(); ++ii) {
       // An unnamed output belongs to a mechanism this model has disabled and
       // has no constant to reach.
       if (!constants_[ii].empty()) {
-        constants[constants_[ii]] = tables[ii];
+        updated.emplace(constants_[ii], tables[ii]);
       }
     }
-    target.load_constants(constants, /*use_inactive=*/true,
-                          /*check_full_update=*/true);
-    runner->swap_constant_buffer();
-    runner->free_inactive_constant_buffer();
+    target.load_constants(updated, /*use_inactive=*/false,
+                          /*check_full_update=*/false);
   }
 
  private:

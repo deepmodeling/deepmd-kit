@@ -113,6 +113,11 @@ else:
 	PID8=$!
 	wait $PID7
 	wait $PID8
+	# Copies of the multi-rank DPA3 archives of gen_dpa3.py and gen_spin.py
+	# whose nested with-comm artifact is corrupt; without them the load-failure
+	# cases of the pt_expt backends (test_with_comm_load_failure_ptexpt.cc)
+	# skip.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_corrupt_with_comm.py
 
 	# Native-spin DPA4 graph archives (baseline + model-level pair
 	# exclusion). Without this the whole native-spin graph C++ suite
@@ -149,6 +154,12 @@ else:
 	if [ "${DP_VARIANT}" = "cuda" ]; then
 		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_spin.py &
 		PID15=$!
+		# Compressed DPA4C, an energy and a native-spin model, on the compact
+		# canonical lower: the only fixtures that reach the device-resident
+		# entry points LAMMPS + Kokkos calls, with the replay of repeated
+		# evaluations and a runtime charge state.
+		env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_canonical.py &
+		PID16=$!
 	fi
 	wait $PID11
 	wait $PID12
@@ -157,6 +168,7 @@ else:
 	wait $PID14B
 	if [ "${DP_VARIANT}" = "cuda" ]; then
 		wait $PID15
+		wait $PID16
 	fi
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then

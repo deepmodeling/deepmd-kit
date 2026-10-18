@@ -186,6 +186,13 @@ void PairDPA4SpinKokkos<DeviceType>::init_style() {
   if (std::is_same<DeviceType, LMPHostType>::value) {
     error->all(FLERR, "pair style dpa4spin/kk runs on the GPU backend only.");
   }
+  // The constructor runs before LAMMPS confirms that KOKKOS is enabled, so
+  // the virial of the graph is allocated here, once: its address stays fixed
+  // from run to run, as the replay of a graph without halo nodes keys on it.
+  if (!d_graph_virial.is_allocated()) {
+    d_graph_virial =
+        Kokkos::View<double[9], DeviceType>("dpa4spin/kk:graph_virial");
+  }
   // Device residency is what the compact canonical ABI exists for: it is the
   // only schema whose inputs this style can hand over without a host round
   // trip.
@@ -263,56 +270,70 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
     memoryKK->create_kokkos(k_eatom, eatom, maxeatom, "dpa4spin/kk:eatom");
     d_eatom = k_eatom.template view<DeviceType>();
   }
-  compact_graph.build(list, cutoff, dist_unit_cvt_factor);
+  // The source CSR feeds the source-attributed per-atom virial alone.
+  compact_graph.build(list, cutoff, dist_unit_cvt_factor, cvflag_atom);
   gather_moment_device();
   const int nloc_m = compact_graph.nloc_model;    // local nodes (energy)
   const int nnode_m = compact_graph.nnode_model;  // all nodes (force / virial)
 
   // Energy is per local node; force, magnetic force and virial span the model
   // node set, which is the local atoms (folded) or local + real ghost atoms
-  // (extended, up to nall). The two extents grow independently: under domain
-  // decomposition ``nlocal`` and ``nall`` need not move together, so a shared
-  // guard could leave the energy buffer short when ``nlocal`` grows while
-  // ``nall`` does not.
+  // (extended). The two extents grow independently: under domain
+  // decomposition ``nlocal`` and the node count need not move together, so a
+  // shared guard could leave the energy buffer short when ``nlocal`` grows
+  // while the node count does not. Sized by the node set rather than by every
+  // atom, the buffers of a folded run keep their addresses while the ghost
+  // count fluctuates, which lets an unchanged evaluation be replayed.
   const int nall = atom->nlocal + atom->nghost;
   if ((int)d_atom_energy.extent(0) < nlocal) {
     d_atom_energy =
         Kokkos::View<double*, DeviceType>("dpa4spin/kk:atom_energy", nlocal);
   }
-  if ((int)d_out_force.extent(0) < 3 * nall) {
+  if ((int)d_out_force.extent(0) < 3 * nnode_m) {
     d_out_force =
-        Kokkos::View<double*, DeviceType>("dpa4spin/kk:out_force", 3 * nall);
+        Kokkos::View<double*, DeviceType>("dpa4spin/kk:out_force", 3 * nnode_m);
     d_out_force_mag = Kokkos::View<double*, DeviceType>(
-        "dpa4spin/kk:out_force_mag", 3 * nall);
-    d_atom_virial =
-        Kokkos::View<double*, DeviceType>("dpa4spin/kk:atom_virial", 9 * nall);
+        "dpa4spin/kk:out_force_mag", 3 * nnode_m);
+    d_atom_virial = Kokkos::View<double*, DeviceType>("dpa4spin/kk:atom_virial",
+                                                      9 * nnode_m);
   }
   if (cvflag_atom && multi_rank && (int)k_reverse_virial.extent(0) < 9 * nall) {
     k_reverse_virial =
         DAT::tdual_double_1d("dpa4spin/kk:reverse_virial", 9 * nall);
   }
-  Kokkos::deep_copy(d_out_force, 0.0);
-  Kokkos::deep_copy(d_out_force_mag, 0.0);
-  Kokkos::deep_copy(d_atom_energy, 0.0);
-  Kokkos::deep_copy(d_atom_virial, 0.0);
+  // The evaluation overwrites every output entry the step reads, so only its
+  // absence leaves outputs to clear.
+  if (nnode_m == 0) {
+    Kokkos::deep_copy(d_out_force, 0.0);
+    Kokkos::deep_copy(d_out_force_mag, 0.0);
+    Kokkos::deep_copy(d_atom_energy, 0.0);
+    Kokkos::deep_copy(d_atom_virial, 0.0);
+    Kokkos::deep_copy(d_graph_virial, 0.0);
+  }
 
   if (nnode_m > 0) {
     // Fully device-resident inference: raw device pointers in and out. The
-    // graph and the moment are produced on the Kokkos stream and consumed by
-    // the model on PyTorch's stream, and the outputs flow back to the Kokkos
-    // scatter, so the two runtimes are bracketed by explicit synchronization:
-    // fence the Kokkos work before the model reads its inputs, and synchronize
-    // the device after so the scatter sees the finished model outputs.
-    Kokkos::fence();
+    // model is enqueued on the Kokkos stream that produces the graph and the
+    // moment and scatters the outputs, so the three stay ordered without a
+    // host synchronization. An execution space without a CUDA stream to
+    // share runs the model on PyTorch's own stream, so its Kokkos work is
+    // fenced before the model reads its inputs.
+    void* const model_stream =
+        compact_canonical_stream(typename DeviceType::execution_space());
+    if (model_stream == nullptr) {
+      Kokkos::fence();
+    }
     try {
       deep_spin.compute_canonical_graph_gpu(
           d_atom_energy.data(), d_out_force.data(), d_out_force_mag.data(),
-          d_atom_virial.data(), compact_graph.d_model_type.data(),
-          compact_graph.d_source.data(), compact_graph.d_edge_vec.data(),
+          d_graph_virial.data(), cvflag_atom ? d_atom_virial.data() : nullptr,
+          compact_graph.d_model_type.data(), compact_graph.d_source.data(),
+          compact_graph.d_edge_vec.data(),
           compact_graph.d_destination_row_ptr.data(),
-          compact_graph.d_source_row_ptr.data(),
-          compact_graph.d_source_order.data(), d_moment.data(), nloc_m, nnode_m,
-          compact_graph.storage_count);
+          cvflag_atom ? compact_graph.d_source_row_ptr.data() : nullptr,
+          cvflag_atom ? compact_graph.d_source_order.data() : nullptr,
+          d_moment.data(), nloc_m, nnode_m, compact_graph.storage_count,
+          model_stream);
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
@@ -394,22 +415,13 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
   }
 
   if (vflag_global) {
-    // Sum the per-node 9-component virial and map to the LAMMPS global 6
-    // (xx, yy, zz, xy, xz, yz), matching the standalone pair's index map. The
-    // sum spans all nodes (local + extended ghost) so the reduction equals the
-    // model's reduced virial for this rank's local-centered edges.
-    auto atom_virial = d_atom_virial;
+    // Map the 9-component virial of the graph to the LAMMPS global 6 (xx, yy,
+    // zz, xy, xz, yz), matching the standalone pair's index map.
+    auto h_virial = Kokkos::create_mirror_view(d_graph_virial);
+    Kokkos::deep_copy(h_virial, d_graph_virial);
     const int comp[6] = {0, 4, 8, 3, 6, 7};
     for (int k = 0; k < 6; ++k) {
-      const int off = comp[k];
-      double vsum = 0.0;
-      Kokkos::parallel_reduce(
-          "dpa4spin/kk:vsum", Kokkos::RangePolicy<DeviceType>(0, nnode_m),
-          KOKKOS_LAMBDA(const int m, double& acc) {
-            acc += atom_virial(9 * m + off);
-          },
-          vsum);
-      virial[k] += scale[1][1] * vsum * ener_unit_cvt_factor;
+      virial[k] += scale[1][1] * h_virial(comp[k]) * ener_unit_cvt_factor;
     }
   }
 

@@ -415,6 +415,14 @@ Run under Kokkos with one GPU:
 lmp -k on g 1 -sf kk -in in.lammps
 ```
 
+On a single MPI rank, the Kokkos styles replay the evaluation of the model as
+a CUDA graph from step to step. A step that also computes the per-atom virial,
+which `compute centroid/stress/atom` requests (the Kokkos styles provide the
+nine-component per-atom virial only), evaluates more outputs than the steps
+around it: that step and the next one run without the replay, which resumes
+one step later. Requesting the per-atom virial at a coarse interval keeps this
+cost small.
+
 ### CPU hosts
 
 DPA4C has a second set of hand-written operators for the CPU, so a compressed

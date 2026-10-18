@@ -17,13 +17,26 @@
 // and source indices only.
 //
 // The two operators that close an energy-force evaluation, the generic
-// backward and the fused canonical energy-gradient, also evaluate an
-// analytical pair potential when `pair_table` is not empty. Its energy and
-// radial slope share their exponentials and need no saved state, so the edge
-// scan that emits the edge gradient produces both: it adds
+// backward and the fused canonical energy-force, also evaluate an analytical
+// pair potential when `pair_table` is not empty. Its energy and radial slope
+// share their exponentials and need no saved state, so the edge scan that
+// differentiates the descriptor produces both: it adds
 // `pair_seed_i * dV/dr / 2` to the radial cotangent of every edge of node `i`
-// and accumulates `V / 2` into the node energy (`pair_energy`, or the
-// `energy` of the fused operator, whose `seed` is the pair seed).
+// and accumulates `V / 2` into the node energy (`pair_energy`, or the node
+// energy of the fused operator, whose pair seed is its ownership mask).
+//
+// The fused canonical operator derives the ownership mask from `n_node` and
+// `n_local` -- a node contributes energy when its type is real and it is among
+// the leading `n_local` nodes of its frame -- and returns the frame energy, the
+// masked node energy, the force, the frame virial, the per-atom virial, the
+// magnetic force of a spin-conditioned descriptor (empty otherwise) and the
+// mask itself. It computes the per-atom virial when it receives the source
+// CSR; a two-entry placeholder in place of `source_row_ptr` and
+// `source_order` declines it, which leaves it zero.
+//
+// Every schema carries, next to the radial table, the low-rank table and the
+// expansion that a single-type scan reads instead of the scalar-only channels
+// (empty together when the descriptor admits none; see `low_rank_basis`).
 //
 // Every schema carries the zone-bridging window as the two dimensionless
 // fractions `f_inner` and `f_outer` of a pair's own length scale, together
@@ -37,7 +50,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "dpa4c_graph_compress(Tensor edge_vec, Tensor edge_index, "
       "Tensor edge_mask, Tensor destination_order, "
       "Tensor destination_row_ptr, Tensor atype, Tensor table, "
-      "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
+      "Tensor basis_table, Tensor basis_matrix, Tensor pair_film, "
+      "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
       "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
@@ -48,7 +62,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "dpa4c_graph_compress_backward(Tensor descriptor_gradient, "
       "Tensor state, Tensor edge_vec, Tensor edge_index, Tensor edge_mask, "
       "Tensor destination_order, Tensor destination_row_ptr, Tensor atype, "
-      "Tensor table, Tensor pair_film, Tensor pair_mixing, "
+      "Tensor table, Tensor basis_table, Tensor basis_matrix, "
+      "Tensor pair_film, Tensor pair_mixing, "
       "Tensor type_embedding, Tensor readout_matrices, Tensor coupling_meta, "
       "Tensor coupling_entry, Tensor coupling_value, Tensor output_mean, "
       "Tensor output_inv_std, Tensor spin, Tensor spin_pair, "
@@ -61,7 +76,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
   library.def(
       "dpa4c_canonical_compress(Tensor edge_vec, Tensor source, "
       "Tensor destination_row_ptr, Tensor atype, Tensor table, "
-      "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
+      "Tensor basis_table, Tensor basis_matrix, Tensor pair_film, "
+      "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
       "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
@@ -72,7 +88,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "dpa4c_canonical_compress_backward(Tensor descriptor_gradient, "
       "Tensor state, Tensor edge_vec, Tensor source, "
       "Tensor destination_row_ptr, Tensor atype, Tensor table, "
-      "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
+      "Tensor basis_table, Tensor basis_matrix, Tensor pair_film, "
+      "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
       "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
@@ -84,7 +101,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "dpa4c_canonical_compress_backward_inplace("
       "Tensor descriptor_gradient, Tensor(a!) state, Tensor edge_vec, "
       "Tensor source, Tensor destination_row_ptr, Tensor atype, Tensor table, "
-      "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
+      "Tensor basis_table, Tensor basis_matrix, Tensor pair_film, "
+      "Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
       "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
@@ -93,8 +111,10 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "-> (Tensor edge_gradient, Tensor spin_gradient, "
       "Tensor edge_spin_gradient)");
   library.def(
-      "dpa4c_canonical_compress_energy_gradient(Tensor edge_vec, "
-      "Tensor source, Tensor destination_row_ptr, Tensor atype, Tensor table, "
+      "dpa4c_canonical_compress_energy_force(Tensor edge_vec, "
+      "Tensor source, Tensor destination_row_ptr, Tensor source_row_ptr, "
+      "Tensor source_order, Tensor n_node, Tensor n_local, Tensor atype, "
+      "Tensor table, Tensor basis_table, Tensor basis_matrix, "
       "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
       "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
       "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
@@ -103,7 +123,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "float degree_floor, float f_inner, float f_outer, "
       "Tensor[] ws, Tensor[] bs, int[] resnets, "
       "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, "
-      "Tensor seed, int tile, Tensor pair_table) "
-      "-> (Tensor energy, Tensor edge_gradient, Tensor spin_gradient, "
-      "Tensor edge_spin_gradient)");
+      "int tile, Tensor pair_table) "
+      "-> (Tensor energy, Tensor atom_energy, Tensor force, Tensor virial, "
+      "Tensor atom_virial, Tensor force_mag, Tensor mask)");
 }

@@ -2,10 +2,11 @@
 //
 // Host-side launch interface of the compressed DPA4C descriptor.
 //
-// The kernel templates are instantiated once per scalar width in a dedicated
-// translation unit, which keeps the compile time of the angular-degree and
-// topology specializations bounded and parallel. The dispatching translation
-// unit only sees the plain argument bundle declared here.
+// The kernel templates are instantiated in generated translation units
+// (shard.cu.in), one per angular degree for the widest scalar widths and one
+// per width for the others, which keeps the compile time of the topology
+// specializations bounded and parallel. The dispatching translation unit only
+// sees the plain argument bundle declared here.
 
 #pragma once
 
@@ -22,12 +23,29 @@ constexpr int kWarpSize = 32;
 /// non-negative range that node and edge identifiers occupy.
 enum class IndexKind : int { Bits32 = 0, Bits64 = 1 };
 
+/// Words of the presence bitmap of the node types of a system, which covers
+/// the types below 32 times this count (`Arguments::type_present`).
+constexpr int kTypeWords = 4;
+
+/// Mode profiles that a folded scan carries as extra features and that a
+/// slotted scan holds in the slots of its types. A model with more modes
+/// scans unfolded.
+constexpr int kFoldedModes = 4;
+
 /// Complete argument bundle of one descriptor launch.
 ///
 /// Pointers that a given direction does not read stay null. All tensors are
-/// contiguous and, except for the topology and the coupling layout, fp32.
+/// contiguous. The tables, weights and per-node and per-edge features are
+/// fp32; the topology and the coupling layout are integers, the node-type
+/// words an integer flag, an fp32 radius and a bitmap, the force totals
+/// 64-bit fixed point, and the pair energy fp64.
 struct Arguments {
   long node_count = 0;
+  // Node count of the whole system, from which the edge scans choose their
+  // row split and their co-scheduled blocks, both of which change the
+  // summation order of a row, so that every run of a tiled system takes the
+  // schedule of the whole system.
+  long system_node_count = 0;
   long edge_count = 0;
   int lmax = 2;
   int interval_count = 0;
@@ -43,6 +61,15 @@ struct Arguments {
   // last node may clear them; an earlier run would erase the gradients that
   // later runs are about to write.
   bool clear_padding = true;
+  // Whether the canonical edge scans request the bond vectors of each row into
+  // L2 as the row starts, and the slotted scans its source indices as well.
+  // Set when the bond vectors of the edge storage exceed the L2 cache, as
+  // those of a graph that fills the storage then stream from DRAM: a row's
+  // vectors are contiguous, the lanes of a warp that scans the row request
+  // one 128-byte line each until the row is covered, and the transfer then
+  // overlaps the scan of the row instead of stalling the first use of every
+  // line. A caller may size the storage beyond the edges.
+  bool prefetch_bonds = false;
   int coupling_count = 0;
   float table_stride = 0.0f;
   float table_max = 0.0f;
@@ -73,6 +100,15 @@ struct Arguments {
   const long* destination_row_ptr = nullptr;
   const long* atype = nullptr;
   const float* table = nullptr;
+  // Low-rank radial table of the single-type and slotted scans, null when
+  // the descriptor carries none: the leading ``C1`` channels, the ``Basis``
+  // functions on which the scalar-only channels are expanded, then the radial
+  // modes, in the layout of ``table``. ``basis_matrix`` is the transpose of
+  // the expansion, of shape ``(Basis, C0 - C1)``: channel ``c >= C1`` is the
+  // sum over ``k`` of ``basis_matrix[k * (C0 - C1) + c - C1]`` times basis
+  // function ``k``.
+  const float* basis_table = nullptr;
+  const float* basis_matrix = nullptr;
   const float* pair_film = nullptr;
   const float* pair_mixing = nullptr;
   const float* type_embedding = nullptr;
@@ -89,6 +125,17 @@ struct Arguments {
   const float* contact_radius = nullptr;
   const float* descriptor_gradient = nullptr;
   const float* state = nullptr;
+  // Device word that stays zero while every node of the system carries the
+  // type of node zero. A canonical launch of such a system scans the bare
+  // radial features; null disables that scan.
+  const int* type_mismatch = nullptr;
+  // Largest length-scale radius among the node types of the system, written
+  // on the device by the scan of the node types that precedes the edge kernels
+  // of a canonical launch, or null. No bond of a row lies inside a bridging
+  // window once it is at least `f_outer` times the sum of the centre radius
+  // and this radius long, so the edge scans resolve the window of a pair only
+  // for the shorter bonds of the row.
+  const float* largest_radius = nullptr;
 
   // === Native spin ===
   // Present together or not at all. ``spin`` is indexed by absolute node id,
@@ -116,13 +163,81 @@ struct Arguments {
   float* descriptor = nullptr;
   float* state_out = nullptr;
   float* moment_gradient = nullptr;
+  // Per-edge energy cotangent. A null pointer skips the store, which a
+  // backward that assembles the force itself only needs for the per-atom
+  // virial.
   float* edge_gradient = nullptr;
   // Per-node on-site magnetic gradient and the per-edge contribution to the
   // source node's magnetic gradient. The latter is reduced onto source nodes
-  // by the shared edge force assembly, which already walks the source CSR.
+  // either by the shared edge force assembly, which walks the source CSR, or
+  // by the fused assembly below.
   float* spin_gradient = nullptr;
   float* edge_spin_gradient = nullptr;
+
+  // === Fused force assembly ===
+  // Present together or not at all. The edge backward then closes the
+  // conservative force and the virial itself:
+  //
+  //   force[i] = sum(dst=i) g_e - sum(src=i) g_e
+  //   W_i      = sum(dst=i) -g_e (x) r_e
+  //
+  // ``force`` and, for a spin-conditioned launch, ``spin_force`` (the source
+  // totals of the magnetic edge cotangent) hold signed fixed-point sums in
+  // units of ``1 / kForceFixedScale`` over the absolute node axis, like
+  // ``atype``, because the source half lands on nodes of other runs; node
+  // ``n`` owns the ``kForceWords`` words from ``n * kForceWords``.
+  // ``node_virial`` holds the nine destination-attributed components of each
+  // node of the run, offset by the caller like ``descriptor``.
+  unsigned long long* force = nullptr;
+  unsigned long long* spin_force = nullptr;
+  float* node_virial = nullptr;
+
+  // === Node types of the system ===
+  // Bitmap of the node types of the system, `kTypeWords` device words in
+  // which bit `t % 32` of word `t / 32` is set when a node carries type `t`,
+  // written by the scan of the node types that also writes `type_mismatch`.
+  // A canonical launch of a system of a few types slots the mode profiles
+  // and the low-rank basis functions of every edge by the type of its source
+  // (see `TypeSlots`). It is null, which disables the slotted scans, for a
+  // launch that is not canonical, of more types than the bitmap covers, the
+  // padding type included, of more than `kFoldedModes` radial modes, of a
+  // descriptor without modes and without a low-rank table, and under the
+  // `DP_DPA4C_TYPE_SLOTS` override.
+  const unsigned* type_present = nullptr;
 };
+
+/// Resolution of the fixed-point force sums, 2^32 per unit.
+///
+/// Integer addition is associative, so the totals do not depend on the order
+/// in which concurrent atomics land and the force is reproducible bit for bit.
+/// Each contribution is rounded to the nearest multiple of 2^-32 eV/Å, an
+/// absolute error of at most 1.2e-10 eV/Å that lies below its fp32 rounding
+/// once it exceeds about 2e-3 eV/Å, and a node keeps a range of 2^31 eV/Å
+/// (see kForceFixedLimit).
+constexpr float kForceFixedScale = 4294967296.0f;
+
+/// Fixed-point words per node of the force sums: the three components and the
+/// range word, so that the 32 bytes of a node fill exactly one sector. The
+/// three atomics an edge adds onto its source then land in one sector and
+/// travel in one instruction, which is what bounds the source scatter of the
+/// edge backward.
+constexpr int kForceWords = 4;
+
+/// Word of the fixed-point totals of a node that a contribution of
+/// kForceFixedLimit or more sets; the node then reports its energy as not a
+/// number, which marks the forces of its frame.
+constexpr int kForceRangeWord = 3;
+
+/// Magnitude in eV/Å from which a force contribution lies outside the range
+/// of the fixed-point totals: half the range of a node, which every
+/// contribution whose conversion would saturate reaches, while any two
+/// contributions below it sum within the range. The check covers each
+/// contribution: a total that leaves the range through three or more
+/// contributions below the limit is not detected, which takes three
+/// neighbours of one atom within 0.001 Å (carbon) to 0.01 Å (uranium) of it
+/// under the unscreened Coulomb repulsion, and closer under any screened pair
+/// term.
+constexpr float kForceFixedLimit = 1073741824.0f;
 
 // === Compile-time descriptor profile ===
 
@@ -140,6 +255,28 @@ constexpr int degree_one_width(int channels) {
 constexpr int degree_two_width(int channels) {
   const int width = degree_one_width(channels) >> 1;
   return width < 4 ? 4 : width;
+}
+
+// Functions on which the single-type and slotted scans expand the
+// scalar-only channels, the channels from ``C1`` on that feed degree zero
+// alone.
+//
+// The radial map of a trained descriptor spans far fewer independent functions
+// than it has channels: on the released checkpoints the largest singular value
+// of its scalar-only channels that a 32-function basis discards lies more than
+// nine orders of magnitude below the leading one, and the basis reproduces
+// every channel and its radial derivative to the rounding of the
+// single-precision table. A scan that accumulates the basis functions instead
+// of the channels reads that many table columns per edge instead of
+// ``C0 - C1``, and the expansion runs once per node, or once per node type of
+// the system in a slotted scan. The width is a multiple of every edge-group
+// width of these profiles, so the basis columns tile the lanes evenly.
+// Narrower profiles have too few scalar-only channels for an expansion
+// to save reads. The compression adopts the basis only when it reproduces the
+// channels of the descriptor at hand, so a model of higher rank keeps the
+// direct scan.
+constexpr int low_rank_basis(int channels) {
+  return channels == 64 || channels == 128 ? 32 : 0;
 }
 
 constexpr int degree_rank(int degree, int rank_one, int rank_two) {
@@ -284,6 +421,36 @@ struct EdgeMap<128> {
   static constexpr int SpinBackward = 8;
 };
 
+// Co-scheduled rows of the canonical edge scans.
+//
+// An edge reads one row of the radial table, and the row is served from L1
+// only while the warps resident on a multiprocessor read nearby rows at the
+// same time. A destination row is sorted by bond length, so a warp sweeps the
+// table from short to long bonds, and warps that start their rows together
+// stay in step. One warp per block lets the block scheduler stagger the
+// resident warps until they read unrelated rows, and a wide table then
+// streams from L2 once per edge. The scans of the wide profiles therefore
+// give one block `Warps` consecutive destination rows, enough warps to fill a
+// multiprocessor on its own, and realign them at bond-length intervals of
+// `kLockstepWindow` with a block barrier. The narrow profiles hold their
+// table in L1 under any schedule and keep blocks of independent rows, as does
+// every system too small to give each multiprocessor two co-scheduled blocks,
+// unless the split scans share its rows among several warps (`row_split`).
+// The widths are the measured optima on disordered diamond carbon; the
+// backward of the high-degree profiles needs the realignment one profile
+// earlier because its edges carry more work between table reads. A spin
+// profile realigns where its spin-free counterpart does, in blocks of fewer
+// rows (`coscheduled_warps`).
+template <int Channels, int Lmax, bool Backward>
+struct Lockstep {
+  static constexpr int Warps =
+      Channels >= 128 || (Backward && Channels >= 64 && Lmax >= 3) ? 24 : 1;
+};
+
+/// Bond-length interval in Å between two realignments of the co-scheduled
+/// rows of one block.
+constexpr float kLockstepWindow = 4.0f;
+
 // ``HasSpin`` is deliberately without a default. It changes the moment
 // layout and the descriptor width, so an instantiation that omits it would
 // silently read a spin-free layout out of a spin-conditioned buffer.
@@ -297,6 +464,10 @@ struct Profile {
   static constexpr int C2 = degree_two_width(Channels);
   static constexpr int K1 = C2;
   static constexpr int K2 = 2;
+  // Width of the low-rank expansion of the scalar-only channels, zero for a
+  // profile whose single-type scan reads the channels directly. The spin
+  // branch never folds, so a spin-conditioned profile carries none.
+  static constexpr int Basis = HasSpin ? 0 : low_rank_basis(Channels);
 
   // === Native spin widths ===
   // The neighbour spin width is derived from the degree-two width, so the
@@ -394,27 +565,16 @@ struct Profile {
   static constexpr int Threads = kWarpSize;
 };
 
-/// Resident blocks an edge kernel is compiled for, passed as the minimum block
-/// count of its launch bounds.
-///
-/// A block is one warp, so the count sets the register budget per thread:
-/// thirty-two blocks exhaust the 65,536-register file at sixty-four registers
-/// per thread, and a lower count raises the budget in proportion at the cost of
-/// occupancy. Zero sets no budget and leaves the register count to the
-/// compiler.
-template <int Channels, int Lmax, bool HasModes, bool HasSpin>
+/// Resident warps per multiprocessor an edge kernel is compiled for. A kernel
+/// of blocks of W warps passes the count divided by W as the minimum block
+/// count of its launch bounds, so the count sets the register budget per
+/// thread: thirty-two warps exhaust the 65,536-register file at sixty-four
+/// registers per thread, and a lower count raises the budget in proportion at
+/// the cost of occupancy. Zero sets no budget and leaves the register count to
+/// the compiler. The comments below count one-warp blocks, which a
+/// multiprocessor holds as many of as its block limit allows.
+template <int Channels, int Lmax, bool HasModes, bool HasSpin, bool Backward>
 constexpr int edge_resident_blocks() {
-  // Measured on compute capability 9.0, degree two holds its geometric working
-  // set in sixty-four registers and spills only what the five spin families
-  // add, so twenty-four blocks buy eighty registers, remove the spill outright
-  // and are worth 2.0% to 4.5% of the step. Degree three overflows the budget
-  // on geometry alone -- it spills without the spin branch and still spills at
-  // eighty and at ninety-six registers -- so the occupancy it would give up
-  // buys an incomplete fix and costs 7.4% to 9.6%. The relief is therefore
-  // taken only where it is complete.
-  if (HasSpin && Lmax == 2) {
-    return 24;
-  }
 #if defined(__CUDA_ARCH__) && \
     (__CUDA_ARCH__ == 890 || (__CUDA_ARCH__ >= 1200 && __CUDA_ARCH__ < 1300))
   // A multiprocessor of compute capability 8.9 or 12.x holds at most
@@ -426,24 +586,76 @@ constexpr int edge_resident_blocks() {
   // compiler's own count, which keeps the spin families in registers and suits
   // the narrow profiles, whose two-lane edge groups keep sixteen edges in
   // flight per warp.
+  //
+  // The spin kernels keep the budget where their working set fits eighty
+  // registers, which on 12.0 holds for the degree-two forward kernels and for
+  // the degree-two backward kernels of sixty-four channels and more. The
+  // others, whose geometric state at degree three or whose spin payload on
+  // lanes that own few channels exceeds eighty registers, run fastest on the
+  // compiler's own count.
+  if (HasSpin) {
+    return Lmax == 2 && (!Backward || Channels >= 64) ? 24 : 0;
+  }
   return HasModes && Channels >= 64 ? 24 : 0;
+#elif defined(__CUDA_ARCH__) && \
+    (__CUDA_ARCH__ == 750 || __CUDA_ARCH__ == 860 || __CUDA_ARCH__ == 870)
+  // A multiprocessor of compute capability 7.5, 8.6 or 8.7 holds at most
+  // sixteen blocks, which leaves a one-warp block 128 registers, more than
+  // any edge kernel takes, so the one-warp kernels keep the compiler's own
+  // count there. A co-scheduled block of twenty-four warps is bounded by its
+  // thread count alone, at eighty registers, and one of twenty, at ninety-six,
+  // on every architecture.
+  return 0;
 #else
-  return 32;
+  // Measured on compute capability 9.0, degree two holds its geometric working
+  // set in sixty-four registers and spills only what the five spin families
+  // add, so twenty-four blocks buy eighty registers, remove the spill outright
+  // and are worth 2.0% to 4.5% of the step. Degree three overflows the budget
+  // on geometry alone -- it spills without the spin branch and still spills at
+  // eighty and at ninety-six registers -- so the occupancy it would give up
+  // buys an incomplete fix and costs 7.4% to 9.6%. The relief is therefore
+  // taken only where it is complete.
+  return HasSpin && Lmax == 2 ? 24 : 32;
 #endif
 }
 
-/// Scalar widths that own a compiled specialization.
+/// Resident warps per multiprocessor a slotted edge kernel is compiled for
+/// (see `edge_resident_blocks`), for blocks of `CoscheduledWarps` co-scheduled
+/// rows, or zero for blocks of independent or shared rows. The slots add one
+/// set of sums per slot to the state of a lane. A co-scheduled block fills a
+/// multiprocessor alone, so its rows are the resident warps, and its thread
+/// count sets the register budget. The other scans that slot the mode
+/// profiles keep sixteen resident warps, which the 65,536-register file of
+/// every supported architecture gives 128 registers per thread, and those
+/// that slot the basis functions alone keep twenty, 96 registers per thread;
+/// a block of one row shared by eight warps, a width that does not divide
+/// twenty, keeps sixteen there as well.
+template <bool HasModes, int CoscheduledWarps>
+constexpr int slot_resident_warps() {
+  if constexpr (CoscheduledWarps > 0) {
+    return CoscheduledWarps;
+  } else {
+    return HasModes ? 16 : 20;
+  }
+}
+
+/// Scalar widths that own a compiled specialization. Each width, with every
+/// degree that graph_compress.cu dispatches, owns instantiations in a shard
+/// that source/op/pt/CMakeLists.txt generates; a width or degree is added in
+/// both places, and a Linux build that misses one fails at the link of the
+/// operator library.
 #define DPA4C_FOR_EACH_CHANNEL(macro) \
   macro(8) macro(16) macro(32) macro(64) macro(128)
 
-#define DPA4C_DECLARE_CHANNEL(width)                        \
-  void launch_forward_c##width(const Arguments& arguments,  \
-                               cudaStream_t stream);        \
-  void launch_backward_c##width(const Arguments& arguments, \
-                                cudaStream_t stream);
-
-DPA4C_FOR_EACH_CHANNEL(DPA4C_DECLARE_CHANNEL)
-
-#undef DPA4C_DECLARE_CHANNEL
+/// One direction of the descriptor for one scalar width and angular degree.
+/// The angular degree is a compile-time specialization because degrees three
+/// and four add moment accumulators that must not enter the register budget
+/// of the production ``lmax=2`` path. Every width of DPA4C_FOR_EACH_CHANNEL
+/// and every degree from 2 to 4 is instantiated, both directions of a degree
+/// in one generated translation unit (shard.cu.in).
+template <int Channels, int Lmax>
+void launch_forward(const Arguments& arguments, cudaStream_t stream);
+template <int Channels, int Lmax>
+void launch_backward(const Arguments& arguments, cudaStream_t stream);
 
 }  // namespace deepmd_dpa4c

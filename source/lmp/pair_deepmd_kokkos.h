@@ -102,8 +102,11 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // Model outputs on the device. Energy is per local atom; force and virial
   // span the model node set (up to ``nall`` under domain decomposition).
   Kokkos::View<double*, DeviceType> d_atom_energy;  // (nlocal)
-  Kokkos::View<double*, DeviceType> d_out_force;    // (3 * nall)
-  Kokkos::View<double*, DeviceType> d_atom_virial;  // (9 * nall)
+  Kokkos::View<double*, DeviceType> d_out_force;    // (3 * nnode_model)
+  Kokkos::View<double*, DeviceType> d_atom_virial;  // (9 * nnode_model)
+  // Virial of the whole compact canonical graph, which that artifact returns
+  // alongside the per-node outputs.
+  Kokkos::View<double[9], DeviceType> d_graph_virial;
   DAT::tdual_double_1d
       k_reverse_virial;  // (9 * nall), atom-order ghost contributions
 
@@ -118,9 +121,12 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   typename AT::t_kkacc_1d d_eatom;
 #endif
 
-  int edge_capacity;       // allocated edges in d_edge_index / d_edge_vec
-  bool edge_vec_fp32;      // model graph ABI consumes edge vectors in fp32
-  bool canonical_graph;    // compact source-only graph artifact
+  int edge_capacity;     // allocated edges in d_edge_index / d_edge_vec
+  bool edge_vec_fp32;    // model graph ABI consumes edge vectors in fp32
+  bool canonical_graph;  // compact source-only graph artifact
+  // The canonical artifact reads the source CSR on every call, not only for
+  // the per-atom virial.
+  bool canonical_source_csr;
   bool device_path_ok;     // resolved once in init_style
   bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // force reverse communication selected host staging

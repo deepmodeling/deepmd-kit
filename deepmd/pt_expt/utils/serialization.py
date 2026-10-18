@@ -778,6 +778,10 @@ def _build_canonical_graph_dynamic_shapes(
         min=2,
         max=UINT32_MAX,
     )
+    # The source CSR keeps extents of its own: a caller that declines the
+    # per-atom virial passes two-entry placeholders in its place.
+    source_row_dim = torch.export.Dim("n_source_row", min=2)
+    source_order_dim = torch.export.Dim("n_source_order", min=2, max=UINT32_MAX)
     shapes = (
         {0: node_dim},
         {0: nframes_dim},
@@ -785,8 +789,8 @@ def _build_canonical_graph_dynamic_shapes(
         {0: edge_storage_dim},
         {0: edge_storage_dim},
         {0: node_dim + 1},
-        {0: node_dim + 1},
-        {0: edge_storage_dim},
+        {0: source_row_dim},
+        {0: source_order_dim},
     )
     return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
 
@@ -1212,7 +1216,7 @@ def _collect_metadata(
     }
     if is_spin:
         # The scheme is what selects the serving backend class in C++
-        # (``deepmd_create_deepspin_backend_v1``): "native" is served by
+        # (``deepmd_create_deepspin_backend_v2``): "native" is served by
         # NativeSpinPTExpt, "deepspin" by DeepSpinPTExpt. It is a property of
         # the model alone, orthogonal to ``lower_input_kind`` below.
         meta["spin_scheme"] = spin_scheme
@@ -2783,13 +2787,25 @@ def _deserialize_to_file_pt2(
     aoti_configs["assert_indirect_indexing"] = False
     if is_cuda:
         aoti_configs["realize_opcount_threshold"] = 0
+    # In the compact canonical lower of a compressed descriptor, expressions of
+    # the weights alone, such as the per-type energy bias that the program sums
+    # from two parameters ahead of the fused operator, are evaluated once, by
+    # the first call after the constants are loaded, instead of at every call.
+    # An update of the constants marks them for evaluation again at the next
+    # call, so a charge state applied at run time stays consistent. The setting
+    # applies to the compact canonical lower alone, the program whose constant
+    # updates the tests check; the other packages of the archive keep the
+    # shared options.
+    lower_configs = dict(aoti_configs)
+    if metadata.get("lower_input_kind") in ("dpa1_canonical", "dpa4c_canonical"):
+        lower_configs["aot_inductor.use_runtime_constant_folding"] = True
     log.info(
         "Compiling the AOTInductor package for %s (the slowest freeze stage; "
         "typically several minutes)...",
         _env.DEVICE,
     )
     aoti_compile_and_package(
-        exported, package_path=model_file, inductor_configs=aoti_configs
+        exported, package_path=model_file, inductor_configs=lower_configs
     )
 
     # Charge-state fold. Present only for a compressed charge-conditioned

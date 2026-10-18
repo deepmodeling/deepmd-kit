@@ -20,6 +20,11 @@ if(ENABLE_PYTORCH)
   # BUILD_PT_EXPT is set for the test binary; otherwise pt_expt tests all
   # GTEST_SKIP() with "PyTorch support is not enabled".
   target_link_libraries(runUnitTests_cc "${TORCH_LIBRARIES}")
+  # The device-resident cases order their work on a caller's stream through the
+  # c10 CUDA stream API, which the backend uses under the same condition.
+  if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
+    target_compile_definitions(runUnitTests_cc PRIVATE DEEPMD_TORCH_HAS_CUDA)
+  endif()
 endif()
 if(ENABLE_JAX)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_JAX)

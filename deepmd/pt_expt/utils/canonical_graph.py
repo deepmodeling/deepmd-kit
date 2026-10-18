@@ -26,9 +26,14 @@ UINT32_MAX = (1 << 32) - 1
 class CanonicalGraph:
     """Store a cutoff-compacted destination-major graph without redundant fields.
 
-    The physical edge count is the final value of either CSR row-pointer tensor.
-    The storage edge axis has length ``max(E, 2)``; suffix entries are guards
-    excluded from every CSR row.
+    The physical edge count is the final value of the destination row-pointer
+    tensor. The storage edge axis has length at least ``max(E, 2)``; entries
+    past the physical edges are guards excluded from every CSR row.
+
+    The source CSR serves the consumers that group edges by source: the DPA1
+    force assembly and the source-attributed per-atom virial of DPA4C. A DPA4C
+    graph whose caller declines the per-atom virial may carry two-entry
+    placeholders in its place.
 
     Parameters
     ----------
@@ -44,10 +49,10 @@ class CanonicalGraph:
     destination_row_ptr
         Destination CSR offsets with shape ``(N + 1,)``, int64.
     source_row_ptr
-        Source CSR offsets with shape ``(N + 1,)``, int64.
+        Source CSR offsets with shape ``(N + 1,)``, int64, or a placeholder.
     source_order
         Edge storage positions grouped by source with shape ``(S,)`` and the
-        same dtype as ``source``.
+        same dtype as ``source``, or a placeholder.
     """
 
     n_node: torch.Tensor
@@ -63,7 +68,12 @@ def validate_canonical_graph_shapes(
     graph: CanonicalGraph,
     node_count: int,
 ) -> None:
-    """Validate shape, dtype, and device invariants without reading tensor data."""
+    """Validate shape, dtype, and device invariants without reading tensor data.
+
+    The extents of the source CSR are left to the operators that read it,
+    because a placeholder is a valid source CSR for a DPA4C graph and the
+    deployment trace keeps its extents independent of the node and edge axes.
+    """
     index_dtype = graph.source.dtype
     if index_dtype != torch.uint32:
         raise ValueError("canonical graph source must be uint32")
@@ -78,8 +88,8 @@ def validate_canonical_graph_shapes(
         or graph.source_row_ptr.dtype != torch.int64
     ):
         raise ValueError("canonical graph row pointers must be int64")
-    if graph.source.ndim != 1 or graph.source_order.shape != graph.source.shape:
-        raise ValueError("canonical graph source arrays must share shape (S,)")
+    if graph.source.ndim != 1 or graph.source_order.ndim != 1:
+        raise ValueError("canonical graph source arrays must be one-dimensional")
     if graph.edge_vec.shape != (graph.source.shape[0], 3):
         raise ValueError("canonical graph edge_vec must have shape (S, 3)")
     if graph.source.shape[0] < 2:
@@ -88,8 +98,8 @@ def validate_canonical_graph_shapes(
         raise ValueError("canonical graph edge storage exceeds the uint32 range")
     if graph.destination_row_ptr.shape != (node_count + 1,):
         raise ValueError("destination_row_ptr must have shape (N + 1,)")
-    if graph.source_row_ptr.shape != (node_count + 1,):
-        raise ValueError("source_row_ptr must have shape (N + 1,)")
+    if graph.source_row_ptr.ndim != 1:
+        raise ValueError("source_row_ptr must be one-dimensional")
     if graph.n_node.shape != graph.n_local.shape or graph.n_node.ndim != 1:
         raise ValueError("n_node and n_local must share shape (nf,)")
     devices = {

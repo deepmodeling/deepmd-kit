@@ -583,6 +583,51 @@ def test_compact_canonical_graph_export(
 
 
 @_GPU
+@pytest.mark.parametrize("channels", [8, 64])  # compressed channel width
+def test_compact_canonical_export_accepts_source_csr_placeholders(
+    monkeypatch: pytest.MonkeyPatch,
+    channels: int,
+) -> None:
+    """The exported compact lower takes placeholders for the source CSR.
+
+    The source CSR keeps extents of its own in the export, so a caller that
+    declines the per-atom virial passes two-entry placeholders in its place.
+    The program then returns a zero per-atom virial and every other output of
+    the complete graph unchanged.
+    """
+    from deepmd.pt_expt.utils.serialization import (
+        build_synthetic_canonical_graph_inputs,
+    )
+
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    model = get_model(_compressed_config(channels)).to("cpu").eval()
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    exported, _metadata, _model_json, _output_keys = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="dpa4c_canonical",
+        do_atomic_virial=True,
+    )
+    # Storage past the real edges holds guard rows, so a generous edge axis
+    # keeps every edge of the synthetic system. The inputs reside on the
+    # device the program was exported for.
+    device = next(
+        node.meta["val"].device
+        for node in exported.graph_module.graph.nodes
+        if node.op == "placeholder"
+    )
+    inputs = build_synthetic_canonical_graph_inputs(model, 4096, device=device)
+    program = exported.module()
+    complete = program(*inputs)
+    declined = program(*inputs[:6], inputs[6].new_zeros(2), inputs[7].new_zeros(2))
+    assert complete["atom_virial"].any()
+    assert not declined["atom_virial"].any()
+    assert declined.keys() == complete.keys()
+    for key, value in complete.items():
+        if key != "atom_virial":
+            assert torch.equal(declined[key], value), key
+
+
+@_GPU
 @pytest.mark.parametrize("channels", [8, 64, 128])  # compressed channel width
 def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     model = get_model(_compressed_config(channels)).to("cpu").eval()
@@ -840,15 +885,18 @@ def test_compressed_spin_lowers_match_autograd(
         do_atomic_virial=False,
         spin=spin,
     )
+    # The canonical operator returns its fixed-point force sums in fp64.
     torch.testing.assert_close(
         canonical["force_mag"].reshape(-1, 3),
         reference["energy_derv_r_mag"].reshape(-1, 3),
         atol=8e-6,
         rtol=1e-4,
+        check_dtype=False,
     )
     torch.testing.assert_close(
         canonical["force"].reshape(-1, 3),
         reference["energy_derv_r"].reshape(-1, 3),
         atol=8e-6,
         rtol=1e-4,
+        check_dtype=False,
     )

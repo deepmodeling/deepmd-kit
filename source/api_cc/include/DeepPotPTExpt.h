@@ -14,6 +14,8 @@
 
 #include <torch/torch.h>
 
+#include <mutex>
+
 #include "DeepPot.h"
 #include "graph_assembly.h"
 
@@ -22,6 +24,7 @@
 namespace deepmd::ptexpt {
 class TempFile;
 class ChargeStateFold;
+class GraphReplay;
 }  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
@@ -375,6 +378,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                          const InputNlist* comm_nlist) override;
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
+                                   double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
                                    const std::uint32_t* d_source,
@@ -384,7 +388,8 @@ class DeepPotPTExpt : public DeepPotBackend {
                                    const std::uint32_t* d_source_order,
                                    const int nloc,
                                    const int nall_nodes,
-                                   const std::int64_t edge_storage) override;
+                                   const std::int64_t edge_storage,
+                                   void* stream) override;
   /**
    * @brief FP32 edge-vector overload for compressed graph artifacts.
    *
@@ -413,6 +418,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    */
   bool uses_fp32_edge_vectors() const override;
   bool uses_canonical_graph_inference() const override;
+  bool canonical_graph_requires_source_csr() const override;
 
  private:
   template <typename EDGE_TYPE>
@@ -432,6 +438,7 @@ class DeepPotPTExpt : public DeepPotBackend {
   void compute_canonical_graph_gpu_impl(
       double* d_atom_energy,
       double* d_force,
+      double* d_virial,
       double* d_atom_virial,
       const std::int64_t* d_atype,
       const std::uint32_t* d_source,
@@ -441,7 +448,8 @@ class DeepPotPTExpt : public DeepPotBackend {
       const std::uint32_t* d_source_order,
       const int nloc,
       const int nall_nodes,
-      const std::int64_t edge_storage);
+      const std::int64_t edge_storage,
+      void* stream);
   bool inited;
   // Every width below is a property of the loaded archive.  They read as zero
   // until ``init`` has run, so that a query on an uninitialised backend
@@ -472,6 +480,13 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool lower_input_is_edge_ = false;
   bool lower_input_is_graph_ = false;
   bool lower_input_is_canonical_ = false;
+  // Whether the canonical force assembly groups edges by source, which makes
+  // the source CSR an input of every evaluation rather than of the per-atom
+  // virial alone.
+  bool canonical_requires_source_csr_ = false;
+  // Two-entry source CSR placeholders that decline the per-atom virial.
+  at::Tensor source_row_placeholder_;
+  at::Tensor source_order_placeholder_;
   bool graph_edge_fp32_ = false;
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
@@ -480,6 +495,15 @@ class DeepPotPTExpt : public DeepPotBackend {
   at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // CUDA-graph replay of repeated device-resident canonical evaluations,
+  // declared after the loader so that the graph is released before the
+  // constants it reads.
+  std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
+  // Serializes the runs of the model, which runs on a single-threaded runner,
+  // the device-resident entry points, whose replay of canonical evaluations
+  // keeps its graph across calls, and the replacement of the constants. The
+  // mutex is recursive because a replayed evaluation enters the runner again.
+  std::recursive_mutex evaluation_mutex_;
   // Optional AOTInductor artifact for multi-rank message-passing inference,
   // loaded only when the .pt2 metadata declares ``has_comm_artifact``. It is
   // required when ghost features must be exchanged across ranks inside the

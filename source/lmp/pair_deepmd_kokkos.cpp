@@ -34,6 +34,7 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
       edge_capacity(0),
       edge_vec_fp32(false),
       canonical_graph(false),
+      canonical_source_csr(false),
       device_path_ok(false),
       reverse_virial(false),
       reverse_used_host(false) {
@@ -177,6 +178,13 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   if (std::is_same<DeviceType, LMPHostType>::value) {
     error->all(FLERR, "pair style deepmd/kk runs on the GPU backend only.");
   }
+  // The constructor runs before LAMMPS confirms that KOKKOS is enabled, so
+  // the virial of the graph is allocated here, once: its address stays fixed
+  // from run to run, as the replay of a graph without halo nodes keys on it.
+  if (!d_graph_virial.is_allocated()) {
+    d_graph_virial =
+        Kokkos::View<double[9], DeviceType>("deepmd/kk:graph_virial");
+  }
   device_path_ok = deep_pot.supports_device_edge_inference();
   if (!device_path_ok) {
     error->all(
@@ -212,6 +220,7 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   request->enable_full();
   edge_vec_fp32 = deep_pot.uses_fp32_edge_vectors();
   canonical_graph = deep_pot.uses_canonical_graph_inference();
+  canonical_source_csr = deep_pot.canonical_graph_requires_source_csr();
   // Force exchange transfers three values per atom. Centroid per-atom virial
   // uses nine values even though the Kokkos full-list request runs newton off,
   // so comm_reverse_off reserves the classic host buffer for the wider mode.
@@ -432,8 +441,11 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     d_eatom = k_eatom.template view<DeviceType>();
   }
   int nedge = 0;
+  // The source CSR feeds the source-attributed per-atom virial, and every
+  // force assembly of an artifact that groups edges by source.
+  const bool source_csr = canonical_source_csr || cvflag_atom;
   if (canonical_graph) {
-    compact_graph.build(list, cutoff, dist_unit_cvt_factor);
+    compact_graph.build(list, cutoff, dist_unit_cvt_factor, source_csr);
   } else {
     nedge = build_edges_device();
   }
@@ -441,29 +453,39 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   const int nnode_m = compact_graph.nnode_model;  // all nodes (force / virial)
 
   // Energy is per local node; force / virial span the model node set, which is
-  // the local atoms (folded) or local + real ghost atoms (extended, up to
-  // nall). The two extents grow independently: under domain decomposition
-  // ``nlocal`` and ``nall`` need not move together, so a shared guard could
-  // leave the energy buffer short when ``nlocal`` grows while ``nall`` does
-  // not.
+  // the local atoms (folded) or local + real ghost atoms (extended). The two
+  // extents grow independently: under domain decomposition ``nlocal`` and the
+  // node count need not move together, so a shared guard could leave the
+  // energy buffer short when ``nlocal`` grows while the node count does not.
+  // Sized by the node set rather than by every atom, the buffers of a folded
+  // run keep their addresses while the ghost count fluctuates, which lets an
+  // unchanged evaluation be replayed.
   const int nall = atom->nlocal + atom->nghost;
   if ((int)d_atom_energy.extent(0) < nlocal) {
     d_atom_energy =
         Kokkos::View<double*, DeviceType>("deepmd/kk:atom_energy", nlocal);
   }
-  if ((int)d_out_force.extent(0) < 3 * nall) {
+  if ((int)d_out_force.extent(0) < 3 * nnode_m) {
     d_out_force =
-        Kokkos::View<double*, DeviceType>("deepmd/kk:out_force", 3 * nall);
+        Kokkos::View<double*, DeviceType>("deepmd/kk:out_force", 3 * nnode_m);
     d_atom_virial =
-        Kokkos::View<double*, DeviceType>("deepmd/kk:atom_virial", 9 * nall);
+        Kokkos::View<double*, DeviceType>("deepmd/kk:atom_virial", 9 * nnode_m);
   }
   if (cvflag_atom && multi_rank && (int)k_reverse_virial.extent(0) < 9 * nall) {
     k_reverse_virial =
         DAT::tdual_double_1d("deepmd/kk:reverse_virial", 9 * nall);
   }
-  Kokkos::deep_copy(d_out_force, 0.0);
-  Kokkos::deep_copy(d_atom_energy, 0.0);
-  Kokkos::deep_copy(d_atom_virial, 0.0);
+  // The canonical evaluation overwrites every output entry the step reads,
+  // so only its absence leaves outputs to clear; the virial of the graph is
+  // read on the canonical path alone.
+  if (!canonical_graph || nnode_m == 0) {
+    Kokkos::deep_copy(d_out_force, 0.0);
+    Kokkos::deep_copy(d_atom_energy, 0.0);
+    Kokkos::deep_copy(d_atom_virial, 0.0);
+  }
+  if (canonical_graph && nnode_m == 0) {
+    Kokkos::deep_copy(d_graph_virial, 0.0);
+  }
 
   atomKK->sync(execution_space, X_MASK | TYPE_MASK);
   auto x = atomKK->k_x.template view<DeviceType>();
@@ -523,12 +545,17 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   if ((canonical_graph && nnode_m > 0) ||
       (!canonical_graph && (nloc_m > 0 || comm_ptr != nullptr))) {
     // Fully device-resident inference: raw device pointers in and out. The
-    // edge buffers are produced on the Kokkos stream and consumed by the model
-    // on PyTorch's stream, and the outputs flow back to the Kokkos scatter, so
-    // the two runtimes are bracketed by explicit synchronization: fence the
-    // Kokkos work before the model reads the edges, and synchronize the device
-    // after so the scatter sees the finished model outputs.
-    Kokkos::fence();
+    // compact canonical model is enqueued on the Kokkos stream that builds its
+    // graph and scatters its forces, so the three stay ordered without a host
+    // synchronization. The edge-input models, and every model of an execution
+    // space without a CUDA stream to share, run on PyTorch's own stream, so
+    // the Kokkos work is fenced before the model reads the edges, and the
+    // model synchronizes the device before returning its outputs.
+    void* const model_stream =
+        compact_canonical_stream(typename DeviceType::execution_space());
+    if (!canonical_graph || model_stream == nullptr) {
+      Kokkos::fence();
+    }
     // Coordinates are model-node order: the compacted buffer when virtual atoms
     // are present, else the local coordinates directly (the graph lower ignores
     // them; edge-input models consume them).
@@ -537,13 +564,14 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     try {
       if (canonical_graph) {
         deep_pot.compute_canonical_graph_gpu(
-            d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
+            d_atom_energy.data(), d_out_force.data(), d_graph_virial.data(),
+            cvflag_atom ? d_atom_virial.data() : nullptr,
             compact_graph.d_model_type.data(), compact_graph.d_source.data(),
             compact_graph.d_edge_vec.data(),
             compact_graph.d_destination_row_ptr.data(),
-            compact_graph.d_source_row_ptr.data(),
-            compact_graph.d_source_order.data(), nloc_m, nnode_m,
-            compact_graph.storage_count);
+            source_csr ? compact_graph.d_source_row_ptr.data() : nullptr,
+            source_csr ? compact_graph.d_source_order.data() : nullptr, nloc_m,
+            nnode_m, compact_graph.storage_count, model_stream);
       } else if (edge_vec_fp32) {
         deep_pot.compute_edges_gpu(d_atom_energy.data(), d_out_force.data(),
                                    d_atom_virial.data(), coord_ptr,
@@ -621,22 +649,31 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   }
 
   if (vflag_global) {
-    // Sum the per-node 9-component virial and map to the LAMMPS global 6
-    // (xx, yy, zz, xy, xz, yz), matching the standalone pair's index map. The
-    // sum spans all nodes (local + extended ghost) so the reduction equals the
-    // model's reduced virial for this rank's local-centered edges.
-    auto atom_virial = d_atom_virial;
+    // Map the 9-component virial to the LAMMPS global 6 (xx, yy, zz, xy, xz,
+    // yz), matching the standalone pair's index map. The canonical artifact
+    // returns it for the whole graph; otherwise the per-node virial is summed
+    // over all nodes (local + extended ghost), which equals the model's
+    // reduced virial for this rank's local-centered edges.
     const int comp[6] = {0, 4, 8, 3, 6, 7};
-    for (int k = 0; k < 6; ++k) {
-      const int off = comp[k];
-      double vsum = 0.0;
-      Kokkos::parallel_reduce(
-          "deepmd/kk:vsum", Kokkos::RangePolicy<DeviceType>(0, nnode_m),
-          KOKKOS_LAMBDA(const int m, double& acc) {
-            acc += atom_virial(9 * m + off);
-          },
-          vsum);
-      virial[k] += scale[1][1] * vsum * ener_unit_cvt_factor;
+    if (canonical_graph) {
+      auto h_virial = Kokkos::create_mirror_view(d_graph_virial);
+      Kokkos::deep_copy(h_virial, d_graph_virial);
+      for (int k = 0; k < 6; ++k) {
+        virial[k] += scale[1][1] * h_virial(comp[k]) * ener_unit_cvt_factor;
+      }
+    } else {
+      auto atom_virial = d_atom_virial;
+      for (int k = 0; k < 6; ++k) {
+        const int off = comp[k];
+        double vsum = 0.0;
+        Kokkos::parallel_reduce(
+            "deepmd/kk:vsum", Kokkos::RangePolicy<DeviceType>(0, nnode_m),
+            KOKKOS_LAMBDA(const int m, double& acc) {
+              acc += atom_virial(9 * m + off);
+            },
+            vsum);
+        virial[k] += scale[1][1] * vsum * ener_unit_cvt_factor;
+      }
     }
   }
 

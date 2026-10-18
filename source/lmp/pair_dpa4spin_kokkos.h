@@ -94,9 +94,11 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // force and virial span the model node set (up to ``nall`` under domain
   // decomposition).
   Kokkos::View<double*, DeviceType> d_atom_energy;    // (nlocal)
-  Kokkos::View<double*, DeviceType> d_out_force;      // (3 * nall)
-  Kokkos::View<double*, DeviceType> d_out_force_mag;  // (3 * nall)
-  Kokkos::View<double*, DeviceType> d_atom_virial;    // (9 * nall)
+  Kokkos::View<double*, DeviceType> d_out_force;      // (3 * nnode_model)
+  Kokkos::View<double*, DeviceType> d_out_force_mag;  // (3 * nnode_model)
+  Kokkos::View<double*, DeviceType> d_atom_virial;    // (9 * nnode_model)
+  // Virial of the whole compact canonical graph.
+  Kokkos::View<double[9], DeviceType> d_graph_virial;
   DAT::tdual_double_1d
       k_reverse_virial;  // (9 * nall), atom-order ghost contributions
 

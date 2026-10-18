@@ -659,6 +659,7 @@ void DeepPotBackend::compute_edges_gpu(double* d_atom_energy,
 void DeepPotBackend::compute_canonical_graph_gpu(
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
     const std::uint32_t* d_source,
@@ -668,9 +669,11 @@ void DeepPotBackend::compute_canonical_graph_gpu(
     const std::uint32_t* d_source_order,
     const int nloc,
     const int nall_nodes,
-    const std::int64_t edge_storage) {
+    const std::int64_t edge_storage,
+    void* stream) {
   (void)d_atom_energy;
   (void)d_force;
+  (void)d_virial;
   (void)d_atom_virial;
   (void)d_atype;
   (void)d_source;
@@ -681,12 +684,17 @@ void DeepPotBackend::compute_canonical_graph_gpu(
   (void)nloc;
   (void)nall_nodes;
   (void)edge_storage;
+  (void)stream;
   throw deepmd::deepmd_exception(
       "compact canonical graph inference is only supported by a compatible "
       "PyTorch Exportable backend.");
 }
 
 bool DeepPotBackend::uses_fp32_edge_vectors() const { return false; }
+
+bool DeepPotBackend::canonical_graph_requires_source_csr() const {
+  return false;
+}
 
 bool DeepPotBackend::supports_device_edge_inference() const { return false; }
 
@@ -748,6 +756,7 @@ void DeepPot::compute_edges_gpu(double* d_atom_energy,
 void DeepPot::compute_canonical_graph_gpu(
     double* d_atom_energy,
     double* d_force,
+    double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
     const std::uint32_t* d_source,
@@ -757,11 +766,12 @@ void DeepPot::compute_canonical_graph_gpu(
     const std::uint32_t* d_source_order,
     const int nloc,
     const int nall_nodes,
-    const std::int64_t edge_storage) {
+    const std::int64_t edge_storage,
+    void* stream) {
   dp->compute_canonical_graph_gpu(
-      d_atom_energy, d_force, d_atom_virial, d_atype, d_source, d_edge_vec,
-      d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc, nall_nodes,
-      edge_storage);
+      d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
+      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc,
+      nall_nodes, edge_storage, stream);
 }
 
 bool DeepPot::uses_fp32_edge_vectors() const {
@@ -774,6 +784,10 @@ bool DeepPot::supports_device_edge_inference() const {
 
 bool DeepPot::uses_canonical_graph_inference() const {
   return dp->uses_canonical_graph_inference();
+}
+
+bool DeepPot::canonical_graph_requires_source_csr() const {
+  return dp->canonical_graph_requires_source_csr();
 }
 
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }

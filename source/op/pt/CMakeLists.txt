@@ -51,6 +51,15 @@ endif()
 # only within its own subtree, which does not cover this target.
 if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   find_package(CUDAToolkit REQUIRED)
+  # The fused fitting network launches thread-block clusters through
+  # cudaLaunchKernelEx and the cluster occupancy queries, which CUDA 11.8
+  # introduced.
+  if(CUDAToolkit_VERSION VERSION_LESS "11.8")
+    message(
+      FATAL_ERROR
+        "The CUDA operators of the PyTorch backend require CUDA 11.8 or later, "
+        "found CUDA ${CUDAToolkit_VERSION}")
+  endif()
   option(DEEPMD_ENABLE_DPA1_HIGH_LMAX
          "Instantiate experimental DPA1 CUDA kernels for lmax greater than one"
          OFF)
@@ -162,10 +171,62 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   unset(DPA4_TRAIN_TYPE_bf16)
   unset(DPA4_TRAIN_TYPE_f64)
   unset(DPA4_TRAIN_DTYPES)
-  set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC
-      dpa4c/graph_compress.cu dpa4c/graph_compress_c8.cu
-      dpa4c/graph_compress_c16.cu dpa4c/graph_compress_c32.cu
-      dpa4c/graph_compress_c64.cu dpa4c/graph_compress_c128.cu)
+  # The compressed DPA4C descriptor kernels form a compile-time grid over the
+  # scalar width and the angular degree, both directions of a degree sharing
+  # most of their code. They follow the generated-shard layout of the DPA4
+  # training kernels, so that the widest profiles, whose degrees take the
+  # longest to compile, do not serialize behind one nvcc invocation: 64 and 128
+  # channels take one source per degree. A narrower width keeps its degrees in
+  # one source, whose kernels share most of their code, so that its fatbinary,
+  # compressed as one, takes about a third of the size of three. The widths are
+  # those of DPA4C_FOR_EACH_CHANNEL and the degrees those that
+  # dpa4c/graph_compress.cu dispatches.
+  set(DPA4C_GRAPH_COMPRESS_KERNEL_SRC dpa4c/graph_compress.cu)
+  set(DPA4C_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/dpa4c")
+  set(DPA4C_KERNEL_HEADER
+      "${CMAKE_CURRENT_SOURCE_DIR}/dpa4c/graph_compress_kernel.cuh")
+  file(MAKE_DIRECTORY "${DPA4C_GENERATED_DIR}")
+  foreach(DPA4C_SHARD_WIDTH IN ITEMS 8 16 32 64 128)
+    if(DPA4C_SHARD_WIDTH GREATER_EQUAL 64)
+      set(DPA4C_SHARD_GROUPS 2 3 4)
+    else()
+      set(DPA4C_SHARD_GROUPS 234)
+    endif()
+    foreach(DPA4C_SHARD_GROUP IN LISTS DPA4C_SHARD_GROUPS)
+      set(DPA4C_SHARD_INSTANTIATIONS)
+      string(LENGTH "${DPA4C_SHARD_GROUP}" DPA4C_SHARD_DEGREES)
+      math(EXPR DPA4C_SHARD_LAST "${DPA4C_SHARD_DEGREES} - 1")
+      foreach(DPA4C_SHARD_INDEX RANGE ${DPA4C_SHARD_LAST})
+        string(SUBSTRING "${DPA4C_SHARD_GROUP}" ${DPA4C_SHARD_INDEX} 1
+                         DPA4C_SHARD_LMAX)
+        foreach(DPA4C_SHARD_DIRECTION IN ITEMS forward backward)
+          string(
+            APPEND
+            DPA4C_SHARD_INSTANTIATIONS
+            "template void launch_${DPA4C_SHARD_DIRECTION}<"
+            "${DPA4C_SHARD_WIDTH}, ${DPA4C_SHARD_LMAX}>(\n"
+            "    const Arguments& arguments, cudaStream_t stream);\n")
+        endforeach()
+      endforeach()
+      set(DPA4C_SHARD
+          "${DPA4C_GENERATED_DIR}/c${DPA4C_SHARD_WIDTH}_l${DPA4C_SHARD_GROUP}.cu"
+      )
+      configure_file(dpa4c/shard.cu.in "${DPA4C_SHARD}" @ONLY)
+      list(APPEND DPA4C_GRAPH_COMPRESS_KERNEL_SRC "${DPA4C_SHARD}")
+    endforeach()
+  endforeach()
+  unset(DPA4C_SHARD)
+  unset(DPA4C_SHARD_DIRECTION)
+  unset(DPA4C_SHARD_LMAX)
+  unset(DPA4C_SHARD_INDEX)
+  unset(DPA4C_SHARD_LAST)
+  unset(DPA4C_SHARD_DEGREES)
+  unset(DPA4C_SHARD_INSTANTIATIONS)
+  unset(DPA4C_SHARD_GROUP)
+  unset(DPA4C_SHARD_GROUPS)
+  unset(DPA4C_SHARD_WIDTH)
+  unset(DPA4C_KERNEL_HEADER)
+  unset(DPA4C_GENERATED_DIR)
   set(DPA1_GRAPH_COMPRESS_KERNEL_SRC
       dpa1_graph_compress_c8.cu dpa1_graph_compress_c16.cu
       dpa1_graph_compress_c32.cu dpa1_graph_compress_c64.cu
@@ -213,7 +274,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     set_property(TARGET deepmd_op_pt PROPERTY CUDA_ARCHITECTURES
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
-  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublas CUDA::cublasLt)
+  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublasLt)
   # libtorch headers require at least C++17, and PyTorch 2.14+ requires C++20.
   # Preserve an explicitly higher CUDA standard requested by the user.
   set(DEEPMD_PT_CUDA_STANDARD 17)
@@ -239,12 +300,20 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   set_source_files_properties(
     ${DPA4_SO2_CONV_KERNEL_SRC} dpa1_graph_descriptor.cu
     PROPERTIES COMPILE_OPTIONS "--threads=2")
-  # The compressed DPA1 and DPA4C kernels are instantiated one translation unit
-  # per channel width so their angular-degree and topology specializations
-  # compile in parallel.
+  # The compressed DPA1 kernels, instantiated one translation unit per channel
+  # width, and the compressed DPA4C sources -- the generated shards and the
+  # bindings, whose own kernels use double arithmetic and fmaxf alone -- are
+  # compiled with fast math.
   set_source_files_properties(
     ${DPA1_GRAPH_COMPRESS_KERNEL_SRC} ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     PROPERTIES COMPILE_OPTIONS "--use_fast_math")
+  # The DPA4C dispatch names one instantiation per width and degree, which only
+  # the generated shards define. The module is loaded at run time, where a
+  # missing definition would make the loading fail and take every operator of
+  # the library with it, so the link resolves every symbol instead.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_options(deepmd_op_pt PRIVATE "LINKER:--no-undefined")
+  endif()
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
   target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD})
