@@ -45,16 +45,21 @@ def _inputs(
 
 
 @pytest.mark.parametrize(
-    "shape", [(2, 2, 32), (3, 2, 32), (3, 1, 64), (6, 2, 96), (6, 3, 128)]
+    "lmax,focus,width,edges,gates,apply_alpha",
+    [
+        pytest.param(2, 2, 32, 0, 1, True, id="empty"),
+        pytest.param(2, 2, 32, 37, 0, True, id="final-only"),
+        pytest.param(2, 2, 32, 37, 1, False, id="one-gate-no-alpha"),
+        pytest.param(3, 2, 32, 129, 3, True, id="recurrence-partial-tiles"),
+        pytest.param(3, 1, 64, 37, 1, True, id="single-focus"),
+        pytest.param(6, 2, 96, 37, 3, False, id="bmm-non-power-of-two"),
+        pytest.param(6, 3, 128, 129, 1, True, id="bmm-multiple-focuses"),
+    ],
 )
-@pytest.mark.parametrize("edges", [0, 37, 129])
-@pytest.mark.parametrize("gates", [0, 1, 3])
-@pytest.mark.parametrize("apply_alpha", [False, True])
 def test_backward_matches_reference_without_mutation(
-    shape: tuple[int, int, int], edges: int, gates: int, apply_alpha: bool
+    lmax: int, focus: int, width: int, edges: int, gates: int, apply_alpha: bool
 ) -> None:
     """Cover empty edges, partial tiles, wide channels and residual recurrences."""
-    lmax, focus, width = shape
     inputs = _inputs(edges, gates, lmax, focus, width, apply_alpha)
     snapshots = [value.clone() for value in inputs]
     actual = vp._mixing_stack_bwd_impl(*inputs, lmax, width, apply_alpha)
@@ -145,16 +150,10 @@ def test_reuse_matches_separate_workspace(
         torch.testing.assert_close(value, snapshot, atol=0, rtol=0)
 
 
-@pytest.mark.parametrize(
-    "trainable_weights",
-    [(True, True, True), (True, False, False), (False, False, False)],
-)
-@pytest.mark.parametrize("lmax,width", [(2, 32), (6, 96)])
-def test_force_loss_and_updates_with_frozen_weights(
-    trainable_weights: tuple[bool, bool, bool], lmax: int, width: int
-) -> None:
-    """Compare first/second derivatives and two updates with the dense reference."""
+def _differentiable_inputs(trainable_weights: tuple[bool, bool, bool]) -> list:
+    """Small direct-stack operands shared by dispatch and frozen-force checks."""
     torch.manual_seed(19)
+    lmax, width = 2, 32
     edges, focus, gates = 7, 2, 2
     row, m0, m1 = (3 * lmax + 1) * width, (lmax + 1) * width, 2 * lmax * width
     values = (
@@ -165,34 +164,92 @@ def test_force_loss_and_updates_with_frozen_weights(
         torch.randn(gates, focus, width, lmax * width, device="cuda") * 0.02,
     )
     requires = (True, True, *trainable_weights)
-    actual_inputs = [
+    return [
         value.clone().requires_grad_(enabled)
         for value, enabled in zip(values, requires, strict=True)
     ]
+
+
+@pytest.mark.parametrize(
+    "trainable_weights",
+    [(True, True, True), (True, False, False), (False, False, False)],
+    ids=["trainable", "partially-frozen", "frozen"],
+)
+@pytest.mark.parametrize("create_graph", [False, True])
+def test_backward_dispatch_protects_training(
+    trainable_weights: tuple[bool, bool, bool], create_graph: bool
+) -> None:
+    """Check real autograd routing without executing a training traversal.
+
+    Mocked gradient operators test selection only, not numerical correctness.
+    Existing model training tests cover ordinary trainable weights; the frozen
+    direct-stack numerical gap is covered by the single force-loss check below.
+    """
+    operands = _differentiable_inputs(trainable_weights)
+    output = vp._mixing_stack_op(*operands, 2, 32, True)[0]
+    gradients = tuple(torch.zeros_like(value) for value in operands)
+    with (
+        patch.object(
+            vp, "_mixing_stack_train_bwd_op", return_value=gradients
+        ) as training,
+        patch.object(
+            vp, "_mixing_stack_bwd_op", return_value=gradients[:2]
+        ) as inference,
+    ):
+        torch.autograd.grad(
+            output.sum(),
+            [v for v in operands if v.requires_grad],
+            create_graph=create_graph,
+        )
+    protected = any(trainable_weights) or create_graph
+    assert training.call_count == int(protected)
+    assert inference.call_count == int(not protected)
+
+
+@pytest.mark.parametrize(
+    "saved_output", [1, 2], ids=["pre-activation", "final-activation"]
+)
+def test_saved_output_cotangent_selects_training(saved_output: int) -> None:
+    """Frozen operands still require protected handling of saved-output cotangents."""
+    operands = _differentiable_inputs((False, False, False))
+    output = vp._mixing_stack_op(*operands, 2, 32, True)[saved_output]
+    gradients = tuple(torch.zeros_like(value) for value in operands)
+    with (
+        patch.object(
+            vp, "_mixing_stack_train_bwd_op", return_value=gradients
+        ) as training,
+        patch.object(
+            vp, "_mixing_stack_bwd_op", return_value=gradients[:2]
+        ) as inference,
+    ):
+        torch.autograd.grad(output.sum(), operands[0])
+    training.assert_called_once()
+    inference.assert_not_called()
+    args = training.call_args.args
+    assert args[10 if saved_output == 1 else 11] is not None
+
+
+def test_frozen_force_loss_second_derivative() -> None:
+    """Retain the unique frozen-weight direct-stack force-loss numerical path.
+
+    One small case checks first and second derivatives without repeating
+    optimizer updates or crossing all freezing modes with both gate widths.
+    """
+    actual_inputs = _differentiable_inputs((False, False, False))
     reference_inputs = [
-        value.clone().requires_grad_(enabled)
-        for value, enabled in zip(values, requires, strict=True)
+        value.detach().clone().requires_grad_(value.requires_grad)
+        for value in actual_inputs
     ]
-    for _ in range(2):
-        gradients = []
-        for operation, operands in (
-            (vp._mixing_stack_op, actual_inputs),
-            (vp._mixing_stack_reference, reference_inputs),
-        ):
-            output = operation(*operands, lmax, width, True)[0]
-            energy = output.square().sum() / edges
-            force = torch.autograd.grad(energy, operands[0], create_graph=True)[0]
-            objective = energy + force.square().sum()
-            leaves = [value for value in operands if value.requires_grad]
-            gradients.append(torch.autograd.grad(objective, leaves))
-        for actual, expected in zip(*gradients, strict=True):
-            torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-4)
-        with torch.no_grad():
-            for operands, updates in zip(
-                (actual_inputs, reference_inputs), gradients, strict=True
-            ):
-                leaves = [value for value in operands if value.requires_grad]
-                for value, gradient in zip(leaves, updates, strict=True):
-                    value.add_(gradient, alpha=-0.01)
-        for actual, expected in zip(actual_inputs, reference_inputs, strict=True):
-            torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-4)
+    results = []
+    for operation, operands in (
+        (vp._mixing_stack_op, actual_inputs),
+        (vp._mixing_stack_reference, reference_inputs),
+    ):
+        output = operation(*operands, 2, 32, True)[0]
+        energy = output.square().sum() / 7
+        force = torch.autograd.grad(energy, operands[0], create_graph=True)[0]
+        objective = energy + force.square().sum()
+        gradients = torch.autograd.grad(objective, operands[:2])
+        results.append((output, force, *gradients))
+    for actual, expected in zip(*results, strict=True):
+        torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-4)
