@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import (
@@ -7,8 +10,15 @@ from pathlib import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_margin_single,
+    pair_half_thresholds,
+)
 from deepmd.utils.data import (
     DeepmdData,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 
@@ -46,6 +56,70 @@ class TestDeepmdDataTypeMap(unittest.TestCase):
         loaded = data._load_set(self.set_dir)
         expected_sorted = expected_atom_types[data.idx_map]
         np.testing.assert_array_equal(loaded["type"], np.tile(expected_sorted, (1, 1)))
+
+    def test_covalent_margin_without_dataset_type_map(self) -> None:
+        """Model type indices retain their element names without a dataset map."""
+        (self.root / "type_map.raw").unlink()
+        coord = np.array(
+            [[0.0, 0.0, 0.0], [0.4, 0.0, 0.0], [2.0, 0.0, 0.0], [4.0, 0.0, 0.0]]
+        )
+        box = 6.0 * np.eye(3)
+        np.save(self.set_dir / "coord.npy", coord.reshape(1, -1))
+        np.save(self.set_dir / "box.npy", box.reshape(1, 9))
+        type_map = ["O", "H", "Si"]
+        data = DeepmdData(str(self.root), type_map=type_map)
+        data.add("pair_margin", 1, default=0.5, length_scale="covalent")
+        expected = compute_min_pair_margin_single(
+            coord,
+            box,
+            np.array([0, 1, 0, 1]),
+            pair_half_thresholds(0.5, "covalent", type_map),
+            screened=True,
+        )
+        for loaded in (data.get_single_frame(0, num_worker=1), data.get_batch(1)):
+            self.assertEqual(float(loaded["find_pair_margin"]), 1.0)
+            np.testing.assert_allclose(loaded["pair_margin"], expected)
+        self.assertIsNone(data.get_type_map())
+        self.assertEqual(data.get_ntypes(), 2)
+        np.testing.assert_array_equal(data.atom_type, [0, 1, 0, 1])
+
+    def test_required_dataset_type_map_cannot_be_replaced(self) -> None:
+        """A supplied model map does not make a required dataset map optional."""
+        (self.root / "type_map.raw").unlink()
+        with self.assertRaisesRegex(AssertionError, "must have type_map.raw"):
+            DeepmdData(str(self.root), type_map=["O", "H"], optional_type_map=False)
+
+    def test_model_map_preserves_virtual_spin_type_counts(self) -> None:
+        """Unnamed virtual types remain part of the reader's numeric type domain."""
+        fixture_dir = Path(__file__).parent.parent / "tf"
+        model = json.loads((fixture_dir / "test_model_spin.json").read_text())["model"]
+        system = fixture_dir / "model_spin"
+        self.assertFalse((system / "type_map.raw").exists())
+        stored_types = np.loadtxt(system / "type.raw", dtype=np.int32)
+        counts = np.bincount(stored_types)
+        self.assertGreater(len(counts), len(model["type_map"]))
+        data = DeepmdDataSystem(
+            [str(system)], batch_size=1, test_size=1, type_map=model["type_map"]
+        )
+        self.assertEqual(data.get_ntypes(), len(counts))
+        np.testing.assert_array_equal(
+            data.get_batch()["natoms_vec"],
+            np.concatenate(([stored_types.size, stored_types.size], counts)),
+        )
+
+    def test_data_system_imports_without_preloading_dpmodel(self) -> None:
+        """The generic reader imports independently of backend initialization."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from deepmd.utils.data_system import DeepmdDataSystem",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class _RaisingModifier:

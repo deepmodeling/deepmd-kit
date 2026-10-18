@@ -3,6 +3,9 @@
 composition (twin of ``deepmd.pt_expt.model.dp_linear_model``).
 """
 
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
 )
@@ -48,6 +51,12 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
     ) -> None:
         DPModelCommon.__init__(self)
         DPLinearModel_.__init__(self, *args, **kwargs)
+
+    def compute_fitting_input_stats(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> None:
+        """Recompute the input statistics of every learned sub-model's fitting net."""
+        self.atomic_model.compute_fitting_input_stats(sampled_func)
 
     @classmethod
     def update_sel(

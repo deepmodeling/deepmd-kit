@@ -377,6 +377,54 @@ def test_shared_weights_preserve_each_tasks_vacuum_reference() -> None:
             torch.testing.assert_close(actual[name], expected[name])
 
 
+def test_vacuum_descriptor_never_materializes_the_neighbor_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The isolated atoms are evaluated on the graph route, without padding.
+
+    DPA4C reports an unbounded neighbor capacity, so a dense neighbor list of
+    that width would hold one padded edge per slot and per type; the graph
+    route holds no real edge. The result must equal the reference rows the
+    training route appends to a real graph.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    config = _config()
+    config["type_map"] = ["O", "H"]
+    config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
+    config["descriptor"].update({"channels": 8, "lmax": 2})
+    config["fitting_net"].update({"neuron": [8, 8], "vacuum_ref": True})
+    model = get_model(config).to(env.DEVICE).eval()
+    am = model.atomic_model
+    assert am.fitting_net.needs_vacuum_descriptor()
+
+    def dense_call(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the dense adapter must not serve the vacuum descriptor")
+
+    monkeypatch.setattr(am.descriptor, "call", dense_call)
+    vacuum = am.vacuum_descriptor()
+    assert vacuum.shape == (2, am.descriptor.get_dim_out())
+
+    coord = torch.tensor(
+        [[[0.0, 0.0, 0.0], [1.1, 0.2, -0.1], [-0.4, 0.9, 0.3]]],
+        dtype=torch.float64,
+        device=env.DEVICE,
+    )
+    atype = torch.tensor([[0, 1, 1]], dtype=torch.long, device=env.DEVICE)
+    graph = build_neighbor_graph(
+        coord, atype, None, config["descriptor"]["rcut"], with_csr=True
+    )
+    graph, atype_all, _, _ = am.append_vacuum_frames(
+        graph, atype.reshape(-1), None, None
+    )
+    gg, _ = am.descriptor.call_graph(
+        graph, atype_all, type_embedding=am.descriptor.graph_type_embedding_table()
+    )
+    torch.testing.assert_close(vacuum, gg[3:], rtol=0.0, atol=0.0)
+
+
 def test_ragged_and_padded_batches_agree() -> None:
     """The two layouts are two spellings of one batch, so they must agree.
 
@@ -660,11 +708,12 @@ def test_compact_canonical_eligibility_rejects_other_descriptors() -> None:
         canonical_model_eligible,
     )
 
+    learned = SimpleNamespace(
+        descriptor=SimpleNamespace(compress=True),
+        fitting_net=object(),
+    )
     model = SimpleNamespace(
-        atomic_model=SimpleNamespace(
-            descriptor=SimpleNamespace(compress=True),
-            fitting_net=object(),
-        )
+        atomic_model=SimpleNamespace(fused_decomposition=lambda: (learned, None))
     )
     assert not canonical_model_eligible(model)
 

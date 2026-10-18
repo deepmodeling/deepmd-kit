@@ -199,6 +199,28 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return False
 
+    def fused_decomposition(self) -> "tuple[Any, Any] | None":
+        """Returns the parts a fused energy-force pipeline evaluates, if any.
+
+        Such a pipeline computes one descriptor-fitting atomic model and,
+        inside the same edge scan, one analytical pair potential. A model that
+        is exactly their plain sum answers with ``(learned, pair_potential)``,
+        either entry ``None`` when absent; every other model answers ``None``
+        (the concrete default) and keeps the autograd lower.
+
+        Generic capability in the sense of :meth:`uses_graph_lower`: the model
+        layer asks instead of reaching into the atomic model for a descriptor,
+        so the answer stays correct for compositions.
+
+        Returns
+        -------
+        tuple[Any, Any] or None
+            The learned descriptor-fitting atomic model and the analytical
+            pair potential, either ``None`` when absent, or ``None`` for a
+            model that is not such a sum.
+        """
+        return None
+
     def supports_native_spin(self) -> bool:
         """Returns whether this atomic model consumes a per-atom spin input.
 

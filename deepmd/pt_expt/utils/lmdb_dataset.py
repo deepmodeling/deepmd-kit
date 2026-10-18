@@ -232,6 +232,10 @@ class LmdbDataSystem:
         """Return one logical LMDB training dataset."""
         return 1
 
+    def get_batch_pass_length(self) -> int:
+        """Return the local pass length belonging to the last returned batch."""
+        return self._batch_iterator.batch_pass_length
+
     @property
     def nbatches(self) -> list[int]:
         """Return the global batch count of one full pass."""
