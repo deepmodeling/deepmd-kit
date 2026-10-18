@@ -105,7 +105,8 @@ from torch.library import (
 )
 
 from ...utils import (
-    use_stack_bwd_fused,
+    triton_infer_level,
+    triton_train_level,
 )
 from .gated_activation import (
     gated_activation_second_order,
@@ -129,6 +130,7 @@ from .tile_configs import (
     recompute_config,
     rotate_mix_bwd_block_config,
     rotate_mix_fwd_config,
+    stack_bwd_fused_config,
     stack_fp16x3_configs,
     stack_fp32_configs,
     stack_m0_gate_config,
@@ -502,6 +504,23 @@ def _mixing_stack_backward_reference(
 # Triton kernels
 # ======================================================================
 if SO2_VALUE_PATH_TRITON_AVAILABLE:
+
+    @triton.jit
+    def _silu_bwd(g, z):
+        """Cotangent of ``z * sigmoid(z)``: one shared SiLU backward chain.
+
+        The mixing-stack kernels (pointwise backward, training backward and
+        the fused per-layer backward) contract the upstream gradient
+        through the same derivative, so the expression lives here once and
+        inlines into each kernel with an identical instruction tree.
+        """
+        s = tl.sigmoid(z)
+        return g * s * (1.0 + z * (1.0 - s))
+
+    @triton.jit
+    def _sigmoid_bwd(g, sig):
+        """Cotangent through a precomputed sigmoid: ``g * sig * (1 - sig)``."""
+        return g * sig * (1.0 - sig)
 
     @triton.jit
     def _rotate_mix_fwd_kernel(
@@ -1471,11 +1490,14 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
         # the output dtype.
         z_s = tl.load(z_row[:, None] + nc[None, :], mask=cm, other=0.0).to(tl.float32)
         g_s = tl.load(g_row[:, None] + nc[None, :], mask=cm, other=0.0).to(tl.float32)
-        s0 = tl.sigmoid(z_s)
-        gz_s = g_s * s0 * (1.0 + z_s * (1.0 - s0))
+        gz_s = _silu_bwd(g_s, z_s)
         if RECOVER_INPUT:
             un_s = tl.load(un_row[:, None] + nc[None, :], mask=cm, other=0.0)
-            tl.store(up_row[:, None] + nc[None, :], un_s - z_s * s0, mask=cm)
+            tl.store(
+                up_row[:, None] + nc[None, :],
+                un_s - z_s * tl.sigmoid(z_s),
+                mask=cm,
+            )
 
         for g in tl.static_range(L):
             if RECOMPUTE_SIG:
@@ -1540,7 +1562,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                 )
             # Gate path: three value rows share gate group g.
             g_sig = gr0 * zr0 + grn * zrn + grp * zrp
-            g_logit = g_sig * sig_g * (1.0 - sig_g)
+            g_logit = _sigmoid_bwd(g_sig, sig_g)
             if GLOGIT_STORE:
                 tl.store(gl_row[:, None] + (g * CF + nc)[None, :], g_logit, mask=cm)
             if not GLOGIT_OUT:
@@ -1849,10 +1871,13 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             )
             if KEEP:
                 tl.store(up_row[:, None] + nc[None, :], g_s, mask=cm)
-            s0 = tl.sigmoid(z_s)
-            gz_s = g_s * s0 * (1.0 + z_s * (1.0 - s0))
+            gz_s = _silu_bwd(g_s, z_s)
             un_s = tl.load(un_row[:, None] + nc[None, :], mask=cm, other=0.0)
-            tl.store(ul_row[:, None] + nc[None, :], un_s - z_s * s0, mask=cm)
+            tl.store(
+                ul_row[:, None] + nc[None, :],
+                un_s - z_s * tl.sigmoid(z_s),
+                mask=cm,
+            )
 
             for grp in tl.static_range(L):
                 gw_g = tl.load(
@@ -2160,8 +2185,6 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
     # slots; the spill traffic eats the fusion win, so the M dimension is
     # halved instead.  BLOCK_K is not free here: it must equal the channel
     # group width so one K tile is exactly one row group (see the kernel).
-    _STACK_BWD_FUSED_CONFIG = (32, 64, 4, 3)
-
     @triton.jit
     def _stack_bwd_fused_kernel(
         g_ptr,  # (F, E, ROW) upstream gradient of the layer output, focus-major
@@ -2258,8 +2281,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                     g_s = tl.load(g_row[:, None] + nc[None, :], mask=cm, other=0.0).to(
                         tl.float32
                     )
-                    s0 = tl.sigmoid(z_s)
-                    a = g_s * s0 * (1.0 + z_s * (1.0 - s0))
+                    a = _silu_bwd(g_s, z_s)
                     for g_ in tl.static_range(L):
                         gr0 = tl.load(
                             g_row[:, None] + ((1 + g_) * CF + nc)[None, :],
@@ -2295,7 +2317,7 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                         )
                         sig_g = sigs[g_]
                         g_sig = gr0 * zr0 + grn * zrn + grp * zrp
-                        g_logit = g_sig * sig_g * (1.0 - sig_g)
+                        g_logit = _sigmoid_bwd(g_sig, sig_g)
                         gwt_g = tl.load(
                             gwt_ptr
                             + (layer * n_focus + fid) * LG * CF
@@ -2676,6 +2698,7 @@ def _launch_stack_bwd_fused(
     focus_dim: int,
     block_k: int,
     n_focus: int,
+    config: tuple[int, int, int, int],
 ) -> None:
     """Launch one gated layer's fused backward into ``g_next``.
 
@@ -2689,7 +2712,7 @@ def _launch_stack_bwd_fused(
     focus_dim = int(focus_dim)
     m0 = (lmax + 1) * focus_dim
     m1 = 2 * lmax * focus_dim
-    fbm, fbn, fwarps, fstages = _STACK_BWD_FUSED_CONFIG
+    fbm, fbn, fwarps, fstages = config
     nt0 = triton.cdiv(m0, fbn)
     nt1 = triton.cdiv(m1, fbn)
     for part, nt_part in ((0, nt0), (1, nt1)):
@@ -3538,17 +3561,30 @@ def _stack_backward_traversal(
     # this backward exactly then); the supported relay carries those
     # derivatives.  ``CF == block_k`` makes one K tile exactly one row group
     # -- the bitwise-matching reduction order the fused kernel assumes.
-    fused = (
-        use_stack_bwd_fused()
-        and not use_bmm
-        and focus_dim == block_k
-        and (focus_dim & (focus_dim - 1)) == 0
-        and grad_out.dtype == torch.float32
-        and not with_weights
-        and not keep
-        and grad_z_upstream is None
-        and not torch.is_grad_enabled()
+    # The fused per-layer backward lives inside the table-tuned Triton
+    # value-path selection (the same >= 2 level as the other tuned kernels):
+    # it engages only where the freeze-time sweep measured it as the winner
+    # for this (focus_dim, lmax) shape.  A missing or "relay won" table
+    # entry keeps the unfused relay, so untuned environments never take the
+    # fused kernel.  The remaining conditions are the internal shape and
+    # higher-order gates: ``CF == block_k`` keeps one K tile exactly one row
+    # group -- the bitwise-matching reduction order the fused kernel assumes.
+    stack_bwd_fused_cfg = (
+        stack_bwd_fused_config(focus_dim, lmax)
+        if (
+            max(triton_infer_level(), triton_train_level()) >= 2
+            and not use_bmm
+            and focus_dim == block_k
+            and (focus_dim & (focus_dim - 1)) == 0
+            and grad_out.dtype == torch.float32
+            and not with_weights
+            and not keep
+            and grad_z_upstream is None
+            and not torch.is_grad_enabled()
+        )
+        else None
     )
+    fused = stack_bwd_fused_cfg is not None
     sig = (
         torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
         if not fused
@@ -3607,6 +3643,7 @@ def _stack_backward_traversal(
                 focus_dim,
                 block_k,
                 n_focus,
+                stack_bwd_fused_cfg,
             )
             g_spare = g_cur
             g_cur = g_next

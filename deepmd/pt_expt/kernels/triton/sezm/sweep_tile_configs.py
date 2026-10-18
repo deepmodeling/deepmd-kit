@@ -2074,6 +2074,191 @@ def sweep_fp16x3(
     return {"stack_fp16x3": {key: conclusion}}
 
 
+# ======================================================================
+# Fused mixing-stack backward (fused vs relay selection)
+# ======================================================================
+def sweep_stack_bwd_fused(
+    cf: int,
+    lmax: int,
+    *,
+    n_focus: int = 2,
+    n_edge: int | None = None,
+    device: torch.device | str = "cuda",
+) -> SweepResult:
+    """Select between the fused per-layer backward and the unfused relay.
+
+    The comparison drives the real :func:`_stack_backward_traversal` over a
+    synthetic stack (three gated layers plus the final linear layer, alpha
+    enabled), so the baseline includes exactly the relay chain production
+    runs -- the gate-sigmoid recompute, the pointwise backward and the
+    tuned GEMM launches -- and each candidate replaces it with one fused
+    launch per layer.  A candidate only qualifies when the traversal
+    outputs match the relay bit-for-bit; the fastest qualifying candidate
+    is registered, otherwise the key records that the relay won (``None``).
+
+    Parameters
+    ----------
+    cf : int
+        Per-focus channel width ``Cf``.
+    lmax : int
+        Maximum spherical harmonic degree.
+    n_focus : int
+        Focus count of the synthetic tensors.
+    n_edge : int or None
+        Edge count of the synthetic tensors; ``None`` selects a saturating
+        count.
+    device : torch.device or str
+        CUDA device to sweep on.
+
+    Returns
+    -------
+    SweepResult
+        The ``stack_bwd_fused`` entry under ``(cf, lmax)``: the winning
+        ``(BLOCK_M, BLOCK_N, num_warps, num_stages)`` or ``None``.
+    """
+    from .so2_value_path import (
+        _stack_backward_traversal,
+    )
+    from .tile_configs import (
+        _runtime_tile_configs,
+        register_tile_configs,
+        stack_fp32_configs,
+    )
+
+    device = torch.device(device)
+    if n_edge is None:
+        n_edge = _saturating_edges(cf)
+    key = (cf, lmax)
+
+    # ``CF == block_k`` is the bitwise reduction-order contract; without it
+    # the dispatch can never take the fused kernel, so the relay wins by
+    # construction and no benchmark is needed.
+    _, _, bwd_cfg = stack_fp32_configs(cf, lmax)
+    if bwd_cfg[2] != cf or cf & (cf - 1) or cf >= GATE_BMM_MIN_FOCUS_DIM:
+        register_tile_configs("stack_bwd_fused", {key: None})
+        print(
+            f"[stack_bwd_fused] ({cf},{lmax}) relay by dispatch contract, "
+            "no sweep needed"
+        )
+        return {"stack_bwd_fused": {key: None}}
+
+    n_layers = 4
+    n_gated = n_layers - 1
+    m0 = (lmax + 1) * cf
+    m1 = 2 * lmax * cf
+    row = (3 * lmax + 1) * cf
+    half = lmax * cf
+
+    generator = torch.Generator(device=device).manual_seed(0)
+
+    def randn(*shape: int, scale: float = 1.0) -> torch.Tensor:
+        return torch.randn(*shape, device=device, generator=generator) * scale
+
+    grad_out = randn(n_edge, n_focus, row, scale=0.05)
+    z_all = randn(n_gated, n_focus, n_edge, row, scale=0.5)
+    u_final = randn(n_edge, n_focus, row, scale=0.05)
+    alpha = (
+        torch.rand(
+            n_edge, n_focus, device=device, dtype=torch.float32, generator=generator
+        )
+        + 0.5
+    )
+    w0t_all = randn(n_layers, n_focus, m0, m0, scale=0.02)
+    block_u = randn(n_layers, n_focus, half, half, scale=0.02)
+    block_v = randn(n_layers, n_focus, half, half, scale=0.02)
+    w1t_all = torch.cat(
+        [
+            torch.cat([block_u, block_v], dim=3),
+            torch.cat([-block_v, block_u], dim=3),
+        ],
+        dim=2,
+    )
+    gw_all = randn(n_gated, n_focus, cf, lmax * cf, scale=0.05)
+    gwt_all = gw_all.transpose(2, 3).contiguous()
+
+    def run_traversal() -> tuple[torch.Tensor, torch.Tensor]:
+        g, ga, _, _ = _stack_backward_traversal(
+            grad_out,
+            grad_out,
+            z_all,
+            u_final,
+            alpha,
+            w0t_all,
+            w1t_all,
+            gw_all,
+            gwt_all,
+            None,
+            None,
+            lmax,
+            cf,
+            True,
+            with_weights=False,
+            keep=False,
+        )
+        return g.clone(), ga.clone()
+
+    candidates = (
+        (32, 64, 4, 3),
+        (64, 64, 4, 3),
+        (32, 128, 4, 3),
+        (64, 128, 8, 3),
+        (16, 64, 4, 2),
+        (128, 64, 8, 4),
+    )
+    runtime = _runtime_tile_configs("stack_bwd_fused")
+    saved = dict(runtime)
+    try:
+        # Baseline: an explicit None entry forces the relay whatever the
+        # built-in tables say, so the comparison reflects this GPU only.
+        register_tile_configs("stack_bwd_fused", {key: None})
+        with torch.no_grad():
+            ref_g, ref_ga = run_traversal()
+            relay_ms = _bench(run_traversal, iters=50)
+
+        best_ms, best_cfg = float("inf"), None
+        for cfg in candidates:
+            register_tile_configs("stack_bwd_fused", {key: cfg})
+            try:
+                with torch.no_grad():
+                    got_g, got_ga = run_traversal()
+                if not (torch.equal(got_g, ref_g) and torch.equal(got_ga, ref_ga)):
+                    print(
+                        f"[stack_bwd_fused] ({cf},{lmax}) candidate "
+                        f"{cfg} rejected: outputs differ from the relay"
+                    )
+                    continue
+                fused_ms = _bench(run_traversal, iters=50)
+            except Exception as err:
+                print(
+                    f"[stack_bwd_fused] ({cf},{lmax}) candidate {cfg} "
+                    f"rejected: {type(err).__name__}: {err}"
+                )
+                continue
+            print(
+                f"[stack_bwd_fused] ({cf},{lmax}) candidate {cfg}: "
+                f"{fused_ms:.3f} ms (relay {relay_ms:.3f} ms)"
+            )
+            if fused_ms < best_ms:
+                best_ms, best_cfg = fused_ms, cfg
+    finally:
+        runtime.clear()
+        runtime.update(saved)
+
+    # A 2% margin keeps run-to-run noise from registering a coin-flip as
+    # a winner; anything below it records the relay.
+    if best_cfg is not None and best_ms < relay_ms * 0.98:
+        winner: tuple | None = best_cfg
+        print(
+            f"[stack_bwd_fused] ({cf},{lmax}) fused {winner} wins: "
+            f"{best_ms:.3f} vs {relay_ms:.3f} ms"
+        )
+    else:
+        winner = None
+        print(f"[stack_bwd_fused] ({cf},{lmax}) relay wins: {relay_ms:.3f} ms")
+    register_tile_configs("stack_bwd_fused", {key: winner})
+    return {"stack_bwd_fused": {key: winner}}
+
+
 @dataclass(frozen=True)
 class _SweepSpec:
     """Describe one independently covered launch-configuration sweep."""
@@ -2103,6 +2288,7 @@ _SWEEP_SPECS = {
     "fp32": _SweepSpec(sweep_fp32, "stack_fp32", "focus"),
     "m0_gate": _SweepSpec(sweep_m0_gate, "stack_m0_gate", "focus"),
     "fp16x3": _SweepSpec(sweep_fp16x3, "stack_fp16x3", "focus", min_level=3),
+    "stack_bwd_fused": _SweepSpec(sweep_stack_bwd_fused, "stack_bwd_fused", "focus"),
 }
 
 
