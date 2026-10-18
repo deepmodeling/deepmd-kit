@@ -237,10 +237,17 @@ class GeometricInitialEmbedding(nn.Module):
         # contract: no tunable configuration, strictly removes the
         # (E, D-1, C) message round-trip, so no table selection is involved.
         if triton_infer_level() >= 1 and self.dtype is torch.float32 and self.lmax == 3:
-            from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
-                GIE_SCATTER_TRITON_AVAILABLE,
-                gie_zonal_scatter,
-            )
+            try:
+                from deepmd.pt_expt.kernels.triton.sezm.gie_scatter import (
+                    GIE_SCATTER_TRITON_AVAILABLE,
+                    gie_zonal_scatter,
+                )
+            except ImportError:
+                # The Triton stack is optional; a level-1 environment
+                # without it keeps the reference composition (and the CUDA
+                # operator above remains unaffected).
+                GIE_SCATTER_TRITON_AVAILABLE = False
+                gie_zonal_scatter = None
 
             index_device = self.non_scalar_row_index.device
             packed_rows = torch.arange(
@@ -324,16 +331,21 @@ class GeometricInitialEmbedding(nn.Module):
         # formula, and force-loss training differentiates the backward
         # itself.
         if spin_l1_message is None and edge_cache.csr_cache is not None:
-            from .edge_cache import (
-                cached_edge_csr,
-            )
+            cuda_selected = self._can_fuse_scatter(zonal_coupling)
+            triton_selected = self._triton_scatter is not None and not self.training
+            if cuda_selected or triton_selected:
+                from .edge_cache import (
+                    cached_edge_csr,
+                )
 
-            order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
-            if self._can_fuse_scatter(zonal_coupling):
+                # The destination view is only needed by a fused backend;
+                # the reference path below must not pay for its sort.
+                order, row_ptr = cached_edge_csr(edge_cache, "dst", n_nodes)
+            if cuda_selected:
                 return self.forward_fused_scatter(
                     n_nodes, edge_cache, radial_feat, zonal_coupling, order, row_ptr
                 )
-            if self._triton_scatter is not None and not self.training:
+            if triton_selected:
                 # The operator contract promises contiguous inputs: the
                 # radial slice and the gathered coupling are flattened in
                 # the traced graph before entering the op, like every
