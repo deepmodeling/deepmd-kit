@@ -15,6 +15,9 @@ from deepmd.dpmodel.atomic_model import (
 from deepmd.dpmodel.descriptor.dpa1 import (
     DescrptDPA1,
 )
+from deepmd.dpmodel.descriptor.dpa2 import (
+    DescrptDPA2,
+)
 from deepmd.dpmodel.descriptor.dpa4 import (
     DescrptDPA4,
 )
@@ -41,6 +44,8 @@ def make_model(
     charge: bool = False,
     spin: bool = False,
     precision: str = "float64",
+    numb_fparam: int = 0,
+    numb_aparam: int = 0,
 ) -> DPAtomicModel:
     """Activate learned condition heads so missing inputs cannot pass by chance."""
     if kind == "dpa1":
@@ -52,6 +57,29 @@ def make_model(
             attn_layer=0,
             axis_neuron=2,
             neuron=[4, 8],
+            precision=precision,
+            seed=3,
+        )
+    elif kind == "dpa2":
+        descriptor = DescrptDPA2(
+            ntypes=2,
+            repinit={
+                "rcut": 4.0,
+                "rcut_smth": 0.5,
+                "nsel": 2,
+                "neuron": [4, 8],
+                "axis_neuron": 2,
+            },
+            repformer={
+                "rcut": 3.0,
+                "rcut_smth": 0.5,
+                "nsel": 1,
+                "nlayers": 1,
+                "g1_dim": 8,
+                "g2_dim": 4,
+                "axis_neuron": 2,
+                "update_g1_has_attn": False,
+            },
             precision=precision,
             seed=3,
         )
@@ -86,6 +114,8 @@ def make_model(
         mixed_types=descriptor.mixed_types(),
         precision=precision,
         vacuum_ref=True,
+        numb_fparam=numb_fparam,
+        numb_aparam=numb_aparam,
         seed=1,
     )
     return DPAtomicModel(
@@ -290,4 +320,73 @@ def test_folding_matches_appended_reference_frames(kind, charge, spin) -> None:
     model.fold_vacuum_reference()
     assert not model.fitting_net.needs_vacuum_descriptor()
     after = model.forward_atomic_graph(graph, atype, **conditions)["energy"]
+    np.testing.assert_allclose(after, before, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("kind", ["dpa1", "dpa2"])  # legacy descriptor
+@pytest.mark.parametrize(
+    "numb_fparam,numb_aparam", [(0, 0), (1, 0), (0, 1)]
+)  # bias folding or conditioned reference table
+def test_legacy_graph_uses_dense_vacuum_reference(
+    kind, numb_fparam, numb_aparam
+) -> None:
+    """Graph inference and folding must subtract the same legacy reference."""
+    model = make_model(kind, numb_fparam=numb_fparam, numb_aparam=numb_aparam)
+    descriptor = model.descriptor
+    blocks = (
+        [descriptor.se_atten]
+        if kind == "dpa1"
+        else [descriptor.repinit, descriptor.repformers]
+    )
+    for block in blocks:
+        block.mean[...] = 0.3
+    assert descriptor.uses_graph_lower()
+    assert not descriptor.supports_graph_vacuum()
+    iso_coord = np.zeros((2, 1, 3))
+    iso_atype = np.arange(2, dtype=np.int64).reshape(2, 1)
+    iso_nlist = np.full((2, 1, 2), -1, dtype=np.int64)
+    iso_graph, iso_atype = graph_from_dense_quartet(
+        iso_coord, iso_atype, iso_nlist, None
+    )
+    graph_reference = descriptor.call_graph(
+        iso_graph, iso_atype, type_embedding=descriptor.graph_type_embedding_table()
+    )[0]
+    dense_reference = model.vacuum_descriptor()
+    assert np.max(np.abs(graph_reference - dense_reference)) > 1e-7
+
+    coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.2, 0.0]]])
+    atype = np.array([[0, 1]], dtype=np.int64)
+    nlist = np.array([[[1, -1], [0, -1]]], dtype=np.int64)
+    graph, atype = graph_from_dense_quartet(coord, atype, nlist, None)
+    fparam = np.array([[0.7]]) if numb_fparam else None
+    aparam = np.array([[0.2], [0.6]]) if numb_aparam else None
+    gg = descriptor.call_graph(
+        graph, atype, type_embedding=descriptor.graph_type_embedding_table()
+    )[0]
+    expected = model.fitting_net.call_graph(
+        gg,
+        atype,
+        fparam=np.repeat(fparam, 2, axis=0) if numb_fparam else None,
+        aparam=aparam,
+        vacuum_descriptor=dense_reference,
+    )["energy"]
+    with (
+        mock.patch.object(
+            model, "append_vacuum_frames", wraps=model.append_vacuum_frames
+        ) as append,
+        mock.patch.object(
+            model, "vacuum_descriptor", wraps=model.vacuum_descriptor
+        ) as reference,
+    ):
+        before = model.forward_atomic_graph(graph, atype, fparam=fparam, aparam=aparam)[
+            "energy"
+        ]
+    np.testing.assert_allclose(before, expected, rtol=1e-12, atol=1e-12)
+    append.assert_not_called()
+    reference.assert_called_once()
+    model.fold_vacuum_reference()
+    assert not model.fitting_net.needs_vacuum_descriptor()
+    after = model.forward_atomic_graph(graph, atype, fparam=fparam, aparam=aparam)[
+        "energy"
+    ]
     np.testing.assert_allclose(after, before, rtol=1e-12, atol=1e-12)

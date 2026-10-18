@@ -636,10 +636,11 @@ class DPAtomicModel(BaseAtomicModel):
                 atype.shape[0],
             )
         # === Step 2. Vacuum reference nodes ===
-        # The reference atoms are appended as single-node frames, so the same
-        # descriptor call yields the vacuum descriptor of every type.
+        # Opted-in descriptors evaluate the reference in the same graph call.
+        # Legacy descriptors must retain the dense reference used by folding.
         vacuum_ref = self.fitting_net.needs_vacuum_descriptor()
-        if vacuum_ref:
+        graph_vacuum = vacuum_ref and self.descriptor.supports_graph_vacuum()
+        if graph_vacuum:
             graph, atype, charge_spin, spin = self.append_vacuum_frames(
                 graph, atype, charge_spin, spin
             )
@@ -668,12 +669,14 @@ class DPAtomicModel(BaseAtomicModel):
         gg, rot_mat = outputs[0], outputs[1]
         node_gate = outputs[2] if len(outputs) > 2 else None
         vacuum_kwargs = {}
-        if vacuum_ref:
+        if graph_vacuum:
             vacuum_kwargs["vacuum_descriptor"] = gg[n_real:]
             gg = gg[:n_real]
             atype = atype[:n_real]
             rot_mat = None if rot_mat is None else rot_mat[:n_real]
             node_gate = None if node_gate is None else node_gate[:n_real]
+        elif vacuum_ref:
+            vacuum_kwargs["vacuum_descriptor"] = self.vacuum_descriptor()
         # === Step 4. Fitting ===
         # The source gate of a bridged descriptor fades the learned part of
         # the fitting output: an atom of a frozen pair keeps only the bias of
