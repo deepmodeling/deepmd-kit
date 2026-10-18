@@ -72,6 +72,10 @@ from deepmd.dpmodel.utils.dist_check import (
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PairGraph,
+    build_topologies,
+)
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
@@ -297,6 +301,10 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     atomic model and fitting. Shared weights do not make those branches
     interchangeable: tasks without a preset bias disable the reference,
     while a folded reference no longer appends isolated atoms to the graph.
+
+    A long-range module is part of the traced computation and of its input
+    schema, so its identity (that of its first parameter) closes the key;
+    tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
     try:
@@ -322,7 +330,17 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
             break
     except AttributeError:
         pass
-    return (int(model.has_spin()), descriptor_id, fitting_id, *vacuum_state)
+    long_range_id = 0
+    long_range = getattr(getattr(model, "atomic_model", None), "long_range", None)
+    if long_range is not None:
+        long_range_id = next((id(p) for p in long_range.parameters()), id(long_range))
+    return (
+        int(model.has_spin()),
+        descriptor_id,
+        fitting_id,
+        *vacuum_state,
+        long_range_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +783,11 @@ def _trace_and_compile_graph(
     autograd leaf. Their compiled lower returns ``force_mag`` and ``mask_mag``
     through the same model-owned translation used by eager execution.
 
+    A model declaring topologies (``atomic_model.required_topologies()``)
+    receives each of them as three further inputs, ``(index, vec, mask)`` in
+    the declared order, ahead of the task buffers; its pair axis is a fourth
+    dynamic dimension, kept a distinct symbol like the other three.
+
     Parameters
     ----------
     model
@@ -773,12 +796,6 @@ def _trace_and_compile_graph(
         Representative optional inputs (or ``None``) so the traced branch
         matches what :meth:`_CompiledModel.forward` passes at run time.
         ``spin`` is the flat ``(N, 3)`` per-node moment.
-
-    Long-range edges (``lr_edge_index`` / ``lr_edge_vec`` / ``lr_edge_mask``)
-    are always part of the compiled lower's input schema.  Models that do not
-    use them receive empty tensors at run time; models with a long-range term
-    (e.g. DPA4C-LR) receive a real all-pairs graph built outside the compiled
-    region.
     compile_opts
         User-supplied inductor options (merged over the built-in defaults).
     task_buffers
@@ -905,18 +922,23 @@ def _trace_and_compile_graph(
     # tensors, while forward_common_lower_graph takes it after them.
     s_spin = s_conditioning.pop(0) if spin is not None else None
     s_fparam, s_aparam, s_charge_spin = s_conditioning
-
-    # Build a synthetic long-range all-pairs graph for models that consume one
-    # (e.g. DPA4C-LR).  The exact coordinates do not matter for shape tracing;
-    # we only need edge tensors whose dynamic axes are distinct from nf and N.
-    s_lr_coord = torch.randn(
-        trace_N, 3, dtype=GLOBAL_PT_FLOAT_PRECISION, device=_trace_device
-    )
-    from deepmd.pt_expt.utils.graph_builder import (
-        build_all_pairs_unordered_graph,
-    )
-
-    s_lr_graph = build_all_pairs_unordered_graph(s_lr_coord, s_n_node)
+    # The trace reads only the shapes of the pair topologies, so the synthetic
+    # pairs join fixed nodes over a pair count distinct from the other axes.
+    topology_names = model.atomic_model.required_topologies()
+    s_topology_vals: list[torch.Tensor] = []
+    if topology_names:
+        p_trace = _next_safe_prime(e_max + 2, _forbidden | {trace_nf, trace_N, e_max})
+        for _ in topology_names:
+            s_topology_vals += [
+                torch.arange(2 * p_trace, dtype=torch.int64, device=_trace_device)
+                .reshape(2, p_trace)
+                .remainder(trace_N),
+                torch.ones(
+                    p_trace, 3, dtype=GLOBAL_PT_FLOAT_PRECISION, device=_trace_device
+                ),
+                torch.ones(p_trace, dtype=torch.bool, device=_trace_device),
+            ]
+    n_topology_vals = len(s_topology_vals)
 
     def fn(
         atype: torch.Tensor,
@@ -933,11 +955,14 @@ def _trace_and_compile_graph(
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
         spin: torch.Tensor | None,
-        lr_edge_index: torch.Tensor,
-        lr_edge_vec: torch.Tensor,
-        lr_edge_mask: torch.Tensor,
-        *task_buf_vals: torch.Tensor,
+        *extra_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
+        topology_vals = extra_vals[:n_topology_vals]
+        task_buf_vals = extra_vals[n_topology_vals:]
+        topologies = {
+            name: PairGraph(*topology_vals[3 * ii : 3 * ii + 3])
+            for ii, name in enumerate(topology_names)
+        }
         # Patch task-specific buffers with the proxy tensors so make_fx records
         # them as FX placeholders (mirrors the dense ``_trace_and_compile``).
         originals: dict[str, torch.Tensor | None] = {}
@@ -971,9 +996,7 @@ def _trace_and_compile_graph(
                 aparam=aparam,
                 charge_spin=charge_spin,
                 spin=spin,
-                lr_edge_index=lr_edge_index,
-                lr_edge_vec=lr_edge_vec,
-                lr_edge_mask=lr_edge_mask,
+                topologies=topologies,
             )
             if spin is None:
                 return _translate_energy_keys(
@@ -1020,9 +1043,7 @@ def _trace_and_compile_graph(
         s_aparam,
         s_charge_spin,
         s_spin,
-        s_lr_graph.edge_index,
-        s_lr_graph.edge_vec,
-        s_lr_graph.edge_mask,
+        *s_topology_vals,
         *task_buf_vals_trace,
     )
 
@@ -1271,8 +1292,6 @@ class _CompiledModel(torch.nn.Module):
         coord_3d = coord.detach().reshape(nframes, nloc, 3)
         box_flat = box.detach().reshape(nframes, 9) if box is not None else None
 
-        if box_flat is not None and torch.all(box_flat == 0):
-            box_flat = None
         if box_flat is not None:
             coord_norm = normalize_coord(coord_3d, box_flat.reshape(nframes, 3, 3))
         else:
@@ -1281,10 +1300,6 @@ class _CompiledModel(torch.nn.Module):
         ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
             coord_norm, atype, box_flat, rcut
         )
-        # A frame can never contribute more than nall neighbors; cap the
-        # requested neighbor count so sentinel capacities (e.g. DPA4C's
-        # effectively-unbounded sel) do not allocate absurd padding.
-        nsel = min(nsel, ext_atype.shape[1])
         nlist = build_neighbor_list(
             ext_coord,
             ext_atype,
@@ -1587,7 +1602,6 @@ class _CompiledModel(torch.nn.Module):
             expand_node_values,
         )
         from deepmd.pt_expt.utils.graph_builder import (
-            build_all_pairs_unordered_graph,
             build_neighbor_graph_for_method,
             build_ragged_neighbor_graph,
         )
@@ -1674,30 +1688,16 @@ class _CompiledModel(torch.nn.Module):
                 aparam = aparam[node_index]
             if spin is not None:
                 spin = spin[node_index]
-
-        # Long-range all-pairs graph (non-periodic).  Built eagerly outside the
-        # compiled region and consumed as an extra edge set by models that have
-        # a long-range term (e.g. DPA4C-LR).  Models without such a term still
-        # feed the compiled lower empty placeholders so the input signature is
-        # fixed across all graph models.
-        needs_lr = getattr(_model, "_needs_long_range_edges", False)
-        if needs_lr:
-            # Ragged-native unordered all-pairs: no cutoff search and no
-            # dependence on the short-range builder policy.
-            if ragged:
-                lr_graph = build_all_pairs_unordered_graph(coord_3d, n_node)
-            else:
-                coord_flat = coord_3d.reshape(n_padded, 3)[node_index]
-                lr_graph = build_all_pairs_unordered_graph(coord_flat, ng.n_node)
-            lr_edge_index = lr_graph.edge_index
-            lr_edge_vec = lr_graph.edge_vec
-            lr_edge_mask = lr_graph.edge_mask
-        else:
-            _dev = coord_3d.device
-            _dt = coord_3d.dtype
-            lr_edge_index = torch.empty((2, 0), dtype=torch.int64, device=_dev)
-            lr_edge_vec = torch.empty((0, 3), dtype=_dt, device=_dev)
-            lr_edge_mask = torch.empty((0,), dtype=torch.bool, device=_dev)
+        # The topologies the atomic model declares are built here as well,
+        # outside the compiled region, on the node axis of the graph.
+        topologies = build_topologies(
+            _model.atomic_model.required_topologies(),
+            coord_3d if ragged else coord_3d.reshape(n_padded, 3)[node_index],
+            ng.n_node,
+            box_flat,
+            atype=atype_flat,
+            pair_excl=pair_excl,
+        )
 
         # Lazy compile of the GRAPH lower (cached per structure key and mode).
         compiled_lower = self._compiled_lower_by_mode.get(self.training)
@@ -1725,6 +1725,17 @@ class _CompiledModel(torch.nn.Module):
         edge_vec = ng.edge_vec.detach().requires_grad_(True)
         if spin is not None:
             spin = spin.detach().requires_grad_(True)
+        # Each pair topology enters as (index, vec, mask), its vec a further
+        # leaf.
+        topology_vals = tuple(
+            tensor
+            for pairs in topologies.values()
+            for tensor in (
+                pairs.index,
+                pairs.vec.detach().requires_grad_(True),
+                pairs.mask,
+            )
+        )
 
         if self._task_buf_order:
             try:
@@ -1766,30 +1777,10 @@ class _CompiledModel(torch.nn.Module):
                 aparam,
                 charge_spin,
                 spin,
-                lr_edge_index,
-                lr_edge_vec,
-                lr_edge_mask,
+                *topology_vals,
                 *task_buf_vals,
             )
         self._report_pending_compile()
-
-        # Optional model-specific post-processing that needs coordinates and is
-        # kept eager (e.g. DPA4C-LR's LES correction).  The hook runs on the
-        # flat-node compiled output before the rectangular unravel below.
-        postprocess = getattr(self.original_model, "_postprocess_compiled_output", None)
-        if postprocess is not None:
-            result = postprocess(
-                coord=coord_3d,
-                edge_vec=edge_vec,
-                graph=ng,
-                result=result,
-                node_index=node_index,
-                n_padded=n_padded,
-                ragged=ragged,
-                fparam=fparam,
-                charge_spin=charge_spin,
-                create_graph=self.training,
-            )
 
         # The compiled graph lower emits PUBLIC keys on the FLAT node axis
         # (``atom_energy`` / ``force`` are (N, *); ``energy`` / ``virial`` are
@@ -3639,8 +3630,8 @@ def _learned_part_path(model: torch.nn.Module) -> str | None:
 
 
 def _move_learned_key(key: str, path: str, source_path: str) -> str:
-    """Rewrite a descriptor or fitting-net key from one learned-part path to another."""
-    for part in ("descriptor.", "fitting_net."):
+    """Rewrite a key of the learned part from one learned-part path to another."""
+    for part in ("descriptor.", "fitting_net.", "long_range."):
         if f".{path}{part}" in key:
             return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
     return key

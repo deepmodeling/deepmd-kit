@@ -118,6 +118,11 @@ class SpinModel(NativeOP):
         spin: Spin,
     ) -> None:
         super().__init__()
+        if backbone_model.atomic_model.has_long_range():
+            raise NotImplementedError(
+                "the virtual-atom spin scheme is not supported for a model with "
+                "a long-range module"
+            )
         self.backbone_model = backbone_model
         self.spin = spin
         # Spin graph-lower unsupported: carry-all routing diverges on

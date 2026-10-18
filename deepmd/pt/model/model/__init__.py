@@ -208,6 +208,11 @@ def get_linear_model(model_params: dict) -> BaseModel:
                 "sub-model: add an `inner_potential` sub-model to the "
                 "composition instead."
             )
+        if sub.get("long_range") is not None:
+            raise NotImplementedError(
+                "long-range modules (`long_range`) are supported by the pt_expt "
+                "backend only"
+            )
     if any(
         sub.get("type") == "inner_potential" for sub in model_params.get("models", [])
     ):
@@ -413,6 +418,11 @@ def get_standard_model(model_params: dict) -> BaseModel:
             "standard model. Route the config through `get_model` (which "
             "expands the flag), or spell the composition explicitly with "
             '`type: "linear_ener"` and an `inner_potential` sub-model.'
+        )
+    if model_params.get("long_range") is not None:
+        raise NotImplementedError(
+            "long-range modules (`long_range`) are supported by the pt_expt "
+            "backend only"
         )
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)

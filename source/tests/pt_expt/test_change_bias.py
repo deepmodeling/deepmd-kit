@@ -472,6 +472,8 @@ class TestChangeBiasFittingStats(unittest.TestCase):
         fitting_net = MagicMock()
 
         class FakeModel(DPModelCommon):
+            atomic_model = MagicMock(**{"has_long_range.return_value": False})
+
             def get_out_bias(self):
                 return np.array([[0.0, 0.0]])
 

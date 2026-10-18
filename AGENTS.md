@@ -165,7 +165,6 @@ source/               # C++ source code and tests
 - **Configuration**: Use `input_torch.json` format typically
 - **Training**: `dp --pt train input_torch.json`
 - **Requirements**: `torch` package
-- **DPA4C-LR long-range variant**: model type `dpa4c_lr` with fitting type `dpa4c_lr` adds a non-periodic long-range term on top of the compact DPA4C descriptor (`deepmd/pt_expt/model/dpa4c_lr_model.py`, `deepmd/pt_expt/fitting/dpa4c_lr.py`). Two kernels are available: `les` (`erf(alpha*r)/r`, the default) and a trainable sum-of-Gaussians `sog` with multi-channel latent charges. Only non-periodic systems are supported — `box=None` or an all-zero box is accepted, while nonzero periodic cells are rejected — and only the `pt_expt` backend. The long-range all-pairs graph is built outside the compiled region and passed into the graph lower alongside the short-range graph, so `torch.compile` sees no data-dependent neighbor construction; it is built ragged-native with unordered pairs (`i < j`, `build_all_pairs_unordered_graph` in `deepmd/pt_expt/utils/graph_builder.py`) straight from the per-frame node counts — no cutoff search, no padding to the batch max width, and half the directed pair storage (`Σ_f n_f(n_f-1)/2`). `.pt2`/`.pte` freeze is not yet implemented. Tests: `pytest source/tests/pt_expt/model/test_dpa4c_lr.py`.
 
 ### JAX Backend
 

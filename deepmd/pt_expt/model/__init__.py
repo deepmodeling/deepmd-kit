@@ -18,9 +18,6 @@ from .dp_zbl_model import (
 from .dpa4_model import (
     DPA4EnergyModel,
 )
-from .dpa4c_lr_model import (
-    DPA4CLREnergyModel,
-)
 from .ener_model import (
     EnergyModel,
 )
@@ -52,7 +49,6 @@ from .unimol_pretrain_model import (
 __all__ = [
     "BaseModel",
     "DOSModel",
-    "DPA4CLREnergyModel",
     "DPA4EnergyModel",
     "DPZBLModel",
     "DipoleModel",

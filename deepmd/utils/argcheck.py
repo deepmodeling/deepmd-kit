@@ -3144,126 +3144,6 @@ def fitting_sezm_ener() -> list[Argument]:
 
 
 @fitting_args_plugin.register(
-    "dpa4c_lr",
-    doc=supported_backends("pt_expt")
-    + "Fit a DPA4C latent-charge energy model (SR + non-periodic LES/SOG).",
-)
-def fitting_dpa4c_lr() -> list[Argument]:
-    doc_dim_out_lr = (
-        "The output dimension of the long-range (latent charge) fitting branch. "
-        "Must be 1 for the LES kernel; SOG supports multiple channels."
-    )
-    doc_neuron_lr = (
-        "The number of neurons in each hidden layer of the latent-charge fitting net."
-    )
-    doc_bias_atom_q = (
-        "Initial bias values for the latent charge (q) of each atomic type. "
-        "If not set, a trainable per-type array is used."
-    )
-    doc_les_alpha = (
-        "Trainable width parameter for the non-periodic LES correction. "
-        "The LES kernel is erf(alpha * r) / r, which behaves as 1/r at long range."
-    )
-    doc_amp = "Trainable amplitude of each Gaussian level in the SOG kernel."
-    doc_bandwidth = (
-        "Trainable width of each Gaussian level in the SOG kernel. The stored "
-        "value is squared inside the kernel."
-    )
-    doc_b = "Geometric ratio used to initialize the SOG bandwidths."
-    doc_sigma = "Base width used to initialize the SOG bandwidths."
-    doc_M = "Number of Gaussian levels used to initialize the SOG kernel."
-    doc_lr_kernel = (
-        "Long-range kernel used for non-periodic systems. "
-        "'les' (default) applies only the LES erf(alpha*r)/r charge-charge kernel. "
-        "'sog' applies a trainable sum-of-Gaussians kernel over distinct atom "
-        "pairs (i != j) and supports multi-channel latent charges."
-    )
-    doc_use_charge_constraint = (
-        "Whether to enforce the sum of latent charges equals the target total "
-        "charge (from charge_spin[:, 0] or fparam[:, 0])."
-    )
-    return [
-        *fitting_sezm_ener(),
-        Argument(
-            "dim_out_lr",
-            int,
-            optional=True,
-            default=1,
-            doc=supported_backends("pt_expt") + doc_dim_out_lr,
-        ),
-        Argument(
-            "neuron_lr",
-            list[int],
-            optional=True,
-            default=[64, 64],
-            doc=supported_backends("pt_expt") + doc_neuron_lr,
-        ),
-        Argument(
-            "bias_atom_q",
-            list[float],
-            optional=True,
-            doc=supported_backends("pt_expt") + doc_bias_atom_q,
-        ),
-        Argument(
-            "amp",
-            [float, list[float], type(None)],
-            optional=True,
-            default=None,
-            doc=supported_backends("pt_expt") + doc_amp,
-        ),
-        Argument(
-            "bandwidth",
-            [float, list[float], type(None)],
-            optional=True,
-            default=None,
-            doc=supported_backends("pt_expt") + doc_bandwidth,
-        ),
-        Argument(
-            "les_alpha",
-            [float, type(None)],
-            optional=True,
-            default=1.0,
-            doc=supported_backends("pt_expt") + doc_les_alpha,
-        ),
-        Argument(
-            "b",
-            float,
-            optional=True,
-            default=1.6297670882677647,
-            doc=supported_backends("pt_expt") + doc_b,
-        ),
-        Argument(
-            "sigma",
-            float,
-            optional=True,
-            default=2.180230445405648,
-            doc=supported_backends("pt_expt") + doc_sigma,
-        ),
-        Argument(
-            "M",
-            int,
-            optional=True,
-            default=12,
-            doc=supported_backends("pt_expt") + doc_M,
-        ),
-        Argument(
-            "lr_kernel",
-            str,
-            optional=True,
-            default="les",
-            doc=supported_backends("pt_expt") + doc_lr_kernel,
-        ),
-        Argument(
-            "use_charge_constraint",
-            bool,
-            optional=True,
-            default=False,
-            doc=supported_backends("pt_expt") + doc_use_charge_constraint,
-        ),
-    ]
-
-
-@fitting_args_plugin.register(
     "dos", doc=supported_backends("tf", "pt", "pt_expt", "tf2") + doc_dos
 )
 def fitting_dos() -> list[Argument]:
@@ -3666,6 +3546,205 @@ def fitting_variant_type_args() -> Variant:
     )
 
 
+#  --- Long-range module configurations: --- #
+long_range_args_plugin = ArgsPlugin()
+interaction_kernel_args_plugin = ArgsPlugin()
+
+
+@interaction_kernel_args_plugin.register(
+    "les",
+    doc="The latent Ewald summation kernel erf(alpha r) / r, the interaction of "
+    "two Gaussian charge clouds: it reaches 1/r beyond a few 1/alpha and stays "
+    "finite at contact.",
+)
+def interaction_kernel_les() -> list[Argument]:
+    doc_alpha = "The inverse width alpha of the kernel, in Å^-1. Must be positive."
+    doc_trainable = "Whether alpha is trained."
+    return [
+        Argument("alpha", float, optional=True, default=1.0, doc=doc_alpha),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+    ]
+
+
+@interaction_kernel_args_plugin.register(
+    "sog",
+    doc="The sum-of-Gaussians kernel sum_k a_k exp(-r^2 / (2 sigma_k^2)).",
+)
+def interaction_kernel_sog() -> list[Argument]:
+    doc_amplitude = (
+        "The amplitudes a_k of the Gaussians, in Å^-1, of either sign: one value "
+        "shared by every Gaussian or one value per Gaussian. Required with "
+        "`width`; with the default widths it defaults to 4 pi ln(`width_ratio`) "
+        "for every Gaussian."
+    )
+    doc_width = (
+        "The widths sigma_k of the Gaussians, in Å, each positive. Defaults to "
+        "the geometric sequence `base_width` * `width_ratio`^k for "
+        "k = 0, ..., `n_gaussian` - 1."
+    )
+    doc_n_gaussian = "The number of Gaussians of the default widths."
+    doc_base_width = "The width of the first default Gaussian, in Å."
+    doc_width_ratio = "The ratio of consecutive default widths. Must exceed one."
+    doc_trainable = "Whether the amplitudes and widths are trained."
+    return [
+        Argument(
+            "amplitude",
+            [float, list[float], type(None)],
+            optional=True,
+            default=None,
+            doc=doc_amplitude,
+        ),
+        Argument(
+            "width",
+            [list[float], type(None)],
+            optional=True,
+            default=None,
+            doc=doc_width,
+        ),
+        Argument("n_gaussian", int, optional=True, default=12, doc=doc_n_gaussian),
+        Argument(
+            "base_width",
+            float,
+            optional=True,
+            default=2.180230445405648,
+            doc=doc_base_width,
+        ),
+        Argument(
+            "width_ratio",
+            float,
+            optional=True,
+            default=1.6297670882677647,
+            doc=doc_width_ratio,
+        ),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+    ]
+
+
+def latent_charge_net_args() -> list[Argument]:
+    doc_neuron = "The number of neurons in each hidden layer of the charge network."
+    doc_activation_function = f"The activation function in the charge network. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Defaults to the activation function of the energy fitting."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection. Defaults to the setting of the energy fitting.'
+    doc_precision = f"The precision of the charge network and kernel parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Defaults to the precision of the energy fitting."
+    doc_trainable = "Whether the parameters of the charge network are trained. A list sets every hidden layer and the output layer separately."
+    doc_seed = "Random seed for parameter initialization of the charge network. Defaults to a seed derived from the seed of the energy fitting."
+    return [
+        Argument("neuron", list[int], optional=True, default=[64, 64], doc=doc_neuron),
+        Argument(
+            "activation_function", str, optional=True, doc=doc_activation_function
+        ),
+        Argument("resnet_dt", bool, optional=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, doc=doc_precision),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
+def charge_constraint_args() -> list[Argument]:
+    doc_source = (
+        "The source of the total charge of a frame: `neutral` for zero, "
+        "`charge_spin` for the charge of the frame charge/spin condition, which "
+        "requires a descriptor with `add_chg_spin_ebd`, or `fparam` for the frame "
+        "parameter at `fparam_index`."
+    )
+    doc_fparam_index = "The column of the frame parameters holding the total charge, used when `source` is `fparam`."
+    doc_channel = "The latent charge channel that is constrained to the total charge; the other channels stay unconstrained."
+    return [
+        Argument(
+            "source",
+            str,
+            optional=True,
+            default="neutral",
+            doc=doc_source,
+            extra_check=lambda x: x in ("neutral", "charge_spin", "fparam"),
+            extra_check_errmsg="must be one of 'neutral', 'charge_spin' or 'fparam'",
+        ),
+        Argument("fparam_index", int, optional=True, default=0, doc=doc_fparam_index),
+        Argument("channel", int, optional=True, default=0, doc=doc_channel),
+    ]
+
+
+@long_range_args_plugin.register(
+    "latent_charge",
+    doc="Interaction of latent charges predicted from the descriptor, summed "
+    "directly over every pair of atoms of a complete non-periodic system. "
+    "Every channel interacts through the same kernel; half of each pair energy "
+    "is attributed to each atom.",
+)
+def long_range_latent_charge() -> list[Argument]:
+    doc_channels = "The number of latent charge channels predicted per atom."
+    doc_charge_net = (
+        "The network predicting the latent charges, in units of the elementary "
+        "charge, from the descriptor; it takes the frame and atomic parameters "
+        "of the energy fitting."
+    )
+    doc_kernel = "The pair interaction kernel of the latent charges, in Å^-1."
+    doc_charge_constraint = (
+        "Shift one latent charge channel uniformly over the atoms of every frame "
+        "so that it sums to the total charge of the frame. Unconstrained if not "
+        "set."
+    )
+    return [
+        Argument("channels", int, optional=True, default=1, doc=doc_channels),
+        Argument(
+            "charge_net",
+            dict,
+            latent_charge_net_args(),
+            optional=True,
+            doc=doc_charge_net,
+        ),
+        Argument(
+            "kernel",
+            dict,
+            [],
+            [
+                Variant(
+                    "type",
+                    interaction_kernel_args_plugin.get_all_argument(),
+                    doc="The type of the kernel.",
+                )
+            ],
+            doc=doc_kernel,
+        ),
+        Argument(
+            "charge_constraint",
+            dict,
+            charge_constraint_args(),
+            optional=True,
+            default=None,
+            doc=doc_charge_constraint,
+        ),
+    ]
+
+
+def long_range_args() -> Argument:
+    doc_long_range = (
+        "A long-range module added to the atomic energy of the energy fitting. "
+        "It reads the same descriptor and is evaluated on complete "
+        "non-periodic systems; a periodic cell is rejected. Currently validated "
+        "with the DPA4C descriptor."
+    )
+    return Argument(
+        "long_range",
+        dict,
+        [],
+        [
+            Variant(
+                "type",
+                long_range_args_plugin.get_all_argument(),
+                doc="The type of the long-range module.",
+            )
+        ],
+        optional=True,
+        doc=supported_backends("pt_expt") + doc_long_range,
+    )
+
+
 #  --- Modifier configurations: --- #
 modifier_args_plugin = ArgsPlugin()
 
@@ -3963,6 +4042,7 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            long_range_args(),
             *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")
@@ -4211,66 +4291,6 @@ def sezm_model_args() -> Argument:
         ],
         alias=["DPA4", "SeZM", "sezm"],
         doc=supported_backends("pt", "pt_expt") + doc_model,
-    )
-    return ca
-
-
-@model_args_plugin.register("dpa4c_lr")
-def dpa4c_lr_model_args() -> Argument:
-    doc_descrpt = (
-        "Descriptor configuration for atomic environments. DPA4C-LR uses the "
-        "compact DPA4C descriptor."
-    )
-    doc_fitting = (
-        "Fitting network configuration. DPA4C-LR requires the `dpa4c_lr` "
-        "fitting, which augments the `dpa4_ener` GLU energy fitting with a "
-        "long-range latent-charge branch."
-    )
-    doc_model = (
-        "DPA4C-LR model scaffold: the compact DPA4C descriptor plus a "
-        "non-periodic LES or SOG term evaluated from the latent charges "
-        "produced by the `dpa4c_lr` fitting. Only the pt_expt backend and "
-        "non-periodic systems (no box) are supported."
-    )
-    ca = Argument(
-        "dpa4c_lr",
-        dict,
-        [
-            Argument(
-                "descriptor",
-                dict,
-                [],
-                [
-                    Variant(
-                        "type",
-                        [descrpt_args_plugin.get_argument("dpa4c")],
-                        optional=True,
-                        default_tag="dpa4c",
-                        doc="The type of the descriptor.",
-                    )
-                ],
-                doc=supported_backends("pt_expt") + doc_descrpt,
-            ),
-            Argument(
-                "fitting_net",
-                dict,
-                [],
-                [
-                    Variant(
-                        "type",
-                        [fitting_args_plugin.get_argument("dpa4c_lr")],
-                        optional=True,
-                        default_tag="dpa4c_lr",
-                        doc="The type of the fitting.",
-                    )
-                ],
-                doc=supported_backends("pt_expt") + doc_fitting,
-            ),
-            # NOTE: no `bridging_method` here. `expand_bridging_method` only
-            # accepts `standard`/`dpa4`/`sezm`, so advertising the flag for
-            # `dpa4c_lr` would pass validation and then fail at construction.
-        ],
-        doc=supported_backends("pt_expt") + doc_model,
     )
     return ca
 

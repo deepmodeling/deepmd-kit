@@ -11,14 +11,14 @@ from .dos_fitting import (
 from .dpa4_ener import (
     SeZMEnergyFittingNet,
 )
-from .dpa4c_lr import (
-    DPA4CLRFitting,
-)
 from .ener_fitting import (
     EnergyFittingNet,
 )
 from .invar_fitting import (
     InvarFitting,
+)
+from .latent_charge import (
+    LatentChargeFitting,
 )
 from .polarizability_fitting import (
     PolarFitting,
@@ -33,10 +33,10 @@ from .unimol_pretrain import (
 __all__ = [
     "BaseFitting",
     "DOSFittingNet",
-    "DPA4CLRFitting",
     "DipoleFitting",
     "EnergyFittingNet",
     "InvarFitting",
+    "LatentChargeFitting",
     "PolarFitting",
     "PropertyFittingNet",
     "SeZMEnergyFittingNet",

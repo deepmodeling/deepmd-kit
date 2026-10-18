@@ -1832,6 +1832,11 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
+        if model.atomic_model.has_long_range():
+            raise NotImplementedError(
+                "a model with a long-range module cannot be exported to a "
+                "deployable archive; evaluate its training checkpoint (.pt)"
+            )
     model.eval()
     # The vacuum reference is resolved on the export object, folded into the
     # fitting bias or stored as a per-type table, so the exported graph

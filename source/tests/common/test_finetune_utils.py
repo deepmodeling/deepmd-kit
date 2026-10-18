@@ -156,6 +156,28 @@ def test_finetune_rule_builder_updates_single_task_config_preserving_trainable()
     assert rule.get_has_new_type()
 
 
+def test_finetune_rule_builder_carries_long_range_preserving_trainable():
+    long_range = {"type": "latent_charge", "kernel": {"type": "les", "alpha": 0.7}}
+    pretrained = _model_config(["O", "H"])
+    pretrained["long_range"] = deepcopy(long_range)
+    target = _model_config(["O", "H"], trainable=False)
+    target["long_range"] = {
+        "type": "latent_charge",
+        "charge_net": {"trainable": False},
+        "kernel": {"type": "les", "alpha": 2.0, "trainable": False},
+    }
+
+    updated, _ = finetune.FinetuneRuleBuilder(
+        pretrained,
+        target,
+        change_model_params=True,
+    ).build()
+
+    assert updated["long_range"]["kernel"]["alpha"] == 0.7
+    assert updated["long_range"]["kernel"]["trainable"] is False
+    assert updated["long_range"]["charge_net"]["trainable"] is False
+
+
 def test_finetune_rule_builder_random_fitting_keeps_target_fitting_net():
     pretrained = _model_config(["O", "H"], descriptor_sel=[8, 16], fitting_neuron=[32])
     target = _model_config(["O", "H"], descriptor_sel=[1, 1], fitting_neuron=[2])

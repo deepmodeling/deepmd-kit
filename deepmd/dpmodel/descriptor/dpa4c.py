@@ -1541,12 +1541,11 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
                 for frame in self._calibration_frames(system):
                     coord = xp.asarray(frame["coord"], dtype=dtype, device=device)
                     atype = xp.asarray(frame["atype"], device=device)
-                    if frame["box"] is None:
-                        box = None
-                    else:
-                        box = xp.asarray(frame["box"], dtype=dtype, device=device)
-                        if xp.all(box == 0):
-                            box = None
+                    box = (
+                        None
+                        if frame["box"] is None
+                        else xp.asarray(frame["box"], dtype=dtype, device=device)
+                    )
                     spin = (
                         None
                         if frame["spin"] is None

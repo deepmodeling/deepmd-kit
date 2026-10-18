@@ -24,6 +24,10 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
 )
+from deepmd.dpmodel.long_range import (
+    BaseLongRange,
+    check_long_range_support,
+)
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
@@ -102,6 +106,12 @@ class DPAtomicModel(BaseAtomicModel):
     :math:`\mathcal{F}` is the fitting network, and
     :math:`\mathbf{y}^i` is the predicted atomic property (energy, dipole, etc.).
 
+    An energy model may carry a long-range module beside its fitting: it reads
+    the same descriptor and adds its own atomic energy to the fitting output,
+    so the atomic energy :math:`E^i` is the complete potential, including the
+    interactions without a cutoff. The module is evaluated on the
+    NeighborGraph route.
+
     Parameters
     ----------
     descriptor
@@ -111,6 +121,8 @@ class DPAtomicModel(BaseAtomicModel):
     type_map
             Mapping atom type to the name (str) of the type.
             For example `type_map[1]` gives the name of the type 1.
+    long_range
+            Long-range module added to the energy output of the fitting.
 
     """
 
@@ -121,12 +133,14 @@ class DPAtomicModel(BaseAtomicModel):
         descriptor: BaseDescriptor,
         fitting: BaseFitting,
         type_map: list[str],
+        long_range: BaseLongRange | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         self.descriptor = descriptor
         self.fitting_net = fitting
         self.fitting_net.reinit_exclude(self.atom_exclude_types)
+        self.long_range = long_range
         self.type_map = type_map
         self.add_chg_spin_ebd: bool = self.descriptor.has_chg_spin_ebd()
         # Structural capability: only descriptors with a native spin
@@ -148,12 +162,39 @@ class DPAtomicModel(BaseAtomicModel):
         self.add_spin_ebd: bool = (
             self._supports_native_spin and self.descriptor.use_spin is not None
         )
+        if self.long_range is not None:
+            self._check_long_range()
         super().init_out_stat()
         # === Reference of the isolated atoms ===
         # The fitting references its output only when the preset fixes the
         # bias of that output; the conditions of the reference atoms follow.
         resolve_vacuum_ref(self.fitting_net, self.preset_out_bias)
         self.init_vacuum_conditions()
+
+    def _check_long_range(self) -> None:
+        """Validate that the long-range module can join this descriptor and fitting."""
+        check_long_range_support(self.descriptor)
+        if not self.descriptor.uses_graph_lower():
+            raise NotImplementedError(
+                "a long-range module is evaluated on the NeighborGraph lower, "
+                "which this descriptor does not provide"
+            )
+        if "energy" not in self.fitting_output_def().keys():
+            raise ValueError(
+                "a long-range module adds to the energy output, which this "
+                "fitting does not have"
+            )
+        if self.atom_exclude_types:
+            raise NotImplementedError(
+                "`atom_exclude_types` is not supported with a long-range module, "
+                "which attributes each pair energy to both atoms of the pair"
+            )
+        if self.long_range.uses_charge_spin() and not self.add_chg_spin_ebd:
+            raise ValueError(
+                "the long-range module reads the total charge from "
+                "`charge_spin`, but the descriptor is not configured with the "
+                "charge/spin condition (`add_chg_spin_ebd`)"
+            )
 
     def init_vacuum_conditions(self) -> None:
         """Build the conditioning inputs of the reference atoms for the type map.
@@ -213,21 +254,45 @@ class DPAtomicModel(BaseAtomicModel):
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())
 
-    def fused_decomposition(self) -> "tuple[DPAtomicModel, None]":
-        """A descriptor-fitting model is its own learned part."""
+    def fused_decomposition(self) -> "tuple[DPAtomicModel, None] | None":
+        """A descriptor-fitting model is its own learned part.
+
+        A model with a long-range module is more than a learned part and a
+        pair potential, so no fused pipeline evaluates it.
+        """
+        if self.long_range is not None:
+            return None
         return self, None
+
+    def has_long_range(self) -> bool:
+        """Whether this model carries a long-range module."""
+        return self.long_range is not None
+
+    def required_topologies(self) -> tuple[str, ...]:
+        """The topologies of the long-range module."""
+        if self.long_range is None:
+            return ()
+        return self.long_range.required_topologies()
 
     def has_message_passing_across_ranks(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.has_message_passing_across_ranks())
 
     def supports_edge_parallel(self) -> bool:
-        """Delegates to this model's own descriptor."""
-        return bool(self.descriptor.supports_edge_parallel())
+        """Delegates to this model's own descriptor.
+
+        A long-range module sums over complete systems, so a model carrying
+        one does not run under domain decomposition.
+        """
+        return self.long_range is None and bool(
+            self.descriptor.supports_edge_parallel()
+        )
 
     def dense_lower_supports_comm(self) -> bool:
-        """Delegates to this model's own descriptor."""
-        return bool(self.descriptor.dense_lower_supports_comm())
+        """Delegates to this model's own descriptor; a long-range module has no dense lower."""
+        return self.long_range is None and bool(
+            self.descriptor.dense_lower_supports_comm()
+        )
 
     def uses_compact_edge_pairs(self) -> bool:
         """Delegates to this model's own descriptor."""
@@ -267,6 +332,8 @@ class DPAtomicModel(BaseAtomicModel):
         typically concatenated with the output of the descriptor and fed into the fitting net.
         """
         self.fitting_net.set_case_embd(case_idx)
+        if self.long_range is not None:
+            self.long_range.set_case_embd(case_idx)
 
     def mixed_types(self) -> bool:
         """If true, the model
@@ -311,6 +378,10 @@ class DPAtomicModel(BaseAtomicModel):
         check_frequency
             The overflow check frequency
         """
+        if self.long_range is not None:
+            raise NotImplementedError(
+                "compression of a model with a long-range module is not supported"
+            )
         self.descriptor.enable_compression(
             min_nbor_dist,
             table_extrapolate,
@@ -358,6 +429,11 @@ class DPAtomicModel(BaseAtomicModel):
             the result dict, defined by the `FittingOutputDef`.
 
         """
+        if self.long_range is not None:
+            raise NotImplementedError(
+                "a long-range module is evaluated on the NeighborGraph lower "
+                "only; the dense (nlist) lower cannot evaluate this model"
+            )
         nframes, nloc, nnei = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
 
@@ -575,13 +651,16 @@ class DPAtomicModel(BaseAtomicModel):
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict | None = None,
+        topologies: dict[str, Any] | None = None,
+        node_mask: Array | None = None,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
 
         Runs the descriptor ``call_graph`` then the fitting ``call_graph`` PER NODE
         and returns the raw fitting dict on the flat ``(N, *)`` axis (no reduction
         or masking; the wrapper handles those). ``fparam`` is gathered to nodes by
-        ``frame_id`` so each node sees its frame's parameter.
+        ``frame_id`` so each node sees its frame's parameter. The atomic energy
+        of the long-range module is added to the energy output of the fitting.
 
         Parameters
         ----------
@@ -607,6 +686,11 @@ class DPAtomicModel(BaseAtomicModel):
             ``call_graph`` (the message-passing part). ``None`` for
             non-parallel inference (default). Mirrors :meth:`forward_atomic`'s
             ``comm_dict`` on the dense route.
+        topologies
+            the topologies of :meth:`required_topologies` by name.
+        node_mask
+            flat mask of the real and owned nodes, which carry the fields of
+            the long-range module. N
 
         Returns
         -------
@@ -637,6 +721,13 @@ class DPAtomicModel(BaseAtomicModel):
                 graph.n_node,
                 graph.n_local,
                 atype.shape[0],
+            )
+        # The long-range module reads the frame conditions of the real frames,
+        # with the defaults the descriptor and fitting fall back on.
+        n_node = graph.n_node
+        if self.long_range is not None:
+            fparam, charge_spin_frame = self._frame_conditions(
+                fparam, charge_spin, n_node.shape[0], graph.edge_vec
             )
         # === Step 2. Vacuum reference nodes ===
         # The reference atoms are appended as single-node frames, so the same
@@ -683,7 +774,7 @@ class DPAtomicModel(BaseAtomicModel):
         # its type, so along the closing of a pair the learned energy follows
         # the switch linearly while the analytical pair term takes over.
         gate_kwargs = {} if node_gate is None else {"node_gate": node_gate}
-        return self.fitting_net.call_graph(
+        ret = self.fitting_net.call_graph(
             gg,
             atype,
             gr=rot_mat,
@@ -694,6 +785,71 @@ class DPAtomicModel(BaseAtomicModel):
             **vacuum_kwargs,
             **gate_kwargs,
         )
+        # === Step 5. Long-range module ===
+        # The module reads the descriptor of the real nodes; the reference
+        # nodes appended above take no part in it.
+        if self.long_range is not None:
+            if topologies is None or node_mask is None:
+                raise ValueError(
+                    "the long-range module of this model reads the topologies "
+                    f"{self.required_topologies()} and the node mask, which were "
+                    "not given"
+                )
+            ret["energy"] = ret["energy"] + self.long_range.call_graph(
+                gg,
+                atype,
+                node_mask,
+                n_node,
+                topologies,
+                fparam=fparam,
+                aparam=aparam_node,
+                charge_spin=charge_spin_frame,
+            )
+        return ret
+
+    def _frame_conditions(
+        self,
+        fparam: Array | None,
+        charge_spin: Array | None,
+        nf: int,
+        reference: Array,
+    ) -> tuple[Array | None, Array | None]:
+        """Frame parameters and charge/spin condition with their defaults resolved.
+
+        Parameters
+        ----------
+        fparam
+            Frame parameters with shape (nf, numb_fparam), or None.
+        charge_spin
+            Charge/spin condition with shape (nf, 2) or (1, 2), or None.
+        nf
+            The number of frames.
+        reference
+            An array giving the namespace, dtype and device of the defaults.
+
+        Returns
+        -------
+        tuple
+            The frame parameters with shape (nf, numb_fparam) and the
+            charge/spin condition with shape (nf, 2), each None when the model
+            takes no such input or it has no default.
+        """
+        xp = array_api_compat.array_namespace(reference)
+        device = array_api_compat.device(reference)
+        if fparam is None and self.has_default_fparam():
+            default_fparam = xp.asarray(
+                self.get_default_fparam(), dtype=reference.dtype, device=device
+            )
+            fparam = xp.tile(xp.reshape(default_fparam, (1, -1)), (nf, 1))
+        if not self.add_chg_spin_ebd:
+            return fparam, None
+        if charge_spin is None:
+            default_cs = self.descriptor.get_default_chg_spin()
+            if default_cs is None:
+                return fparam, None
+            charge_spin = xp.asarray(default_cs, dtype=reference.dtype, device=device)
+        charge_spin = xp.broadcast_to(xp.reshape(charge_spin, (-1, 2)), (nf, 2))
+        return fparam, charge_spin
 
     def compute_or_load_stat(
         self,
@@ -724,6 +880,10 @@ class DPAtomicModel(BaseAtomicModel):
         self.fitting_net.compute_input_stats(
             wrapped_sampler, stat_file_path=stat_file_path
         )
+        if self.long_range is not None:
+            self.long_range.compute_input_stats(
+                wrapped_sampler, stat_file_path=stat_file_path
+            )
         self._collect_and_set_observed_type(
             wrapped_sampler, stat_file_path, preset_observed_type
         )
@@ -747,6 +907,8 @@ class DPAtomicModel(BaseAtomicModel):
             else None,
         )
         self.fitting_net.change_type_map(type_map=type_map)
+        if self.long_range is not None:
+            self.long_range.change_type_map(type_map=type_map)
         self.init_vacuum_conditions()
 
     def compute_fitting_input_stat(
@@ -755,6 +917,9 @@ class DPAtomicModel(BaseAtomicModel):
         stat_file_path: DPPath | None = None,
     ) -> None:
         """Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        The networks of the long-range module take the inputs of the fitting
+        and receive their statistics as well.
 
         Parameters
         ----------
@@ -772,6 +937,12 @@ class DPAtomicModel(BaseAtomicModel):
             protection=self.data_stat_protect,
             stat_file_path=stat_file_path,
         )
+        if self.long_range is not None:
+            self.long_range.compute_input_stats(
+                sample_merged,
+                protection=self.data_stat_protect,
+                stat_file_path=stat_file_path,
+            )
 
     def serialize(self) -> dict:
         dd = super().serialize()
@@ -785,6 +956,12 @@ class DPAtomicModel(BaseAtomicModel):
                 "fitting": self.fitting_net.serialize(),
             }
         )
+        # A record with a long-range module is version 3, which a reader that
+        # cannot evaluate the module rejects; every other record keeps
+        # version 2.
+        if self.long_range is not None:
+            dd["@version"] = 3
+            dd["long_range"] = self.long_range.serialize()
         return dd
 
     # for subclass overridden
@@ -792,17 +969,27 @@ class DPAtomicModel(BaseAtomicModel):
     """The base descriptor class."""
     base_fitting_cls = BaseFitting
     """The base fitting class."""
+    base_long_range_cls: type | None = BaseLongRange
+    """The base long-range module class; ``None`` for a backend without one."""
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> "DPAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 2)
+        check_version_compatibility(data.pop("@version", 1), 3, 2)
         data.pop("@class")
         data.pop("type")
         descriptor_obj = cls.base_descriptor_cls.deserialize(data.pop("descriptor"))
         fitting_obj = cls.base_fitting_cls.deserialize(data.pop("fitting"))
         data["descriptor"] = descriptor_obj
         data["fitting"] = fitting_obj
+        long_range = data.pop("long_range", None)
+        if long_range is not None:
+            if cls.base_long_range_cls is None:
+                raise NotImplementedError(
+                    "this backend cannot evaluate the long-range module of the "
+                    "model record"
+                )
+            data["long_range"] = cls.base_long_range_cls.deserialize(long_range)
         obj = super().deserialize(data)
         return obj
 

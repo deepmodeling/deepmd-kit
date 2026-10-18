@@ -34,6 +34,9 @@ from .base_atomic_model import (
 from .dp_atomic_model import (
     DPAtomicModel,
 )
+from .inner_potential import (
+    InnerPotentialAtomicModel,
+)
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
 )
@@ -111,6 +114,23 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     "tensor: "
                     + ", ".join(f"{type(m).__name__}={dim_of(m)}" for m in models)
                 )
+
+        # A long-range module attributes each pair energy to both atoms of
+        # the pair. It is not combined with a bridging term, which defines the
+        # close-pair limit of a learned local energy, nor with atom exclusion,
+        # which removes atomic outputs.
+        if any(isinstance(m, InnerPotentialAtomicModel) for m in models) and any(
+            m.has_long_range() for m in models
+        ):
+            raise NotImplementedError(
+                "an inner_potential bridging term cannot be combined with a "
+                "sub-model carrying a long-range module"
+            )
+        if self.atom_exclude_types and any(m.has_long_range() for m in models):
+            raise NotImplementedError(
+                "`atom_exclude_types` is not supported with a sub-model carrying "
+                "a long-range module"
+            )
 
         self.models = models
         self.type_map = type_map
@@ -377,6 +397,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         for model in self.models:
             if isinstance(model, DPAtomicModel):
                 model.fitting_net.compute_input_stats(sampled_func)
+                if model.long_range is not None:
+                    model.long_range.compute_input_stats(sampled_func)
 
     def supports_native_spin(self) -> bool:
         """Spin-capable when ANY child consumes the spin input.
@@ -389,6 +411,18 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         return any(m.supports_native_spin() for m in self.models)
 
+    def has_long_range(self) -> bool:
+        """ANY child carrying a long-range module makes the composition carry one."""
+        return any(m.has_long_range() for m in self.models)
+
+    def required_topologies(self) -> tuple[str, ...]:
+        """Every topology a child reads, each named once."""
+        return tuple(
+            dict.fromkeys(
+                name for model in self.models for name in model.required_topologies()
+            )
+        )
+
     def forward_atomic_graph(
         self,
         graph: Any,
@@ -398,14 +432,18 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         charge_spin: Array | None = None,
         spin: Array | None = None,
         comm_dict: dict | None = None,
+        topologies: dict[str, Any] | None = None,
+        node_mask: Array | None = None,
     ) -> dict[str, Array]:
         """Graph-route linear combination on the flat node axis.
 
-        Every child consumes the SAME graph, so on autograd backends the
-        shared ``graph.edge_vec`` leaf makes the summed energy's force and
-        virial exactly the sum of the children's -- one edge backward
-        covers the whole composition (this is what makes analytical
-        bridging terms compose with the learned model for free).
+        Every child consumes the SAME graph and topologies, so on autograd
+        backends the shared geometry leaves make the summed energy's force
+        and virial exactly the sum of the children's -- one backward covers
+        the whole composition (this is what makes analytical bridging terms
+        compose with the learned model for free). Each child evaluates its
+        complete energy, including its long-range module, before its weight
+        applies.
 
         Only constant weights are supported here (``"sum"``/``"mean"`` or a
         per-child float list); the distance-switched ZBL-interpolation
@@ -429,6 +467,12 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             flat (N, 3) per-node spin, forwarded to every child.
         comm_dict
             MPI communication metadata, forwarded to every child.
+        topologies
+            the topologies of :meth:`required_topologies`, forwarded to every
+            child.
+        node_mask
+            flat mask of the nodes whose outputs count, forwarded to every
+            child, which combines it with its own exclusions.
 
         Returns
         -------
@@ -472,6 +516,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 charge_spin=charge_spin,
                 spin=spin,
                 comm_dict=comm_dict,
+                topologies=topologies,
+                node_mask=node_mask,
             )
             contrib = ret["energy"] * ww
             energy = contrib if energy is None else energy + contrib

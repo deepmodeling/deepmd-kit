@@ -46,13 +46,12 @@ from deepmd.dpmodel.utils import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
+    PairGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
+    build_topologies,
     compact_nodes,
     expand_node_values,
-)
-from deepmd.dpmodel.utils.nlist import (
-    UNBOUNDED_NSEL,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -134,21 +133,6 @@ def model_call_from_call_lower(
     nframes, nloc = atype.shape[:2]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
-    # Non-periodic datasets may carry an all-zero cell; treat it as no box.
-    if bb is not None:
-        xp_bb = array_api_compat.array_namespace(bb)
-        try:
-            zero_box = bool(xp_bb.all(bb == 0))
-        except Exception:
-            # Traced/symbolic arrays (e.g. jax2tf export) cannot be evaluated
-            # to a Python bool, so this rewrite cannot be baked into an
-            # exported graph: the periodic topology is fixed at trace time.
-            # Callers exporting a non-periodic model must pass ``box=None``
-            # at export time; a dynamic all-zero box at runtime is not
-            # representable and keeps the periodic path.
-            zero_box = False
-        if zero_box:
-            bb = None
     builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
     # Model-level pair exclusion is a nlist-BUILD transform (decision #18/A4):
     # the BUILDER owns it (mirroring build_neighbor_graph on the graph path), so
@@ -582,12 +566,21 @@ def make_model(
             # atom count the mask is all true and this is a renumbering by the
             # identity.
             ng, node_index = compact_nodes(ng, atype_flat >= 0)
+            atype_real = xp.take(atype_flat, node_index, axis=0)
+            topologies = build_topologies(
+                self.atomic_model.required_topologies(),
+                xp.take(xp.reshape(cc, (n_padded, 3)), node_index, axis=0),
+                ng.n_node,
+                bb,
+                atype=atype_real,
+                pair_excl=pair_excl,
+            )
             # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
             # derivative name-holders ``None``, plus int ``mask``), like the
             # dense ``call_common``.  ``call_lower_graph`` masks virtual atoms
             # (atype<0) and sets the real int mask.
             model_predict = self.call_lower_graph(
-                atype=xp.take(atype_flat, node_index, axis=0),
+                atype=atype_real,
                 n_node=ng.n_node,
                 edge_index=ng.edge_index,
                 edge_vec=ng.edge_vec,
@@ -607,6 +600,7 @@ def make_model(
                     else None
                 ),
                 charge_spin=charge_spin,
+                topologies=topologies,
             )
             # Public ABI is rectangular (nf, nloc, *); the lower is flat over
             # the real atoms. Scatter per-atom keys back onto the padded width
@@ -749,6 +743,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
             spin: Array | None = None,
+            topologies: dict[str, Any] | None = None,
         ) -> dict[str, Array]:
             """Model-level graph forward (no type cast). Analogue of the dense
             :meth:`forward_common_atomic`.
@@ -791,6 +786,9 @@ def make_model(
                 Per-node spin vectors, flat (N, 3), or ``None``. Forwarded
                 unchanged to the atomic model's ``forward_common_atomic_graph``
                 (and, from there, the descriptor's ``call_graph``).
+            topologies
+                The topologies the atomic model declares by
+                ``required_topologies()``, on the node axis of the graph.
 
             Returns
             -------
@@ -813,6 +811,7 @@ def make_model(
                 aparam=aparam,
                 charge_spin=charge_spin,
                 spin=spin,
+                topologies=topologies,
             )
             return fit_output_to_model_output_graph(
                 atomic_ret,
@@ -835,6 +834,7 @@ def make_model(
             comm_dict: dict | None = None,
             charge_spin: Array | None = None,
             spin: Array | None = None,
+            topologies: dict[str, Any] | None = None,
         ) -> dict[str, Array]:
             """Graph-native PUBLIC lower (dpa1/se_atten concat-tebd, attention included).
 
@@ -876,6 +876,9 @@ def make_model(
                 Per-node spin vectors, flat (N, 3), or ``None``. Cast to the
                 model precision alongside the other node inputs and forwarded
                 unchanged to :meth:`forward_common_atomic_graph`.
+            topologies
+                The topologies the atomic model declares by
+                ``required_topologies()``, on the node axis of the graph.
 
             Returns
             -------
@@ -889,6 +892,15 @@ def make_model(
                 charge_spin=charge_spin,
                 spin=spin,
             )
+            if topologies:
+                # The pair vectors are geometry like the edge vectors.
+                xp = array_api_compat.array_namespace(edge_vec)
+                topologies = {
+                    name: PairGraph(
+                        pairs.index, xp.astype(pairs.vec, edge_vec.dtype), pairs.mask
+                    )
+                    for name, pairs in topologies.items()
+                }
             model_predict = self.forward_common_atomic_graph(
                 atype,
                 n_node,
@@ -901,6 +913,7 @@ def make_model(
                 comm_dict=comm_dict,
                 charge_spin=cs,
                 spin=sp,
+                topologies=topologies,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -1087,24 +1100,12 @@ def make_model(
                 the formatted nlist.
 
             """
+            n_nf, n_nloc, n_nnei = nlist.shape
             mixed_types = self.mixed_types()
-            # Sentinel capacities (e.g. DPA4C's effectively-unbounded sel)
-            # would allocate absurd padding; a frame can never contribute
-            # more than nall neighbors, so cap them.  Normal capacities must
-            # NOT be capped: type-distinguished descriptors REQUIRE exactly
-            # sum(sel) columns (their statistics and
-            # ``nlist_distinguish_types`` depend on it), so they must never
-            # be capped.  Skip the cap when nall is symbolic (e.g. jax2tf
-            # export), where the comparison would be inconclusive; sentinel
-            # capacities only occur on backends with concrete shapes.
-            nall = extended_atype.shape[1]
-            nnei = sum(self.get_sel())
-            if nnei >= UNBOUNDED_NSEL and isinstance(nall, int) and nnei > nall:
-                nnei = nall
             ret = self._format_nlist(
                 extended_coord,
                 nlist,
-                nnei,
+                sum(self.get_sel()),
                 extra_nlist_sort=extra_nlist_sort,
             )
             if not mixed_types:

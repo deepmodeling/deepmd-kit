@@ -1,0 +1,673 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Long-range latent-charge modules on the DPA4C graph lower (pt_expt)."""
+
+import copy
+
+import numpy as np
+import pytest
+import torch
+
+from deepmd.dpmodel.long_range import (
+    COULOMB_CONSTANT,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    build_pair_graph,
+)
+from deepmd.infer import (
+    DeepPot,
+)
+from deepmd.pt_expt.model.get_model import (
+    get_model,
+)
+from deepmd.pt_expt.train.training import (
+    _CompiledModel,
+    _get_model_structure_key,
+    model_change_out_bias,
+)
+from deepmd.pt_expt.train.wrapper import (
+    ModelWrapper,
+)
+from deepmd.pt_expt.utils import (
+    env,
+)
+
+from ..compile_utils import (
+    REQUIRES_SUPPORTED_COMPILE,
+)
+
+KERNELS = {
+    "les": {"type": "les", "alpha": 0.8},
+    "sog": {"type": "sog", "amplitude": [0.7, -0.2, 0.1], "width": [0.8, 1.7, 3.2]},
+}
+CHANNELS = {"les": 1, "sog": 3}
+NEUTRAL = {"source": "neutral"}
+
+
+def _config(kernel: str = "les", constraint: dict | None = NEUTRAL) -> dict:
+    """Small float64 DPA4C model with a latent-charge long-range module."""
+    return {
+        "type_map": ["A", "B"],
+        "descriptor": {
+            "type": "dpa4c",
+            "rcut": 3.0,
+            "channels": 8,
+            "lmax": 2,
+            "n_radial": 4,
+            "precision": "float64",
+            "seed": 17,
+        },
+        "fitting_net": {
+            "type": "ener",
+            "neuron": [16, 16],
+            "precision": "float64",
+            "seed": 19,
+        },
+        "long_range": {
+            "type": "latent_charge",
+            "channels": CHANNELS[kernel],
+            "charge_net": {"neuron": [8, 8], "precision": "float64", "seed": 23},
+            "kernel": copy.deepcopy(KERNELS[kernel]),
+            "charge_constraint": copy.deepcopy(constraint),
+        },
+    }
+
+
+def _model(kernel: str = "les", **kwargs: object) -> torch.nn.Module:
+    return get_model(_config(kernel, **kwargs)).to(env.DEVICE).eval()
+
+
+def _tensor(x: np.ndarray, dtype: torch.dtype = torch.float64) -> torch.Tensor:
+    return torch.tensor(x, dtype=dtype, device=env.DEVICE)
+
+
+def _batch(seed: int = 0) -> tuple[torch.Tensor, torch.Tensor]:
+    """Three frames of 6, 3 and 5 real atoms, padded to a common width."""
+    rng = np.random.default_rng(seed)
+    coord = rng.uniform(0.0, 6.0, (3, 6, 3))
+    atype = np.array(
+        [[0, 1, 0, 1, 1, 0], [1, 0, 0, -1, -1, -1], [0, 0, 1, 1, 0, -1]],
+        dtype=np.int64,
+    )
+    return _tensor(coord), _tensor(atype, torch.int64)
+
+
+def _set_constant_charges(model: torch.nn.Module, charges: list[float]) -> None:
+    """Zero every network weight and give the atoms of each type a fixed charge.
+
+    The energy is then the long-range pair sum alone, of charges that do not
+    depend on the geometry; the kernel keeps its configured parameters.
+    """
+    with torch.no_grad():
+        for name, parameter in model.atomic_model.named_parameters():
+            if ".kernel." not in f".{name}":
+                parameter.zero_()
+        bias = model.atomic_model.long_range.charge_net.bias_atom_e
+        bias.zero_()
+        bias[:, 0] = torch.as_tensor(charges, dtype=bias.dtype)
+
+
+def _reference_energy(coord: np.ndarray, charge: np.ndarray, kernel: str) -> float:
+    """Direct pair sum of the latent-charge energy of one frame, in eV."""
+    energy = 0.0
+    for i in range(len(coord)):
+        for j in range(i + 1, len(coord)):
+            r = np.linalg.norm(coord[i] - coord[j])
+            if kernel == "les":
+                from scipy.special import (
+                    erf,
+                )
+
+                k = erf(0.8 * r) / r
+            else:
+                amplitude = np.array([0.7, -0.2, 0.1])
+                width = np.array([0.8, 1.7, 3.2])
+                k = np.sum(amplitude * np.exp(-(r**2) / (2 * width**2)))
+            energy += COULOMB_CONSTANT * float(charge[i] @ charge[j]) * k
+    return energy
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_energy_matches_direct_pair_sum(kernel: str) -> None:
+    """With fixed charges the energy is the documented pair sum, attributed half per atom."""
+    model = _model(kernel, constraint=None)
+    _set_constant_charges(model, [1.0, -0.5])
+    coord = np.array([[[0.0, 0.0, 0.0], [1.3, 0.0, 0.0], [0.0, 2.1, 0.4]]])
+    atype = np.array([[0, 1, 1]])
+    out = model(_tensor(coord), _tensor(atype, torch.int64))
+    charge = np.zeros((3, CHANNELS[kernel]))
+    charge[:, 0] = [1.0, -0.5, -0.5]
+    expected = _reference_energy(coord[0], charge, kernel)
+    np.testing.assert_allclose(out["energy"].item(), expected, rtol=1e-12)
+    np.testing.assert_allclose(
+        out["atom_energy"].sum().item(), expected, rtol=1e-12, atol=1e-14
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_force_virial_hessian_match_finite_differences(kernel: str) -> None:
+    """Force, affine-strain virial and Hessian are derivatives of the complete energy."""
+    model = _model(kernel)
+    # Atoms within the cutoff of each other make the charges depend on the
+    # geometry, so the derivatives hold the response of the charges.
+    rng = np.random.default_rng(3)
+    coord = rng.uniform(0.0, 2.5, (1, 4, 3))
+    atype = np.array([[0, 1, 0, 1]])
+    coord_t, atype_t = _tensor(coord), _tensor(atype, torch.int64)
+    out = model(coord_t, atype_t)
+
+    def energy(c: np.ndarray) -> float:
+        return model(_tensor(c), atype_t)["energy"].item()
+
+    h = 1e-5
+    force_fd = np.zeros((4, 3))
+    for i in range(4):
+        for d in range(3):
+            plus, minus = coord.copy(), coord.copy()
+            plus[0, i, d] += h
+            minus[0, i, d] -= h
+            force_fd[i, d] = -(energy(plus) - energy(minus)) / (2 * h)
+    np.testing.assert_allclose(
+        out["force"][0].detach().cpu().numpy(), force_fd, atol=1e-8
+    )
+
+    # The virial is -dE/d(strain) at zero strain, for x -> (1 + eps) x.
+    virial_fd = np.zeros((3, 3))
+    for a in range(3):
+        for b in range(3):
+            strain = np.zeros((3, 3))
+            strain[a, b] = h
+            plus = coord @ (np.eye(3) + strain)
+            minus = coord @ (np.eye(3) - strain)
+            virial_fd[a, b] = -(energy(plus) - energy(minus)) / (2 * h)
+    np.testing.assert_allclose(
+        out["virial"][0].detach().cpu().numpy().reshape(3, 3), virial_fd, atol=1e-8
+    )
+
+    hessian_model = _model(kernel)
+    hessian_model.enable_hessian()
+    hessian = hessian_model(coord_t, atype_t)["hessian"].detach().cpu().numpy()
+    hessian = hessian.reshape(12, 12)
+    hessian_fd = np.zeros((12, 12))
+    for k in range(12):
+        plus, minus = coord.copy(), coord.copy()
+        plus.reshape(-1)[k] += h
+        minus.reshape(-1)[k] -= h
+        f_plus = model(_tensor(plus), atype_t)["force"].detach().cpu().numpy()
+        f_minus = model(_tensor(minus), atype_t)["force"].detach().cpu().numpy()
+        hessian_fd[:, k] = -(f_plus - f_minus).reshape(-1) / (2 * h)
+    np.testing.assert_allclose(hessian, hessian_fd, atol=1e-6)
+    np.testing.assert_allclose(hessian, hessian.T, atol=1e-10)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_atomic_reductions_and_padding(kernel: str) -> None:
+    """Atomic energy and virial sum to the frame values; padding atoms are inert."""
+    model = _model(kernel)
+    coord, atype = _batch()
+    out = model(coord, atype, do_atomic_virial=True)
+    torch.testing.assert_close(out["atom_energy"].sum(1), out["energy"])
+    torch.testing.assert_close(out["atom_virial"].sum(1), out["virial"])
+    assert out["force"][1, 3:].abs().max() == 0
+    moved = coord.clone()
+    moved[1, 3:] += 50.0
+    moved_out = model(moved, atype)
+    torch.testing.assert_close(moved_out["energy"], out["energy"], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_frames_are_independent(kernel: str) -> None:
+    """A frame keeps its energy and force whatever other frames are batched with it."""
+    model = _model(kernel)
+    coord, atype = _batch()
+    batched = model(coord, atype)
+    for frame, nloc in enumerate((6, 3, 5)):
+        alone = model(coord[frame : frame + 1, :nloc], atype[frame : frame + 1, :nloc])
+        torch.testing.assert_close(alone["energy"][0], batched["energy"][frame])
+        torch.testing.assert_close(
+            alone["force"][0], batched["force"][frame, :nloc], atol=1e-12, rtol=0
+        )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_ragged_matches_rectangular(kernel: str) -> None:
+    """The flat ragged entry evaluates the same model as the padded one."""
+    model = _model(kernel)
+    coord, atype = _batch()
+    padded = model(coord, atype)
+    keep = atype.reshape(-1) >= 0
+    ragged = model.forward_ragged(
+        coord.reshape(-1, 3)[keep],
+        atype.reshape(-1)[keep],
+        torch.tensor([6, 3, 5], device=env.DEVICE),
+    )
+    torch.testing.assert_close(ragged["energy"], padded["energy"])
+    torch.testing.assert_close(ragged["force"], padded["force"].reshape(-1, 3)[keep])
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_empty_and_single_atom_frames(kernel: str) -> None:
+    """Frames without pairs contribute no long-range energy and stay finite."""
+    model = _model(kernel)
+    coord = _tensor(np.random.default_rng(5).uniform(0.0, 3.0, (3, 2, 3)))
+    atype = _tensor(np.array([[0, -1], [1, 0], [-1, -1]]), torch.int64)
+    out = model(coord, atype)
+    assert torch.isfinite(out["energy"]).all()
+    assert torch.isfinite(out["force"]).all()
+    single = model(coord[:1, :1], atype[:1, :1])
+    torch.testing.assert_close(single["energy"][0], out["energy"][0])
+
+
+def test_permutation_and_rigid_motion_invariance() -> None:
+    """The energy is invariant under atom permutation, translation and rotation."""
+    model = _model("sog")
+    coord, atype = _batch()
+    coord, atype = coord[:1], atype[:1]
+    out = model(coord, atype)
+    perm = torch.tensor([3, 0, 5, 1, 4, 2], device=env.DEVICE)
+    permuted = model(coord[:, perm], atype[:, perm])
+    torch.testing.assert_close(permuted["energy"], out["energy"])
+    torch.testing.assert_close(permuted["force"], out["force"][:, perm])
+    rotation, _ = torch.linalg.qr(
+        _tensor(np.random.default_rng(13).normal(size=(3, 3)))
+    )
+    moved = model(coord @ rotation.T + 3.7, atype)
+    torch.testing.assert_close(moved["energy"], out["energy"])
+    torch.testing.assert_close(moved["force"], out["force"] @ rotation.T)
+
+
+@pytest.mark.parametrize("source", ["charge_spin", "fparam"])
+def test_constraint_default_matches_explicit_target(source: str) -> None:
+    """An omitted frame condition takes its default for the constraint as well."""
+    config = _config("les", constraint={"source": source, "fparam_index": 0})
+    if source == "charge_spin":
+        config["descriptor"]["add_chg_spin_ebd"] = True
+        config["descriptor"]["default_chg_spin"] = [2.0, 1.0]
+        explicit = {"charge_spin": _tensor(np.array([[2.0, 1.0], [2.0, 1.0]]))}
+        other = {"charge_spin": _tensor(np.array([[0.0, 1.0], [0.0, 1.0]]))}
+    else:
+        config["fitting_net"]["numb_fparam"] = 1
+        config["fitting_net"]["default_fparam"] = [2.0]
+        explicit = {"fparam": _tensor(np.array([[2.0], [2.0]]))}
+        other = {"fparam": _tensor(np.array([[0.0], [0.0]]))}
+    model = get_model(config).to(env.DEVICE).eval()
+    coord, atype = _batch()
+    coord, atype = coord[:2], atype[:2]
+    implicit_out = model(coord, atype)
+    explicit_out = model(coord, atype, **explicit)
+    torch.testing.assert_close(implicit_out["energy"], explicit_out["energy"])
+    torch.testing.assert_close(implicit_out["force"], explicit_out["force"])
+    other_out = model(coord, atype, **other)
+    assert (other_out["energy"] - implicit_out["energy"]).abs().max() > 1e-6
+
+
+@pytest.mark.parametrize("constraint", [None, NEUTRAL])
+def test_pair_exclusion_removes_the_interaction(constraint: dict | None) -> None:
+    """Pairs of excluded types do not interact; their atoms keep their charges."""
+    config = _config("les", constraint=constraint)
+    config["pair_exclude_types"] = [[0, 1]]
+    model = get_model(config).to(env.DEVICE).eval()
+    _set_constant_charges(model, [1.0, -1.0])
+    coord = _tensor(np.array([[[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 0.0, 0.0]]]))
+    atype = _tensor(np.array([[0, 0, 1]]), torch.int64)
+    out = model(coord, atype)
+    # Only the two type-0 atoms interact. The neutral constraint shifts the
+    # charges (1, 1, -1) of the three atoms to (2/3, 2/3, -4/3).
+    charge = 1.0 if constraint is None else 2.0 / 3.0
+    erf = torch.erf(torch.tensor(3.2, dtype=torch.float64)).item()
+    expected = COULOMB_CONSTANT * charge**2 * erf / 4.0
+    np.testing.assert_allclose(out["energy"].item(), expected, rtol=1e-12)
+    assert out["force"][0, 2].abs().max() == 0
+
+
+@pytest.mark.parametrize("compiled", [False, True])
+def test_vacuum_reference_with_long_range(compiled: bool) -> None:
+    """An isolated atom keeps its reference energy; reference rows join no pair."""
+    config = _config("les", constraint={"source": "charge_spin"})
+    config["type_map"] = ["O", "H"]
+    config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
+    config["descriptor"]["add_chg_spin_ebd"] = True
+    config["descriptor"]["default_chg_spin"] = [0.0, 1.0]
+    config["fitting_net"]["vacuum_ref"] = True
+    model = get_model(config).to(env.DEVICE).eval()
+    assert model.get_fitting_net().needs_vacuum_descriptor()
+    rng = np.random.default_rng(11)
+    coord = _tensor(rng.uniform(0.0, 2.5, (2, 4, 3)))
+    atype = _tensor(np.array([[0, 1, 1, 0], [1, 0, -1, -1]]), torch.int64)
+    if compiled:
+        model.train()
+        runner = _CompiledModel(model, _get_model_structure_key(model))
+        runner.train()
+        reference = model(coord, atype)
+        out = runner(coord, atype)
+        torch.testing.assert_close(out["energy"], reference["energy"])
+        torch.testing.assert_close(out["force"], reference["force"])
+        return
+    out = model(coord, atype)
+    for frame in range(2):
+        alone = model(coord[frame : frame + 1], atype[frame : frame + 1])
+        torch.testing.assert_close(alone["energy"][0], out["energy"][frame])
+    # The output statistics set the bias; an atom without neighbors and in
+    # its reference state then has exactly the bias of its type.
+    bias = model.atomic_model.out_bias.clone()
+    bias[0, :, 0] = torch.tensor([-3.0, 0.5])
+    model.atomic_model.set_out_bias(bias)
+    isolated = model(
+        coord[:1, :1],
+        atype[:1, :1],
+        charge_spin=_tensor(np.array([[0.0, 3.0]])),
+    )
+    torch.testing.assert_close(
+        isolated["energy"].reshape(()),
+        torch.tensor(-3.0, dtype=torch.float64, device=env.DEVICE),
+        rtol=0,
+        atol=1e-12,
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_self_label_bias_adjustment_is_invariant(kernel: str) -> None:
+    """Labelling a sample with the model's own energies leaves its bias unchanged."""
+    model = _model(kernel)
+    with torch.no_grad():
+        model.atomic_model.long_range.charge_net.bias_atom_e[:, 0] = torch.tensor(
+            [0.8, -0.6]
+        )
+    coord, atype = _batch()
+    coord, atype = coord[:1], atype[:1]
+    energy = model(coord, atype)["energy"].detach().cpu().numpy()
+    natoms = np.array([[6, 6, 3, 3]], dtype=np.int32)
+    sample = [
+        {
+            "coord": coord.cpu().numpy(),
+            "atype": atype.cpu().numpy(),
+            "box": None,
+            "natoms": natoms,
+            "energy": energy.reshape(1, 1),
+            "find_energy": np.float32(1.0),
+        }
+    ]
+    bias_before = model.atomic_model.out_bias.detach().clone()
+    model_change_out_bias(model, lambda: sample, "change-by-statistic")
+    torch.testing.assert_close(
+        model.atomic_model.out_bias, bias_before, atol=1e-10, rtol=0
+    )
+    after = model(coord, atype)["energy"].detach().cpu().numpy()
+    np.testing.assert_allclose(after, energy, atol=1e-10)
+
+
+@pytest.mark.parametrize("weights", ["sum", "mean", [0.3, 1.4]])
+def test_linear_composition_combines_complete_energies(weights: object) -> None:
+    """A linear composition weights the complete energy of each child.
+
+    The second child is an ordinary model, which reads no topology.
+    """
+    child = _config("les")
+    child["type"] = "standard"
+    other = copy.deepcopy(child)
+    other.pop("long_range")
+    other["descriptor"]["seed"] = 31
+    composition = (
+        get_model(
+            {
+                "type": "linear_ener",
+                "type_map": child["type_map"],
+                "weights": weights,
+                "models": [child, other],
+            }
+        )
+        .to(env.DEVICE)
+        .eval()
+    )
+    standalone = [_model("les"), get_model(other).to(env.DEVICE).eval()]
+    for index, model in enumerate(standalone):
+        model.atomic_model.load_state_dict(
+            composition.atomic_model.models[index].state_dict()
+        )
+    coord, atype = _batch()
+    out = composition(coord, atype)
+    if weights == "sum":
+        w = [1.0, 1.0]
+    elif weights == "mean":
+        w = [0.5, 0.5]
+    else:
+        w = weights
+    energy = sum(
+        ww * m(coord, atype)["energy"] for ww, m in zip(w, standalone, strict=True)
+    )
+    force = sum(
+        ww * m(coord, atype)["force"] for ww, m in zip(w, standalone, strict=True)
+    )
+    torch.testing.assert_close(out["energy"], energy)
+    torch.testing.assert_close(out["force"], force)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_parameter_gradients_and_freezing(kernel: str) -> None:
+    """Energy and force losses reach the charge network and the kernel; frozen parts stay out."""
+    model = _model(kernel).train()
+    coord, atype = _batch()
+    out = model(coord, atype)
+    loss = out["energy"].square().sum() + out["force"].square().sum()
+    loss.backward()
+    long_range = model.atomic_model.long_range
+    for name, parameter in long_range.named_parameters():
+        assert parameter.grad is not None and parameter.grad.abs().max() > 0, name
+
+    config = _config(kernel)
+    config["long_range"]["kernel"]["trainable"] = False
+    config["long_range"]["charge_net"]["trainable"] = False
+    frozen = get_model(config).to(env.DEVICE).train()
+    names = [
+        name
+        for name, parameter in frozen.named_parameters()
+        if parameter.requires_grad and "long_range" in name
+    ]
+    assert names == []
+    frozen(coord, atype)["energy"].sum().backward()
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_serialization_round_trip(kernel: str) -> None:
+    """The portable record and the state dict restore the same model."""
+    model = _model(kernel)
+    rng = np.random.default_rng(5)
+    with torch.no_grad():
+        for parameter in model.atomic_model.long_range.parameters():
+            parameter.add_(0.01 * _tensor(rng.normal(size=tuple(parameter.shape))))
+    coord, atype = _batch()
+    expected = model(coord, atype)
+    record = model.serialize()
+    assert record["@version"] == 3
+    restored = type(model).deserialize(copy.deepcopy(record)).to(env.DEVICE).eval()
+    torch.testing.assert_close(restored(coord, atype)["energy"], expected["energy"])
+    rebuilt = _model(kernel)
+    rebuilt.load_state_dict(model.state_dict())
+    torch.testing.assert_close(rebuilt(coord, atype)["force"], expected["force"])
+
+
+def test_construction_is_reproducible() -> None:
+    """Without a seed of its own the charge network follows the fitting seed."""
+    config = _config("les")
+    del config["long_range"]["charge_net"]["seed"]
+    first, second = (get_model(copy.deepcopy(config)) for _ in range(2))
+    for (name, a), (_, b) in zip(
+        first.named_parameters(), second.named_parameters(), strict=True
+    ):
+        torch.testing.assert_close(a, b, rtol=0, atol=0, msg=name)
+
+
+def test_ordinary_record_keeps_version() -> None:
+    """A model without a long-range module keeps its record and constructor."""
+    config = _config("les")
+    config.pop("long_range")
+    model = get_model(config)
+    record = model.serialize()
+    assert record["@version"] == 2
+    assert "long_range" not in record
+    assert not model.atomic_model.has_long_range()
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_checkpoint_inference_matches_direct_forward(tmp_path, kernel: str) -> None:
+    """DeepPot on a checkpoint builds the topology over the real atoms only."""
+    model = _model(kernel)
+    checkpoint = tmp_path / f"long_range_{kernel}.pt"
+    wrapper = ModelWrapper(model, model_params=_config(kernel))
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    coord, atype = _batch(seed=7)
+    expected = model(coord, atype, do_atomic_virial=True)
+    dp = DeepPot(str(checkpoint), auto_batch_size=False)
+    names = ("energy", "force", "virial", "atom_energy", "atom_virial")
+    coord_np = coord.cpu().numpy()
+    actual = dict(
+        zip(
+            names,
+            dp.eval(coord_np, None, atype.cpu().numpy(), atomic=True, mixed_type=True),
+            strict=True,
+        )
+    )
+    for name in names:
+        np.testing.assert_allclose(
+            actual[name],
+            expected[name].detach().cpu().numpy(),
+            rtol=1e-10,
+            atol=1e-10,
+            err_msg=name,
+        )
+    coord_np[1, 3:] += 40.0
+    moved = dp.eval(coord_np, None, atype.cpu().numpy(), mixed_type=True)
+    np.testing.assert_allclose(moved[0], actual["energy"], rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+@REQUIRES_SUPPORTED_COMPILE
+def test_compiled_matches_eager(kernel: str) -> None:
+    """The compiled graph lower evaluates the complete model, train and eval.
+
+    In training the gradient of an energy and force loss, whose force part is
+    a second-order derivative of the energy, reaches the long-range
+    parameters as in eager execution.
+    """
+    model = _model(kernel)
+    coord, atype = _batch()
+    parameters = list(model.atomic_model.long_range.parameters())
+
+    def loss(out: dict) -> torch.Tensor:
+        return out["energy"].square().sum() + out["force"].square().sum()
+
+    for training in (True, False):
+        model.train(training)
+        compiled = _CompiledModel(
+            model, _get_model_structure_key(model), compile_eval=True
+        )
+        compiled.train(training)
+        reference = model(coord, atype)
+        result = compiled(coord, atype)
+        assert compiled._compiled_lower_by_mode, "the compiled graph was not used"
+        torch.testing.assert_close(result["energy"], reference["energy"])
+        torch.testing.assert_close(result["force"], reference["force"])
+        torch.testing.assert_close(result["virial"], reference["virial"])
+        if training:
+            expected = torch.autograd.grad(loss(reference), parameters)
+            actual = torch.autograd.grad(loss(result), parameters)
+            for expected_grad, actual_grad in zip(expected, actual, strict=True):
+                torch.testing.assert_close(actual_grad, expected_grad)
+
+
+def test_unsupported_combinations_fail() -> None:
+    """Unsupported inputs, routes, combinations and descriptors are rejected."""
+    model = _model("les")
+    coord, atype = _batch()
+    box = 10.0 * torch.eye(3, dtype=torch.float64, device=env.DEVICE).reshape(1, 9)
+    with pytest.raises(NotImplementedError, match="non-periodic"):
+        model(coord[:1], atype[:1], box=box)
+    nlist = torch.full((1, 6, 4), -1, dtype=torch.int64, device=env.DEVICE)
+    with pytest.raises(NotImplementedError, match="NeighborGraph"):
+        model.atomic_model.forward_atomic(coord[:1], atype[:1], nlist)
+    with pytest.raises(NotImplementedError, match="compression"):
+        model.atomic_model.enable_compression(0.5)
+    config = _config("les")
+    config["spin"] = {"use_spin": [True, False], "scheme": "native"}
+    with pytest.raises(NotImplementedError):
+        get_model(config)
+    config = _config("les")
+    config["use_srtab"] = "table.txt"
+    config["sw_rmin"], config["sw_rmax"] = 0.5, 1.0
+    with pytest.raises(NotImplementedError, match="ZBL"):
+        get_model(config)
+    config = _config("les")
+    config["type_map"] = ["O", "H"]
+    config["bridging_method"] = "ZBL"
+    with pytest.raises(NotImplementedError, match="bridging"):
+        get_model(config)
+    config = _config("les")
+    config["atom_exclude_types"] = [1]
+    with pytest.raises(NotImplementedError, match="atom_exclude_types"):
+        get_model(config)
+    child = _config("les")
+    child["type"] = "standard"
+    with pytest.raises(NotImplementedError, match="atom_exclude_types"):
+        get_model(
+            {
+                "type": "linear_ener",
+                "type_map": child["type_map"],
+                "weights": "sum",
+                "models": [child],
+                "atom_exclude_types": [1],
+            }
+        )
+    config = _config("les")
+    config["descriptor"] = {
+        "type": "se_e2_a",
+        "rcut": 3.0,
+        "rcut_smth": 2.0,
+        "sel": [8, 8],
+    }
+    with pytest.raises(NotImplementedError, match="DPA4C"):
+        get_model(config)
+    from deepmd.pt_expt.utils.serialization import (
+        _trace_and_export,
+    )
+
+    with pytest.raises(NotImplementedError, match="deployable"):
+        _trace_and_export({"model": model.serialize()})
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_dpmodel_reference_matches(kernel: str) -> None:
+    """The dpmodel reference evaluates the same energy from the portable record."""
+    from deepmd.dpmodel.model.base_model import BaseModel as BaseModelDP
+
+    model = _model(kernel)
+    coord, atype = _batch()
+    expected = model(coord, atype)
+    reference = BaseModelDP.deserialize(model.serialize())
+    ret = reference.call_common(
+        coord.cpu().numpy(), atype.cpu().numpy(), neighbor_graph_method="dense"
+    )
+    np.testing.assert_allclose(
+        ret["energy_redu"].reshape(-1),
+        expected["energy"].detach().cpu().numpy().reshape(-1),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        ret["energy"].reshape(3, 6),
+        expected["atom_energy"].detach().cpu().numpy().reshape(3, 6),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
+def test_pair_graph_skips_padding() -> None:
+    """The pair topology joins real atoms of one frame only and ends in masked guards."""
+    coord = torch.arange(15, dtype=torch.float64).reshape(5, 3)
+    pairs = build_pair_graph(
+        coord,
+        torch.tensor([3, 2]),
+        torch.tensor([0, -1, 1, 0, 1]),
+        torch.tensor([True, False, True, True, True]),
+    )
+    real = pairs.index[:, pairs.mask]
+    assert real.tolist() == [[0, 3], [2, 4]]
+    assert (~pairs.mask).sum() == 2

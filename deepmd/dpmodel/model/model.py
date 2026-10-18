@@ -13,6 +13,9 @@ from deepmd.dpmodel.descriptor.base_descriptor import (
 from deepmd.dpmodel.fitting.base_fitting import (
     BaseFitting,
 )
+from deepmd.dpmodel.long_range import (
+    BaseLongRange,
+)
 from deepmd.dpmodel.model.base_model import (
     BaseModel,
 )
@@ -47,6 +50,7 @@ _model_factory = BackendModelFactory(
     atomic_model=DPAtomicModel,
     pairtab_model=PairTabAtomicModel,
     zbl_model=DPZBLModel,
+    long_range_base=BaseLongRange,
 )
 get_zbl_model = _model_factory.get_zbl_model
 

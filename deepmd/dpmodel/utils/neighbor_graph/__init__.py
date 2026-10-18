@@ -5,8 +5,10 @@ The unified edge/graph neighbor-list contract and its supporting machinery:
 ``graph`` (the ``NeighborGraph``/``GraphLayout`` contract + derived node-validity
 + edge padding), ``csr`` (backend-agnostic CSR construction and canonicalization),
 ``builder`` (the carry-all ``build_neighbor_graph`` dispatcher + the
-``from_dense_quartet`` legacy converter), ``segment`` (mask-aware
-segment-reduction toolkit), and ``derivatives`` (edge force/virial assembly).
+``from_dense_quartet`` legacy converter), ``pair_graph`` (the complete
+intra-frame pair topology of interactions without a cutoff), ``segment``
+(mask-aware segment-reduction toolkit), and ``derivatives`` (edge and pair
+force/virial assembly).
 See the design discussion wanghan-iapcm/deepmd-kit#4.
 """
 
@@ -33,6 +35,7 @@ from .csr import (
 )
 from .derivatives import (
     edge_force_virial,
+    pair_force_virial,
 )
 from .env import (
     edge_env_mat,
@@ -53,6 +56,13 @@ from .graph import (
     pad_and_guard_angles,
     pad_and_guard_edges,
 )
+from .pair_graph import (
+    ALL_PAIRS,
+    PairGraph,
+    build_pair_graph,
+    build_topologies,
+    unordered_pair_index,
+)
 from .pairs import (
     center_edge_pairs,
 )
@@ -64,8 +74,10 @@ from .segment import (
 )
 
 __all__ = [
+    "ALL_PAIRS",
     "GraphLayout",
     "NeighborGraph",
+    "PairGraph",
     "angle_padding_fraction",
     "angle_to_edge_sum",
     "angle_to_node_sum",
@@ -77,6 +89,8 @@ __all__ = [
     "build_edge_csr",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",
+    "build_pair_graph",
+    "build_topologies",
     "canonicalize_neighbor_graph",
     "center_edge_pairs",
     "compact_nodes",
@@ -92,8 +106,10 @@ __all__ = [
     "node_validity_mask",
     "pad_and_guard_angles",
     "pad_and_guard_edges",
+    "pair_force_virial",
     "segment_max",
     "segment_mean",
     "segment_softmax",
     "segment_sum",
+    "unordered_pair_index",
 ]

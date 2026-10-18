@@ -1,9 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Autograd assembly: graph energy -> force/virial/atom_virial via grad(E, edge_vec).
 
-torch-only. The pure-array scatter (edge_force_virial) is shared with dpmodel;
-this module supplies the single backward pass that produces g_e = dE/d(edge_vec).
+torch-only. The pure-array scatters (edge_force_virial, pair_force_virial) are
+shared with dpmodel; this module supplies the single backward pass that
+produces the gradient of the energy with respect to every geometry leaf: the
+edge vectors of the neighbor graph and the pair vectors of the topologies.
 """
+
+from collections.abc import (
+    Sequence,
+)
 
 import torch
 
@@ -20,8 +26,10 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
+    PairGraph,
     edge_force_virial,
     frame_id_from_n_node,
+    pair_force_virial,
     segment_sum,
 )
 from deepmd.pt.utils import (
@@ -60,6 +68,7 @@ def edge_energy_deriv(
     do_atomic_virial: bool = False,
     create_graph: bool = False,
     force_precision: torch.dtype | None = None,
+    pair_graphs: Sequence[PairGraph] = (),
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
     """Return (force, atom_virial_or_None, virial) from a graph energy.
 
@@ -78,6 +87,12 @@ def edge_energy_deriv(
     a small neighbor sum and the per-frame virial uses a hierarchical block
     reduction. A retained graph (training / double backward) keeps the fp64 leaf
     dtype so training numerics are unchanged.
+
+    The same backward differentiates the energy with respect to the vectors
+    of every pair topology in ``pair_graphs``. Their gradients are pulled back
+    by the shared pair_force_virial scatter and summed in: the energy reaches
+    the coordinates through all its geometry leaves, so its complete force and
+    virial are the sum of their pullbacks.
 
     Parameters
     ----------
@@ -109,6 +124,9 @@ def edge_energy_deriv(
         whether to materialize the per-atom virial (else ``None`` is returned).
     create_graph
         whether the backward retains a graph (training, for second-order grad).
+    pair_graphs
+        Pair topologies whose ``vec`` are further autograd leaves of
+        ``energy``, on the same node axis.
 
     Returns
     -------
@@ -119,9 +137,9 @@ def edge_energy_deriv(
     virial
         (nf, 3, 3) per-frame virial (always computed).
     """
-    (g_e,) = torch.autograd.grad(
+    g_e, *g_pairs = torch.autograd.grad(
         energy.sum() if energy.dim() else energy,
-        edge_vec,
+        (edge_vec, *(pairs.vec for pairs in pair_graphs)),
         create_graph=create_graph,
         retain_graph=True,
     )
@@ -197,6 +215,19 @@ def edge_energy_deriv(
         force, atom_virial, virial = edge_force_virial(
             g_e, edge_vec, edge_index, edge_mask, n_node, node_capacity=node_capacity
         )
+    for g_p, pairs in zip(g_pairs, pair_graphs, strict=True):
+        pair_force, pair_atom_virial, pair_virial = pair_force_virial(
+            g_p,
+            pairs.vec,
+            pairs.index,
+            pairs.mask,
+            n_node,
+            node_capacity=force.shape[0],
+        )
+        force = force + pair_force.to(force.dtype)
+        virial = virial + pair_virial.to(virial.dtype)
+        if do_atomic_virial:
+            atom_virial = atom_virial + pair_atom_virial.to(atom_virial.dtype)
     return force, (atom_virial if do_atomic_virial else None), virial
 
 
@@ -211,6 +242,7 @@ def fit_output_to_model_output_graph(
     n_local: torch.Tensor | None = None,
     force_precision: torch.dtype | None = None,
     spin_leaf: torch.Tensor | None = None,
+    topologies: dict[str, PairGraph] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Graph analogue of the dense pt_expt ``fit_output_to_model_output``.
 
@@ -282,6 +314,10 @@ def fit_output_to_model_output_graph(
         ``grad(E, [edge_vec, spin])`` jointly in one call; here the two grads
         are separate so :func:`edge_energy_deriv`'s signature stays
         untouched. ``None`` (default): unchanged, no mag output.
+    topologies
+        Pair topologies read by the atomic model, by name. Their ``vec`` are
+        autograd leaves of ``fit_ret`` next to ``graph.edge_vec``; force and
+        virial include their pullbacks (see :func:`edge_energy_deriv`).
 
     Returns
     -------
@@ -393,6 +429,7 @@ def fit_output_to_model_output_graph(
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,
                 force_precision=force_precision if not create_graph else None,
+                pair_graphs=() if topologies is None else tuple(topologies.values()),
             )
             # force (N, 3) -> (N, 1, 3)  [flat; caller unravels at I/O boundary]
             ff_list.append(force.reshape(N, 1, 3))
