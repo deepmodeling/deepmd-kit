@@ -33,6 +33,10 @@ import msgpack
 import numpy as np
 
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_margin_single,
+    pair_half_thresholds,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     DistributedLmdbBatchSampler,
     LmdbBatchIterator,
@@ -1202,17 +1206,20 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(result["find_energy"], 1.0)
         self.assertEqual(result["find_force"], 1.0)
 
-    def test_min_pair_dist_requirement_computed(self):
-        path = _create_grid_lmdb(f"{self._tmpdir.name}/grid_min_pair.lmdb", nframes=1)
+    def test_pair_margin_requirement_computed(self):
+        path = _create_grid_lmdb(
+            f"{self._tmpdir.name}/grid_pair_margin.lmdb", nframes=1
+        )
         reader = LmdbDataReader(path, ["TYPE"], batch_size=1)
         reader.add_data_requirement(
             [
                 DataRequirementItem(
-                    "min_pair_dist",
+                    "pair_margin",
                     ndof=1,
                     atomic=False,
                     must=False,
                     high_prec=False,
+                    default=0.5,
                     source_policy="derived",
                 )
             ]
@@ -1220,14 +1227,15 @@ class TestLmdbDataReader(unittest.TestCase):
 
         frame = reader[0]
 
-        self.assertEqual(frame["find_min_pair_dist"], np.float32(1.0))
-        np.testing.assert_allclose(frame["min_pair_dist"], np.array([1.0]))
+        # The grid spaces its atoms 1 Å apart, which is twice the window.
+        self.assertEqual(frame["find_pair_margin"], np.float32(1.0))
+        np.testing.assert_allclose(frame["pair_margin"], np.array([2.0]))
 
-    def test_min_pair_dist_requirement_defaults_without_atype(self):
+    def test_pair_margin_requirement_defaults_without_atype(self):
         raw_frame = _make_frame(natoms=6, seed=0)
         raw_frame.pop("atom_types")
         requirement = DataRequirementItem(
-            "min_pair_dist",
+            "pair_margin",
             ndof=1,
             default=0.25,
             source_policy="derived",
@@ -1236,7 +1244,7 @@ class TestLmdbDataReader(unittest.TestCase):
             ntypes=2,
             natoms=6,
             type_remap=None,
-            data_requirements={"min_pair_dist": requirement},
+            data_requirements={"pair_margin": requirement},
         )
 
         frame = decode_lmdb_frame(
@@ -1246,20 +1254,20 @@ class TestLmdbDataReader(unittest.TestCase):
             copy_arrays=True,
         )
 
-        self.assertEqual(frame["find_min_pair_dist"], np.float32(0.0))
-        np.testing.assert_allclose(frame["min_pair_dist"], np.array([0.25]))
+        self.assertEqual(frame["find_pair_margin"], np.float32(0.0))
+        np.testing.assert_allclose(frame["pair_margin"], np.array([0.25]))
 
-    def test_derived_min_pair_dist_ignores_raw_presence_for_grouping(self):
+    def test_derived_pair_margin_ignores_raw_presence_for_grouping(self):
         """Derived fields neither partition frames nor trust stored values."""
         path = _create_grid_lmdb(
-            f"{self._tmpdir.name}/derived_min_pair.lmdb",
+            f"{self._tmpdir.name}/derived_pair_margin.lmdb",
             nframes=2,
         )
         environment = lmdb.open(path, readonly=False, lock=False)
         with environment.begin(write=True) as transaction:
             key = format(0, "012d").encode()
             frame = msgpack.unpackb(transaction.get(key), raw=False)
-            frame["min_pair_dist"] = {
+            frame["pair_margin"] = {
                 "type": "<f8",
                 "shape": (1,),
                 "data": np.array([99.0], dtype=np.float64).tobytes(),
@@ -1271,10 +1279,10 @@ class TestLmdbDataReader(unittest.TestCase):
         reader.add_data_requirement(
             [
                 DataRequirementItem(
-                    "min_pair_dist",
+                    "pair_margin",
                     ndof=1,
                     atomic=False,
-                    default=0.0,
+                    default=0.5,
                     source_policy="derived",
                 )
             ]
@@ -1287,8 +1295,8 @@ class TestLmdbDataReader(unittest.TestCase):
             groups = collect_lmdb_sampling_groups(reader)
 
         self.assertEqual(len(groups), 1)
-        np.testing.assert_allclose(reader[0]["min_pair_dist"], [1.0])
-        np.testing.assert_allclose(reader[1]["min_pair_dist"], [1.0])
+        np.testing.assert_allclose(reader[0]["pair_margin"], [2.0])
+        np.testing.assert_allclose(reader[1]["pair_margin"], [2.0])
 
 
 # ============================================================
@@ -2941,6 +2949,112 @@ class TestDecoderPoolFailure(unittest.TestCase):
 
         self._assert_same_batch(batch, self._reader.decode_batch([4, 5, 6, 7]))
         self.assertFalse(iterator._pool.healthy)
+
+
+class TestDerivedMinPairDist(unittest.TestCase):
+    """A batch derives `pair_margin` as the frames of that batch carry it."""
+
+    @staticmethod
+    def _requirement(
+        fraction: float, length_scale: str = "absolute"
+    ) -> list[DataRequirementItem]:
+        return [
+            DataRequirementItem(
+                "pair_margin",
+                ndof=1,
+                atomic=False,
+                must=False,
+                high_prec=False,
+                default=fraction,
+                source_policy="derived",
+                length_scale=length_scale,
+            )
+        ]
+
+    def _margins(self, fraction: float, length_scale: str = "absolute") -> np.ndarray:
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(fraction, length_scale))
+        return reader.decode_batch(list(range(6)))["pair_margin"].reshape(-1)
+
+    def _frame_margins(
+        self, fraction: float, length_scale: str = "absolute"
+    ) -> np.ndarray:
+        """Margins of the frame read path, which visits every pair.
+
+        The batch read bounds its scan at a margin of one, so a frame that
+        clears its window carries a value it reaches rather than its exact
+        margin; the frame read path has no such bound.
+        """
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(fraction, length_scale))
+        return np.concatenate([reader[index]["pair_margin"] for index in range(6)])
+
+    def setUp(self) -> None:
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._path = _create_lmdb(f"{self._tmpdir.name}/derived.lmdb", nframes=6)
+        # Frames without periodicity carry a cell of zeros, which the readers
+        # may mix with periodic ones in one batch.
+        environment = lmdb.open(self._path, map_size=10 * 1024 * 1024)
+        with environment.begin(write=True) as transaction:
+            for index in (1, 4):
+                key = format(index, "012d").encode()
+                frame = msgpack.unpackb(transaction.get(key), raw=False)
+                frame["cells"]["data"] = np.zeros((3, 3)).tobytes()
+                transaction.put(key, msgpack.packb(frame, use_bin_type=True))
+        environment.close()
+
+    def tearDown(self) -> None:
+        self._tmpdir.cleanup()
+
+    def test_batch_matches_the_frames_it_holds(self) -> None:
+        """A window no frame clears leaves both read-backs exact."""
+        wide = 10.0
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(wide))
+        expected = np.concatenate([reader[index]["pair_margin"] for index in range(6)])
+        self.assertTrue((expected < 1.0).all())
+        batch = reader.decode_batch(list(range(6)))
+        self.assertEqual(float(batch["find_pair_margin"]), 1.0)
+        self.assertEqual(batch["pair_margin"].shape, (6, 1))
+        np.testing.assert_allclose(
+            batch["pair_margin"].reshape(-1), expected, rtol=1e-12, atol=1e-12
+        )
+
+    def test_a_threshold_keeps_the_side_of_every_frame(self) -> None:
+        """The window each frame is judged against is its own radius."""
+        wide = 10.0
+        distances = self._margins(wide) * wide
+        fraction = float(np.median(distances))
+        margins = self._margins(fraction)
+        self.assertTrue((margins < 1.0).any() and (margins >= 1.0).any())
+        np.testing.assert_array_equal(margins < 1.0, distances < fraction)
+
+    def test_a_covalent_window_sizes_each_pair_by_its_elements(self) -> None:
+        """Oxygen and hydrogen carry different windows on the same geometry."""
+        reader = LmdbDataReader(self._path, ["O", "H"], batch_size=6)
+        reader.add_data_requirement(self._requirement(0.5, "covalent"))
+        half = pair_half_thresholds(0.5, "covalent", ["O", "H"])
+        for index in range(6):
+            frame = reader[index]
+            box = None if not frame["box"].any() else frame["box"]
+            np.testing.assert_allclose(
+                frame["pair_margin"],
+                [
+                    compute_min_pair_margin_single(
+                        frame["coord"], box, frame["atype"], half
+                    )
+                ],
+                rtol=1e-12,
+            )
+        # Half of the Pyykko single-bond radii puts the three pair thresholds
+        # at 0.63 Å for O-O, 0.475 Å for O-H and 0.32 Å for H-H, and an
+        # absolute window is one threshold for all three: no radius reproduces
+        # the covalent margins, which stay between the two extreme ones.
+        covalent = self._frame_margins(0.5, "covalent")
+        for threshold in (0.32, 0.475, 0.63):
+            self.assertFalse(np.allclose(covalent, self._frame_margins(threshold)))
+        self.assertTrue((covalent >= self._frame_margins(0.63)).all())
+        self.assertTrue((covalent <= self._frame_margins(0.32)).all())
 
 
 if __name__ == "__main__":

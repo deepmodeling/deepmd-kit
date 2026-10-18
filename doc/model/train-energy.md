@@ -153,15 +153,20 @@ limit of the model is pinned. Two model options provide this together:
 
 | Name     | Reference calculation | Elements                                  |
 | -------- | --------------------- | ----------------------------------------- |
+| `mptraj` | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
 | `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
 | `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
 | `omc25`  | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
 | `odac25` | ODAC25                | 94, H to Pu                               |
 
-These four tables are the isolated-atom reference energies of the UMA training
-tasks published with fairchem
+The `mptraj` table uses the final VASP `free energy TOTEN`, in eV.
+
+The `omat24`, `omol25`, `omc25` and `odac25` tables are the isolated-atom
+reference energies of the UMA training tasks published with fairchem
 (`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
-license). Each table is on the energy scale of its own reference calculation
+license).
+
+Each table is on the energy scale of its own reference calculation
 (the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a
 model takes the table of the calculation that produced its training data. A
 table of another reference calculation is given as a JSON file

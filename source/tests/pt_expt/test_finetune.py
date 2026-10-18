@@ -771,6 +771,103 @@ class TestFinetuneCLI(unittest.TestCase):
             os.chdir(old_cwd)
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def _finetune_across_bridging(
+        self,
+        source_bridged: bool,
+        model_branch: str = "",
+    ) -> None:
+        """Fine-tune between a plain DPA4C model and its ZBL-bridged composition.
+
+        The composition holds the learned descriptor and fitting net as its
+        first sub-model, so the weights of that part come from the checkpoint
+        although their path differs; a RANDOM fitting takes the descriptor
+        alone and computes the output statistics of the new fitting.
+        """
+        plain = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 8,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [16, 16], "seed": 1},
+            "data_stat_nbatch": 1,
+        }
+        bridged = {
+            **deepcopy(plain),
+            "bridging_method": "zbl",
+            "bridging_r_inner": 0.5,
+            "bridging_r_outer": 0.8,
+        }
+        source, target = (bridged, plain) if source_bridged else (plain, bridged)
+        source_path, target_path = (
+            (".atomic_model.models.0.", ".atomic_model.")
+            if source_bridged
+            else (".atomic_model.", ".atomic_model.models.0.")
+        )
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_bridged_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, source, numb_steps=1), warning=False
+                )
+            )
+            ckpt_path = self._train_pretrained(config, tmpdir)
+
+            ft_config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, target, numb_steps=1), warning=False
+                )
+            )
+            ft_config["model"], finetune_links = get_finetune_rules(
+                ckpt_path, ft_config["model"], model_branch=model_branch
+            )
+            trainer_ft = get_trainer(
+                ft_config,
+                finetune_model=ckpt_path,
+                finetune_links=finetune_links,
+            )
+
+            pretrained_state = torch.load(
+                ckpt_path, map_location=DEVICE, weights_only=True
+            )["model"]
+            ft_state = trainer_ft.wrapper.state_dict()
+            parts = ["descriptor."]
+            if model_branch != "RANDOM":
+                parts.append("fitting_net.")
+            learned = [
+                key
+                for key in ft_state
+                if any(f"{target_path}{part}" in key for part in parts)
+            ]
+            self.assertTrue(learned)
+            for key in learned:
+                torch.testing.assert_close(
+                    ft_state[key],
+                    pretrained_state[key.replace(target_path, source_path)],
+                    msg=f"{key} should come from the checkpoint",
+                )
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_finetune_plain_into_bridged(self) -> None:
+        """A plain DPA4C checkpoint fine-tunes into its ZBL-bridged composition."""
+        self._finetune_across_bridging(source_bridged=False)
+
+    def test_finetune_bridged_into_plain(self) -> None:
+        """A ZBL-bridged DPA4C checkpoint fine-tunes into the plain model."""
+        self._finetune_across_bridging(source_bridged=True)
+
+    def test_finetune_random_fitting_into_bridged(self) -> None:
+        """A RANDOM fitting of a bridged target takes the plain descriptor."""
+        self._finetune_across_bridging(source_bridged=False, model_branch="RANDOM")
+
     def test_finetune_from_pte(self) -> None:
         """Train -> freeze to .pte -> finetune from .pte -> verify checkpoint."""
         from deepmd.pt_expt.entrypoints.main import (
