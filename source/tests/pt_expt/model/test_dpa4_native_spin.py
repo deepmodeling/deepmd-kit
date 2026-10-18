@@ -1213,8 +1213,8 @@ class TestDPA4DescriptorVersionPersistence:
         target = self._descriptor()
         target.load_state_dict(state)
         assert torch.all(target.env_seed_embedding.spin_scale == 4.0)
-        assert target.version == 1.2
-        assert float(target.version_tensor.item()) == 1.2
+        assert target.version == 1.3
+        assert float(target.version_tensor.item()) == 1.3
 
     def test_legacy_spin_free_state_zeros_dormant_routes(self) -> None:
         state = self._descriptor([False, False]).state_dict()
@@ -1238,7 +1238,7 @@ class TestDPA4DescriptorVersionPersistence:
         for key in dormant_keys:
             assert torch.all(migrated[key] == 0.0)
         assert torch.all(migrated["spin_embedding.mag_layer1.w"] == 5.0)
-        assert target.version == 1.2
+        assert target.version == 1.3
 
     def test_state_without_a_version_is_read_as_the_last_untagged_one(self) -> None:
         """Checkpoints predating the buffer were written under version 1.1."""
@@ -1250,7 +1250,7 @@ class TestDPA4DescriptorVersionPersistence:
         target = self._descriptor()
         target.load_state_dict(state)
         assert torch.all(target.env_seed_embedding.spin_scale == 9.0)
-        assert target.version == 1.2
+        assert target.version == 1.3
 
 
 class TestNativeSpinConfigFormsPtExpt:

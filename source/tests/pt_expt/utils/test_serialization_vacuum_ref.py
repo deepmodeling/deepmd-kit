@@ -65,7 +65,7 @@ def reference_model(monkeypatch, numb_fparam=0, numb_aparam=0, vacuum_ref=True):
     for name in LEVELS:
         monkeypatch.setenv(name, "0")
     config = copy.deepcopy(CONFIG)
-    config["descriptor"].update(precision="float32", compute_precision="float32")
+    config["descriptor"].update(precision="float32")
     config["fitting_net"].update(
         precision="float32",
         vacuum_ref=vacuum_ref,

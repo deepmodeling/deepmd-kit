@@ -213,6 +213,10 @@ class DPAtomicModel(BaseAtomicModel):
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.uses_graph_lower())
 
+    def fused_decomposition(self) -> "tuple[DPAtomicModel, None]":
+        """A descriptor-fitting model is its own learned part."""
+        return self, None
+
     def has_message_passing_across_ranks(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.has_message_passing_across_ranks())
@@ -369,7 +373,9 @@ class DPAtomicModel(BaseAtomicModel):
                 )
                 charge_spin = xp.tile(xp.reshape(cs_array, (1, -1)), (nframes, 1))
 
-        descriptor, rot_mat, g2, h2, sw = self.descriptor(
+        # A bridged descriptor returns a sixth element, the per-atom source
+        # gate of its bridging window; every other descriptor returns five.
+        outputs = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
@@ -377,11 +383,16 @@ class DPAtomicModel(BaseAtomicModel):
             comm_dict=comm_dict,
             charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
+        descriptor, rot_mat, g2, h2 = outputs[:4]
+        node_gate = outputs[5] if len(outputs) > 5 else None
         # The vacuum descriptor of every type is handed to a fitting that
-        # references its atoms; other fittings do not take the keyword.
+        # references its atoms; other fittings do not take the keyword. The
+        # source gate fades the learned part of the fitting output: an atom
+        # of a frozen pair keeps only the bias of its type.
         vacuum_kwargs = {}
         if self.fitting_net.needs_vacuum_descriptor():
             vacuum_kwargs["vacuum_descriptor"] = self.vacuum_descriptor()
+        gate_kwargs = {} if node_gate is None else {"node_gate": node_gate}
         ret = self.fitting_net(
             descriptor,
             atype,
@@ -391,6 +402,7 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
             **vacuum_kwargs,
+            **gate_kwargs,
         )
         return ret
 
@@ -643,7 +655,9 @@ class DPAtomicModel(BaseAtomicModel):
         charge_spin_kwargs = (
             {"charge_spin": charge_spin} if self.supports_charge_spin else {}
         )
-        gg, rot_mat = self.descriptor.call_graph(
+        # A bridged descriptor returns a third element, the per-node source
+        # gate of its bridging window; every other descriptor returns two.
+        outputs = self.descriptor.call_graph(
             graph,
             atype,
             type_embedding=type_embedding,
@@ -651,13 +665,21 @@ class DPAtomicModel(BaseAtomicModel):
             **spin_kwargs,
             **charge_spin_kwargs,
         )
+        gg, rot_mat = outputs[0], outputs[1]
+        node_gate = outputs[2] if len(outputs) > 2 else None
         vacuum_kwargs = {}
         if vacuum_ref:
             vacuum_kwargs["vacuum_descriptor"] = gg[n_real:]
             gg = gg[:n_real]
             atype = atype[:n_real]
             rot_mat = None if rot_mat is None else rot_mat[:n_real]
+            node_gate = None if node_gate is None else node_gate[:n_real]
         # === Step 4. Fitting ===
+        # The source gate of a bridged descriptor fades the learned part of
+        # the fitting output: an atom of a frozen pair keeps only the bias of
+        # its type, so along the closing of a pair the learned energy follows
+        # the switch linearly while the analytical pair term takes over.
+        gate_kwargs = {} if node_gate is None else {"node_gate": node_gate}
         return self.fitting_net.call_graph(
             gg,
             atype,
@@ -667,6 +689,7 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam_node,
             aparam=aparam_node,
             **vacuum_kwargs,
+            **gate_kwargs,
         )
 
     def compute_or_load_stat(

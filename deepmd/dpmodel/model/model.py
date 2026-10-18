@@ -87,9 +87,9 @@ def get_linear_model(data: dict) -> BaseModel:
     models; ``pairtab`` children build as pair-tabulation atomic models;
     an ``inner_potential`` child builds the analytical bridging term. The
     composition is the ONE owner of the bridging coupling: it derives the
-    learned sibling descriptor's ``inner_clamp_r_inner``/``_outer`` from
-    the ``inner_potential`` child's ``r_inner``/``r_outer``, so the radii
-    are written once in the config (issue #5948, task 2).
+    learned sibling descriptor's window from the ``inner_potential``
+    child's, so the window is written once in the config (issue #5948,
+    task 2).
 
     A top-level ``spin`` section (scheme ``native``) wraps the composed
     atomic model as a :class:`NativeSpinEnergyModel`, with ``use_spin``
