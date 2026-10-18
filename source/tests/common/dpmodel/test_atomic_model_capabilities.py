@@ -12,6 +12,9 @@ import pytest
 from deepmd.dpmodel.atomic_model import (
     DPAtomicModel,
 )
+from deepmd.dpmodel.atomic_model.base_atomic_model import (
+    BaseAtomicModel,
+)
 from deepmd.dpmodel.atomic_model.inner_potential import (
     InnerPotentialAtomicModel,
 )
@@ -69,7 +72,13 @@ def _dpa4_descriptor(bridging: bool) -> DescrptDPA4:
         "random_gamma": False,
     }
     if bridging:
-        kwargs.update(inner_clamp_r_inner=0.8, inner_clamp_r_outer=1.2)
+        # The absolute scale gives every pair the unit length scale, so the two
+        # fractions are the window radii in Å.
+        kwargs.update(
+            inner_clamp_f_inner=0.8,
+            inner_clamp_f_outer=1.2,
+            inner_clamp_scale="absolute",
+        )
     return DescrptDPA4(**kwargs)
 
 
@@ -91,7 +100,19 @@ def test_base_defaults(cap, default) -> None:
 
 def test_base_graph_edge_dtype_default() -> None:
     """float64 is the model-agnostic edge-geometry ABI."""
-    assert _inner_potential().graph_edge_dtype() == "float64"
+    plain = _dp_atomic_model(_dpa4_descriptor(bridging=False))
+    assert BaseAtomicModel.graph_edge_dtype(plain) == "float64"
+
+
+def test_analytical_term_accepts_single_precision_edges() -> None:
+    """The learned sibling decides the dtype of a bridged composition.
+
+    The analytical term evaluates on edges of either precision, so under the
+    rule of the composition (float32 only if every child accepts it) it
+    answers float32 and never vetoes a compressed single-precision sibling.
+    """
+    assert _inner_potential().graph_edge_dtype() == "float32"
+    assert _inner_potential().fused_decomposition()[0] is None
 
 
 def test_dp_atomic_model_delegates_to_descriptor() -> None:
@@ -116,6 +137,18 @@ def test_dp_atomic_model_delegates_to_descriptor() -> None:
     assert plain.uses_compact_edge_pairs() is bool(
         plain.descriptor.uses_compact_edge_pairs()
     )
+
+
+def test_hybrid_descriptor_refuses_a_bridged_child() -> None:
+    """A concatenated descriptor has no fitting output for a child's readout gate."""
+    from deepmd.dpmodel.descriptor.hybrid import (
+        DescrptHybrid,
+    )
+
+    with pytest.raises(NotImplementedError, match="bridged child"):
+        DescrptHybrid(
+            [_dpa4_descriptor(bridging=True), _dpa4_descriptor(bridging=False)]
+        )
 
 
 def test_hybrid_descriptor_aggregates_dense_comm() -> None:

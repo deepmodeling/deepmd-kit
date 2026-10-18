@@ -202,6 +202,133 @@ and evaluation and inference are governed independently by `DP_AMP_INFER`. A
 model trained in full precision can therefore be evaluated under mixed
 precision, and the reverse.
 
+## Zone bridging
+
+DPA4C can add an analytical short-range repulsion to the learned energy, so that
+close approaches in high-temperature, high-pressure or collision simulations meet
+a physical repulsive wall instead of an extrapolated network output:
+
+```math
+E_i = E_i^{\mathrm{DPA4C}} + E_i^{\mathrm{pair}}.
+```
+
+Two potentials are available. `bridging_method: "zbl"` uses the
+Ziegler-Biersack-Littmark screened nuclear potential, which is derived from
+frozen atomic electron densities and covers every element.
+`bridging_method: "nlh"` uses the Nordlund-Lehtola-Hobler form, whose
+coefficients are fitted to self-consistent quantum-chemical pair energies and
+therefore follow the real repulsive wall much more closely; it leaves a smaller
+residual repulsion at ordinary bond lengths, which is energy the learned model
+would otherwise have to cancel. `zbl` is the default; whether `nlh` yields a
+better trained model has not been established.
+
+> [!NOTE]
+> The `nlh` coefficients shipped with DeePMD-kit are this project's own refit and
+> are **not** the coefficients published by Nordlund, Lehtola and Hobler. They are
+> fitted independently to the same open reference data — K. Nordlund, G. Hobler and
+> S. Lehtola, Zenodo [10.5281/zenodo.14172633](https://doi.org/10.5281/zenodo.14172633)
+> v1.0 (2024), CC BY 4.0 — under conditions this use requires, and are therefore
+> modified material. The functional form is that of
+> [Phys. Rev. A **111**, 032818 (2025)](https://doi.org/10.1103/PhysRevA.111.032818).
+> Pairs containing an element heavier than uranium, which the reference data does
+> not cover, fall back to ZBL.
+
+The analytical term acts on every pair inside `rcut`. The learned model, in turn, is
+made blind to pairs that are too close to be covered by training data. Below
+the inner radius of the window a pair leaves the descriptor entirely: both
+atoms are described exactly as if the other one were absent, and the pair
+interacts through the analytical term alone. Between the inner and the outer
+radius the pair enters the descriptor smoothly in two coupled ways: its
+amplitude opens from zero to one, and the separation its radial functions
+read is released at the same rate, from the midpoint of the window at the
+inner radius to the true separation at the outer radius. A pair deep inside
+the window therefore changes the descriptor through its amplitude alone,
+with its radial features held where the retained training frames place them.
+Beyond the outer radius the descriptor is the same as without bridging. The
+transition keeps the energy three times continuously differentiable, like the
+outer cutoff.
+
+The two radii follow the size of the pair they apply to. Each is a fraction of
+the covalent bond length of that element pair, so a hydrogen pair is described
+down to a much shorter separation than a caesium pair, and one setting covers
+every element combination in the type map. The defaults place the outer radius
+at 0.80 of the bond length, below all but the shortest multiple bonds, and
+the inner radius at 0.26, deep inside the repulsive wall where the analytical
+term is the responsible description.
+
+Enable it on the model:
+
+```json
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa4c",
+      "rcut": 6.0
+    },
+    "bridging_method": "zbl"
+  }
+}
+```
+
+`type_map` must name chemical elements, because the analytical term is built
+from their nuclear charges and the window from their covalent radii. `bridging_fraction_inner` and
+`bridging_fraction_outer` adjust the two fractions. Giving `bridging_r_inner`
+and `bridging_r_outer` instead replaces the rule with one window in Å applied
+to every pair alike, which is worth doing only for a single-element system or
+to reproduce an earlier model. See `examples/water/dpa4c/input-zbl.json` for a
+complete input.
+
+Training frames that contain a pair closer than the midpoint of its window are
+left out of the loss. Below the midpoint the learned contribution of the pair is
+throttled to less than half of its amplitude, so a label there would ask the
+model for a multiple of the energy it has to express; the separation the
+radial functions read never falls below the midpoint either, and through the
+lower half of the window it moves by less than 7 % of the window width, so the
+radial features of a close pair stay next to the range the retained frames
+cover. The threshold is derived from the window of each element pair, and
+`training_data.min_pair_dist` must stay unset on a bridged model. The data
+statistics, including those of `dp change-bias`, are drawn under the same
+filter, while validation batches are not filtered, so a validation error also
+covers frames that training leaves out.
+
+Bridging therefore relies on short-range training data. The labels that are
+kept have to reach into the window of every element pair, which in practice
+means adding dimer scans that run down to about half the covalent bond length.
+Between the inner radius and the closest retained label the learned
+contribution of the pair falls to zero with no data to shape it; labels inside
+the window keep that descent smooth, while a pair whose window holds no label
+can show spurious force maxima there.
+
+The same model can be written explicitly as a `linear_ener` model over the
+DPA4C model and an `inner_potential` sub-model with `weights: "sum"`; the
+concise form above expands to it.
+
+Bridging changes nothing in the workflow after training. The model freezes,
+compresses and runs in LAMMPS like a plain DPA4C model: compression still
+selects the compact canonical graph form, the fused kernels evaluate the
+analytical term in the same pass over the neighbors as the descriptor, and multi-GPU runs
+need no extra communication. Native spin and the frame charge state combine
+with bridging; the analytical term depends on the separation alone and leaves
+the magnetic force to the learned model.
+
+A model trained without bridging fine-tunes into its bridged form, and the
+other way round. Add the bridging keys above to the input, keep the
+architecture, and start from the earlier checkpoint:
+
+```bash
+dp --pt-expt train input-zbl.json --finetune model.ckpt.pt
+```
+
+The descriptor and the fitting net are carried over although the bridged model
+holds them one level deeper, inside the composition. Fine-tuning is required
+rather than optional: the bridging window changes what the descriptor sees at
+short range, so the learned part is trained against the analytical term it is
+now summed with.
+
 ## Model compression
 
 Compression is the deployment step. It replaces the analytic radial functions

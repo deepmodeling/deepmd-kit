@@ -2432,7 +2432,9 @@ def _charge_state_descriptor(data: dict, metadata: dict) -> Any | None:
     )
 
     model = BaseModel.deserialize(data["model"])
-    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    # A bridged composition carries its charge state in its learned part.
+    parts = model.atomic_model.fused_decomposition()
+    descriptor = None if parts is None else parts[0].descriptor
     if (
         descriptor is None
         or not getattr(descriptor, "compress", False)
