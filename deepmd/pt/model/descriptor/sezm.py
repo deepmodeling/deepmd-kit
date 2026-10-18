@@ -67,8 +67,6 @@ from deepmd.pt.utils.update_sel import (
 )
 from deepmd.pt_expt.kernels.utils import (
     cuda_infer_level,
-    triton_infer_level,
-    triton_train_level,
     use_amp_infer,
 )
 from deepmd.utils.bridging import (
@@ -143,12 +141,12 @@ def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     with the Triton flash aggregation and the GIE coupling that read the
     same tensor.  Every dense-layout consumer keeps the dense surfaces:
     the cuTile value path, the fused CUDA convolution, the CUDA training
-    value path, the plain SO2 reference path (no Triton binding selected
-    at the *current* level and mode), and the aggregation routes that
-    rotate messages back through ``Dt_full`` (no attention heads, or an
-    attention layout with value/output projections, where the flash
-    operator does not bind).  The check is evaluated per cache build, so
-    mode and level changes between builds are honored.
+    value path, the plain SO2 reference path, and the aggregation routes
+    that rotate messages back through ``Dt_full`` (no attention heads,
+    a projected-attention layout, or a training flash that did not bind
+    for training).  Levels derive from the per-block values captured at
+    construction -- the same numbers ``active_triton_level`` resolves
+    dispatch with -- and the train/eval mode is read per cache build.
     """
     if getattr(so2_conv, "_cutile_value_path", None) is not None:
         return False
@@ -157,13 +155,21 @@ def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     if getattr(so2_conv, "_cuda_value_train", None) is not None:
         return False
     # Inverse-rotation consumer: without a bound flash aggregation the
-    # message is rotated back through the dense inverse matrix.
-    if getattr(so2_conv, "_flash_atten_fn", None) is None:
+    # message is rotated back through the dense inverse matrix.  In
+    # training the aggregation is packed-capable only when the flash
+    # operator was bound for training too.
+    flash = getattr(so2_conv, "_flash_atten_fn", None)
+    if flash is None:
         return False
-    level = triton_train_level() if training else triton_infer_level()
+    if training and not getattr(so2_conv, "_flash_atten_trains", False):
+        return False
+    # Dispatch resolves against the per-block levels captured at
+    # construction (``active_triton_level``), not the ambient environment;
+    # eligibility must derive from the same captured numbers.
+    level = so2_conv.triton_train_level if training else so2_conv.triton_infer_level
     if level < 1:
         return False
-    # Forward-rotation consumer selected at the current level.
+    # Forward-rotation consumer selected at the captured level.
     if training:
         return getattr(so2_conv, "_triton_rotate_mix", None) is not None
     return getattr(so2_conv, "_triton_value_path", None) is not None or (

@@ -2067,6 +2067,9 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
             "_triton_value_path": None,
             "_triton_rotate_mix": None,
             "_flash_atten_fn": None,
+            "_flash_atten_trains": True,
+            "triton_infer_level": 2,
+            "triton_train_level": 0,
         }
         base.update(kw)
         return SimpleNamespace(**base)
@@ -2138,23 +2141,51 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
             )
         )
 
-    def test_gate_follows_mode_and_levels(self):
-        """The gate is evaluated against the current mode and levels."""
+    def test_gate_follows_mode_and_captured_levels(self):
+        """The gate derives from the per-block captured levels, like dispatch."""
         from deepmd.pt.model.descriptor.sezm import (
             block_supports_packed_wigner,
         )
 
-        packed_conv = self._conv(_triton_value_path=object(), _flash_atten_fn=object())
-        # Inference level 2, training level 0: eval passes, train rejects.
-        self._with_levels("2", "0")
+        # Captured inference 2 / training 0: eval passes, train rejects
+        # (the captured training level selects the dense path regardless
+        # of what the ambient environment now says).
+        packed_conv = self._conv(
+            _triton_value_path=object(),
+            _flash_atten_fn=object(),
+            _flash_atten_trains=True,
+            triton_infer_level=2,
+            triton_train_level=0,
+        )
+        self._with_levels("1", "1")  # ambient disagrees on purpose
         self.assertTrue(block_supports_packed_wigner(packed_conv, False))
         self.assertFalse(block_supports_packed_wigner(packed_conv, True))
-        # Inference level 0, training level 1: eval rejects; a
-        # training-bound rotate-mix block passes in train mode.
-        self._with_levels("0", "1")
-        self.assertFalse(block_supports_packed_wigner(packed_conv, False))
-        train_conv = self._conv(_triton_rotate_mix=object(), _flash_atten_fn=object())
+        # Captured inference 0 / training 1: eval rejects; a training-
+        # bound rotate-mix block whose flash binds for training passes.
+        train_conv = self._conv(
+            _triton_rotate_mix=object(),
+            _flash_atten_fn=object(),
+            _flash_atten_trains=True,
+            triton_infer_level=0,
+            triton_train_level=1,
+        )
+        self.assertFalse(block_supports_packed_wigner(train_conv, False))
         self.assertTrue(block_supports_packed_wigner(train_conv, True))
+        # Training flash bound for inference only: the training-mode
+        # aggregation rotates back through the dense inverse, so the band
+        # is rejected even with a training-bound rotate-mix forward.
+        self.assertFalse(
+            block_supports_packed_wigner(
+                self._conv(
+                    _triton_rotate_mix=object(),
+                    _flash_atten_fn=object(),
+                    _flash_atten_trains=False,
+                    triton_infer_level=2,
+                    triton_train_level=1,
+                ),
+                True,
+            )
+        )
 
 
 if __name__ == "__main__":
