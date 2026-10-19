@@ -1,5 +1,11 @@
 # Experimental SO(2) edge-cohort inference backward
 
+**Update:** the cold-process numbers below remain historical measurements, but
+their earlier fixed-3%-noise interpretation is retired. See the
+[controlled timing follow-up](ecs-edge-cohort-controlled-timing.md) for aligned
+autotune choices, counterbalanced same-context normal-API measurements,
+process-level uncertainty and negative experiments.
+
 This opt-in experiment targets first-order input and alpha gradients of a frozen
 DPA4-Neo model. It is not a training optimization and does not change the default
 inference path. Enable `DP_SO2_EDGE_COHORT_INFER=1` **before importing the model**.
@@ -100,8 +106,8 @@ were also identical. Memory columns report the worst process, not its average.
 
 Baseline process P50s: 12.157611 / 11.771478 / 12.372728 ms.
 Candidate process P50s: 12.398105 / 12.254008 / 12.313776 ms.
-The latency difference is within the chosen 3% noise band; there is **no claimed
-stable speedup**. The result is a reproducible memory reduction with no repeat
+The single-batch latency difference alone is not a significance test; there is
+**no claimed stable speedup**. The result is a reproducible memory reduction with no repeat
 of the original approximately 7.8% small-system regression, not proof of zero
 time cost. First-call compilation latency itself is approximately two minutes
 in this fresh-cache protocol and is not hidden.
@@ -145,7 +151,7 @@ complete training run.
 Earlier opaque two-cohort N64 runs regressed by 6.85-7.81% despite reducing
 memory. The compiled single-cohort branch addresses that small-system penalty;
 it must not inherit the earlier 9.46% cold-peak reduction claim. Differences
-below 3% are treated as noise, not a demonstrated speedup. Earlier diagnostic
+are now evaluated with process-level uncertainty, not a fixed 3% cutoff. Earlier diagnostic
 workers produced different baseline timings; their numbers are not mixed into
 this same-entry-point comparison, and the cross-day difference is not uniquely
 attributed to a hardware cause.

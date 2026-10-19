@@ -129,6 +129,8 @@ try:
         torch.cuda.synchronize()
         wall.append(1000 * (time.perf_counter() - start))
         gpu.append(s.elapsed_time(e))
+    if globals().get("_controlled_rounds") is not None:
+        globals()["_controlled_rounds"](globals())
     complete = {
         "allocated": torch.cuda.max_memory_allocated(),
         "reserved": torch.cuda.max_memory_reserved(),

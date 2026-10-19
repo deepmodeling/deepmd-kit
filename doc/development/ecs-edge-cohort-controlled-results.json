@@ -1,0 +1,4593 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-19",
+  "baseline_commit": "668b60cc2a9559f79abb9c33acd959833376344f",
+  "implementation_commit": "e8b6b78363a9c8cd0b178b99e6d18feda191cbf6",
+  "kernel_implementation_changed": false,
+  "source_sha256": {
+    "deepmd/pt_expt/kernels/triton/sezm/so2_value_path.py": "2bf062b9bbb84e2fa4c3fd2132f3ca68e4c9cb91a093a70a600f1c1eb045b3a6",
+    "deepmd/pt_expt/kernels/triton/sezm/so2_edge_cohort.py": "08c67a81883ff70f19ce9dad8809037585e0c5b0949ecceab747bb4179c44474",
+    "source/tests/pt_expt/kernels/test_so2_edge_cohort.py": "e950f552d1b7012e58e7ff2190e1eeec565d9572a63d65111a527331a14c9737"
+  },
+  "environment": {
+    "gpu": "RTX 5090",
+    "driver": "595.91.07",
+    "torch": "2.11.0+cu128",
+    "cuda": "12.8",
+    "triton": "3.6.0",
+    "so2_dtype": "float32",
+    "tf32": false,
+    "amp": false,
+    "model": "DPA4-Neo-OMat24-v20260627.pt",
+    "model_sha256": "8d8b2b02b9575cb9e0af420cc1e8b1d9ffcbc04752c2203d29f48ccd0cd5f07d"
+  },
+  "method": {
+    "inference_backend": "make_fx -> aot_module_simplified -> compile_fx_inner; no Dynamo inference frontend",
+    "normal_api": "ASE energy/forces/virial/stress including neighbor construction",
+    "primary_precision": {
+      "atol": 1e-05,
+      "rtol": 0.0001,
+      "relative_denominator_floor": 1e-08
+    },
+    "no_global_clock_changes": true,
+    "thread_affinity": "GPU0 CPU8 + monitor16; GPU1 CPU40 + monitor48",
+    "uncertainty": "independent processes are replicates; frame counts and conditional block intervals do not prove population equivalence",
+    "rejected_rule": "a change below 3% is not automatically noise"
+  },
+  "primary_same_context_normal_api": {
+    "processes": [
+      {
+        "run": "same_api_r0",
+        "first": "BASE",
+        "blocks": 24,
+        "logmean": 0.0029942139334827957,
+        "change_percent": 0.2998701069386458,
+        "conditional_block_ci95_percent": [
+          0.2160580917410669,
+          0.3741272750221055
+        ],
+        "worst_error_ratio": 0.37667335116014933,
+        "wrappers": {
+          "BASE": "538c9d7d866411c60e2903f740e84f7607c562a75d34fc6cba39a4311a427024",
+          "ECS": "45fcab253d559c8b8ce73c33f7a3b3ec6ec80421c59d9763eea8d0e7ac205e4e"
+        }
+      },
+      {
+        "run": "same_api_r1",
+        "first": "ECS",
+        "blocks": 24,
+        "logmean": -0.001537485774856499,
+        "change_percent": -0.1536304449103964,
+        "conditional_block_ci95_percent": [
+          -0.25581785218645947,
+          -0.037210522754869704
+        ],
+        "worst_error_ratio": 0.3327401297734396,
+        "wrappers": {
+          "ECS": "5628c96d17ffb942c8016f909521c78912d8d3cf707c9f8433304a94f2721cd4",
+          "BASE": "7173409f6cdca1de469a759b96d087c3969b656517d43f6930a265d43493cb1e"
+        }
+      },
+      {
+        "run": "same_api_r2",
+        "first": "BASE",
+        "blocks": 24,
+        "logmean": 0.003649310407773332,
+        "change_percent": 0.36559772483228126,
+        "conditional_block_ci95_percent": [
+          0.2666125841077847,
+          0.4668921301933525
+        ],
+        "worst_error_ratio": 0.3075668823537886,
+        "wrappers": {
+          "BASE": "538c9d7d866411c60e2903f740e84f7607c562a75d34fc6cba39a4311a427024",
+          "ECS": "45fcab253d559c8b8ce73c33f7a3b3ec6ec80421c59d9763eea8d0e7ac205e4e"
+        }
+      },
+      {
+        "run": "same_api_r3",
+        "first": "ECS",
+        "blocks": 24,
+        "logmean": -0.0019256500356109967,
+        "change_percent": -0.1923797161101289,
+        "conditional_block_ci95_percent": [
+          -0.31158433170386357,
+          -0.09145138740206932
+        ],
+        "worst_error_ratio": 0.3444816224895775,
+        "wrappers": {
+          "ECS": "5628c96d17ffb942c8016f909521c78912d8d3cf707c9f8433304a94f2721cd4",
+          "BASE": "7173409f6cdca1de469a759b96d087c3969b656517d43f6930a265d43493cb1e"
+        }
+      }
+    ],
+    "process_count": 4,
+    "mean_change_percent": 0.07954133062130357,
+    "process_t95_percent": [
+      -0.38661480593790803,
+      0.547878916422788
+    ],
+    "confidence_note": "processes, not frames, are independent replicates; conditional block intervals do not establish population equivalence",
+    "stats": {
+      "BASE": {
+        "samples": 9600,
+        "p50_ms": 11.68358139693737,
+        "p90_ms": 11.911459197290242
+      },
+      "ECS": {
+        "samples": 9600,
+        "p50_ms": 11.708142468705773,
+        "p90_ms": 11.9329929118976
+      }
+    },
+    "scope": "normal full ASE API, both implementations in one CUDA context; two calculators, actual master and exact PR definitions; no Dynamo inference frontend"
+  },
+  "clock_matched_sensitivity": {
+    "criteria": "block mean SM clock difference <=0.5%, both memory clocks 13801MHz, mean temperature difference <=2C",
+    "primary": false,
+    "caveat": "post-stratified sensitivity analysis; conditioning can change composition and does not prove constant clocks or replace full results",
+    "processes": [
+      {
+        "run": "same_api_r0",
+        "retained_blocks": 22,
+        "blocks": [
+          {
+            "block": 1,
+            "logratio": 0.0028716235008769964,
+            "sm_mhz": {
+              "BASE": 2822.4347826086955,
+              "ECS": 2823.6521739130435
+            }
+          },
+          {
+            "block": 2,
+            "logratio": 0.0030438794030094307,
+            "sm_mhz": {
+              "BASE": 2825.478260869565,
+              "ECS": 2823.3478260869565
+            }
+          },
+          {
+            "block": 3,
+            "logratio": 0.00512300455927317,
+            "sm_mhz": {
+              "BASE": 2824.6666666666665,
+              "ECS": 2820.9545454545455
+            }
+          },
+          {
+            "block": 4,
+            "logratio": 0.00436331614460439,
+            "sm_mhz": {
+              "BASE": 2823.0434782608695,
+              "ECS": 2823.36
+            }
+          },
+          {
+            "block": 5,
+            "logratio": 0.002686576010344055,
+            "sm_mhz": {
+              "BASE": 2822.1304347826085,
+              "ECS": 2820.913043478261
+            }
+          },
+          {
+            "block": 6,
+            "logratio": 0.0032964977581597665,
+            "sm_mhz": {
+              "BASE": 2824.8695652173915,
+              "ECS": 2823.9565217391305
+            }
+          },
+          {
+            "block": 7,
+            "logratio": 0.00285706276185671,
+            "sm_mhz": {
+              "BASE": 2824.2608695652175,
+              "ECS": 2823.9565217391305
+            }
+          },
+          {
+            "block": 8,
+            "logratio": 0.00545304911232547,
+            "sm_mhz": {
+              "BASE": 2813.0,
+              "ECS": 2822.5416666666665
+            }
+          },
+          {
+            "block": 9,
+            "logratio": 0.005008737542294028,
+            "sm_mhz": {
+              "BASE": 2824.2608695652175,
+              "ECS": 2824.2608695652175
+            }
+          },
+          {
+            "block": 10,
+            "logratio": 0.004794177562289725,
+            "sm_mhz": {
+              "BASE": 2821.75,
+              "ECS": 2824.2608695652175
+            }
+          },
+          {
+            "block": 11,
+            "logratio": -0.00033211149625334,
+            "sm_mhz": {
+              "BASE": 2824.0833333333335,
+              "ECS": 2827.0
+            }
+          },
+          {
+            "block": 12,
+            "logratio": 0.0012528738811403706,
+            "sm_mhz": {
+              "BASE": 2821.521739130435,
+              "ECS": 2827.0
+            }
+          },
+          {
+            "block": 13,
+            "logratio": -0.0032679309816510127,
+            "sm_mhz": {
+              "BASE": 2807.8695652173915,
+              "ECS": 2820.086956521739
+            }
+          },
+          {
+            "block": 14,
+            "logratio": 0.002271437985801761,
+            "sm_mhz": {
+              "BASE": 2806.8695652173915,
+              "ECS": 2812.3478260869565
+            }
+          },
+          {
+            "block": 15,
+            "logratio": 0.003913371256543119,
+            "sm_mhz": {
+              "BASE": 2800.0416666666665,
+              "ECS": 2811.6363636363635
+            }
+          },
+          {
+            "block": 16,
+            "logratio": 0.005391604122262805,
+            "sm_mhz": {
+              "BASE": 2817.5652173913045,
+              "ECS": 2811.7391304347825
+            }
+          },
+          {
+            "block": 17,
+            "logratio": 0.0021853364857458146,
+            "sm_mhz": {
+              "BASE": 2809.2608695652175,
+              "ECS": 2806.521739130435
+            }
+          },
+          {
+            "block": 18,
+            "logratio": 0.0019569929468001845,
+            "sm_mhz": {
+              "BASE": 2816.8695652173915,
+              "ECS": 2807.521739130435
+            }
+          },
+          {
+            "block": 19,
+            "logratio": 0.002051886273785719,
+            "sm_mhz": {
+              "BASE": 2809.6666666666665,
+              "ECS": 2803.782608695652
+            }
+          },
+          {
+            "block": 20,
+            "logratio": 0.0025069274817441922,
+            "sm_mhz": {
+              "BASE": 2815.3333333333335,
+              "ECS": 2809.304347826087
+            }
+          },
+          {
+            "block": 21,
+            "logratio": 0.001546512369963171,
+            "sm_mhz": {
+              "BASE": 2808.0833333333335,
+              "ECS": 2806.6363636363635
+            }
+          },
+          {
+            "block": 23,
+            "logratio": 0.004902387008157927,
+            "sm_mhz": {
+              "BASE": 2802.0833333333335,
+              "ECS": 2815.2727272727275
+            }
+          }
+        ],
+        "mean_logratio": 0.002903509622230657
+      },
+      {
+        "run": "same_api_r1",
+        "retained_blocks": 23,
+        "blocks": [
+          {
+            "block": 1,
+            "logratio": -0.001692171763402861,
+            "sm_mhz": {
+              "BASE": 2820.6363636363635,
+              "ECS": 2821.8260869565215
+            }
+          },
+          {
+            "block": 2,
+            "logratio": -0.003119901634812461,
+            "sm_mhz": {
+              "BASE": 2822.391304347826,
+              "ECS": 2820.0
+            }
+          },
+          {
+            "block": 3,
+            "logratio": -0.003127075701074844,
+            "sm_mhz": {
+              "BASE": 2820.9545454545455,
+              "ECS": 2823.2083333333335
+            }
+          },
+          {
+            "block": 4,
+            "logratio": -0.0011921761110076368,
+            "sm_mhz": {
+              "BASE": 2820.608695652174,
+              "ECS": 2822.2272727272725
+            }
+          },
+          {
+            "block": 5,
+            "logratio": -0.0028242601945085433,
+            "sm_mhz": {
+              "BASE": 2821.217391304348,
+              "ECS": 2822.4347826086955
+            }
+          },
+          {
+            "block": 6,
+            "logratio": -0.00033087293111089267,
+            "sm_mhz": {
+              "BASE": 2821.8260869565215,
+              "ECS": 2824.1363636363635
+            }
+          },
+          {
+            "block": 7,
+            "logratio": -0.002652198517723914,
+            "sm_mhz": {
+              "BASE": 2821.590909090909,
+              "ECS": 2814.1304347826085
+            }
+          },
+          {
+            "block": 8,
+            "logratio": -0.0027796612840966795,
+            "sm_mhz": {
+              "BASE": 2822.2272727272725,
+              "ECS": 2823.6521739130435
+            }
+          },
+          {
+            "block": 9,
+            "logratio": -0.0019142997925727379,
+            "sm_mhz": {
+              "BASE": 2822.1304347826085,
+              "ECS": 2821.217391304348
+            }
+          },
+          {
+            "block": 10,
+            "logratio": -6.280917832945931e-06,
+            "sm_mhz": {
+              "BASE": 2822.8636363636365,
+              "ECS": 2823.5
+            }
+          },
+          {
+            "block": 11,
+            "logratio": -0.0006008618137776089,
+            "sm_mhz": {
+              "BASE": 2821.5454545454545,
+              "ECS": 2820.1739130434785
+            }
+          },
+          {
+            "block": 12,
+            "logratio": -0.0010094126764426115,
+            "sm_mhz": {
+              "BASE": 2816.0,
+              "ECS": 2810.304347826087
+            }
+          },
+          {
+            "block": 13,
+            "logratio": -0.001004108681392335,
+            "sm_mhz": {
+              "BASE": 2812.625,
+              "ECS": 2805.318181818182
+            }
+          },
+          {
+            "block": 14,
+            "logratio": -0.001915763671719528,
+            "sm_mhz": {
+              "BASE": 2814.181818181818,
+              "ECS": 2801.6521739130435
+            }
+          },
+          {
+            "block": 15,
+            "logratio": -0.0008815817033833717,
+            "sm_mhz": {
+              "BASE": 2810.1739130434785,
+              "ECS": 2802.0
+            }
+          },
+          {
+            "block": 16,
+            "logratio": -0.0023973091176170414,
+            "sm_mhz": {
+              "BASE": 2817.090909090909,
+              "ECS": 2809.913043478261
+            }
+          },
+          {
+            "block": 17,
+            "logratio": -0.0019317493103976346,
+            "sm_mhz": {
+              "BASE": 2815.478260869565,
+              "ECS": 2806.590909090909
+            }
+          },
+          {
+            "block": 18,
+            "logratio": -0.0012067052487729768,
+            "sm_mhz": {
+              "BASE": 2814.3333333333335,
+              "ECS": 2806.8695652173915
+            }
+          },
+          {
+            "block": 19,
+            "logratio": 0.001191768296656015,
+            "sm_mhz": {
+              "BASE": 2815.1304347826085,
+              "ECS": 2806.590909090909
+            }
+          },
+          {
+            "block": 20,
+            "logratio": -0.0034599160200707857,
+            "sm_mhz": {
+              "BASE": 2814.5454545454545,
+              "ECS": 2807.1739130434785
+            }
+          },
+          {
+            "block": 21,
+            "logratio": -0.0007130708443980893,
+            "sm_mhz": {
+              "BASE": 2815.478260869565,
+              "ECS": 2807.1304347826085
+            }
+          },
+          {
+            "block": 22,
+            "logratio": 0.008316182510481163,
+            "sm_mhz": {
+              "BASE": 2803.6363636363635,
+              "ECS": 2803.695652173913
+            }
+          },
+          {
+            "block": 23,
+            "logratio": -0.0027600702727861304,
+            "sm_mhz": {
+              "BASE": 2812.0,
+              "ECS": 2800.2608695652175
+            }
+          }
+        ],
+        "mean_logratio": -0.0012178911913810631
+      },
+      {
+        "run": "same_api_r2",
+        "retained_blocks": 22,
+        "blocks": [
+          {
+            "block": 1,
+            "logratio": 0.00030360745578139614,
+            "sm_mhz": {
+              "BASE": 2821.217391304348,
+              "ECS": 2813.318181818182
+            }
+          },
+          {
+            "block": 2,
+            "logratio": 0.0027640250938403277,
+            "sm_mhz": {
+              "BASE": 2827.0,
+              "ECS": 2824.2608695652175
+            }
+          },
+          {
+            "block": 3,
+            "logratio": 0.00476690417308312,
+            "sm_mhz": {
+              "BASE": 2821.521739130435,
+              "ECS": 2827.0
+            }
+          },
+          {
+            "block": 4,
+            "logratio": 0.003795467883834558,
+            "sm_mhz": {
+              "BASE": 2821.217391304348,
+              "ECS": 2824.0833333333335
+            }
+          },
+          {
+            "block": 5,
+            "logratio": 0.005243957751577266,
+            "sm_mhz": {
+              "BASE": 2821.521739130435,
+              "ECS": 2827.0
+            }
+          },
+          {
+            "block": 6,
+            "logratio": 0.005282512547641449,
+            "sm_mhz": {
+              "BASE": 2821.590909090909,
+              "ECS": 2824.375
+            }
+          },
+          {
+            "block": 7,
+            "logratio": 0.0009754923947022931,
+            "sm_mhz": {
+              "BASE": 2821.8260869565215,
+              "ECS": 2827.0
+            }
+          },
+          {
+            "block": 8,
+            "logratio": 0.005503805628825464,
+            "sm_mhz": {
+              "BASE": 2819.0434782608695,
+              "ECS": 2813.125
+            }
+          },
+          {
+            "block": 9,
+            "logratio": 0.005127983554682025,
+            "sm_mhz": {
+              "BASE": 2821.8260869565215,
+              "ECS": 2827.0
+            }
+          },
+          {
+            "block": 10,
+            "logratio": 0.004281626313858311,
+            "sm_mhz": {
+              "BASE": 2814.9166666666665,
+              "ECS": 2816.7272727272725
+            }
+          },
+          {
+            "block": 11,
+            "logratio": 0.004748379827354654,
+            "sm_mhz": {
+              "BASE": 2808.5652173913045,
+              "ECS": 2814.4347826086955
+            }
+          },
+          {
+            "block": 12,
+            "logratio": 0.007345642096450611,
+            "sm_mhz": {
+              "BASE": 2807.608695652174,
+              "ECS": 2814.086956521739
+            }
+          },
+          {
+            "block": 13,
+            "logratio": 0.0031641393697432463,
+            "sm_mhz": {
+              "BASE": 2806.521739130435,
+              "ECS": 2813.4545454545455
+            }
+          },
+          {
+            "block": 14,
+            "logratio": 0.007282437362431615,
+            "sm_mhz": {
+              "BASE": 2807.608695652174,
+              "ECS": 2816.8695652173915
+            }
+          },
+          {
+            "block": 15,
+            "logratio": 0.00804012696889922,
+            "sm_mhz": {
+              "BASE": 2810.9565217391305,
+              "ECS": 2805.5652173913045
+            }
+          },
+          {
+            "block": 16,
+            "logratio": -0.0015884497173273004,
+            "sm_mhz": {
+              "BASE": 2803.6666666666665,
+              "ECS": 2809.8695652173915
+            }
+          },
+          {
+            "block": 17,
+            "logratio": 0.0014360026121025271,
+            "sm_mhz": {
+              "BASE": 2810.304347826087,
+              "ECS": 2813.818181818182
+            }
+          },
+          {
+            "block": 18,
+            "logratio": 0.0017863296332549794,
+            "sm_mhz": {
+              "BASE": 2811.7916666666665,
+              "ECS": 2815.2272727272725
+            }
+          },
+          {
+            "block": 19,
+            "logratio": 0.0013262146546848541,
+            "sm_mhz": {
+              "BASE": 2810.304347826087,
+              "ECS": 2811.608695652174
+            }
+          },
+          {
+            "block": 20,
+            "logratio": 0.0023870705192710062,
+            "sm_mhz": {
+              "BASE": 2812.090909090909,
+              "ECS": 2812.3478260869565
+            }
+          },
+          {
+            "block": 21,
+            "logratio": 0.007555590958148173,
+            "sm_mhz": {
+              "BASE": 2809.8636363636365,
+              "ECS": 2811.9583333333335
+            }
+          },
+          {
+            "block": 22,
+            "logratio": 0.004038440067853699,
+            "sm_mhz": {
+              "BASE": 2812.090909090909,
+              "ECS": 2812.3478260869565
+            }
+          }
+        ],
+        "mean_logratio": 0.00388942305230425
+      },
+      {
+        "run": "same_api_r3",
+        "retained_blocks": 23,
+        "blocks": [
+          {
+            "block": 1,
+            "logratio": -0.0018937283658861936,
+            "sm_mhz": {
+              "BASE": 2811.375,
+              "ECS": 2820.0
+            }
+          },
+          {
+            "block": 2,
+            "logratio": -0.001205954139682941,
+            "sm_mhz": {
+              "BASE": 2826.391304347826,
+              "ECS": 2824.5652173913045
+            }
+          },
+          {
+            "block": 3,
+            "logratio": 0.00017800684290980584,
+            "sm_mhz": {
+              "BASE": 2821.2727272727275,
+              "ECS": 2824.7727272727275
+            }
+          },
+          {
+            "block": 4,
+            "logratio": 0.00031133899935431586,
+            "sm_mhz": {
+              "BASE": 2821.217391304348,
+              "ECS": 2825.5416666666665
+            }
+          },
+          {
+            "block": 5,
+            "logratio": -0.0030884491935352365,
+            "sm_mhz": {
+              "BASE": 2824.7727272727275,
+              "ECS": 2818.695652173913
+            }
+          },
+          {
+            "block": 6,
+            "logratio": -0.0026627683583360096,
+            "sm_mhz": {
+              "BASE": 2821.217391304348,
+              "ECS": 2825.1739130434785
+            }
+          },
+          {
+            "block": 7,
+            "logratio": -0.003560797160056861,
+            "sm_mhz": {
+              "BASE": 2821.8260869565215,
+              "ECS": 2823.818181818182
+            }
+          },
+          {
+            "block": 8,
+            "logratio": -0.00043459720135929913,
+            "sm_mhz": {
+              "BASE": 2813.318181818182,
+              "ECS": 2826.391304347826
+            }
+          },
+          {
+            "block": 9,
+            "logratio": -0.0018848507038642381,
+            "sm_mhz": {
+              "BASE": 2822.1304347826085,
+              "ECS": 2825.318181818182
+            }
+          },
+          {
+            "block": 10,
+            "logratio": -3.078778059073528e-05,
+            "sm_mhz": {
+              "BASE": 2823.5,
+              "ECS": 2820.8695652173915
+            }
+          },
+          {
+            "block": 11,
+            "logratio": -0.000878554824469191,
+            "sm_mhz": {
+              "BASE": 2824.5652173913045,
+              "ECS": 2826.391304347826
+            }
+          },
+          {
+            "block": 12,
+            "logratio": -0.002552570345722316,
+            "sm_mhz": {
+              "BASE": 2823.818181818182,
+              "ECS": 2823.3478260869565
+            }
+          },
+          {
+            "block": 13,
+            "logratio": -0.0018164345564883888,
+            "sm_mhz": {
+              "BASE": 2807.4347826086955,
+              "ECS": 2815.681818181818
+            }
+          },
+          {
+            "block": 14,
+            "logratio": -0.002886310209198939,
+            "sm_mhz": {
+              "BASE": 2813.478260869565,
+              "ECS": 2812.1739130434785
+            }
+          },
+          {
+            "block": 15,
+            "logratio": -0.0020690075813396547,
+            "sm_mhz": {
+              "BASE": 2810.090909090909,
+              "ECS": 2807.7391304347825
+            }
+          },
+          {
+            "block": 16,
+            "logratio": -0.001544629854110191,
+            "sm_mhz": {
+              "BASE": 2813.2608695652175,
+              "ECS": 2800.7391304347825
+            }
+          },
+          {
+            "block": 17,
+            "logratio": -0.007062031584247563,
+            "sm_mhz": {
+              "BASE": 2810.1739130434785,
+              "ECS": 2805.2727272727275
+            }
+          },
+          {
+            "block": 18,
+            "logratio": -0.00148487694449706,
+            "sm_mhz": {
+              "BASE": 2814.608695652174,
+              "ECS": 2813.695652173913
+            }
+          },
+          {
+            "block": 19,
+            "logratio": -0.01194964260560294,
+            "sm_mhz": {
+              "BASE": 2810.5652173913045,
+              "ECS": 2806.875
+            }
+          },
+          {
+            "block": 20,
+            "logratio": 0.0004017897977548479,
+            "sm_mhz": {
+              "BASE": 2808.9565217391305,
+              "ECS": 2809.590909090909
+            }
+          },
+          {
+            "block": 21,
+            "logratio": -0.0002992433409829687,
+            "sm_mhz": {
+              "BASE": 2810.217391304348,
+              "ECS": 2809.9545454545455
+            }
+          },
+          {
+            "block": 22,
+            "logratio": 0.0006963888987554512,
+            "sm_mhz": {
+              "BASE": 2809.8636363636365,
+              "ECS": 2808.695652173913
+            }
+          },
+          {
+            "block": 23,
+            "logratio": -0.0033566099909112523,
+            "sm_mhz": {
+              "BASE": 2810.217391304348,
+              "ECS": 2801.1304347826085
+            }
+          }
+        ],
+        "mean_logratio": -0.0021336660957438068
+      }
+    ],
+    "mean_change_percent": 0.08607140487792889,
+    "process_t95_percent": [
+      -0.38732511965011324,
+      0.5617176859726369
+    ]
+  },
+  "primary_hardware": {
+    "BASE": {
+      "mean_sampled_sm_mhz": 2776.837494325919,
+      "sm_mhz_histogram": {
+        "2715": 12,
+        "2790": 21,
+        "2820": 899,
+        "2827": 410,
+        "2805": 295,
+        "2812": 414,
+        "2782": 18,
+        "2797": 81,
+        "2760": 10,
+        "345": 10,
+        "180": 12,
+        "2775": 10,
+        "247": 11
+      },
+      "memory_mhz_histogram": {
+        "13801": 2193,
+        "810": 10
+      },
+      "temperature_range": [
+        34,
+        47
+      ],
+      "clock_reason_masks": {
+        "0": 2203
+      }
+    },
+    "ECS": {
+      "mean_sampled_sm_mhz": 2815.979972690032,
+      "sm_mhz_histogram": {
+        "2715": 3,
+        "2820": 648,
+        "2790": 30,
+        "2827": 620,
+        "2805": 345,
+        "2812": 409,
+        "2797": 129,
+        "2782": 6,
+        "2775": 7
+      },
+      "memory_mhz_histogram": {
+        "13801": 2197
+      },
+      "temperature_range": [
+        37,
+        47
+      ],
+      "clock_reason_masks": {
+        "0": 2197
+      }
+    }
+  },
+  "focused_cuda_tests": {
+    "passed": 60,
+    "warnings": 14,
+    "duration_seconds": 50.53
+  },
+  "cache_choice_audit": {
+    "3_BASE": {
+      "total": 110,
+      "common": 110,
+      "different_choices": [
+        {
+          "key": "481b5eaf0863a955bf1b27c409a89fd0d887ff775a2039c1180b50005f4c4e1b.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c51f1450e2dbf2dfdf96f9d9a24d6579bb6960a8164477df47e8b1c671a59459.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "836d62b61967369445baa2170231545e08e0a9938083acf1b3f3284ea50ca8ff.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "fd3be0f38cb22b0c109696f9fd052b265fbd8b6d2806acb2699bada606fd076f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b3172f8129aef67ad36e287181de6d995b9d05aea55a90a7b044c8b95fd670bf.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b6d4ffcbaaa98b6289e2370a45043c2f4e4a29b92cf93f81041fd65e1d67e1a1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ebd2121db585838b4e95dd8e7dec9afb1d8b48cf96d86da816bfd30229fd7bf1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b36a2e30e0670d43d45b75478f264edb08db48e71f22f5f17d4d62dfe1e76ce1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b6dd6527c8ddf285b834936424739fa571a64de224a4329b5f43cda711772458.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5b0ae63dfc19df474953623475716f67725b542707068c4d440cf014a7abc1b4.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d4e7f8b5c9c60e8ddff42c99e2abcc39328212b9195eb1a341ded6e4b4e60ceb.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "4deaa98b07ebbce15c84b15163845c95cb50cebda7a2c8511e07b087a6f4fed0.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 16,
+            "num_warps": 2,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 16,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bfc8cb09ea2205974ae805cb215f9a392f95011525b3b27a7eba23d4bb7330f1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ff901bac30b8c1a6b91b7194f20e1f1378f416d5cc30d5ddfb370db0aa1dc279.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0f7faa18e83debef805dcc204ab39b372086f6be3acff0dcffeed5ac5f90cd87.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9a5a4df838b2562da0de02f5bb75f02e701f2ad67c376df51d9c57c4e7a4a704.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "73822a71e4fba4878426d5d9db88739689431f5ce3d5dde1d2ec6deccacefc69.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "e940946c2192fe6effbeabc81599cc404b7e3ac2cf668f567bf649ea1ee26335.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9ee2e90762aea15ba75b7066a0ccb760a7213b13b1d72d722ddae66069634fe6.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f1045689b61a9131e8c2836254cfc96ab9b5fc8d38f5600de8d985f624f4c1fc.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "df8aa099c1cdcce62217028c3bfea0c8a2d72ef4434a189c9c3da022255a6a51.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bd9f0a5607f1338452d0c17fe2216abe364777b7bc9b8742febc86679d806075.best_config",
+          "baseline": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b02d67db585fb2f7ae2ab33c063df911a9175cd6536a16807ccf77b9138b54ee.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0386e83d7a8a1d21f562c83aa7f7f79c521eaed41413a2642a24c56b9c76364a.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "219198755ba0c9f4b1747c28d19aa2ffca4c373b8b9b7837abf615075c8e20f1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "de7622f1795fc03138403ec8b8e230b2449ce1740e0e2f670b2f095de7064d38.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8048c877e767aef1337331b0b5a18a24c2d59aa2daa150a5ae646baa2101fcb5.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "552d4af8fe08461f0c73becf7b87f0b5134dcdb04087bf51a747fd60d0a0e705.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "960b2e55b2e7ae9bb4f3a7a4e48aad6274a11b6caf56fa246d686c758463dbbe.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3299b1127e4bbaa0405e041aa28616f33a76b3eae1efe07f88b2461e3c179ee7.best_config",
+          "baseline": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f3b6463f86a975601225ef85441966e1c9541c89c9d07251d2099401fc4ca02b.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "72eaa88a99ca86ae56ebf17c92028523b09e8ff5fe9f219a1822b1b9475be3eb.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f230d872f307eb986ae8fd07adccb04ce4468ebadafd4cdfc4d6753ac8d8c51e.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "64d91eb4dc4173d1a37f7eeed8887d2d6d8b99cfe0c22322b38f511763bbaa5a.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ab79b3b58e2842c35da9b3af4e2ac29421eb0cfedd742ff32d57b65d5c3661e9.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "a23b7ee84cdf77c88130163f9ffb50a572c972c123a400fe5b3afe6b1f1c6e44.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 4,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "757fe12a6d4c4cb12ad657afcdcf0e1174cd69791886c70dbf0a4e111ba9b290.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c71ce21bb17bf7e4f0034c7ab97ac60ffa9954db2436c6556e5935eb7b575872.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ef39c45cded32a95c94657c3fee9b23e9b4332f2d03b1ee3a922ecb0c56ec85a.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ceaf0da3a2fa15e02b5e2a28a93b4ee256b9577559d55bd1581bdae332b16629.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "4cba4393ab0c05df7b88e4a6f38db04dfb8150933ca0ff938751a8741fb62eac.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2c91452b7e8f35c92f5ca857c8e8b9bce56cd891240faddff298291e5532834d.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "6f84bcac51dc18e4488956c6159735d214b610943ae941a4100763b5e38898eb.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d0969a1eac3a93ee40e7c260e97edbd734dc22507307416a0920cc2030f990fa.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "db98a6c58bcede96e8fff3bc418d7e15828d9c3ed94b02ac60d601d35d1b321e.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "024904826d32817024ef178f0f7221c1115ae5768592a69ff7b7b3227ff4b7ef.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "7822ec213930d270d22fd09e8b3e4b811330036a07ea06bf38bde4a6c094a1fb.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "317b7d1c393c9afb4c237f577fb9930a3866c6b94e69b116855b15a5380e6b3b.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        }
+      ]
+    },
+    "2_FIXED": {
+      "total": 110,
+      "common": 109,
+      "different_choices": [
+        {
+          "key": "95d97949ac3bf784e65ee78b8cb2d0dd44d228fd57f3c18c3849632892b47324.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "dee7675c1ad83c56eb456e91a902abd51b37a6d91b48bf06d997fb6e4b509819.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "fd3be0f38cb22b0c109696f9fd052b265fbd8b6d2806acb2699bada606fd076f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b3172f8129aef67ad36e287181de6d995b9d05aea55a90a7b044c8b95fd670bf.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bfc8cb09ea2205974ae805cb215f9a392f95011525b3b27a7eba23d4bb7330f1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "18b14c8c502b362c2eb73e71c5e29805842bfcab6e91448029bae59d9bb93f92.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0f7faa18e83debef805dcc204ab39b372086f6be3acff0dcffeed5ac5f90cd87.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "e302bb8b28f3d225b64c718f3d0b671894e36903aa34e48cba920757270bac91.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "195032f505d67c19b1998cce1746de12e705f019f3c4c02aaca3395e53cacc27.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "73822a71e4fba4878426d5d9db88739689431f5ce3d5dde1d2ec6deccacefc69.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9ee2e90762aea15ba75b7066a0ccb760a7213b13b1d72d722ddae66069634fe6.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "e6f241463ab8a643f746bfa5ab176a9bd66350be542adbdf7c546c670147936e.best_config",
+          "baseline": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f1045689b61a9131e8c2836254cfc96ab9b5fc8d38f5600de8d985f624f4c1fc.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8e56757bfe2e14a26f1bd4619a5148469bb8c66d785f84f04a72e1d9c987c2ad.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "df8aa099c1cdcce62217028c3bfea0c8a2d72ef4434a189c9c3da022255a6a51.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b02d67db585fb2f7ae2ab33c063df911a9175cd6536a16807ccf77b9138b54ee.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0386e83d7a8a1d21f562c83aa7f7f79c521eaed41413a2642a24c56b9c76364a.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "adf31de99adcc0b7d983bdb5e39ae3394d3e023d40f99c4602e63091fc670769.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8048c877e767aef1337331b0b5a18a24c2d59aa2daa150a5ae646baa2101fcb5.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "552d4af8fe08461f0c73becf7b87f0b5134dcdb04087bf51a747fd60d0a0e705.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "960b2e55b2e7ae9bb4f3a7a4e48aad6274a11b6caf56fa246d686c758463dbbe.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3299b1127e4bbaa0405e041aa28616f33a76b3eae1efe07f88b2461e3c179ee7.best_config",
+          "baseline": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "e6284c4b3b46e7d476636adf41769e87dadcb31974567528c0c743a7c2373302.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0ab62ca7938c98b3744d6172b7c1802170738f8cee426ef6c6136b5d511e27b0.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "72eaa88a99ca86ae56ebf17c92028523b09e8ff5fe9f219a1822b1b9475be3eb.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "64d91eb4dc4173d1a37f7eeed8887d2d6d8b99cfe0c22322b38f511763bbaa5a.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "a2fc7b54fa34e55ca1f008c75273b872dc32a27856a0ab6fe8b2e1670106fd7f.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "56d8b1a34f6147f7e24fa355df1b05068021cb3f5053c0a504c041c0874d9b67.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ab79b3b58e2842c35da9b3af4e2ac29421eb0cfedd742ff32d57b65d5c3661e9.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "128e14dc2ee731f9d2db3cefeb5ebee1c935712cab339048ca337b803e18745c.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "757fe12a6d4c4cb12ad657afcdcf0e1174cd69791886c70dbf0a4e111ba9b290.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c71ce21bb17bf7e4f0034c7ab97ac60ffa9954db2436c6556e5935eb7b575872.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ef39c45cded32a95c94657c3fee9b23e9b4332f2d03b1ee3a922ecb0c56ec85a.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "1a2f6422d8257011f515da151c0e0de1b8050b11ab084d5703b92a8f9f65c1ee.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ceaf0da3a2fa15e02b5e2a28a93b4ee256b9577559d55bd1581bdae332b16629.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9f0bb56290b8ae83d2a3bce8f029ac71b872a5ee9dcc8628a84b2fe28ee14c6d.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "09930e885216eadc8562324c49151556a48acde6568bc5dd46bafee438b016d2.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2b1c974d10d420ef6da428de6dc1abe53185d6667e67e696544059c52d79ad68.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "78ff6b2def47f94a8640054d10a9f45ab6dadcbd39e98ef6275df5467d5f1aa8.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d0969a1eac3a93ee40e7c260e97edbd734dc22507307416a0920cc2030f990fa.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "db98a6c58bcede96e8fff3bc418d7e15828d9c3ed94b02ac60d601d35d1b321e.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "024904826d32817024ef178f0f7221c1115ae5768592a69ff7b7b3227ff4b7ef.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3442117b8da00b42a7f2ded30b96709073d95158c3505f7b9889e28d4497212b.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "952de5fdca6afca62174cb068f5e660f89a654fbcf5d95e2c392900f3411ec05.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        }
+      ]
+    },
+    "1_FIXED": {
+      "total": 110,
+      "common": 109,
+      "different_choices": [
+        {
+          "key": "95d97949ac3bf784e65ee78b8cb2d0dd44d228fd57f3c18c3849632892b47324.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "dee7675c1ad83c56eb456e91a902abd51b37a6d91b48bf06d997fb6e4b509819.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "836d62b61967369445baa2170231545e08e0a9938083acf1b3f3284ea50ca8ff.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "fd3be0f38cb22b0c109696f9fd052b265fbd8b6d2806acb2699bada606fd076f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d86f8cdc45dcf33c0524b21f773314b48e0dd78e6d1eaa550e9c18a3f8c00906.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b6d4ffcbaaa98b6289e2370a45043c2f4e4a29b92cf93f81041fd65e1d67e1a1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f6fec06df63d7bf7d7db498b4e28b39007dc82f54a196cce47e7b81edc60885b.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5b0ae63dfc19df474953623475716f67725b542707068c4d440cf014a7abc1b4.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d4e7f8b5c9c60e8ddff42c99e2abcc39328212b9195eb1a341ded6e4b4e60ceb.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bfc8cb09ea2205974ae805cb215f9a392f95011525b3b27a7eba23d4bb7330f1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "18b14c8c502b362c2eb73e71c5e29805842bfcab6e91448029bae59d9bb93f92.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "34db1f3bb187bbc93a9d59062d213cdc3bf2a349fe5e5c6fd6c7c84468a5dc72.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "73822a71e4fba4878426d5d9db88739689431f5ce3d5dde1d2ec6deccacefc69.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9ee2e90762aea15ba75b7066a0ccb760a7213b13b1d72d722ddae66069634fe6.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f75022ae7a25845337de1ae8bf49ca2600d6fa77797ee807063d18072e958136.best_config",
+          "baseline": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "df8aa099c1cdcce62217028c3bfea0c8a2d72ef4434a189c9c3da022255a6a51.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0386e83d7a8a1d21f562c83aa7f7f79c521eaed41413a2642a24c56b9c76364a.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "219198755ba0c9f4b1747c28d19aa2ffca4c373b8b9b7837abf615075c8e20f1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "de7622f1795fc03138403ec8b8e230b2449ce1740e0e2f670b2f095de7064d38.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8048c877e767aef1337331b0b5a18a24c2d59aa2daa150a5ae646baa2101fcb5.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "552d4af8fe08461f0c73becf7b87f0b5134dcdb04087bf51a747fd60d0a0e705.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "960b2e55b2e7ae9bb4f3a7a4e48aad6274a11b6caf56fa246d686c758463dbbe.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3299b1127e4bbaa0405e041aa28616f33a76b3eae1efe07f88b2461e3c179ee7.best_config",
+          "baseline": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5d956c57a997cc5e1b9ec0c9a9faa578a44ae246f93ab9ba8e3996cbf56b6f2f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "72eaa88a99ca86ae56ebf17c92028523b09e8ff5fe9f219a1822b1b9475be3eb.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f230d872f307eb986ae8fd07adccb04ce4468ebadafd4cdfc4d6753ac8d8c51e.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "64d91eb4dc4173d1a37f7eeed8887d2d6d8b99cfe0c22322b38f511763bbaa5a.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "56d8b1a34f6147f7e24fa355df1b05068021cb3f5053c0a504c041c0874d9b67.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bd9a4e6b44047511a8399c709045ef133066bd8236923f6063027d9c2a148278.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0946b4617397d4b4aa5f8c7110d62d46f891e8539cacdb780cc2a0e72ada350c.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "a23b7ee84cdf77c88130163f9ffb50a572c972c123a400fe5b3afe6b1f1c6e44.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 4,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "757fe12a6d4c4cb12ad657afcdcf0e1174cd69791886c70dbf0a4e111ba9b290.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c71ce21bb17bf7e4f0034c7ab97ac60ffa9954db2436c6556e5935eb7b575872.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ef39c45cded32a95c94657c3fee9b23e9b4332f2d03b1ee3a922ecb0c56ec85a.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "09930e885216eadc8562324c49151556a48acde6568bc5dd46bafee438b016d2.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2c91452b7e8f35c92f5ca857c8e8b9bce56cd891240faddff298291e5532834d.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2b1c974d10d420ef6da428de6dc1abe53185d6667e67e696544059c52d79ad68.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "78ff6b2def47f94a8640054d10a9f45ab6dadcbd39e98ef6275df5467d5f1aa8.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d0969a1eac3a93ee40e7c260e97edbd734dc22507307416a0920cc2030f990fa.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "952de5fdca6afca62174cb068f5e660f89a654fbcf5d95e2c392900f3411ec05.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "317b7d1c393c9afb4c237f577fb9930a3866c6b94e69b116855b15a5380e6b3b.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        }
+      ]
+    },
+    "4_BASE": {
+      "total": 110,
+      "common": 110,
+      "different_choices": [
+        {
+          "key": "481b5eaf0863a955bf1b27c409a89fd0d887ff775a2039c1180b50005f4c4e1b.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "95d97949ac3bf784e65ee78b8cb2d0dd44d228fd57f3c18c3849632892b47324.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c51f1450e2dbf2dfdf96f9d9a24d6579bb6960a8164477df47e8b1c671a59459.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "836d62b61967369445baa2170231545e08e0a9938083acf1b3f3284ea50ca8ff.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "fd3be0f38cb22b0c109696f9fd052b265fbd8b6d2806acb2699bada606fd076f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b6d4ffcbaaa98b6289e2370a45043c2f4e4a29b92cf93f81041fd65e1d67e1a1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f6fec06df63d7bf7d7db498b4e28b39007dc82f54a196cce47e7b81edc60885b.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ebd2121db585838b4e95dd8e7dec9afb1d8b48cf96d86da816bfd30229fd7bf1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b6dd6527c8ddf285b834936424739fa571a64de224a4329b5f43cda711772458.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8712a8732a73919b44f218afdeb3d2e92105b6c4a1b4ce85e066e8f3533afae0.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "4deaa98b07ebbce15c84b15163845c95cb50cebda7a2c8511e07b087a6f4fed0.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 16,
+            "num_warps": 2,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 16,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "18b14c8c502b362c2eb73e71c5e29805842bfcab6e91448029bae59d9bb93f92.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0f7faa18e83debef805dcc204ab39b372086f6be3acff0dcffeed5ac5f90cd87.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9a5a4df838b2562da0de02f5bb75f02e701f2ad67c376df51d9c57c4e7a4a704.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "195032f505d67c19b1998cce1746de12e705f019f3c4c02aaca3395e53cacc27.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "74c024d1bcb3860fce2b7e11a6278f949ee4c9c225af7f91996615f6f68bf258.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "73822a71e4fba4878426d5d9db88739689431f5ce3d5dde1d2ec6deccacefc69.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b8481c85a1d6227393d043dab7b6fab092f6fe0ef8c79867aabb0587a586f30d.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9ee2e90762aea15ba75b7066a0ccb760a7213b13b1d72d722ddae66069634fe6.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f1045689b61a9131e8c2836254cfc96ab9b5fc8d38f5600de8d985f624f4c1fc.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8e56757bfe2e14a26f1bd4619a5148469bb8c66d785f84f04a72e1d9c987c2ad.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "df8aa099c1cdcce62217028c3bfea0c8a2d72ef4434a189c9c3da022255a6a51.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b78e464c8896ddd0922b6ecc98bb53cf8d76a7adf1bfeed3296cebf555aec41b.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bd9f0a5607f1338452d0c17fe2216abe364777b7bc9b8742febc86679d806075.best_config",
+          "baseline": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 4,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0386e83d7a8a1d21f562c83aa7f7f79c521eaed41413a2642a24c56b9c76364a.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "219198755ba0c9f4b1747c28d19aa2ffca4c373b8b9b7837abf615075c8e20f1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8048c877e767aef1337331b0b5a18a24c2d59aa2daa150a5ae646baa2101fcb5.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "552d4af8fe08461f0c73becf7b87f0b5134dcdb04087bf51a747fd60d0a0e705.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "960b2e55b2e7ae9bb4f3a7a4e48aad6274a11b6caf56fa246d686c758463dbbe.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3299b1127e4bbaa0405e041aa28616f33a76b3eae1efe07f88b2461e3c179ee7.best_config",
+          "baseline": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "474ce4e91c1502c672b011450ec7009fb7431cf11737680c4f6f56b73c9b8d7c.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0ab62ca7938c98b3744d6172b7c1802170738f8cee426ef6c6136b5d511e27b0.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5d956c57a997cc5e1b9ec0c9a9faa578a44ae246f93ab9ba8e3996cbf56b6f2f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f3b6463f86a975601225ef85441966e1c9541c89c9d07251d2099401fc4ca02b.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "f230d872f307eb986ae8fd07adccb04ce4468ebadafd4cdfc4d6753ac8d8c51e.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "64d91eb4dc4173d1a37f7eeed8887d2d6d8b99cfe0c22322b38f511763bbaa5a.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "bd9a4e6b44047511a8399c709045ef133066bd8236923f6063027d9c2a148278.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "a23b7ee84cdf77c88130163f9ffb50a572c972c123a400fe5b3afe6b1f1c6e44.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "7cefd1d389e586783d8d8e2fde058613935c8ad90a17cd007e73ed241c630b7c.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "757fe12a6d4c4cb12ad657afcdcf0e1174cd69791886c70dbf0a4e111ba9b290.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c71ce21bb17bf7e4f0034c7ab97ac60ffa9954db2436c6556e5935eb7b575872.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ef39c45cded32a95c94657c3fee9b23e9b4332f2d03b1ee3a922ecb0c56ec85a.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "1a2f6422d8257011f515da151c0e0de1b8050b11ab084d5703b92a8f9f65c1ee.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "4cba4393ab0c05df7b88e4a6f38db04dfb8150933ca0ff938751a8741fb62eac.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2b1c974d10d420ef6da428de6dc1abe53185d6667e67e696544059c52d79ad68.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "78ff6b2def47f94a8640054d10a9f45ab6dadcbd39e98ef6275df5467d5f1aa8.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "7ac06103d95122a8a5cdc8fa5704a4b2c529175822b3aee46523735919a7d912.best_config",
+          "baseline": {
+            "num_warps": 1,
+            "num_stages": 1
+          },
+          "candidate": {
+            "num_warps": 1,
+            "num_stages": 2
+          }
+        }
+      ]
+    },
+    "5_FIXED": {
+      "total": 110,
+      "common": 109,
+      "different_choices": [
+        {
+          "key": "481b5eaf0863a955bf1b27c409a89fd0d887ff775a2039c1180b50005f4c4e1b.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "95d97949ac3bf784e65ee78b8cb2d0dd44d228fd57f3c18c3849632892b47324.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "836d62b61967369445baa2170231545e08e0a9938083acf1b3f3284ea50ca8ff.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "fd3be0f38cb22b0c109696f9fd052b265fbd8b6d2806acb2699bada606fd076f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d86f8cdc45dcf33c0524b21f773314b48e0dd78e6d1eaa550e9c18a3f8c00906.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5a1160a1d21f810d24a085d43875cf658f1dd22cb5945fbfba7082cf83b51eed.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b3172f8129aef67ad36e287181de6d995b9d05aea55a90a7b044c8b95fd670bf.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2947964b2bba915e610e2a864a546a4577542c8c6005a145d3ae8971c32ac39d.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ebd2121db585838b4e95dd8e7dec9afb1d8b48cf96d86da816bfd30229fd7bf1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b6dd6527c8ddf285b834936424739fa571a64de224a4329b5f43cda711772458.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5b0ae63dfc19df474953623475716f67725b542707068c4d440cf014a7abc1b4.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3f7678533e94378a570c1613f4717b6129e03e5befbf924e3b29e2c40af7aabc.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "18b14c8c502b362c2eb73e71c5e29805842bfcab6e91448029bae59d9bb93f92.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "a30d3467fd8fcb078fbe1a4b3d71525b6b0cccf27a2190bb8501de8af6b13e17.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "34db1f3bb187bbc93a9d59062d213cdc3bf2a349fe5e5c6fd6c7c84468a5dc72.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "195032f505d67c19b1998cce1746de12e705f019f3c4c02aaca3395e53cacc27.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0549f73cb67250fb221c7c11505d05b263945cf13cf47edcaea0adc8fa08e814.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "e940946c2192fe6effbeabc81599cc404b7e3ac2cf668f567bf649ea1ee26335.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ea9757ffc7a8ce4b8ee817c8b5e93203ba9ddb777d44b0f11d0cde30644a5c77.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "9ee2e90762aea15ba75b7066a0ccb760a7213b13b1d72d722ddae66069634fe6.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "4df032128c21c2506c450ba1963fe9b2dd17ae5671ada8888ca0a57f90616c51.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "df8aa099c1cdcce62217028c3bfea0c8a2d72ef4434a189c9c3da022255a6a51.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b78e464c8896ddd0922b6ecc98bb53cf8d76a7adf1bfeed3296cebf555aec41b.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "b02d67db585fb2f7ae2ab33c063df911a9175cd6536a16807ccf77b9138b54ee.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0386e83d7a8a1d21f562c83aa7f7f79c521eaed41413a2642a24c56b9c76364a.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "219198755ba0c9f4b1747c28d19aa2ffca4c373b8b9b7837abf615075c8e20f1.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "de7622f1795fc03138403ec8b8e230b2449ce1740e0e2f670b2f095de7064d38.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "8048c877e767aef1337331b0b5a18a24c2d59aa2daa150a5ae646baa2101fcb5.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "552d4af8fe08461f0c73becf7b87f0b5134dcdb04087bf51a747fd60d0a0e705.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3299b1127e4bbaa0405e041aa28616f33a76b3eae1efe07f88b2461e3c179ee7.best_config",
+          "baseline": {
+            "XBLOCK": 32,
+            "R0_BLOCK": 32,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "e6284c4b3b46e7d476636adf41769e87dadcb31974567528c0c743a7c2373302.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "474ce4e91c1502c672b011450ec7009fb7431cf11737680c4f6f56b73c9b8d7c.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0ab62ca7938c98b3744d6172b7c1802170738f8cee426ef6c6136b5d511e27b0.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 2,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "5d956c57a997cc5e1b9ec0c9a9faa578a44ae246f93ab9ba8e3996cbf56b6f2f.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "72eaa88a99ca86ae56ebf17c92028523b09e8ff5fe9f219a1822b1b9475be3eb.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "46e77de3d24dde64ae3afd1635c5ea9905441067879b634677a93012403533f1.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "710b92c96f4174545e4793c6bcf83711d3b6a9bc3024d1f741beecf04749b296.best_config",
+          "baseline": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "0946b4617397d4b4aa5f8c7110d62d46f891e8539cacdb780cc2a0e72ada350c.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "a23b7ee84cdf77c88130163f9ffb50a572c972c123a400fe5b3afe6b1f1c6e44.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 4,
+            "num_warps": 8,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "757fe12a6d4c4cb12ad657afcdcf0e1174cd69791886c70dbf0a4e111ba9b290.best_config",
+          "baseline": {
+            "XBLOCK": 64,
+            "R0_BLOCK": 32,
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "c71ce21bb17bf7e4f0034c7ab97ac60ffa9954db2436c6556e5935eb7b575872.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "ef39c45cded32a95c94657c3fee9b23e9b4332f2d03b1ee3a922ecb0c56ec85a.best_config",
+          "baseline": {
+            "XBLOCK": 16,
+            "R0_BLOCK": 32,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 8,
+            "R0_BLOCK": 32,
+            "num_warps": 2,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "09930e885216eadc8562324c49151556a48acde6568bc5dd46bafee438b016d2.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "2c91452b7e8f35c92f5ca857c8e8b9bce56cd891240faddff298291e5532834d.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 1024,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "6f84bcac51dc18e4488956c6159735d214b610943ae941a4100763b5e38898eb.best_config",
+          "baseline": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "d0969a1eac3a93ee40e7c260e97edbd734dc22507307416a0920cc2030f990fa.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "3442117b8da00b42a7f2ded30b96709073d95158c3505f7b9889e28d4497212b.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "952de5fdca6afca62174cb068f5e660f89a654fbcf5d95e2c392900f3411ec05.best_config",
+          "baseline": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 512,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        },
+        {
+          "key": "317b7d1c393c9afb4c237f577fb9930a3866c6b94e69b116855b15a5380e6b3b.best_config",
+          "baseline": {
+            "XBLOCK": 128,
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "candidate": {
+            "XBLOCK": 256,
+            "num_warps": 4,
+            "num_stages": 1
+          }
+        }
+      ]
+    },
+    "0_BASE": {
+      "total": 110,
+      "common": 110,
+      "different_choices": []
+    },
+    "frozen": {
+      "total": 111,
+      "common": 110,
+      "different_choices": []
+    }
+  },
+  "secondary_protocols": {
+    "controlled_main_r2": {
+      "arms": [
+        "BASE",
+        "ECS"
+      ],
+      "process_pairs": 6,
+      "blocks": 72,
+      "paired_logmean_change_percent": 0.02058626570751996,
+      "mean_block_difference_ms": 0.002166914378499819,
+      "hierarchical_bootstrap_95_percent": [
+        -0.912346628963445,
+        0.989445600438023
+      ],
+      "bootstrap_draws": 20000,
+      "bootstrap_seed": 20261019,
+      "process_pair_t_95_percent": [
+        -1.429479090635824,
+        1.4919834514687136
+      ],
+      "process_pair_t_one_sided_upper95_percent": 1.172174308799368,
+      "t_interval_caveat": "t interval over independent process-pair means; n=2 is calibration only, not a precise population estimate",
+      "interval_method": "resample independent process pairs, then ABBA blocks within each selected pair; frame samples are not iid replicates",
+      "per_pair_change_percent": [
+        -1.3588576917719564,
+        1.5269476680395746,
+        -1.0409687146497932,
+        0.9277401107158486,
+        -1.2770760196324105,
+        1.394163852214109
+      ],
+      "interpretation": "interval crosses zero: unresolved sign, not proof of zero cost",
+      "stats": {
+        "BASE": {
+          "rounds": 144,
+          "samples": 7200,
+          "median_of_round_medians_ms": 11.62086520344019,
+          "pooled_p50_ms": 11.628862586803734,
+          "pooled_p90_ms": 11.784044210799038,
+          "min_ms": 11.364558944478631,
+          "max_ms": 33.7275939527899,
+          "event_p50_ms": 11.60422420501709
+        },
+        "ECS": {
+          "rounds": 144,
+          "samples": 7200,
+          "median_of_round_medians_ms": 11.632081295829266,
+          "pooled_p50_ms": 11.632530018687248,
+          "pooled_p90_ms": 11.750231846235693,
+          "min_ms": 11.400016024708748,
+          "max_ms": 33.8139480445534,
+          "event_p50_ms": 11.607679843902588
+        }
+      },
+      "kernel_audits": [
+        {
+          "pair": 0,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 835
+        },
+        {
+          "pair": 1,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 835
+        },
+        {
+          "pair": 2,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 835
+        },
+        {
+          "pair": 3,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 835
+        },
+        {
+          "pair": 4,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 835
+        },
+        {
+          "pair": 5,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 835
+        }
+      ],
+      "monitor_errors": [],
+      "memory_scope": "resident timing only; retain independent cold-first/full-window capacity measurements separately"
+    },
+    "controlled_native_r1": {
+      "arms": [
+        "BASE",
+        "NATIVE"
+      ],
+      "process_pairs": 2,
+      "blocks": 16,
+      "paired_logmean_change_percent": 0.5091941213821622,
+      "mean_block_difference_ms": 0.06005537579767406,
+      "hierarchical_bootstrap_95_percent": [
+        -0.7580916671069791,
+        1.7542458933901175
+      ],
+      "bootstrap_draws": 20000,
+      "bootstrap_seed": 20261019,
+      "interval_method": "resample independent process pairs, then ABBA blocks within each selected pair; frame samples are not iid replicates",
+      "per_pair_change_percent": [
+        1.690826169532391,
+        -0.6587075407557829
+      ],
+      "interpretation": "interval crosses zero: unresolved sign, not proof of zero cost",
+      "stats": {
+        "BASE": {
+          "rounds": 32,
+          "samples": 1600,
+          "median_of_round_medians_ms": 11.722697759978473,
+          "pooled_p50_ms": 11.715475469827652,
+          "pooled_p90_ms": 11.856800084933639,
+          "min_ms": 11.545370100066066,
+          "max_ms": 15.718108974397182,
+          "event_p50_ms": 11.690415859222412
+        },
+        "NATIVE": {
+          "rounds": 32,
+          "samples": 1600,
+          "median_of_round_medians_ms": 11.78879226790741,
+          "pooled_p50_ms": 11.806232971139252,
+          "pooled_p90_ms": 11.99429426342249,
+          "min_ms": 11.468925047665834,
+          "max_ms": 21.098918979987502,
+          "event_p50_ms": 11.780960083007812
+        }
+      },
+      "kernel_audits": [
+        {
+          "pair": 0,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 830
+        },
+        {
+          "pair": 1,
+          "shared_semantic_programs": 172,
+          "common_programs_identical_cubin": 31,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 830
+        }
+      ],
+      "monitor_errors": [],
+      "memory_scope": "resident timing only; retain independent cold-first/full-window capacity measurements separately"
+    },
+    "controlled_aa_r0": {
+      "arms": [
+        "BASE",
+        "BASE2"
+      ],
+      "process_pairs": 2,
+      "blocks": 16,
+      "paired_logmean_change_percent": 0.35110862371332213,
+      "mean_block_difference_ms": 0.04091367736691609,
+      "hierarchical_bootstrap_95_percent": [
+        -0.2119685661667238,
+        0.9130768977863435
+      ],
+      "bootstrap_draws": 20000,
+      "bootstrap_seed": 20261019,
+      "process_pair_t_95_percent": [
+        -5.974273426474185,
+        7.102017383865119
+      ],
+      "t_interval_caveat": "t interval over independent process-pair means; n=2 is calibration only, not a precise population estimate",
+      "interval_method": "resample independent process pairs, then ABBA blocks within each selected pair; frame samples are not iid replicates",
+      "per_pair_change_percent": [
+        0.8666281125339586,
+        -0.1617760953293716
+      ],
+      "interpretation": "interval crosses zero: unresolved sign, not proof of zero cost",
+      "stats": {
+        "BASE": {
+          "rounds": 32,
+          "samples": 1600,
+          "median_of_round_medians_ms": 11.606976855546236,
+          "pooled_p50_ms": 11.608579545281827,
+          "pooled_p90_ms": 11.749405972659588,
+          "min_ms": 11.476099025458097,
+          "max_ms": 18.376658903434873,
+          "event_p50_ms": 11.58292818069458
+        },
+        "BASE2": {
+          "rounds": 32,
+          "samples": 1600,
+          "median_of_round_medians_ms": 11.651177424937487,
+          "pooled_p50_ms": 11.66504097636789,
+          "pooled_p90_ms": 11.785010271705687,
+          "min_ms": 11.452123988419771,
+          "max_ms": 16.8201201595366,
+          "event_p50_ms": 11.63966417312622
+        }
+      },
+      "kernel_audits": [
+        {
+          "pair": 0,
+          "shared_semantic_programs": 179,
+          "common_programs_identical_cubin": 38,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 830
+        },
+        {
+          "pair": 1,
+          "shared_semantic_programs": 179,
+          "common_programs_identical_cubin": 38,
+          "different_configs": [],
+          "all_compiler_artifact_hashes_unchanged": true,
+          "fingerprinted_artifacts": 830
+        }
+      ],
+      "monitor_errors": [],
+      "memory_scope": "resident timing only; retain independent cold-first/full-window capacity measurements separately"
+    },
+    "serial_matched_r0": {
+      "scope": "normal API; one GPU0 process at a time; matched Python hash seeds; fixed cache and CPU8",
+      "pairs": [
+        {
+          "seed": 0,
+          "arms": {
+            "BASE": {
+              "p50_ms": 11.655072448775172,
+              "p90_ms": 11.742073320783675,
+              "round_logmean_ms": 11.65466631448555,
+              "round_medians_ms": [
+                11.660026502795517,
+                11.664921068586409,
+                11.664274497888982,
+                11.648745508864522,
+                11.664624908007681,
+                11.652737041004002,
+                11.635109083727002,
+                11.646926519460976
+              ]
+            },
+            "ECS": {
+              "p50_ms": 11.463750968687236,
+              "p90_ms": 11.575755872763693,
+              "round_logmean_ms": 11.466276711387163,
+              "round_medians_ms": [
+                11.484920978546143,
+                11.46163686644286,
+                11.506321025080979,
+                11.441759415902197,
+                11.443693074397743,
+                11.46172743756324,
+                11.468874872662127,
+                11.461416608653963
+              ]
+            }
+          },
+          "logratio": -0.0162963744269935,
+          "percent": -1.6164306897764709
+        },
+        {
+          "seed": 1,
+          "arms": {
+            "BASE": {
+              "p50_ms": 11.755812563933432,
+              "p90_ms": 11.829267209395766,
+              "round_logmean_ms": 11.754112419677941,
+              "round_medians_ms": [
+                11.769437463954091,
+                11.729583027772605,
+                11.758126551285386,
+                11.755166575312614,
+                11.738269124180079,
+                11.752361082471907,
+                11.769573553465307,
+                11.760441004298627
+              ]
+            },
+            "ECS": {
+              "p50_ms": 11.616128496825695,
+              "p90_ms": 11.690132855437696,
+              "round_logmean_ms": 11.61715565365439,
+              "round_medians_ms": [
+                11.616323958151042,
+                11.610337533056736,
+                11.611675610765815,
+                11.614450486376882,
+                11.617486015893519,
+                11.61593315191567,
+                11.640554526820779,
+                11.610513087362051
+              ]
+            }
+          },
+          "logratio": -0.011720231297017492,
+          "percent": -1.1651816924455123
+        },
+        {
+          "seed": 2,
+          "arms": {
+            "BASE": {
+              "p50_ms": 11.435658088885248,
+              "p90_ms": 11.544119915924966,
+              "round_logmean_ms": 11.442691456269566,
+              "round_medians_ms": [
+                11.40038634184748,
+                11.438753572292626,
+                11.394820525310934,
+                11.452439473941922,
+                11.533723562024534,
+                11.432531522586942,
+                11.428103549405932,
+                11.461345944553614
+              ]
+            },
+            "ECS": {
+              "p50_ms": 11.572300922125578,
+              "p90_ms": 11.684036930091679,
+              "round_logmean_ms": 11.574341032928734,
+              "round_medians_ms": [
+                11.634438531473279,
+                11.537801125086844,
+                11.549462447874248,
+                11.647828505374491,
+                11.539698927663267,
+                11.531829135492444,
+                11.597914039157331,
+                11.556396028026938
+              ]
+            }
+          },
+          "logratio": 0.01143944271406605,
+          "percent": 1.150512334989468
+        }
+      ],
+      "mean_change_percent": -0.5510482288227784,
+      "process_pair_t_95_percent": [
+        -4.157432071093869,
+        3.191037365799539
+      ],
+      "stats": {
+        "BASE": {
+          "samples": 1200,
+          "p50_ms": 11.659641517326236,
+          "p90_ms": 11.789045156911016,
+          "min_ms": 11.306868866086006,
+          "max_ms": 22.86916086450219
+        },
+        "ECS": {
+          "samples": 1200,
+          "p50_ms": 11.57341303769499,
+          "p90_ms": 11.673081968910992,
+          "min_ms": 11.363105848431587,
+          "max_ms": 24.471957935020328
+        }
+      },
+      "compiler_artifacts": [
+        {
+          "run": 0,
+          "unchanged": true,
+          "count": 835
+        },
+        {
+          "run": 1,
+          "unchanged": true,
+          "count": 835
+        },
+        {
+          "run": 2,
+          "unchanged": true,
+          "count": 835
+        },
+        {
+          "run": 3,
+          "unchanged": true,
+          "count": 835
+        },
+        {
+          "run": 4,
+          "unchanged": true,
+          "count": 835
+        },
+        {
+          "run": 5,
+          "unchanged": true,
+          "count": 835
+        }
+      ],
+      "interpretation": "finite n=3 independent pairs; a confidence interval is not proof of zero cost",
+      "cold_peak": "separate existing cold-process measurement, not replaced"
+    },
+    "compiled_graph_replay_diagnostic": {
+      "processes": 1,
+      "blocks": 24,
+      "paired_change_percent": 0.226145777601847,
+      "conditional_block_bootstrap95_percent": [
+        0.0706033734667633,
+        0.38418086800490775
+      ],
+      "scope": "compiled graph only on same captured real inputs and CUDA context; one process, not population/API acceptance",
+      "stats": {
+        "BASE": {
+          "p50_ms": 7.320728036575019,
+          "p90_ms": 7.417856063693762
+        },
+        "ECS": {
+          "p50_ms": 7.336758426390588,
+          "p90_ms": 7.425044267438352
+        }
+      }
+    }
+  },
+  "natural_stride_not_adopted": [
+    {
+      "run": "natural_stride_r0",
+      "status": {
+        "status": "completed",
+        "correctness_cases": 21,
+        "dtype": "float32",
+        "tf32": false,
+        "scope": "single small-stack input backward only, no alpha or forward/model timing"
+      },
+      "paired_change_percent": 0.06525239059100577,
+      "conditional_block95_percent": [
+        -0.028697385654204866,
+        0.14577425505556788
+      ],
+      "p50_ms": {
+        "old": 0.3089229576289654,
+        "natural": 0.3091339021921158
+      }
+    },
+    {
+      "run": "natural_stride_r1",
+      "status": {
+        "status": "completed",
+        "correctness_cases": 21,
+        "dtype": "float32",
+        "tf32": false,
+        "scope": "single small-stack input backward only, no alpha or forward/model timing"
+      },
+      "paired_change_percent": 0.03573459119047764,
+      "conditional_block95_percent": [
+        -0.0006084065066323472,
+        0.07264982019066607
+      ],
+      "p50_ms": {
+        "old": 0.31001504976302385,
+        "natural": 0.3102158661931753
+      }
+    }
+  ],
+  "kernel_counts": {
+    "full_model_per_frame": 657,
+    "so2_per_frame": 32,
+    "single_stack_forward": 8,
+    "single_stack_backward": 8,
+    "scope": "new representative profiler traces; time under profiler is not used for speed conclusions"
+  },
+  "wrapper_equivalence": {
+    "real_pr_kernel_definitions": 191,
+    "in_process_kernel_definitions": 191,
+    "identical_kernel_body_multiset": true,
+    "same_call_after_symbol_renaming": true,
+    "real_call": "2eb42115a595ebef74c6ffd358fcb1a3cb9ef2f39461cc8b91cd9de89b71ebb7",
+    "in_process_call": "2eb42115a595ebef74c6ffd358fcb1a3cb9ef2f39461cc8b91cd9de89b71ebb7"
+  },
+  "first_peak_capacity": {
+    "scope": "retained independent cold-process measurements; source unchanged; new timing protocols do not replace first peak",
+    "baseline": {
+      "first": {
+        "allocated": 498199552,
+        "reserved": 528482304
+      },
+      "complete": {
+        "allocated": 498199552,
+        "reserved": 528482304
+      },
+      "steady": {
+        "allocated": 397536256,
+        "reserved": 528482304
+      }
+    },
+    "candidate": {
+      "first": {
+        "allocated": 480156672,
+        "reserved": 507510784
+      },
+      "complete": {
+        "allocated": 480156672,
+        "reserved": 507510784
+      },
+      "steady": {
+        "allocated": 379493376,
+        "reserved": 507510784
+      }
+    },
+    "first_alloc_reduction_percent": 3.621617066407956,
+    "steady_alloc_reduction_percent": 4.538675335313314
+  },
+  "invalid_diagnostics": [
+    "Two launcher-inspection failures before controlled timing; no comparative result used.",
+    "One own-worker initialization cancelled after inspection incompatibility was identified.",
+    "Two graph-replay setup failures (bound method / missing no_grad); not candidate numerical failures."
+  ],
+  "limitations": [
+    "Neo N64 only; no new multi-model/PT2/large-edge acceptance.",
+    "Only partial Megakernels scheduling ideas are used, not its runtime or a cross-layer mega-kernel.",
+    "No stable speedup or exact zero-cost guarantee; initialization-order effect observed, low-level mechanism not uniquely attributed.",
+    "The natural-stride experiment was not adopted; it did not demonstrate a repeatable benefit.",
+    "Large-edge make_fx/AOT dispatch must be checked separately; Dynamo boundary unit tests are not AOT deployment acceptance."
+  ],
+  "raw_evidence": {
+    "file": "ecs-edge-cohort-controlled-raw.json.gz",
+    "sha256": "213178e9d326af552766ffb5b0f002b924e56a9ede703b4b7748bcde912e329d",
+    "compressed_bytes": 1311322
+  }
+}

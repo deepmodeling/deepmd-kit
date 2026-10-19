@@ -5197,6 +5197,6 @@
     "Latest cold-process matrix covers Neo N64 only; no multi-model/PT2 acceptance claim.",
     "Small-path residual reuse overlaps the earlier internal inplace optimization; percentages are not additive.",
     "Earlier opaque two-cohort N64 path regressed 6.85-7.81%; it is not the reported small path.",
-    "No stable latency speedup is claimed below 3%; full model outputs are tolerance-equivalent, not bitwise guaranteed."
+    "Cold-process percentage differences alone are not significance tests; the fixed-3%-noise interpretation is retired by the controlled timing follow-up. Full model outputs are tolerance-equivalent, not bitwise guaranteed."
   ]
 }
