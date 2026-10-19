@@ -265,6 +265,22 @@ class TestDPA4C:
                 original_parameters[name],
             )
 
+    def test_state_dict_of_version_3_2_loads(self) -> None:
+        """A checkpoint holding the gather tables of DeePMD-kit 3.2 loads strictly."""
+        state = self.descriptor.state_dict()
+        width = 32
+        state["angular_channel_index"] = torch.arange(width)
+        state["angular_harmonic_index"] = torch.arange(width)
+        restored = self.build()
+        restored.load_state_dict(state)
+        torch.testing.assert_close(
+            self._evaluate(restored, self.coord),
+            self._evaluate(self.descriptor, self.coord),
+        )
+        state["unknown"] = torch.zeros(1)
+        with pytest.raises(RuntimeError, match="unknown"):
+            restored.load_state_dict(state)
+
     def test_deserialization_preserves_version_one_raw_radial_basis(self) -> None:
         data = self.descriptor.serialize()
         radial_basis = data["radial_basis"]
