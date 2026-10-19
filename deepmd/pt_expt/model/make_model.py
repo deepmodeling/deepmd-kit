@@ -196,6 +196,51 @@ def _fused_energy_force_graph(
     return ret
 
 
+def check_owned_frames(
+    n_node: torch.Tensor,
+    n_local: torch.Tensor | None,
+    communicator: torch.Tensor | None = None,
+) -> None:
+    """Reject halo nodes in the frames of a single domain with a long-range module.
+
+    The module sums over every pair of atoms of a frame, so a frame that one
+    domain holds whole owns all its nodes; halo nodes would carry no charge
+    and remove their interactions from the sum. Across the domains of a
+    communicator, every domain owns its share of the frame instead. The
+    counts are read eagerly only: a traced lower receives them from callers
+    that check them.
+
+    Parameters
+    ----------
+    n_node
+        Per-frame node counts with shape ``(nf,)``.
+    n_local
+        Per-frame owned node counts with shape ``(nf,)``, or ``None``.
+    communicator
+        The communicator input of the compact lower, a CPU tensor holding the
+        address of an MPI_Comm handle or zero, or ``None`` for a single domain.
+
+    Raises
+    ------
+    ValueError
+        If a frame of a single domain carries halo nodes.
+    """
+    from torch._subclasses.fake_tensor import (
+        is_fake,
+    )
+
+    if n_local is None or n_local is n_node or is_fake(n_local):
+        return
+    if communicator is not None and int(communicator.reshape(-1)[0]) != 0:
+        return
+    if not torch.equal(n_local, n_node):
+        raise ValueError(
+            "a model with a long-range module evaluates complete frames on a "
+            "single domain, whose graph owns every node (n_local == n_node), "
+            f"but got n_local {n_local.tolist()} for n_node {n_node.tolist()}"
+        )
+
+
 def _pad_nlist_for_export(nlist: torch.Tensor) -> torch.Tensor:
     """Append a single ``-1`` column to ``nlist`` for export-time tracing.
 
@@ -742,6 +787,7 @@ def make_model(
                         "the long-range topologies describe complete systems; "
                         "a domain-decomposed system is not supported"
                     )
+                check_owned_frames(n_node, n_local)
                 # Every topology carries a geometry leaf of its own.
                 topologies = {
                     name: PairGraph(

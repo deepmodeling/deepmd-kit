@@ -148,6 +148,25 @@ class BaseInteractionKernel(NativeOP, make_plugin_registry("interaction kernel")
         return {}
 
 
+# Taylor coefficients of erf(x) / x in powers of x^2, 2 / sqrt(pi) (-1)^n /
+# (n! (2n + 1)), and the square of x below which LESKernel evaluates them: there
+# the nine terms reach the float64 rounding of erf(x) / x. Above it the closed
+# form keeps the relative error of its radial derivative within 2e-14 in
+# float64 and 1e-5 in float32.
+_ERF_OVER_X_SERIES = (
+    1.1283791670955126,
+    -0.37612638903183754,
+    0.11283791670955126,
+    -0.026866170645131252,
+    0.005223977625442188,
+    -0.0008548327023450852,
+    0.00012055332981789664,
+    -1.492565035840625e-05,
+    1.6462114365889246e-06,
+)
+_ERF_SERIES_X_SQ = 0.0625
+
+
 @BaseInteractionKernel.register("les")
 class LESKernel(BaseInteractionKernel):
     r"""Latent Ewald summation kernel :math:`K(r) = \mathrm{erf}(\alpha r) / r`.
@@ -183,9 +202,21 @@ class LESKernel(BaseInteractionKernel):
 
     def evaluate(self, r_sq: Array, coefficients: dict[str, Array]) -> Array:
         xp = array_api_compat.array_namespace(r_sq)
-        # The softening keeps the derivative finite on a coincident pair.
-        r = xp.sqrt(r_sq + 1e-12)
-        return xp_erf(coefficients["alpha"] * r) / r
+        alpha = coefficients["alpha"]
+        x_sq = alpha**2 * r_sq
+        # K = alpha erf(x) / x with x = alpha r. The derivative of the closed
+        # form subtracts two terms that agree to second order in x, so near
+        # contact erf(x) / x comes from its Taylor series in x^2. Both are
+        # evaluated on every pair, which keeps the shapes static; each reads a
+        # value of its own domain where the other is selected, which keeps the
+        # derivatives of both finite.
+        near = x_sq < _ERF_SERIES_X_SQ
+        x_far = xp.sqrt(xp.where(near, xp.ones_like(x_sq), x_sq))
+        x_sq_near = xp.where(near, x_sq, xp.zeros_like(x_sq))
+        series = xp.full_like(x_sq, _ERF_OVER_X_SERIES[-1])
+        for coefficient in reversed(_ERF_OVER_X_SERIES[:-1]):
+            series = series * x_sq_near + coefficient
+        return alpha * xp.where(near, series, xp_erf(x_far) / x_far)
 
 
 @BaseInteractionKernel.register("sog")
@@ -201,9 +232,11 @@ class SOGKernel(BaseInteractionKernel):
         :math:`a_k = \sqrt{2/\pi} \ln b / \sigma_k`, the trapezoidal
         discretization in :math:`\ln s` of
         :math:`1/r = \sqrt{2/\pi} \int_0^\infty e^{-r^2/2s^2} s^{-2} \, ds`.
-        The default kernel then follows :math:`1/r`, less a constant that
-        exerts no force, from a few :math:`\sigma` to a fraction of
-        :math:`\sigma b^{M-1}`, and stays finite at contact.
+        The default kernel then follows :math:`1/r`, less a nearly constant
+        offset, from a few :math:`\sigma` to a fraction of
+        :math:`\sigma b^{M-1}`, and stays finite at contact. The offset
+        exerts no force between fixed charges; through charges that respond
+        to the positions it does.
     width
         The widths :math:`\sigma_k > 0`, in Å. Defaults to the geometric
         sequence :math:`\sigma_k = \sigma b^k`, :math:`k = 0, \dots, M - 1`.

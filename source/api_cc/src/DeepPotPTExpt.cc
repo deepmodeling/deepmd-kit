@@ -112,15 +112,13 @@ FrameParameterLayout resolve_frame_parameter_layout(const char* name,
 }
 
 // The communicator input of the compact lower of a long-range model: an int64
-// CPU tensor holding the bytes of the ``MPI_Comm`` that ``world`` points to,
-// read as for the comm tensors of a message-passing model, or zero for a
-// system that one rank holds whole.
+// CPU tensor holding the address of the ``MPI_Comm`` that ``world`` points to,
+// or zero for a system that one rank holds whole. The handle itself is read
+// only by the operator, with the width of ``MPI_Comm`` in its MPI library.
 at::Tensor communicator_tensor(const void* world) {
-  const auto options = torch::TensorOptions().dtype(torch::kInt64);
-  if (world == nullptr) {
-    return torch::zeros({1}, options);
-  }
-  return torch::from_blob(const_cast<void*>(world), {1}, options).clone();
+  return torch::full(
+      {1}, static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(world)),
+      torch::TensorOptions().dtype(torch::kInt64));
 }
 
 }  // namespace

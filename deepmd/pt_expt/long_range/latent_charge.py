@@ -10,15 +10,16 @@ from deepmd.dpmodel.long_range.latent_charge import (
 from deepmd.pt_expt.common import (
     torch_module,
 )
+from deepmd.pt_expt.fitting.latent_charge import (
+    LatentChargeFitting,
+)
 
-# The charge network and the kernels built by the dpmodel class are converted
-# to their pt_expt modules on assignment; importing them registers the
-# conversions.
-from deepmd.pt_expt.fitting import latent_charge as _latent_charge_fitting  # noqa: F401
-
-from . import kernel as _kernel  # noqa: F401
 from .base_long_range import (
     BaseLongRange,
+)
+from .kernel import (
+    LESKernel,
+    SOGKernel,
 )
 
 
@@ -26,6 +27,12 @@ from .base_long_range import (
 @torch_module
 class LatentChargeLongRange(LatentChargeLongRangeDP):
     """Energy of interacting latent charges in complete non-periodic systems (pt_expt)."""
+
+    # The dpmodel class builds the charge network and the kernel, which the
+    # assignment converts to these pt_expt modules; importing their classes
+    # registers the conversions.
+    charge_net: LatentChargeFitting
+    kernel: LESKernel | SOGKernel
 
     def _pair_kernel(
         self, r_sq: torch.Tensor, src: torch.Tensor, n: int

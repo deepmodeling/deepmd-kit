@@ -92,9 +92,15 @@ training.
   which explicit widths require. The default amplitudes,
   $a_k = \sqrt{2/\pi}\,\ln b/\sigma_k$ for the ratio $b$ of consecutive
   widths, discretize $1/r$: with the default widths the kernel stays finite,
-  $0.46$ Å⁻¹, at contact, and its force stays within 0.4% of that of $1/r$
-  from 6.5 Å to 150 Å. It differs from $1/r$ there by a constant, which
-  exerts no force.
+  $0.46$ Å⁻¹, at contact, and its radial force between fixed charges stays
+  within 0.4% of that of $1/r$ from 6.5 Å to 150 Å. It differs from $1/r$
+  there by a nearly constant offset $C \approx 1.3 \times 10^{-3}$ Å⁻¹, which
+  exerts no force between fixed charges. The charges respond to the positions,
+  however, and through them the offset adds
+  $-k_e C \sum_c (Q_c^2 - \sum_i (q_i^c)^2)/2$ to the energy of a frame, with
+  $Q_c$ the total charge of channel $c$, which the response of the charges
+  turns into a force. Below about 5 Å the kernel falls short of $1/r$ by more
+  than $C$, by 0.12 Å⁻¹ at 2 Å.
 
 Several charge channels, set by
 {ref}`channels <model[standard]/long_range[latent_charge]/channels>`, let
@@ -115,8 +121,10 @@ constrained.
 
 Pairs of the types in `pair_exclude_types` see each other neither in the
 descriptor nor in the long-range interaction, while the `exclude_types` of
-the descriptor act on the descriptor alone. `atom_exclude_types` is not
-supported with a long-range module.
+the descriptor act on the descriptor alone. In a `linear_ener` composition,
+`pair_exclude_types` belongs to the composition, whose sub-models share its
+neighbor graph and pair topology. `atom_exclude_types` is not supported with
+a long-range module.
 
 ## Training and inference
 

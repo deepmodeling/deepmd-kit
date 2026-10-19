@@ -15,6 +15,10 @@ from __future__ import (
     annotations,
 )
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 import pytest
 import torch
@@ -72,10 +76,9 @@ def _system(
 
 
 def _evaluate(
-    system: tuple[torch.Tensor, ...], kernel_name: str, channel: int
+    system: tuple[torch.Tensor, ...], kernel: Any, channel: int
 ) -> tuple[tuple[torch.Tensor, ...], tuple[torch.Tensor, ...]]:
     coord, charge, node_mask, n_node, total_charge = system
-    kernel = KERNELS[kernel_name]()
     actual = latent_charge_direct_sum(
         coord,
         charge,
@@ -120,7 +123,33 @@ def test_matches_float64_pair_sum(
 ) -> None:
     """Every output agrees with the float64 pair sum."""
     system = _system(n_node, channels, padding, 7, 1.0e3)
-    actual, expected = _evaluate(system, kernel_name, channel)
+    actual, expected = _evaluate(system, KERNELS[kernel_name](), channel)
+    _assert_close(actual, expected)
+    # Padding nodes join no frame.
+    if padding:
+        for value in actual[:4]:
+            assert torch.all(value[-padding:] == 0)
+
+
+@pytest.mark.parametrize("alpha", [1e-3, 0.03, 0.3])
+@pytest.mark.parametrize("channel", [0, -1])
+def test_les_matches_float64_pair_sum_at_small_alpha_r(
+    alpha: float, channel: int
+) -> None:
+    """The erf kernel keeps its precision where alpha r is small.
+
+    The two terms of the slope of erf(x) / x agree to second order in x, so
+    that the slope of an approximate erf loses precision in proportion to
+    1 / x^2 at atomic distances and a small alpha.
+    """
+    system = _system([96], 2, 0, 5, 0.0)
+    _assert_close(*_evaluate(system, LESKernel(alpha=alpha), channel))
+
+
+def _assert_close(
+    actual: tuple[torch.Tensor, ...], expected: tuple[torch.Tensor, ...]
+) -> None:
+    """Every output agrees with the float64 pair sum, relative to its largest entry."""
     for name, value, reference in zip(NAMES, actual, expected, strict=True):
         assert value.dtype == (
             torch.float64 if name == "atom_energy" else torch.float32
@@ -128,10 +157,6 @@ def test_matches_float64_pair_sum(
         scale = reference.abs().max().item()
         error = (value.double() - reference.double()).abs().max().item()
         assert error <= 2e-5 * scale, (name, error, scale)
-    # Padding nodes join no frame.
-    if padding:
-        for value in actual[:4]:
-            assert torch.all(value[-padding:] == 0)
 
 
 @pytest.mark.parametrize("kernel_name", ["les", "sog"])

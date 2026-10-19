@@ -56,10 +56,10 @@ def dpa4c_canonical_long_range_energy_force(
         Node positions with shape ``(N, 3)`` in Å; every frame is a complete
         non-periodic system.
     communicator
-        The bytes of the MPI_Comm handle of a frame decomposed into domains,
-        one per rank, as an int64 CPU tensor of one element, or zero or
-        ``None`` for a single domain. Across domains the owned nodes of every
-        rank make up the frame.
+        The address of the MPI_Comm handle of a frame decomposed into
+        domains, one per rank, as an int64 CPU tensor of one element, or zero
+        or ``None`` for a single domain. Across domains the owned nodes of
+        every rank make up the frame.
     ownership
         Boolean mask selecting energy-contributing nodes with shape ``(N,)``.
     atom_bias

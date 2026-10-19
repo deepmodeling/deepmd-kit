@@ -44,13 +44,12 @@
 // virial hold the charges fixed; the response of the charges is the
 // caller's, through the charge gradient.
 //
-// `communicator` is an int64 CPU tensor of one element holding the bytes of
-// an MPI_Comm handle, as for deepmd_export::border_op, or zero. A handle of
-// several ranks decomposes one frame into domains, one per rank: the charged
-// nodes of every rank are the charged nodes of the frame, and the sums run
-// over all of them. The outputs of a rank are those of its charged nodes, and
-// W_f is their share of the virial of the frame; the other nodes of the rank
-// carry no charge.
+// `communicator` is an int64 CPU tensor of one element holding the address of
+// the caller's MPI_Comm handle, or zero. A handle of several ranks decomposes
+// one frame into domains, one per rank: the charged nodes of every rank are
+// the charged nodes of the frame, and the sums run over all of them. The
+// outputs of a rank are those of its charged nodes, and W_f is their share of
+// the virial of the frame; the other nodes of the rank carry no charge.
 
 #include <torch/library.h>
 

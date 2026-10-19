@@ -19,7 +19,6 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/util/Exception.h>
 
-#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -27,7 +26,7 @@ namespace deepmd {
 namespace long_range {
 namespace {
 
-std::int64_t handle_of(const torch::Tensor& communicator) {
+std::int64_t address_of(const torch::Tensor& communicator) {
   TORCH_CHECK(communicator.device().is_cpu() &&
                   communicator.scalar_type() == torch::kInt64 &&
                   communicator.numel() == 1,
@@ -37,15 +36,13 @@ std::int64_t handle_of(const torch::Tensor& communicator) {
 }
 
 #ifdef USE_MPI
-// The tensor holds the bytes of the handle from its first byte on, whatever
-// the width of MPI_Comm in the MPI library.
+// The handle of the caller, of the width of MPI_Comm in this MPI library: an
+// int in MPICH, a pointer in Open MPI.
 MPI_Comm communicator_of(const torch::Tensor& communicator) {
-  const torch::Tensor bytes = communicator.contiguous();
-  MPI_Comm comm;
-  static_assert(sizeof(MPI_Comm) <= sizeof(std::int64_t),
-                "an MPI_Comm handle must fit in an int64 tensor");
-  std::memcpy(&comm, bytes.data_ptr<std::int64_t>(), sizeof(MPI_Comm));
-  return comm;
+  static_assert(sizeof(std::uintptr_t) <= sizeof(std::int64_t),
+                "an address must fit in an int64 tensor");
+  return *reinterpret_cast<const MPI_Comm*>(
+      static_cast<std::uintptr_t>(address_of(communicator)));
 }
 
 bool reads_device_memory() {
@@ -60,7 +57,7 @@ bool reads_device_memory() {
 }  // namespace
 
 Domain domain_of(const torch::Tensor& communicator) {
-  if (handle_of(communicator) == 0) {
+  if (address_of(communicator) == 0) {
     return {0, 1};
   }
 #ifdef USE_MPI

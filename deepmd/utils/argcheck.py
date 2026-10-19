@@ -3576,9 +3576,10 @@ def interaction_kernel_sog() -> list[Argument]:
         "shared by every Gaussian or one value per Gaussian. Required with "
         "`width`; with the default widths it defaults to "
         "sqrt(2 / pi) ln(`width_ratio`) / sigma_k, the weights of a discretized "
-        "1 / r, so that the default kernel follows 1 / r, less a constant that "
-        "exerts no force, from a few `base_width` to a fraction of the widest "
-        "Gaussian."
+        "1 / r, so that the default kernel follows 1 / r, less a nearly "
+        "constant offset, from a few `base_width` to a fraction of the widest "
+        "Gaussian. The offset exerts no force between fixed charges; through "
+        "charges that respond to the positions it does."
     )
     doc_width = (
         "The widths sigma_k of the Gaussians, in Å, each positive. Defaults to "

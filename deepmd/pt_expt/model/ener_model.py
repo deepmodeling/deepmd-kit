@@ -27,6 +27,7 @@ from deepmd.dpmodel.utils.neighbor_list import (
 
 from .make_model import (
     _translate_energy_keys,
+    check_owned_frames,
     fused_atom_bias,
     make_model,
 )
@@ -175,7 +176,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             with a long-range module, whose frames are complete non-periodic
             systems; ``None`` otherwise.
         communicator
-            For a model with a long-range module, the bytes of the MPI_Comm
+            For a model with a long-range module, the address of the MPI_Comm
             handle of a frame decomposed into domains, one per rank, as an
             int64 CPU tensor of one element, whose owned nodes are then those
             of one domain; zero or ``None`` for a complete frame.
@@ -234,6 +235,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 raise ValueError(
                     "a model with a long-range module reads the node positions"
                 )
+            check_owned_frames(n_node, n_local, communicator)
             force_mag = None
             energy, atom_energy, force, virial, atom_virial = (
                 dpa4c_canonical_long_range_energy_force(

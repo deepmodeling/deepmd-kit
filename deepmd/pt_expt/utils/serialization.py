@@ -818,7 +818,7 @@ def _build_canonical_graph_dynamic_shapes(
     The trailing slots, the moments of a native-spin model or the positions
     and the communicator of a model with a long-range module, are present
     only for such models, so the sample length selects the shape tuple. The
-    communicator holds one handle and is static.
+    communicator holds one address and is static.
     """
     from deepmd.pt_expt.utils.canonical_graph import (
         UINT32_MAX,

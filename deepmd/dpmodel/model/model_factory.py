@@ -282,8 +282,11 @@ def get_linear_atomic_model(
         If more than one ``inner_potential`` child is given, if an
         ``inner_potential`` child has no unique learned sibling, if a
         bridged composition does not use ``weights: "sum"``, if a child
-        carries a ``bridging_method`` flag, or if a child is of an
+        carries a ``bridging_method`` flag, if a child with a long-range
+        module carries its own ``pair_exclude_types``, or if a child is of an
         unsupported kind.
+    NotImplementedError
+        If a child with a long-range module carries ``atom_exclude_types``.
     """
     from deepmd.dpmodel.atomic_model.inner_potential import (
         InnerPotentialAtomicModel,
@@ -405,6 +408,24 @@ def get_linear_atomic_model(
             if descriptor_child_builder is not None:
                 child = descriptor_child_builder(sub)
             if child is None:
+                # A long-range child is checked as the same model alone: the
+                # pair exclusion of the composition shapes the graph and the
+                # pair topology the children share, and atom exclusion is
+                # unsupported with a long-range module.
+                if sub.get("long_range") is not None:
+                    if sub.get("pair_exclude_types"):
+                        raise ValueError(
+                            "a linear_ener sub-model with a long-range module "
+                            "takes `pair_exclude_types` from the composition, "
+                            "whose sub-models share one neighbor graph and one "
+                            "pair topology; set it on the composition"
+                        )
+                    if sub.get("atom_exclude_types"):
+                        raise NotImplementedError(
+                            "`atom_exclude_types` is not supported with a "
+                            "long-range module, which attributes each pair "
+                            "energy to both atoms of the pair"
+                        )
                 descriptor, fitting, _ = get_model_components(
                     sub,
                     descriptor_base=descriptor_base,

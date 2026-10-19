@@ -61,10 +61,6 @@ constexpr int kThreads = 128;
 constexpr int kBatch = 4;
 constexpr int kMaxChannels = 8;
 constexpr int kMaxGaussians = 32;
-// Squared distances are evaluated no shorter than this, in the units of the
-// staged positions, which keeps the kernels finite for a node paired with
-// itself and for coincident padding nodes; both carry a zero weight.
-constexpr float kMinSquaredDistance = 1e-12f;
 // Fills of the resident block slots of the device that one launch aims for.
 constexpr int kWaves = 8;
 // Shortest chunk of the partner axis, in tiles.
@@ -313,7 +309,22 @@ __global__ void prepare_nodes(const double* __restrict__ coord,
 // erf(x) / x and its slope (2 / sqrt(pi) exp(-x^2) - erf(x) / x) / x^2, with
 // erf(x) = 1 - t P(t) exp(-x^2), t = 1 / (1 + p x), and the coefficients of
 // Abramowitz and Stegun 7.1.26 (absolute error below 1.5e-7), so that one
-// exponential serves the kernel and its slope.
+// exponential serves the kernel and its slope. The two terms of the slope
+// agree to second order in x, which amplifies the error of the approximation
+// by 1 / x^2; below x^2 = kSeriesSquared the kernel and its slope therefore
+// come from their Taylor series in x^2,
+//
+//   erf(x) / x  = 2 / sqrt(pi) sum_n (-1)^n x^(2n) / (n! (2n + 1)),
+//   slope       = 2 / sqrt(pi) sum_{n >= 1} (-1)^n 2n x^(2n - 2) /
+//                 (n! (2n + 1)),
+//
+// whose first six terms reach float32 precision there. The relative error of
+// the kernel stays below 1e-6 for every x, that of its slope below 7e-6, the
+// largest just above the threshold. A warp evaluates the series only for a
+// batch with a pair below the threshold: a batch that pairs a node with
+// itself, or a contact shorter than 0.4 / alpha, which for an alpha of 0.5 per
+// angstrom or more is shorter than every bond but that of H2. Every other
+// batch evaluates the closed form without a branch.
 //
 // Beyond x^2 = kFarSquared the float32 kernel equals 1 / x and its slope
 // -1 / x^3 bit for bit: exp(-x^2) and erfc(x) fall below half a unit in the
@@ -331,6 +342,20 @@ __global__ void prepare_nodes(const double* __restrict__ coord,
 // sum_k s_k 2^(-c_k r^2), s_k = -2 ln(2) c_k a_k, from the staged
 // coefficients ``{a_k, -c_k, s_k}``.
 constexpr float kFarSquared = 20.25f;
+constexpr float kSeriesSquared = 0.16f;
+
+// A series in x^2 with the coefficients ``c``, in increasing powers, by
+// Horner's rule.
+template <int kTerms>
+__device__ __forceinline__ float even_series(const float (&c)[kTerms],
+                                             float x2) {
+  float sum = c[kTerms - 1];
+#pragma unroll
+  for (int n = kTerms - 2; n >= 0; --n) {
+    sum = fmaf(sum, x2, c[n]);
+  }
+  return sum;
+}
 
 // Whether every pair of the batch of every thread of the warp lies in the far
 // field of the erf kernel, judged from the head displacements, whose squared
@@ -353,6 +378,30 @@ __device__ __forceinline__ bool far_batch(const float (&dx)[kBatch],
   }
 }
 
+// erf(x) / x and its slope by the approximation of Abramowitz and Stegun at
+// the squared distances ``r2``.
+__device__ __forceinline__ void les_closed_form(const float (&r2)[kBatch],
+                                                float (&value)[kBatch],
+                                                float (&slope)[kBatch]) {
+#pragma unroll
+  for (int b = 0; b < kBatch; ++b) {
+    const float inverse = rsqrtf(r2[b]);
+    const float x = r2[b] * inverse;
+    const float t = __fdividef(1.f, fmaf(0.3275911f, x, 1.f));
+    const float poly =
+        t *
+        fmaf(
+            t,
+            fmaf(t, fmaf(t, fmaf(t, 1.061405429f, -1.453152027f), 1.421413741f),
+                 -0.284496736f),
+            0.254829592f);
+    const float gaussian = exp2f(-1.44269504088896341f * r2[b]);
+    value[b] = fmaf(-poly, gaussian, 1.f) * inverse;
+    slope[b] =
+        fmaf(1.12837916709551257f, gaussian, -value[b]) * (inverse * inverse);
+  }
+}
+
 template <int kKernel>
 __device__ __forceinline__ void evaluate_kernel(const float (&r2)[kBatch],
                                                 const float4* gaussians,
@@ -360,22 +409,34 @@ __device__ __forceinline__ void evaluate_kernel(const float (&r2)[kBatch],
                                                 float (&value)[kBatch],
                                                 float (&slope)[kBatch]) {
   if constexpr (kKernel == kLes) {
+    float nearest = r2[0];
+#pragma unroll
+    for (int b = 1; b < kBatch; ++b) {
+      nearest = fminf(nearest, r2[b]);
+    }
+    if (!__any_sync(0xffffffffu, nearest < kSeriesSquared)) {
+      les_closed_form(r2, value, slope);
+      return;
+    }
+    constexpr float kValueSeries[6] = {1.128379167f,    -0.376126389f,
+                                       0.1128379167f,   -0.02686617065f,
+                                       0.005223977625f, -0.0008548327023f};
+    constexpr float kSlopeSeries[6] = {-0.7522527781f,   0.4513516668f,
+                                       -0.1611970239f,   0.041791821f,
+                                       -0.008548327023f, 0.001446639958f};
+    // The closed form reads the threshold where the series is selected.
+    float clamped[kBatch];
 #pragma unroll
     for (int b = 0; b < kBatch; ++b) {
-      const float inverse = rsqrtf(r2[b]);
-      const float x = r2[b] * inverse;
-      const float t = __fdividef(1.f, fmaf(0.3275911f, x, 1.f));
-      const float poly =
-          t *
-          fmaf(t,
-               fmaf(t,
-                    fmaf(t, fmaf(t, 1.061405429f, -1.453152027f), 1.421413741f),
-                    -0.284496736f),
-               0.254829592f);
-      const float gaussian = exp2f(-1.44269504088896341f * r2[b]);
-      value[b] = fmaf(-poly, gaussian, 1.f) * inverse;
-      slope[b] =
-          fmaf(1.12837916709551257f, gaussian, -value[b]) * (inverse * inverse);
+      clamped[b] = fmaxf(r2[b], kSeriesSquared);
+    }
+    les_closed_form(clamped, value, slope);
+#pragma unroll
+    for (int b = 0; b < kBatch; ++b) {
+      if (r2[b] < kSeriesSquared) {
+        value[b] = even_series(kValueSeries, r2[b]);
+        slope[b] = even_series(kSlopeSeries, r2[b]);
+      }
     }
   } else {
 #pragma unroll
@@ -457,8 +518,9 @@ __device__ __forceinline__ void accumulate_tile(
         dx[b] += own.tail.x - other_tail.x;
         dy[b] += own.tail.y - other_tail.y;
         dz[b] += own.tail.z - other_tail.z;
-        r2[b] = fmaxf(fmaf(dx[b], dx[b], fmaf(dy[b], dy[b], dz[b] * dz[b])),
-                      kMinSquaredDistance);
+        // Both kernels are finite at r2 = 0, which a node paired with itself
+        // and coincident padding nodes reach with a zero weight.
+        r2[b] = fmaf(dx[b], dx[b], fmaf(dy[b], dy[b], dz[b] * dz[b]));
       }
       evaluate_kernel<kKernel>(r2, gaussians, gaussian_count, value, slope);
     }

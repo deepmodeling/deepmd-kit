@@ -4,11 +4,10 @@
 // system.
 //
 // A domain is one MPI rank of the communicator that a caller hands to
-// deepmd::latent_charge_direct_sum as an int64 tensor holding the bytes of its
-// MPI_Comm handle, the convention of deepmd_export::border_op. A zero handle
-// stands for a single domain. Both exchanges follow the rank order, so every
-// rank receives the same rows and the same sums, independent of the
-// reduction algorithm of the MPI library.
+// deepmd::latent_charge_direct_sum as an int64 tensor holding the address of
+// its MPI_Comm handle. A zero address stands for a single domain. Both
+// exchanges follow the rank order, so every rank receives the same rows and the
+// same sums, independent of the reduction algorithm of the MPI library.
 
 #pragma once
 
@@ -26,7 +25,7 @@ struct Domain {
 };
 
 // The rank of this process and the number of ranks of ``communicator``; one
-// rank for a zero handle.
+// rank for a zero address.
 Domain domain_of(const torch::Tensor& communicator);
 
 // Concatenates, in rank order, the rows of every rank. ``rows`` is a

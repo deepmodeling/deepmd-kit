@@ -323,6 +323,153 @@ def test_pair_exclusion_removes_the_interaction(constraint: dict | None) -> None
     assert out["force"][0, 2].abs().max() == 0
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_les_kernel_derivatives_down_to_contact(dtype: torch.dtype) -> None:
+    """The radial derivatives of LES keep the precision of the dtype near contact.
+
+    The derivatives of erf(alpha r) / r subtract terms that agree to second
+    order in alpha r, which the series of the kernel avoids; the reference
+    differentiates in 40-digit arithmetic.
+    """
+    import mpmath
+
+    from deepmd.pt_expt.long_range.kernel import (
+        LESKernel,
+    )
+
+    alpha = 0.8
+    kernel = LESKernel(alpha=alpha)
+    r = torch.tensor(
+        np.geomspace(1e-5, 6.0, 80), dtype=dtype, device=env.DEVICE
+    ).requires_grad_(True)
+    (first,) = torch.autograd.grad(kernel(r * r).sum(), r, create_graph=True)
+    (second,) = torch.autograd.grad(first.sum(), r)
+
+    def les(t: mpmath.mpf) -> mpmath.mpf:
+        return mpmath.erf(alpha * t) / t
+
+    rtol = 2e-5 if dtype == torch.float32 else 1e-11
+    for order, actual in ((1, first), (2, second)):
+        with mpmath.workdps(40):
+            expected = np.array(
+                [
+                    float(mpmath.diff(les, mpmath.mpf(float(t)), order))
+                    for t in r.detach().cpu()
+                ]
+            )
+        # The second derivative changes sign near 1.2 Å, where it is the
+        # difference of terms much larger than itself.
+        np.testing.assert_allclose(
+            actual.detach().cpu().numpy(),
+            expected,
+            rtol=rtol,
+            atol=rtol * np.abs(expected).max(),
+            err_msg=str(order),
+        )
+
+
+def test_owned_frames_across_domains() -> None:
+    """Halo nodes are rejected on a single domain and kept across domains."""
+    from deepmd.pt_expt.model.make_model import (
+        check_owned_frames,
+    )
+
+    n_node = torch.tensor([5, 3], dtype=torch.int64)
+    n_local = torch.tensor([4, 3], dtype=torch.int64)
+    check_owned_frames(n_node, n_node.clone())
+    check_owned_frames(n_node, n_local, torch.ones(1, dtype=torch.int64))
+    for communicator in (None, torch.zeros(1, dtype=torch.int64)):
+        with pytest.raises(ValueError, match="n_local == n_node"):
+            check_owned_frames(n_node, n_local, communicator)
+
+
+def test_graph_lower_rejects_halo_nodes() -> None:
+    """A graph whose frames carry halo nodes is rejected, not summed without them.
+
+    The halo nodes of a graph without communication would carry no charge and
+    remove their interactions from the sum of a frame held whole.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_topologies,
+    )
+    from deepmd.pt_expt.utils.graph_builder import (
+        build_neighbor_graph_for_method,
+    )
+
+    model = _model("les", constraint=None)
+    coord = _tensor(np.array([[[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 0.0, 0.0]]]))
+    atype = _tensor(np.array([[0, 0, 1]]), torch.int64)
+    graph = build_neighbor_graph_for_method(
+        "dense", coord, atype, None, model.get_rcut(), None
+    )
+    topologies = build_topologies(
+        model.atomic_model.required_topologies(),
+        coord.reshape(-1, 3),
+        graph.n_node,
+        atype=atype.reshape(-1),
+    )
+    inputs = (
+        atype.reshape(-1),
+        graph.n_node,
+        graph.edge_index,
+        graph.edge_vec,
+        graph.edge_mask,
+    )
+
+    def lower(n_local: torch.Tensor) -> dict[str, torch.Tensor]:
+        return model.forward_common_lower_graph(
+            inputs[0], inputs[1], n_local, *inputs[2:], topologies=topologies
+        )
+
+    lower(graph.n_node.clone())
+    with pytest.raises(ValueError, match="n_local == n_node"):
+        lower(graph.n_node - 1)
+
+
+def test_linear_composition_takes_the_exclusions_of_the_composition() -> None:
+    """A long-range child follows the pair exclusion of its composition.
+
+    The children of a composition share its neighbor graph and pair topology,
+    so the exclusions of the composition give the child the semantics of the
+    same model alone, and an exclusion of the child itself is rejected.
+    """
+    child = _config("les", constraint=None)
+    child["type"] = "standard"
+    composition = {
+        "type": "linear_ener",
+        "type_map": child["type_map"],
+        "weights": "sum",
+        "models": [child],
+        "pair_exclude_types": [[0, 1]],
+    }
+    model = get_model(copy.deepcopy(composition)).to(env.DEVICE).eval()
+    with torch.no_grad():
+        for name, parameter in model.atomic_model.named_parameters():
+            if ".kernel." not in f".{name}":
+                parameter.zero_()
+        bias = model.atomic_model.models[0].long_range.charge_net.bias_atom_e
+        bias[:, 0] = torch.as_tensor([1.0, -1.0], dtype=bias.dtype)
+    coord = _tensor(np.array([[[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [8.0, 0.0, 0.0]]]))
+    atype = _tensor(np.array([[0, 0, 1]]), torch.int64)
+    # As in test_pair_exclusion_removes_the_interaction: only the two type-0
+    # atoms interact.
+    erf = torch.erf(torch.tensor(3.2, dtype=torch.float64)).item()
+    np.testing.assert_allclose(
+        model(coord, atype)["energy"].item(),
+        COULOMB_CONSTANT * erf / 4.0,
+        rtol=1e-12,
+    )
+    for key, value, error, match in (
+        ("pair_exclude_types", [[0, 1]], ValueError, "from the composition"),
+        ("atom_exclude_types", [1], NotImplementedError, "atom_exclude_types"),
+    ):
+        config = copy.deepcopy(composition)
+        config.pop("pair_exclude_types")
+        config["models"][0][key] = value
+        with pytest.raises(error, match=match):
+            get_model(config)
+
+
 @pytest.mark.parametrize("compiled", [False, True])
 def test_vacuum_reference_with_long_range(compiled: bool) -> None:
     """An isolated atom keeps its reference energy; reference rows join no pair."""
@@ -447,15 +594,29 @@ def test_linear_composition_combines_complete_energies(weights: object) -> None:
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])
 def test_parameter_gradients_and_freezing(kernel: str) -> None:
-    """Energy and force losses reach the charge network and the kernel; frozen parts stay out."""
-    model = _model(kernel).train()
+    """Energy and force losses reach the charge network and the kernel; frozen parts stay out.
+
+    Every parameter of the module moves the losses, except under a constraint
+    the common charge bias of the constrained channel, whose gradient
+    vanishes (see test_constraint_removes_the_common_charge_bias).
+    """
     coord, atype = _batch()
-    out = model(coord, atype)
-    loss = out["energy"].square().sum() + out["force"].square().sum()
-    loss.backward()
-    long_range = model.atomic_model.long_range
-    for name, parameter in long_range.named_parameters():
-        assert parameter.grad is not None and parameter.grad.abs().max() > 0, name
+    for constraint in (None, NEUTRAL):
+        model = _model(kernel, constraint=constraint).train()
+        out = model(coord, atype)
+        loss = out["energy"].square().sum() + out["force"].square().sum()
+        loss.backward()
+        long_range = model.atomic_model.long_range
+        bias = long_range.charge_net.nets[0].layers[-1].b
+        for name, parameter in long_range.named_parameters():
+            assert parameter.grad is not None, name
+            assert torch.isfinite(parameter.grad).all(), name
+            gradient = parameter.grad
+            if constraint is not None and parameter is bias:
+                # Channel 0 is the constrained channel.
+                gradient = gradient[..., 1:]
+            if gradient.numel():
+                assert gradient.abs().max() > 0, name
 
     config = _config(kernel)
     config["long_range"]["kernel"]["trainable"] = False
@@ -468,6 +629,31 @@ def test_parameter_gradients_and_freezing(kernel: str) -> None:
     ]
     assert names == []
     frozen(coord, atype)["energy"].sum().backward()
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_constraint_removes_the_common_charge_bias(kernel: str) -> None:
+    """A uniform shift of the raw charges of the constrained channel changes nothing.
+
+    The constraint subtracts the mean shift of every frame, so the output bias
+    of that channel leaves energy and force unchanged, while that of another
+    channel does not.
+    """
+    model = _model(kernel)
+    coord, atype = _batch()
+    reference = model(coord, atype)
+    bias = model.atomic_model.long_range.charge_net.nets[0].layers[-1].b
+    for channel in range(bias.shape[-1]):
+        with torch.no_grad():
+            bias[..., channel] += 0.3
+        out = model(coord, atype)
+        with torch.no_grad():
+            bias[..., channel] -= 0.3
+        if channel == 0:
+            torch.testing.assert_close(out["energy"], reference["energy"])
+            torch.testing.assert_close(out["force"], reference["force"])
+        else:
+            assert (out["energy"] - reference["energy"]).abs().max() > 1e-6
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])

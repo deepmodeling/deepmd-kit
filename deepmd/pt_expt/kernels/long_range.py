@@ -117,8 +117,8 @@ def _kernel_and_slope(
     coefficient = coefficient.to(dtype=r_sq.dtype, device=r_sq.device)
     if kernel == _LES:
         alpha = coefficient[0]
-        # Coincident nodes take the limit at the shortest distance the CUDA
-        # kernel evaluates.
+        # Coincident nodes, which carry no weight, are evaluated at a short
+        # distance, where the closed form stays finite.
         r_sq = torch.clamp(r_sq, min=1e-12 / alpha**2)
         r = torch.sqrt(r_sq)
         value = torch.erf(alpha * r) / r
@@ -272,9 +272,9 @@ def latent_charge_direct_sum(
     prefactor
         Factor of every pair term, in eV Å.
     communicator
-        The bytes of the MPI_Comm handle of a system decomposed into domains,
-        one per rank, as an int64 CPU tensor of one element, or zero, the
-        default, for a single domain. Across domains the call takes one
+        The address of the MPI_Comm handle of a system decomposed into
+        domains, one per rank, as an int64 CPU tensor of one element, or zero,
+        the default, for a single domain. Across domains the call takes one
         frame, whose charged nodes are those of every rank; the outputs are
         those of the charged nodes of this rank, the other nodes carry no
         charge, and ``virial`` is the share of this rank.
