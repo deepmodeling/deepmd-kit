@@ -2114,6 +2114,10 @@ class DescrptDPA4C(NativeOP, BaseDescriptor):
         """Return the direction regularization scale in Å."""
         return self._EPS
 
+    def supports_graph_vacuum(self) -> bool:
+        """Isolated references use the graph core without a dense sel capacity."""
+        return True
+
     def uses_graph_lower(self) -> bool:
         """Return whether graph-native lowering is supported."""
         return True
