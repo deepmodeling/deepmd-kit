@@ -299,8 +299,10 @@ def _cpu_energy_force(
         atype,
         *args[:_DESCRIPTOR_TAIL_COUNT],
     )
+    # The trailing fitting-route table, which a caller may leave to its default,
+    # sets only the speed of the CUDA operator.
     ws, bs, resnets, w_head, b_head, bias_atom_e, act, _tile, pair_table = args[
-        _DESCRIPTOR_TAIL_COUNT:
+        _DESCRIPTOR_TAIL_COUNT : _DESCRIPTOR_TAIL_COUNT + 9
     ]
     descriptor, state = _cpu_forward(*descriptor_args)
     energy, saved = torch.ops.deepmd.graph_fitting(
@@ -545,6 +547,7 @@ def dpa4c_canonical_compress_energy_force(
     atom_bias: torch.Tensor,
     spin: torch.Tensor | None = None,
     pair_table: torch.Tensor | None = None,
+    fitting_routes: list[int] | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -597,6 +600,11 @@ def dpa4c_canonical_compress_energy_force(
         Series constants of an analytical pair potential with shape
         ``((T + 1) ** 2, 8)``, or ``None``. The fused operator adds its energy
         to the node energies and its slope to the edge gradient.
+    fitting_routes
+        Fitting-route table of the CUDA operator, which sets only its speed
+        (``deepmd.pt_expt.kernels.fitting_routes``), or ``None`` for the table
+        measured for the network on the backend device in this process, if
+        any. An empty table leaves the routes to the rules of the operator.
 
     Returns
     -------
@@ -631,6 +639,7 @@ def dpa4c_canonical_compress_energy_force(
         compressed_operator_arguments,
         mega_eligible,
     )
+    from deepmd.pt_expt.kernels.fitting_routes import fitting_routes as measured_routes
     from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
     )
@@ -645,6 +654,7 @@ def dpa4c_canonical_compress_energy_force(
         raise ValueError("model is not eligible for compact canonical DPA4C inference")
 
     network = fitting_operator_arguments(fitting)
+    routes = measured_routes(fitting) if fitting_routes is None else fitting_routes
     return torch.ops.deepmd.dpa4c_canonical_compress_energy_force(
         graph.edge_vec,
         graph.source,
@@ -666,4 +676,8 @@ def dpa4c_canonical_compress_energy_force(
         network.activation,
         node_tile(),
         graph.edge_vec.new_empty(0) if pair_table is None else pair_table,
+        # No table is passed as None rather than as an empty list: the
+        # AOTInductor proxy executor of torch 2.13 and earlier hands a
+        # serialized empty int list to the operator as None.
+        list(routes) if routes else None,
     )

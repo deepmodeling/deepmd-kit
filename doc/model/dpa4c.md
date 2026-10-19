@@ -349,6 +349,14 @@ This writes `compressed_model.pt2` directly using the default compression
 settings, without compiling an intermediate uncompressed archive. Compression
 selects the export schema appropriate to the model and target device.
 
+On a CUDA device, compression also measures which kernel evaluates the fitting
+network fastest on that GPU at each system size and stores the choices in the
+archive. The measurement adds about 15 seconds to 3 minutes to a compression,
+depending on the size of the model. All choices give bit-identical results, so
+they affect only the speed. On a GPU of another model, the archive uses the
+default choices instead; compress on the GPU model that will run the
+simulations.
+
 To compress an existing frozen archive or choose the spline spacing, use the
 compression command:
 
@@ -493,6 +501,18 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 mpirun -np 4 lmp -in in.lammps
 
 Use a non-zero neighbor skin, for example `neighbor 2.0 bin`, to keep per-step
 GPU memory stable; a zero skin rebuilds the neighbor list every step.
+
+Use an MPI library that can access GPU memory (CUDA-aware MPI);
+[Install LAMMPS](../install/install-lammps.md#mpi-for-runs-on-several-gpus)
+describes the setup. The KOKKOS package of LAMMPS then exchanges atom data
+between ranks directly in GPU memory. When LAMMPS detects an MPI library without
+this support, it prints a warning, turns GPU-aware communication off and copies
+the whole position array through host memory at every step;
+`pair_style deepmd/kk` and `pair_style dpa4spin/kk` then send the forces of
+ghost atoms to the ranks that own them themselves, staging only those values in
+host memory. On three RTX PRO 6000 GPUs with one million carbon atoms, a step of
+the Nano model took 6.8 ms with a CUDA-aware Open MPI and 11.3 ms with an MPI
+library without CUDA support, against 15.2 ms on one GPU.
 
 ## Inference settings
 

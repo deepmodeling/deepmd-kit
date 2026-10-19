@@ -89,6 +89,8 @@ TYPED_TEST(TestInferDeepPotModeDeviPtExpt, attrs) {
   EXPECT_EQ(dp_md.dim_fparam(), 1);
   EXPECT_EQ(dp_md.dim_aparam(), 1);
   EXPECT_TRUE(dp_md.has_default_fparam());
+  EXPECT_FALSE(dp0.has_long_range());
+  EXPECT_FALSE(dp_md.has_long_range());
 }
 
 TYPED_TEST(TestInferDeepPotModeDeviPtExpt, cpu_build_nlist) {

@@ -10,12 +10,13 @@
 
 #pragma once
 
+#include <c10/util/Exception.h>
+
 #include <climits>
 #include <map>
 #include <mutex>
 #include <type_traits>
 
-#include "../launch_overrides.h"
 #include "graph_compress.cuh"
 
 namespace deepmd_dpa4c {
@@ -595,40 +596,12 @@ inline long multiprocessor_count(int device) {
   return multiprocessors;
 }
 
-// The launch overrides of the scans (launch_overrides.h), each read on its
-// first use in the process and shared by every kernel configuration.
-
-/// The `DP_DPA4C_ROW_SPLIT` value, or -1.
-inline long forced_row_split() {
-  static const long forced =
-      launch_override("DP_DPA4C_ROW_SPLIT", {1, 2, 4, 8});
-  return forced;
-}
-
-/// Whether `DP_DPA4C_COSCHEDULE` turns the co-scheduled blocks off.
-inline bool coscheduling_disabled() {
-  static const bool disabled = launch_override("DP_DPA4C_COSCHEDULE", {0}) == 0;
-  return disabled;
-}
-
-/// The `DP_DPA4C_NODE_LANES` value, or -1.
-inline long forced_node_lanes() {
-  static const long forced = launch_override(
-      "DP_DPA4C_NODE_LANES", {kNodeLanesNarrow, kNodeLanesWide});
-  return forced;
-}
-
 /// Warps that share one destination row: the most among `1, 2, 4, 8` whose
 /// warps fit in one wave of the warps that `Kernel`, the scan of blocks of
 /// `Rows` independent rows that serves the system otherwise, keeps resident
-/// across the current device, or the value of the `DP_DPA4C_ROW_SPLIT`
-/// override.
+/// across the current device.
 template <auto Kernel, int Rows>
 int row_split(long node_count) {
-  const long forced = forced_row_split();
-  if (forced > 0) {
-    return static_cast<int>(forced);
-  }
   static DeviceMemo capacities;
   const long capacity = capacities.get([](int device) {
     int resident = 0;
@@ -647,16 +620,12 @@ int row_split(long node_count) {
 /// Whether a system fills the current device with co-scheduled blocks of
 /// `Warps` rows: one such block fills a multiprocessor, so a run with fewer
 /// than two blocks per multiprocessor would leave part of the device idle, and
-/// narrow blocks then serve it better. The `DP_DPA4C_COSCHEDULE` override
-/// turns the co-scheduled blocks off.
+/// narrow blocks then serve it better.
 template <int Warps>
 bool fills_coscheduled(long node_count) {
   if constexpr (Warps == 1) {
     return false;
   } else {
-    if (coscheduling_disabled()) {
-      return false;
-    }
     static DeviceMemo capacities;
     const long capacity = capacities.get(
         [](int device) { return 2L * multiprocessor_count(device) * Warps; });
@@ -4397,13 +4366,8 @@ struct BackwardLauncher {
   // backward, at a third the two are within noise, and above that the narrow
   // variant wins by up to 3.6 %. The threshold is therefore stated against the
   // device's own warp capacity, and the query is made once per configuration
-  // and device; the `DP_DPA4C_NODE_LANES` override (launch_overrides.h)
-  // replaces it.
+  // and device.
   static bool prefer_wide_nodes() {
-    const long forced = forced_node_lanes();
-    if (forced > 0) {
-      return forced == kNodeLanesWide;
-    }
     static DeviceMemo preferences;
     return preferences.get([](int device) {
       using Narrow = Profile<Channels, Lmax, HasSpin, kNodeLanesNarrow>;

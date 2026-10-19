@@ -12,11 +12,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "atom.h"
 #include "atom_kokkos.h"
 #include "atom_masks.h"
+#include "comm_kokkos.h"
 #include "error.h"
 #include "kokkos_type.h"
 #include "neigh_list_kokkos.h"
@@ -841,6 +844,127 @@ inline void* compact_canonical_stream(const Kokkos::Cuda& space) {
 }
 #endif
 
+// Pointers to the members of the swap plan of the Kokkos brick communication
+// -- the swap count, the atom counts, partners and first ghost slot of every
+// swap, and the device send lists -- which CommBrick and CommKokkos keep
+// protected. Formed through this derived class, they read the plan of any
+// CommKokkos; the class itself is never instantiated.
+struct CompactCanonicalSwapPlan : public CommKokkos {
+  static constexpr auto swap_count = &CompactCanonicalSwapPlan::nswap;
+  static constexpr auto send_count = &CompactCanonicalSwapPlan::sendnum;
+  static constexpr auto recv_count = &CompactCanonicalSwapPlan::recvnum;
+  static constexpr auto send_rank = &CompactCanonicalSwapPlan::sendproc;
+  static constexpr auto recv_rank = &CompactCanonicalSwapPlan::recvproc;
+  static constexpr auto first_recv = &CompactCanonicalSwapPlan::firstrecv;
+  static constexpr auto send_lists = &CompactCanonicalSwapPlan::k_sendlist;
+};
+
+// Fold of the per-atom outputs of the ghost nodes of an extended node set
+// onto their owners, ``size`` values per atom, in place of the host reverse
+// communication of the KOKKOS package. Wherever that package does not use its
+// device path for the reverse communication of a pair -- with MPI that cannot
+// address device memory, and under the classic or host settings of the pair
+// communication -- it sends the values through the host and copies the whole
+// per-atom arrays there and back at every call. The fold walks the swaps of
+// that communication in the same order instead: the pair packs the ghost
+// values of a swap on the device, only these values travel through pinned
+// host buffers to the rank that owns the atoms, and the pair adds them to its
+// atoms on the device. The atoms of the send list of a swap are distinct and
+// each receives one addition per swap, as in the host communication, so the
+// result is the same in every bit. Where the package uses its device path, or
+// with a communication style other than the Kokkos brick communication, it
+// communicates as it would.
+template <class DeviceType, class Buffer>
+class CompactCanonicalGhostFold {
+  using Value = std::remove_const_t<typename Buffer::t_dev::value_type>;
+
+ public:
+  template <class PairKokkos>
+  void fold(Comm* comm, MPI_Comm world, PairKokkos* pair, const int size) {
+    // The condition under which CommKokkos::reverse_comm(Pair*) takes its
+    // host path for a pair whose reverse communication runs on the device;
+    // LAMMPS names the flag "classic" before its 10Sep2025 release.
+    auto* kokkos_comm = dynamic_cast<CommKokkos*>(comm);
+#if LAMMPS_VERSION_NUMBER < 20250910
+    const bool host_path =
+        kokkos_comm != nullptr && kokkos_comm->reverse_pair_comm_classic;
+#else
+    const bool host_path =
+        kokkos_comm != nullptr && kokkos_comm->reverse_pair_comm_legacy;
+#endif
+    if (!host_path) {
+      comm->reverse_comm(pair, size);
+      return;
+    }
+    using Plan = CompactCanonicalSwapPlan;
+    const int nswap = kokkos_comm->*Plan::swap_count;
+    const int* sendnum = kokkos_comm->*Plan::send_count;
+    const int* recvnum = kokkos_comm->*Plan::recv_count;
+    const int* sendproc = kokkos_comm->*Plan::send_rank;
+    const int* recvproc = kokkos_comm->*Plan::recv_rank;
+    const int* firstrecv = kokkos_comm->*Plan::first_recv;
+    auto& sendlists = kokkos_comm->*Plan::send_lists;
+    int capacity = 0;
+    for (int iswap = 0; iswap < nswap; ++iswap) {
+      capacity =
+          std::max(capacity, size * std::max(sendnum[iswap], recvnum[iswap]));
+    }
+    reserve(capacity);
+    sendlists.sync_device();
+    const MPI_Datatype type =
+        std::is_same<Value, float>::value ? MPI_FLOAT : MPI_DOUBLE;
+    auto d_send = send.template view<DeviceType>();
+    auto d_recv = recv.template view<DeviceType>();
+    for (int iswap = nswap - 1; iswap >= 0; --iswap) {
+      const int nsend = pair->pack_reverse_comm_kokkos(recvnum[iswap],
+                                                       firstrecv[iswap], send);
+      auto sendlist = Kokkos::subview(sendlists, iswap, Kokkos::ALL);
+      if (sendproc[iswap] == comm->me) {
+        pair->unpack_reverse_comm_kokkos(sendnum[iswap], sendlist, send);
+        continue;
+      }
+      const int nrecv = size * sendnum[iswap];
+      // A copy between views without an execution space waits for the device
+      // before and after it, so the packed values are complete when sent and
+      // the received ones are on the device before they are added.
+      Kokkos::deep_copy(Kokkos::subview(h_send, std::make_pair(0, nsend)),
+                        Kokkos::subview(d_send, std::make_pair(0, nsend)));
+      MPI_Request request;
+      if (sendnum[iswap] > 0) {
+        MPI_Irecv(h_recv.data(), nrecv, type, sendproc[iswap], 0, world,
+                  &request);
+      }
+      if (recvnum[iswap] > 0) {
+        MPI_Send(h_send.data(), nsend, type, recvproc[iswap], 0, world);
+      }
+      if (sendnum[iswap] > 0) {
+        MPI_Wait(&request, MPI_STATUS_IGNORE);
+      }
+      Kokkos::deep_copy(Kokkos::subview(d_recv, std::make_pair(0, nrecv)),
+                        Kokkos::subview(h_recv, std::make_pair(0, nrecv)));
+      pair->unpack_reverse_comm_kokkos(sendnum[iswap], sendlist, recv);
+    }
+  }
+
+ private:
+  void reserve(const int capacity) {
+    if (static_cast<int>(send.extent(0)) >= capacity) {
+      return;
+    }
+    send = Buffer("compact_canonical:fold_send", capacity);
+    recv = Buffer("compact_canonical:fold_recv", capacity);
+    h_send = Kokkos::View<Value*, Kokkos::SharedHostPinnedSpace>(
+        "compact_canonical:fold_send_host", capacity);
+    h_recv = Kokkos::View<Value*, Kokkos::SharedHostPinnedSpace>(
+        "compact_canonical:fold_recv_host", capacity);
+  }
+
+  // The pair packs into and unpacks from the device views of the buffers;
+  // only the packed values of a swap are staged in the pinned host views.
+  Buffer send, recv;
+  Kokkos::View<Value*, Kokkos::SharedHostPinnedSpace> h_send, h_recv;
+};
+
 // Device-resident model node set and compact canonical neighbor graph.
 //
 // A ``.pt2`` artifact frozen with the compact canonical lower consumes a
@@ -1171,7 +1295,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
             for (int d = 0; d < 3; ++d) {
               packed(a, d) = static_cast<int>(
                   static_cast<std::uint32_t>(static_cast<std::int64_t>(
-                      Kokkos::rint(x(a, d) * position_scale))));
+                      Kokkos::nearbyint(x(a, d) * position_scale))));
             }
             packed(a, 3) = candidate_to_model(a);
           });

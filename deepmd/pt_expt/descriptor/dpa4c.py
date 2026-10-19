@@ -24,6 +24,10 @@ from deepmd.pt_expt.common import (
 from deepmd.pt_expt.descriptor.base_descriptor import (
     BaseDescriptor,
 )
+
+# Registers the freeze-time measurement of the fitting routes of the fused
+# energy-force operator, which every freeze of a compressed DPA4C model runs.
+from deepmd.pt_expt.kernels import fitting_routes as _fitting_routes  # noqa: F401
 from deepmd.pt_expt.kernels.utils import (
     fused_energy_force_enabled,
     fused_operators_enabled,

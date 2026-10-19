@@ -291,6 +291,9 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     }
     dp.init(Case::kModelPath);
     ASSERT_TRUE(dp.uses_canonical_graph_inference());
+    if constexpr (!Case::kSpin) {
+      ASSERT_FALSE(dp.has_long_range());
+    }
     ref.load(Case::kRefPath);
     system.coord = ref.get<double>("system", "coord");
     system.box = ref.get<double>("system", "box");
@@ -535,8 +538,9 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     } else {
       dp.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
-          edge_vec, destination_row_ptr, source_row_ptr, source_order, natoms,
-          nodes, edge_storage, stream);
+          edge_vec, destination_row_ptr, source_row_ptr, source_order,
+          /*d_coord=*/nullptr, /*world=*/nullptr, natoms, nodes, edge_storage,
+          stream);
     }
   }
 

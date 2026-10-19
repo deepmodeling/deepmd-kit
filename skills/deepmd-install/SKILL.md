@@ -216,6 +216,9 @@ LAMMPS, use a packaged `lmp` when it satisfies the request. Otherwise follow
 the matching built-in or plugin instructions after the C/C++ interface
 succeeds. Enable Kokkos only when the requested LAMMPS runtime requires it,
 and select the architecture supported by that exact LAMMPS/Kokkos source tree.
+For LAMMPS runs on several GPUs, build LAMMPS and the DeePMD-kit C/C++
+interface against the same CUDA-aware MPI library, such as Open MPI with UCX,
+and enable its CUDA support at run time as the matching LAMMPS page describes.
 
 ## 4. Verify the requested interface
 
@@ -233,8 +236,10 @@ An installation is complete only after the requested public interface runs:
 1. For C/C++, confirm the installed headers/libraries, then load a built
    library or run a linked client so the platform loader resolves its dynamic
    dependencies.
-1. For LAMMPS, run the selected binary with `-h`, require the exact DeePMD pair
-   style needed by the model, and run a short documented example.
+1. For LAMMPS, run the selected binary with `-h`; in plugin mode, also list the
+   loaded plugins with the `plugin list` command, because `-h` shows only the
+   built-in styles. Require the exact DeePMD pair style needed by the model, and
+   run a short documented example.
 1. For Docker, perform all applicable checks inside the selected image.
 
 On failure, stop at the first failing check and read

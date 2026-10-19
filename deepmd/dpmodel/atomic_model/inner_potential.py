@@ -412,7 +412,8 @@ class InnerPotential(NativeOP):
         r = xp.clip(r, min=1e-10)
         # Padded atoms carry type -1; their edges are masked below, so the
         # table lookup only needs a valid index for them.
-        atype_row = xp.clip(xp.astype(atype_flat, xp.int64), min=0)
+        atype_row = xp.astype(atype_flat, xp.int64)
+        atype_row = xp.maximum(atype_row, xp.zeros_like(atype_row))
         # Row ``center * (T + 1) + neighbor``, the ordered-pair index the
         # fused kernels use, with the destination as the center.
         row = xp.take(

@@ -165,16 +165,45 @@ void fitting_backward_range(cudaStream_t stream,
 
 // Whether the fused fitting kernel serves a run of ``run_nodes`` nodes: an
 // input of at least one feature, one to eight hidden layers of one width it is
-// compiled for, every layer after the first square, a kernel image compiled for
-// compute_80 or later, and 32-node panels that either split over clusters of
-// CTAs the device keeps resident at once or, one CTA each, cover half of the
+// compiled for, every layer after the first square, and shapes whose shared
+// memory the device admits for the run and for a run of one panel. A run of
+// more 32-node panels than multiprocessors needs a kernel image compiled for
+// compute_70 or later, and at a width that 128 divides it is left to the
+// per-layer kernels where the fp32 ridge of the device lies below width / 4. A
+// run of at most one panel per multiprocessor needs an image compiled for
+// compute_80 or later and panels that either split over clusters of CTAs the
+// device keeps resident at once or, one CTA each, cover half of the
 // multiprocessors (three quarters at a width of 256). At a width of 384 it
-// serves runs of at most one panel per multiprocessor. The
-// ``DP_FITTING_FUSED`` override (launch_overrides.h) leaves every run to the
-// per-layer kernels.
+// serves runs of at most one panel per multiprocessor.
 bool fitting_fused_serves(const FittingLayerPlan& plan,
                           const std::vector<torch::Tensor>& ws,
                           long run_nodes);
+
+// Routes of the fitting network that fitting_route returns besides the key of
+// a fused shape, which is positive.
+//
+// kFittingPerLayer: the per-layer kernels, fitting_forward_range followed by
+// fitting_backward_range.
+constexpr int64_t kFittingPerLayer = -1;
+// kFittingRules: the fused kernel, of the shape that the rules of the dispatch
+// select for the run size; in a fitting-route table, the choice that leaves
+// the run to the rules.
+constexpr int64_t kFittingRules = 0;
+
+// Route of the fitting network over a run of ``run_nodes`` nodes. ``table`` is
+// a fitting-route table measured at freeze time on the device of the run
+// (graph_fitting.cu), which names a route only where the measurement departs
+// from the rules and names the rules elsewhere. The run takes the route that
+// the table names for its size, or the rules where the table names them, is
+// empty, was measured on another device, or names a fused shape that the
+// device cannot run on the run size or that is not compiled for the network.
+// The rules route the run to the fused kernel where fitting_fused_serves holds
+// and to the per-layer kernels otherwise. Every route evaluates the same
+// contractions in the same order, so the route sets only the speed.
+int64_t fitting_route(const FittingLayerPlan& plan,
+                      const std::vector<torch::Tensor>& ws,
+                      long run_nodes,
+                      const std::vector<int64_t>& table);
 
 // Floats of the transposed weights the fused fitting kernel streams in its
 // backward, and their layout from the weights: one (width, din rounded up to
@@ -196,7 +225,8 @@ void fitting_fused_transpose(cudaStream_t stream,
 // ``wt``, it is 16-byte aligned. ``wt`` holds the sheets that
 // fitting_fused_transpose writes for the same weights, and
 // fitting_fused_serves holds for the network and for a run of ``run_nodes``
-// or more. ``d_x`` may alias ``x``.
+// or more, or ``route`` is a fused route that fitting_route returned for a run
+// of ``run_nodes``. ``d_x`` may alias ``x``.
 void fitting_energy_gradient_range(cudaStream_t stream,
                                    const FittingLayerPlan& plan,
                                    const float* x,
@@ -214,7 +244,8 @@ void fitting_energy_gradient_range(cudaStream_t stream,
                                    long run_nodes,
                                    float* saved,
                                    double* e,
-                                   float* d_x);
+                                   float* d_x,
+                                   int64_t route);
 
 // Source-attributed per-node virial of a canonical graph from stored edge
 // cotangents, atom_virial[node] = sum(src=node) -g_e (x) edge_vec_e. The edge

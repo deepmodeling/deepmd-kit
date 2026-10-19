@@ -2579,6 +2579,8 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
     const std::uint32_t* d_source_order,
+    const double* d_coord,
+    void* world,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage,
@@ -2707,8 +2709,12 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     };
     // A graph without halo nodes keeps its extents from step to step, so its
     // evaluation is replayed; a domain's halo changes its extent at every
-    // neighbor rebuild, so a graph with halo nodes is evaluated eagerly.
-    if (nloc != nall_nodes) {
+    // neighbor rebuild, so a graph with halo nodes is evaluated eagerly. A
+    // model with a long-range module reads the node positions, whose address
+    // is then part of the key, and is evaluated eagerly over several ranks,
+    // where it may communicate between its kernels.
+    const bool long_range = has_long_range();
+    if (nloc != nall_nodes || (long_range && world != nullptr)) {
       evaluate();
     } else {
       if (!canonical_replay_) {
@@ -2721,8 +2727,9 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
            ptexpt::address_key(d_edge_vec),
            ptexpt::address_key(d_destination_row_ptr),
            ptexpt::address_key(source_row_data),
-           ptexpt::address_key(source_order_data), nloc, nall_nodes,
-           edge_storage},
+           ptexpt::address_key(source_order_data),
+           ptexpt::address_key(long_range ? d_coord : nullptr), nloc,
+           nall_nodes, edge_storage},
           gpu_id, evaluate);
     }
     if (stream == nullptr) {
@@ -2793,14 +2800,16 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
     const std::uint32_t* d_source_order,
+    const double* d_coord,
+    void* world,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage,
     void* stream) {
   compute_canonical_graph_gpu_impl(
       d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
-      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc,
-      nall_nodes, edge_storage, stream);
+      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
+      d_coord, world, nloc, nall_nodes, edge_storage, stream);
 }
 
 bool DeepPotPTExpt::uses_fp32_edge_vectors() const {

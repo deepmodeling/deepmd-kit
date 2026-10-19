@@ -346,10 +346,11 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
   // forces are written to the ghost slots and folded onto their owners by the
   // reverse communication that the KOKKOS package (which forces 'newton off'
   // with a full list) would otherwise skip.
-  // The scatter remains device-resident. If LAMMPS selects classic host
-  // communication, the host pack/unpack methods synchronize the force
-  // DualViews and the completed fold is copied back once after all
-  // communication stages.
+  // The scatter and the fold stay device-resident: the reverse communication
+  // packs and unpacks on the device (CompactCanonicalGhostFold). Only a
+  // communication style other than the Kokkos brick communication calls the
+  // host pack/unpack methods, which synchronize the force DualViews, and the
+  // completed fold is then copied back once.
   auto model2loc = compact_graph.d_model2loc;
   const double fscale = scale[1][1] * force_unit_cvt_factor;
   // Precession: energy gradient times |m| / hbar. Cartesian: energy gradient
@@ -398,7 +399,7 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
       });
   atomKK->modified(execution_space, F_MASK | FM_MASK);
   if (multi_rank) {
-    comm->reverse_comm(this, 6);
+    ghost_fold.fold(comm, world, this, 6);
     if (reverse_used_host) {
       atomKK->sync(execution_space, F_MASK | FM_MASK);
     }
@@ -466,7 +467,7 @@ void PairDPA4SpinKokkos<DeviceType>::compute(int eflag, int vflag) {
         }
       }
       k_reverse_virial.template sync<DeviceType>();
-      comm->reverse_comm(this, 9);
+      ghost_fold.fold(comm, world, this, 9);
       k_reverse_virial.sync_host();
       for (int i = 0; i < nlocal; ++i) {
         for (int k = 0; k < 9; ++k) {

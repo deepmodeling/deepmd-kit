@@ -37,19 +37,25 @@ def _pair_pointer(lmp, name, pointer_type):
     return pointer
 
 
-def _snapshot(lmp):
+def _snapshot(lmp, virial=False):
     # gather() returns atom-ID order, including contributions reverse-communicated
     # from ghost nodes. All ranks must participate in these collective calls.
     def gather(name, count):
         return np.array(lmp.gather(name, 1, count)).reshape(-1, count).tolist()
 
-    return {
+    snapshot = {
         "ids": list(lmp.gather_atoms("id", 0, 1)),
         "force": gather("f", 3),
         "magnetic_force": gather("c_fmprop", 3),
         "spin": gather("c_spprop", 4),
         "energy": lmp.get_thermo("pe"),
     }
+    if virial:
+        # centroid/stress/atom reports the negative per-atom virial in
+        # pressure*volume units; dividing by -nktv2p gives eV (units metal).
+        scale = -1.0 / lmp.extract_global("nktv2p")
+        snapshot["virial"] = (scale * np.array(gather("c_vatom", 9))).tolist()
+    return snapshot
 
 
 def _cmdargs(kokkos):
@@ -129,13 +135,21 @@ def _run(lmp, args, selection, overlay=False):
     for _ in range(2):
         lmp.command("run 0")
         result["snapshots"].append(_snapshot(lmp))
+    # A per-atom centroid virial switches the graph build and the operator to
+    # their source-attributed path; the snapshots above cover the path without
+    # it. A compute defined between runs is scheduled by every later run.
+    lmp.command("compute vatom all centroid/stress/atom NULL pair")
+    result["virial_snapshots"] = []
+    for _ in range(2):
+        lmp.command("run 0")
+        result["virial_snapshots"].append(_snapshot(lmp, virial=True))
     if not overlay:
         scale = _pair_pointer(
             lmp, "scale", ctypes.POINTER(ctypes.POINTER(ctypes.c_double))
         )
         scale[1][1] = 2.75
         lmp.command("run 0")
-        result["scaled"] = _snapshot(lmp)
+        result["scaled"] = _snapshot(lmp, virial=True)
     return result
 
 

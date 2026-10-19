@@ -67,9 +67,11 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // Fold extended (ghost) node outputs onto their owners. The KOKKOS package
   // forces 'newton off' with a full neighbor list, disabling the integrator's
   // automatic reverse communication, so the extended multi-domain path drives
-  // it explicitly for force and centroid per-atom virial. The Kokkos overrides
-  // run device-resident with GPU-aware MPI; the plain overrides serve the
-  // host-staged path.
+  // it explicitly for force and centroid per-atom virial. The Kokkos
+  // overrides pack and unpack on the device, in the device path of the KOKKOS
+  // package and in the fold that replaces its host path
+  // (CompactCanonicalGhostFold); the plain overrides serve communication styles
+  // other than the Kokkos brick communication.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   int pack_reverse_comm_kokkos(int, int, DeepMDKokkosCommBuffer&) override;
@@ -81,6 +83,9 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // neighbor list, returning the edge count. Public because it launches
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
+  // Positions of the model nodes, in model-node order and in the length unit
+  // of the model; public for the same reason.
+  const double* model_node_positions();
 
  protected:
   // Model node set and, for a compact canonical artifact, the graph itself.
@@ -89,7 +94,7 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
       d_model_type;  // (nnode_model) edge-input type per model node
   bool multi_rank;   // domain-decomposed run -> extended (local+ghost) node set
   Kokkos::View<double*, DeviceType>
-      d_coord_model;  // (3 * nnode_model), NULL case
+      d_coord_model;  // (3 * nnode_model), model-unit positions of nodes
 
   // Compact edge schema: edge_index is [2 * nedge] (src rows then dst rows),
   // edge_vec is [3 * nedge]; offsets is the per-atom exclusive edge prefix.
@@ -127,9 +132,12 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // The canonical artifact reads the source CSR on every call, not only for
   // the per-atom virial.
   bool canonical_source_csr;
+  bool long_range;         // the model reads the positions of its nodes
   bool device_path_ok;     // resolved once in init_style
   bool reverse_virial;     // reverse communication operates on centroid virial
-  bool reverse_used_host;  // force reverse communication selected host staging
+  bool reverse_used_host;  // the host pack/unpack overrides ran
+  // Device-packed fold that replaces the host reverse communication.
+  CompactCanonicalGhostFold<DeviceType, DeepMDKokkosCommBuffer> ghost_fold;
 };
 
 }  // namespace LAMMPS_NS

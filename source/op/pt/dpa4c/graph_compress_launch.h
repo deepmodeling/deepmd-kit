@@ -200,9 +200,8 @@ struct Arguments {
   // and the low-rank basis functions of every edge by the type of its source
   // (see `TypeSlots`). It is null, which disables the slotted scans, for a
   // launch that is not canonical, of more types than the bitmap covers, the
-  // padding type included, of more than `kFoldedModes` radial modes, of a
-  // descriptor without modes and without a low-rank table, and under the
-  // `DP_DPA4C_TYPE_SLOTS` override.
+  // padding type included, of more than `kFoldedModes` radial modes, and of a
+  // descriptor without modes and without a low-rank table.
   const unsigned* type_present = nullptr;
 };
 
@@ -606,16 +605,52 @@ constexpr int edge_resident_blocks() {
   // thread count alone, at eighty registers, and one of twenty, at ninety-six,
   // on every architecture.
   return 0;
+#elif defined(__CUDA_ARCH__) && __CUDA_ARCH__ == 700
+  // At the thirty-two resident blocks that a multiprocessor of compute
+  // capability 7.0 holds, sixty-four registers per thread, the edge backward of
+  // every spin-free profile spills 40 to 224 bytes. Twenty-four blocks, eighty
+  // registers, remove all but 8 to 24 bytes of that spill at degree two and
+  // about halve it at degree three. On a V100 they shorten the LAMMPS step of
+  // Nano by 13% to 30% on carbon, BCN and five elements alike, and that of Mini
+  // by 2% to 9% on BCN and five elements and by up to 35% on carbon, whose
+  // single-type scan keeps the sums of its extra feature live through the edge
+  // loop; against the compiler's own count they shorten the Nano step by 1.5%
+  // to 5.4% on BCN and five elements.
+  //
+  // The spin kernels of degree two take twenty-four blocks for the forward and
+  // for the backward of sixty-four channels and more, and the compiler's own
+  // count for the backward of fewer channels, at which the spin backward of
+  // Nano and Mini holds its payload without spilling and the spin step of Nano
+  // is 14% to 22% shorter and that of Mini up to 1%. The kernels of degree
+  // three serve the generic graph path and the LAMMPS systems of more than
+  // eight node types; unmeasured on 7.0, they keep the thirty-two blocks of the
+  // architectures without a branch of their own.
+  if (HasSpin) {
+    return Lmax == 2 ? (!Backward || Channels >= 64 ? 24 : 0) : 32;
+  }
+  return 24;
 #else
-  // Measured on compute capability 9.0, degree two holds its geometric working
-  // set in sixty-four registers and spills only what the five spin families
-  // add, so twenty-four blocks buy eighty registers, remove the spill outright
-  // and are worth 2.0% to 4.5% of the step. Degree three overflows the budget
-  // on geometry alone -- it spills without the spin branch and still spills at
-  // eighty and at ninety-six registers -- so the occupancy it would give up
-  // buys an incomplete fix and costs 7.4% to 9.6%. The relief is therefore
-  // taken only where it is complete.
-  return HasSpin && Lmax == 2 ? 24 : 32;
+  // Measured on compute capability 9.0, whose multiprocessor holds thirty-two
+  // blocks; 8.0 and 10.x take these values unmeasured. Thirty-two blocks leave
+  // sixty-four registers per thread. The backward of eight channels, whose
+  // two-lane edge groups keep sixteen edges in flight per warp, spills 56
+  // bytes there; twenty-four blocks give it eighty registers, which remove the
+  // spill, shorten the kernel by 14% and the LAMMPS step of such a model by
+  // 3.3% to 5.3% at 10,296 and 100,800 atoms. The backward of sixteen channels
+  // does not spill at sixty-four registers and takes 3% to 5% longer at
+  // eighty, those of thirty-two and sixty-four channels take up to 5% longer
+  // at eighty on a system of one element, and the forward kernels change by at
+  // most 4% either way, under 1% of the step, so the other kernels keep
+  // thirty-two blocks. The degree-two spin backward spills 16 to 104 bytes at
+  // the eighty registers of twenty-four blocks and runs 3% to 6% faster on the
+  // compiler's own count, 96 to 127 registers, while its forward runs fastest
+  // at twenty-four blocks. The degree-three spin kernels keep thirty-two
+  // blocks; a system of at most eight types scans them slotted, so no
+  // production path has measured them.
+  if (HasSpin) {
+    return Lmax == 2 ? (Backward ? 0 : 24) : 32;
+  }
+  return Backward && Channels == 8 ? 24 : 32;
 #endif
 }
 

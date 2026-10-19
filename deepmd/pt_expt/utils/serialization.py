@@ -1965,7 +1965,7 @@ def _trace_and_export_impl(
         run_autotune,
     )
 
-    run_autotune(model, target_device)
+    run_autotune(model, target_device, lower_kind)
 
     # Pack after checkpoint deserialization. The non-persistent buffers become
     # constants in the CPU trace and move with the exported graph to the

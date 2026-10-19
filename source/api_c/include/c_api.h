@@ -447,6 +447,20 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * ``d_source_order`` and ``d_atom_virial`` unless
  * DP_DeepPotCanonicalGraphRequiresSourceCSR reports otherwise.
  * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] d_coord Node positions in the length unit of the model, shape
+ * ``(nall_nodes, 3)``, in the order of ``d_atype``, or NULL. Only a model
+ * with a long-range module (DP_DeepPotHasLongRange) reads them, and it
+ * requires them; every other model ignores them.
+ * @param[in] world Pointer to the MPI communicator of the caller (an
+ * ``MPI_Comm``), as the ``world`` argument of DP_NewNlist_comm, when the
+ * system spans several ranks, or NULL on a single rank. A model with a
+ * long-range module evaluates a complete non-periodic system: on a single
+ * rank its nodes are the whole system (``nall_nodes == nloc``); on several
+ * ranks it requires the communicator, reads the positions of the nodes each
+ * rank owns, and is evaluated on every rank at every step, a rank without
+ * nodes included (``nall_nodes``, ``nloc`` and ``edge_storage`` zero), whose
+ * buffers sized by the nodes or by the edge storage may then be NULL. Every
+ * other model ignores it.
  * @param[in] nloc Number of owned local nodes.
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
@@ -455,9 +469,10 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * non-NULL stream requires a CUDA build. The evaluation is enqueued on it
  * without a synchronization of the stream. A graph without halo nodes is
  * captured into a CUDA graph on the second consecutive call with the same
- * buffers and extents and replayed while they stay the same. The host waits
- * for the device when a call captures or releases a graph, which happens on
- * that second call and on a call whose buffers or extents change.
+ * buffers and extents and replayed while they stay the same, except where a
+ * model with a long-range module receives a communicator. The host waits for
+ * the device when a call captures or releases a graph, which happens on that
+ * second call and on a call whose buffers or extents change.
  * DP_DeepPotSetChargeSpin waits for the work in flight on the model device
  * before it replaces the constants and for the replacement before it returns,
  * and the caller completes the work on its stream before it deletes the model.
@@ -468,9 +483,9 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * work outside DeePMD-kit that waits for the whole device while a capture is
  * under way invalidates it, and the model then evaluates without replay.
  * @note API versions 28 to 30 named this function
- *       DP_DeepPotComputeCanonicalGraphGPU, without ``d_virial`` and
- *       ``stream``; a binary built against that name fails to load rather than
- *       call a function of another argument list.
+ *       DP_DeepPotComputeCanonicalGraphGPU, without ``d_virial``, ``d_coord``,
+ *       ``world`` and ``stream``; a binary built against that name fails to
+ *       load rather than call a function of another argument list.
  * @since API version 31
  */
 extern void DP_DPA4ComputeCanonicalGraphGPU(
@@ -485,6 +500,8 @@ extern void DP_DPA4ComputeCanonicalGraphGPU(
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
     const uint32_t* d_source_order,
+    const double* d_coord,
+    void* world,
     int nloc,
     int nall_nodes,
     int64_t edge_storage,
@@ -514,6 +531,17 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * @since API version 31
  */
 extern bool DP_DeepPotCanonicalGraphRequiresSourceCSR(DP_DeepPot* dp);
+
+/**
+ * @brief Query whether the model carries a long-range module.
+ *
+ * Such a module sums its interaction over every pair of atoms, so the model
+ * evaluates only a complete non-periodic system, and the device-resident
+ * entry DP_DPA4ComputeCanonicalGraphGPU passes it the node positions and, on
+ * several ranks, the communicator.
+ * @since API version 31
+ */
+extern bool DP_DeepPotHasLongRange(DP_DeepPot* dp);
 
 /**
  * @brief Evaluate the energy, force and virial by using a DP. (double version)
@@ -2733,6 +2761,14 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
  * @since API version 27
  */
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Query whether any model of a DP Model Deviation carries a long-range
+ * module; see DP_DeepPotHasLongRange.
+ * @param[in] dp The DP Model Deviation to use.
+ * @since API version 31
+ */
+extern bool DP_DeepPotModelDeviHasLongRange(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Fix the charge/spin condition served for the rest of the run.

@@ -45,8 +45,12 @@
 // memory, and reproduces the energy and the input cotangent of the per-layer
 // path bit for bit. It serves the networks of one hidden width it is compiled
 // for, on runs whose panels split over clusters of CTAs that the device keeps
-// resident at once or, as single CTAs, cover enough of the device;
-// dispatch_fused_shape lists the shapes of each width.
+// resident at once or, as single CTAs, cover enough of the device, except
+// where the per-layer kernels are compute-bound on the device;
+// dispatch_fused_shape lists the shapes of each width. A fitting-route table
+// measured at freeze time on the deployment device names another route for
+// the run sizes at which the measurement departs from these rules
+// (fitting_route).
 //
 // All tensors here are node-scale (atoms, not edges); the fusion removes the
 // full-tensor elementwise passes rather than FLOPs. The head bias arrives as a
@@ -65,13 +69,14 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "fp32_ridge.h"
 #include "graph_ops.h"
-#include "launch_overrides.h"
 
 namespace {
 
@@ -1068,13 +1073,28 @@ struct FusedShape {
                 "the hidden contraction is whole slices");
   static_assert((width / 32) * rows <= input_floats,
                 "the head partials fit the input staging");
-  // Every device of compute capability 8.0 or later, on which alone the
-  // kernel runs, lets one CTA opt in to at least the 99 KB of shared memory
-  // of 8.6, 8.9 and 12.x, so every shape fits every device that runs it,
-  // including the shape that the tail run of a tiled call takes for its own
-  // size without a second serve decision.
+  // Every shape fits the 99 KB of shared memory that compute capability 8.6,
+  // 8.9 and 12.x let one CTA opt in to, and so every device of compute
+  // capability 8.0 or later. A device that grants less, 96 KB on 7.0 and 64 KB
+  // on 7.5, takes only the shapes it admits (launch_first_fit).
   static_assert(bytes <= 101376,
-                "a shape fits the smallest opt-in shared memory served");
+                "a shape fits the opt-in shared memory of 8.6, 8.9 and 12.x");
+  /// The template parameters packed into one positive integer, which names
+  /// the shape in a fitting-route table (fitting_route).
+  static constexpr int64_t key =
+      static_cast<int64_t>(kWidth) | static_cast<int64_t>(kCluster) << 9 |
+      static_cast<int64_t>(kThreadRows) << 15 |
+      static_cast<int64_t>(kThreadCols) << 21 |
+      static_cast<int64_t>(kWarpRows) << 27 |
+      static_cast<int64_t>(kWarpCols) << 33 |
+      static_cast<int64_t>(kMinBlocks) << 39 |
+      static_cast<int64_t>(kStages) << 45 | static_cast<int64_t>(kDepth) << 51 |
+      static_cast<int64_t>(kServeQuarters) << 58;
+  static_assert(kWidth < 512 && kCluster < 64 && kThreadRows < 64 &&
+                    kThreadCols < 64 && kWarpRows < 64 && kWarpCols < 64 &&
+                    kMinBlocks < 64 && kStages < 64 && kDepth < 128 &&
+                    kServeQuarters < 16,
+                "every template parameter fits its field of the key");
 };
 
 struct FusedNetwork {
@@ -1103,9 +1123,8 @@ struct FusedNetwork {
 /// Copy 16 bytes into shared memory, zero-filled when the source is outside
 /// the operand. In an image compiled for compute capability 8.0 or later the
 /// copy is asynchronous and completes at the matching ``copy_async_wait``; an
-/// image compiled for an earlier virtual architecture copies at once, on any
-/// device that runs it, which the barriers of the ring order the same way, so
-/// the portable PTX of the library stays correct there.
+/// image compiled for compute capability 7.x copies at once, which the
+/// barriers of the ring order the same way.
 __device__ __forceinline__ void copy_async16(void* dst,
                                              const void* src,
                                              bool valid) {
@@ -2273,6 +2292,10 @@ struct FusedCapacity {
   /// several CTAs on one multiprocessor where their registers and shared
   /// memory allow, which the narrow network does.
   int clusters;
+  /// CTAs of a single-CTA shape that a multiprocessor keeps resident at once
+  /// for both activations, which sets the waves in which a run of its panels
+  /// passes; zero for a cluster shape and where the device refuses the query.
+  int resident;
 };
 
 template <class S>
@@ -2288,14 +2311,25 @@ FusedCapacity fused_capacity() {
   // A query the device or the driver refuses reads as a version of zero or as
   // no resident cluster, so the shape is not used and the per-layer kernels
   // serve the run instead of the call failing.
-  FusedCapacity capacity{std::numeric_limits<int>::max(), 0};
+  FusedCapacity capacity{std::numeric_limits<int>::max(), 0,
+                         S::cluster == 1 ? std::numeric_limits<int>::max() : 0};
   for (const long act : {0L, 1L}) {
     dispatch_activation(act, [&](auto tag) {
+      constexpr int kAct = decltype(tag)::value;
+      const auto kernel = fused_network_kernel<S, kAct>;
       cudaFuncAttributes attributes{};
-      const bool known = accepted(cudaFuncGetAttributes(
-          &attributes, fused_network_kernel<S, decltype(tag)::value>));
+      const bool known = accepted(cudaFuncGetAttributes(&attributes, kernel));
       capacity.version =
           std::min(capacity.version, known ? attributes.ptxVersion : 0);
+      if constexpr (S::cluster == 1) {
+        int resident = 0;
+        if (!accepted(set_fused_attributes<S, kAct>()) ||
+            !accepted(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+                &resident, kernel, S::threads, S::bytes))) {
+          resident = 0;
+        }
+        capacity.resident = std::min(capacity.resident, resident);
+      }
     });
   }
   int cluster_launch = 0;
@@ -2330,13 +2364,18 @@ FusedCapacity fused_capacity() {
   return capacity;
 }
 
-/// Launch the first of ``shapes`` that takes a run of ``panels`` panels: a
-/// cluster shape when the device keeps a cluster per panel resident at once,
+/// Launch the first of ``shapes`` that takes a run of ``panels`` panels: of
+/// the shapes whose dynamic shared memory the device lets one CTA opt in to,
+/// a cluster shape when the device keeps a cluster per panel resident at once,
 /// a single-CTA shape unconditionally. Returns whether a shape launched.
 template <typename Fn, class... Shapes>
 bool launch_first_fit(long panels, Fn&& launch, Shapes... shapes) {
   const auto take = [&](auto shape) {
     using S = decltype(shape);
+    if (S::bytes >
+        at::cuda::getCurrentDeviceProperties()->sharedMemPerBlockOptin) {
+      return false;
+    }
     if constexpr (S::cluster > 1) {
       if (fused_capacity<S>().clusters < panels) {
         return false;
@@ -2346,6 +2385,113 @@ bool launch_first_fit(long panels, Fn&& launch, Shapes... shapes) {
     return true;
   };
   return (take(shapes) || ...);
+}
+
+/// A list of fused shapes.
+template <class... Shapes>
+struct ShapeList {};
+
+/// launch_first_fit over the shapes of a list.
+template <typename Fn, class... Shapes>
+bool launch_first_listed(long panels, Fn&& launch, ShapeList<Shapes...>) {
+  return launch_first_fit(panels, launch, Shapes{}...);
+}
+
+/// The fused shapes compiled for a hidden width, in the order of the dispatch:
+/// the latency shapes, the largest cluster first, then the throughput shapes.
+template <int W>
+struct FusedShapes;
+template <>
+struct FusedShapes<96> {
+  using Latency = ShapeList<FusedShape<96, 3, 2, 4, 4, 1, 1, 4, 32>,
+                            FusedShape<96, 1, 4, 4, 2, 3, 1, 8>>;
+  using WidePanels = FusedShape<96, 1, 4, 4, 4, 3, 2, 2, 16>;
+  using NarrowPanels = FusedShape<96, 1, 4, 4, 2, 3, 3, 3>;
+  using Throughput = ShapeList<WidePanels, NarrowPanels>;
+};
+template <>
+struct FusedShapes<192> {
+  using Latency = ShapeList<FusedShape<192, 6, 2, 4, 4, 1, 1, 4, 32>,
+                            FusedShape<192, 3, 4, 4, 2, 2, 1, 4, 32>,
+                            FusedShape<192, 2, 4, 4, 2, 3, 1, 4, 16>,
+                            FusedShape<192, 1, 4, 4, 2, 6, 1, 8>>;
+  using Throughput = ShapeList<FusedShape<192, 1, 4, 8, 2, 3, 2, 3>>;
+};
+template <>
+struct FusedShapes<256> {
+  using Latency = ShapeList<FusedShape<256, 8, 2, 4, 4, 1, 1, 4, 32>,
+                            FusedShape<256, 4, 4, 4, 2, 2, 1, 4, 32>,
+                            FusedShape<256, 2, 4, 4, 2, 4, 1, 4, 16>,
+                            FusedShape<256, 1, 4, 4, 2, 8, 1, 7, 8, 3>>;
+  using Throughput = ShapeList<FusedShape<256, 1, 8, 8, 2, 4, 1, 3>>;
+};
+template <>
+struct FusedShapes<384> {
+  using Latency = ShapeList<FusedShape<384, 12, 2, 4, 4, 1, 1, 4, 32>,
+                            FusedShape<384, 6, 4, 4, 2, 2, 1, 4, 32>,
+                            FusedShape<384, 4, 4, 4, 2, 3, 1, 4, 16>,
+                            FusedShape<384, 3, 4, 4, 2, 4, 1, 4, 16>,
+                            FusedShape<384, 2, 4, 4, 2, 6, 1, 3, 16>,
+                            FusedShape<384, 1, 8, 4, 1, 12, 1, 3, 8>>;
+  using Throughput = ShapeList<>;
+};
+
+/// Call ``fn`` with the FusedShapes of ``width``; false for a width that no
+/// fused shape is compiled for.
+template <typename Fn>
+bool with_fused_shapes(long width, Fn&& fn) {
+  switch (width) {
+    case 96:
+      return fn(FusedShapes<96>{});
+    case 192:
+      return fn(FusedShapes<192>{});
+    case 256:
+      return fn(FusedShapes<256>{});
+    case 384:
+      return fn(FusedShapes<384>{});
+    default:
+      return false;
+  }
+}
+
+/// Call ``visit`` with the shapes of a list in order until it returns true;
+/// returns whether it did.
+template <typename Fn, class... Shapes>
+bool visit_shapes(ShapeList<Shapes...>, [[maybe_unused]] Fn&& visit) {
+  return (visit(Shapes{}) || ...);
+}
+
+/// Call ``visit`` with every fused shape compiled for ``width`` until it
+/// returns true; returns whether it did.
+template <typename Fn>
+bool visit_fused_shapes(long width, Fn&& visit) {
+  return with_fused_shapes(width, [&](auto shapes) {
+    using Shapes = decltype(shapes);
+    return visit_shapes(typename Shapes::Latency{}, visit) ||
+           visit_shapes(typename Shapes::Throughput{}, visit);
+  });
+}
+
+/// Call ``visit`` with the fused shapes of ``width`` that a measurement of
+/// the fitting routes compares on runs of ``latency`` or of more panels than
+/// multiprocessors: the latency shapes on the former, and on the latter the
+/// throughput shapes, or the single-CTA latency shapes of a width that has
+/// none; until it returns true. Returns whether it did.
+template <typename Fn>
+bool visit_compared_shapes(long width, bool latency, Fn&& visit) {
+  return with_fused_shapes(width, [&](auto shapes) {
+    using Shapes = decltype(shapes);
+    if (latency) {
+      return visit_shapes(typename Shapes::Latency{}, visit);
+    }
+    if constexpr (std::is_same_v<typename Shapes::Throughput, ShapeList<>>) {
+      return visit_shapes(typename Shapes::Latency{}, [&](auto shape) {
+        return decltype(shape)::cluster == 1 && visit(shape);
+      });
+    } else {
+      return visit_shapes(typename Shapes::Throughput{}, visit);
+    }
+  });
 }
 
 /// Dispatch the fused network over the hidden widths it is compiled for.
@@ -2359,78 +2505,217 @@ bool launch_first_fit(long panels, Fn&& launch, Shapes... shapes) {
 /// stream each weight slice to half as many CTAs as 32-node panels and so keep
 /// the L2 traffic within the FMA rate. A width of 96 moves on to 64-node
 /// panels of twelve warps, two CTAs per SM in place of three, once a run
-/// fills two waves of them. Such a panel streams each weight slice once for
-/// twice the nodes of a 32-node panel, and on sm_120 the larger panels take
-/// 6% less time at 100,800 nodes and 11% less at 131,072, the default node
-/// tile; from two waves on, this gain outweighs the cost of their last,
-/// partly filled wave. At a width of 384 the per-layer kernels, whose 64 x 128
-/// tiles reuse each weight slice across twice the nodes, serve such a run: a
-/// 32-node panel of that width takes 94,848 bytes of shared memory, a
-/// multiprocessor of sm_120 to itself, so the run would pass in waves of one
-/// panel per multiprocessor. A smaller run splits its 32-node panels over the
-/// largest cluster, of the divisors of width / 32 above one, of which the
-/// device keeps one per panel resident at once; the cluster divides the FMAs
-/// of each panel between its CTAs. A cluster above the portable size of eight
-/// takes the non-portable cluster attribute and runs where the device
-/// launches clusters of its size. A run too large for any cluster in one
-/// wave, or on a device without clusters, takes the latency shape: 32-node
-/// panels on the most lanes their tile allows, each alone on its
-/// multiprocessor, with a ring deep enough to keep the weight stream ahead of
-/// the FMAs without other panels to hide its latency.
+/// fills two waves of them, or once they pass it in fewer waves than the
+/// 32-node panels, each shape at the CTAs per SM that the device keeps
+/// resident. Such a panel streams each weight slice once for twice the nodes
+/// of a 32-node panel, and on sm_120 the larger panels take 6% less time at
+/// 100,800 nodes and 11% less at 131,072, the default node tile; from two
+/// waves on, this gain outweighs the cost of their last, partly filled wave,
+/// and below two waves a wave fewer outweighs it: on the 92 multiprocessors
+/// of an L20, one wave of 64-node panels takes 0.064 ms at 10,296 nodes
+/// against 0.078 ms for two waves of 32-node panels.
+///
+/// A width that the 128 columns of the per-layer large tile divide is left to
+/// the per-layer kernels at runs of more panels than multiprocessors on a
+/// device whose fp32 ridge lies below width / 4, the FLOP per byte of a hidden
+/// layer of those kernels: bound there by the arithmetic rather than by the
+/// activation traffic that the fusion saves, they use more of the fp32 peak
+/// than the fused panels, and at a width of 256 on an H20, whose ridge is 10,
+/// they shorten the LAMMPS step by 1% to 6%. At a width of 384 the per-layer
+/// kernels, whose 64 x 128 tiles reuse each weight slice across twice the
+/// nodes, serve such a run on every device: a 32-node panel of that width
+/// takes 94,848 bytes of shared memory, a multiprocessor of sm_120 to itself,
+/// so the run would pass in waves of one panel per multiprocessor.
+///
+/// A smaller run splits its 32-node panels over the largest cluster, of the
+/// divisors of width / 32 above one, of which the device keeps one per panel
+/// resident at once; the cluster divides the FMAs of each panel between its
+/// CTAs. A cluster above the portable size of eight takes the non-portable
+/// cluster attribute and runs where the device launches clusters of its size.
+/// A run too large for any cluster in one wave, or on a device without
+/// clusters, takes the latency shape: 32-node panels on the most lanes their
+/// tile allows, each alone on its multiprocessor, with a ring deep enough to
+/// keep the weight stream ahead of the FMAs without other panels to hide its
+/// latency. The ring runs ahead through asynchronous copies, so
+/// fitting_fused_serves leaves such a run to the per-layer kernels on a kernel
+/// image of compute capability 7.x, whose copies are plain loads and stores.
+/// The tail of a tiled call that graph_fitting_energy_gradient serves with the
+/// fused network takes such a shape nevertheless, since that operator decides
+/// once for the runs of the call; the fused energy-force operator of DPA4C
+/// decides the tail by its own size (fitting_route).
 template <typename Fn>
 bool dispatch_fused_shape(long width, long run_nodes, Fn&& launch) {
   const long sms = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
   const long panels = ceil_div(run_nodes, 32);
   const bool latency = panels <= sms;
-  switch (width) {
-    case 96: {
-      if (latency) {
-        return launch_first_fit(panels, launch,
-                                FusedShape<96, 3, 2, 4, 4, 1, 1, 4, 32>{},
-                                FusedShape<96, 1, 4, 4, 2, 3, 1, 8>{});
-      }
-      // Two waves of the 64-node panels, at the CTAs per SM of their bound.
-      using WidePanels = FusedShape<96, 1, 4, 4, 4, 3, 2, 2, 16>;
-      if (run_nodes >= 2 * WidePanels::min_blocks * sms * WidePanels::rows) {
+  if (!latency && width % LargeTile::cols == 0 && fp32_ridge() < width / 4.0) {
+    return false;
+  }
+  return with_fused_shapes(width, [&](auto shapes) {
+    using Shapes = decltype(shapes);
+    if (latency) {
+      return launch_first_listed(panels, launch, typename Shapes::Latency{});
+    }
+    if constexpr (std::is_same_v<Shapes, FusedShapes<96>>) {
+      using WidePanels = typename Shapes::WidePanels;
+      using NarrowPanels = typename Shapes::NarrowPanels;
+      // Panels of each shape that one wave of the device holds.
+      const long wide_wave = fused_capacity<WidePanels>().resident * sms;
+      const long narrow_wave = fused_capacity<NarrowPanels>().resident * sms;
+      if (wide_wave > 0 &&
+          (run_nodes >= 2 * wide_wave * WidePanels::rows ||
+           (narrow_wave > 0 &&
+            ceil_div(ceil_div(run_nodes, WidePanels::rows), wide_wave) <
+                ceil_div(ceil_div(run_nodes, NarrowPanels::rows),
+                         narrow_wave)))) {
         return launch_first_fit(panels, launch, WidePanels{});
       }
-      return launch_first_fit(panels, launch,
-                              FusedShape<96, 1, 4, 4, 2, 3, 3, 3>{});
+      return launch_first_fit(panels, launch, NarrowPanels{});
+    } else {
+      return launch_first_listed(panels, launch, typename Shapes::Throughput{});
     }
-    case 192:
-      if (latency) {
-        return launch_first_fit(panels, launch,
-                                FusedShape<192, 6, 2, 4, 4, 1, 1, 4, 32>{},
-                                FusedShape<192, 3, 4, 4, 2, 2, 1, 4, 32>{},
-                                FusedShape<192, 2, 4, 4, 2, 3, 1, 4, 16>{},
-                                FusedShape<192, 1, 4, 4, 2, 6, 1, 8>{});
-      }
-      return launch_first_fit(panels, launch,
-                              FusedShape<192, 1, 4, 8, 2, 3, 2, 3>{});
-    case 256:
-      if (latency) {
-        return launch_first_fit(panels, launch,
-                                FusedShape<256, 8, 2, 4, 4, 1, 1, 4, 32>{},
-                                FusedShape<256, 4, 4, 4, 2, 2, 1, 4, 32>{},
-                                FusedShape<256, 2, 4, 4, 2, 4, 1, 4, 16>{},
-                                FusedShape<256, 1, 4, 4, 2, 8, 1, 7, 8, 3>{});
-      }
-      return launch_first_fit(panels, launch,
-                              FusedShape<256, 1, 8, 8, 2, 4, 1, 3>{});
-    case 384:
-      if (latency) {
-        return launch_first_fit(panels, launch,
-                                FusedShape<384, 12, 2, 4, 4, 1, 1, 4, 32>{},
-                                FusedShape<384, 6, 4, 4, 2, 2, 1, 4, 32>{},
-                                FusedShape<384, 4, 4, 4, 2, 3, 1, 4, 16>{},
-                                FusedShape<384, 3, 4, 4, 2, 4, 1, 4, 16>{},
-                                FusedShape<384, 2, 4, 4, 2, 6, 1, 3, 16>{},
-                                FusedShape<384, 1, 8, 4, 1, 12, 1, 3, 8>{});
-      }
-      return false;
-    default:
-      return false;
+  });
+}
+
+/// Whether the device runs shape S on a run of ``run_nodes`` nodes: an image
+/// of compute_70 or later whose shared memory the device admits and, for a
+/// cluster shape, a cluster per panel resident at once. A single-CTA shape
+/// runs a run of any size, in as many waves as it takes.
+template <class S>
+bool fused_shape_runs(long run_nodes) {
+  const FusedCapacity capacity = fused_capacity<S>();
+  if (capacity.version < 70) {
+    return false;
   }
+  if constexpr (S::cluster > 1) {
+    return capacity.clusters >= ceil_div(run_nodes, S::rows);
+  } else {
+    return capacity.resident > 0;
+  }
+}
+
+/// CTAs of the per-layer kernels of ``Tile`` that a multiprocessor of the
+/// current device keeps resident, the fewest over the forward and the backward
+/// kernels and both activations. Each device answers once.
+template <class Tile>
+int tile_resident() {
+  static std::mutex mutex;
+  static std::map<c10::DeviceIndex, int> residents;
+  const c10::DeviceIndex device = c10::cuda::current_device();
+  const std::lock_guard<std::mutex> lock(mutex);
+  const auto known = residents.find(device);
+  if (known != residents.end()) {
+    return known->second;
+  }
+  int resident = std::numeric_limits<int>::max();
+  for (const long act : {0L, 1L}) {
+    dispatch_activation(act, [&](auto tag) {
+      constexpr int kAct = decltype(tag)::value;
+      int forward = 0;
+      int backward = 0;
+      if (!accepted(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+              &forward, layer_forward_kernel<Tile, kAct, true>, Tile::threads,
+              0))) {
+        forward = 0;
+      }
+      if (!accepted(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+              &backward, layer_backward_kernel<Tile, kAct, Cotangent::kChain>,
+              Tile::threads, 0))) {
+        backward = 0;
+      }
+      resident = std::min({resident, forward, backward});
+    });
+  }
+  residents.emplace(device, resident);
+  return resident;
+}
+
+// A fitting-route table records which route serves each run size of one
+// network on one device, as measured at freeze time; the fused energy-force
+// operator of DPA4C receives it as a literal argument of the frozen program.
+// It holds kRouteTableMagic, the fingerprint of the device it was measured on
+// (device_fingerprint), the number n of its intervals of run sizes, the
+// inclusive upper bounds of the first n - 1 intervals in increasing order, and
+// one choice per interval: kFittingPerLayer or the key of a fused shape
+// (FusedShape::key) where the measurement departs from the rules, and
+// kFittingRules, which leaves the run to them, everywhere else.
+
+/// First word of a fitting-route table, which also names its layout.
+constexpr int64_t kRouteTableMagic = 0x52545431;
+/// Words of the device fingerprint of a fitting-route table.
+constexpr size_t kFingerprintWords = 11;
+
+/// What sets the waves and the speed of the fitting kernels on the current
+/// device: its compute capability, multiprocessors, L2 size, registers and
+/// shared memory per multiprocessor, shared memory a block may opt in to,
+/// thread and block limits per multiprocessor, memory bus width, and memory and
+/// SM clocks. Each device answers once.
+std::vector<int64_t> device_fingerprint() {
+  static std::mutex mutex;
+  static std::map<int, std::vector<int64_t>> fingerprints;
+  int device = 0;
+  C10_CUDA_CHECK(cudaGetDevice(&device));
+  const std::lock_guard<std::mutex> lock(mutex);
+  const auto known = fingerprints.find(device);
+  if (known != fingerprints.end()) {
+    return known->second;
+  }
+  const cudaDeviceAttr attributes[] = {
+      cudaDevAttrComputeCapabilityMajor,
+      cudaDevAttrComputeCapabilityMinor,
+      cudaDevAttrMultiProcessorCount,
+      cudaDevAttrL2CacheSize,
+      cudaDevAttrMaxRegistersPerMultiprocessor,
+      cudaDevAttrMaxSharedMemoryPerMultiprocessor,
+      cudaDevAttrMaxSharedMemoryPerBlockOptin,
+      cudaDevAttrMaxThreadsPerMultiProcessor,
+      cudaDevAttrMaxBlocksPerMultiprocessor,
+      cudaDevAttrGlobalMemoryBusWidth,
+      cudaDevAttrMemoryClockRate,
+      cudaDevAttrClockRate};
+  std::vector<int64_t> values;
+  for (const cudaDeviceAttr attribute : attributes) {
+    int value = 0;
+    C10_CUDA_CHECK(cudaDeviceGetAttribute(&value, attribute, device));
+    values.push_back(value);
+  }
+  std::vector<int64_t> fingerprint{10 * values[0] + values[1]};
+  fingerprint.insert(fingerprint.end(), values.begin() + 2, values.end());
+  TORCH_INTERNAL_ASSERT(fingerprint.size() == kFingerprintWords);
+  fingerprints.emplace(device, fingerprint);
+  return fingerprint;
+}
+
+/// The choice that ``table`` makes for a run of ``run_nodes`` nodes:
+/// kFittingPerLayer or the key of a fused shape where the measurement departed
+/// from the rules, and kFittingRules where it agreed with them or the table is
+/// empty, malformed or measured on a device of another fingerprint.
+int64_t table_choice(const std::vector<int64_t>& table, long run_nodes) {
+  constexpr size_t kHead = 2 + kFingerprintWords;
+  if (table.size() <= kHead || table[0] != kRouteTableMagic) {
+    return kFittingRules;
+  }
+  const std::vector<int64_t> fingerprint = device_fingerprint();
+  if (!std::equal(fingerprint.begin(), fingerprint.end(), table.begin() + 1)) {
+    return kFittingRules;
+  }
+  const int64_t intervals = table[kHead - 1];
+  if (intervals < 1 ||
+      table.size() != kHead + 2 * static_cast<size_t>(intervals) - 1) {
+    return kFittingRules;
+  }
+  const int64_t* bounds = table.data() + kHead;
+  const int64_t* choices = bounds + intervals - 1;
+  for (int64_t i = 1; i < intervals - 1; ++i) {
+    if (bounds[i - 1] >= bounds[i]) {
+      return kFittingRules;
+    }
+  }
+  int64_t interval = 0;
+  while (interval < intervals - 1 && run_nodes > bounds[interval]) {
+    ++interval;
+  }
+  return choices[interval];
 }
 
 /// Row pitch of the transposed weight ``w``: its input width rounded up to
@@ -2472,14 +2757,12 @@ void check_fused_plan(const FittingLayerPlan& plan,
   }
 }
 
-}  // namespace
-
-bool fitting_fused_serves(const FittingLayerPlan& plan,
-                          const std::vector<torch::Tensor>& ws,
-                          long run_nodes) {
-  static const bool disabled = launch_override("DP_FITTING_FUSED", {0}) == 0;
-  if (disabled || plan.n_layer < 1 || plan.n_layer > kFusedLayers ||
-      ws[0].size(0) < 1) {
+/// Whether the fused kernel computes the network: one to eight hidden layers
+/// of one width, every layer after the first square, and an input of at least
+/// one feature.
+bool fused_network_eligible(const FittingLayerPlan& plan,
+                            const std::vector<torch::Tensor>& ws) {
+  if (plan.n_layer < 1 || plan.n_layer > kFusedLayers || ws[0].size(0) < 1) {
     return false;
   }
   const long width = ws[0].size(1);
@@ -2488,14 +2771,31 @@ bool fitting_fused_serves(const FittingLayerPlan& plan,
       return false;
     }
   }
+  return true;
+}
+
+}  // namespace
+
+bool fitting_fused_serves(const FittingLayerPlan& plan,
+                          const std::vector<torch::Tensor>& ws,
+                          long run_nodes) {
+  if (!fused_network_eligible(plan, ws)) {
+    return false;
+  }
+  const long width = ws[0].size(1);
   const auto* properties = at::cuda::getCurrentDeviceProperties();
   bool serves = false;
   dispatch_fused_shape(width, run_nodes, [&](auto shape) {
     using S = decltype(shape);
     // The kernel streams its weights by asynchronous copies, which an image
-    // compiled for a virtual architecture below compute_80 performs as plain
-    // loads and stores; such an image leaves the run to the per-layer
-    // kernels at every width.
+    // compiled for compute capability 7.x performs as plain loads and stores.
+    // The panels of a throughput shape share a multiprocessor and hide the
+    // weight stream behind each other, so they serve images of compute
+    // capability 7.0 and later; a latency shape runs each panel alone on its
+    // multiprocessor and keeps the stream ahead of its FMAs through the
+    // asynchronous copies of its ring alone, so it serves images of 8.0 and
+    // later. An image of an earlier architecture leaves the run to the
+    // per-layer kernels at every width.
     //
     // A run of few panels leaves each panel's pass through the whole network
     // on one multiprocessor, while the per-layer kernels spread every layer
@@ -2506,10 +2806,43 @@ bool fitting_fused_serves(const FittingLayerPlan& plan,
     // outrun the per-layer kernels on sm_120.
     const long panels = ceil_div(run_nodes, 32);
     const long sms = properties->multiProcessorCount;
-    serves = fused_capacity<S>().version >= 80 &&
+    serves = fused_capacity<S>().version >= (panels <= sms ? 80 : 70) &&
              (S::cluster > 1 || 4 * panels >= S::serve_quarters * sms);
   });
-  return serves;
+  // graph_fitting_energy_gradient decides once for the runs of a tiled call
+  // and launches its tail with a shape of the tail's own size, so a run is
+  // served only where every shorter run finds a shape as well. The fused
+  // energy-force operator of DPA4C decides its tail by its own size but takes
+  // the same rule, so that the two operators route a run of one size alike. A
+  // tail of more panels than multiprocessors takes the throughput list of its
+  // width, as the served run does: one shape, or at a width of 96 the 64-node
+  // panels only where the device keeps them resident and otherwise the
+  // 32-node panels, which take less shared memory. A shorter tail takes the
+  // latency list, which ends with a single-CTA shape that launch_first_fit
+  // takes at any panel count once the device admits its shared memory; a
+  // device that admits less than every shape, below compute capability 8.0,
+  // launches no clusters, so its latency list serves every run size or none,
+  // and a run of one panel stands for every tail.
+  return serves && dispatch_fused_shape(width, 1, [](auto) {});
+}
+
+int64_t fitting_route(const FittingLayerPlan& plan,
+                      const std::vector<torch::Tensor>& ws,
+                      long run_nodes,
+                      const std::vector<int64_t>& table) {
+  const int64_t choice = table_choice(table, run_nodes);
+  if (choice == kFittingPerLayer) {
+    return kFittingPerLayer;
+  }
+  if (choice > 0 && fused_network_eligible(plan, ws) &&
+      visit_fused_shapes(ws[0].size(1), [&](auto shape) {
+        using S = decltype(shape);
+        return S::key == choice && fused_shape_runs<S>(run_nodes);
+      })) {
+    return choice;
+  }
+  return fitting_fused_serves(plan, ws, run_nodes) ? kFittingRules
+                                                   : kFittingPerLayer;
 }
 
 long fitting_fused_transposed_floats(const std::vector<torch::Tensor>& ws) {
@@ -2565,7 +2898,8 @@ void fitting_energy_gradient_range(cudaStream_t stream,
                                    long run_nodes,
                                    float* saved,
                                    double* e,
-                                   float* d_x) {
+                                   float* d_x,
+                                   int64_t route) {
   check_energy_parameters(ws, bs, resnets, w_head, b_head, bias_atom_e);
   check_fused_plan(plan, ws);
   FusedNetwork p{};
@@ -2587,22 +2921,31 @@ void fitting_energy_gradient_range(cudaStream_t stream,
   p.din = (int)input_width;
   p.n_layer = plan.n_layer;
   place_transposed_weights(p, ws, wt);
-  const bool launched =
-      dispatch_fused_shape(ws[0].size(1), run_nodes, [&](auto shape) {
-        using S = decltype(shape);
-        dispatch_activation(act, [&](auto tag) {
-          constexpr int kAct = decltype(tag)::value;
-          configure_fused_kernel<S, kAct>();
-          cudaLaunchAttribute cluster;
-          const cudaLaunchConfig_t config = fused_launch_config<S>(
-              ceil_div(run_nodes, S::rows), stream, &cluster);
-          C10_CUDA_CHECK(
-              cudaLaunchKernelEx(&config, fused_network_kernel<S, kAct>, p));
-        });
-      });
+  const auto launch = [&](auto shape) {
+    using S = decltype(shape);
+    dispatch_activation(act, [&](auto tag) {
+      constexpr int kAct = decltype(tag)::value;
+      configure_fused_kernel<S, kAct>();
+      cudaLaunchAttribute cluster;
+      const cudaLaunchConfig_t config = fused_launch_config<S>(
+          ceil_div(run_nodes, S::rows), stream, &cluster);
+      C10_CUDA_CHECK(
+          cudaLaunchKernelEx(&config, fused_network_kernel<S, kAct>, p));
+    });
+  };
+  const long width = ws[0].size(1);
+  const bool launched = route == kFittingRules
+                            ? dispatch_fused_shape(width, run_nodes, launch)
+                            : visit_fused_shapes(width, [&](auto shape) {
+                                if (decltype(shape)::key != route) {
+                                  return false;
+                                }
+                                launch(shape);
+                                return true;
+                              });
   TORCH_CHECK(launched, "graph_fitting fused network: no fused shape serves ",
-              run_nodes, " nodes of hidden width ", ws[0].size(1),
-              "; fitting_fused_serves selects the runs it serves");
+              run_nodes, " nodes of hidden width ", width, " on route ", route,
+              "; fitting_fused_serves and fitting_route select the routes");
 }
 
 // Forward: per-atom energy (fp64 (N, 1)) plus the flat saved buffer of the
@@ -2768,7 +3111,7 @@ torch::Tensor graph_fitting_energy_gradient(torch::Tensor x,
           bias_atom_e, act, transposed.data_ptr<float>(),
           seed_c.data_ptr<double>() + begin, count, saved.data_ptr<float>(),
           e.data_ptr<double>() + begin,
-          x.data_ptr<float>() + begin * input_width);
+          x.data_ptr<float>() + begin * input_width, kFittingRules);
     }
     return e;
   }
@@ -2796,9 +3139,169 @@ torch::Tensor graph_fitting_energy_gradient(torch::Tensor x,
   return e;
 }
 
+namespace {
+
+// Queries of the freeze-time measurement of the fitting routes
+// (deepmd/pt_expt/kernels/fitting_routes.py) and of its tests. They answer for
+// CUDA device ``device``.
+
+/// The fingerprint that a fitting-route table measured on the device carries.
+std::vector<int64_t> graph_fitting_route_fingerprint(int64_t device) {
+  const c10::cuda::CUDAGuard device_guard(
+      static_cast<c10::DeviceIndex>(device));
+  return device_fingerprint();
+}
+
+/// The keys of the fused shapes of hidden width ``width`` that a measurement
+/// compares on a run of ``run_nodes`` nodes (visit_compared_shapes) and that
+/// the device runs on it, in the order of the dispatch.
+std::vector<int64_t> graph_fitting_route_choices(int64_t device,
+                                                 int64_t width,
+                                                 int64_t run_nodes) {
+  const c10::cuda::CUDAGuard device_guard(
+      static_cast<c10::DeviceIndex>(device));
+  const long sms = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
+  std::vector<int64_t> keys;
+  visit_compared_shapes(width, ceil_div(run_nodes, 32) <= sms, [&](auto shape) {
+    using S = decltype(shape);
+    if (fused_shape_runs<S>(run_nodes)) {
+      keys.push_back(S::key);
+    }
+    return false;
+  });
+  return keys;
+}
+
+/// The route that the rules take for the network ``ws`` on a run of
+/// ``run_nodes`` nodes: kFittingPerLayer or the key of the fused shape the
+/// dispatch selects.
+int64_t graph_fitting_route_rule(std::vector<torch::Tensor> ws,
+                                 int64_t run_nodes) {
+  TORCH_CHECK(!ws.empty() && ws[0].is_cuda(),
+              "graph_fitting_route_rule: the weights must be CUDA tensors");
+  const c10::cuda::CUDAGuard device_guard(ws[0].device());
+  const FittingLayerPlan plan = fitting_layer_plan(ws);
+  if (!fitting_fused_serves(plan, ws, run_nodes)) {
+    return kFittingPerLayer;
+  }
+  int64_t key = kFittingPerLayer;
+  dispatch_fused_shape(ws[0].size(1), run_nodes,
+                       [&](auto shape) { key = decltype(shape)::key; });
+  return key;
+}
+
+/// The route that the fused energy-force operator of DPA4C takes for the
+/// network ``ws`` on a run of ``run_nodes`` nodes under the fitting-route
+/// table ``table`` (fitting_route): kFittingPerLayer, kFittingRules or the key
+/// of a fused shape.
+int64_t graph_fitting_route_resolve(std::vector<torch::Tensor> ws,
+                                    int64_t run_nodes,
+                                    std::vector<int64_t> table) {
+  TORCH_CHECK(!ws.empty() && ws[0].is_cuda(),
+              "graph_fitting_route_resolve: the weights must be CUDA tensors");
+  const c10::cuda::CUDAGuard device_guard(ws[0].device());
+  return fitting_route(fitting_layer_plan(ws), ws, run_nodes, table);
+}
+
+/// Inclusive upper bounds of the run sizes, up to ``max_nodes`` and ending
+/// with it, between which none of the routes that a measurement compares
+/// (visit_compared_shapes and the per-layer kernels) changes the number of
+/// waves of its grids on the device, and no rule changes the route of the
+/// network of hidden width ``width`` and input width ``din``: the cluster
+/// capacities and the serve gates of the latency shapes, the waves of the
+/// single-CTA shapes compared above one panel per multiprocessor, the waves of
+/// the per-layer tiles on every column count of the network and the switch
+/// between the two tiles, and the switch between the latency and the
+/// throughput shapes. A route keeps its waves inside such a band, but not the
+/// fill of its last wave, which the measurement samples at both ends of the
+/// band.
+std::vector<int64_t> graph_fitting_route_bands(int64_t device,
+                                               int64_t width,
+                                               int64_t din,
+                                               int64_t max_nodes) {
+  const c10::cuda::CUDAGuard device_guard(
+      static_cast<c10::DeviceIndex>(device));
+  const int64_t sms =
+      at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
+  const int64_t latency_nodes = 32 * sms;
+  std::set<int64_t> bounds;
+  const auto add = [&](int64_t nodes) {
+    if (nodes >= 1 && nodes < max_nodes) {
+      bounds.insert(nodes);
+    }
+  };
+  add(latency_nodes);
+  visit_compared_shapes(width, true, [&](auto shape) {
+    using S = decltype(shape);
+    const FusedCapacity capacity = fused_capacity<S>();
+    if constexpr (S::cluster > 1) {
+      add(std::min<int64_t>(capacity.clusters * S::rows, latency_nodes));
+    } else {
+      add(32 * (ceil_div(S::serve_quarters * sms, 4) - 1));
+    }
+    return false;
+  });
+  visit_compared_shapes(width, false, [&](auto shape) {
+    using S = decltype(shape);
+    const int64_t wave =
+        static_cast<int64_t>(fused_capacity<S>().resident) * sms * S::rows;
+    for (int64_t nodes = wave; wave > 0 && nodes < max_nodes; nodes += wave) {
+      if (nodes > latency_nodes) {
+        add(nodes);
+      }
+    }
+    return false;
+  });
+  // The per-layer kernels take the small tile up to the run size at which its
+  // grid reaches four and a half CTAs per multiprocessor (dispatch_tile), and
+  // the large tile beyond it, on each GEMM of the network.
+  for (const int64_t columns : {width, din}) {
+    const int64_t small_limit =
+        SmallTile::rows * (9 * sms / (2 * ceil_div(columns, SmallTile::cols)));
+    add(small_limit);
+    const auto add_tile_waves = [&](auto tile, int64_t from, int64_t to) {
+      using Tile = decltype(tile);
+      const int64_t wave = static_cast<int64_t>(tile_resident<Tile>()) * sms;
+      const int64_t tiles = ceil_div(columns, Tile::cols);
+      for (int64_t waves = 1; wave > 0; ++waves) {
+        const int64_t nodes = Tile::rows * (waves * wave / tiles);
+        if (nodes >= to) {
+          break;
+        }
+        if (nodes > from) {
+          add(nodes);
+        }
+      }
+    };
+    add_tile_waves(SmallTile{}, 0, small_limit);
+    add_tile_waves(LargeTile{}, small_limit, max_nodes);
+  }
+  bounds.insert(max_nodes);
+  return {bounds.begin(), bounds.end()};
+}
+
+}  // namespace
+
 TORCH_LIBRARY_FRAGMENT(deepmd, m) {
   m.impl("graph_fitting", torch::kCUDA, &graph_fitting);
   m.impl("graph_fitting_backward", torch::kCUDA, &graph_fitting_backward);
   m.impl("graph_fitting_energy_gradient", torch::kCUDA,
          &graph_fitting_energy_gradient);
+  m.def("graph_fitting_route_fingerprint(int device) -> int[]",
+        &graph_fitting_route_fingerprint);
+  m.def(
+      "graph_fitting_route_choices(int device, int width, int run_nodes) "
+      "-> int[]",
+      &graph_fitting_route_choices);
+  m.def(
+      "graph_fitting_route_bands(int device, int width, int din, "
+      "int max_nodes) -> int[]",
+      &graph_fitting_route_bands);
+  m.def("graph_fitting_route_rule(Tensor[] ws, int run_nodes) -> int");
+  m.impl("graph_fitting_route_rule", torch::kCUDA, &graph_fitting_route_rule);
+  m.def(
+      "graph_fitting_route_resolve(Tensor[] ws, int run_nodes, int[] table) "
+      "-> int");
+  m.impl("graph_fitting_route_resolve", torch::kCUDA,
+         &graph_fitting_route_resolve);
 }

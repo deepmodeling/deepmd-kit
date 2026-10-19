@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "../graph_ops.h"
-#include "../launch_overrides.h"
 #include "graph_compress_launch.h"
 
 namespace {
@@ -76,19 +75,12 @@ Dimensions dimensions_for(int lmax) {
   }
 }
 
-/// Whether ``bytes`` of streamed edge data exceed the L2 cache of the current
-/// device.
-bool exceeds_l2(long bytes) {
-  return bytes > at::cuda::getCurrentDeviceProperties()->l2CacheSize;
-}
-
 /// Whether the edge scans prefetch the bond vectors of a canonical graph whose
-/// edge storage holds `bytes` of them: when they exceed the L2 cache, as those
-/// of a graph that fills the storage then stream from DRAM, or as the
-/// `DP_DPA4C_BOND_PREFETCH` override (launch_overrides.h) sets it.
+/// edge storage holds `bytes` of them: when they exceed the L2 cache of the
+/// current device, as those of a graph that fills the storage then stream from
+/// DRAM.
 bool prefetches_bonds(long bytes) {
-  static const long forced = launch_override("DP_DPA4C_BOND_PREFETCH", {0, 1});
-  return forced >= 0 ? forced == 1 : exceeds_l2(bytes);
+  return bytes > at::cuda::getCurrentDeviceProperties()->l2CacheSize;
 }
 
 Dimensions profile_dimensions(int channels, int lmax, bool has_spin) {
@@ -594,16 +586,13 @@ const float* windowed_radii(const Arguments& arguments) {
 /// Bitmap of the node types of `words` for a launch that its slotted scans
 /// may serve: one whose types, the padding type included, the bitmap covers,
 /// of at most `kFoldedModes` radial modes, whose descriptor carries modes or
-/// a low-rank table for the slots to hold, unless the `DP_DPA4C_TYPE_SLOTS`
-/// override (launch_overrides.h) turns the slotted scans off. Null for every
-/// other launch, whose systems the other kernels of the profile scan.
+/// a low-rank table for the slots to hold. Null for every other launch, whose
+/// systems the other kernels of the profile scan.
 const unsigned* present_types(const Arguments& arguments,
                               const NodeTypeWords* words) {
-  static const bool disabled = launch_override("DP_DPA4C_TYPE_SLOTS", {0}) == 0;
   const bool slotted_features =
       arguments.radial_modes > 0 || arguments.basis_table != nullptr;
-  return !disabled && slotted_features &&
-                 arguments.type_count <= 32 * kTypeWords &&
+  return slotted_features && arguments.type_count <= 32 * kTypeWords &&
                  arguments.radial_modes <= kFoldedModes
              ? words->type_present
              : nullptr;
@@ -1400,8 +1389,8 @@ int epilogue_blocks(long node_count) {
 //
 // Every reduction has a fixed order for a given node count and kernel
 // configuration, so an evaluation is reproducible bit for bit on one device;
-// the configuration follows from the device (launch_overrides.h), so another
-// device may differ in the last bits.
+// the configuration follows from the device, so another device may differ in
+// the last bits.
 //
 // The frame counts ``n_node`` sum to at most the node count, and ``n_local``
 // does not exceed them; nodes past their sum belong to no frame and enter no
@@ -1416,47 +1405,49 @@ std::tuple<torch::Tensor,
            torch::Tensor,
            torch::Tensor,
            torch::Tensor>
-dpa4c_canonical_compress_energy_force(torch::Tensor edge_vec,
-                                      torch::Tensor source,
-                                      torch::Tensor destination_row_ptr,
-                                      torch::Tensor source_row_ptr,
-                                      torch::Tensor source_order,
-                                      torch::Tensor n_node,
-                                      torch::Tensor n_local,
-                                      torch::Tensor atype,
-                                      torch::Tensor table,
-                                      torch::Tensor basis_table,
-                                      torch::Tensor basis_matrix,
-                                      torch::Tensor pair_film,
-                                      torch::Tensor pair_mixing,
-                                      torch::Tensor type_embedding,
-                                      torch::Tensor readout_matrices,
-                                      torch::Tensor coupling_meta,
-                                      torch::Tensor coupling_entry,
-                                      torch::Tensor coupling_value,
-                                      torch::Tensor output_mean,
-                                      torch::Tensor output_inv_std,
-                                      torch::Tensor spin,
-                                      torch::Tensor spin_pair,
-                                      torch::Tensor spin_type,
-                                      torch::Tensor contact_radius,
-                                      int64_t lmax,
-                                      double table_stride,
-                                      double table_max,
-                                      double rcut,
-                                      double eps,
-                                      double degree_floor,
-                                      double f_inner,
-                                      double f_outer,
-                                      std::vector<torch::Tensor> ws,
-                                      std::vector<torch::Tensor> bs,
-                                      std::vector<int64_t> resnets,
-                                      torch::Tensor w_head,
-                                      torch::Tensor b_head,
-                                      torch::Tensor bias_atom_e,
-                                      int64_t act,
-                                      int64_t tile,
-                                      torch::Tensor pair_table) {
+dpa4c_canonical_compress_energy_force(
+    torch::Tensor edge_vec,
+    torch::Tensor source,
+    torch::Tensor destination_row_ptr,
+    torch::Tensor source_row_ptr,
+    torch::Tensor source_order,
+    torch::Tensor n_node,
+    torch::Tensor n_local,
+    torch::Tensor atype,
+    torch::Tensor table,
+    torch::Tensor basis_table,
+    torch::Tensor basis_matrix,
+    torch::Tensor pair_film,
+    torch::Tensor pair_mixing,
+    torch::Tensor type_embedding,
+    torch::Tensor readout_matrices,
+    torch::Tensor coupling_meta,
+    torch::Tensor coupling_entry,
+    torch::Tensor coupling_value,
+    torch::Tensor output_mean,
+    torch::Tensor output_inv_std,
+    torch::Tensor spin,
+    torch::Tensor spin_pair,
+    torch::Tensor spin_type,
+    torch::Tensor contact_radius,
+    int64_t lmax,
+    double table_stride,
+    double table_max,
+    double rcut,
+    double eps,
+    double degree_floor,
+    double f_inner,
+    double f_outer,
+    std::vector<torch::Tensor> ws,
+    std::vector<torch::Tensor> bs,
+    std::vector<int64_t> resnets,
+    torch::Tensor w_head,
+    torch::Tensor b_head,
+    torch::Tensor bias_atom_e,
+    int64_t act,
+    int64_t tile,
+    torch::Tensor pair_table,
+    std::optional<std::vector<int64_t>> fitting_routes) {
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_canonical_compress_energy_force: edge_vec must be a CUDA "
               "tensor");
@@ -1594,19 +1585,32 @@ dpa4c_canonical_compress_energy_force(torch::Tensor edge_vec,
   auto descriptor = torch::empty({run, widths.output_width}, f32);
   auto state = torch::empty({run, widths.moment_width + 2}, f32);
   auto saved = torch::empty({run * plan.saved_width()}, f32);
-  // A fitting that the fused network serves needs only the transposed
-  // weights besides the saved pre-activations; the per-layer kernels need
-  // the activation ping-pong instead.
-  const bool fused_fitting = fitting_fused_serves(plan, ws, run);
+  // The full runs and the tail run each take the fitting route of their own
+  // size; an absent table, like an empty one, leaves both to the rules. A
+  // route of the fused network needs only the transposed weights besides the
+  // saved pre-activations; the per-layer kernels need the activation
+  // ping-pong, sized for the largest run that takes them.
+  const std::vector<int64_t> routes =
+      std::move(fitting_routes).value_or(std::vector<int64_t>{});
+  const long tail = node_count % run;
+  const int64_t full_route = fitting_route(plan, ws, run, routes);
+  const int64_t tail_route =
+      tail > 0 ? fitting_route(plan, ws, tail, routes) : full_route;
+  const long full_count = node_count / run;
+  const long per_layer_nodes =
+      std::max(full_count > 0 && full_route == kFittingPerLayer ? run : 0L,
+               tail > 0 && tail_route == kFittingPerLayer ? tail : 0L);
   torch::Tensor transposed;
   torch::Tensor scratch;
   float* slot[2] = {nullptr, nullptr};
-  if (fused_fitting) {
+  if ((full_count > 0 && full_route != kFittingPerLayer) ||
+      (tail > 0 && tail_route != kFittingPerLayer)) {
     transposed = torch::empty({fitting_fused_transposed_floats(ws)}, f32);
     fitting_fused_transpose(stream, plan, ws, transposed.data_ptr<float>());
-  } else {
+  }
+  if (per_layer_nodes > 0) {
     const int slots = plan.n_layer > 1 ? 2 : 1;
-    scratch = torch::empty({slots, run, plan.width_max}, f32);
+    scratch = torch::empty({slots, per_layer_nodes, plan.width_max}, f32);
     slot[0] = scratch[0].data_ptr<float>();
     slot[1] = slots > 1 ? scratch[1].data_ptr<float>() : slot[0];
   }
@@ -1659,13 +1663,15 @@ dpa4c_canonical_compress_energy_force(torch::Tensor edge_vec,
     dispatch(channels, false, arguments, stream);
 
     // The cotangent replaces the descriptor, which the run no longer needs.
-    if (fused_fitting) {
+    const int64_t route = count == run ? full_route : tail_route;
+    if (route != kFittingPerLayer) {
       fitting_energy_gradient_range(
           stream, plan, descriptor.data_ptr<float>(), widths.output_width,
           node_type.data_ptr<long>() + begin, ws, bs, resnets, w_head, b_head,
           bias_atom_e, act, transposed.data_ptr<float>(),
           seed.data_ptr<double>() + begin, count, saved.data_ptr<float>(),
-          raw_energy.data_ptr<double>() + begin, descriptor.data_ptr<float>());
+          raw_energy.data_ptr<double>() + begin, descriptor.data_ptr<float>(),
+          route);
     } else {
       fitting_forward_range(
           stream, plan, descriptor.data_ptr<float>(), widths.output_width,

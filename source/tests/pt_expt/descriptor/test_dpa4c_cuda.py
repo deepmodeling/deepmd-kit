@@ -3,7 +3,6 @@
 
 import dataclasses
 import functools
-import hashlib
 import json
 import math
 import os
@@ -11,7 +10,9 @@ import pathlib
 import re
 import subprocess
 import sys
+import types
 from collections.abc import (
+    Callable,
     Sequence,
 )
 from typing import (
@@ -77,12 +78,6 @@ _WINDOW = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.6}
 #: Factor on the mode-mixing columns of the output layer of the pair encoder of
 #: every test descriptor (see `_strengthen_mode_mixing`).
 _MIXING_GAIN = 2000.0
-
-#: Whether the operator library of this process derives its slotted scans: the
-#: `DP_DPA4C_TYPE_SLOTS` override, which the library reads from the
-#: environment, turns them off. The assertions about the scans that a system
-#: takes follow from it.
-_SLOTS_DERIVED = os.environ.get("DP_DPA4C_TYPE_SLOTS", "") in ("", "auto")
 
 
 def _strengthen_mode_mixing(descriptor: DescrptDPA4C) -> None:
@@ -1036,8 +1031,7 @@ def test_fused_slotted_scans_match_the_reference(
     low-rank table of a 32-function basis, which the slotted scans read as the
     single-type scans do, sums other terms: its forces differ from those of the
     same descriptor without the basis in the last bits, which shows that the
-    slotted low-rank scans ran. Under the ``DP_DPA4C_TYPE_SLOTS=0`` override
-    both descriptors scan pairwise and follow the reference alone.
+    slotted low-rank scans ran.
     """
     multiprocessors = torch.cuda.get_device_properties("cuda").multi_processor_count
     node_count = {
@@ -1074,8 +1068,7 @@ def test_fused_slotted_scans_match_the_reference(
             {**artifacts, "basis_table": empty, "basis_matrix": empty}
         )
         direct = check()
-        if _SLOTS_DERIVED:
-            assert not torch.equal(slotted[2], direct[2])
+        assert not torch.equal(slotted[2], direct[2])
 
 
 @_GPU
@@ -1113,8 +1106,7 @@ def test_systems_of_a_few_types_take_the_slotted_scans(
     apply the pair coefficients of each slot to reduced sums, so their forces
     differ from the pairwise ones in the last bits. A descriptor without radial
     modes and without a low-rank table has nothing to slot and scans pairwise
-    either way, as every descriptor does under the ``DP_DPA4C_TYPE_SLOTS=0``
-    override: its forces agree bit for bit.
+    either way: its forces agree bit for bit.
     """
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         dpa4c_canonical_compress_energy_force,
@@ -1176,7 +1168,7 @@ def test_systems_of_a_few_types_take_the_slotted_scans(
     )
     assert not slotted[2][nodes:].any()
     assert not pairwise[2][nodes:].any()
-    slots = (radial_modes > 0 or low_rank) and _SLOTS_DERIVED
+    slots = radial_modes > 0 or low_rank
     assert torch.equal(slotted[2][:nodes], pairwise[2][:nodes]) is not slots
 
 
@@ -1211,18 +1203,14 @@ def _edge_scans(trace: Any) -> list[tuple[str, int, int, int, float]]:
     return scans
 
 
-#: The node backward in a kernel trace: its lanes per node group follow the
-#: spin flag among its template arguments.
-_NODE_BACKWARD = re.compile(r"node_backward_kernel<\d+, \d+, (?:true|false), (\d+)>")
+def _run_in_process(call: str) -> Any:
+    """Return the result of ``call`` in a fresh Python process.
 
-
-def _run_in_process(call: str, name: str, value: str) -> Any:
-    """Return the result of ``call`` in a process whose variable ``name`` is ``value``.
-
-    The operator library reads its launch overrides once per process, so a
-    check under an override runs in a process of its own, which imports this
-    module and evaluates ``call``, an expression of its names whose result
-    passes through JSON.
+    A check that reads from a CUDA kernel trace which kernels ran evaluates in
+    a process of its own: late in a long process, CUPTI can stop delivering the
+    kernel records, and the trace then shows the launch calls without the
+    kernels. The process imports this module and evaluates ``call``, an
+    expression of its names whose result passes through JSON.
     """
     # The module imports from its package, so the process finds it by its
     # name from the directory above its top package.
@@ -1234,11 +1222,7 @@ def _run_in_process(call: str, name: str, value: str) -> Any:
         f"print('result:', json.dumps(module.{call}))\n"
     )
     result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        env={**os.environ, name: value},
-        check=False,
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stdout + "\n" + result.stderr
     (report,) = [
@@ -1247,23 +1231,29 @@ def _run_in_process(call: str, name: str, value: str) -> Any:
     return json.loads(report.removeprefix("result:"))
 
 
-def _check_fused_scans_in_process(
+#: Atom counts of the systems of `_row_split_sweep_in_process`: doubling from
+#: one small enough for every edge scan to share its rows among eight warps on
+#: any device.
+_SWEEP_NODE_COUNTS = tuple(8 << k for k in range(13))
+
+
+def _row_split_sweep_in_process(
     channels: int,
     lmax: int,
     radial_modes: int,
     rank: int,
     spin: bool,
     types: tuple[int, ...],
-) -> dict[str, list]:
-    """Compare the fused operator with its CPU reference on a system of a few types.
+) -> list[list]:
+    """Compare the fused operator with its CPU reference on systems of doubling size.
 
-    The 40-atom system, whose atoms cycle through ``types`` of a descriptor of
-    nine types, shares its rows among the warps of a block, as many as the
-    launch overrides of the calling process select. A positive ``rank``
+    The systems of `_SWEEP_NODE_COUNTS`, at the density of the 40-atom system
+    and with atoms that cycle through ``types`` of a descriptor of nine types,
+    run until every edge scan takes one warp per row. A positive ``rank``
     confines the scalar-only channels to the span of that many functions, so
-    that the compression adopts the low-rank table. Returns the kernels that
-    the comparison launched: its edge scans (see `_edge_scans`) and the lanes
-    per node group of its node backward.
+    that the compression adopts the low-rank table. Returns, per system, its
+    atom count and the sorted direction, scan and warps per row of every edge
+    scan that ran (see `_edge_scans`).
     """
     from torch.profiler import (
         ProfilerActivity,
@@ -1277,109 +1267,140 @@ def _check_fused_scans_in_process(
     artifacts = build_compression_artifacts(descriptor)
     assert (artifacts["basis_table"].numel() > 0) is bool(rank)
     descriptor._set_compression(artifacts)
-    with (
-        pytest.MonkeyPatch.context() as patch,
-        profile(activities=[ProfilerActivity.CUDA]) as trace,
-    ):
-        _check_canonical_against_reference(
-            descriptor, False, patch, single_type=False, types=types
+    sweep = []
+    for node_count in _SWEEP_NODE_COUNTS:
+        with (
+            pytest.MonkeyPatch.context() as patch,
+            profile(activities=[ProfilerActivity.CUDA]) as trace,
+        ):
+            _check_canonical_against_reference(
+                descriptor,
+                False,
+                patch,
+                node_count=node_count,
+                side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+                single_type=False,
+                types=types,
+            )
+        scans = sorted(
+            {
+                (direction, scan, split)
+                for direction, _, split, scan, _ in _edge_scans(trace)
+            }
         )
-    lanes = {
-        int(match.group(1))
-        for event in trace.events()
-        if (match := _NODE_BACKWARD.search(event.name)) is not None
-    }
-    return {"edge_scans": _edge_scans(trace), "node_lanes": sorted(lanes)}
+        assert scans, f"the trace of {node_count} atoms records no edge scan"
+        sweep.append([node_count, scans])
+        if all(split == 1 for _, _, split in scans):
+            return sweep
+    raise AssertionError(
+        f"an edge scan still shares its rows at {_SWEEP_NODE_COUNTS[-1]} atoms"
+    )
 
 
 _FEW = (0, 1)
 _SIX = (0, 2, 3, 5, 6, 8)
+_NINE = tuple(range(9))
 
 
 @_GPU
 @pytest.mark.parametrize(
-    ("channels", "lmax", "radial_modes", "rank", "spin", "types", "override"),
+    ("channels", "lmax", "radial_modes", "rank", "spin", "types"),
     [
-        *(
-            (*profile, override)
-            for profile in (
-                (64, 2, 0, 32, False, _FEW),
-                (64, 3, 4, 32, False, _FEW),
-                (128, 3, 4, 32, False, _FEW),
-                (64, 3, 4, 0, False, _FEW),
-                (64, 3, 4, 0, True, _FEW),
-                (128, 3, 4, 0, True, _FEW),
-                (64, 2, 0, 32, False, _SIX),
-                (64, 3, 4, 32, False, _SIX),
-                (128, 3, 4, 32, False, _SIX),
-                (64, 3, 4, 0, False, _SIX),
-                (64, 3, 4, 0, True, _SIX),
-            )
-            for override in ("DP_DPA4C_ROW_SPLIT=2", "DP_DPA4C_ROW_SPLIT=4")
-        ),
-        (64, 3, 4, 32, False, _SIX, "DP_DPA4C_TYPE_SLOTS=0"),
-        (64, 3, 4, 0, True, _FEW, "DP_DPA4C_TYPE_SLOTS=0"),
-        *(
-            (64, 3, 4, 0, spin, _FEW, f"DP_DPA4C_NODE_LANES={lanes}")
-            for spin in (False, True)
-            for lanes in (8, 16)
-        ),
+        (64, 2, 0, 32, False, _FEW),
+        (64, 3, 4, 32, False, _FEW),
+        (128, 3, 4, 32, False, _FEW),
+        (64, 3, 4, 0, False, _FEW),
+        (64, 3, 4, 0, True, _FEW),
+        (128, 3, 4, 0, True, _FEW),
+        (64, 2, 0, 32, False, _SIX),
+        (64, 3, 4, 32, False, _SIX),
+        (128, 3, 4, 32, False, _SIX),
+        (64, 3, 4, 0, False, _SIX),
+        (64, 3, 4, 0, True, _SIX),
+        (64, 3, 4, 32, False, _NINE),
+        (64, 3, 4, 0, True, _NINE),
     ],
 )
-def test_overridden_scans_match_the_reference(
+def test_rows_shared_among_warps_match_the_reference(
     channels: int,
     lmax: int,
     radial_modes: int,
     rank: int,
     spin: bool,
     types: tuple[int, ...],
-    override: str,
 ) -> None:
-    """The scans that the launch overrides select follow the reference.
+    """Rows shared among two, four or eight warps follow the reference.
 
-    Rows shared among two or four warps (``DP_DPA4C_ROW_SPLIT``) merge the slot
-    sums of the warps of a row, in the slotted scans of four slots of a system
-    of two types and in those of eight slots of a system of six, but for the
-    edge backward of a descriptor without radial modes, which scans six types
-    pairwise; ``DP_DPA4C_TYPE_SLOTS=0`` gives the pairwise scans the systems of
-    a few types, and node groups of eight or sixteen lanes
-    (``DP_DPA4C_NODE_LANES``) sum the per-node terms of the node backward in
-    another order. The check runs in a process of its own (`_run_in_process`),
-    whose kernel trace shows the choice that the override names: every edge
-    scan shares its rows among the warps that ``DP_DPA4C_ROW_SPLIT`` names, no
-    slotted scan launches under ``DP_DPA4C_TYPE_SLOTS=0``, and the node
-    backward runs node groups of the lanes that ``DP_DPA4C_NODE_LANES`` names.
-    The row split and the node-group width are each overridden with two
-    values, of which the 40-atom system takes at most one without the
-    override, so one of the two cases at least shows that the override took
-    effect on any device.
+    An edge scan of a canonical system shares each row among the most of 1, 2,
+    4 and 8 warps whose warps fit in one wave of its resident warps, so once a
+    system is too large for eight warps per row, every doubling of its atoms
+    halves the warps per row. The systems of doubling size of
+    `_row_split_sweep_in_process`, in a process of their own
+    (`_run_in_process`), whose kernel traces show the warps per row of every
+    edge scan, therefore take, in every scan of both directions, each split
+    from that of the smallest system down to one warp per row, and every system
+    follows the reference. The shared rows merge the slot sums of the warps of
+    a row in the slotted scans of four slots of a system of two types and in
+    those of eight slots of a system of six, except for the edge backward of a
+    descriptor without radial modes, which scans six types pairwise, as every
+    profile scans the systems of nine types from sixteen atoms on; the
+    smallest system of that sweep holds eight of the nine types.
     """
-    name, value = override.split("=")
-    kernels = _run_in_process(
-        f"_check_fused_scans_in_process({channels}, {lmax}, {radial_modes}, "
-        f"{rank}, {spin}, {types!r})",
-        name,
-        value,
+    sweep = _run_in_process(
+        f"_row_split_sweep_in_process({channels}, {lmax}, {radial_modes}, "
+        f"{rank}, {spin}, {types!r})"
     )
-    scans = kernels["edge_scans"]
-    assert scans
-    if name == "DP_DPA4C_ROW_SPLIT":
-        assert {split for _, _, split, _, _ in scans} == {int(value)}
-    elif name == "DP_DPA4C_NODE_LANES":
-        assert kernels["node_lanes"] == [int(value)]
-    else:
-        assert not {scan for _, _, _, scan, _ in scans} & _SLOTTED_SCANS
+    splits: dict[tuple[str, int], list[int]] = {}
+    for _, scans in sweep:
+        for direction, scan, split in scans:
+            splits.setdefault((direction, scan), []).append(split)
+    for kernel, taken in splits.items():
+        assert len(taken) == len(sweep), kernel
+        assert taken[0] > 1, kernel
+        assert taken == sorted(taken, reverse=True), kernel
+        assert set(taken) == {taken[0] >> k for k in range(taken[0].bit_length())}, (
+            kernel
+        )
 
 
-def _fused_output_digest_in_process(spin: bool) -> str:
-    """Return the SHA-256 digest of the fused outputs on systems of three schedules.
+def _padded_storage(graph: Any, slots: int) -> Any:
+    """Return ``graph`` with ``slots`` guard slots past its edge storage.
 
-    A descriptor of 128 channels, degree three, four radial modes and nine
-    types, with the low-rank table when it is spin-free, evaluates systems of
-    the six types of `_SIX`: one of 40 atoms, whose rows the warps of a block
-    share, one of more rows than half a wave of the warps of independent rows,
-    which take a warp each, and one of four waves of single 24-row blocks per
-    multiprocessor, which takes the co-scheduled blocks.
+    The guard slots hold zero bond vectors and the identity entries of the
+    source order, and belong to no row of either CSR, as the guard slots of a
+    storage that a candidate count sizes do.
+    """
+    storage = graph.source.shape[0]
+    order = torch.arange(
+        storage, storage + slots, dtype=torch.int64, device=graph.source.device
+    )
+    return dataclasses.replace(
+        graph,
+        source=torch.cat([graph.source, graph.source.new_zeros(slots)]),
+        edge_vec=torch.cat([graph.edge_vec, graph.edge_vec.new_zeros(slots, 3)]),
+        source_order=torch.cat(
+            [graph.source_order, order.to(graph.source_order.dtype)]
+        ),
+    )
+
+
+@_GPU
+@pytest.mark.parametrize("spin", [False, True])
+def test_bond_prefetch_leaves_every_output_unchanged(spin: bool) -> None:
+    """The bond prefetch leaves every output of the fused operator unchanged.
+
+    The edge scans of a canonical system request the bond vectors of every row,
+    and the slotted scans its source indices, into L2 when the bond vectors of
+    the edge storage exceed the L2 cache. A descriptor of 128 channels, degree
+    three, four radial modes and nine types, with the low-rank table when it is
+    spin-free, evaluates systems of the six types of `_SIX`: one of 40 atoms,
+    whose rows the warps of a block share, one of more rows than half a wave of
+    the warps of independent rows, which take a warp each, and one of four
+    waves of single 24-row blocks per multiprocessor, which takes the
+    co-scheduled blocks. Each system evaluates on its own edge storage, whose
+    bond vectors fit in L2, and on the same storage with guard slots that carry
+    it past the L2 size (`_padded_storage`), and every output of the two agrees
+    bit for bit.
     """
     from deepmd.pt_expt.kernels.dpa4c.canonical import (
         dpa4c_canonical_compress_energy_force,
@@ -1394,8 +1415,11 @@ def _fused_output_digest_in_process(spin: bool) -> str:
         _restrict_scalar_rank(descriptor, rank=32)
     descriptor._set_compression(build_compression_artifacts(descriptor))
     fitting = _energy_fitting(descriptor)
-    multiprocessors = torch.cuda.get_device_properties("cuda").multi_processor_count
-    digest = hashlib.sha256()
+    properties = torch.cuda.get_device_properties("cuda")
+    multiprocessors = properties.multi_processor_count
+    # Bytes of the fp32 bond vector of one storage slot.
+    slot_bytes = 3 * 4
+    prefetch_slots = properties.L2_cache_size // slot_bytes + 1
     for node_count in (40, 16 * multiprocessors + 17, 4 * 24 * multiprocessors + 17):
         neighbor_graph, atype = _build_graph(
             descriptor,
@@ -1407,6 +1431,8 @@ def _fused_output_digest_in_process(spin: bool) -> str:
         graph = canonical_graph_from_neighbor_graph(
             dataclasses.replace(neighbor_graph, n_local=neighbor_graph.n_node)
         )
+        storage = graph.source.shape[0]
+        assert storage < prefetch_slots, node_count
         moments = None
         if spin:
             generator = torch.Generator(device="cuda").manual_seed(13)
@@ -1417,34 +1443,14 @@ def _fused_output_digest_in_process(spin: bool) -> str:
                 device="cuda",
                 generator=generator,
             )
-        outputs = dpa4c_canonical_compress_energy_force(
-            descriptor, fitting, graph, atype, fitting.bias_atom_e[:, 0], moments
-        )
-        for output in outputs:
-            digest.update(output.detach().cpu().numpy().tobytes())
-    return digest.hexdigest()
-
-
-@_GPU
-@pytest.mark.parametrize("spin", [False, True])
-def test_bond_prefetch_leaves_every_output_unchanged(spin: bool) -> None:
-    """The bond prefetch leaves every output of the fused operator unchanged.
-
-    The edge scans of a canonical system request the bond vectors of every row,
-    and the slotted scans its source indices, into L2 when the bond vectors
-    exceed the L2 cache; the ``DP_DPA4C_BOND_PREFETCH`` override turns the
-    requests off or on for every system. A process of each setting evaluates
-    the systems of `_fused_output_digest_in_process`, in which the first warp
-    of a shared row requests the lines of the row, and both return the same
-    bits.
-    """
-    digests = {
-        _run_in_process(
-            f"_fused_output_digest_in_process({spin})", "DP_DPA4C_BOND_PREFETCH", value
-        )
-        for value in ("0", "1")
-    }
-    assert len(digests) == 1
+        outputs = [
+            dpa4c_canonical_compress_energy_force(
+                descriptor, fitting, edges, atype, fitting.bias_atom_e[:, 0], moments
+            )
+            for edges in (graph, _padded_storage(graph, prefetch_slots - storage))
+        ]
+        for index, (compact, padded) in enumerate(zip(*outputs, strict=True)):
+            assert torch.equal(compact, padded), (node_count, index)
 
 
 @_GPU
@@ -2599,17 +2605,15 @@ def test_coscheduled_scans_match_the_reference(
     one type, whose launches also start the kernels of the other, whose blocks
     retire at once. A spin profile without radial modes has nothing to slot and
     scans its system of two types pairwise, in the kernels of the single-type
-    scans, as every profile does under the ``DP_DPA4C_TYPE_SLOTS=0`` override.
-    The node count gives every multiprocessor two blocks of the widest
-    co-scheduled shape on any device, so only the ``DP_DPA4C_COSCHEDULE=0``
-    override, which turns the blocks off, skips the test.
+    scans. The node count gives every multiprocessor two blocks of the widest
+    co-scheduled shape on any device. The comparison and its kernel trace run
+    in a process of their own (`_run_in_process`).
     """
-    if os.environ.get("DP_DPA4C_COSCHEDULE") == "0":
-        pytest.skip("DP_DPA4C_COSCHEDULE=0 turns the co-scheduled blocks off")
-    scans = _device_filling_scans(single_type, spin)
+    scans = _run_in_process(f"_device_filling_scans({single_type}, {spin})")
+    assert scans
     # Blocks of more than the four independent rows of a slotted or a spin
     # scan are co-scheduled ones.
-    slotted = not (single_type or spin) and _SLOTS_DERIVED
+    slotted = not (single_type or spin)
     serving = _SLOTTED_SCANS if slotted else _SINGLE_TYPE_SCANS
     for direction in ("forward", "edge_backward"):
         _, rows, _, scan, _ = max(
@@ -2618,23 +2622,6 @@ def test_coscheduled_scans_match_the_reference(
         )
         assert rows > 4, direction
         assert scan in serving, direction
-
-
-@_GPU
-@pytest.mark.parametrize("spin", [False, True])
-def test_coscheduling_override_turns_the_blocks_off(spin: bool) -> None:
-    """``DP_DPA4C_COSCHEDULE=0`` scans a device-filling system in independent rows.
-
-    The system of two types of `_device_filling_scans` follows the reference in
-    a process with the override (`_run_in_process`), and none of its edge
-    scans runs blocks of more than the four independent rows of a slotted or a
-    spin scan.
-    """
-    scans = _run_in_process(
-        f"_device_filling_scans(False, {spin})", "DP_DPA4C_COSCHEDULE", "0"
-    )
-    assert scans
-    assert max(rows for _, rows, _, _, _ in scans) <= 4
 
 
 @_GPU
@@ -2854,10 +2841,13 @@ def test_out_of_range_forces_mark_their_frame(
     )
     reference = [_to_cpu(argument) for argument in arguments]
 
+    head_slot = [
+        argument.name for argument in operator.default._schema.arguments
+    ].index("w_head")
+
     def evaluate(values: list[Any], scale: float) -> tuple[torch.Tensor, ...]:
-        # The head weight is the sixth argument from the end of the schema.
         scaled = list(values)
-        scaled[-6] = values[-6] * scale
+        scaled[head_slot] = values[head_slot] * scale
         return operator(*scaled)
 
     def threshold_of(values: list[Any]) -> float:
@@ -3407,8 +3397,7 @@ def test_spin_systems_of_a_few_types_take_the_slotted_scans(
     rows of both take a warp each. The slotted scans apply the mode mixing of
     each slot to reduced sums, so their forces and magnetic forces differ from
     the pairwise ones in the last bits. A descriptor without radial modes has
-    nothing to slot and scans pairwise either way, as every descriptor does
-    under the ``DP_DPA4C_TYPE_SLOTS=0`` override: its outputs agree bit for
+    nothing to slot and scans pairwise either way: its outputs agree bit for
     bit. The forces of the system of one type follow the CPU reference of the
     fused operator.
     """
@@ -3479,7 +3468,6 @@ def test_spin_systems_of_a_few_types_take_the_slotted_scans(
     torch.testing.assert_close(
         slotted[5][:nodes], pairwise[5][:nodes], atol=2e-5, rtol=2e-5
     )
-    slots = slots and _SLOTS_DERIVED
     assert torch.equal(slotted[2][:nodes], pairwise[2][:nodes]) is not slots
     assert torch.equal(slotted[5][:nodes], pairwise[5][:nodes]) is not slots
 
@@ -3662,3 +3650,593 @@ def test_registered_autograd_refuses_the_magnetic_moment() -> None:
     )
     with pytest.raises(RuntimeError, match="cannot differentiate its magnetic"):
         output.sum().backward()
+
+
+# === Fitting routes of the fused energy-force operator ===
+
+
+def _route_fitting(descriptor: DescrptDPA4C, width: int) -> Any:
+    """Return a three-layer fp32 SiLU energy fitting of hidden width ``width``."""
+    from deepmd.pt_expt.fitting.ener_fitting import (
+        EnergyFittingNet,
+    )
+
+    return (
+        EnergyFittingNet(
+            ntypes=descriptor.get_ntypes(),
+            dim_descrpt=descriptor.get_dim_out(),
+            neuron=[width] * 3,
+            resnet_dt=False,
+            activation_function="silu",
+            precision="float32",
+            mixed_types=True,
+            seed=31,
+        )
+        .cuda()
+        .eval()
+    )
+
+
+def _route_case(node_count: int) -> tuple[DescrptDPA4C, Any, torch.Tensor]:
+    """Return a compressed descriptor and the canonical graph of ``node_count`` atoms."""
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    descriptor = _build_descriptor(8, 2, 0)
+    descriptor._set_compression(build_compression_artifacts(descriptor))
+    neighbor_graph, atype = _build_graph(
+        descriptor,
+        canonical=True,
+        node_count=node_count,
+        side=5.0 * (node_count / 40) ** (1.0 / 3.0),
+    )
+    graph = canonical_graph_from_neighbor_graph(
+        dataclasses.replace(neighbor_graph, n_local=neighbor_graph.n_node)
+    )
+    return descriptor, graph, atype
+
+
+def _single_route(choice: int) -> list[int]:
+    """Return the fitting-route table that names ``choice`` for every run size."""
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        ROUTE_TABLE_MAGIC,
+    )
+
+    fingerprint = torch.ops.deepmd.graph_fitting_route_fingerprint(
+        torch.cuda.current_device()
+    )
+    return [ROUTE_TABLE_MAGIC, *fingerprint, 1, choice]
+
+
+def _fitting_kernels(call: Callable[[], Any]) -> list[str]:
+    """Return the kinds of the fitting kernels that ``call`` launches, sorted.
+
+    A trace that records no CUDA kernel at all fails the check rather than
+    reading as a route without fitting kernels.
+    """
+    from torch.profiler import (
+        ProfilerActivity,
+        profile,
+    )
+
+    with profile(activities=[ProfilerActivity.CUDA]) as trace:
+        call()
+        torch.cuda.synchronize()
+    names = [
+        event.name
+        for event in trace.events()
+        if event.device_type == torch.autograd.DeviceType.CUDA
+    ]
+    assert names, "the profiler recorded no CUDA kernel"
+    kinds = set()
+    for name in names:
+        if "fused_network_kernel" in name:
+            kinds.add("fused")
+        elif "layer_forward_kernel" in name:
+            kinds.add("per-layer")
+    return sorted(kinds)
+
+
+#: Run sizes of the route cases, in multiprocessors of the device: a run of
+#: fewer 32-node panels than multiprocessors and one of more.
+_ROUTE_RUNS = {"latency": 0.5, "throughput": 3.5}
+
+
+@_GPU
+@pytest.mark.parametrize("width", [96, 192, 256, 384])  # fused hidden width
+@pytest.mark.parametrize("run", sorted(_ROUTE_RUNS))  # run size regime
+def test_every_fitting_route_returns_the_bits_of_the_rules(
+    width: int, run: str
+) -> None:
+    """Every route of the fitting network gives the outputs of the rules bit for bit.
+
+    A route table that names the per-layer kernels or a fused shape the device
+    runs for the run size routes the network there, and every route evaluates
+    the same contractions in the same order, so all seven outputs of the
+    operator equal those of the rules, which an empty table takes.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+    )
+
+    multiprocessors = torch.cuda.get_device_properties("cuda").multi_processor_count
+    node_count = int(32 * multiprocessors * _ROUTE_RUNS[run])
+    descriptor, graph, atype = _route_case(node_count)
+    fitting = _route_fitting(descriptor, width)
+    bias = fitting.bias_atom_e[:, 0]
+    rules = dpa4c_canonical_compress_energy_force(
+        descriptor, fitting, graph, atype, bias, fitting_routes=[]
+    )
+    choices = [
+        PER_LAYER,
+        *torch.ops.deepmd.graph_fitting_route_choices(
+            torch.cuda.current_device(), width, node_count
+        ),
+    ]
+    for choice in choices:
+        routed = dpa4c_canonical_compress_energy_force(
+            descriptor,
+            fitting,
+            graph,
+            atype,
+            bias,
+            fitting_routes=_single_route(choice),
+        )
+        for name, expected, actual in zip(
+            (
+                "energy",
+                "atom_energy",
+                "force",
+                "virial",
+                "atom_virial",
+                "force_mag",
+                "mask",
+            ),
+            rules,
+            routed,
+            strict=True,
+        ):
+            assert torch.equal(expected, actual), (choice, name)
+
+
+@_GPU
+@pytest.mark.parametrize("width", [96, 192])  # fused hidden width
+def test_a_tiled_call_routes_its_runs_and_its_tail_apart(
+    width: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The full runs and the tail of a tiled call take their routes apart.
+
+    The operator routes every run of a tiled call by the run's own size, so a
+    table that splits the run sizes at 1,000 nodes sends full runs of 3.5
+    waves of panels and a tail of 100 nodes to the per-layer kernels, the
+    rules or a fused shape in each combination, and the per-layer buffers
+    serve whichever runs take those kernels. Every combination gives the
+    outputs of the untiled call under the rules bit for bit.
+    """
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+        ROUTE_TABLE_MAGIC,
+        RULES,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    device = torch.cuda.current_device()
+    multiprocessors = torch.cuda.get_device_properties(device).multi_processor_count
+    tile, tail = int(32 * multiprocessors * _ROUTE_RUNS["throughput"]), 100
+    descriptor, graph, atype = _route_case(2 * tile + tail)
+    fitting = _route_fitting(descriptor, width)
+    bias = fitting.bias_atom_e[:, 0]
+    weights = list(fitting_operator_arguments(fitting).weights)
+    fingerprint = torch.ops.deepmd.graph_fitting_route_fingerprint(device)
+
+    def run(table: list[int]) -> tuple[torch.Tensor, ...]:
+        return dpa4c_canonical_compress_energy_force(
+            descriptor, fitting, graph, atype, bias, fitting_routes=table
+        )
+
+    monkeypatch.setenv("DP_NODE_TILE", "0")
+    reference = run([])
+    monkeypatch.setenv("DP_NODE_TILE", str(tile))
+    combinations = [(PER_LAYER, RULES), (RULES, PER_LAYER), (PER_LAYER, PER_LAYER)]
+    tail_shapes = torch.ops.deepmd.graph_fitting_route_choices(device, width, tail)
+    full_shapes = torch.ops.deepmd.graph_fitting_route_choices(device, width, tile)
+    if tail_shapes and full_shapes:
+        combinations.append((tail_shapes[-1], full_shapes[0]))
+    for tail_route, full_route in combinations:
+        table = [ROUTE_TABLE_MAGIC, *fingerprint, 2, 1000, tail_route, full_route]
+        for size, route in ((tail, tail_route), (tile, full_route)):
+            if route != RULES:
+                resolved = torch.ops.deepmd.graph_fitting_route_resolve(
+                    weights, size, table
+                )
+                assert resolved == route, (size, route)
+        for actual, expected in zip(run(table), reference, strict=True):
+            assert torch.equal(actual, expected), (tail_route, full_route)
+
+
+def _route_routing_case() -> tuple[DescrptDPA4C, Any, Any, torch.Tensor]:
+    """Return the network of width 192 and a run of four waves of its panels."""
+    multiprocessors = torch.cuda.get_device_properties("cuda").multi_processor_count
+    descriptor, graph, atype = _route_case(32 * multiprocessors * 4)
+    return descriptor, _route_fitting(descriptor, 192), graph, atype
+
+
+def _route_tables() -> dict[str, list[int]]:
+    """Return the tables of the routing cases, by name."""
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+        RULES,
+    )
+
+    per_layer = _single_route(PER_LAYER)
+    foreign = list(per_layer)
+    foreign[2] += 1  # the multiprocessor count of the fingerprint
+    return {
+        "empty": [],
+        "rules": _single_route(RULES),
+        "per-layer": per_layer,
+        "foreign": foreign,
+        "malformed": per_layer[:-1],
+        "unknown shape": _single_route(0x7FFF_FFFF_FFFF),
+    }
+
+
+def _traced_routes() -> dict[str, list[str]]:
+    """Return the fitting kernels that each routing table launches, by name."""
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+
+    descriptor, fitting, graph, atype = _route_routing_case()
+    bias = fitting.bias_atom_e[:, 0]
+    return {
+        name: _fitting_kernels(
+            lambda table=table: dpa4c_canonical_compress_energy_force(
+                descriptor, fitting, graph, atype, bias, fitting_routes=table
+            )
+        )
+        for name, table in _route_tables().items()
+    }
+
+
+@_GPU
+def test_a_fitting_route_table_routes_the_network() -> None:
+    """The table decides the route; an unusable table leaves it to the rules.
+
+    At a width of 192 the rules route a run of a few waves of panels to the
+    fused kernel. A table that names the per-layer kernels routes it there; a
+    table that names the rules, one measured on a device of another
+    fingerprint, a malformed one and one that names a shape not compiled for
+    the width leave the run to the rules.
+    The routes resolve through the query of the operator, and the kernels they
+    launch, which a profiler trace in a process of its own shows, follow them.
+    """
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    _descriptor, fitting, graph, _atype = _route_routing_case()
+    weights = list(fitting_operator_arguments(fitting).weights)
+    nodes = graph.destination_row_ptr.numel() - 1
+    resolved = {
+        name: torch.ops.deepmd.graph_fitting_route_resolve(weights, nodes, table)
+        for name, table in _route_tables().items()
+    }
+    assert resolved == {
+        "empty": 0,
+        "rules": 0,
+        "per-layer": PER_LAYER,
+        "foreign": 0,
+        "malformed": 0,
+        "unknown shape": 0,
+    }
+    traced = _run_in_process("_traced_routes()")
+    assert traced == {
+        "empty": ["fused"],
+        "rules": ["fused"],
+        "per-layer": ["per-layer"],
+        "foreign": ["fused"],
+        "malformed": ["fused"],
+        "unknown shape": ["fused"],
+    }
+
+
+def _route_model(compressed: bool = True) -> Any:
+    """Return a DPA4C energy model whose fitting has a hidden width of 192."""
+    from deepmd.pt_expt.model.get_model import (
+        get_model,
+    )
+
+    model = (
+        get_model(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "dpa4c",
+                    "rcut": 4.0,
+                    "channels": 8,
+                    "lmax": 2,
+                    "n_radial": 8,
+                    "precision": "float32",
+                    "seed": 3,
+                },
+                "fitting_net": {
+                    "type": "ener",
+                    "neuron": [192, 192, 192],
+                    "activation_function": "silu",
+                    "precision": "float32",
+                    "resnet_dt": False,
+                    "seed": 3,
+                },
+            }
+        )
+        .to("cpu")
+        .eval()
+    )
+    if compressed:
+        model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    return model
+
+
+def _frozen_route_kernels(directory: str) -> dict[str, Any]:
+    """Freeze the routing model under two held tables; return what each archive does.
+
+    The tuner skips a network whose table it holds, so a table set beforehand
+    stands for a measured one. Each archive is frozen to ``directory`` and run
+    through AOTInductor, as a deployment runs it. Returns, for the table that
+    names the per-layer kernels and for no table, the table argument of the
+    fused operator in the exported program and the fitting kernels that the
+    archive launches.
+    """
+    from torch._inductor import (
+        aoti_load_package,
+    )
+
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        _trace_and_export,
+        deserialize_to_file,
+    )
+
+    os.environ["DP_CUDA_INFER"] = "2"
+    model = _route_model()
+    learned = model.atomic_model.fused_decomposition()[0]
+    key = fitting_routes.network_key(learned.fitting_net)
+    device = torch.device("cuda", torch.cuda.current_device())
+    fingerprint = fitting_routes._fingerprint(device)
+    multiprocessors = torch.cuda.get_device_properties(device).multi_processor_count
+    node_count = 32 * multiprocessors * 4
+    graph = fitting_routes._bulk_graph(4.0, node_count, device)
+    atype = torch.arange(node_count, device=device) % 2
+    inputs = (
+        atype,
+        graph.n_node,
+        graph.n_local,
+        graph.source,
+        graph.edge_vec,
+        graph.destination_row_ptr,
+        graph.source_row_ptr,
+        graph.source_order,
+    )
+    results = {}
+    for name, table in (
+        ("per-layer", _single_route(fitting_routes.PER_LAYER)),
+        ("rules", []),
+    ):
+        fitting_routes._ROUTE_TABLES[(fingerprint, key)] = tuple(table)
+        exported, _metadata, _model_json, _output_keys = _trace_and_export(
+            {"model": model.serialize()},
+            lower_kind="dpa4c_canonical",
+            do_atomic_virial=True,
+        )
+        # The table is the last argument of the schema; a call that leaves it
+        # to its default of no table records one argument fewer.
+        schema = torch.ops.deepmd.dpa4c_canonical_compress_energy_force.default._schema
+        literals = [
+            node.args[-1] if len(node.args) == len(schema.arguments) else None
+            for node in exported.graph_module.graph.nodes
+            if "dpa4c_canonical_compress_energy_force" in str(node.target)
+        ]
+        archive = os.path.join(directory, f"{name}.pt2")
+        deserialize_to_file(
+            archive,
+            {"model": model.serialize()},
+            do_atomic_virial=True,
+            lower_kind="dpa4c_canonical",
+            with_comm=False,
+        )
+        runner = aoti_load_package(archive)
+        results[name] = {
+            "literals": [None if v is None else [int(x) for x in v] for v in literals],
+            "kernels": _fitting_kernels(lambda runner=runner: runner(*inputs)),
+        }
+    return results
+
+
+@_GPU
+def test_the_measured_routes_reach_the_frozen_program(tmp_path: pathlib.Path) -> None:
+    """The table held for a network routes the frozen archive of the model.
+
+    The export of the compact canonical lower takes the held table as an
+    argument of the fused operator, or no table where none is held, and the
+    frozen archive, run through AOTInductor, routes the network as the table
+    names: through the per-layer kernels under a table that names them, and
+    through the fused kernel, which the rules choose for the run, without a
+    table. The archives run in a process of their own, whose profiler trace
+    shows the kernels.
+    """
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+    )
+
+    results = _run_in_process(f"_frozen_route_kernels({str(tmp_path)!r})")
+    assert results == {
+        "per-layer": {
+            "literals": [_single_route(PER_LAYER)],
+            "kernels": ["per-layer"],
+        },
+        "rules": {"literals": [None], "kernels": ["fused"]},
+    }
+
+
+@_GPU
+def test_the_route_tuner_leaves_other_models_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tuner measures nothing for a model off the fused DPA4C operator.
+
+    Nor does a freeze of a model that takes the operator measure anything for
+    a lower that does not call it.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.kernels.autotune import (
+        run_autotune,
+    )
+
+    tables: dict = {}
+    monkeypatch.setattr(fitting_routes, "_ROUTE_TABLES", tables)
+    device = torch.device("cuda", torch.cuda.current_device())
+    for model in (_route_model(compressed=False), torch.nn.Linear(2, 2)):
+        fitting_routes.tune_fitting_routes(model, 0, device)
+    run_autotune(_route_model(), device, "graph")
+    assert tables == {}
+    descriptor = _build_descriptor(8, 2, 0)
+    assert fitting_routes.fitting_routes(_route_fitting(descriptor, 96)) == []
+
+
+@_GPU
+def test_a_measured_table_names_only_its_departures_from_the_rules() -> None:
+    """A measured table leaves the rules every run size that they route as measured.
+
+    The measurement runs on the bands of the device with a stand-in for the
+    timing, under which the per-layer kernels win from a run size inside one
+    band of throughput runs to the end of the next band, and the route of the
+    rules wins at every other run size, the per-layer kernels of the smallest
+    runs among them. The table holds the rules wherever that winner is the
+    route that graph_fitting_route_rule gives, and the per-layer kernels over
+    the departure, whose start inside its band the measurement bisects for.
+    The rules and the stand-in change their route only at the probed sizes,
+    the bounds of the bands and of the departure.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    fitting = _route_fitting(_build_descriptor(8, 2, 0), 192)
+    ws = list(fitting_operator_arguments(fitting).weights)
+    device = torch.device("cuda", torch.cuda.current_device())
+    largest, block = fitting_routes.MAX_RUN_NODES, fitting_routes.BLOCK
+    bands = [
+        int(bound)
+        for bound in torch.ops.deepmd.graph_fitting_route_bands(
+            device.index, int(ws[0].shape[1]), int(ws[0].shape[0]), largest
+        )
+    ]
+    multiprocessors = torch.cuda.get_device_properties(device).multi_processor_count
+    band = next(
+        index
+        for index in range(1, len(bands) - 1)
+        if bands[index - 1] >= 32 * multiprocessors
+        and bands[index] - bands[index - 1] >= 4 * block
+    )
+    start = block * (math.ceil((bands[band - 1] + 1) / block) + 1)
+    end = bands[band + 1]
+
+    def winner(node_count: int, rule: int, choices: list[int]) -> int:
+        return fitting_routes.PER_LAYER if start < node_count <= end else rule
+
+    bounds, choices = fitting_routes._measure(
+        types.SimpleNamespace(device=device, winner=winner), ws, largest
+    )
+    probes = {1, *(size + d for size in (*bands, start, end) for d in (0, 1))}
+    for node_count in sorted(size for size in probes if size <= largest):
+        rule = int(torch.ops.deepmd.graph_fitting_route_rule(ws, node_count))
+        fastest = winner(node_count, rule, [])
+        recorded = next(
+            choice
+            for bound, choice in zip([*bounds, largest], choices, strict=True)
+            if node_count <= bound
+        )
+        expected = fitting_routes.RULES if fastest == rule else fastest
+        assert recorded == expected, node_count
+    assert fitting_routes.PER_LAYER in choices
+
+
+@_GPU
+def test_the_route_tuner_measures_a_table_that_changes_no_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The tuner holds a table of the device under which no output changes.
+
+    The routing model is measured over the run sizes of a node tile of 16,384.
+    The table carries the fingerprint of the device and increasing bounds
+    below the tile, and names on every interval the rules or a route that the
+    operator takes there. On a bulk system at the upper end of every interval,
+    the operator gives the outputs of the rules bit for bit under it.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.canonical import (
+        dpa4c_canonical_compress_energy_force,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    tables: dict = {}
+    monkeypatch.setattr(fitting_routes, "_ROUTE_TABLES", tables)
+    monkeypatch.setenv("DP_NODE_TILE", "16384")
+    device = torch.device("cuda", torch.cuda.current_device())
+    model = _route_model()
+    fitting_routes.tune_fitting_routes(model, 0, device)
+    (table,) = tables.values()
+    table = list(table)
+    fingerprint = list(fitting_routes._fingerprint(device))
+    header = 1 + len(fingerprint)
+    assert table[:header] == [fitting_routes.ROUTE_TABLE_MAGIC, *fingerprint]
+    intervals = table[header]
+    bounds = table[header + 1 : header + intervals]
+    choices = table[header + intervals :]
+    assert len(choices) == intervals
+    assert bounds == sorted(set(bounds)) and all(0 < b < 16384 for b in bounds)
+    learned = model.atomic_model.fused_decomposition()[0]
+    descriptor = learned.descriptor.to(device).eval()
+    fitting = learned.fitting_net.to(device).eval()
+    weights = list(fitting_operator_arguments(fitting).weights)
+    bias = fitting.bias_atom_e[:, 0]
+    for node_count, choice in zip([*bounds, 16384], choices, strict=True):
+        if choice != fitting_routes.RULES:
+            resolved = torch.ops.deepmd.graph_fitting_route_resolve(
+                weights, node_count, table
+            )
+            assert resolved == choice, node_count
+        graph = fitting_routes._bulk_graph(4.0, node_count, device)
+        atype = torch.arange(node_count, device=device) % 2
+        rules = dpa4c_canonical_compress_energy_force(
+            descriptor, fitting, graph, atype, bias, fitting_routes=[]
+        )
+        routed = dpa4c_canonical_compress_energy_force(
+            descriptor, fitting, graph, atype, bias, fitting_routes=table
+        )
+        for expected, actual in zip(rules, routed, strict=True):
+            assert torch.equal(expected, actual), node_count

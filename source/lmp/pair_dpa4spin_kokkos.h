@@ -68,8 +68,10 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
   // forces 'newton off' with a full neighbor list, disabling the integrator's
   // automatic reverse communication, so the extended multi-domain path drives
   // it explicitly for force, magnetic force and centroid per-atom virial. The
-  // Kokkos overrides run device-resident with GPU-aware MPI; the plain
-  // overrides serve the host-staged path.
+  // Kokkos overrides pack and unpack on the device, in the device path of the
+  // KOKKOS package and in the fold that replaces its host path
+  // (CompactCanonicalGhostFold); the plain overrides serve communication styles
+  // other than the Kokkos brick communication.
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
   int pack_reverse_comm_kokkos(int, int, DPA4SpinKokkosCommBuffer&) override;
@@ -114,7 +116,9 @@ class PairDPA4SpinKokkos : public PairDPA4Spin, public KokkosBase {
 #endif
 
   bool reverse_virial;     // reverse communication operates on centroid virial
-  bool reverse_used_host;  // force reverse communication selected host staging
+  bool reverse_used_host;  // the host pack/unpack overrides ran
+  // Device-packed fold that replaces the host reverse communication.
+  CompactCanonicalGhostFold<DeviceType, DPA4SpinKokkosCommBuffer> ghost_fold;
 };
 
 }  // namespace LAMMPS_NS

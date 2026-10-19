@@ -123,7 +123,7 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "float degree_floor, float f_inner, float f_outer, "
       "Tensor[] ws, Tensor[] bs, int[] resnets, "
       "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, "
-      "int tile, Tensor pair_table) "
+      "int tile, Tensor pair_table, int[]? fitting_routes=None) "
       "-> (Tensor energy, Tensor atom_energy, Tensor force, Tensor virial, "
       "Tensor atom_virial, Tensor force_mag, Tensor mask)");
 }

@@ -1154,18 +1154,22 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         take the per-layer kernels. The runs, sized by the multiprocessor
         count, span the shapes the dispatch selects by run size: a cluster or
         latency shape up to one panel per multiprocessor, the throughput shape
-        of the widths that have one beyond, the 64-node panels that a width of
-        96 takes from two waves of them, and the per-layer kernels wherever
-        the fused network declines a run. The tiled calls end in a short tail,
-        one of them after a first run of exactly two waves of 64-node panels.
+        of the widths that have one beyond, at a width of 96 the 32-node panels
+        on a run that one wave of either throughput shape holds and the 64-node
+        panels on runs that they pass in fewer waves or in two waves or more,
+        and the per-layer kernels wherever the fused network declines a run.
+        The tiled calls end in a short tail, one of them after a first run of
+        exactly two waves of 64-node panels.
         Four networks cover the input paths and the depth: an input narrower
         than the width and not a multiple of four, an aligned input wider than
         the width, whose layer-0 backward contracts in several passes, a single
         square layer without biases, whose backward the residual seeds, and
         the eight layers the fused network holds at most. A network whose runs
         the fused network never serves, as on a device or build without a
-        kernel image of compute capability 8.0 or later, is reported as
-        skipped, since its comparison covers the per-layer kernels alone.
+        kernel image of compute capability 7.0 or later, is reported as
+        skipped, since its comparison covers the per-layer kernels alone. The
+        route of a run is that of the rules of the dispatch
+        (``graph_fitting_route_rule``), which the call shares.
         """
         from deepmd.pt_expt.kernels.graph_fitting import (
             ensure_registered,
@@ -1177,6 +1181,7 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
             (37, 0),
             (16 * sms + 3, 0),
             (32 * sms - 1, 0),
+            (48 * sms + 17, 0),
             (96 * sms + 17, 0),
             (96 * sms + 17, 32 * sms - 1),
             (256 * sms + 37, 0),
@@ -1207,11 +1212,9 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
         gen: torch.Generator,
     ) -> None:
         """Compare the fused and per-layer kernels on one network."""
-        from torch.profiler import (
-            ProfilerActivity,
-            profile,
+        from deepmd.pt_expt.kernels.fitting_routes import (
+            PER_LAYER,
         )
-
         from deepmd.pt_expt.kernels.graph_fitting import (
             fitting_operator_arguments,
         )
@@ -1256,23 +1259,25 @@ class TestDpa1GraphCudaFitting(unittest.TestCase):
                     network.activation,
                 )
                 gradient = x.clone()
-                with profile(activities=[ProfilerActivity.CUDA]) as trace:
-                    energy = torch.ops.deepmd.graph_fitting_energy_gradient(
-                        gradient,
-                        atype,
-                        network.weights,
-                        biases,
-                        network.residuals,
-                        network.head_weight,
-                        head_bias,
-                        bias,
-                        network.activation,
-                        seed,
-                        tile,
-                    )
-                    torch.cuda.synchronize()
-            fused_runs += any(
-                "fused_network_kernel" in event.name for event in trace.events()
+                energy = torch.ops.deepmd.graph_fitting_energy_gradient(
+                    gradient,
+                    atype,
+                    network.weights,
+                    biases,
+                    network.residuals,
+                    network.head_weight,
+                    head_bias,
+                    bias,
+                    network.activation,
+                    seed,
+                    tile,
+                )
+            # The operator serves every run of a call with the fused network
+            # where its rules route a run of the call's run size there.
+            run = min(tile, nodes) if tile > 0 else nodes
+            fused_runs += (
+                torch.ops.deepmd.graph_fitting_route_rule(network.weights, run)
+                != PER_LAYER
             )
             with self.subTest(width=width, act=act, din=din, nodes=nodes, tile=tile):
                 self.assertTrue(torch.equal(energy, layer_energy))

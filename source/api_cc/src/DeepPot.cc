@@ -667,6 +667,8 @@ void DeepPotBackend::compute_canonical_graph_gpu(
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
     const std::uint32_t* d_source_order,
+    const double* d_coord,
+    void* world,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage,
@@ -681,6 +683,8 @@ void DeepPotBackend::compute_canonical_graph_gpu(
   (void)d_destination_row_ptr;
   (void)d_source_row_ptr;
   (void)d_source_order;
+  (void)d_coord;
+  (void)world;
   (void)nloc;
   (void)nall_nodes;
   (void)edge_storage;
@@ -699,6 +703,8 @@ bool DeepPotBackend::canonical_graph_requires_source_csr() const {
 bool DeepPotBackend::supports_device_edge_inference() const { return false; }
 
 bool DeepPotBackend::uses_canonical_graph_inference() const { return false; }
+
+bool DeepPotBackend::has_long_range() const { return false; }
 
 void DeepPot::compute_edges_gpu(double* d_atom_energy,
                                 double* d_force,
@@ -764,14 +770,16 @@ void DeepPot::compute_canonical_graph_gpu(
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
     const std::uint32_t* d_source_order,
+    const double* d_coord,
+    void* world,
     const int nloc,
     const int nall_nodes,
     const std::int64_t edge_storage,
     void* stream) {
   dp->compute_canonical_graph_gpu(
       d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
-      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc,
-      nall_nodes, edge_storage, stream);
+      d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
+      d_coord, world, nloc, nall_nodes, edge_storage, stream);
 }
 
 bool DeepPot::uses_fp32_edge_vectors() const {
@@ -789,6 +797,8 @@ bool DeepPot::uses_canonical_graph_inference() const {
 bool DeepPot::canonical_graph_requires_source_csr() const {
   return dp->canonical_graph_requires_source_csr();
 }
+
+bool DeepPot::has_long_range() const { return dp->has_long_range(); }
 
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
 

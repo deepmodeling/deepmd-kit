@@ -1,8 +1,8 @@
 # Install LAMMPS
 
 An AI agent can build LAMMPS with the DeePMD-kit module and Kokkos. DPA4/SeZM
-uses `pair_style deepmd/kk`; DPA4C uses `pair_style dpa4spin/kk`. See
-[Install with an AI agent](install-with-agent.md).
+and DPA4C use `pair_style deepmd/kk`; compressed native-spin DPA4C models use
+`pair_style dpa4spin/kk`. See [Install with an AI agent](install-with-agent.md).
 
 There are two ways to install LAMMPS: the built-in mode and the plugin mode. The built-in mode builds LAMMPS along with the DeePMD-kit and DeePMD-kit will be loaded automatically when running LAMMPS. The plugin mode builds LAMMPS and a plugin separately, so one needs to use `plugin load` command to load the DeePMD-kit's LAMMPS plugin library.
 
@@ -145,3 +145,21 @@ ${deepmd_root}/bin/lmp -h
 > ```sh
 > patchelf --add-rpath "${tensorflow_root}/lib" liblammps.so
 > ```
+
+## MPI for runs on several GPUs
+
+With the KOKKOS package, each MPI rank of LAMMPS uses one GPU and keeps its atom data in GPU memory, and the ranks exchange atom data at every step. Build LAMMPS and the DeePMD-kit C++ interface against the same MPI library, one that can access GPU memory (CUDA-aware MPI), such as Open MPI with UCX. When LAMMPS detects an MPI library without CUDA support, such as the MPICH package of conda-forge, it turns GPU-aware communication off and copies the positions and forces through host memory at every step. An MPI library that LAMMPS cannot identify is assumed to support CUDA; if it does not, run LAMMPS with `-pk kokkos gpu/aware off`.
+
+The Open MPI package of conda-forge is built with CUDA support but disables it by default; `ompi_info --all | grep opal_built_with_cuda_support` shows whether an Open MPI installation was built with it. Install the package in an environment of its own:
+
+```bash
+conda create -n openmpi -c conda-forge openmpi ucx
+```
+
+Configure LAMMPS and the DeePMD-kit C++ interface in new build directories with both compiler wrappers of that environment, `-D MPI_C_COMPILER=${mpi_root}/bin/mpicc -D MPI_CXX_COMPILER=${mpi_root}/bin/mpicxx`, where `${mpi_root}` is its prefix; CMake finds the MPI of each language separately. Before launching LAMMPS with the `mpirun` of that installation, enable its CUDA support:
+
+```bash
+export OMPI_MCA_opal_cuda_support=true UCX_MEMTYPE_CACHE=n
+```
+
+With `UCX_MEMTYPE_CACHE=n`, UCX queries the memory type of every buffer instead of taking it from a cache that can report a GPU buffer as host memory and make UCX abort.
