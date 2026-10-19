@@ -197,8 +197,13 @@ class SOGKernel(BaseInteractionKernel):
     amplitude
         The amplitudes :math:`a_k`, in Å⁻¹, of either sign: a scalar shared by
         every Gaussian or one value per Gaussian. Required with ``width``;
-        with the default widths it defaults to :math:`4\pi \ln b` for every
-        Gaussian.
+        with the default widths it defaults to
+        :math:`a_k = \sqrt{2/\pi} \ln b / \sigma_k`, the trapezoidal
+        discretization in :math:`\ln s` of
+        :math:`1/r = \sqrt{2/\pi} \int_0^\infty e^{-r^2/2s^2} s^{-2} \, ds`.
+        The default kernel then follows :math:`1/r`, less a constant that
+        exerts no force, from a few :math:`\sigma` to a fraction of
+        :math:`\sigma b^{M-1}`, and stays finite at contact.
     width
         The widths :math:`\sigma_k > 0`, in Å. Defaults to the geometric
         sequence :math:`\sigma_k = \sigma b^k`, :math:`k = 0, \dots, M - 1`.
@@ -241,7 +246,7 @@ class SOGKernel(BaseInteractionKernel):
                 width_ratio, np.arange(n_gaussian, dtype=np.float64)
             )
             if amplitude is None:
-                amplitude = 4.0 * np.pi * np.log(width_ratio)
+                amplitude = np.sqrt(2.0 / np.pi) * np.log(width_ratio) / width
         elif amplitude is None:
             raise ValueError("`amplitude` is required with explicit `width`")
         width = np.asarray(width, dtype=np.float64).reshape(-1)

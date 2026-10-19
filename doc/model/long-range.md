@@ -89,7 +89,12 @@ training.
   {ref}`width <model[standard]/long_range[latent_charge]/kernel[sog]/width>`
   or default to a geometric sequence, and the amplitudes by
   {ref}`amplitude <model[standard]/long_range[latent_charge]/kernel[sog]/amplitude>`,
-  which explicit widths require.
+  which explicit widths require. The default amplitudes,
+  $a_k = \sqrt{2/\pi}\,\ln b/\sigma_k$ for the ratio $b$ of consecutive
+  widths, discretize $1/r$: with the default widths the kernel stays finite,
+  $0.46$ Å⁻¹, at contact, and its force stays within 0.4% of that of $1/r$
+  from 6.5 Å to 150 Å. It differs from $1/r$ there by a constant, which
+  exerts no force.
 
 Several charge channels, set by
 {ref}`channels <model[standard]/long_range[latent_charge]/channels>`, let

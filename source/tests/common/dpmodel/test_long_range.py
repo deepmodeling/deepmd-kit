@@ -94,7 +94,7 @@ def test_les_kernel_closed_form() -> None:
 
 
 def test_sog_kernel_closed_form_and_defaults() -> None:
-    """SOG is sum_k a_k exp(-r^2 / 2 sigma_k^2); the defaults follow the geometric widths."""
+    """SOG is sum_k a_k exp(-r^2 / 2 sigma_k^2); the defaults discretize 1/r."""
     kernel = SOGKernel(amplitude=[0.7, -0.2], width=[0.8, 1.7])
     r = np.array([0.0, 1.1, 3.0])
     expected = 0.7 * np.exp(-(r**2) / (2 * 0.8**2)) - 0.2 * np.exp(
@@ -103,7 +103,16 @@ def test_sog_kernel_closed_form_and_defaults() -> None:
     np.testing.assert_allclose(kernel(r**2), expected, rtol=1e-12)
     default = SOGKernel(n_gaussian=3, base_width=2.0, width_ratio=1.5)
     np.testing.assert_allclose(np.exp(default.log_width), [2.0, 3.0, 4.5])
-    np.testing.assert_allclose(default.amplitude, 4 * np.pi * np.log(1.5))
+    np.testing.assert_allclose(
+        default.amplitude, np.sqrt(2 / np.pi) * np.log(1.5) / np.array([2.0, 3.0, 4.5])
+    )
+    # The default kernel exerts the Coulomb force, r^2 K'(r) = -1, between a
+    # few times its first width and a fraction of its widest one.
+    default = SOGKernel()
+    r = np.geomspace(6.5, 150.0, 200)
+    step = 1e-4 * r
+    slope = (default((r + step) ** 2) - default((r - step) ** 2)) / (2 * step)
+    np.testing.assert_allclose(r**2 * slope, -1.0, rtol=0, atol=5e-3)
 
 
 @pytest.mark.parametrize(
