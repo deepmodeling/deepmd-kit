@@ -11,6 +11,15 @@
 # graph and the moment in device memory:
 #
 #   lmp -k on g 1 -sf kk -in in.lammps
+#
+# By default atom->fm holds the precession magnetic force. For a Newtonian
+# Cartesian integrator that needs -dE/dS, append `magnetic_force cartesian`
+# (units metal) and read Pair::extract("fm_cartesian_force", dim). Host
+# `dpa4spin` accepts the graph-lower archive from freeze; `dpa4spin/kk`
+# requires the compact canonical archive from `dp --pt-expt compress`
+# (see README.md):
+#
+#   pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
 
 units             metal
 dimension         3

@@ -70,10 +70,12 @@ def test_builder_composes_linear_model():
         kinds == ["EnergyAtomicModel", "InnerPotentialAtomicModel"]
         or kinds[1] == "InnerPotentialAtomicModel"
     )
-    # radii wired to the LEARNED child's descriptor InnerClamp
+    # radii wired to the LEARNED child's descriptor: the switch spans the
+    # window and the clamp freezes two fifths into it
     dp_child = am.models[0]
-    assert dp_child.descriptor.inner_clamp is not None
-    assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
+    assert float(dp_child.descriptor.bridging_switch.f_inner) == 0.8
+    assert float(dp_child.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
+    assert dp_child.descriptor.bridging_scale == "absolute"
 
 
 def test_bridged_preset_belongs_to_output_statistics() -> None:
@@ -294,12 +296,12 @@ def _pair_energy(model, natoms=2, r=1.0):
 
 
 class TestInnerPotentialChangeTypeMap:
-    """``change_type_map`` must rebuild the ZBL element lookup.
+    """``change_type_map`` must rebuild the ZBL coefficient tables.
 
     The generic ``BaseAtomicModel.change_type_map`` only rewrites the public
-    map and the stat/exclusion state; the nuclear-charge table belongs to
-    ``InnerPotential`` and is rebuilt there (review 3649295675).  Without it
-    the lookup keeps the ORIGINAL elements while ``atype`` values already mean
+    map and the stat/exclusion state; the per-pair coefficients belong to
+    ``InnerPotential`` and are rebuilt there (review 3649295675).  Without it
+    the tables keep the ORIGINAL elements while ``atype`` values already mean
     the new ones -- silently wrong energies, or ``IndexError`` for a longer
     map.
     """
@@ -311,17 +313,22 @@ class TestInnerPotentialChangeTypeMap:
         fresh = InnerPotentialAtomicModel(type_map=["O", "H"], rcut=4.0, sel=[8])
         e_fresh = _pair_energy(fresh)
         # anti-vacuity: the two element pairs must be far apart, or a stale
-        # lookup would be indistinguishable from a rebuilt one
+        # table would be indistinguishable from a rebuilt one
         assert abs(e_fresh - e_hh) > 1.0
         np.testing.assert_allclose(_pair_energy(model), e_fresh, rtol=1e-12)
-        assert list(model.potential.atomic_numbers) == [8.0, 1.0]
+        np.testing.assert_allclose(
+            np.asarray(model.potential.series_table),
+            np.asarray(fresh.potential.series_table),
+            rtol=1e-12,
+        )
         assert model.potential.type_map == ["O", "H"]
 
     def test_added_element_extends_the_lookup(self) -> None:
         model = InnerPotentialAtomicModel(type_map=["H", "O"], rcut=4.0, sel=[8])
         model.change_type_map(["H", "O", "Ni"])
-        assert model.potential.ntypes_real == 3
-        assert list(model.potential.atomic_numbers) == [1.0, 8.0, 28.0]
+        assert model.potential.ntypes == 3
+        # one row per ordered pair of the three types plus the padding type
+        assert model.potential.series_table.shape == (16, 8)
         # the new type is now addressable -- a stale (length-2) table raises
         # IndexError here
         graph_atype = np.full(2, 2, dtype=np.int64)
@@ -344,8 +351,14 @@ class TestInnerPotentialChangeTypeMap:
     def test_dropped_element_shrinks_the_lookup(self) -> None:
         model = InnerPotentialAtomicModel(type_map=["H", "O", "Ni"], rcut=4.0, sel=[8])
         model.change_type_map(["Ni"])
-        assert model.potential.ntypes_real == 1
-        assert list(model.potential.atomic_numbers) == [28.0]
+        assert model.potential.ntypes == 1
+        fresh = InnerPotentialAtomicModel(type_map=["Ni"], rcut=4.0, sel=[8])
+        np.testing.assert_allclose(
+            np.asarray(model.potential.series_table),
+            np.asarray(fresh.potential.series_table),
+            rtol=1e-12,
+        )
+        np.testing.assert_allclose(_pair_energy(model), _pair_energy(fresh), rtol=1e-12)
 
     def test_serialize_roundtrip_after_change_type_map(self) -> None:
         """Checkpoint continuity: the restored model must predict the same.
@@ -770,8 +783,9 @@ class TestCanonicalComposition:
         # the composition derives the learned sibling's clamp window from
         # the inner_potential child: one source of truth for the radii
         dp_child = am.models[0]
-        assert dp_child.descriptor.inner_clamp is not None
-        assert float(dp_child.descriptor.inner_clamp.r_inner) == 0.8
+        assert float(dp_child.descriptor.bridging_switch.f_inner) == 0.8
+        assert float(dp_child.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
+        assert dp_child.descriptor.bridging_scale == "absolute"
         assert dp_child.descriptor.bridging_switch is not None
 
     def test_canonical_matches_sugar_energy(self) -> None:
@@ -963,9 +977,74 @@ class TestConsumeOrRejectGuards:
         cfg = _canonical_config()
         cfg["models"][0]["descriptor"] = {
             "type": "se_e2_a",
-            "rcut": 4.0,
             "rcut_smth": 3.5,
+            "rcut": 4.0,
             "sel": [8, 8],
         }
         with pytest.raises(NotImplementedError, match="DPA4/SeZM"):
             get_model(cfg)
+
+
+# ---------------------------------------------------------------------------
+# The same composition in NLH mode
+# ---------------------------------------------------------------------------
+def _nlh_config():
+    cfg = copy.deepcopy(ZBL_CONFIG)
+    cfg["bridging_method"] = "nlh"
+    return cfg
+
+
+def test_nlh_bridging_builds_and_carries_the_mode():
+    model = get_model(_nlh_config())
+    assert isinstance(model, LinearEnergyModel)
+    potential = model.atomic_model.models[1].potential
+    assert potential.mode == "NLH"
+
+
+def test_nlh_bridging_serialize_roundtrip_energy_identical():
+    """The mode survives the wire and the restored model predicts the same."""
+    model = get_model(_nlh_config())
+    coord, atype, box = _close_pair_inputs()
+    data = model.serialize()
+    assert data["models"][1]["mode"] == "NLH"
+    restored = BaseModel.deserialize(data)
+    assert restored.atomic_model.models[1].potential.mode == "NLH"
+    e1 = model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    e2 = restored.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+        "energy_redu"
+    ]
+    np.testing.assert_allclose(e1, e2, rtol=1e-12)
+
+
+def test_nlh_and_zbl_bridging_predict_differently():
+    """The mode reaches the energy; it is not silently dropped to the default."""
+    coord, atype, box = _close_pair_inputs()
+    energies = []
+    for cfg in (copy.deepcopy(ZBL_CONFIG), _nlh_config()):
+        model = get_model(cfg)
+        energies.append(
+            float(
+                model.call_common(coord, atype, box=box, neighbor_graph_method="dense")[
+                    "energy_redu"
+                ].sum()
+            )
+        )
+    assert abs(energies[0] - energies[1]) > 1e-6
+
+
+def test_nlh_atomic_model_roundtrips_the_mode():
+    """The child atomic model carries the mode across serialize/deserialize."""
+    child = InnerPotentialAtomicModel(
+        type_map=["Ni", "O"], mode="nlh", rcut=4.0, sel=[8]
+    )
+    data = child.serialize()
+    assert data["mode"] == "NLH"
+    restored = InnerPotentialAtomicModel.deserialize(data)
+    assert restored.potential.mode == "NLH"
+    np.testing.assert_allclose(
+        np.asarray(restored.potential.series_table),
+        np.asarray(child.potential.series_table),
+        rtol=1e-12,
+    )

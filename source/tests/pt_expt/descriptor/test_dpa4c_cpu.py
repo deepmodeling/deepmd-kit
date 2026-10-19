@@ -9,6 +9,10 @@ rank, and the two topology forms -- is covered, because each selects a
 different compiled body or a different addressing mode.
 """
 
+from typing import (
+    Any,
+)
+
 import pytest
 import torch
 
@@ -25,6 +29,7 @@ from deepmd.pt_expt.descriptor.dpa4c import (
 from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
     _reference_descriptor,
     build_compression_artifacts,
+    contact_radius_input,
     descriptor_profile,
     ensure_registered,
     op_available,
@@ -52,10 +57,22 @@ _CPU_FITTING = pytest.mark.skipif(
 )
 
 
+#: Element symbols of the two test types. They fix the covalent radii, whose
+#: pairwise sums give the three distinct length scales the window is measured
+#: against, so a kernel that gathered the wrong radius would misplace it.
+_TYPE_MAP = ["O", "H"]
+
+#: A bridging window wide enough that the random test cluster populates its
+#: frozen zone, its transition zone and the plain zone beyond it. The bounds
+#: are fractions of each pair's own length scale, not distances in Å.
+_WINDOW = {"inner_clamp_f_inner": 0.9, "inner_clamp_f_outer": 1.6}
+
+
 def _build_descriptor(
     channels: int,
     lmax: int = 2,
     radial_modes: int = 0,
+    **window: float,
 ) -> DescrptDPA4C:
     return DescrptDPA4C(
         rcut=3.0,
@@ -66,7 +83,21 @@ def _build_descriptor(
         radial_modes=radial_modes,
         precision="float32",
         seed=17,
+        type_map=_TYPE_MAP,
+        **window,
     ).eval()
+
+
+def _reduced_distance(
+    descriptor: DescrptDPA4C,
+    graph: Any,
+    atype: torch.Tensor,
+) -> torch.Tensor:
+    """Return the valid edge distances in units of each pair's length scale."""
+    source, destination = graph.edge_index[0], graph.edge_index[1]
+    distance = graph.edge_vec.norm(dim=-1, keepdim=True)
+    contact = descriptor.pair_contact(atype[destination], atype[source], distance.dtype)
+    return (distance / contact)[graph.edge_mask, 0]
 
 
 def test_fixed_basis_types_freeze_the_basis() -> None:
@@ -80,6 +111,7 @@ def test_fixed_basis_types_freeze_the_basis() -> None:
             n_radial=8,
             precision="float32",
             seed=17,
+            type_map=_TYPE_MAP,
             basis_type=f"{family}/fix",
         )
         assert fixed.radial_basis.basis_family == family
@@ -100,6 +132,7 @@ def test_adam_route_patterns_name_the_first_radial_layer() -> None:
         radial_modes=2,
         precision="float32",
         seed=17,
+        type_map=_TYPE_MAP,
     )
     patterns = descriptor.adam_route_patterns()
     assert patterns == ["radial_embedding.layers.0."]
@@ -152,10 +185,26 @@ def _arguments(descriptor: DescrptDPA4C, graph, atype: torch.Tensor) -> tuple:
         artifacts["spin_type"][:0],
         artifacts["spin_pair"],
         artifacts["spin_type"],
+        contact_radius_input(descriptor),
         bool(graph.destination_sorted),
         int(descriptor.lmax),
         *(float(value) for value in artifacts["info"]),
+        descriptor.bridging_f_inner or 0.0,
+        descriptor.bridging_f_outer or 0.0,
     )
+
+
+def _descriptor_backward(
+    cotangent: torch.Tensor,
+    state: torch.Tensor,
+    edge_vec: torch.Tensor,
+    *arguments: Any,
+) -> tuple[torch.Tensor, ...]:
+    """Differentiate the descriptor alone, without an analytical pair potential."""
+    no_pair = edge_vec.new_empty(0)
+    return torch.ops.deepmd.dpa4c_graph_compress_backward(
+        cotangent, state, edge_vec, *arguments, no_pair, no_pair
+    )[:3]
 
 
 def _spin_free(arguments: tuple) -> tuple:
@@ -181,9 +230,7 @@ def _check_parity(descriptor: DescrptDPA4C, canonical: bool) -> None:
     (reference_gradient,) = torch.autograd.grad(
         (reference * cotangent).sum(), reference_edge
     )
-    gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
-        cotangent, state, graph.edge_vec, *arguments
-    )[0]
+    gradient = _descriptor_backward(cotangent, state, graph.edge_vec, *arguments)[0]
     torch.testing.assert_close(gradient, reference_gradient, atol=8.0e-6, rtol=1.0e-4)
 
 
@@ -193,6 +240,97 @@ def _check_parity(descriptor: DescrptDPA4C, canonical: bool) -> None:
 def test_forward_backward_parity(channels: int, canonical: bool) -> None:
     """Both topology forms reproduce the portable compressed descriptor."""
     _check_parity(_build_descriptor(channels), canonical)
+
+
+@_CPU
+@pytest.mark.parametrize("canonical", [False, True])
+def test_bridging_window_parity(canonical: bool) -> None:
+    """The switched envelope reproduces the portable descriptor.
+
+    The reference evaluates the window in its own form, so it is first pinned
+    to the descriptor equations and then serves the kernel comparison.
+    """
+    descriptor = _build_descriptor(32, lmax=3, radial_modes=2, **_WINDOW)
+    graph, atype = _build_graph(descriptor, canonical)
+    reduced = _reduced_distance(descriptor, graph, atype)
+    inner, outer = _WINDOW.values()
+    assert (reduced < inner).any() and (reduced > outer).any()
+    assert ((reduced > inner) & (reduced < outer)).sum() > 8
+    reference = _reference_descriptor(
+        graph.edge_vec, *_spin_free(_arguments(descriptor, graph, atype))
+    )
+    portable, _ = descriptor.call_graph(
+        graph, atype, type_embedding=descriptor.type_embedding.call()
+    )
+    torch.testing.assert_close(reference, portable, atol=3.0e-5, rtol=3.0e-5)
+    _check_parity(descriptor, canonical)
+
+
+@_CPU
+@pytest.mark.parametrize("mode", ["zbl", "nlh"])
+@pytest.mark.parametrize("windowed", [True, False])
+@pytest.mark.parametrize("canonical", [False, True])
+def test_pair_potential_matches_the_portable_term(
+    canonical: bool,
+    windowed: bool,
+    mode: str,
+) -> None:
+    """The backward scan evaluates the analytical pair potential of a bridged model.
+
+    A vanishing descriptor cotangent isolates the term: the edge gradient is
+    then the pair slope alone, weighted by the energy cotangent of the
+    destination, and the scan returns the pair energy of every node. Edges
+    inside the bridging window leave the descriptor but keep the pair term,
+    and the portable reference backs the traced form of the fused operator.
+    Without a window the pair table alone selects the bridged backward, behind
+    a plain forward. The scan reads the coefficients of whichever potential
+    filled the table, so both supported modes ride the same kernel.
+    """
+    from deepmd.dpmodel.atomic_model.inner_potential import (
+        InnerPotential,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
+        _reference_backward,
+    )
+
+    descriptor = _build_descriptor(32, **(_WINDOW if windowed else {}))
+    graph, atype = _build_graph(descriptor, canonical)
+    arguments = _arguments(descriptor, graph, atype)
+    output, state = torch.ops.deepmd.dpa4c_graph_compress(graph.edge_vec, *arguments)
+    potential = InnerPotential(type_map=["O", "H"], mode=mode)
+    pair_table = torch.as_tensor(potential.pair_table)
+    # Ghost nodes carry no energy, so their cotangent vanishes.
+    seed = (torch.arange(atype.shape[0], device="cpu") % 3 != 0).to(torch.float64)
+
+    edge = graph.edge_vec.double().requires_grad_(True)
+    reference = potential.call(
+        edge, graph.edge_index, atype, graph.edge_mask, atype.shape[0]
+    )[0]
+    (reference_gradient,) = torch.autograd.grad((reference[:, 0] * seed).sum(), edge)
+    assert reference.max() > 10.0
+    for backward in (
+        torch.ops.deepmd.dpa4c_graph_compress_backward,
+        _reference_backward,
+    ):
+        edge_gradient, _, _, pair_energy = backward(
+            torch.zeros_like(output),
+            state,
+            graph.edge_vec,
+            *arguments,
+            pair_table,
+            seed,
+        )
+        torch.testing.assert_close(pair_energy, reference, atol=3e-5, rtol=3e-5)
+        torch.testing.assert_close(
+            edge_gradient.double(), reference_gradient, atol=3e-5, rtol=3e-5
+        )
+
+    no_pair = graph.edge_vec.new_empty(0)
+    plain_gradient, _, _, absent = torch.ops.deepmd.dpa4c_graph_compress_backward(
+        torch.zeros_like(output), state, graph.edge_vec, *arguments, no_pair, no_pair
+    )
+    assert absent.numel() == 0
+    assert torch.count_nonzero(plain_gradient).item() == 0
 
 
 @_CPU
@@ -227,9 +365,7 @@ def test_masked_edges_are_ignored() -> None:
     torch.testing.assert_close(output, reference)
 
     cotangent = torch.ones_like(output)
-    gradient = torch.ops.deepmd.dpa4c_graph_compress_backward(
-        cotangent, state, padded, *extended
-    )[0]
+    gradient = _descriptor_backward(cotangent, state, padded, *extended)[0]
     assert torch.all(gradient[graph.edge_vec.shape[0] :] == 0.0)
 
 
@@ -496,6 +632,7 @@ def test_spin_descriptor_keeps_the_reference_path() -> None:
         n_radial=8,
         precision="float32",
         seed=17,
+        type_map=_TYPE_MAP,
         use_spin=[True, False],
     ).eval()
     assert mega_eligible(with_spin)

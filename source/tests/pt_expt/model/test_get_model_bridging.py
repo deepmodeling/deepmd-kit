@@ -179,6 +179,26 @@ def test_compile_attention_probe_tolerates_composition() -> None:
     _warn_compiled_attention(model, "Default")
 
 
+def test_fine_tune_locates_the_learned_part_by_structure() -> None:
+    """Fine-tuning finds the learned child of a composition by its descriptor.
+
+    A descriptor exclusion gives the child its own pair exclusion, which keeps
+    the composition off the fused route, but not its learned part off its path.
+    """
+    from deepmd.pt_expt.train.training import (
+        _learned_part_path,
+    )
+
+    plain = _dpa4_standard_config()
+    plain["type"] = "dpa4"
+    plain["descriptor"]["exclude_types"] = [[0, 1]]
+    bridged = _bridged(copy.deepcopy(plain))
+    bridged_model = get_model(bridged)
+    assert bridged_model.atomic_model.fused_decomposition() is None
+    assert _learned_part_path(get_model(plain)) == "atomic_model."
+    assert _learned_part_path(bridged_model) == "atomic_model.models.0."
+
+
 def _canonical_config() -> dict:
     """The bridged config spelled canonically (issue #5948)."""
     base = _dpa4_standard_config()
@@ -224,7 +244,9 @@ def test_canonical_composition_builds() -> None:
     assert len(model.atomic_model.models) == 2
     learned = model.atomic_model.models[0]
     assert learned.descriptor.bridging_switch is not None
-    assert float(learned.descriptor.inner_clamp.r_inner) == 0.8
+    assert float(learned.descriptor.bridging_switch.f_inner) == 0.8
+    assert float(learned.descriptor.bridging_clamp.f_freeze) == pytest.approx(0.96)
+    assert learned.descriptor.bridging_scale == "absolute"
 
 
 def test_canonical_matches_sugar_serialize() -> None:
