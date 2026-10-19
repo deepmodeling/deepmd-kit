@@ -378,13 +378,13 @@ class TestValidationHelpers(unittest.TestCase):
                     rank=0,
                     restart_training=False,
                 )
-                new_best_path = self._run_best_candidate(
+                self._run_best_candidate(
                     validator,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
 
-                new_best_path = self._run_best_candidate(
+                self._run_best_candidate(
                     validator,
                     display_step=2,
                     selected_metric_value=1.0,
@@ -513,14 +513,14 @@ class TestValidationHelpers(unittest.TestCase):
                     restart_training=False,
                     best_checkpoint_suffix=".jax",
                 )
-                new_best_path = self._run_best_candidate(
+                self._run_best_candidate(
                     validator,
                     directory_checkpoint=True,
                     display_step=1,
                     selected_metric_value=2.0,
                 )
 
-                new_best_path = self._run_best_candidate(
+                self._run_best_candidate(
                     validator,
                     directory_checkpoint=True,
                     display_step=2,
