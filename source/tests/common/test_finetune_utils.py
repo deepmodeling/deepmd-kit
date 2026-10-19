@@ -87,6 +87,22 @@ def test_descriptor_config_warning_skips_default_only_difference(caplog):
     assert caplog.text == ""
 
 
+def test_descriptor_config_warning_skips_seed_difference(monkeypatch, caplog):
+    monkeypatch.setattr(
+        finetune,
+        "_normalize_descriptor_for_compare",
+        lambda descriptor: descriptor,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        finetune.warn_configuration_mismatch_during_finetune(
+            {"type": "se_e2_a", "seed": None},
+            {"type": "se_e2_a", "seed": 42},
+        )
+
+    assert caplog.text == ""
+
+
 def test_descriptor_config_warning_falls_back_to_raw_if_normalization_fails(
     monkeypatch, caplog
 ):

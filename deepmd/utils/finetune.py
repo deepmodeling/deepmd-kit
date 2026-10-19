@@ -19,7 +19,7 @@ from deepmd.utils.spin import (
 
 log = logging.getLogger(__name__)
 
-_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
+_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable", "seed"})
 _MISSING = object()
 _MAX_DESCRIPTOR_CONFIG_DIFFS = 20
 _MAX_CONFIG_VALUE_LENGTH = 200
