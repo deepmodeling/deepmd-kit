@@ -60,6 +60,29 @@ def test_freeze_cli_compression_option(tmp_path: Path, compress: bool) -> None:
     assert freeze.call_args.kwargs["compress"] is compress
 
 
+@pytest.mark.parametrize("backend", ["pt", "tf", "pd", "jax"])
+def test_freeze_cli_rejects_unsupported_compression(
+    backend: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Unsupported backends reject compression instead of ignoring the flag."""
+    with pytest.raises(SystemExit) as error:
+        parse_args([f"--{backend}", "freeze", "--compress"])
+    assert error.value.code == 2
+    assert "freeze --compress requires --pt-expt" in capsys.readouterr().err
+
+
+def test_freeze_missing_neighbor_statistics_explains_compression_command(
+    tmp_path: Path,
+) -> None:
+    """Models needing data statistics point to the CLI that accepts them."""
+    checkpoint = _write_checkpoint(tmp_path / "model.pt", "dense")
+    output = tmp_path / "model.pte"
+    with pytest.raises(ValueError, match="dp --pt-expt compress") as error:
+        entrypoints.freeze(str(checkpoint), str(output), compress=True)
+    assert "without --compress" in str(error.value)
+    assert not output.exists()
+
+
 @pytest.mark.parametrize("compress", [False, True])
 def test_freeze_compression_changes_snapshot_before_export(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compress: bool
@@ -108,9 +131,13 @@ def test_ase_falls_back_but_explicit_compression_reports_ineligibility(
         error = "requires `default_chg_spin`"
     checkpoint = _write_checkpoint(tmp_path / "model.pt", "dpa4c", config=config)
     loaded = DeepPot(str(checkpoint))
+
+    def write_artifact(source: str, output: str, **kwargs: object) -> None:
+        Path(output).write_bytes(b"export")
+
     with (
         mock.patch("deepmd.calculator.DeepPot", return_value=loaded),
-        mock.patch.object(entrypoints, "freeze") as freeze,
+        mock.patch.object(entrypoints, "freeze", side_effect=write_artifact) as freeze,
         caplog.at_level(logging.WARNING, logger="deepmd.calculator"),
     ):
         DP(checkpoint, freeze=True)

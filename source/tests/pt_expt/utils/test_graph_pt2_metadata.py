@@ -508,7 +508,7 @@ def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> 
             copy.deepcopy(dpa1_dpmodel_data),
             do_atomic_virial=True,
         )
-        with pytest.raises(ValueError, match="graph-form"):
+        with pytest.raises(ValueError, match="use nlist_backend"):
             DeepPot(p, neighbor_graph_method="vesin")
         # The default remains valid for nlist-form artifacts.
         DeepPot(p)

@@ -3,11 +3,21 @@
 
 import logging
 import math
+import weakref
+from contextlib import (
+    ExitStack,
+)
 from functools import (
     partial,
 )
 from pathlib import (
     Path,
+)
+from shutil import (
+    copyfile,
+)
+from tempfile import (
+    TemporaryDirectory,
 )
 from typing import (
     TYPE_CHECKING,
@@ -154,8 +164,11 @@ class DP(Calculator):
         Export an eligible ``.pt`` checkpoint to ``.pt2`` for inference,
         by default False.
         Supports PT DPA4/SeZM and graph-eligible PT-expt models. Each call
-        exports ``<checkpoint-stem>-ase_single.pt2`` beside the checkpoint,
-        using the backend's freeze-time kernel policy and omitting the
+        retains a private artifact for its evaluator's lifetime and atomically
+        publishes a copy as ``<checkpoint-stem>-ase_single.pt2`` beside the
+        checkpoint. Concurrent processes retain their own selected model heads;
+        the last publication replaces the shared copy. Export uses the
+        backend's freeze-time kernel policy and omits the
         multi-rank communication artifact. DPA4C models are also compressed
         when their configuration supports it; otherwise a warning explains
         why the export remains uncompressed. Other models ignore this option
@@ -233,14 +246,27 @@ class DP(Calculator):
             self.dp.close()
             del self.dp
             log.info("Freezing ASE checkpoint %s to %s", model_path, output)
-            freezer(str(model_path), str(output))
-            self.dp = DeepPot(
-                str(output),
-                neighbor_list=neighbor_list,
-                nlist_backend=nlist_backend,
-                neighbor_graph_method=neighbor_graph_method,
-                neighbor_skin=neighbor_skin,
-            )
+            with ExitStack() as cleanup:
+                temporary = TemporaryDirectory(
+                    prefix=f".{model_path.stem}-ase-", dir=model_path.parent
+                )
+                cleanup.callback(temporary.cleanup)
+                private = Path(temporary.name) / output.name
+                freezer(str(model_path), str(private))
+                self.dp = DeepPot(
+                    str(private),
+                    neighbor_list=neighbor_list,
+                    nlist_backend=nlist_backend,
+                    neighbor_graph_method=neighbor_graph_method,
+                    neighbor_skin=neighbor_skin,
+                )
+                # A separate inode keeps later writes to the public artifact
+                # from changing the file reopened by evaluator serialization.
+                publication = Path(temporary.name) / "publish.pt2"
+                copyfile(private, publication)
+                publication.replace(output)
+                weakref.finalize(self.dp.deep_eval, temporary.cleanup)
+                cleanup.pop_all()
         elif freezer is not None:
             log.warning(
                 "ASE inference directly from a .pt checkpoint can be SUBSTANTIALLY "

@@ -116,9 +116,10 @@ def compress_model(
         )
         if training_script is None:
             raise ValueError(
-                "The model does not have a minimum neighbor distance, "
-                "so the training script and data must be provided "
-                "(via -t,--training-script)."
+                "The model does not have a minimum neighbor distance. "
+                "Provide training_script to compression, or freeze without "
+                "--compress and then run 'dp --pt-expt compress -i model.pte "
+                "-o compressed.pte -t INPUT.json' with the training script and data."
             )
         from deepmd.common import (
             j_loader,

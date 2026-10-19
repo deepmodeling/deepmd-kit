@@ -1105,6 +1105,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """
     parser = main_parser()
     parsed_args = parser.parse_args(args=args)
+    if (
+        parsed_args.command == "freeze"
+        and parsed_args.compress
+        and BACKEND_TABLE[parsed_args.backend] != "pytorch-exportable"
+    ):
+        parser.error("freeze --compress requires --pt-expt (PyTorch Exportable)")
     if parsed_args.command is None:
         parser.print_help()
     else:

@@ -3,15 +3,26 @@
 
 import contextlib
 import copy
+import gc
 import json
 import logging
 import os
 import zipfile
 from collections.abc import (
+    Callable,
     Iterator,
+)
+from concurrent.futures import (
+    ThreadPoolExecutor,
+)
+from functools import (
+    partial,
 )
 from pathlib import (
     Path,
+)
+from threading import (
+    Barrier,
 )
 from unittest import (
     mock,
@@ -24,6 +35,7 @@ from ase import (
     Atoms,
 )
 
+from deepmd import calculator as calculator_module
 from deepmd.calculator import (
     DP,
 )
@@ -153,6 +165,117 @@ def _write_checkpoint(
     )
     torch.save({"model": wrapper.state_dict()}, path)
     return path
+
+
+@pytest.fixture
+def file_freezer(monkeypatch: pytest.MonkeyPatch) -> mock.Mock:
+    """Exercise artifact ownership without running threaded compilation."""
+
+    class FileEvaluator:
+        def __init__(self, model_file: str) -> None:
+            self.model_path = model_file
+
+        def serialize(self) -> str:
+            return Path(self.model_path).read_text()
+
+    def load(model_file: str, **kwargs: object) -> mock.Mock:
+        return mock.Mock(
+            deep_eval=FileEvaluator(model_file),
+            get_type_map=mock.Mock(return_value=["O", "H"]),
+            get_ntypes=mock.Mock(return_value=2),
+        )
+
+    def export(source: str, output: str, *, head: str | None) -> None:
+        Path(output).write_text(head or "Default")
+
+    freezer = mock.Mock(side_effect=export)
+
+    def select(
+        evaluator: object, head: str | None, **kwargs: object
+    ) -> Callable[..., None]:
+        return partial(freezer, head=head)
+
+    monkeypatch.setattr(calculator_module, "DeepPot", load)
+    monkeypatch.setattr(calculator_module, "_checkpoint_freezer", select)
+    return freezer
+
+
+def test_automatic_freeze_retains_owned_artifact(
+    tmp_path: Path, file_freezer: mock.Mock
+) -> None:
+    checkpoint = tmp_path / "model.pt"
+    first = DP(checkpoint, head="first", freeze=True)
+    second = DP(checkpoint, head="second", freeze=True)
+    evaluator = first.dp.deep_eval
+    private = Path(evaluator.model_path)
+    assert evaluator.serialize() == "first"
+    assert second.dp.deep_eval.serialize() == "second"
+    assert (tmp_path / "model-ase_single.pt2").read_text() == "second"
+    (tmp_path / "model-ase_single.pt2").write_text("external overwrite")
+    assert evaluator.serialize() == "first"
+    assert second.dp.deep_eval.serialize() == "second"
+    del first
+    gc.collect()
+    assert private.exists()
+    del evaluator
+    gc.collect()
+    assert not private.parent.exists()
+
+
+def test_concurrent_automatic_freeze_loads_each_head(
+    tmp_path: Path, file_freezer: mock.Mock
+) -> None:
+    barrier = Barrier(2)
+
+    def export(source: str, output: str, *, head: str) -> None:
+        Path(output).write_text(head)
+        barrier.wait(timeout=10)
+
+    file_freezer.side_effect = export
+
+    def construct(head: str) -> DP:
+        return DP(tmp_path / "model.pt", head=head, freeze=True)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first, second = pool.map(construct, ["first", "second"])
+    assert first.dp.deep_eval.serialize() == "first"
+    assert second.dp.deep_eval.serialize() == "second"
+    assert (tmp_path / "model-ase_single.pt2").read_text() in {"first", "second"}
+
+
+@pytest.mark.parametrize("stage", ["export", "load", "publish"])
+def test_failed_automatic_freeze_preserves_published_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    file_freezer: mock.Mock,
+    stage: str,
+) -> None:
+    output = tmp_path / "model-ase_single.pt2"
+    output.write_text("original")
+
+    def fail_export(source: str, output: str, **kwargs: object) -> None:
+        Path(output).write_text("incomplete")
+        raise RuntimeError("export failed")
+
+    load = calculator_module.DeepPot
+
+    def fail_load(model_file: str, **kwargs: object) -> object:
+        if model_file.endswith(".pt2"):
+            raise RuntimeError("load failed")
+        return load(model_file, **kwargs)
+
+    if stage == "export":
+        file_freezer.side_effect = fail_export
+    elif stage == "load":
+        monkeypatch.setattr(calculator_module, "DeepPot", fail_load)
+    else:
+        monkeypatch.setattr(
+            Path, "replace", mock.Mock(side_effect=RuntimeError("publish failed"))
+        )
+    with pytest.raises(RuntimeError, match=f"{stage} failed"):
+        DP(tmp_path / "model.pt", freeze=True)
+    assert output.read_text() == "original"
+    assert list(tmp_path.iterdir()) == [output]
 
 
 @pytest.mark.parametrize("skin", [None, 0.75])
@@ -327,6 +450,7 @@ def test_automatic_freeze_reuses_kernel_policy(
     def capture(*args: object, **kwargs: object) -> None:
         captured["levels"] = tuple(os.environ.get(name) for name in _LEVELS[:2])
         captured["with_comm"] = kwargs["with_comm"]
+        Path(args[1] if kind == "pt" else args[0]).write_bytes(b"export")
 
     if kind == "pt":
         monkeypatch.setattr(freeze_pt2, "_freeze_sezm_to_pt2", capture)
@@ -358,8 +482,12 @@ def test_automatic_freeze_reuses_kernel_policy(
         override or (None, None)
     )
     assert deep_pot.call_count == 2
+    private = Path(deep_pot.call_args.args[0])
+    assert private.name == "model-ase_single.pt2"
+    assert private.parent != tmp_path
+    assert (tmp_path / private.name).read_bytes() == b"export"
     deep_pot.assert_called_with(
-        str(tmp_path / "model-ase_single.pt2"),
+        str(private),
         neighbor_list=None,
         nlist_backend="auto",
         neighbor_graph_method="vesin",
@@ -386,13 +514,17 @@ def test_single_task_pt_freeze_ignores_head(
     """Single-task head arguments retain the eager checkpoint's semantics."""
     checkpoint = _write_checkpoint(tmp_path / "model.pt", "pt")
     loaded = DeepPot(str(checkpoint), head="Default")
-    export = mock.Mock()
+
+    def write_artifact(source: str, output: str, **kwargs: object) -> None:
+        Path(output).write_bytes(b"export")
+
+    export = mock.Mock(side_effect=write_artifact)
     monkeypatch.setattr(freeze_pt2, "freeze_sezm_to_pt2", export)
     with mock.patch("deepmd.calculator.DeepPot", return_value=loaded):
         DP(checkpoint, head="Default", freeze=True)
     export.assert_called_once_with(
         str(checkpoint),
-        str(tmp_path / "model-ase_single.pt2"),
+        mock.ANY,
         head=None,
         with_comm=False,
     )
@@ -429,7 +561,9 @@ def test_automatic_freeze_single_artifact_matches_eager(
         assert any("dpa4c_" in target and "compress" in target for target in targets)
     frozen = tmp_path / "model-ase_single.pt2"
     assert checkpoint.read_bytes() == original
-    assert atoms.calc.dp.deep_eval.model_path == str(frozen)
+    private = Path(atoms.calc.dp.deep_eval.model_path)
+    assert private != frozen
+    assert private.read_bytes() == frozen.read_bytes()
     with zipfile.ZipFile(frozen) as archive:
         metadata = json.loads(archive.read("model/extra/metadata.json"))
         assert metadata["has_comm_artifact"] is False

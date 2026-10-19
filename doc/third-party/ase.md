@@ -98,10 +98,16 @@ from deepmd.calculator import DP
 calculator = DP(model="model.pt", freeze=True)
 ```
 
-This exports `model-ase_single.pt2` beside the checkpoint and loads it through
-the compiled inference backend. Each calculator construction with `freeze=True`
-rebuilds the artifact using the selected checkpoint head and the backend's
-normal freeze policy. The export omits the multi-rank communication artifact
+Each calculator construction with `freeze=True` rebuilds the artifact using
+the selected checkpoint head and the backend's normal freeze policy. The
+calculator loads a private artifact retained for its evaluator's lifetime and
+atomically publishes a separate copy as `model-ase_single.pt2` beside the
+checkpoint. Concurrent processes retain their own selected heads; the last
+publication replaces the shared copy. This requires one extra artifact copy
+per live evaluator. Concurrent exports must use separate processes because
+the backend compiler configuration is not thread-safe.
+
+The export omits the multi-rank communication artifact
 because ASE inference runs in one process. For CUDA targets, DPA4 defaults to
 `DP_CUDA_INFER=1` and `DP_TRITON_INFER=2`, with explicit environment settings
 taking precedence; DPA4C keeps its required CUDA level of 2.
@@ -117,9 +123,10 @@ for an unsupported compression configuration.
 The default `freeze=False` loads checkpoints directly and logs a warning for
 these models: inference can be **substantially slower**. This mode is intended
 for debugging and short runs that avoid compilation overhead. To reuse an
-export without compiling again, pass the `.pt2` file directly. Already frozen
-models, other PT models, and PT-expt models without graph eligibility ignore
-`freeze` and keep their normal loading path.
+export without compiling again, pass the `.pt2` file directly after concurrent
+exports have finished. Already frozen models, other PT models, and PT-expt
+models without graph eligibility ignore `freeze` and keep their normal loading
+path.
 
 Optimization is also available:
 
