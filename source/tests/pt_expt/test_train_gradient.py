@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import torch
 
@@ -86,6 +89,32 @@ class TestNonFiniteGradGuard(unittest.TestCase):
 
     def test_no_update_is_noop(self) -> None:
         NonFiniteGradGuard().raise_if_nonfinite(self._named(1.0))
+
+    def test_remote_failure_is_agreed_before_diagnostics(self) -> None:
+        # Even a rank with no local update must join the agreement. In FSDP,
+        # accessing the gradients for diagnostics may itself be collective.
+        guard = NonFiniteGradGuard()
+        events = []
+
+        def agree(gathered, local_flag):
+            self.assertFalse(local_flag)
+            events.append("agree")
+            gathered[:] = [False, True]
+
+        def named_parameters():
+            events.append("diagnostics")
+            return self._named(1.0)()
+
+        with (
+            patch("deepmd.pt_expt.train.gradient.dist.get_world_size", return_value=2),
+            patch(
+                "deepmd.pt_expt.train.gradient.dist.all_gather_object",
+                side_effect=agree,
+            ),
+            self.assertRaisesRegex(RuntimeError, "Non-finite gradient norm"),
+        ):
+            guard.raise_if_nonfinite(named_parameters, synchronize=True)
+        self.assertEqual(events, ["agree", "diagnostics"])
 
     def test_reports_offending_parameter(self) -> None:
         guard = NonFiniteGradGuard()
