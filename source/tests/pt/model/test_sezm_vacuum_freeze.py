@@ -43,6 +43,15 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
     def test_frozen_model_folds_the_reference(self) -> None:
         self.check_frozen_model(numb_fparam=0)
 
+    def test_frozen_bridged_model_keeps_the_readout_reference(self) -> None:
+        """The readout gate of a bridged model fades to the bias the fold moved.
+
+        A pair inside the bridging window keeps the gate open in part, so the
+        frozen archive reproduces the eager energies only if the gate reads
+        the isolated-atom output rather than the folded bias.
+        """
+        self.check_frozen_model(numb_fparam=0, bridged=True)
+
     def test_frozen_model_keeps_the_reference_with_fparam(self) -> None:
         """With frame parameters the archive references from the stored vacuum table."""
         self.check_frozen_model(numb_fparam=1)
@@ -67,9 +76,21 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "`ener` mode"):
                 freeze_sezm_to_pt2(str(ckpt), str(Path(tmp) / "dens.pt2"))
 
-    def check_frozen_model(self, numb_fparam: int, device: torch.device = _CPU) -> None:
+    def check_frozen_model(
+        self,
+        numb_fparam: int,
+        device: torch.device = _CPU,
+        bridged: bool = False,
+    ) -> None:
         params = _tiny_sezm_model_params()
-        params["preset_out_bias"] = {"energy": {"A": BIAS[0, 0], "B": BIAS[1, 0]}}
+        if bridged:
+            # the analytical term and the covalent window need element names
+            params["type_map"] = ["Ni", "O"]
+            params["bridging_method"] = "zbl"
+        types = params["type_map"]
+        params["preset_out_bias"] = {
+            "energy": {types[0]: BIAS[0, 0], types[1]: BIAS[1, 0]}
+        }
         params["fitting_net"]["vacuum_ref"] = True
         params["fitting_net"]["numb_fparam"] = numb_fparam
         fparam = None if numb_fparam == 0 else np.array([[0.7]])
@@ -89,6 +110,9 @@ class TestSeZMVacuumFreeze(unittest.TestCase):
         natoms = 5
         atype = np.array([0, 1, 0, 1, 0], dtype=np.int32)
         coord = rng.random((1, natoms, 3)) * box_edge * 0.4 + box_edge * 0.3
+        if bridged:
+            # a Ni-Ni pair inside its window, where the readout gate is partly open
+            coord[0, 2] = coord[0, 0] + np.array([1.0, 0.0, 0.0])
         eager = (
             model.forward(
                 torch.tensor(coord, dtype=torch.float64, device=device),

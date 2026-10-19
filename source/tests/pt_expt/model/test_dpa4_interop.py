@@ -225,6 +225,39 @@ class TestDPA4Interop:
             assert "momentum_buffer" not in optimizer.state[parameters[name]]
         assert "momentum_buffer" in optimizer.state[parameters[control]]
 
+    @pytest.mark.parametrize("child_protection", [None, 0.05])
+    def test_pt_spin_hybrid_routes_explicit_env_protection(
+        self,
+        child_protection: float | None,
+    ) -> None:
+        """The PT factory preserves explicit hybrid-level protection."""
+        descriptor = {
+            "type": "se_e2_a",
+            "sel": [4, 4],
+            "rcut": 6.0,
+            "rcut_smth": 5.5,
+            "neuron": [4, 8],
+            "axis_neuron": 2,
+        }
+        if child_protection is not None:
+            descriptor["env_protection"] = child_protection
+        config = {
+            "type": "standard",
+            "type_map": ["Fe"],
+            "descriptor": {
+                "type": "hybrid",
+                "env_protection": 0.03,
+                "list": [descriptor],
+            },
+            "fitting_net": {"type": "ener", "neuron": [8]},
+            "spin": {"use_spin": [True], "virtual_scale": [0.2]},
+        }
+        original = copy.deepcopy(config)
+        model = pt_get_model(config)
+        expected = 0.03 if child_protection is None else child_protection
+        assert model.get_descriptor().get_env_protection() == expected
+        assert config == original
+
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])
     def test_single_envelope_normalization_and_roundtrip(self, basis_type: str) -> None:
         """Preserve the integer envelope configuration and its energy/force function."""
