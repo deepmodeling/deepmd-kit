@@ -52,6 +52,13 @@ parser.add_argument(
     "reference run on the same archive (single-artifact dispatch).",
 )
 parser.add_argument(
+    "--boundary",
+    type=str,
+    default="p p p",
+    help="LAMMPS boundary style. Default 'p p p'; a model with a long-range "
+    "module evaluates complete non-periodic systems and passes 'f f f'.",
+)
+parser.add_argument(
     "--pair-coeff",
     type=str,
     default="* *",
@@ -137,7 +144,7 @@ lammps = PyLammps()
 # (the regular artifact handles nswap==0).
 lammps.processors(args.processors)
 lammps.units("metal")
-lammps.boundary("p p p")
+lammps.boundary(args.boundary)
 lammps.atom_style("atomic")
 # ``atom_modify map yes`` is required when single-rank dispatch goes
 # through the regular artifact of a use_loc_mapping=False .pt2: the

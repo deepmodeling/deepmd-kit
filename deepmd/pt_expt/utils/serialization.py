@@ -731,15 +731,16 @@ def build_synthetic_canonical_graph_inputs(
     *,
     device: torch.device,
     want_spin: bool = False,
-    want_coord: bool = False,
+    want_long_range: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     """Build compact canonical trace inputs for compressed CUDA descriptors.
 
     ``want_spin`` appends the per-node moment at slot 8, the last slot of the
     compact ABI, matching
     :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
-    ``want_coord`` appends the float64 node positions at the same slot, which
-    the compact lower of a model with a long-range module reads.
+    ``want_long_range`` appends the inputs that the compact lower of a model
+    with a long-range module reads: the float64 node positions at slot 8 and
+    the int64 communicator, a CPU tensor of one element, at slot 9.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
@@ -798,13 +799,14 @@ def build_synthetic_canonical_graph_inputs(
     )
     if spin is not None:
         return (*compact_sample, spin)
-    if want_coord:
+    if want_long_range:
         # Tracing reads the shape of the positions alone; distinct values keep
-        # the sample nodes apart.
+        # the sample nodes apart. The communicator of a single domain is zero.
         coord = 0.7 * torch.arange(
             3 * atype.shape[0], dtype=torch.float64, device=device
         ).reshape(-1, 3)
-        return (*compact_sample, coord)
+        communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
+        return (*compact_sample, coord, communicator)
     return compact_sample
 
 
@@ -813,9 +815,10 @@ def _build_canonical_graph_dynamic_shapes(
 ) -> tuple:
     """Build dynamic shapes for the compact deployment ABI.
 
-    The trailing node slot, the moments of a native-spin model or the
-    positions of a model with a long-range module, is present only for such
-    models, so the sample length selects the shape tuple.
+    The trailing slots, the moments of a native-spin model or the positions
+    and the communicator of a model with a long-range module, are present
+    only for such models, so the sample length selects the shape tuple. The
+    communicator holds one handle and is static.
     """
     from deepmd.pt_expt.utils.canonical_graph import (
         UINT32_MAX,
@@ -838,7 +841,8 @@ def _build_canonical_graph_dynamic_shapes(
         {0: node_dim + 1},
         {0: edge_storage_dim},
     )
-    return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
+    trailing = ({0: node_dim}, None)[: len(sample_inputs) - len(shapes)]
+    return (*shapes, *trailing)
 
 
 def count_synthetic_graph_edges(
@@ -2084,14 +2088,15 @@ def _trace_and_export_impl(
             e_sample += 1
         if canonical:
             # The compact lower of a model with a long-range module reads the
-            # node positions, from which its operators enumerate the pairs.
-            want_coord = bool(model.atomic_model.required_topologies())
+            # node positions, from which its operators enumerate the pairs,
+            # and the communicator of the domains of a decomposed frame.
+            want_long_range = bool(model.atomic_model.required_topologies())
             sample_inputs = build_synthetic_canonical_graph_inputs(
                 model,
                 e_sample,
                 device=torch.device("cpu"),
                 want_spin=is_native_spin,
-                want_coord=want_coord,
+                want_long_range=want_long_range,
             )
             traced = model.forward_lower_canonical_graph_exportable(
                 *sample_inputs,

@@ -662,6 +662,7 @@ void DeepPotBackend::compute_canonical_graph_gpu(
     double* d_atom_virial,
     const std::int64_t* d_atype,
     const double* d_coord,
+    void* world,
     const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
@@ -675,6 +676,7 @@ void DeepPotBackend::compute_canonical_graph_gpu(
   (void)d_atom_virial;
   (void)d_atype;
   (void)d_coord;
+  (void)world;
   (void)d_source;
   (void)d_edge_vec;
   (void)d_destination_row_ptr;
@@ -764,8 +766,8 @@ void DeepPot::compute_canonical_graph_gpu(
     const std::int64_t edge_storage) {
   dp->compute_canonical_graph_gpu(
       d_atom_energy, d_force, d_atom_virial, d_atype, /*d_coord=*/nullptr,
-      d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
-      d_source_order, nloc, nall_nodes, edge_storage);
+      /*world=*/nullptr, d_source, d_edge_vec, d_destination_row_ptr,
+      d_source_row_ptr, d_source_order, nloc, nall_nodes, edge_storage);
 }
 
 void DeepPot::compute_canonical_graph_gpu(
@@ -774,6 +776,7 @@ void DeepPot::compute_canonical_graph_gpu(
     double* d_atom_virial,
     const std::int64_t* d_atype,
     const double* d_coord,
+    void* world,
     const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
@@ -783,7 +786,7 @@ void DeepPot::compute_canonical_graph_gpu(
     const int nall_nodes,
     const std::int64_t edge_storage) {
   dp->compute_canonical_graph_gpu(
-      d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, d_source,
+      d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, world, d_source,
       d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc,
       nall_nodes, edge_storage);
 }

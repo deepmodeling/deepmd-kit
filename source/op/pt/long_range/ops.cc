@@ -43,6 +43,14 @@
 // float64 and is read only with a constrained channel. The force and the
 // virial hold the charges fixed; the response of the charges is the
 // caller's, through the charge gradient.
+//
+// `communicator` is an int64 CPU tensor of one element holding the bytes of
+// an MPI_Comm handle, as for deepmd_export::border_op, or zero. A handle of
+// several ranks decomposes one frame into domains, one per rank: the charged
+// nodes of every rank are the charged nodes of the frame, and the sums run
+// over all of them. The outputs of a rank are those of its charged nodes, and
+// W_f is their share of the virial of the frame; the other nodes of the rank
+// carry no charge.
 
 #include <torch/library.h>
 
@@ -50,7 +58,8 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
   library.def(
       "latent_charge_direct_sum(Tensor coord, Tensor charge, "
       "Tensor node_mask, Tensor n_node_per_frame, Tensor total_charge, "
-      "Tensor coefficient, int kernel, int channel, float prefactor) -> "
+      "Tensor coefficient, Tensor communicator, int kernel, int channel, "
+      "float prefactor) -> "
       "(Tensor atom_energy, Tensor charge_gradient, Tensor force, "
       "Tensor atom_virial, Tensor virial)");
 }

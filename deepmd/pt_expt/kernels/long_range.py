@@ -13,6 +13,10 @@ module, and returns the atomic energy, its derivative with respect to the
 charges the charge network predicts, and the force and virial at fixed
 charges; the caller adds the response of the charges by back-propagating the
 charge gradient through the charge network.
+
+Given the MPI communicator of a system decomposed into domains, one per rank,
+the CUDA kernel evaluates the charged nodes of its rank against those of
+every rank; the CPU reference evaluates a single domain.
 """
 
 import math
@@ -133,11 +137,17 @@ def _reference(
     n_node_per_frame: torch.Tensor,
     total_charge: torch.Tensor,
     coefficient: torch.Tensor,
+    communicator: torch.Tensor,
     kernel: int,
     channel: int,
     prefactor: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Evaluate the operator over the explicit pairs of every frame, in float64."""
+    if int(communicator.reshape(-1)[0]) != 0:
+        raise NotImplementedError(
+            "the CPU reference of latent_charge_direct_sum evaluates a single "
+            "domain; a communicator of several ranks requires the CUDA kernel"
+        )
     n = coord.shape[0]
     frame_count = n_node_per_frame.shape[0]
     # Padding nodes belong to no frame and carry no charge.
@@ -191,6 +201,7 @@ def _fake(
     n_node_per_frame: torch.Tensor,
     total_charge: torch.Tensor,
     coefficient: torch.Tensor,
+    communicator: torch.Tensor,
     kernel: int,
     channel: int,
     prefactor: float,
@@ -232,6 +243,7 @@ def latent_charge_direct_sum(
     kernel: Any,
     channel: int,
     prefactor: float,
+    communicator: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Energy, charge gradient, force and virial of the charges of complete frames.
 
@@ -259,6 +271,13 @@ def latent_charge_direct_sum(
         nodes of every frame to sum to its total charge, or -1 for none.
     prefactor
         Factor of every pair term, in eV Å.
+    communicator
+        The bytes of the MPI_Comm handle of a system decomposed into domains,
+        one per rank, as an int64 CPU tensor of one element, or zero, the
+        default, for a single domain. Across domains the call takes one
+        frame, whose charged nodes are those of every rank; the outputs are
+        those of the charged nodes of this rank, the other nodes carry no
+        charge, and ``virial`` is the share of this rank.
 
     Returns
     -------
@@ -278,6 +297,8 @@ def latent_charge_direct_sum(
     """
     ensure_registered()
     code, coefficient = kernel_operator_arguments(kernel)
+    if communicator is None:
+        communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
     return torch.ops.deepmd.latent_charge_direct_sum(
         coord,
         charge,
@@ -285,6 +306,7 @@ def latent_charge_direct_sum(
         n_node_per_frame,
         total_charge,
         coefficient.to(coord.device),
+        communicator,
         code,
         int(channel),
         float(prefactor),

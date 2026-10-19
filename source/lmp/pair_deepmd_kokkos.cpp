@@ -214,7 +214,8 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   edge_vec_fp32 = deep_pot.uses_fp32_edge_vectors();
   canonical_graph = deep_pot.uses_canonical_graph_inference();
   // PairDeepMD::init_style() has confined such a model to a complete
-  // non-periodic system on one rank.
+  // non-periodic system, whose atoms on other ranks it reaches through the
+  // communicator.
   long_range = deep_pot.has_long_range();
   // Force exchange transfers three values per atom. Centroid per-atom virial
   // uses nine values even though the Kokkos full-list request runs newton off,
@@ -553,7 +554,10 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     comm_ptr = &comm_list;
   }
 
-  if ((canonical_graph && nnode_m > 0) ||
+  // A long-range module across ranks exchanges the charges of every rank, so
+  // that every rank evaluates the model, also without nodes.
+  const bool long_range_across_ranks = long_range && multi_rank;
+  if ((canonical_graph && (nnode_m > 0 || long_range_across_ranks)) ||
       (!canonical_graph && (nloc_m > 0 || comm_ptr != nullptr))) {
     // Fully device-resident inference: raw device pointers in and out. The
     // edge buffers are produced on the Kokkos stream and consumed by the model
@@ -575,6 +579,7 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
         deep_pot.compute_canonical_graph_gpu(
             d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
             compact_graph.d_model_type.data(), long_range ? coord_ptr : nullptr,
+            long_range_across_ranks ? static_cast<void*>(&world) : nullptr,
             compact_graph.d_source.data(), compact_graph.d_edge_vec.data(),
             compact_graph.d_destination_row_ptr.data(),
             compact_graph.d_source_row_ptr.data(),

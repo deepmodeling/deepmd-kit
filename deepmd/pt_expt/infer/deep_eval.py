@@ -2518,12 +2518,14 @@ class DeepEval(DeepEvalBackend):
             )
             if self.metadata.get("topologies"):
                 # The compact lower of a model with a long-range module reads
-                # the positions of complete non-periodic frames.
+                # the positions of complete non-periodic frames, and the zero
+                # communicator of a frame held whole.
                 check_complete_frames(box_input)
                 model_inputs += (
                     torch.as_tensor(
                         coord_input.reshape(-1, 3), dtype=torch.float64, device=DEVICE
                     ),
+                    torch.zeros(1, dtype=torch.int64, device="cpu"),
                 )
         else:
             fparam_t, aparam_t = self._prepare_optional_lower_inputs(

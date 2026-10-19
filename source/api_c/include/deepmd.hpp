@@ -1415,6 +1415,7 @@ class DeepPot : public DeepBaseModel {
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
                                    const double* d_coord,
+                                   void* world,
                                    const uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
@@ -1424,15 +1425,15 @@ class DeepPot : public DeepBaseModel {
                                    const int nall_nodes,
                                    const int64_t edge_storage) {
     DP_DeepPotComputeCanonicalGraphGPU2(
-        dp, d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, d_source,
-        d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
-        nloc, nall_nodes, edge_storage);
+        dp, d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, world,
+        d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+        d_source_order, nloc, nall_nodes, edge_storage);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   }
 
   /**
    * @brief Query whether the model carries a long-range module, which
-   * evaluates complete non-periodic systems in a single domain only.
+   * evaluates complete non-periodic systems.
    */
   bool has_long_range() const {
     const bool result = DP_DeepPotHasLongRange(dp);
@@ -2640,6 +2641,16 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
   int dim_chg_spin() const {
     assert(dp);
     return dchgspin;
+  }
+
+  /**
+   * @brief Query whether any of the models carries a long-range module, which
+   * evaluates complete non-periodic systems.
+   */
+  bool has_long_range() const {
+    const bool result = DP_DeepPotModelDeviHasLongRange(dp);
+    DP_CHECK_OK(DP_DeepPotModelDeviCheckOK, dp);
+    return result;
   }
 
   /**

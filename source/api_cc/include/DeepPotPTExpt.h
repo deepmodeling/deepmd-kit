@@ -378,6 +378,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
                                    const double* d_coord,
+                                   void* world,
                                    const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
@@ -437,6 +438,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       double* d_atom_virial,
       const std::int64_t* d_atype,
       const double* d_coord,
+      void* world,
       const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
@@ -478,7 +480,8 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool graph_edge_fp32_ = false;
   // The model carries a long-range module, whose lower reads the all-pairs
   // topology of the frame after its other inputs: the pair lists for the graph
-  // lower, the node positions for the compact canonical lower.
+  // lower, the node positions and the communicator of the ranks for the
+  // compact canonical lower.
   bool long_range_ = false;
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
@@ -647,6 +650,9 @@ class DeepPotPTExpt : public DeepPotBackend {
    *
    * @param[in] coord Node positions, shape ``(N, 3)`` float64, appended for a
    * model with a long-range module and ignored otherwise.
+   * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of the
+   * ranks a decomposed system spans, or NULL for a system that one rank holds
+   * whole; a model with a long-range module receives it after the positions.
    */
   std::vector<torch::Tensor> run_model_canonical_graph(
       const torch::Tensor& atype,
@@ -657,7 +663,17 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& destination_row_ptr,
       const torch::Tensor& source_row_ptr,
       const torch::Tensor& source_order,
-      const torch::Tensor& coord);
+      const torch::Tensor& coord,
+      const void* world);
+
+  /**
+   * @brief Evaluate the long-range module on a rank that holds no node.
+   *
+   * The compact lower runs on one halo node without edges, which carries no
+   * charge and contributes nothing, so that the rank joins the exchanges of
+   * the module with the other ranks of ``world``.
+   */
+  void join_long_range_exchange(const void* world);
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.

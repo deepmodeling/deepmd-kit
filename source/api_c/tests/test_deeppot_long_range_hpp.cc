@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <string>
 #include <vector>
 
 #include "../../api_cc/tests/expected_ref.h"
@@ -16,6 +17,8 @@ constexpr const char* kModelPath =
     "../../tests/infer/deeppot_dpa4c_long_range.pt2";
 constexpr const char* kRefPath =
     "../../tests/infer/deeppot_dpa4c_long_range.expected";
+constexpr const char* kShortRangeModelPath =
+    "../../tests/infer/deeppot_sea.pth";
 }  // namespace
 
 template <class VALUETYPE>
@@ -47,6 +50,20 @@ TYPED_TEST_SUITE(TestInferDeepPotLongRangeHPP, ValueTypes);
 
 TYPED_TEST(TestInferDeepPotLongRangeHPP, has_long_range) {
   EXPECT_TRUE(this->dp.has_long_range());
+}
+
+TEST(TestInferDeepPotModelDeviLongRangeHPP, has_long_range) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  // A long-range model anywhere in the ensemble confines all of them.
+  deepmd::hpp::DeepPotModelDevi mixed;
+  mixed.init(std::vector<std::string>{kShortRangeModelPath, kModelPath});
+  EXPECT_TRUE(mixed.has_long_range());
+  deepmd::hpp::DeepPotModelDevi short_range;
+  short_range.init(
+      std::vector<std::string>{kShortRangeModelPath, kShortRangeModelPath});
+  EXPECT_FALSE(short_range.has_long_range());
 }
 
 TYPED_TEST(TestInferDeepPotLongRangeHPP, nopbc) {

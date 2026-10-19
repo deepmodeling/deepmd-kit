@@ -29,6 +29,16 @@
 // The charge constraint and the per-frame virial reduce over the nodes of
 // every frame, in slices whose float64 sums are added in a fixed order, so
 // that every output is independent of scheduling.
+//
+// The nodes whose sums a call evaluates, its owners, are either every node
+// or, across the domains of a decomposed system, the charged nodes of one
+// MPI rank. The ranks then gather the positions and charges of the charged
+// nodes of every domain into one frame, in rank order (domain_exchange.h),
+// and each rank evaluates its own nodes against the whole frame, so that the
+// quadratic work divides among the ranks. Every rank shifts the constrained
+// channel by the same sum of the gathered charges; the mean potential of the
+// constraint adds the sums of the ranks in rank order, and the per-frame
+// virial is the share of the owners of the rank.
 
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
@@ -40,6 +50,8 @@
 #include <cstdint>
 #include <limits>
 #include <tuple>
+
+#include "domain_exchange.h"
 
 namespace {
 
@@ -189,11 +201,11 @@ __device__ __forceinline__ void write_slice_sum(
 }
 
 // Per-frame statistics of the charge constraint: the shift of the
-// constrained channel, the number of charged nodes, and the mean potential of
-// the charged nodes in that channel.
+// constrained channel, the number of charged nodes, and the potential of the
+// charged nodes in that channel summed over them.
 constexpr int kStatShift = 0;
 constexpr int kStatCount = 1;
-constexpr int kStatMean = 2;
+constexpr int kStatPotential = 2;
 constexpr int kStatWidth = 3;
 
 // Sums, over one slice of one frame, the number of charged nodes and their raw
@@ -490,9 +502,10 @@ __device__ __forceinline__ void accumulate_tile(
   }
 }
 
-// Sums, for every node of one block and every partner of one chunk, the
+// Sums, for every owner node of one block and every partner of one chunk, the
 // unscaled potential, force direction and virial of the node, and writes them
-// to ``partial[chunk][component][node]``.
+// to ``partial[chunk][component][node - owner_begin]``. The owners are the
+// nodes [owner_begin, owner_begin + owner_count).
 template <int kKernel, int kChannels>
 __global__ void __launch_bounds__(kThreads)
     direct_sum_kernel(const float4* __restrict__ head,
@@ -500,7 +513,8 @@ __global__ void __launch_bounds__(kThreads)
                       const float* __restrict__ charge,
                       const int* __restrict__ frame,
                       const int64_t* __restrict__ frame_ptr,
-                      int node_count,
+                      int owner_begin,
+                      int owner_count,
                       const float* __restrict__ coefficient,
                       int gaussian_count,
                       float* __restrict__ partial) {
@@ -512,9 +526,10 @@ __global__ void __launch_bounds__(kThreads)
   __shared__ int range[2];
   __shared__ bool single_frame;
 
-  const int first = blockIdx.x * kThreads;
+  const int owner_end = owner_begin + owner_count;
+  const int first = owner_begin + blockIdx.x * kThreads;
   const int node = first + threadIdx.x;
-  const int own_frame = node < node_count ? frame[node] : -1;
+  const int own_frame = node < owner_end ? frame[node] : -1;
 
   if constexpr (kKernel == kSog) {
     for (int k = threadIdx.x; k < gaussian_count; k += kThreads) {
@@ -528,7 +543,7 @@ __global__ void __launch_bounds__(kThreads)
   // to: a contiguous range, since frames are contiguous on the node axis and
   // padding nodes trail them.
   if (threadIdx.x == 0) {
-    int last = min(first + kThreads, node_count) - 1;
+    int last = min(first + kThreads, owner_end) - 1;
     while (last > first && frame[last] < 0) {
       --last;
     }
@@ -539,7 +554,7 @@ __global__ void __launch_bounds__(kThreads)
     // A block whose nodes all lie in one frame finds every partner of its
     // range in that frame, which spares the frame test of every pair.
     single_frame = low_frame >= 0 && low_frame == high_frame &&
-                   min(first + kThreads, node_count) - 1 == last;
+                   min(first + kThreads, owner_end) - 1 == last;
   }
   __syncthreads();
 
@@ -614,24 +629,25 @@ __global__ void __launch_bounds__(kThreads)
     __syncthreads();
   }
 
-  if (node < node_count) {
-    float* out =
-        partial + static_cast<int64_t>(blockIdx.y) * kWidth * node_count + node;
+  if (node < owner_end) {
+    float* out = partial +
+                 static_cast<int64_t>(blockIdx.y) * kWidth * owner_count +
+                 (node - owner_begin);
 #pragma unroll
     for (int k = 0; k < kWidth; ++k) {
-      out[static_cast<int64_t>(k) * node_count] = total[k].sum;
+      out[static_cast<int64_t>(k) * owner_count] = total[k].sum;
     }
   }
 }
 
-// Adds the chunk sums of one component of one node in chunk order, one
-// thread per component and node, and scales the result into the potential,
-// the force or the per-node virial. With positions scaled by alpha,
-// K(r) = alpha f(x), K'(r) / r = alpha^3 f'(x) / x and d = d' / alpha, so the
-// potential carries alpha, the force alpha^2 and the virial alpha.
+// Adds the chunk sums of one component of one owner node in chunk order, one
+// thread per component and owner, and scales the result into the potential,
+// the force or the per-node virial of the owner. With positions scaled by
+// alpha, K(r) = alpha f(x), K'(r) / r = alpha^3 f'(x) / x and d = d' / alpha,
+// so the potential carries alpha, the force alpha^2 and the virial alpha.
 template <int kChannels>
 __global__ void reduce_chunks(const float* __restrict__ partial,
-                              int node_count,
+                              int owner_count,
                               int chunk_count,
                               double prefactor,
                               const float* __restrict__ alpha,
@@ -641,14 +657,15 @@ __global__ void reduce_chunks(const float* __restrict__ partial,
   constexpr int kWidth = sum_width<kChannels>();
   const int64_t index =
       static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (index >= static_cast<int64_t>(kWidth) * node_count) {
+  if (index >= static_cast<int64_t>(kWidth) * owner_count) {
     return;
   }
-  const int component = static_cast<int>(index / node_count);
-  const int node = static_cast<int>(index - component * int64_t(node_count));
+  const int component = static_cast<int>(index / owner_count);
+  const int node = static_cast<int>(index - component * int64_t(owner_count));
   double value = 0.0;
   for (int chunk = 0; chunk < chunk_count; ++chunk) {
-    value += partial[static_cast<int64_t>(chunk) * kWidth * node_count + index];
+    value +=
+        partial[static_cast<int64_t>(chunk) * kWidth * owner_count + index];
   }
   const double unit = alpha == nullptr ? 1.0 : static_cast<double>(*alpha);
   if (component < kChannels) {
@@ -700,7 +717,7 @@ __global__ void __launch_bounds__(kFrameThreads)
 }
 
 // Adds the slice sums of virial_slices into the virial of every frame and,
-// with a constraint, the mean potential of its charged nodes.
+// with a constraint, the potential summed over its charged nodes.
 template <bool kConstrained>
 __global__ void virial_total(const double* __restrict__ slice_sum,
                              int slice_count,
@@ -720,32 +737,34 @@ __global__ void virial_total(const double* __restrict__ slice_sum,
   if (threadIdx.x < 9) {
     virial[blockIdx.x * 9 + threadIdx.x] = static_cast<float>(value);
   } else {
-    double* stat = frame_stat + blockIdx.x * kStatWidth;
-    stat[kStatMean] = value / stat[kStatCount];
+    frame_stat[blockIdx.x * kStatWidth + kStatPotential] = value;
   }
 }
 
-// Writes the atomic energy q_i . phi_i / 2 and the derivative of the energy
-// with respect to the raw charges: w_i (phi_i - mean_f) in the constrained
-// channel and w_i phi_i in the others, w_i marking the charged nodes.
+// Writes the atomic energy q_i . phi_i / 2 of every owner node and the
+// derivative of the energy with respect to its raw charges: w_i (phi_i -
+// mean_f) in the constrained channel and w_i phi_i in the others, w_i marking
+// the charged nodes. ``pair_charge``, ``node_mask`` and ``frame`` start at the
+// first owner.
 __global__ void project_charges(const float* __restrict__ potential,
                                 const float* __restrict__ pair_charge,
                                 const bool* __restrict__ node_mask,
                                 const int* __restrict__ frame,
                                 const double* __restrict__ frame_stat,
-                                int node_count,
+                                int owner_count,
                                 int channels,
                                 int channel,
                                 double* __restrict__ atom_energy,
                                 float* __restrict__ charge_gradient) {
   const int node = blockIdx.x * blockDim.x + threadIdx.x;
-  if (node >= node_count) {
+  if (node >= owner_count) {
     return;
   }
   const int f = frame[node];
   const bool charged = f >= 0 && node_mask[node];
   const double mean = charged && frame_stat != nullptr
-                          ? frame_stat[f * kStatWidth + kStatMean]
+                          ? frame_stat[f * kStatWidth + kStatPotential] /
+                                frame_stat[f * kStatWidth + kStatCount]
                           : 0.0;
   double energy = 0.0;
   for (int c = 0; c < channels; ++c) {
@@ -759,23 +778,27 @@ __global__ void project_charges(const float* __restrict__ potential,
   atom_energy[node] = 0.5 * energy;
 }
 
-// Chunks of the partner axis for the given node count. The blocks of one
-// launch all carry the same work, so the launch fills the resident block
-// slots of the device several times over, which bounds the idle share of the
-// last wave; no chunk is shorter than kMinChunkTiles tiles of a frame that
-// spans every node.
-int chunk_count_for(int node_count, int resident_blocks_per_multiprocessor) {
+// Chunks of the partner axis for the given counts of owners and partners. The
+// blocks of one launch all carry the same work, so the launch fills the
+// resident block slots of the device several times over, which bounds the
+// idle share of the last wave; no chunk is shorter than kMinChunkTiles tiles
+// of a frame that spans every partner.
+int chunk_count_for(int owner_count,
+                    int partner_count,
+                    int resident_blocks_per_multiprocessor) {
   const int multiprocessors =
       at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
-  const int node_blocks = (node_count + kThreads - 1) / kThreads;
+  const int owner_blocks = (owner_count + kThreads - 1) / kThreads;
+  const int partner_tiles = (partner_count + kThreads - 1) / kThreads;
   const int64_t wanted_blocks = static_cast<int64_t>(kWaves) *
                                 resident_blocks_per_multiprocessor *
                                 multiprocessors;
   const int wanted =
-      static_cast<int>((wanted_blocks + node_blocks - 1) / node_blocks);
-  return std::max(1, std::min(wanted, node_blocks / kMinChunkTiles));
+      static_cast<int>((wanted_blocks + owner_blocks - 1) / owner_blocks);
+  return std::max(1, std::min(wanted, partner_tiles / kMinChunkTiles));
 }
 
+// The staged partners, one row per node, and the sums of the owners.
 struct DirectSumBuffers {
   const torch::Tensor& head;
   const torch::Tensor& tail;
@@ -803,29 +826,31 @@ int resident_blocks_per_multiprocessor() {
 
 template <int kKernel, int kChannels>
 void launch(const DirectSumBuffers& buffers,
-            int node_count,
+            int owner_begin,
+            int owner_count,
             double prefactor,
             cudaStream_t stream) {
   constexpr int kWidth = sum_width<kChannels>();
-  const int chunk_count = chunk_count_for(
-      node_count, resident_blocks_per_multiprocessor<kKernel, kChannels>());
+  const int chunk_count =
+      chunk_count_for(owner_count, static_cast<int>(buffers.head.size(0)),
+                      resident_blocks_per_multiprocessor<kKernel, kChannels>());
   auto partial =
-      torch::empty({static_cast<int64_t>(chunk_count) * node_count * kWidth},
+      torch::empty({static_cast<int64_t>(chunk_count) * owner_count * kWidth},
                    buffers.charge.options());
-  const dim3 grid((node_count + kThreads - 1) / kThreads, chunk_count);
+  const dim3 grid((owner_count + kThreads - 1) / kThreads, chunk_count);
   direct_sum_kernel<kKernel, kChannels><<<grid, kThreads, 0, stream>>>(
       reinterpret_cast<const float4*>(buffers.head.data_ptr<float>()),
       reinterpret_cast<const float4*>(buffers.tail.data_ptr<float>()),
       buffers.charge.data_ptr<float>(), buffers.frame.data_ptr<int>(),
-      buffers.frame_ptr.data_ptr<int64_t>(), node_count,
+      buffers.frame_ptr.data_ptr<int64_t>(), owner_begin, owner_count,
       buffers.coefficient.data_ptr<float>(),
       static_cast<int>(buffers.coefficient.numel() / 2),
       partial.data_ptr<float>());
   C10_CUDA_KERNEL_LAUNCH_CHECK();
-  const int64_t reduce_threads = static_cast<int64_t>(kWidth) * node_count;
+  const int64_t reduce_threads = static_cast<int64_t>(kWidth) * owner_count;
   reduce_chunks<kChannels>
       <<<static_cast<unsigned>((reduce_threads + 255) / 256), 256, 0, stream>>>(
-          partial.data_ptr<float>(), node_count, chunk_count, prefactor,
+          partial.data_ptr<float>(), owner_count, chunk_count, prefactor,
           kKernel == kLes ? buffers.coefficient.data_ptr<float>() : nullptr,
           buffers.potential.data_ptr<float>(), buffers.force.data_ptr<float>(),
           buffers.atom_virial.data_ptr<float>());
@@ -835,46 +860,277 @@ void launch(const DirectSumBuffers& buffers,
 template <int kKernel>
 void dispatch_channels(int channels,
                        const DirectSumBuffers& buffers,
-                       int node_count,
+                       int owner_begin,
+                       int owner_count,
                        double prefactor,
                        cudaStream_t stream) {
   switch (channels) {
     case 1:
-      return launch<kKernel, 1>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 1>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 2:
-      return launch<kKernel, 2>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 2>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 3:
-      return launch<kKernel, 3>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 3>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 4:
-      return launch<kKernel, 4>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 4>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 5:
-      return launch<kKernel, 5>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 5>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 6:
-      return launch<kKernel, 6>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 6>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 7:
-      return launch<kKernel, 7>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 7>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     case 8:
-      return launch<kKernel, 8>(buffers, node_count, prefactor, stream);
+      return launch<kKernel, 8>(buffers, owner_begin, owner_count, prefactor,
+                                stream);
     default:
       TORCH_CHECK(false, "latent_charge_direct_sum: unsupported channel count ",
                   channels);
   }
 }
 
-std::tuple<torch::Tensor,
-           torch::Tensor,
-           torch::Tensor,
-           torch::Tensor,
-           torch::Tensor>
-latent_charge_direct_sum(torch::Tensor coord,
-                         torch::Tensor charge,
-                         torch::Tensor node_mask,
-                         torch::Tensor n_node_per_frame,
-                         torch::Tensor total_charge,
-                         torch::Tensor coefficient,
-                         int64_t kernel,
-                         int64_t channel,
-                         double prefactor) {
+using DirectSumOutputs = std::tuple<torch::Tensor,
+                                    torch::Tensor,
+                                    torch::Tensor,
+                                    torch::Tensor,
+                                    torch::Tensor>;
+
+// Evaluates the owner nodes [owner_begin, owner_begin + owner_count) against
+// the nodes of their frames. Returns the outputs of the owners, row r for
+// owner owner_begin + r, and the per-frame virial of the owners. Owners other
+// than every node lie in a single frame. A non-null ``communicator`` spans
+// the domains whose owners share that frame, over which the potential of the
+// constraint is summed.
+DirectSumOutputs evaluate(const torch::Tensor& coord,
+                          const torch::Tensor& charge,
+                          const torch::Tensor& node_mask,
+                          const torch::Tensor& n_node_per_frame,
+                          const torch::Tensor& total_charge,
+                          const torch::Tensor& coefficient,
+                          int64_t kernel,
+                          int64_t channel,
+                          double prefactor,
+                          int owner_begin,
+                          int owner_count,
+                          const torch::Tensor* communicator) {
+  TORCH_CHECK(coord.size(0) < std::numeric_limits<int>::max() / kThreads,
+              "latent_charge_direct_sum: too many nodes");
+  const int node_count = static_cast<int>(coord.size(0));
+  const int frame_count = static_cast<int>(n_node_per_frame.size(0));
+  const int64_t channels = charge.size(1);
+  const auto float_options = charge.options();
+  const auto double_options = coord.options();
+  if (node_count == 0 || frame_count == 0) {
+    return {torch::zeros({owner_count, 1}, double_options),
+            torch::zeros({owner_count, channels}, float_options),
+            torch::zeros({owner_count, 3}, float_options),
+            torch::zeros({owner_count, 9}, float_options),
+            torch::zeros({frame_count, 9}, float_options)};
+  }
+  const bool every_node = owner_begin == 0 && owner_count == node_count;
+  TORCH_CHECK(every_node || frame_count == 1,
+              "latent_charge_direct_sum: owners other than every node lie in "
+              "one frame");
+  const bool constrained = channel >= 0;
+  const int constrained_channel = static_cast<int>(channel);
+  // The kernels write every entry of the outputs.
+  auto atom_energy = torch::empty({owner_count, 1}, double_options);
+  auto charge_gradient = torch::empty({owner_count, channels}, float_options);
+  auto force = torch::empty({owner_count, 3}, float_options);
+  auto atom_virial = torch::empty({owner_count, 9}, float_options);
+  auto virial = torch::empty({frame_count, 9}, float_options);
+
+  const auto counts = n_node_per_frame.to(torch::kInt64).contiguous();
+  auto frame_ptr = torch::empty({frame_count + 1}, counts.options());
+  auto head = torch::empty({node_count, 4}, float_options);
+  auto tail = torch::empty({node_count, 4}, float_options);
+  auto frame = torch::empty({node_count}, coord.options().dtype(torch::kInt32));
+  auto pair_charge = torch::empty({node_count, channels}, float_options);
+  auto potential = torch::empty({owner_count, channels}, float_options);
+  auto frame_stat = torch::empty({constrained ? frame_count * kStatWidth : 0},
+                                 double_options);
+  const auto slices_for = [frame_count](int64_t nodes) {
+    const int64_t average_nodes = (nodes + frame_count - 1) / frame_count;
+    return static_cast<int>(std::min<int64_t>(
+        kMaxSlices,
+        std::max<int64_t>(1, (average_nodes + kSliceNodes - 1) / kSliceNodes)));
+  };
+  const int slice_count = slices_for(node_count);
+  const dim3 slice_grid(frame_count, slice_count);
+  const auto stream = at::cuda::getCurrentCUDAStream();
+  frame_offsets<<<1, kOffsetThreads, 0, stream>>>(
+      counts.data_ptr<int64_t>(), frame_count, frame_ptr.data_ptr<int64_t>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  if (constrained) {
+    auto slice_charge = torch::empty(
+        {static_cast<int64_t>(frame_count) * slice_count * 2}, double_options);
+    charge_slices<<<slice_grid, kFrameThreads, 0, stream>>>(
+        charge.data_ptr<float>(), node_mask.data_ptr<bool>(),
+        frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
+        constrained_channel, slice_charge.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    charge_shift<<<(frame_count + kFrameThreads - 1) / kFrameThreads,
+                   kFrameThreads, 0, stream>>>(
+        slice_charge.data_ptr<double>(), slice_count, frame_count,
+        total_charge.data_ptr<double>(), frame_stat.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+  }
+  // Alpha stays on the device, so that a call never waits for it.
+  prepare_nodes<<<(node_count + kThreads - 1) / kThreads, kThreads, 0,
+                  stream>>>(
+      coord.data_ptr<double>(), charge.data_ptr<float>(),
+      node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(), frame_count,
+      node_count, static_cast<int>(channels), constrained_channel,
+      kernel == kLes ? coefficient.data_ptr<float>() : nullptr,
+      constrained ? frame_stat.data_ptr<double>() : nullptr,
+      reinterpret_cast<float4*>(head.data_ptr<float>()),
+      reinterpret_cast<float4*>(tail.data_ptr<float>()), frame.data_ptr<int>(),
+      pair_charge.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+  if (owner_count > 0) {
+    const DirectSumBuffers buffers{head,      tail,      pair_charge,
+                                   frame,     frame_ptr, coefficient,
+                                   potential, force,     atom_virial};
+    if (kernel == kLes) {
+      dispatch_channels<kLes>(static_cast<int>(channels), buffers, owner_begin,
+                              owner_count, prefactor, stream.stream());
+    } else {
+      dispatch_channels<kSog>(static_cast<int>(channels), buffers, owner_begin,
+                              owner_count, prefactor, stream.stream());
+    }
+  }
+  // The frames of the owners, on the axis of the owners: the frames
+  // themselves when every node is an owner, else the one frame the owners
+  // share, written on the device.
+  torch::Tensor owner_frame_ptr = frame_ptr;
+  if (!every_node) {
+    owner_frame_ptr =
+        torch::full({2}, int64_t{owner_count}, frame_ptr.options());
+    owner_frame_ptr.select(0, 0).zero_();
+  }
+  const bool* owner_mask = node_mask.data_ptr<bool>() + owner_begin;
+  const int owner_slice_count = slices_for(owner_count);
+  const dim3 owner_slice_grid(frame_count, owner_slice_count);
+  const int components = constrained ? 10 : 9;
+  auto slice_virial = torch::empty(
+      {static_cast<int64_t>(frame_count) * owner_slice_count * components},
+      double_options);
+  if (constrained) {
+    virial_slices<true><<<owner_slice_grid, kFrameThreads, 0, stream>>>(
+        atom_virial.data_ptr<float>(), potential.data_ptr<float>(), owner_mask,
+        owner_frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
+        constrained_channel, slice_virial.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    virial_total<true><<<frame_count, 32, 0, stream>>>(
+        slice_virial.data_ptr<double>(), owner_slice_count,
+        virial.data_ptr<float>(), frame_stat.data_ptr<double>());
+  } else {
+    virial_slices<false><<<owner_slice_grid, kFrameThreads, 0, stream>>>(
+        atom_virial.data_ptr<float>(), potential.data_ptr<float>(), owner_mask,
+        owner_frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
+        constrained_channel, slice_virial.data_ptr<double>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    virial_total<false><<<frame_count, 32, 0, stream>>>(
+        slice_virial.data_ptr<double>(), owner_slice_count,
+        virial.data_ptr<float>(), nullptr);
+  }
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  if (constrained && communicator != nullptr) {
+    // The mean potential of the constraint runs over the charged nodes of
+    // every domain.
+    auto potential_sum =
+        frame_stat.view({frame_count, kStatWidth}).select(1, kStatPotential);
+    potential_sum.copy_(deepmd::long_range::sum_over_domains(
+        *communicator, potential_sum.contiguous()));
+  }
+  if (owner_count > 0) {
+    project_charges<<<(owner_count + kThreads - 1) / kThreads, kThreads, 0,
+                      stream>>>(
+        potential.data_ptr<float>(),
+        pair_charge.data_ptr<float>() + int64_t{owner_begin} * channels,
+        owner_mask, frame.data_ptr<int>() + owner_begin,
+        constrained ? frame_stat.data_ptr<double>() : nullptr, owner_count,
+        static_cast<int>(channels), constrained_channel,
+        atom_energy.data_ptr<double>(), charge_gradient.data_ptr<float>());
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+  }
+  return {atom_energy, charge_gradient, force, atom_virial, virial};
+}
+
+// Evaluates the frame of a system decomposed into the domains of
+// ``communicator``, of which this rank holds one: its charged nodes are its
+// owners, the charged nodes of every domain its partners. The nodes the rank
+// does not own carry no charge, and the per-frame virial is the share of its
+// owners.
+DirectSumOutputs evaluate_across_domains(const torch::Tensor& coord,
+                                         const torch::Tensor& charge,
+                                         const torch::Tensor& node_mask,
+                                         const torch::Tensor& n_node_per_frame,
+                                         const torch::Tensor& total_charge,
+                                         const torch::Tensor& coefficient,
+                                         int64_t kernel,
+                                         int64_t channel,
+                                         double prefactor,
+                                         const torch::Tensor& communicator) {
+  TORCH_CHECK(n_node_per_frame.size(0) == 1,
+              "latent_charge_direct_sum: an evaluation across MPI ranks takes "
+              "one frame, got ",
+              n_node_per_frame.size(0));
+  const int64_t node_count = coord.size(0);
+  // The charged nodes of the frame; the padding nodes past it carry none.
+  // Their count is the one value the host has to wait for before the
+  // exchange.
+  const auto in_frame =
+      torch::arange(node_count, n_node_per_frame.options()) < n_node_per_frame;
+  const auto owned = torch::nonzero(node_mask & in_frame).squeeze(1);
+  const auto rows =
+      torch::cat({coord.index_select(0, owned),
+                  charge.index_select(0, owned).to(torch::kFloat64)},
+                 1)
+          .contiguous();
+  const auto [partners, owner_begin] =
+      deepmd::long_range::gather_domain_rows(communicator, rows);
+  const int64_t partner_count = partners.size(0);
+  const auto partner_coord = partners.slice(1, 0, 3).contiguous();
+  const auto partner_charge =
+      partners.slice(1, 3).to(torch::kFloat32).contiguous();
+  const auto partner_mask = torch::ones({partner_count}, node_mask.options());
+  const auto partner_frame =
+      torch::full({1}, partner_count, n_node_per_frame.options());
+  const auto [owner_energy, owner_gradient, owner_force, owner_atom_virial,
+              virial] =
+      evaluate(partner_coord, partner_charge, partner_mask, partner_frame,
+               total_charge, coefficient, kernel, channel, prefactor,
+               static_cast<int>(owner_begin), static_cast<int>(owned.size(0)),
+               &communicator);
+  return {torch::zeros({node_count, 1}, coord.options())
+              .index_copy_(0, owned, owner_energy),
+          torch::zeros({node_count, charge.size(1)}, charge.options())
+              .index_copy_(0, owned, owner_gradient),
+          torch::zeros({node_count, 3}, charge.options())
+              .index_copy_(0, owned, owner_force),
+          torch::zeros({node_count, 9}, charge.options())
+              .index_copy_(0, owned, owner_atom_virial),
+          virial};
+}
+
+DirectSumOutputs latent_charge_direct_sum(torch::Tensor coord,
+                                          torch::Tensor charge,
+                                          torch::Tensor node_mask,
+                                          torch::Tensor n_node_per_frame,
+                                          torch::Tensor total_charge,
+                                          torch::Tensor coefficient,
+                                          torch::Tensor communicator,
+                                          int64_t kernel,
+                                          int64_t channel,
+                                          double prefactor) {
   TORCH_CHECK(coord.is_cuda() && charge.is_cuda() && node_mask.is_cuda() &&
                   n_node_per_frame.is_cuda() && total_charge.is_cuda() &&
                   coefficient.is_cuda(),
@@ -916,8 +1172,6 @@ latent_charge_direct_sum(torch::Tensor coord,
               "latent_charge_direct_sum: the constrained channel must be -1 "
               "or lie in [0, ",
               channels, "), got ", channel);
-  TORCH_CHECK(coord.size(0) < std::numeric_limits<int>::max() / kThreads,
-              "latent_charge_direct_sum: too many nodes");
   if (kernel == kLes) {
     TORCH_CHECK(coefficient.numel() == 1,
                 "latent_charge_direct_sum: the erf kernel takes one "
@@ -933,121 +1187,19 @@ latent_charge_direct_sum(torch::Tensor coord,
   }
 
   const c10::cuda::CUDAGuard guard(coord.device());
-  const int node_count = static_cast<int>(coord.size(0));
-  const int frame_count = static_cast<int>(n_node_per_frame.size(0));
-  const auto float_options = charge.options();
-  const auto double_options = coord.options();
-  if (node_count == 0 || frame_count == 0) {
-    return {torch::zeros({node_count, 1}, double_options),
-            torch::zeros({node_count, channels}, float_options),
-            torch::zeros({node_count, 3}, float_options),
-            torch::zeros({node_count, 9}, float_options),
-            torch::zeros({frame_count, 9}, float_options)};
-  }
-  const bool constrained = channel >= 0;
-  const int constrained_channel = static_cast<int>(channel);
-  // The kernels write every entry of the outputs.
-  auto atom_energy = torch::empty({node_count, 1}, double_options);
-  auto charge_gradient = torch::empty({node_count, channels}, float_options);
-  auto force = torch::empty({node_count, 3}, float_options);
-  auto atom_virial = torch::empty({node_count, 9}, float_options);
-  auto virial = torch::empty({frame_count, 9}, float_options);
-
   coord = coord.contiguous();
   charge = charge.contiguous();
   node_mask = node_mask.contiguous();
   total_charge = total_charge.contiguous();
   coefficient = coefficient.contiguous();
-  const auto counts = n_node_per_frame.to(torch::kInt64).contiguous();
-  auto frame_ptr = torch::empty({frame_count + 1}, counts.options());
-  auto head = torch::empty({node_count, 4}, float_options);
-  auto tail = torch::empty({node_count, 4}, float_options);
-  auto frame = torch::empty({node_count}, coord.options().dtype(torch::kInt32));
-  auto pair_charge = torch::empty({node_count, channels}, float_options);
-  auto potential = torch::empty({node_count, channels}, float_options);
-  auto frame_stat = torch::empty({constrained ? frame_count * kStatWidth : 0},
-                                 double_options);
-  const int64_t average_nodes = (node_count + frame_count - 1) / frame_count;
-  const int slice_count = static_cast<int>(std::min<int64_t>(
-      kMaxSlices,
-      std::max<int64_t>(1, (average_nodes + kSliceNodes - 1) / kSliceNodes)));
-  const dim3 slice_grid(frame_count, slice_count);
-  const auto stream = at::cuda::getCurrentCUDAStream();
-  frame_offsets<<<1, kOffsetThreads, 0, stream>>>(
-      counts.data_ptr<int64_t>(), frame_count, frame_ptr.data_ptr<int64_t>());
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-  if (constrained) {
-    auto slice_charge = torch::empty(
-        {static_cast<int64_t>(frame_count) * slice_count * 2}, double_options);
-    charge_slices<<<slice_grid, kFrameThreads, 0, stream>>>(
-        charge.data_ptr<float>(), node_mask.data_ptr<bool>(),
-        frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
-        constrained_channel, slice_charge.data_ptr<double>());
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-    charge_shift<<<(frame_count + kFrameThreads - 1) / kFrameThreads,
-                   kFrameThreads, 0, stream>>>(
-        slice_charge.data_ptr<double>(), slice_count, frame_count,
-        total_charge.data_ptr<double>(), frame_stat.data_ptr<double>());
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
+  if (deepmd::long_range::domain_of(communicator).size == 1) {
+    return evaluate(coord, charge, node_mask, n_node_per_frame, total_charge,
+                    coefficient, kernel, channel, prefactor, 0,
+                    static_cast<int>(coord.size(0)), nullptr);
   }
-  // Alpha stays on the device, so that a call never waits for it.
-  prepare_nodes<<<(node_count + kThreads - 1) / kThreads, kThreads, 0,
-                  stream>>>(
-      coord.data_ptr<double>(), charge.data_ptr<float>(),
-      node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(), frame_count,
-      node_count, static_cast<int>(channels), constrained_channel,
-      kernel == kLes ? coefficient.data_ptr<float>() : nullptr,
-      constrained ? frame_stat.data_ptr<double>() : nullptr,
-      reinterpret_cast<float4*>(head.data_ptr<float>()),
-      reinterpret_cast<float4*>(tail.data_ptr<float>()), frame.data_ptr<int>(),
-      pair_charge.data_ptr<float>());
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-
-  const DirectSumBuffers buffers{head,      tail,      pair_charge,
-                                 frame,     frame_ptr, coefficient,
-                                 potential, force,     atom_virial};
-  if (kernel == kLes) {
-    dispatch_channels<kLes>(static_cast<int>(channels), buffers, node_count,
-                            prefactor, stream.stream());
-  } else {
-    dispatch_channels<kSog>(static_cast<int>(channels), buffers, node_count,
-                            prefactor, stream.stream());
-  }
-  const int components = constrained ? 10 : 9;
-  auto slice_virial = torch::empty(
-      {static_cast<int64_t>(frame_count) * slice_count * components},
-      double_options);
-  if (constrained) {
-    virial_slices<true><<<slice_grid, kFrameThreads, 0, stream>>>(
-        atom_virial.data_ptr<float>(), potential.data_ptr<float>(),
-        node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(),
-        static_cast<int>(channels), constrained_channel,
-        slice_virial.data_ptr<double>());
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-    virial_total<true><<<frame_count, 32, 0, stream>>>(
-        slice_virial.data_ptr<double>(), slice_count, virial.data_ptr<float>(),
-        frame_stat.data_ptr<double>());
-  } else {
-    virial_slices<false><<<slice_grid, kFrameThreads, 0, stream>>>(
-        atom_virial.data_ptr<float>(), potential.data_ptr<float>(),
-        node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(),
-        static_cast<int>(channels), constrained_channel,
-        slice_virial.data_ptr<double>());
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-    virial_total<false><<<frame_count, 32, 0, stream>>>(
-        slice_virial.data_ptr<double>(), slice_count, virial.data_ptr<float>(),
-        nullptr);
-  }
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-  project_charges<<<(node_count + kThreads - 1) / kThreads, kThreads, 0,
-                    stream>>>(
-      potential.data_ptr<float>(), pair_charge.data_ptr<float>(),
-      node_mask.data_ptr<bool>(), frame.data_ptr<int>(),
-      constrained ? frame_stat.data_ptr<double>() : nullptr, node_count,
-      static_cast<int>(channels), constrained_channel,
-      atom_energy.data_ptr<double>(), charge_gradient.data_ptr<float>());
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-  return {atom_energy, charge_gradient, force, atom_virial, virial};
+  return evaluate_across_domains(coord, charge, node_mask, n_node_per_frame,
+                                 total_charge, coefficient, kernel, channel,
+                                 prefactor, communicator);
 }
 
 }  // namespace

@@ -25,6 +25,7 @@ def dpa4c_canonical_long_range_energy_force(
     graph: CanonicalGraph,
     atype: torch.Tensor,
     coord: torch.Tensor,
+    communicator: torch.Tensor | None,
     ownership: torch.Tensor,
     atom_bias: torch.Tensor,
     do_atomic_virial: bool,
@@ -54,6 +55,11 @@ def dpa4c_canonical_long_range_energy_force(
     coord
         Node positions with shape ``(N, 3)`` in Å; every frame is a complete
         non-periodic system.
+    communicator
+        The bytes of the MPI_Comm handle of a frame decomposed into domains,
+        one per rank, as an int64 CPU tensor of one element, or zero or
+        ``None`` for a single domain. Across domains the owned nodes of every
+        rank make up the frame.
     ownership
         Boolean mask selecting energy-contributing nodes with shape ``(N,)``.
     atom_bias
@@ -117,7 +123,7 @@ def dpa4c_canonical_long_range_energy_force(
         long_range_atom_virial,
         long_range_virial,
     ) = long_range.energy_force_from_coord(
-        node_descriptor, atype, ownership, graph.n_node, coord
+        node_descriptor, atype, ownership, graph.n_node, coord, communicator
     )
     atom_energy, descriptor_gradient = fitting_energy_and_gradient(
         fitting, node_descriptor, atype, ownership, atom_bias

@@ -427,6 +427,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
       double* d_atom_virial,
       const std::int64_t* d_atype,
       const double* d_coord,
+      void* world,
       const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
@@ -901,8 +902,9 @@ class DeepPot : public DeepBaseModel {
    *
    * Such a model sums its long-range interaction over every pair of atoms of
    * a complete non-periodic system, so it evaluates a system without a
-   * periodic cell in a single domain only, and the device entries take the
-   * positions of its atoms.
+   * periodic cell, held whole by one rank or, through the compact canonical
+   * lower, decomposed over the ranks of an MPI communicator; the device
+   * entries take the positions of its atoms.
    */
   bool has_long_range() const;
 
@@ -923,13 +925,20 @@ class DeepPot : public DeepBaseModel {
    * @brief Evaluate a compact canonical graph together with the positions of
    * its nodes.
    *
-   * Every pointer resides on the model device. A model with a long-range
-   * module reads the positions; any other model ignores them.
+   * Every pointer except ``world`` resides on the model device; ``world``
+   * points to the caller's ``MPI_Comm`` in host memory. A model with a
+   * long-range module reads the positions and the communicator; any other
+   * model ignores them.
    *
    * @param[in] d_coord Node positions in model-node order, shape
    * ``(nall_nodes, 3)``, in the length unit of the model. A model with a
-   * long-range module requires them and a single-domain node set
-   * (``nall_nodes == nloc``) of a system without a periodic cell.
+   * long-range module requires them, for a system without a periodic cell.
+   * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of a
+   * system decomposed over several ranks, of which the owned nodes
+   * ``[0, nloc)`` are the share of this rank, or NULL on a single rank,
+   * whose node set then holds the complete system (``nall_nodes == nloc``).
+   * With a long-range module and several ranks, every rank calls this
+   * function on every evaluation, also when it holds no node.
    *
    * The other parameters are those of the overload without positions.
    */
@@ -938,6 +947,7 @@ class DeepPot : public DeepBaseModel {
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
                                    const double* d_coord,
+                                   void* world,
                                    const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
@@ -997,6 +1007,17 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   int dim_chg_spin() const {
     return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
+  /**
+   * @brief Whether any of the models carries a long-range module, which
+   * confines all of them to complete non-periodic systems.
+   **/
+  bool has_long_range() const {
+    return std::any_of(dps.begin(), dps.end(),
+                       [](const std::shared_ptr<DeepPot>& model) {
+                         return model->has_long_range();
+                       });
   };
 
   /**

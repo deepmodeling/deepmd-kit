@@ -1870,6 +1870,7 @@ void DP_DeepPotComputeCanonicalGraphGPU2(DP_DeepPot* dp,
                                          double* d_atom_virial,
                                          const int64_t* d_atype,
                                          const double* d_coord,
+                                         void* world,
                                          const uint32_t* d_source,
                                          const float* d_edge_vec,
                                          const int64_t* d_destination_row_ptr,
@@ -1880,8 +1881,8 @@ void DP_DeepPotComputeCanonicalGraphGPU2(DP_DeepPot* dp,
                                          const int64_t edge_storage) {
   DP_REQUIRES_OK(
       dp, dp->dp.compute_canonical_graph_gpu(
-              d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, d_source,
-              d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+              d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, world,
+              d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
               d_source_order, nloc, nall_nodes, edge_storage));
 }
 
@@ -2876,6 +2877,15 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp) {
   return dp->dp.dim_chg_spin();
+}
+
+bool DP_DeepPotModelDeviHasLongRange(DP_DeepPotModelDevi* dp) {
+  try {
+    return dp->dp.has_long_range();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
 }
 
 void DP_DeepPotModelDeviSetChargeSpin(DP_DeepPotModelDevi* dp,

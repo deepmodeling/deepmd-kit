@@ -142,6 +142,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         do_atomic_virial: bool,
         spin: torch.Tensor | None = None,
         coord: torch.Tensor | None = None,
+        communicator: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate an eligible compressed canonical deployment graph.
 
@@ -173,6 +174,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Node positions with shape ``(N, 3)`` in Å, float64, for a model
             with a long-range module, whose frames are complete non-periodic
             systems; ``None`` otherwise.
+        communicator
+            For a model with a long-range module, the bytes of the MPI_Comm
+            handle of a frame decomposed into domains, one per rank, as an
+            int64 CPU tensor of one element, whose owned nodes are then those
+            of one domain; zero or ``None`` for a complete frame.
 
         Returns
         -------
@@ -237,6 +243,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     graph,
                     atype,
                     coord,
+                    communicator,
                     output_mask,
                     atom_bias,
                     do_atomic_virial,
@@ -303,6 +310,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         source_row_ptr: torch.Tensor,
         source_order: torch.Tensor,
         coord: torch.Tensor | None = None,
+        communicator: torch.Tensor | None = None,
         *,
         do_atomic_virial: bool,
         **make_fx_kwargs: Any,
@@ -315,10 +323,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Compact graph node and edge tensors.
         destination_row_ptr, source_row_ptr, source_order
             Compact dual-CSR topology.
-        coord
-            Sample node positions with shape ``(N, 3)``, float64, for a model
-            with a long-range module, which then takes them as a ninth input;
-            ``None`` otherwise.
+        coord, communicator
+            For a model with a long-range module, sample node positions with
+            shape ``(N, 3)``, float64, and a sample communicator, an int64 CPU
+            tensor of one element, which the traced module then takes as its
+            ninth and tenth inputs; ``None`` otherwise.
         do_atomic_virial
             Whether the traced output includes per-node virial.
         **make_fx_kwargs
@@ -327,14 +336,19 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         Returns
         -------
         torch.nn.Module
-            Traced compact deployment module of eight inputs, or nine with
-            the node positions.
+            Traced compact deployment module of eight inputs, or ten with the
+            node positions and the communicator.
         """
         model = self
+        if (coord is None) != (communicator is None):
+            raise ValueError(
+                "the compact lower of a model with a long-range module takes "
+                "the node positions and the communicator together"
+            )
 
         if coord is not None:
 
-            def fn_coord(
+            def fn_long_range(
                 atype: torch.Tensor,
                 n_node: torch.Tensor,
                 n_local: torch.Tensor,
@@ -344,6 +358,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 source_row_ptr: torch.Tensor,
                 source_order: torch.Tensor,
                 coord: torch.Tensor,
+                communicator: torch.Tensor,
             ) -> dict[str, torch.Tensor]:
                 return model.forward_lower_canonical_graph(
                     atype,
@@ -356,9 +371,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     source_order,
                     do_atomic_virial=do_atomic_virial,
                     coord=coord,
+                    communicator=communicator,
                 )
 
-            return make_fx(fn_coord, **make_fx_kwargs)(
+            return make_fx(fn_long_range, **make_fx_kwargs)(
                 atype,
                 n_node,
                 n_local,
@@ -368,6 +384,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 source_row_ptr,
                 source_order,
                 coord,
+                communicator,
             )
 
         def fn(

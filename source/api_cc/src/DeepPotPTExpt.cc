@@ -111,6 +111,18 @@ FrameParameterLayout resolve_frame_parameter_layout(const char* name,
       " for frame-specific values.");
 }
 
+// The communicator input of the compact lower of a long-range model: an int64
+// CPU tensor holding the bytes of the ``MPI_Comm`` that ``world`` points to,
+// read as for the comm tensors of a message-passing model, or zero for a
+// system that one rank holds whole.
+at::Tensor communicator_tensor(const void* world) {
+  const auto options = torch::TensorOptions().dtype(torch::kInt64);
+  if (world == nullptr) {
+    return torch::zeros({1}, options);
+  }
+  return torch::from_blob(const_cast<void*>(world), {1}, options).clone();
+}
+
 }  // namespace
 
 void DeepPotPTExpt::translate_error(std::function<void()> f) {
@@ -566,15 +578,31 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_canonical_graph(
     const torch::Tensor& destination_row_ptr,
     const torch::Tensor& source_row_ptr,
     const torch::Tensor& source_order,
-    const torch::Tensor& coord) {
+    const torch::Tensor& coord,
+    const void* world) {
   std::vector<torch::Tensor> inputs = {atype,          n_node,
                                        n_local,        source,
                                        edge_vec,       destination_row_ptr,
                                        source_row_ptr, source_order};
   if (long_range_) {
     inputs.push_back(coord);
+    inputs.push_back(communicator_tensor(world));
   }
   return loader->run(inputs);
+}
+
+void DeepPotPTExpt::join_long_range_exchange(const void* world) {
+  const torch::Device device(torch::kCUDA, gpu_id);
+  const auto i64 = torch::TensorOptions().dtype(torch::kInt64).device(device);
+  const auto index_type = deepmd::canonicalGraphIndexType();
+  // The compact lower stores at least two edge slots; without edges both are
+  // padding outside every CSR row.
+  run_model_canonical_graph(
+      torch::zeros({1}, i64), torch::ones({1}, i64), torch::zeros({1}, i64),
+      torch::zeros({2}, i64.dtype(index_type)),
+      torch::zeros({2, 3}, i64.dtype(torch::kFloat32)), torch::zeros({2}, i64),
+      torch::zeros({2}, i64), torch::arange(2, i64).to(index_type),
+      torch::zeros({1, 3}, i64.dtype(torch::kFloat64)), world);
 }
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
@@ -831,17 +859,34 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
-  // A long-range module sums over every pair of atoms of the system, which
-  // therefore has to be complete in this call: without periodic images and
-  // without other domains, both of which appear as ghost atoms.
-  if (long_range_ && (multi_rank || nghost_real > 0)) {
+  // A long-range module sums over every pair of atoms of the system. A single
+  // rank holds all of them, so a ghost atom there is a periodic image. Across
+  // ranks, the compact lower gathers the owned atoms of every rank through
+  // the communicator; the pairs that the graph lower lists stay within one.
+  if (long_range_ && !multi_rank && nghost_real > 0) {
     throw deepmd::deepmd_exception(
         "a model with a long-range module evaluates a complete non-periodic "
-        "system in a single domain, but this call carries " +
-        std::to_string(nghost_real) + " ghost atoms on " +
-        std::to_string(lmp_list.nprocs) +
-        " domain(s); use a non-periodic box on a single MPI rank.");
+        "system, but this single-rank call carries " +
+        std::to_string(nghost_real) +
+        " ghost atoms, the periodic images of a periodic cell; use a "
+        "non-periodic box.");
   }
+  if (long_range_ && multi_rank && !lower_input_is_canonical_) {
+    throw deepmd::deepmd_exception(
+        "a model with a long-range module evaluates a system decomposed over " +
+        std::to_string(lmp_list.nprocs) +
+        " MPI ranks only through the compact canonical lower, which a "
+        "compressed DPA4C model frozen for a CUDA device uses when the "
+        "direct-sum operator serves its long-range module; this archive uses "
+        "another lower, so run it on a single rank.");
+  }
+  if (long_range_ && multi_rank && lmp_list.world == nullptr) {
+    throw deepmd::deepmd_exception(
+        "a model with a long-range module evaluates a system decomposed over "
+        "several MPI ranks through their communicator, but the neighbor list "
+        "carries none (InputNlist::world).");
+  }
+  const void* const world = multi_rank ? lmp_list.world : nullptr;
   // Whether the edge topology folds ghost neighbours onto their local owners,
   // which reads an owner for every extended atom out of ``mapping_``.  The
   // edge lower folds unless the with-comm artifact carries ghost features
@@ -1270,7 +1315,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         // ``Dim("n_node_total", min=1)``. Such a rank contributes nothing, so
         // fill zero outputs and return instead of running the model.  (The
         // tested ``nloc == 0`` empty-subdomain case has ``nall_real > 0`` --
-        // ghosts within rcut -- so it still runs the model normally.)
+        // ghosts within rcut -- so it still runs the model normally.) A
+        // long-range module across ranks still joins the exchanges of the
+        // others.
+        if (long_range_ && multi_rank) {
+          join_long_range_exchange(world);
+        }
         ener.assign(nframes, static_cast<ENERGYTYPE>(0));
         force.assign(static_cast<size_t>(nframes) * fwd_map.size() * 3,
                      static_cast<VALUETYPE>(0));
@@ -1318,7 +1368,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         flat_outputs = run_model_canonical_graph(
             compact.atype, compact.n_node, compact.n_local, compact.source,
             compact.edge_vec, compact.destination_row_ptr,
-            compact.source_row_ptr, compact.source_order, node_coord);
+            compact.source_row_ptr, compact.source_order, node_coord, world);
       } else {
         flat_outputs = run_model_graph(
             node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
@@ -1706,7 +1756,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       flat_outputs = run_model_canonical_graph(
           compact.atype, compact.n_node, compact.n_local, compact.source,
           compact.edge_vec, compact.destination_row_ptr, compact.source_row_ptr,
-          compact.source_order, node_coord);
+          compact.source_order, node_coord, /*world=*/nullptr);
     } else {
       flat_outputs = run_model_graph(
           graph_tensors.atype, graph_tensors.n_node, graph_tensors.n_local,
@@ -2277,8 +2327,10 @@ void DeepPotPTExpt::compute_edges_gpu_impl(double* d_atom_energy,
   if (long_range_ && (extended || comm_nlist != nullptr)) {
     throw deepmd::deepmd_exception(
         "compute_edges_gpu: a model with a long-range module evaluates a "
-        "complete non-periodic system in a single domain (nall_nodes == nloc "
-        "and no comm_nlist).");
+        "complete non-periodic system on a single rank (nall_nodes == nloc and "
+        "no comm_nlist); several ranks require the compact canonical lower, "
+        "which a compressed DPA4C model frozen for a CUDA device uses when "
+        "the direct-sum operator serves its long-range module.");
   }
   if (lower_input_is_graph_ && extended && has_message_passing_) {
     throw deepmd::deepmd_exception(
@@ -2597,6 +2649,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     double* d_atom_virial,
     const std::int64_t* d_atype,
     const double* d_coord,
+    void* world,
     const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
@@ -2613,17 +2666,34 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a CUDA device.");
   }
+  // A long-range module reads the positions of a complete non-periodic
+  // system: the node set of a single rank, or the owned nodes of every rank
+  // of ``world``, which a rank without nodes still joins.
+  if (long_range_ && d_coord == nullptr && nall_nodes > 0) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: a model with a long-range module reads "
+        "the node positions (d_coord).");
+  }
+  if (long_range_ && world == nullptr && nall_nodes != nloc) {
+    throw deepmd::deepmd_exception(
+        "compute_canonical_graph_gpu: a model with a long-range module on a "
+        "single rank evaluates a complete non-periodic system "
+        "(nall_nodes == nloc); a system decomposed over several ranks takes "
+        "their communicator.");
+  }
+  if (long_range_ && world != nullptr && nall_nodes == 0) {
+    translate_error([&] {
+      const c10::DeviceGuard device_guard(torch::Device(torch::kCUDA, gpu_id));
+      join_long_range_exchange(world);
+      synchronize_current_accelerator_stream();
+    });
+    return;
+  }
   if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2 ||
       static_cast<std::uint64_t>(edge_storage) >
           std::numeric_limits<std::uint32_t>::max()) {
     throw deepmd::deepmd_exception(
         "invalid compact canonical graph dimensions.");
-  }
-  if (long_range_ && (d_coord == nullptr || nall_nodes != nloc)) {
-    throw deepmd::deepmd_exception(
-        "compute_canonical_graph_gpu: a model with a long-range module reads "
-        "the node positions of a complete non-periodic system in a single "
-        "domain (d_coord given and nall_nodes == nloc).");
   }
 
   translate_error([&] {
@@ -2659,10 +2729,10 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
             : at::Tensor();
 
     std::map<std::string, torch::Tensor> output;
-    extract_outputs(
-        output, run_model_canonical_graph(atype, n_node, n_local, source,
-                                          edge_vec, destination_row_ptr,
-                                          source_row_ptr, source_order, coord));
+    extract_outputs(output, run_model_canonical_graph(
+                                atype, n_node, n_local, source, edge_vec,
+                                destination_row_ptr, source_row_ptr,
+                                source_order, coord, world));
     auto atom_energy = output["atom_energy"]
                            .reshape({nall_nodes})
                            .slice(0, 0, nloc)
@@ -2745,6 +2815,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     double* d_atom_virial,
     const std::int64_t* d_atype,
     const double* d_coord,
+    void* world,
     const std::uint32_t* d_source,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
@@ -2754,7 +2825,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu(
     const int nall_nodes,
     const std::int64_t edge_storage) {
   compute_canonical_graph_gpu_impl(
-      d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, d_source,
+      d_atom_energy, d_force, d_atom_virial, d_atype, d_coord, world, d_source,
       d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order, nloc,
       nall_nodes, edge_storage);
 }

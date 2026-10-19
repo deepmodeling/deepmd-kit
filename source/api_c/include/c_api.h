@@ -484,8 +484,12 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * model device.
  *
  * A model with a long-range module reads the positions of the nodes, which
- * must form a complete non-periodic system in a single domain
- * (``nall_nodes == nloc``); any other model ignores them.
+ * must form a complete non-periodic system: held whole by one rank
+ * (``nall_nodes == nloc``), or decomposed over the ranks of ``world``, whose
+ * owned nodes ``[0, nloc)`` are the share of this rank. With such a model on
+ * several ranks, every rank calls this function on every evaluation, also
+ * when it holds no node. Any other model ignores the positions and the
+ * communicator.
  *
  * @param[in] dp The DP to use.
  * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
@@ -494,6 +498,8 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
  * @param[in] d_coord Node positions in model-node order, shape
  * ``(nall_nodes, 3)``, or NULL for a model without a long-range module.
+ * @param[in] world The MPI communicator (a host pointer to an ``MPI_Comm``)
+ * of a system decomposed over several ranks, or NULL on a single rank.
  * @param[in] d_source Source node per edge storage slot.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
@@ -503,7 +509,7 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
  * @note Supersedes DP_DeepPotComputeCanonicalGraphGPU, adding the node
- * positions.
+ * positions and the communicator.
  * @since API version 31
  */
 extern void DP_DeepPotComputeCanonicalGraphGPU2(
@@ -513,6 +519,7 @@ extern void DP_DeepPotComputeCanonicalGraphGPU2(
     double* d_atom_virial,
     const int64_t* d_atype,
     const double* d_coord,
+    void* world,
     const uint32_t* d_source,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
@@ -524,7 +531,7 @@ extern void DP_DeepPotComputeCanonicalGraphGPU2(
 
 /**
  * @brief Query whether the model carries a long-range module, which
- * evaluates complete non-periodic systems in a single domain only.
+ * evaluates complete non-periodic systems.
  * @since API version 31
  */
 extern bool DP_DeepPotHasLongRange(DP_DeepPot* dp);
@@ -2732,6 +2739,14 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
  * @since API version 27
  */
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Query whether any model of a DP Model Deviation carries a long-range
+ * module, which evaluates complete non-periodic systems.
+ * @param[in] dp The DP Model Deviation to use.
+ * @since API version 31
+ */
+extern bool DP_DeepPotModelDeviHasLongRange(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Fix the charge/spin condition served for the rest of the run.

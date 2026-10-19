@@ -133,8 +133,13 @@ A trained checkpoint (`.pt`) and the frozen model are evaluated by `dp test`
 and the Python inference interface; the C++ interface and LAMMPS, with
 `pair_style deepmd` and `pair_style deepmd/kk`, read the `.pt2` archive.
 Since the pair sum covers the complete system, LAMMPS runs such a model with
-non-periodic boundaries (`f`, `s` or `m`) in every dimension on a single MPI
-rank, and rejects any other setting.
+non-periodic boundaries (`f`, `s` or `m`) in every dimension, and rejects a
+periodic one. A model that the dedicated operator described below evaluates,
+a compressed DPA4C model frozen for a CUDA device, also runs on several MPI
+ranks: every rank gathers the positions and charges of the atoms of all ranks
+over MPI and evaluates the pairs of its own atoms, so that the ranks share
+the cost of the pair sum. This requires DeePMD-kit built with MPI. Any other
+model, like an uncompressed one, runs on a single rank.
 
 Compressing a descriptor conditioned on `charge_spin` specializes the model
 to one charge state at a time, and a constraint that reads its total charge
@@ -153,5 +158,6 @@ calling the model, so its memory grows with the square of the number of
 atoms.
 
 The following are not supported for a model with a long-range module:
-multi-rank (domain-decomposed) inference, spin models, the tabulated ZBL
-potential, and short-range bridging.
+multi-rank (domain-decomposed) inference of a model that the dedicated
+operator does not evaluate, such as an uncompressed one, spin models, the
+tabulated ZBL potential, and short-range bridging.

@@ -74,6 +74,7 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         node_mask: torch.Tensor,
         n_node: torch.Tensor,
         coord: torch.Tensor,
+        communicator: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Evaluate the module for inference from the positions of the nodes.
 
@@ -98,6 +99,11 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             contiguous spans of the node axis.
         coord
             Node positions with shape ``(N, 3)`` in Å.
+        communicator
+            The MPI communicator of a frame decomposed into domains, one per
+            rank, whose charged nodes are those of every rank, in the form of
+            :func:`~deepmd.pt_expt.kernels.long_range.latent_charge_direct_sum`;
+            ``None`` for a single domain.
 
         Returns
         -------
@@ -113,7 +119,7 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             float32, each pair term split half to each of its nodes.
         virial
             Per-frame virial at fixed charges with shape ``(nf, 9)`` in eV,
-            float32.
+            float32; across domains, the share of the nodes of this rank.
         """
         from deepmd.pt_expt.kernels.long_range import (
             latent_charge_direct_sum,
@@ -137,6 +143,7 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
                 self.kernel,
                 channel,
                 COULOMB_CONSTANT,
+                communicator,
             )
         )
         (descriptor_gradient,) = torch.autograd.grad(
