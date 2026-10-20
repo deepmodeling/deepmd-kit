@@ -636,6 +636,44 @@ class TestPtExptLoadPtGraphDPA1(unittest.TestCase):
                         err_msg=name,
                     )
 
+    def test_dense_introspection_survives_graph_checkpoint(self) -> None:
+        """Graph evaluation must not discard capacities used by introspection."""
+        coords = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]])
+        atom_types = np.array([0, 1], dtype=np.int32)
+        coord_t = torch.tensor(coords, dtype=torch.float64, device=DEVICE)
+        atype_t = torch.tensor(atom_types[None], dtype=torch.int64, device=DEVICE)
+        # Construct the two-atom dense list independently of the checkpoint
+        # loader: each center has one neighbor and the remaining slots pad.
+        nlist = torch.full(
+            (1, 2, sum(self.model.get_sel())), -1, dtype=torch.int64, device=DEVICE
+        )
+        nlist[0, :, 0] = torch.tensor([1, 0], device=DEVICE)
+        mapping = torch.arange(2, device=DEVICE).reshape(1, 2)
+        atomic_model = self.model.get_dp_atomic_model()
+        with torch.no_grad():
+            descriptor, rot_mat, g2, h2, _ = atomic_model.descriptor(
+                coord_t, atype_t, nlist, mapping=mapping
+            )
+            fitting = atomic_model.fitting_net
+            fitting.set_return_middle_output(True)
+            try:
+                middle = fitting(descriptor, atype_t, gr=rot_mat, g2=g2, h2=h2)[
+                    "middle_output"
+                ]
+            finally:
+                fitting.set_return_middle_output(False)
+
+        for layout, path in self.pt_paths.items():
+            with self.subTest(layout=layout):
+                dp = DeepPot(path, auto_batch_size=False)
+                for actual, expected in (
+                    (dp.eval_descriptor(coords, None, atom_types), descriptor),
+                    (dp.eval_fitting_last_layer(coords, None, atom_types), middle),
+                ):
+                    np.testing.assert_allclose(
+                        actual, expected.detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+                    )
+
     def test_nlist_controls_fail_without_changing_graph_semantics(self) -> None:
         output_def = ModelOutputDef(self.model.atomic_output_def())
         path = self.pt_paths["plain"]
