@@ -501,7 +501,7 @@ def build_synthetic_graph_inputs(
     Single source of the trace-time graph inputs, shared by ``.pt2`` export
     (:func:`_trace_and_export`) and compiled training
     (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`). Builds a
-    small random system and runs the carry-all
+    small deterministic system and runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
     padded ``GraphLayout(edge_capacity=e_max)`` trace sample. Export uses the
     destination-major graph with CSR metadata; compiled training selects the
@@ -519,8 +519,10 @@ def build_synthetic_graph_inputs(
     (before ``fparam``/``aparam``); there is no ``charge_spin`` slot at all
     (native spin rejects ``add_chg_spin_ebd`` at build).
 
-    The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
-    i % ntypes``) is identical for both callers.
+    The system is identical for both callers and independent of dense neighbor
+    capacities. For at least four atoms it includes an isolated center and a
+    connected three-atom cluster. The highest atom type occurs in the cluster
+    even when the type map is larger than the sample.
 
     Parameters
     ----------
@@ -587,9 +589,21 @@ def build_synthetic_graph_inputs(
     box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
     rng = np.random.default_rng(42)
     coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
+    if nloc >= 4:
+        # Exercise multi-edge aggregation and empty neighborhoods in the same
+        # trace. Every other atom lies in [.75*rcut, 2.25*rcut]^3, so the
+        # origin is isolated even under periodic minimum-image distances.
+        coord_np[:, [0, 2, 3]] = rcut * np.array(
+            [[1.5, 1.5, 1.5], [1.6, 1.5, 1.5], [1.5, 1.65, 1.5]]
+        )
+        # Keep the isolated center inside n_local (the final atom is a
+        # synthetic ghost), including the minimal four-atom fixture.
+        coord_np[:, 1] = 0.0
     atype_np = np.zeros((nframes, nloc), dtype=np.int64)
     for i in range(nloc):
         atype_np[:, i] = i % ntypes
+    # Include the upper type-index boundary without growing the node axis.
+    atype_np[:, 0] = ntypes - 1
 
     coord_t = torch.tensor(coord_np, dtype=dtype, device=device)
     atype_t = torch.tensor(atype_np, dtype=torch.int64, device=device)
