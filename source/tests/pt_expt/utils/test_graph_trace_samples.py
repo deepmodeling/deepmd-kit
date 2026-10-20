@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Graph trace coverage must not depend on dense neighbor capacities."""
 
-from unittest.mock import patch
+from unittest.mock import (
+    patch,
+)
 
 import pytest
 import torch
