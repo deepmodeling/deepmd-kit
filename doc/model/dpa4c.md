@@ -349,6 +349,21 @@ This writes `compressed_model.pt2` directly using the default compression
 settings, without compiling an intermediate uncompressed archive. Compression
 selects the export schema appropriate to the model and target device.
 
+A branch of a multi-task model is frozen by naming it with `--head`:
+
+```bash
+dp --pt-expt freeze -c model.ckpt.pt -o compressed_branch --head CHOSEN_BRANCH --compress
+```
+
+Where the branches share the fitting network, the case embedding that
+distinguishes them is a constant of the branch, and the export folds it into
+the bias of the first fitting layer, so the compressed branch takes the export
+schema and the fused kernels of a single-task model. The fold is not possible
+where the descriptor and the case embedding together are as wide as the first
+fitting layer, or half as wide, because the residual connection of that layer
+then carries the case embedding; such a branch keeps it and exports to the
+graph form, which the export reports with a warning.
+
 On a CUDA device, compression also measures which kernel evaluates the fitting
 network fastest on that GPU at each system size and stores the choices in the
 archive. A kernel other than the default is chosen only where the measurement

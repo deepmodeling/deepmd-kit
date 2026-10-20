@@ -1566,6 +1566,32 @@ def _dpa4_kernel_levels_for_target(
                 os.environ[name] = value
 
 
+def _fold_case_embeddings(model: torch.nn.Module) -> None:
+    """Fold the fixed case embedding of every fitting into its first layer.
+
+    A deployed model evaluates a single case, so the schema selection, the
+    launch tuners and the fused fitting operators see a plain fitting network
+    (see :meth:`~deepmd.dpmodel.fitting.general_fitting.GeneralFitting.fold_case_embedding`).
+    """
+    from deepmd.dpmodel.fitting.general_fitting import (
+        GeneralFitting,
+    )
+
+    # The fold replaces submodules, so the fittings are collected before it.
+    fittings = [
+        module for module in model.modules() if isinstance(module, GeneralFitting)
+    ]
+    for fitting in fittings:
+        fitting.fold_case_embedding()
+        if fitting.dim_case_embd:
+            log.warning(
+                "The case embedding of a fitting network is kept, since the "
+                "residual of its first layer adds the input to the output; "
+                "the export evaluates that network without the fused fitting "
+                "operators."
+            )
+
+
 def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None:
     """Select the graph schema supported by the target model.
 
@@ -1590,6 +1616,7 @@ def _select_graph_lower_kind(data: dict, *, allow_canonical: bool) -> str | None
     )
 
     model = BaseModel.deserialize(data["model"])
+    _fold_case_embeddings(model)
     if not (model_uses_graph_lower(model) and _supports_graph_export(model)):
         return None
     if allow_canonical:
@@ -1924,6 +1951,9 @@ def _trace_and_export_impl(
         # Registry-dispatched (incl. native spin, type "native_spin"): the
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
+    # The fold rebuilds the first fitting layers on the default device, where
+    # the deserialized model resides, so it precedes the move below.
+    _fold_case_embeddings(model)
     model.eval()
     # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
     # evaluates an isolated atom of every type through the descriptor; on CUDA

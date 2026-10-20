@@ -114,6 +114,46 @@ def _run_graph(
     )
 
 
+def _sample(model: torch.nn.Module) -> tuple:
+    """Return a canonical graph, its flat types and a per-node moment."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        attach_edge_csr,
+        build_neighbor_graph,
+    )
+
+    nodes = 24
+    generator = torch.Generator(device=env.DEVICE).manual_seed(31)
+    coord = 5.0 * torch.rand(
+        1, nodes, 3, dtype=torch.float32, device=env.DEVICE, generator=generator
+    )
+    atype = torch.arange(nodes, device=env.DEVICE).reshape(1, -1) % 2
+    graph = attach_edge_csr(
+        build_neighbor_graph(coord, atype, None, model.get_rcut()), nodes
+    )
+    spin = torch.randn(
+        nodes, 3, dtype=torch.float32, device=env.DEVICE, generator=generator
+    )
+    return graph, atype.reshape(-1), spin
+
+
+def _assert_exported_outputs(
+    exported: dict[str, torch.Tensor], reference: dict[str, torch.Tensor]
+) -> None:
+    """Compare the outputs of an exported lower with those of the autograd lower."""
+    for key, name in (
+        ("energy", "energy_redu"),
+        ("force", "energy_derv_r"),
+        ("virial", "energy_derv_c_redu"),
+    ):
+        torch.testing.assert_close(
+            exported[key].reshape(-1),
+            reference[name].reshape(-1),
+            atol=8e-6,
+            rtol=1e-4,
+            check_dtype=False,
+        )
+
+
 def test_graph_lower_energy_force_are_finite() -> None:
     model = get_model(_config()).to(env.DEVICE).eval()
     assert model.get_descriptor().uses_graph_lower()
@@ -636,6 +676,92 @@ def test_auto_lower_kind_selects_compact_canonical(channels: int) -> None:
     assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
 
 
+def test_a_case_embedding_reaches_the_fused_fitting_operator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A branch of a shared fitting network keeps the fused fitting operator.
+
+    The branch carries a fixed one-hot case embedding, which the fused fitting
+    operator does not read. Export folds it into the first layer of the
+    fitting network, so the exported graph lower evaluates the network with
+    that operator and reproduces the autograd lower of the model as trained.
+    """
+    monkeypatch.setenv("DP_CUDA_INFER", "1")
+    # The fitting network of the compressed configuration is the one that the
+    # fused operator evaluates; the descriptor stays uncompressed.
+    config = _compressed_config()
+    config["fitting_net"]["dim_case_embd"] = 3
+    model = get_model(config).to(env.DEVICE).eval()
+    model.get_fitting_net().set_case_embd(1)
+    exported, metadata, _model_json, _output_keys = _trace_and_export(
+        {"model": model.serialize()},
+        lower_kind="graph",
+        do_atomic_virial=True,
+    )
+    targets = {str(node.target) for node in exported.graph_module.graph.nodes}
+    assert "deepmd.graph_fitting.default" in targets
+    dtype = getattr(torch, metadata["graph_edge_dtype"])
+    sample = build_synthetic_graph_inputs(
+        model, e_max=None, nframes=2, nloc=7, dtype=dtype, device=env.DEVICE
+    )
+    _assert_exported_outputs(exported.module()(*sample), _run_graph(model, dtype))
+
+
+@_GPU
+def test_a_case_embedding_deploys_on_the_compact_canonical_lower(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A branch of a shared fitting network exports like a single-task model.
+
+    The branch carries a fixed one-hot case embedding, which export folds into
+    the first layer of the fitting network, next to the vacuum reference. The
+    compressed model then selects the compact canonical schema, and the
+    exported program reproduces the autograd lower of the model as trained.
+    """
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    config = _compressed_config()
+    config["type_map"] = ["O", "H"]
+    config["fitting_net"].update({"dim_case_embd": 3, "vacuum_ref": True})
+    config["preset_out_bias"] = {"energy": {"O": -3.0, "H": 0.5}}
+    model = get_model(config).to(env.DEVICE).eval()
+    model.get_fitting_net().set_case_embd(1)
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    data = {"model": model.serialize()}
+    assert _resolve_lower_kind("model.pt2", data, "auto") == "dpa4c_canonical"
+    exported, _metadata, _model_json, _output_keys = _trace_and_export(
+        data,
+        lower_kind="dpa4c_canonical",
+        do_atomic_virial=True,
+    )
+
+    graph, atype, _moment = _sample(model)
+    reference = model.forward_common_lower_graph(
+        atype,
+        graph.n_node,
+        graph.n_node.clone(),
+        graph.edge_index,
+        graph.edge_vec,
+        graph.edge_mask,
+        destination_order=graph.destination_order,
+        destination_row_ptr=graph.destination_row_ptr,
+        source_order=graph.source_order,
+        source_row_ptr=graph.source_row_ptr,
+        destination_sorted=bool(graph.destination_sorted),
+    )
+    physical = int(graph.destination_row_ptr[-1])
+    deployed = exported.module()(
+        atype,
+        graph.n_node,
+        graph.n_node.clone(),
+        graph.edge_index[0][:physical].to(torch.uint32).contiguous(),
+        graph.edge_vec[:physical].contiguous(),
+        graph.destination_row_ptr,
+        graph.source_row_ptr,
+        graph.source_order[:physical].to(torch.uint32).contiguous(),
+    )
+    _assert_exported_outputs(deployed, reference)
+
+
 def test_the_graph_lower_conditions_each_frame_on_its_own_charge_state() -> None:
     """The frame condition must survive the model seam and stay per frame.
 
@@ -795,28 +921,6 @@ def _spin_config(channels: int = 16) -> dict:
     return config
 
 
-def _spin_sample(model: torch.nn.Module) -> tuple:
-    """Return a canonical graph, its flat types and a per-node moment."""
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        attach_edge_csr,
-        build_neighbor_graph,
-    )
-
-    nodes = 24
-    generator = torch.Generator(device=env.DEVICE).manual_seed(31)
-    coord = 5.0 * torch.rand(
-        1, nodes, 3, dtype=torch.float32, device=env.DEVICE, generator=generator
-    )
-    atype = torch.arange(nodes, device=env.DEVICE).reshape(1, -1) % 2
-    graph = attach_edge_csr(
-        build_neighbor_graph(coord, atype, None, model.get_rcut()), nodes
-    )
-    spin = torch.randn(
-        nodes, 3, dtype=torch.float32, device=env.DEVICE, generator=generator
-    )
-    return graph, atype.reshape(-1), spin
-
-
 @_GPU
 @pytest.mark.parametrize("gate", [0.8, 0.0])  # active vs inactive spin gate
 def test_compressed_spin_lowers_match_autograd(
@@ -845,7 +949,7 @@ def test_compressed_spin_lowers_match_autograd(
     descriptor.spin.set_spin_reference(np.array([1.7, 1.0, 1.0]))
     with torch.no_grad():
         descriptor.spin.spin_gate.fill_(gate)
-    graph, atype, spin = _spin_sample(model)
+    graph, atype, spin = _sample(model)
     descriptor.enable_compression(min_nbor_dist=0.5)
 
     def lower() -> dict[str, torch.Tensor]:
