@@ -25,6 +25,7 @@ from deepmd.dpmodel.output_def import (
     get_deriv_name_mag,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    KGrid,
     NeighborGraph,
     PairGraph,
     edge_force_virial,
@@ -69,6 +70,8 @@ def edge_energy_deriv(
     create_graph: bool = False,
     force_precision: torch.dtype | None = None,
     pair_graphs: Sequence[PairGraph] = (),
+    coord_leaf: torch.Tensor | None = None,
+    strain_leaf: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
     """Return (force, atom_virial_or_None, virial) from a graph energy.
 
@@ -93,6 +96,11 @@ def edge_energy_deriv(
     by the shared pair_force_virial scatter and summed in: the energy reaches
     the coordinates through all its geometry leaves, so its complete force and
     virial are the sum of their pullbacks.
+
+    A k-space long-range term reaches the geometry through ``coord_leaf`` (the
+    node positions, whose gradient is its force directly) and ``strain_leaf``
+    (a zero (nf, 3, 3) strain the module applies to coordinates, wave numbers
+    and volumes, whose gradient is the negative k-space virial).
 
     Parameters
     ----------
@@ -127,6 +135,10 @@ def edge_energy_deriv(
     pair_graphs
         Pair topologies whose ``vec`` are further autograd leaves of
         ``energy``, on the same node axis.
+    coord_leaf
+        (N, 3) node positions of a k-space long-range term, or ``None``.
+    strain_leaf
+        (nf, 3, 3) zero strain of a k-space long-range term, or ``None``.
 
     Returns
     -------
@@ -137,12 +149,16 @@ def edge_energy_deriv(
     virial
         (nf, 3, 3) per-frame virial (always computed).
     """
-    g_e, *g_pairs = torch.autograd.grad(
+    extra_leaves = tuple(leaf for leaf in (coord_leaf, strain_leaf) if leaf is not None)
+    g_e, *g_rest = torch.autograd.grad(
         energy.sum() if energy.dim() else energy,
-        (edge_vec, *(pairs.vec for pairs in pair_graphs)),
+        (edge_vec, *(pairs.vec for pairs in pair_graphs), *extra_leaves),
         create_graph=create_graph,
         retain_graph=True,
     )
+    g_pairs = g_rest[: len(pair_graphs)]
+    g_coord = g_rest[len(pair_graphs)] if coord_leaf is not None else None
+    g_strain = g_rest[-1] if strain_leaf is not None else None
     if (
         force_precision is not None
         and not create_graph
@@ -228,6 +244,31 @@ def edge_energy_deriv(
         virial = virial + pair_virial.to(virial.dtype)
         if do_atomic_virial:
             atom_virial = atom_virial + pair_atom_virial.to(atom_virial.dtype)
+    if coord_leaf is not None or strain_leaf is not None:
+        # The k-space term: the coordinate gradient is its force, the strain
+        # gradient its negative virial. The atomic virial convention keeps the
+        # per-frame sum exact: the r x F part per node, the remainder shared
+        # evenly over the frame.
+        frame_id = frame_id_from_n_node(n_node, force.shape[0])
+        kspace_vir_frame = None
+        if strain_leaf is not None:
+            kspace_vir_frame = -g_strain  # (nf, 3, 3)
+            virial = virial + kspace_vir_frame.to(virial.dtype)
+        if coord_leaf is not None:
+            f_coord = -g_coord
+            force = force + f_coord.to(force.dtype)
+        if do_atomic_virial:
+            av = torch.zeros_like(atom_virial)
+            if coord_leaf is not None:
+                # w = -g (x) r, force index first as for the edge virial
+                av = av + torch.einsum("ni,nj->nij", f_coord, coord_leaf)
+            if kspace_vir_frame is not None:
+                remainder = kspace_vir_frame - segment_sum(
+                    av, frame_id, n_node.shape[0]
+                )
+                count = n_node.to(av.dtype)[frame_id].clamp(min=1).reshape(-1, 1, 1)
+                av = av + remainder[frame_id] / count
+            atom_virial = atom_virial + av.to(atom_virial.dtype)
     return force, (atom_virial if do_atomic_virial else None), virial
 
 
@@ -409,6 +450,14 @@ def fit_output_to_model_output_graph(
             size *= ii
         # split the reduced output into ``size`` per-frame scalar components.
         svv = model_ret[kk_redu].reshape(nf, size)
+        # The k-space geometry leaves of a periodic long-range module: the
+        # node positions (its force) and the zero strain (its virial).
+        coord_leaf = strain_leaf = None
+        if topologies:
+            for topology in topologies.values():
+                if isinstance(topology, KGrid):
+                    coord_leaf = topology.coord
+                    strain_leaf = topology.strain
         ff_list: list[torch.Tensor] = []
         av_list: list[torch.Tensor] = []
         vir_list: list[torch.Tensor] = []
@@ -429,7 +478,15 @@ def fit_output_to_model_output_graph(
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,
                 force_precision=force_precision if not create_graph else None,
-                pair_graphs=() if topologies is None else tuple(topologies.values()),
+                pair_graphs=(
+                    ()
+                    if topologies is None
+                    else tuple(
+                        t for t in topologies.values() if isinstance(t, PairGraph)
+                    )
+                ),
+                coord_leaf=coord_leaf,
+                strain_leaf=strain_leaf,
             )
             # force (N, 3) -> (N, 1, 3)  [flat; caller unravels at I/O boundary]
             ff_list.append(force.reshape(N, 1, 3))

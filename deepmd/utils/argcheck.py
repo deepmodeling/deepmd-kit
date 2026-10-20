@@ -3674,8 +3674,10 @@ def charge_constraint_args() -> list[Argument]:
 
 @long_range_args_plugin.register(
     "latent_charge",
-    doc="Interaction of latent charges predicted from the descriptor, summed "
-    "directly over every pair of atoms of a complete non-periodic system. "
+    doc="Interaction of latent charges predicted from the descriptor. "
+    "For a non-periodic system the kernel is summed directly over every pair "
+    "of atoms; for a periodic system (``periodic: true``) its Fourier "
+    "transform is summed over the reciprocal lattice points of the cell. "
     "Every channel interacts through the same kernel; half of each pair energy "
     "is attributed to each atom.",
 )
@@ -3691,6 +3693,16 @@ def long_range_latent_charge() -> list[Argument]:
         "Shift one latent charge channel uniformly over the atoms of every frame "
         "so that it sums to the total charge of the frame. Unconstrained if not "
         "set."
+    )
+    doc_periodic = (
+        "Evaluate the module on periodic systems in reciprocal space: the "
+        "Fourier transform of the kernel is summed over the wave numbers of "
+        "each cell, with the tin-foil boundary convention, and the self term "
+        "subtracted. Every latent channel must be neutral."
+    )
+    doc_kspace_tolerance = (
+        "The relative weight of the slowest-decaying kernel mode at the "
+        "wave-number cutoff of the k grid of a periodic batch."
     )
     return [
         Argument("channels", int, optional=True, default=1, doc=doc_channels),
@@ -3722,15 +3734,23 @@ def long_range_latent_charge() -> list[Argument]:
             default=None,
             doc=doc_charge_constraint,
         ),
+        Argument("periodic", bool, optional=True, default=False, doc=doc_periodic),
+        Argument(
+            "kspace_tolerance",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=doc_kspace_tolerance,
+        ),
     ]
 
 
 def long_range_args() -> Argument:
     doc_long_range = (
         "A long-range module added to the atomic energy of the energy fitting. "
-        "It reads the same descriptor and is evaluated on complete "
-        "non-periodic systems; a periodic cell is rejected. Currently validated "
-        "with the DPA4C descriptor."
+        "It reads the same descriptor and is evaluated on complete systems; "
+        "non-periodic directly, periodic in reciprocal space when the module "
+        "enables it. Currently validated with the DPA4C descriptor."
     )
     return Argument(
         "long_range",

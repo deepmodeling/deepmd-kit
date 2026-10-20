@@ -685,13 +685,15 @@ def build_synthetic_topologies(
     *,
     dtype: torch.dtype,
     device: torch.device,
+    nframes: int | None = None,
 ) -> dict[str, PairGraph]:
     """Build trace-time samples of the topologies a model declares.
 
     Single source of the trace-time topology inputs, shared by graph export
     and compiled training. Tracing reads only their shapes, so every topology
-    joins fixed nodes over ``n_pair`` pairs, a length the caller keeps
-    distinct from the other dynamic axes.
+    joins fixed nodes over ``n_pair`` entries, a length the caller keeps
+    distinct from the other dynamic axes. A k grid additionally carries the
+    frame volumes and the node coordinates.
 
     Parameters
     ----------
@@ -705,24 +707,45 @@ def build_synthetic_topologies(
         Precision of the pair vectors.
     device : torch.device
         Target device.
+    nframes : int | None
+        The frame count, needed for the volume axis of a k grid; ``None``
+        for a model declaring none.
 
     Returns
     -------
     dict[str, PairGraph]
         A sample of every declared topology; empty when none is declared.
     """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        K_GRID,
+        KGrid,
+    )
+
     index = (
         torch.arange(2 * n_pair, dtype=torch.int64, device=device).reshape(2, n_pair)
         % n_node_total
     )
-    return {
-        name: PairGraph(
-            index=index,
-            vec=torch.ones(n_pair, 3, dtype=dtype, device=device),
-            mask=torch.ones(n_pair, dtype=torch.bool, device=device),
-        )
-        for name in model.atomic_model.required_topologies()
-    }
+    topologies = {}
+    for name in model.atomic_model.required_topologies():
+        if name == K_GRID:
+            if nframes is None:
+                raise ValueError(f"a {K_GRID!r} topology sample needs the frame count")
+            topologies[name] = KGrid(
+                frame=torch.zeros(n_pair, dtype=torch.int64, device=device),
+                # Nonzero wave numbers: the kernel transform carries 1/k^2.
+                vec=torch.ones(n_pair, 3, dtype=dtype, device=device),
+                mask=torch.ones(n_pair, dtype=torch.bool, device=device),
+                volume=torch.ones(nframes, dtype=dtype, device=device),
+                coord=torch.ones(n_node_total, 3, dtype=dtype, device=device),
+                strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
+            )
+        else:
+            topologies[name] = PairGraph(
+                index=index,
+                vec=torch.ones(n_pair, 3, dtype=dtype, device=device),
+                mask=torch.ones(n_pair, dtype=torch.bool, device=device),
+            )
+    return topologies
 
 
 def build_synthetic_canonical_graph_inputs(
@@ -949,7 +972,19 @@ def _build_graph_dynamic_shapes(
     topologies = []
     for name in topology_names:
         npair_dim = torch.export.Dim(f"npair_{name}", min=2)
-        topologies += [{1: npair_dim}, {0: npair_dim}, {0: npair_dim}]
+        if name == "k_grid":
+            # (frame, vec, mask, volume, coord, strain): the k axis, the
+            # frame axis and the node axis.
+            topologies += [
+                {0: npair_dim},
+                {0: npair_dim},
+                {0: npair_dim},
+                {0: nframes_dim},
+                {0: n_node_total_dim},
+                {0: nframes_dim},
+            ]
+        else:
+            topologies += [{1: npair_dim}, {0: npair_dim}, {0: npair_dim}]
     if is_native_spin:
         spin = sample_inputs[10]
         fparam = sample_inputs[11]
@@ -1921,6 +1956,18 @@ def _trace_and_export_impl(
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
     model.eval()
+    # The k-space evaluation of a periodic long-range module needs the
+    # reciprocal grid of the input cells, which no exported lower ABI carries
+    # yet; freeze and compress reject such models until they do.
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        K_GRID,
+    )
+
+    if K_GRID in model.atomic_model.required_topologies():
+        raise NotImplementedError(
+            "a periodic long-range module (the k-grid topology) cannot be "
+            "frozen or exported yet; serve it through the Python interface"
+        )
     # The vacuum reference is resolved on the export object, folded into the
     # fitting bias or stored as a per-type table, so the exported graph
     # carries no reference atoms; the move to the tracing device follows, so
@@ -2189,6 +2236,7 @@ def _trace_and_export_impl(
                 ),
                 dtype=edge_dtype,
                 device=torch.device("cpu"),
+                nframes=nframes_sample,
             )
             if is_native_spin:
                 # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable):

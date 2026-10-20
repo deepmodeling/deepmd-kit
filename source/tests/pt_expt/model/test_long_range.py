@@ -878,3 +878,254 @@ def test_pair_graph_skips_padding() -> None:
     real = pairs.index[:, pairs.mask]
     assert real.tolist() == [[0, 3], [2, 4]]
     assert (~pairs.mask).sum() == 2
+
+
+# ---------------------------------------------------------------------------
+# Periodic (k-space) evaluation
+# ---------------------------------------------------------------------------
+
+
+def _periodic_model(kernel: str, **kwargs: object) -> torch.nn.Module:
+    config = _config(kernel, **kwargs)
+    config["long_range"]["periodic"] = True
+    return get_model(config).to(env.DEVICE).eval()
+
+
+def _periodic_case() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """A compact cluster (all atoms within rcut of each other) in a large triclinic cell."""
+    box = np.array([[9.0, 0.4, 0.0], [0.0, 8.5, 0.3], [0.0, 0.0, 9.5]])
+    rng = np.random.default_rng(7)
+    coord = 3.0 + rng.uniform(0.0, 1.4, (6, 3))
+    atype = np.array([0, 1, 0, 1, 1, 0], dtype=np.int64)
+    return coord[None], atype[None], box[None]
+
+
+def _kspace_reference(
+    coord: np.ndarray, charge: np.ndarray, box: np.ndarray, kernel: str
+) -> float:
+    """Independent k-space evaluation of the periodic long-range energy, in eV.
+
+    E = k_e [ 1/(2V) sum_{k != 0} K_hat(k) |rho(k)|^2 - K(0)/2 sum_i |q_i|^2 ].
+    """
+    rec = 2.0 * np.pi * np.linalg.inv(box)  # columns g_d: k(n) = rec @ n
+    # the module's default kspace_tolerance=1e-8 sets the truncation
+    if kernel == "les":
+        k_max = 2.0 * 0.8 * np.sqrt(np.log(1e8))
+    else:
+        k_max = np.sqrt(2.0 * np.log(1e8)) / 0.8
+    n_d = np.ceil(k_max * np.linalg.norm(box, axis=1) / (2 * np.pi)).astype(int)
+    grids = np.meshgrid(
+        *[np.arange(-n, n + 1, dtype=float) for n in n_d], indexing="ij"
+    )
+    n_all = np.stack(grids, axis=-1).reshape(-1, 3)
+    k = n_all @ rec.T
+    k2 = np.sum(k * k, axis=-1)
+    keep = (k2 > 0) & (k2 <= k_max * k_max)
+    k, k2 = k[keep], k2[keep]
+    phase = k @ coord.T  # (nk, N)
+    rho = (np.cos(phase) + 1j * np.sin(phase)) @ charge  # (nk, C)
+    s_sq = np.abs(rho) ** 2
+    s_sq = s_sq.sum(axis=-1)
+    if kernel == "les":
+        k_hat = 4.0 * np.pi * np.exp(-k2 / (4.0 * 0.8**2)) / k2
+        k0 = 2.0 * 0.8 / np.sqrt(np.pi)
+    else:
+        amplitude = np.array([0.7, -0.2, 0.1])
+        width = np.array([0.8, 1.7, 3.2])
+        k_hat = np.sum(
+            amplitude[None, :]
+            * (2.0 * np.pi) ** 1.5
+            * width[None, :] ** 3
+            * np.exp(-0.5 * k2[:, None] * width[None, :] ** 2),
+            axis=-1,
+        )
+        k0 = amplitude.sum()
+    volume = abs(np.linalg.det(box))
+    return float(
+        COULOMB_CONSTANT
+        * ((k_hat * s_sq).sum() / (2 * volume) - 0.5 * k0 * (charge * charge).sum())
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_energy_matches_kspace_reference(kernel: str) -> None:
+    """With fixed charges the periodic energy is the documented k-space sum."""
+    model = _periodic_model(kernel, constraint=None)
+    _set_constant_charges(model, [1.0, -0.5])
+    coord, atype, box = _periodic_case()
+    out = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    charge = np.zeros((6, CHANNELS[kernel]))
+    charge[:, 0] = [1.0, -0.5, 1.0, -0.5, -0.5, 1.0]
+    expected = _kspace_reference(coord[0], charge, box[0], kernel)
+    np.testing.assert_allclose(out["energy"].item(), expected, rtol=1e-9, atol=1e-9)
+    np.testing.assert_allclose(
+        out["atom_energy"].sum().item(), expected, rtol=1e-9, atol=1e-9
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_force_virial_hessian_match_finite_differences(kernel: str) -> None:
+    """Force, strain virial and Hessian derive from the complete periodic energy."""
+    model = _periodic_model(kernel)
+    coord, atype, box = _periodic_case()
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    out = model(coord_t, atype_t, box=box_t)
+
+    def energy(c: np.ndarray, b: np.ndarray) -> float:
+        return model(_tensor(c), atype_t, box=_tensor(b))["energy"].item()
+
+    h = 1e-5
+    force_fd = np.zeros((6, 3))
+    for i in range(6):
+        for d in range(3):
+            plus, minus = coord.copy(), coord.copy()
+            plus[0, i, d] += h
+            minus[0, i, d] -= h
+            force_fd[i, d] = -(energy(plus, box) - energy(minus, box)) / (2 * h)
+    np.testing.assert_allclose(
+        out["force"][0].detach().cpu().numpy(), force_fd, atol=1e-6
+    )
+
+    # The virial is -dE/d(strain) at zero strain, for r -> (I + eps) r and
+    # B -> B (I + eps)^T (the strain family of the k-space strain leaf).
+    virial_fd = np.zeros((3, 3))
+    for a in range(3):
+        for b in range(3):
+            strain = np.zeros((3, 3))
+            strain[a, b] = h
+            plus = coord @ (np.eye(3) + strain).T
+            minus = coord @ (np.eye(3) - strain).T
+            box_plus = box @ (np.eye(3) + strain).T
+            box_minus = box @ (np.eye(3) - strain).T
+            virial_fd[a, b] = -(energy(plus, box_plus) - energy(minus, box_minus)) / (
+                2 * h
+            )
+    np.testing.assert_allclose(
+        out["virial"][0].detach().cpu().numpy().reshape(3, 3), virial_fd, atol=1e-5
+    )
+
+    hessian_model = _periodic_model(kernel)
+    hessian_model.load_state_dict(model.state_dict())
+    hessian_model.enable_hessian()
+    hessian = (
+        hessian_model(coord_t, atype_t, box=box_t)["hessian"].detach().cpu().numpy()
+    )
+    hessian = hessian.reshape(18, 18)
+    hessian_fd = np.zeros((18, 18))
+    for kk in range(18):
+        plus, minus = coord.copy(), coord.copy()
+        plus.reshape(-1)[kk] += h
+        minus.reshape(-1)[kk] -= h
+        f_plus = (
+            model(_tensor(plus), atype_t, box=box_t)["force"].detach().cpu().numpy()
+        )
+        f_minus = (
+            model(_tensor(minus), atype_t, box=box_t)["force"].detach().cpu().numpy()
+        )
+        hessian_fd[:, kk] = -(f_plus - f_minus).reshape(-1) / (2 * h)
+    np.testing.assert_allclose(hessian, hessian_fd, atol=1e-4)
+    np.testing.assert_allclose(hessian, hessian.T, atol=1e-10)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+@REQUIRES_SUPPORTED_COMPILE
+def test_periodic_compiled_matches_eager(kernel: str) -> None:
+    """The compiled graph lower evaluates the periodic model like the eager one."""
+    model = _periodic_model(kernel)
+    coord, atype, box = _periodic_case()
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    model.train()
+    runner = _CompiledModel(model, _get_model_structure_key(model))
+    runner.train()
+    reference = model.eval()(coord_t, atype_t, box=box_t)
+    model.train()
+    out = runner(coord_t, atype_t, box=box_t)
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(out[key], reference[key], rtol=1e-6, atol=1e-8)
+    # the backward reaches the charge network and the kernel through the
+    # compiled graph
+    loss = out["energy"].square().sum() + out["force"].square().sum()
+    loss.backward()
+    grads = [parameter.grad for parameter in model.atomic_model.long_range.parameters()]
+    assert grads and all(grad is not None for grad in grads)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_model_serves_non_periodic_batches(kernel: str) -> None:
+    """A periodic-enabled model keeps its non-periodic evaluation."""
+    model = _periodic_model(kernel)
+    plain = _model(kernel)
+    plain.load_state_dict(model.state_dict())
+    coord, atype = _batch()
+    periodic_enabled = model(coord, atype)
+    plain_out = plain(coord, atype)
+    torch.testing.assert_close(periodic_enabled["energy"], plain_out["energy"])
+    torch.testing.assert_close(periodic_enabled["force"], plain_out["force"])
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_frames_are_independent(kernel: str) -> None:
+    """Each frame's k grid and energy are independent of the rest of the batch."""
+    model = _periodic_model(kernel)
+    coord, atype, box = _periodic_case()
+    coord2 = np.concatenate([coord, coord + 0.1], axis=0)
+    atype2 = np.concatenate([atype, atype], axis=0)
+    box2 = np.concatenate([box, box * 1.1], axis=0)
+    batched = model(_tensor(coord2), _tensor(atype2, torch.int64), box=_tensor(box2))
+    for frame in range(2):
+        alone = model(
+            _tensor(coord2[frame : frame + 1]),
+            _tensor(atype2[frame : frame + 1], torch.int64),
+            box=_tensor(box2[frame : frame + 1]),
+        )
+        torch.testing.assert_close(
+            alone["energy"][0], batched["energy"][frame], rtol=1e-10, atol=1e-10
+        )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_serialization_round_trip(kernel: str) -> None:
+    """The record keeps the periodic flag and evaluates identically."""
+    from deepmd.dpmodel.model.base_model import BaseModel as BaseModelDP
+
+    model = _periodic_model(kernel)
+    assert model.atomic_model.required_topologies() == ("all_pairs", "k_grid")
+    record = model.serialize()
+    assert record["long_range"]["periodic"] is True
+    reference = BaseModelDP.deserialize(record)
+    assert reference.atomic_model.required_topologies() == ("all_pairs", "k_grid")
+    coord, atype, box = _periodic_case()
+    expected = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    ret = reference.call_common(
+        coord,
+        atype,
+        box,
+        neighbor_graph_method="dense",
+    )
+    np.testing.assert_allclose(
+        ret["energy_redu"].reshape(-1),
+        expected["energy"].detach().cpu().numpy().reshape(-1),
+        rtol=1e-9,
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_compression_is_rejected(kernel: str) -> None:
+    """The compressed path does not serve the k-space evaluation."""
+    config = _config(kernel)
+    config["descriptor"]["precision"] = "float32"
+    config["fitting_net"]["precision"] = "float32"
+    config["long_range"]["charge_net"]["precision"] = "float32"
+    config["long_range"]["periodic"] = True
+    model = get_model(config).to(env.DEVICE).eval()
+    with pytest.raises(NotImplementedError, match="reciprocal-space"):
+        model.atomic_model.enable_compression(0.5)

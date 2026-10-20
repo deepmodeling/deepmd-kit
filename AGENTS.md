@@ -165,6 +165,7 @@ source/               # C++ source code and tests
 - **Configuration**: Use `input_torch.json` format typically
 - **Training**: `dp --pt train input_torch.json`
 - **Requirements**: `torch` package
+- **Long-range latent-charge module**: a standard energy model (DPA4C descriptor) takes a `long_range` section (`type: latent_charge`, kernels `les`/`sog`, optional `charge_constraint`) that adds an interacting-charge energy evaluated on complete systems — directly over all pairs for non-periodic frames, and in reciprocal space for periodic frames when `periodic: true` (k grid enumerated eagerly per batch from the kernel's `kspace_cutoff`, tin-foil boundary, neutral channels required). Periodic evaluation supports eager and compiled training plus the Python interface; freeze/export, compression, C++ and LAMMPS reject periodic long-range models. Tests: `pytest source/tests/pt_expt/model/test_long_range.py`, `source/tests/common/dpmodel/test_long_range.py`.
 
 ### JAX Backend
 

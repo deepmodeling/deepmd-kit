@@ -22,6 +22,9 @@ from deepmd.dpmodel.fitting.latent_charge import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     ALL_PAIRS,
+    K_GRID,
+    KGrid,
+    build_topologies,
     frame_id_from_n_node,
     segment_sum,
 )
@@ -60,23 +63,33 @@ when the fitting and descriptor seeds coincide.
 
 @BaseLongRange.register("latent_charge")
 class LatentChargeLongRange(NativeOP, BaseLongRange):
-    r"""Energy of interacting latent charges in complete non-periodic systems.
+    r"""Energy of interacting latent charges, periodic or not.
 
     A charge network predicts :math:`C` latent charge channels
     :math:`q_i^c` per atom, in units of :math:`e`, from the descriptor shared
     with the energy fitting; padding and atoms owned by another rank carry no
-    charge. The energy is the direct sum over the pairs of atoms of each frame
-    listed by the :data:`~deepmd.dpmodel.utils.neighbor_graph.ALL_PAIRS`
-    topology, each unordered pair once,
+    charge. For a non-periodic batch the energy is the direct sum over the
+    pairs of atoms of each frame listed by the
+    :data:`~deepmd.dpmodel.utils.neighbor_graph.ALL_PAIRS` topology, each
+    unordered pair once; for a periodic batch (with ``periodic=True``) it is
+    the reciprocal-space lattice sum over the wave numbers of the
+    :data:`~deepmd.dpmodel.utils.neighbor_graph.K_GRID` topology,
 
     .. math::
-        E = k_e \sum_{i<j} \sum_{c=1}^{C} q_i^c q_j^c K(r_{ij}),
+        E_{\rm non-periodic} = k_e \sum_{i<j} \sum_{c=1}^{C} q_i^c q_j^c K(r_{ij}),
+        \qquad
+        E_{\rm periodic} = k_e \Big[
+        \frac{1}{2V} \sum_{\mathbf{k} \neq \mathbf{0}} \sum_{c=1}^{C}
+        \hat K(\mathbf{k}) \, |\hat\rho_c(\mathbf{k})|^2
+        - \frac{1}{2} K(0) \sum_{i,c} (q_i^c)^2 \Big],
 
-    with the Coulomb constant :math:`k_e` and the kernel :math:`K` in Å⁻¹:
-    every channel interacts through the same kernel and channels do not mix.
-    The sum holds pair terms only; there is no self or background term and no
-    periodic image. Half of each pair energy is attributed to each of its two
-    atoms.
+    with the Coulomb constant :math:`k_e`, the kernel :math:`K` in Å⁻¹ and its
+    Fourier transform :math:`\hat K`; every channel interacts through the same
+    kernel and channels do not mix. The periodic sum uses the tin-foil boundary
+    convention (the :math:`\mathbf{k} = \mathbf{0}` mode is dropped) and
+    requires every channel to be neutral: a constrained channel must sum to
+    zero, so set ``charge_constraint`` to ``neutral`` or to a source holding a
+    neutral total charge.
 
     An optional constraint shifts one channel uniformly over the atoms of
     every frame so that it sums to the total charge of the frame; this channel
@@ -95,6 +108,14 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         first column of the frame charge/spin condition, or ``"fparam"`` for
         the frame-parameter column ``fparam_index``) and the constrained
         ``channel``.
+    periodic
+        Whether the module serves periodic systems: it then declares the
+        :data:`~deepmd.dpmodel.utils.neighbor_graph.K_GRID` topology beside
+        :data:`~deepmd.dpmodel.utils.neighbor_graph.ALL_PAIRS` and evaluates
+        batches by their cells. Non-periodic batches keep working.
+    kspace_tolerance
+        The relative weight of the slowest-decaying kernel mode at the
+        wave-number cutoff of the k grid of a periodic batch.
     """
 
     def __init__(
@@ -102,6 +123,8 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         charge_net: LatentChargeFitting,
         kernel: BaseInteractionKernel,
         charge_constraint: dict | None = None,
+        periodic: bool = False,
+        kspace_tolerance: float = 1e-8,
     ) -> None:
         if charge_net.vacuum_ref:
             raise ValueError(
@@ -113,6 +136,15 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         self.charge_constraint = self._normalize_constraint(
             charge_constraint, charge_net
         )
+        self.periodic = bool(periodic)
+        self.kspace_tolerance = float(kspace_tolerance)
+        if (
+            not np.isfinite(self.kspace_tolerance)
+            or not 0.0 < self.kspace_tolerance < 1.0
+        ):
+            raise ValueError(
+                f"`kspace_tolerance` must be in (0, 1), got {self.kspace_tolerance}"
+            )
         # The frame charge/spin condition a compressed model is specialized
         # to; see :meth:`fold_charge_state`.
         self.charge_state = None
@@ -203,9 +235,43 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             charge_net,
             kernel_cls(**kernel_config),
             config.get("charge_constraint"),
+            periodic=config.get("periodic", False),
+            kspace_tolerance=config.get("kspace_tolerance", 1e-8),
+        )
+
+    def build_topologies(
+        self,
+        coord: Array,
+        n_node: Array,
+        box: Array | None,
+        *,
+        atype: Array,
+        node_mask: Array | None = None,
+        pair_excl: Any = None,
+    ) -> dict[str, Any]:
+        """Build the topologies of the module for one batch.
+
+        The k grid of a periodic batch is enumerated from the cells with the
+        wave-number cutoff of the kernel (the trainable parameters are read at
+        build time, so a drifting kernel re-derives its grid every batch).
+        """
+        params = {}
+        if self.periodic:
+            params[K_GRID] = {"k_max": self.kernel.kspace_cutoff(self.kspace_tolerance)}
+        return build_topologies(
+            self.required_topologies(),
+            coord,
+            n_node,
+            box,
+            node_mask,
+            atype=atype,
+            pair_excl=pair_excl,
+            topology_params=params,
         )
 
     def required_topologies(self) -> tuple[str, ...]:
+        if self.periodic:
+            return (ALL_PAIRS, K_GRID)
         return (ALL_PAIRS,)
 
     def uses_charge_spin(self) -> bool:
@@ -274,6 +340,16 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             charge = self._constrain(
                 charge, node_mask, frame_id, n_node, fparam, charge_spin
             )
+        energy = self._pair_branch(charge, pairs, n)
+        if self.periodic:
+            energy = energy + self._kspace_branch(
+                charge, topologies[K_GRID], frame_id, node_mask, n_node
+            )
+        return xp.reshape(energy, (n, 1))
+
+    def _pair_branch(self, charge: Array, pairs: Any, n: int) -> Array:
+        """Direct pair sum over the non-periodic frames, per atom."""
+        xp = array_api_compat.array_namespace(charge)
         src = pairs.index[0]
         dst = pairs.index[1]
         pair_charge = xp.sum(
@@ -284,8 +360,84 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         half_energy = (0.5 * COULOMB_CONSTANT) * xp.where(
             pairs.mask, pair_energy, xp.zeros_like(r_sq)
         )
-        energy = segment_sum(half_energy, src, n) + segment_sum(half_energy, dst, n)
-        return xp.reshape(energy, (n, 1))
+        return segment_sum(half_energy, src, n) + segment_sum(half_energy, dst, n)
+
+    def _kspace_branch(
+        self,
+        charge: Array,
+        k_grid: KGrid,
+        frame_id: Array,
+        node_mask: Array,
+        n_node: Array,
+    ) -> Array:
+        r"""Reciprocal-space energy of the periodic frames, per atom.
+
+        Evaluates
+        :math:`E_f = k_e [ \frac{1}{2V_f} \sum_{\mathbf{k}\neq\mathbf{0}}
+        \hat K(\mathbf{k}) |\hat\rho(\mathbf{k})|^2
+        - \frac{1}{2} K(0) \sum_{i \in f} |q_i|^2 ]`
+        on the strained geometry of :attr:`KGrid.strain` (identity when no
+        strain leaf is set): coordinates by ``I + strain``, wave numbers by
+        ``(I + strain)^{-1}`` on their row layout and volumes by
+        ``det(I + strain)``, so that the gradient of the energy with respect
+        to the strain leaf is the negative k-space virial of the frame. The
+        reciprocal energy is attributed to the charged atoms of the frame in
+        equal shares; the self term is per atom by construction. Guard points
+        carry a zero mask.
+        """
+        xp = array_api_compat.array_namespace(charge)
+        nf = n_node.shape[0]
+        coord = k_grid.coord
+        if coord is None:
+            raise ValueError(
+                "the k-grid topology carries no coordinates; the graph lower "
+                "re-leafs them before the evaluation"
+            )
+        coord = xp.astype(coord, charge.dtype)
+        k_vec = xp.astype(k_grid.vec, charge.dtype)
+        volume = xp.astype(k_grid.volume, charge.dtype)
+        if k_grid.strain is not None:
+            eye = xp.eye(3, dtype=charge.dtype, device=array_api_compat.device(charge))
+            s = xp.astype(k_grid.strain, charge.dtype) + eye  # (nf, 3, 3)
+            # r' = S r (columns)
+            s_node = xp.take(s, frame_id, axis=0)  # (N, 3, 3)
+            coord = xp.matmul(s_node, coord[:, :, None])[:, :, 0]
+            # k' = S^{-T} k (columns), i.e. rows multiplied by S^{-1}
+            s_inv_t = xp.matrix_transpose(xp.linalg.inv(s))
+            s_inv_t_k = xp.take(s_inv_t, k_grid.frame, axis=0)  # (nk, 3, 3)
+            k_vec = xp.matmul(s_inv_t_k, k_vec[:, :, None])[:, :, 0]
+            volume = volume * xp.linalg.det(s)
+        phase = xp.matmul(k_vec, xp.matrix_transpose(coord))  # (nk, N)
+        same_frame = frame_id[None, :] == k_grid.frame[:, None]
+        cos_phase = xp.cos(phase) * same_frame
+        sin_phase = xp.sin(phase) * same_frame
+        rho_real = xp.matmul(cos_phase, charge)  # (nk, C)
+        rho_imag = xp.matmul(sin_phase, charge)  # (nk, C)
+        s_sq = xp.sum(rho_real**2 + rho_imag**2, axis=-1)  # (nk,)
+        k_sq = xp.sum(k_vec * k_vec, axis=-1)
+        kernel_value = self.kernel.kspace(k_sq)  # (nk,)
+        half_ke = 0.5 * COULOMB_CONSTANT
+        volume_k = xp.take(volume, k_grid.frame, axis=0)
+        energy_k = half_ke * kernel_value * s_sq / volume_k
+        energy_k = xp.where(k_grid.mask, energy_k, xp.zeros_like(energy_k))
+        e_rec_frame = segment_sum(energy_k, k_grid.frame, nf)  # (nf,)
+        weight = xp.astype(node_mask, charge.dtype)
+        count = segment_sum(weight, frame_id, nf)
+        count = xp.maximum(count, xp.ones_like(count))
+        e_rec = xp.take(e_rec_frame / count, frame_id, axis=0) * weight  # (N,)
+        # The self term belongs to the periodic lattice sum alone: a frame
+        # without real k points (a non-periodic batch on a periodic-enabled
+        # model) keeps its non-periodic self-free energy.
+        periodic_frame = (
+            segment_sum(xp.astype(k_grid.mask, charge.dtype), k_grid.frame, nf) > 0
+        )
+        e_self = (
+            -half_ke
+            * self.kernel.contact_value(charge)
+            * xp.sum(charge * charge, axis=-1)
+            * xp.astype(xp.take(periodic_frame, frame_id, axis=0), charge.dtype)
+        )
+        return e_rec + e_self
 
     def _pair_kernel(self, r_sq: Array, src: Array, n: int) -> Array:
         """Kernel values of the pairs.
@@ -406,6 +558,9 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             "kernel": self.kernel.serialize(),
             "charge_constraint": self.charge_constraint,
         }
+        if self.periodic:
+            data["periodic"] = True
+            data["kspace_tolerance"] = self.kspace_tolerance
         if self.charge_state is not None:
             data["charge_state"] = to_numpy_array(self.charge_state).tolist()
         return data
@@ -418,6 +573,8 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             LatentChargeFitting.deserialize(data["charge_net"]),
             BaseInteractionKernel.deserialize(data["kernel"]),
             data["charge_constraint"],
+            periodic=data.get("periodic", False),
+            kspace_tolerance=data.get("kspace_tolerance", 1e-8),
         )
         if data.get("charge_state") is not None:
             obj.fold_charge_state(np.asarray(data["charge_state"]).reshape(-1).tolist())

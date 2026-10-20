@@ -2556,19 +2556,40 @@ class DeepEval(DeepEvalBackend):
             if topology_names:
                 # Padding slots of a mixed-type batch are no atoms and join
                 # no pair.
-                model_inputs += flatten_topologies(
-                    build_topologies(
+                coord_flat_t = torch.as_tensor(
+                    coord_input.reshape(-1, 3), dtype=edge_dtype, device=DEVICE
+                )
+                if self._dpmodel is not None:
+                    # The live model builds its own topologies, so the k-grid
+                    # cutoff follows the kernel parameters.
+                    topologies = self._dpmodel.atomic_model.build_topologies(
+                        coord_flat_t,
+                        n_node_t,
+                        box_input,
+                        atype=atype_t,
+                        node_mask=atype_t >= 0,
+                        pair_excl=self._model_pair_excl(),
+                    )
+                else:
+                    from deepmd.dpmodel.utils.neighbor_graph import (
+                        K_GRID,
+                    )
+
+                    if K_GRID in topology_names:
+                        raise NotImplementedError(
+                            "a periodic long-range model cannot be evaluated from "
+                            "a .pt2/.pte archive yet"
+                        )
+                    topologies = build_topologies(
                         topology_names,
-                        torch.as_tensor(
-                            coord_input.reshape(-1, 3), dtype=edge_dtype, device=DEVICE
-                        ),
+                        coord_flat_t,
                         n_node_t,
                         box_input,
                         node_mask=atype_t >= 0,
                         atype=atype_t,
                         pair_excl=self._model_pair_excl(),
                     )
-                )
+                model_inputs += flatten_topologies(topologies)
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:

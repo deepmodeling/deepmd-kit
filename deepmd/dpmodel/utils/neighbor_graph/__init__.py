@@ -58,11 +58,15 @@ from .graph import (
 )
 from .pair_graph import (
     ALL_PAIRS,
+    K_GRID,
+    KGrid,
     PairGraph,
+    build_k_grid,
     build_pair_graph,
     build_topologies,
     check_complete_frames,
     flatten_topologies,
+    topology_flat_fields,
     unflatten_topologies,
     unordered_pair_index,
 )
@@ -78,7 +82,9 @@ from .segment import (
 
 __all__ = [
     "ALL_PAIRS",
+    "K_GRID",
     "GraphLayout",
+    "KGrid",
     "NeighborGraph",
     "PairGraph",
     "angle_padding_fraction",
@@ -90,6 +96,7 @@ __all__ = [
     "attach_edge_csr",
     "build_angle_index",
     "build_edge_csr",
+    "build_k_grid",
     "build_neighbor_graph",
     "build_neighbor_graph_ase",
     "build_pair_graph",
@@ -116,6 +123,7 @@ __all__ = [
     "segment_mean",
     "segment_softmax",
     "segment_sum",
+    "topology_flat_fields",
     "unflatten_topologies",
     "unordered_pair_index",
 ]

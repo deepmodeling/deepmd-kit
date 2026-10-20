@@ -242,6 +242,36 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return ()
 
+    def build_topologies(
+        self,
+        coord: Any,
+        n_node: Any,
+        box: Any,
+        *,
+        atype: Any,
+        node_mask: Any = None,
+        pair_excl: Any = None,
+    ) -> dict[str, Any]:
+        """Build the topologies of :meth:`required_topologies` for one batch.
+
+        The default builds them from their names; a module that owns build
+        parameters (e.g. the wave-number cutoff of the k grid of a periodic
+        long-range module) overrides this so they stay with it.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_topologies,
+        )
+
+        return build_topologies(
+            self.required_topologies(),
+            coord,
+            n_node,
+            box,
+            node_mask,
+            atype=atype,
+            pair_excl=pair_excl,
+        )
+
     def supports_native_spin(self) -> bool:
         """Returns whether this atomic model consumes a per-atom spin input.
 
@@ -974,7 +1004,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
 
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_neighbor_graph,
-            build_topologies,
         )
         from deepmd.dpmodel.utils.nlist import (
             extend_input_and_build_neighbor_list,
@@ -1025,13 +1054,12 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                     pair_excl=self.pair_excl,
                 )
                 atype_flat = xp.reshape(atype, (-1,))
-                topologies = build_topologies(
-                    self.required_topologies(),
+                topologies = self.build_topologies(
                     xp.reshape(coord, (-1, 3)),
                     graph.n_node,
                     box,
-                    node_mask=atype_flat >= 0,
                     atype=atype_flat,
+                    node_mask=atype_flat >= 0,
                     pair_excl=self.pair_excl,
                 )
                 atomic_ret = self.forward_common_atomic_graph(

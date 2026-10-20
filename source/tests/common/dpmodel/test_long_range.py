@@ -19,6 +19,7 @@ from deepmd.dpmodel.long_range import (
     SOGKernel,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    build_k_grid,
     build_pair_graph,
     build_topologies,
     pair_force_virial,
@@ -199,3 +200,120 @@ def test_long_range_round_trip() -> None:
     assert restored.serialize()["charge_constraint"] == record["charge_constraint"]
     assert restored.required_topologies() == ("all_pairs",)
     assert not restored.uses_charge_spin()
+
+
+# ---------------------------------------------------------------------------
+# Periodic (k-space) primitives
+# ---------------------------------------------------------------------------
+
+
+def _spherical_ft(
+    kernel: str, k: float, n_r: int = 20000, r_max: float = 60.0
+) -> float:
+    """Isotropic Fourier transform of the kernel by direct radial quadrature."""
+    r = np.linspace(1e-9, r_max, n_r)
+    if kernel == "les":
+        k_r = erf(0.8 * r) / r
+    else:
+        amplitude = np.array([0.7, -0.2, 0.1])
+        width = np.array([0.8, 1.7, 3.2])
+        k_r = np.sum(
+            amplitude[None, :] * np.exp(-(r[:, None] ** 2) / (2 * width**2)), -1
+        )
+    return float(np.trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(k * r / np.pi), r))
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_kernel_kspace_matches_radial_ft(kernel: str) -> None:
+    """``kernel.kspace`` is the analytic Fourier transform of the real-space kernel."""
+    k_sq = np.array([0.5, 1.0, 2.0, 5.0]) ** 2
+    if kernel == "les":
+        mod = LESKernel(alpha=0.8)
+    else:
+        mod = SOGKernel(amplitude=[0.7, -0.2, 0.1], width=[0.8, 1.7, 3.2])
+    got = mod.kspace(k_sq)
+    for kk, value in zip(np.sqrt(k_sq), got, strict=True):
+        if kernel == "les":
+            # erf(alpha r)/r is not integrable; quadrature of the integrable
+            # complement erfc(alpha r)/r = 1/r - erf(alpha r)/r converges, and
+            # K_hat(k) = 4 pi / k^2 - FT(erfc(alpha r)/r).
+            r = np.linspace(1e-9, 60.0, 20000)
+            k_r = (1.0 - erf(0.8 * r)) / r  # erfc(0.8 r)/r
+            expected = 4.0 * np.pi / kk**2 - float(
+                np.trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(kk * r / np.pi), r)
+            )
+        else:
+            expected = _spherical_ft(kernel, kk)
+        np.testing.assert_allclose(value, expected, rtol=1e-3, atol=1e-5)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_kernel_contact_value_matches_real_space_limit(kernel: str) -> None:
+    """``kernel.contact_value`` is K(r) at contact."""
+    if kernel == "les":
+        mod = LESKernel(alpha=0.8)
+    else:
+        mod = SOGKernel(amplitude=[0.7, -0.2, 0.1], width=[0.8, 1.7, 3.2])
+    r_sq = np.array([1e-12])
+    np.testing.assert_allclose(
+        mod.contact_value(r_sq), mod(r_sq)[0], rtol=1e-6, atol=1e-9
+    )
+
+
+def test_build_k_grid_orthogonality_and_guards() -> None:
+    """The k points satisfy k . a_d = 2 pi n_d, are ordered and carry guards."""
+    box = np.array([[8.0, 0.6, 0.0], [0.0, 7.5, 0.4], [0.0, 0.0, 9.0]])[None]
+    grid = build_k_grid(box, 2.0, np.array([4]), coord=np.zeros((4, 3)))
+    # guard points are two masked (1e-6, 0, 0) entries
+    assert grid.mask[-2:].tolist() == [False, False]
+    assert grid.mask[:-2].all()
+    n_integer = grid.vec[:-2] @ box[0].T / (2 * np.pi)
+    np.testing.assert_allclose(n_integer, np.round(n_integer), atol=1e-10)
+    k_sq = np.sum(grid.vec[:-2] ** 2, axis=-1)
+    assert (k_sq > 0).all() and (k_sq <= 4.0 + 1e-12).all()
+    np.testing.assert_allclose(grid.volume, np.abs(np.linalg.det(box[0])))
+    # every integer point inside the sphere is present exactly once
+    ns = np.round(n_integer).astype(int)
+    assert len({tuple(row) for row in ns}) == ns.shape[0]
+    rec = 2 * np.pi * np.linalg.inv(box[0])
+    n_d = np.ceil(2.0 * np.linalg.norm(box[0], axis=1) / (2 * np.pi)).astype(int)
+    count = 0
+    for n0 in range(-n_d[0], n_d[0] + 1):
+        for n1 in range(-n_d[1], n_d[1] + 1):
+            for n2 in range(-n_d[2], n_d[2] + 1):
+                if (n0, n1, n2) != (0, 0, 0):
+                    k = rec @ np.array([n0, n1, n2], dtype=float)
+                    count += int(np.sum(k * k) <= 4.0)
+    assert count == ns.shape[0]
+
+
+def test_build_topologies_periodic_branching() -> None:
+    """A cell switches the pair topology to guards and the k grid on, and back."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        ALL_PAIRS,
+        K_GRID,
+    )
+
+    coord = np.random.default_rng(1).normal(size=(4, 3))
+    atype = np.array([0, 1, 1, 0])
+    n_node = np.array([4])
+    box = np.eye(3)[None] * 10.0
+    names = (ALL_PAIRS, K_GRID)
+    params = {K_GRID: {"k_max": 2.0}}
+    with_box = build_topologies(
+        names, coord, n_node, box, atype=atype, topology_params=params
+    )
+    assert with_box[ALL_PAIRS].index.shape[1] == 2  # guards only
+    assert not with_box[ALL_PAIRS].mask.any()
+    assert with_box[K_GRID].mask.sum() > 0
+    without_box = build_topologies(
+        names, coord, n_node, None, atype=atype, topology_params=params
+    )
+    assert without_box[ALL_PAIRS].mask.any()
+    assert not without_box[K_GRID].mask.any()  # guards only
+    # a pair-only declaration still rejects a cell loudly
+    with pytest.raises(NotImplementedError, match="non-periodic"):
+        build_topologies((ALL_PAIRS,), coord, n_node, box, atype=atype)
+    # the k grid needs its build parameter
+    with pytest.raises(ValueError, match="k_max"):
+        build_topologies(names, coord, n_node, box, atype=atype)
