@@ -8,6 +8,7 @@ import math
 import os
 import pathlib
 import re
+import statistics
 import subprocess
 import sys
 import types
@@ -4179,6 +4180,560 @@ def test_a_measured_table_names_only_its_departures_from_the_rules() -> None:
         expected = fitting_routes.RULES if fastest == rule else fastest
         assert recorded == expected, node_count
     assert fitting_routes.PER_LAYER in choices
+
+
+def _route_stand_in(
+    alternating: dict[int, float | tuple[float, ...]],
+    trains: dict[str, dict[int, tuple]],
+    type_count: int = 3,
+) -> tuple[Any, list[int], list[tuple[str, int]]]:
+    """Return a route bench whose timings are those of the given stand-ins.
+
+    ``alternating`` holds the replay time of every route in the alternating
+    replays of a sample, one time for every capture or one per capture after
+    the untimed round. ``trains`` holds the times of the trains of one route
+    at a time, one per capture, for each composition: every node of one type
+    (``"one type"``) and the node types of the sample (``"sample"``), drawn
+    among ``type_count`` types. The two lists returned with the bench record
+    the routes of the alternating replays, the untimed round included, and the
+    compositions and routes of the trains, in the order in which the bench
+    times them.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    replayed: list[int] = []
+    trained: list[tuple[str, int]] = []
+    calls = 0
+
+    def replay(graphs: dict, replays: int, times: dict[int, list[float]]) -> None:
+        nonlocal calls
+        # The first call of a sample is its untimed round, which takes the
+        # times of the first capture; call k > 0 times capture k - 1.
+        capture = max(calls - 1, 0)
+        calls += 1
+        for choice in graphs:
+            replayed.append(choice)
+            value = alternating[choice]
+            ms = value[capture] if isinstance(value, tuple) else value
+            times[choice].extend([ms] * replays)
+
+    def capture(inputs: tuple, choices: list[int], rotation: int) -> dict:
+        nodes = "sample" if bool(inputs[1].any()) else "one type"
+        return {choice: (nodes, choice) for choice in choices}
+
+    def train_ms(graph: tuple[str, int]) -> float:
+        trained.append(graph)
+        nodes, choice = graph
+        return remaining[nodes][choice].pop(0)
+
+    remaining = {
+        nodes: {choice: list(times) for choice, times in routes.items()}
+        for nodes, routes in trains.items()
+    }
+    bench = object.__new__(fitting_routes._Bench)
+    bench.samples = bench.checked = bench.overturned = bench.replays = 0
+    bench.types = type_count
+    bench.one_type = torch.zeros(64, dtype=torch.long)
+    bench._inputs = lambda node_count: (None, torch.arange(64) % type_count, None)
+    bench._capture = capture
+    bench._replay_ms = lambda graph: 5.0
+    bench._replay = replay
+    bench._train_ms = train_ms
+    return bench, replayed, trained
+
+
+def _alternating_ms(*gains: float) -> tuple[float, ...]:
+    """Return per-capture replay times whose gains over 1 ms are ``gains``, in percent."""
+    return tuple(1.0 / (1.0 + gain / 100.0) for gain in gains)
+
+
+def _train_order(nodes: str, rule: int, route: int) -> list[tuple[str, int]]:
+    """Return the trains of the two captures of one composition, in their order."""
+    return [(nodes, choice) for choice in (rule, route, route, rule)]
+
+
+@pytest.mark.parametrize(
+    ("alternating_ms", "one_type_ms", "sample_ms", "per_layer_wins", "compositions"),
+    [
+        (1.05, (0.95, 0.95), (0.95, 0.95), False, 0),
+        (0.95, (1.10, 1.10), (0.95, 0.95), False, 1),
+        (0.95, (1.00, 1.04), (0.95, 0.95), False, 1),
+        (0.97, (0.95, 0.95), (1.02, 1.02), False, 2),
+        (0.97, (1.005, 1.005), (1.008, 1.008), True, 2),
+        (0.97, (0.98, 1.03), (1.00, 1.00), True, 2),
+    ],
+    ids=[
+        "slower-alternating",
+        "slower-one-type",
+        "median-beyond-the-tie",
+        "slower-sample",
+        "within-the-tie",
+        "median-within-the-tie",
+    ],
+)
+def test_a_departure_holds_on_trains_of_both_node_compositions(
+    alternating_ms: float,
+    one_type_ms: tuple,
+    sample_ms: tuple,
+    per_layer_wins: bool,
+    compositions: int,
+) -> None:
+    """A route that wins the alternating replays departs where it also holds on trains.
+
+    The stand-in times the route of the rules at 1 ms per replay and the
+    per-layer kernels at ``alternating_ms`` in the alternating replays of a
+    sample. On the trains of one route at a time, two captures for each
+    composition, it times the route of the rules at 1 ms and the per-layer
+    kernels at ``one_type_ms`` with every node of one type and at
+    ``sample_ms`` with the node types of the sample. A board at its power limit
+    can make a route that wins the alternating replays lose on trains, by an
+    amount that depends on the composition, because it sets the clock of a
+    route from the power that the route draws, which the node types of the
+    system change.
+
+    A route that clearly loses the alternating replays is settled after one
+    capture and never timed on trains, and a route that wins them is timed on
+    three captures at least. It departs from the rules where its median gain
+    on the trains of each composition is at least -1%, the tie, and the check
+    stops at the first composition on which it loses by more. The two captures
+    of a composition time the two routes in opposite orders.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule, per_layer = 7, fitting_routes.PER_LAYER
+    bench, replayed, trained = _route_stand_in(
+        {per_layer: alternating_ms, rule: 1.0},
+        {
+            "one type": {per_layer: one_type_ms, rule: (1.0, 1.0)},
+            "sample": {per_layer: sample_ms, rule: (1.0, 1.0)},
+        },
+    )
+    expected = per_layer if per_layer_wins else rule
+    assert bench.winner(4096, rule, [per_layer, rule]) == expected
+    assert bench.samples == 1
+    # The untimed round and the captures of the sample, two routes each.
+    captures = 1 if alternating_ms > 1.0 else 3
+    assert len(replayed) == 2 * (1 + captures)
+    checked = int(compositions > 0)
+    assert (bench.checked, bench.overturned) == (checked, checked - per_layer_wins)
+    order = _train_order("one type", rule, per_layer) + _train_order(
+        "sample", rule, per_layer
+    )
+    assert trained == order[: 4 * compositions]
+
+
+@pytest.mark.parametrize(
+    ("per_layer_gains", "shape_gains", "expected"),
+    [
+        ((0.5,) * 7, None, "rules"),
+        ((2.0, 2.0, 10.0, 2.0, 2.0, 10.0, 2.0), None, "rules"),
+        ((6.0, 5.0, 0.0, 6.0, 5.0, 0.0, 5.0), None, "per-layer"),
+        ((2.5, 2.5, -6.0, 2.5, 2.5, -6.0, 2.5), (2.0,) * 7, "shape"),
+    ],
+    ids=[
+        "within-the-tie",
+        "within-the-half-range",
+        "beyond-the-half-range",
+        "runner-up-of-a-wide-best",
+    ],
+)
+def test_a_candidate_exceeds_its_own_bound(
+    per_layer_gains: tuple, shape_gains: tuple | None, expected: str
+) -> None:
+    """A route is a candidate where its median gain exceeds its own bound.
+
+    The stand-in times the route of the rules at 1 ms per replay in the
+    alternating replays of a sample and the per-layer kernels, and in the
+    last case a fused shape, at the given per-capture gains over it, in
+    percent; the trains time every route at 1 ms. The bound of a route is the
+    tie of 1%, or the half-range of its own per-capture gains where that is
+    larger. A steady gain of 0.5% within the tie and a median gain of 2% within
+    a half-range of 4% leave the run size to the rules, a median gain of 5%
+    beyond a half-range of 3% departs, and a fused shape of a steady 2% departs
+    where the per-layer kernels do not, although their median gain of 2.5% is
+    larger, since the half-range of their gains is 4.25%.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule, shape, per_layer = 7, 5, fitting_routes.PER_LAYER
+    alternating = {per_layer: _alternating_ms(*per_layer_gains), rule: 1.0}
+    if shape_gains is not None:
+        alternating[shape] = _alternating_ms(*shape_gains)
+    level = dict.fromkeys((per_layer, shape, rule), (1.0,) * 4)
+    bench, _, _ = _route_stand_in(alternating, {"one type": level, "sample": level})
+    routes = {"rules": rule, "per-layer": per_layer, "shape": shape}
+    assert bench.winner(4096, rule, [*alternating]) == routes[expected]
+    assert bench.checked == int(expected != "rules")
+
+
+@pytest.mark.parametrize(
+    ("per_layer_gains", "shape_gains", "expected", "stages"),
+    [
+        (
+            (2.2, 2.2, -6.0, 0.0, 0.0, 0.0, 0.0),
+            (1.9, 2.0, 2.1, 0.0, 0.0, 0.0, 0.0),
+            "rules",
+            3,
+        ),
+        ((6.0,) * 7, (-6.0,) * 7, "per-layer", 2),
+        ((-6.0,) * 7, (6.0,) * 7, "shape", 2),
+    ],
+    ids=[
+        "runner-up-near-its-bound",
+        "departure-of-the-first-route",
+        "departure-of-the-second-route",
+    ],
+)
+def test_a_sample_settles_every_rival_before_it_stops(
+    per_layer_gains: tuple, shape_gains: tuple, expected: str, stages: int
+) -> None:
+    """A sample takes captures until every route besides the rules' is settled.
+
+    The stand-in times the route of the rules at 1 ms per replay and the
+    per-layer kernels and a fused shape, given to the bench in that order, at
+    the given per-capture gains over it, in percent; the trains time every
+    route at 1 ms. In the first case, after three captures the per-layer
+    kernels, whose median gain is the largest, lie clearly below their bound,
+    a half-range of 4.1%, while the fused shape lies 1% above its bound,
+    within the margin of that stage: the sample takes the captures of the
+    third stage, over which both routes tie with the rules, and leaves the run
+    size to them. In the other two cases one route lies clearly below its
+    bound after one capture and the other clearly above its own, the first
+    route given to the bench in one case and the second in the other: the
+    sample still takes the captures of the second stage before the route
+    above its bound departs.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule, shape, per_layer = 7, 5, fitting_routes.PER_LAYER
+    level = dict.fromkeys((per_layer, shape, rule), (1.0,) * 4)
+    bench, replayed, _ = _route_stand_in(
+        {
+            per_layer: _alternating_ms(*per_layer_gains),
+            shape: _alternating_ms(*shape_gains),
+            rule: 1.0,
+        },
+        {"one type": level, "sample": level},
+    )
+    routes = {"rules": rule, "per-layer": per_layer, "shape": shape}
+    assert bench.winner(4096, rule, [per_layer, shape, rule]) == routes[expected]
+    # The untimed round and the captures of the stages, three routes each.
+    captures = sum(fitting_routes.STAGE_CAPTURES[:stages])
+    assert len(replayed) == 3 * (1 + captures)
+
+
+@pytest.mark.parametrize(
+    ("one_type_ms", "expected"),
+    [((1.03, 0.97), 1), ((1.03, 1.02), None), ((1.03, 1.03, 0.99), 2)],
+    ids=["second-holds", "none-holds", "third-holds"],
+)
+def test_the_candidates_are_tried_in_the_order_of_their_gains(
+    one_type_ms: tuple[float, ...], expected: int | None
+) -> None:
+    """The candidates of a sample are checked on trains in the order of their gains.
+
+    The stand-in times the per-layer kernels and one or two fused shapes at
+    0.95, 0.96 and 0.97 ms in the alternating replays of a sample, against
+    1 ms for the route of the rules, so that every one exceeds the tie and
+    their gains fall in that order; the bench receives the routes in the
+    reverse order. On the trains with every node of one type candidate ``i``
+    takes ``one_type_ms[i]`` against 1 ms for the route of the rules, so that
+    the per-layer kernels lose 3% there, and with the node types of the sample
+    every candidate takes 0.97 ms. The first candidate that holds on both
+    compositions departs from the rules, and the rules keep the run size where
+    none holds; the sample counts as overturned either way.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule = 7
+    candidates = [fitting_routes.PER_LAYER, 5, 6][: len(one_type_ms)]
+    alternating = {choice: 0.95 + 0.01 * i for i, choice in enumerate(candidates)}
+    one_type = dict(zip(candidates, ((ms, ms) for ms in one_type_ms), strict=True))
+    bench, _, trained = _route_stand_in(
+        {**alternating, rule: 1.0},
+        {
+            "one type": {**one_type, rule: (1.0,) * (2 * len(candidates))},
+            "sample": {**dict.fromkeys(candidates, (0.97, 0.97)), rule: (1.0, 1.0)},
+        },
+    )
+    winner = rule if expected is None else candidates[expected]
+    assert bench.winner(4096, rule, [*reversed(candidates), rule]) == winner
+    assert (bench.checked, bench.overturned) == (1, 1)
+    tried = candidates if expected is None else candidates[: expected + 1]
+    order = [train for c in tried for train in _train_order("one type", rule, c)]
+    if expected is not None:
+        order += _train_order("sample", rule, winner)
+    assert trained == order
+
+
+@pytest.mark.parametrize(
+    ("rule_ms", "rule_train_ms", "per_layer_wins", "compositions"),
+    [(1.125, 1.0, False, 0), (1.25, 0.875, True, 2)],
+    ids=["gain-at-its-bound", "train-gain-at-the-tie"],
+)
+def test_the_bound_and_the_tie_are_strict_and_inclusive(
+    monkeypatch: pytest.MonkeyPatch,
+    rule_ms: float,
+    rule_train_ms: float,
+    per_layer_wins: bool,
+    compositions: int,
+) -> None:
+    """A gain equal to its bound is no candidate, and a train loss equal to the tie holds.
+
+    With a tie of 1/8, which the times of the stand-in represent exactly, the
+    per-layer kernels take 1 ms in the alternating replays and on the trains.
+    A route of the rules at 1.125 ms gives them a steady gain of exactly the
+    tie, their bound, which a candidate has to exceed, so the run size stays
+    with the rules. A route of the rules at 1.25 ms in the alternating replays
+    and at 0.875 ms on the trains gives them a candidacy and a median gain of
+    exactly minus the tie on the trains of both compositions, at which a
+    candidate holds.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    monkeypatch.setattr(fitting_routes, "TIE", 0.125)
+    rule, per_layer = 7, fitting_routes.PER_LAYER
+    level = {per_layer: (1.0, 1.0), rule: (rule_train_ms, rule_train_ms)}
+    bench, _, trained = _route_stand_in(
+        {per_layer: 1.0, rule: rule_ms}, {"one type": level, "sample": level}
+    )
+    expected = per_layer if per_layer_wins else rule
+    assert bench.winner(4096, rule, [per_layer, rule]) == expected
+    assert len(trained) == 4 * compositions
+
+
+def test_a_margin_equal_to_that_of_its_stage_takes_the_next_stage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sample decides only where every margin lies strictly beyond that of its stage.
+
+    With a tie of 1/8 and stage margins of 1/4 and 1/8, which the times of the
+    stand-in represent exactly, the route of the rules takes 1.25 ms and the
+    per-layer kernels 1 ms per replay, a steady gain of 1/4. Its margin, the
+    gain less its bound, is 1/8 after every stage. The first stage does not
+    decide, since the route exceeds its bound, and the second does not either,
+    since the margin equals that of the stage, so the sample takes the
+    captures of the last stage before the per-layer kernels depart.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    monkeypatch.setattr(fitting_routes, "TIE", 0.125)
+    monkeypatch.setattr(fitting_routes, "STAGE_MARGINS", (0.25, 0.125))
+    rule, per_layer = 7, fitting_routes.PER_LAYER
+    level = {per_layer: (1.0, 1.0), rule: (1.0, 1.0)}
+    bench, replayed, _ = _route_stand_in(
+        {per_layer: 1.0, rule: 1.25}, {"one type": level, "sample": level}
+    )
+    assert bench.winner(4096, rule, [per_layer, rule]) == per_layer
+    # The untimed round and the captures of the three stages, two routes each.
+    assert len(replayed) == 2 * (1 + sum(fitting_routes.STAGE_CAPTURES))
+
+
+def test_the_candidates_are_ordered_by_their_gain_rather_than_their_margin() -> None:
+    """Of two candidates, the one of the larger median gain is checked first.
+
+    The stand-in times the route of the rules at 1 ms per replay, the
+    per-layer kernels at per-capture gains of 6%, 5% and 0%, a median gain of
+    5% above a bound of 3%, and a fused shape at a steady gain of 4%, above a
+    bound of 1%, so that the fused shape lies farther above its bound while
+    the per-layer kernels gain more. The trains time every route at 1 ms, so
+    both candidates hold there, and the per-layer kernels, checked first, take
+    the run size.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule, shape, per_layer = 7, 5, fitting_routes.PER_LAYER
+    level = dict.fromkeys((per_layer, shape, rule), (1.0,) * 4)
+    bench, _, trained = _route_stand_in(
+        {
+            per_layer: _alternating_ms(6.0, 5.0, 0.0, 6.0, 5.0, 0.0, 5.0),
+            shape: _alternating_ms(*(4.0,) * 7),
+            rule: 1.0,
+        },
+        {"one type": level, "sample": level},
+    )
+    assert bench.winner(4096, rule, [shape, per_layer, rule]) == per_layer
+    assert trained == _train_order("one type", rule, per_layer) + _train_order(
+        "sample", rule, per_layer
+    )
+
+
+@_GPU
+@pytest.mark.parametrize(
+    ("train_span_ms", "floor"), [(10.0, False), (0.5, True)], ids=["span", "floor"]
+)
+def test_a_train_follows_its_lead_in_and_returns_the_time_of_one_replay(
+    monkeypatch: pytest.MonkeyPatch, train_span_ms: float, floor: bool
+) -> None:
+    """A train replays its route for the lead-in, then times a span of replays.
+
+    Captured CUDA graphs of sleep kernels stand in for the operator: one
+    replays during the lead-in, whose replays the bench times through
+    ``_replay_ms``, and one of four times its length during the train, so that
+    the time that the train returns tells its own replays from those of the
+    lead-in also where other processes take time slices of a shared device and
+    so lengthen the lead-in. With a lead-in of 20 ms of device time in chunks of
+    5 ms, the first replay sets the size of the chunks, the lead-in replays the
+    route in chunks until their device time reaches 20 ms, and the train then
+    takes the replays that span ``train_span_ms`` at the mean replay time of
+    the lead-in, nine at least: a span of 10 ms takes more than nine replays, a
+    span of 0.5 ms nine. The bench counts every replay, and the train returns
+    the median time of its own replays, which the test compares with the
+    median of single replays of the same graph; a median, unlike a mean, stays
+    in place under the time slices of other processes.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    monkeypatch.setattr(fitting_routes, "LEAD_IN_MS", 20.0)
+    monkeypatch.setattr(fitting_routes, "LEAD_IN_CHUNK_MS", 5.0)
+    monkeypatch.setattr(fitting_routes, "TRAIN_MS", train_span_ms)
+    device = torch.device("cuda", torch.cuda.current_device())
+
+    class Counted:
+        """Replays the lead-in graph or the train graph and counts the replays."""
+
+        def __init__(
+            self, lead_in: torch.cuda.CUDAGraph, train: torch.cuda.CUDAGraph
+        ) -> None:
+            self.lead_in, self.train = lead_in, train
+            self.leading, self.count = False, 0
+
+        def replay(self) -> None:
+            self.count += 1
+            (self.lead_in if self.leading else self.train).replay()
+
+    bench = object.__new__(fitting_routes._Bench)
+    bench.device, bench.replays = device, 0
+    timed: list[tuple[int, float]] = []
+    replay_ms = bench._replay_ms
+
+    def lead_in_replay_ms(graph: Counted, count: int = 1) -> float:
+        graph.leading = True
+        timed.append((count, replay_ms(graph, count)))
+        graph.leading = False
+        return timed[-1][1]
+
+    bench._replay_ms = lead_in_replay_ms
+    with torch.cuda.device(device):
+        stream = torch.cuda.Stream(device)
+        with torch.cuda.stream(stream):
+            torch.cuda._sleep(1000)
+        torch.cuda.synchronize(device)
+        graphs = []
+        for cycles in (250_000, 1_000_000):
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                torch.cuda._sleep(cycles)
+            graphs.append(graph)
+        counted = Counted(*graphs)
+        train_ms = bench._train_ms(counted)
+        single_ms = statistics.median(replay_ms(graphs[1]) for _ in range(15))
+    counts, times = zip(*timed, strict=True)
+    chunk = max(1, math.ceil(fitting_routes.LEAD_IN_CHUNK_MS / times[0]))
+    assert counts == (1, *(chunk,) * (len(counts) - 1))
+    assert sum(times[:-1]) < fitting_routes.LEAD_IN_MS <= sum(times)
+    span = math.ceil(fitting_routes.TRAIN_MS * sum(counts) / sum(times))
+    if floor:
+        assert span < fitting_routes.TRAIN_REPLAYS
+    else:
+        assert span > fitting_routes.TRAIN_REPLAYS
+    assert counted.count - sum(counts) == max(fitting_routes.TRAIN_REPLAYS, span)
+    assert bench.replays == counted.count
+    assert 0.8 * single_ms <= train_ms <= 1.25 * single_ms
+
+
+@pytest.mark.parametrize("type_count", [1, 2], ids=["one-type", "two-types"])
+def test_the_trains_time_each_distinct_composition_once(type_count: int) -> None:
+    """The trains time each distinct composition of a sample once.
+
+    The node types of the sample of a model of one node type are those of the
+    composition with every node of one type, so the bench times that
+    composition alone; the sample of a model of two node types holds both
+    types, and the bench times both compositions.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule, per_layer = 7, fitting_routes.PER_LAYER
+    level = {per_layer: (0.95, 0.95), rule: (1.0, 1.0)}
+    bench, _, trained = _route_stand_in(
+        {per_layer: 0.95, rule: 1.0},
+        {"one type": level, "sample": level},
+        type_count=type_count,
+    )
+    assert bench.winner(4096, rule, [per_layer, rule]) == per_layer
+    assert (bench.checked, bench.overturned) == (1, 0)
+    order = _train_order("one type", rule, per_layer)
+    if type_count > 1:
+        order += _train_order("sample", rule, per_layer)
+    assert trained == order
+
+
+@pytest.mark.parametrize(
+    ("one_type_ms", "sample_ms", "second_wins"),
+    [
+        ((1.10, 1.10), (1.0, 1.0), True),
+        ((1.012, 0.995), (1.0, 1.0), True),
+        ((0.995, 0.995), (1.03, 1.03), True),
+        ((0.97, 0.97), (1.0, 1.0), False),
+        ((1.02, 1.02), (0.95, 0.95), False),
+        ((1.0, 1.0), (1.0, 1.0), False),
+    ],
+    ids=["clear", "within-range", "mean", "first-faster", "mean-against", "tie"],
+)
+def test_two_routes_besides_the_rules_are_decided_on_trains(
+    one_type_ms: tuple, sample_ms: tuple, second_wins: bool
+) -> None:
+    """Two routes that are not the rules' are decided on trains alone.
+
+    The bisection of a band compares the routes that won at its two ends,
+    neither of them that of the rules, and the bench runs no alternating
+    replays for such a pair. The stand-in times the per-layer kernels, the
+    first route, faster than a fused shape in the alternating replays, and on
+    the trains at ``one_type_ms`` with every node of one type and at
+    ``sample_ms`` with the node types of the sample, against 1 ms for the
+    fused shape. The fused shape takes the run size where the mean over the two
+    compositions of its median gains over the per-layer kernels is positive,
+    and the per-layer kernels keep it otherwise, a tie included.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+
+    rule, shape, per_layer = 7, 5, fitting_routes.PER_LAYER
+    bench, replayed, trained = _route_stand_in(
+        {per_layer: 0.95, shape: 1.0},
+        {
+            "one type": {per_layer: one_type_ms, shape: (1.0, 1.0)},
+            "sample": {per_layer: sample_ms, shape: (1.0, 1.0)},
+        },
+    )
+    expected = shape if second_wins else per_layer
+    assert bench.winner(4096, rule, [per_layer, shape]) == expected
+    assert (bench.samples, bench.checked, bench.overturned) == (1, 1, 0)
+    assert replayed == []
+    assert trained == _train_order("one type", per_layer, shape) + _train_order(
+        "sample", per_layer, shape
+    )
 
 
 @_GPU

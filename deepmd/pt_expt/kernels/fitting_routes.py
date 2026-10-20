@@ -5,14 +5,16 @@ The fused energy-force operator of compressed DPA4C evaluates its fitting
 network over runs of nodes, either through the fused kernel, in one of the
 shapes compiled for the hidden width, or through the per-layer kernels. Every
 route evaluates the same contractions in the same order and so returns the
-same bits; the routes differ only in speed, by the number of waves their grids
-take on the device and by how full the last of them is. The operator derives a
-route from rules when it is given no table. At freeze time, on the deployment
-device, :func:`tune_fitting_routes` measures instead which route serves each
-run size and records the result as a fitting-route table, which names a route
-only where the measurement departs from the rules and leaves them every other
-run size, so that the frozen program runs the code of an untuned one wherever
-the two agree. The table is passed to the operator as a literal of the frozen
+same bits; the routes differ only in speed. At a common clock a route takes
+the time of the waves that its grids take on the device, which depends on how
+full the last of them is, while a board at its power limit clocks each route by
+the power that the route itself draws. The operator derives a route from rules
+when it is given no table. At freeze time, on the deployment device,
+:func:`tune_fitting_routes` measures instead which route serves each run size
+and records the result as a fitting-route table, which names a route only
+where the measurement departs from the rules and leaves them every other run
+size, so that the frozen program runs the code of an untuned one wherever the
+two agree. The table is passed to the operator as a literal of the frozen
 program (:func:`fitting_routes`), which falls back to the rules on a device of
 another fingerprint.
 
@@ -21,13 +23,36 @@ its number of waves and no rule changes its route
 (``graph_fitting_route_bands``). A route is fastest over a whole band only if
 the fill of its last wave does not decide; the measurement therefore times both
 ends of every band, and where the two ends disagree it bisects the band for the
-run size at which the winner changes. Each sample times every compared route
-on the canonical graph of a periodic bulk system of exactly the run size of
+run size at which the winner changes. Each sample times the compared routes on
+the canonical graph of a periodic bulk system of exactly the run size of
 atoms, as replays of a captured CUDA graph of the whole operator, which is how
-LAMMPS evaluates it. A route other than that of the rules is recorded only
-where its median gain over the rules, measured within each capture of the
-operator, exceeds :data:`TIE` and the spread of that gain between captures,
-which a deployment that captures once sees.
+LAMMPS evaluates it.
+
+A sample times the routes in two ways. Within each capture of the operator the
+replays of the routes alternate, so that every route runs at the clocks of a
+lightly loaded board, and a route other than that of the rules is a candidate
+only where its median gain over the rules exceeds :data:`TIE` and the
+half-range of its per-capture gains, half the difference between the largest
+and the smallest of these gains; a deployment captures the operator once and
+sees the gain of one capture. At a common clock the fitting network takes the
+same time whatever the node types of the system, so the alternating replays run
+the node types of the sample alone. A train is a run of consecutive replays of
+one route, timed after a lead-in of further replays of that route; trains time
+the routes at the clocks of a board held at its power limit, where a route that
+draws more power can lose what it wins at a common clock. The loss depends on
+the node types of the system, its composition: the descriptor may run other
+scans for one node type than for several, and so sets the power and the length
+of the step around the fitting network. On an L20 at its 350 W limit, the
+per-layer kernels of a trained Air model at 12,320 nodes gain 1.1% on trains
+with every node carbon and lose 1.4% with three node types. A candidate
+therefore takes a run size only where it loses by no more than :data:`TIE` on
+the trains of two compositions: every node of one type, and the node types of
+the sample. Where a deployment leaves the device idle part of the time, the
+gain of a route lies between its gains in the alternating replays and on the
+trains, as on a V100 at its 300 W limit, where the gain on trains rises towards
+that of the alternating replays as the device idles more. On these compositions
+a route that the measurement selects is therefore not slower than the rules at
+a load in between, beyond the tie and the noise of the measurements.
 """
 
 from __future__ import (
@@ -58,9 +83,12 @@ PER_LAYER = -1
 #: Choice of a table that leaves the run to the rules of the operator
 #: (graph_ops.h).
 RULES = 0
-#: Least median gain by which a route must beat that of the rules to replace
-#: it; a sample whose gains spread wider between captures requires their
-#: half-range.
+#: Relative gain within which a route counts as equally fast as that of the
+#: rules. A route other than that of the rules is a candidate where its median
+#: gain over the rules in the alternating replays of a sample exceeds its bound
+#: (:func:`_bound`), the tie or a larger half-range of its per-capture gains. A
+#: candidate replaces the route of the rules only if it loses to that route by
+#: no more than the tie on the trains of one route at a time.
 TIE = 0.01
 #: Atoms per Å³ of the synthetic systems: diamond, the density of the benchmark
 #: systems.
@@ -87,13 +115,32 @@ SYNTHETIC_TYPES = 3
 STAGE_CAPTURES = (1, 2, 4)
 STAGE_REPLAYS = 3
 WARMUP_REPLAYS = 2
-#: A sample decides after a stage whose gain lies farther than this relative
-#: margin from its bound.
+#: Margins of the stages but the last. A sample decides after such a stage
+#: where the median gain of every route other than that of the rules lies
+#: farther than the margin of the stage from its bound, and after the first
+#: stage only where no route exceeds its bound, so that a departure from the
+#: rules rests on at least three captures, those of the first two stages; the
+#: last stage always decides.
 STAGE_MARGINS = (0.04, 0.015)
 #: Replays per capture of a route whose replay takes less than
 #: SHORT_REPLAY_MS, which cost little.
 SHORT_STAGE_REPLAYS = 9
 SHORT_REPLAY_MS = 2.0
+#: Least device time, in ms, of the replays of a route that lead in to its
+#: timed train, and the device time of the chunks in which the lead-in is
+#: timed. A board at its power limit settles the clock of its multiprocessors
+#: on the power draw of a route within about 0.4 s of switching to it (an L20
+#: at its 350 W limit), so a train is timed only after half a second of its own
+#: replays.
+LEAD_IN_MS = 500.0
+LEAD_IN_CHUNK_MS = 50.0
+#: Least number of timed replays of a train, and the device time, in ms, that
+#: they span at about the replay time of the lead-in.
+TRAIN_REPLAYS = 9
+TRAIN_MS = 100.0
+#: Captures of the trains of each composition of a sample
+#: (:meth:`_Bench._train_gain`).
+TRAIN_CAPTURES = 2
 
 #: Measured tables: (device fingerprint, network key) -> fitting-route table.
 _ROUTE_TABLES: dict[tuple, tuple[int, ...]] = {}
@@ -225,7 +272,20 @@ def _bulk_graph(rcut: float, node_count: int, device: torch.device) -> Any:
 
 
 class _Bench:
-    """Times the fused operator of one model on synthetic bulk systems."""
+    """Times the fused operator of one model on synthetic bulk systems.
+
+    The bench keeps four counters, which :func:`tune_fitting_routes` logs:
+
+    - ``samples``, the samples of run sizes that it times, those of the
+      bisections of bands included;
+    - ``checked``, the samples that it times on trains;
+    - ``overturned``, the samples in which the trains refuse the candidate of
+      the largest gain in the alternating replays; a sample of two routes
+      besides that of the rules, which runs no alternating replays, never
+      counts;
+    - ``replays``, the replays of the alternating rounds of the samples and
+      those of the trains, their lead-ins included.
+    """
 
     def __init__(self, model: Any, device: torch.device, largest: int) -> None:
         import copy
@@ -244,10 +304,11 @@ class _Bench:
         self.device = device
         self.rcut = float(self.descriptor.get_rcut())
         generator = torch.Generator(device=device).manual_seed(SEED)
-        types = min(SYNTHETIC_TYPES, int(self.descriptor.get_ntypes()))
+        self.types = min(SYNTHETIC_TYPES, int(self.descriptor.get_ntypes()))
         self.atype = torch.randint(
-            0, types, (largest,), device=device, generator=generator
+            0, self.types, (largest,), device=device, generator=generator
         )
+        self.one_type = torch.zeros_like(self.atype)
         self.spin = None
         if getattr(self.descriptor, "spin", None) is not None:
             moments = torch.randn(largest, 3, device=device, generator=generator)
@@ -256,6 +317,8 @@ class _Bench:
             )
         self.fingerprint = _fingerprint(device)
         self.samples = 0
+        self.checked = 0
+        self.overturned = 0
         self.replays = 0
 
     def single(self, choice: int) -> list[int]:
@@ -267,6 +330,17 @@ class _Bench:
         graph = _bulk_graph(self.rcut, node_count, self.device)
         spin = None if self.spin is None else self.spin[:node_count]
         return graph, self.atype[:node_count], spin
+
+    def _compositions(self, inputs: tuple) -> list[tuple]:
+        """Return the compositions of the trains of a sample.
+
+        The trains run the graph of the sample with every node of the first
+        node type and with the node types of the sample; for a model of one
+        node type the two coincide, and the trains run it once.
+        """
+        graph, atype, spin = inputs
+        one_type = (graph, self.one_type[: atype.shape[0]], spin)
+        return [one_type] if self.types == 1 else [one_type, inputs]
 
     def _capture(
         self, inputs: tuple, choices: list[int], rotation: int
@@ -321,7 +395,7 @@ class _Bench:
     def _replay(
         self, graphs: dict[int, Any], replays: int, times: dict[int, list[float]]
     ) -> None:
-        """Append the times of ``replays`` interleaved replays of every route."""
+        """Append the times of ``replays`` alternating replays of every route."""
         choices = list(graphs)
         events = []
         for replay in range(replays):
@@ -341,31 +415,40 @@ class _Bench:
     def winner(self, node_count: int, rule: int, choices: list[int]) -> int:
         """Return the fastest route on one run size.
 
-        Within one capture of the operator every route replays at the same
-        clocks of the device, and the gain of a route over another is the
-        ratio of their median replay times, less one. The route of the rules
-        wins unless the median gain of another route over it, over the
-        captures of the sample, exceeds the bound of the sample: :data:`TIE`,
-        or the half-range of the per-capture gains where that is larger. A
-        deployment captures the operator once and replays that capture, so a
-        gain within this spread is not one that it reliably sees. Between two
-        routes of which neither is that of the rules, the faster wins. The
-        sample takes further captures while the gain lies near its bound, and
-        a departure from the rules rests on at least three captures.
+        Within one capture of the operator the replays of the routes
+        alternate, so every route replays at the same clocks of the device,
+        and the gain of a route over the route of the rules is the ratio of
+        their median replay times, less one. A route is a candidate where its
+        median gain over the captures of the sample exceeds its bound
+        (:func:`_bound`); a deployment captures the operator once and replays
+        that capture, so a gain within the half-range of the per-capture gains
+        is not one that it reliably sees. The sample takes further captures
+        while the gain of any route lies near its bound, and a departure from
+        the rules rests on at least three captures (:data:`STAGE_MARGINS`).
+        The candidates are checked on trains of one route at a time in the
+        order of their gains, and the first that holds there takes the run
+        size (:meth:`_departure`).
+
+        The bisection of a band compares the two routes that won at its ends.
+        Where neither of them is that of the rules, ``choices`` holds these two
+        alone, and the trains decide between them (:meth:`_faster_on_trains`);
+        where one of them is, the sample runs as above.
         """
         if len(choices) == 1:
             return choices[0]
         self.samples += 1
         inputs = self._inputs(node_count)
+        if rule not in choices:
+            first, second = choices
+            return self._faster_on_trains(inputs, first, second)
         # One untimed round brings the clocks of the device to the load of the
         # sample, and sets the replays of its captures.
         graphs = self._capture(inputs, choices, 0)
-        short = self._replay_ms(graphs, choices[0]) < SHORT_REPLAY_MS
+        short = self._replay_ms(graphs[choices[0]]) < SHORT_REPLAY_MS
         replays = SHORT_STAGE_REPLAYS if short else STAGE_REPLAYS
         self._replay(graphs, replays, {choice: [] for choice in choices})
         del graphs
-        incumbent = rule if rule in choices else choices[0]
-        rivals = [choice for choice in choices if choice != incumbent]
+        rivals = [choice for choice in choices if choice != rule]
         gains: dict[int, list[float]] = {choice: [] for choice in rivals}
         captures = 0
         for stage, count in enumerate(STAGE_CAPTURES):
@@ -377,31 +460,132 @@ class _Bench:
                 del graphs
                 medians = {choice: statistics.median(v) for choice, v in times.items()}
                 for choice in rivals:
-                    gains[choice].append(medians[incumbent] / medians[choice] - 1.0)
-            rival = max(rivals, key=lambda choice: statistics.median(gains[choice]))
-            gain = statistics.median(gains[rival])
-            bound = (
-                max(TIE, 0.5 * (max(gains[rival]) - min(gains[rival])))
-                if incumbent == rule
-                else 0.0
-            )
-            decision = rival if gain > bound else incumbent
-            settled = decision == rule or stage > 0
+                    gains[choice].append(medians[rule] / medians[choice] - 1.0)
+            margins = [
+                statistics.median(gains[choice]) - _bound(gains[choice])
+                for choice in rivals
+            ]
+            settled = stage > 0 or max(margins) <= 0.0
             if stage == len(STAGE_MARGINS) or (
-                settled and abs(gain - bound) > STAGE_MARGINS[stage]
+                settled
+                and all(abs(margin) > STAGE_MARGINS[stage] for margin in margins)
             ):
                 break
-        return decision
+        candidates = sorted(
+            (
+                choice
+                for choice, margin in zip(rivals, margins, strict=True)
+                if margin > 0.0
+            ),
+            key=lambda choice: statistics.median(gains[choice]),
+            reverse=True,
+        )
+        return self._departure(inputs, rule, candidates)
 
-    def _replay_ms(self, graphs: dict[int, Any], choice: int) -> float:
-        """Return the time of one replay of a route, in ms."""
+    def _departure(self, inputs: tuple, rule: int, candidates: list[int]) -> int:
+        """Return the first of ``candidates`` that holds on trains, or the rules.
+
+        A candidate holds where its median gain over the route of the rules on
+        the trains is at least ``-TIE`` for every composition of
+        :meth:`_compositions`: within the tie, two routes count as equally fast,
+        on trains as in the alternating replays. The check of a candidate stops
+        at the first composition on which it loses by more. A sample counts as
+        overturned where the trains refuse the candidate of the largest gain,
+        whether a later candidate or the route of the rules then takes the run
+        size.
+        """
+        if not candidates:
+            return rule
+        self.checked += 1
+        for candidate in candidates:
+            if all(
+                self._train_gain(nodes, rule, candidate) >= -TIE
+                for nodes in self._compositions(inputs)
+            ):
+                self.overturned += candidate != candidates[0]
+                return candidate
+        self.overturned += 1
+        return rule
+
+    def _faster_on_trains(self, inputs: tuple, first: int, second: int) -> int:
+        """Return the faster of two routes on trains of one route at a time.
+
+        The second route is faster where the mean, over the compositions of
+        :meth:`_compositions`, of its median gains over the first on the trains
+        is positive, and the first route otherwise.
+        """
+        self.checked += 1
+        gains = [
+            self._train_gain(nodes, first, second)
+            for nodes in self._compositions(inputs)
+        ]
+        return second if statistics.mean(gains) > 0.0 else first
+
+    def _train_gain(self, inputs: tuple, incumbent: int, rival: int) -> float:
+        """Return the median gain of ``rival`` over ``incumbent`` on trains.
+
+        Each capture times a train of each route (:meth:`_train_ms`); the
+        captures alternate the order of the two routes, so that a drift of the
+        clocks cancels in the median gain.
+        """
+        gains = []
+        for capture in range(TRAIN_CAPTURES):
+            graphs = self._capture(inputs, [incumbent, rival], capture)
+            order = (incumbent, rival) if capture % 2 == 0 else (rival, incumbent)
+            times = {choice: self._train_ms(graphs[choice]) for choice in order}
+            del graphs
+            gains.append(times[incumbent] / times[rival] - 1.0)
+        return statistics.median(gains)
+
+    def _train_ms(self, graph: Any) -> float:
+        """Return the median replay time, in ms, of a train of one route.
+
+        The timed replays follow a lead-in of at least :data:`LEAD_IN_MS` of
+        device time, after which a board at its power limit has settled its
+        clocks on the route. The lead-in accumulates device time in chunks of
+        about :data:`LEAD_IN_CHUNK_MS`, sized from the time of its first
+        replay. The train spans about :data:`TRAIN_MS` of device time at the
+        mean replay time of the lead-in, in at least :data:`TRAIN_REPLAYS`
+        replays.
+        """
+        replay_ms = self._replay_ms(graph)
+        chunk = max(1, math.ceil(LEAD_IN_CHUNK_MS / replay_ms))
+        lead_in_ms, lead_in = replay_ms, 1
+        while lead_in_ms < LEAD_IN_MS:
+            lead_in_ms += self._replay_ms(graph, chunk)
+            lead_in += chunk
+        count = max(TRAIN_REPLAYS, math.ceil(TRAIN_MS * lead_in / lead_in_ms))
+        events = []
+        for _ in range(count):
+            begin = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            begin.record()
+            graph.replay()
+            end.record()
+            events.append((begin, end))
+        torch.cuda.synchronize(self.device)
+        self.replays += lead_in + count
+        return statistics.median([begin.elapsed_time(end) for begin, end in events])
+
+    def _replay_ms(self, graph: Any, count: int = 1) -> float:
+        """Return the time, in ms, of ``count`` consecutive replays of ``graph``."""
         start = torch.cuda.Event(enable_timing=True)
         stop = torch.cuda.Event(enable_timing=True)
         start.record()
-        graphs[choice].replay()
+        for _ in range(count):
+            graph.replay()
         stop.record()
         stop.synchronize()
         return start.elapsed_time(stop)
+
+
+def _bound(gains: list[float]) -> float:
+    """Return the median gain that a route must exceed in the alternating replays.
+
+    The bound is :data:`TIE`, or the half-range of the per-capture gains of
+    the route where that is larger.
+    """
+    return max(TIE, 0.5 * (max(gains) - min(gains)))
 
 
 def _choices(device: torch.device, width: int, node_count: int) -> list[int]:
@@ -539,11 +723,14 @@ def tune_fitting_routes(
     _ROUTE_TABLES[(fingerprint, key)] = table
     log.info(
         "Measured the fitting routes of hidden width %d on %s in %.1f s "
-        "(%d samples, %d replays): %d intervals, bounds %s, choices %s",
+        "(%d samples, %d of them checked on trains of one route and %d of "
+        "these overturned, %d replays): %d intervals, bounds %s, choices %s",
         int(network.weights[0].shape[1]),
         torch.cuda.get_device_name(device),
         time.perf_counter() - start,
         bench.samples,
+        bench.checked,
+        bench.overturned,
         bench.replays,
         len(choices),
         bounds,

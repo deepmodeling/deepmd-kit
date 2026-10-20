@@ -351,11 +351,14 @@ selects the export schema appropriate to the model and target device.
 
 On a CUDA device, compression also measures which kernel evaluates the fitting
 network fastest on that GPU at each system size and stores the choices in the
-archive. The measurement adds about 15 seconds to 3 minutes to a compression,
-depending on the size of the model. All choices give bit-identical results, so
-they affect only the speed. On a GPU of another model, the archive uses the
-default choices instead; compress on the GPU model that will run the
-simulations.
+archive. A kernel other than the default is chosen only where the measurement
+finds it faster by more than 1% on a lightly loaded GPU and, under sustained
+load, at most 1% slower both on a system of one element and on a system of up
+to three elements. The measurement adds a few seconds to several minutes to a
+compression, depending on the size of the model and on the GPU. All choices
+give bit-identical results, so they affect only the speed. On a GPU of another
+model, the archive uses the default choices instead; compress on the GPU model
+that will run the simulations.
 
 To compress an existing frozen archive or choose the spline spacing, use the
 compression command:
@@ -628,12 +631,15 @@ from a broken data pipeline and reports a vanishing magnetic force.
 ### Running a spin model in LAMMPS
 
 Freeze and compress exactly as for any other DPA4C model, then select a spin
-pair style from the table under
-[Choosing a pair style](#choosing-a-pair-style). Both spin styles require
-`atom_style spin`:
+pair style from the table under [Choosing a pair style](#choosing-a-pair-style).
+Both spin styles require `atom_style spin` and, on a single MPI rank, an atom
+map; the
+[LAMMPS command reference](../third-party/lammps-command.md#pair_style-dpa4spin)
+describes their keywords. A minimal input reads:
 
 ```lammps
 atom_style        spin
+atom_modify       map yes
 pair_style        dpa4spin compressed_model.pt2
 pair_coeff        * * Ni O
 ```
@@ -643,24 +649,27 @@ already performs, and the magnetic force is reduced back onto owning atoms
 alongside the conservative force, so domain decomposition needs no additional
 exchange.
 
-By default the pair styles store the precession magnetic force expected by the
-LAMMPS SPIN package (the model energy gradient scaled by the moment magnitude
-over `hbar`). A Newtonian Cartesian integrator instead needs the raw energy
-gradient `-dE/dS`. Select it with `magnetic_force cartesian` (requires
-`units metal`); the default is `magnetic_force precession`:
+By default the pair styles store the precession magnetic force that the LAMMPS
+SPIN package expects, the negative energy gradient `-dE/dS` scaled by the
+moment magnitude over `hbar`. `min_style spin` reads this force and relaxes the
+moment directions. The `fix nve/spin` of a stock LAMMPS build does not use this
+force: the fix evaluates the magnetic force itself, through the pair styles
+whose names begin with `spin`, and `dpa4spin` and `dpa4spin/kk` are not among
+them. With no such pair style, the fix runs silently on a single MPI rank and
+stops with a sectoring error on several. Spin dynamics therefore needs a LAMMPS
+build whose integrator reads the magnetic force of these pair styles.
+
+A Newtonian integrator of the Cartesian spin vector needs `-dE/dS` itself
+rather than the precession force. The keyword `magnetic_force cartesian`
+selects `-dE/dS` and requires `units metal`:
 
 ```lammps
 pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
 ```
 
-The selected convention is exposed as the scalar integer
-`Pair::extract("fm_cartesian_force", dim)` (zero for precession, one for
-Cartesian) so a consuming integrator can reject an incompatible configuration.
-
-`min_style spin` reads the magnetic force from the pair style and relaxes the
-moment directions. Spin dynamics through `fix nve/spin` requires a LAMMPS build
-whose fix recognizes this pair style, because the stock fix accumulates the
-magnetic force only from pair styles matching its own name pattern.
+The pair styles declare the selected convention through the scalar integer
+`Pair::extract("fm_cartesian_force", dim)`, zero for precession and one for
+Cartesian, so such an integrator can reject a pair style left at the default.
 
 A worked example, a rocksalt NiO cell in its type-II antiferromagnetic order,
 is provided in `examples/spin/dpa4c/lmp/`.

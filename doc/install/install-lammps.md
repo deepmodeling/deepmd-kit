@@ -84,8 +84,8 @@ make -j4
 make install
 ```
 
-To build the GPU-resident `pair_style deepmd/kk`, enable the LAMMPS Kokkos
-package. The pair style uses the DeePMD C API:
+To build the GPU-resident pair styles `deepmd/kk` and `dpa4spin/kk`, enable the
+LAMMPS Kokkos package. The pair styles use the DeePMD C API:
 
 ```bash
 cmake -D PKG_KOKKOS=ON \
@@ -129,9 +129,9 @@ make install
 
 Configure LAMMPS with `PKG_KOKKOS=ON`, then configure the DeePMD plugin with
 `DEEPMD_LAMMPS_KOKKOS=ON` and `Kokkos_DIR` pointing to the Kokkos package
-exported by the LAMMPS build. This registers the GPU-resident
-`pair_style deepmd/kk`; the plugin and built-in integrations use the same C API
-device-graph interface.
+exported by the LAMMPS build. This registers the GPU-resident pair styles
+`deepmd/kk` and `dpa4spin/kk`; the plugin and built-in integrations use the same
+C API device-graph interface.
 
 If everything works fine, you will end up with an executable `${deepmd_root}/bin/lmp`.
 
@@ -156,10 +156,12 @@ The Open MPI package of conda-forge is built with CUDA support but disables it b
 conda create -n openmpi -c conda-forge openmpi ucx
 ```
 
-Configure LAMMPS and the DeePMD-kit C++ interface in new build directories with both compiler wrappers of that environment, `-D MPI_C_COMPILER=${mpi_root}/bin/mpicc -D MPI_CXX_COMPILER=${mpi_root}/bin/mpicxx`, where `${mpi_root}` is its prefix; CMake finds the MPI of each language separately. Before launching LAMMPS with the `mpirun` of that installation, enable its CUDA support:
+Configure LAMMPS and the DeePMD-kit C++ interface in new build directories with both compiler wrappers of that environment, `-D MPI_C_COMPILER=${mpi_root}/bin/mpicc -D MPI_CXX_COMPILER=${mpi_root}/bin/mpicxx`, where `${mpi_root}` is its prefix; CMake finds the MPI of each language separately. Launch a run on several GPUs with the `mpirun` of that installation, enabling its CUDA support for the launch:
 
 ```bash
-export OMPI_MCA_opal_cuda_support=true UCX_MEMTYPE_CACHE=n
+mpirun --mca opal_cuda_support 1 -x UCX_MEMTYPE_CACHE=n -np 2 lmp -k on g 2 -sf kk -in in.lammps
 ```
 
 With `UCX_MEMTYPE_CACHE=n`, UCX queries the memory type of every buffer instead of taking it from a cache that can report a GPU buffer as host memory and make UCX abort.
+
+Launch a run on a single MPI rank without these options: it exchanges no atom data, and the CUDA support adds a memory-type query to every MPI call, which can lengthen the step of a small system by more than 10%.

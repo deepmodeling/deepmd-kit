@@ -4,22 +4,21 @@
 # magnetic force is the negative spin gradient of the energy, so no virtual
 # atoms are created and the atom count equals the number of physical atoms.
 #
-# The pair style reads a graph-lower archive or the compact canonical graph
-# archive produced by compression. See README.md for how to obtain one.
-#
-# Substitute `dpa4spin/kk` for the device-resident Kokkos path, which keeps the
-# graph and the moment in device memory:
+# `dpa4spin` reads a graph-lower archive or the compressed archive; see
+# README.md for how to obtain either. The `-sf kk` option selects the Kokkos
+# variant `dpa4spin/kk`, which keeps the graph and the moments in device memory
+# and reads only the compressed archive:
 #
 #   lmp -k on g 1 -sf kk -in in.lammps
 #
-# By default atom->fm holds the precession magnetic force. For a Newtonian
-# Cartesian integrator that needs -dE/dS, append `magnetic_force cartesian`
-# (units metal) and read Pair::extract("fm_cartesian_force", dim). Host
-# `dpa4spin` accepts the graph-lower archive from freeze; `dpa4spin/kk`
-# requires the compact canonical archive from `dp --pt-expt compress`
-# (see README.md):
+# By default atom->fm holds the precession magnetic force. A Newtonian
+# integrator of the Cartesian spin vector needs the negative energy gradient
+# -dE/dS instead, which `magnetic_force cartesian` selects under units metal:
 #
 #   pair_style        dpa4spin/kk compressed_model.pt2 magnetic_force cartesian
+#
+# The pair style declares the selected convention through
+# Pair::extract("fm_cartesian_force", dim).
 
 units             metal
 dimension         3
@@ -51,10 +50,13 @@ dump_modify       1 sort id format float %.12e
 # magnetic force of the antiferromagnetic reference state.
 run               0
 
-# `min_style spin` reads the magnetic force from the pair style directly and
-# relaxes the moment directions at fixed positions. Note that `fix nve/spin`
-# accumulates the magnetic force only from pair styles whose name it matches,
-# so spin dynamics needs a LAMMPS build aware of this style.
+# `min_style spin` reads the magnetic force from the pair style and relaxes the
+# moment directions at fixed positions. The `fix nve/spin` of a stock LAMMPS
+# build does not use this force: the fix evaluates the magnetic force through
+# the pair styles whose names begin with `spin`, so with this pair style alone
+# the fix runs silently on a single rank and stops with a sectoring error on
+# several. Spin dynamics needs a LAMMPS build whose integrator reads the
+# magnetic force of the pair style.
 min_style         spin
 min_modify        line spin_cubic discrete_factor 10.0
 minimize          1.0e-10 1.0e-8 500 1000
