@@ -29,11 +29,17 @@ def _get_stat_nsystems(data: Any) -> int:
 
 
 def _get_stat_numb_batches(data: Any, sys_idx: int, nbatches: int) -> int:
-    """Limit sampling to the available batches of one statistical system."""
-    get_stat_numb_batches = getattr(data, "get_stat_numb_batches", None)
-    if get_stat_numb_batches is None:
+    """Limit sampling to the available batches of one statistical system.
+
+    A system with fewer batches than ``nbatches`` contributes each of its
+    batches once instead of being resampled, matching the PyTorch backend.
+    """
+    if (
+        getattr(data, "get_stat_numb_batches", None) is None
+        and getattr(data, "get_nbatches", None) is None
+    ):
         return nbatches
-    return min(nbatches, int(get_stat_numb_batches(sys_idx)))
+    return min(nbatches, _get_stat_pass_length(data, sys_idx))
 
 
 def _get_stat_batch(data: Any, sys_idx: int) -> dict[str, Any]:
