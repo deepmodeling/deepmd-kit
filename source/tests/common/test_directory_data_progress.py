@@ -207,6 +207,130 @@ def test_system_resume_random_choices(tmp_path, hdf5, batch_size):
         _assert_batch_equal(restored.get_batch(), batch)
 
 
+@pytest.mark.parametrize("batch_size", [2, "mixed:3"])
+def test_system_resume_restores_exact_probabilities_after_roundoff(
+    tmp_path, batch_size
+):
+    paths = [
+        _write_system(tmp_path / f"data{index}", offset=index * 1000)
+        for index in range(2)
+    ]
+    # Put the first random draw exactly on a selection threshold. Even a
+    # one-ULP probability difference then changes the selected system.
+    dp_random.seed(1)
+    threshold = float(dp_random.random())
+    saved_probs = np.array([threshold, 1 - threshold])
+    rounded_threshold = np.nextafter(threshold, np.inf)
+    recomputed_probs = np.array([rounded_threshold, 1 - rounded_threshold])
+    dp_random.seed(1)
+    assert dp_random.choice(2, p=saved_probs) == 1
+    dp_random.seed(1)
+    assert dp_random.choice(2, p=recomputed_probs) == 0
+
+    original = DeepmdDataSystem(paths, batch_size, 1, sys_probs=saved_probs.tolist())
+    state = original.state_dict()
+    dp_random.seed(1)
+    rng_state = dp_random.get_state()
+    expected = [original.get_batch() for _ in range(20)]
+    expected_rng_state = dp_random.get_state()
+
+    restored = DeepmdDataSystem(
+        paths, batch_size, 1, sys_probs=recomputed_probs.tolist()
+    )
+    with patch.object(DeepmdData, "_load_set", side_effect=AssertionError("decoded")):
+        restored.load_state_dict(state)
+    np.testing.assert_array_equal(restored.sys_probs, saved_probs)
+    # The restored probabilities must not alias the caller's checkpoint.
+    state["sys_probs"][0] = 0
+    np.testing.assert_array_equal(restored.sys_probs, saved_probs)
+    dp_random.set_state(rng_state)
+    for batch in expected:
+        _assert_batch_equal(restored.get_batch(), batch)
+    assert dp_random.get_state() == expected_rng_state
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_system_resume_preserves_exactly_matching_probability_dtype(tmp_path, dtype):
+    paths = [
+        _write_system(tmp_path / f"data{index}", offset=index * 1000)
+        for index in range(3)
+    ]
+    # Float32 thirds are valid for NumPy choice but their float64 sum is
+    # outside its tighter float64 normalization tolerance.
+    probabilities = list(np.full(3, 1 / 3, dtype=dtype))
+    original = DeepmdDataSystem(paths, 2, 1, sys_probs=probabilities)
+    state = original.state_dict()
+    dp_random.seed(193)
+    rng_state = dp_random.get_state()
+    expected = [original.get_batch() for _ in range(20)]
+
+    restored = DeepmdDataSystem(paths, 2, 1, sys_probs=probabilities)
+    restored.load_state_dict(state)
+    assert restored.sys_probs.dtype == dtype
+    np.testing.assert_array_equal(restored.sys_probs, probabilities)
+    dp_random.set_state(rng_state)
+    for batch in expected:
+        _assert_batch_equal(restored.get_batch(), batch)
+
+
+@pytest.mark.parametrize(
+    "saved_probs",
+    [
+        None,
+        0.5,
+        [0.5],
+        [[0.3, 0.7]],
+        [0.3, 0.7, 0.0],
+        [float("nan"), 0.7],
+        [float("inf"), 0.7],
+        [-0.3, 1.3],
+        ["invalid", 0.7],
+        [0.4, 0.6],
+        [0.3 + 1e-8, 0.7 - 1e-8],
+    ],
+)
+def test_invalid_system_probabilities_are_rejected_without_mutation(
+    tmp_path, saved_probs
+):
+    paths = [_write_system(tmp_path / f"data{index}") for index in range(2)]
+    data = DeepmdDataSystem(paths, 2, 1, sys_probs=[0.3, 0.7])
+    data.get_batch()
+    initial = data.state_dict()
+    invalid = copy.deepcopy(initial)
+    invalid["sys_probs"] = saved_probs
+    with pytest.raises(ValueError, match="probabilities"):
+        data.load_state_dict(invalid)
+    assert data.state_dict() == initial
+
+
+@pytest.mark.parametrize("saved_zero", [False, True])
+def test_system_probability_roundoff_does_not_change_excluded_systems(
+    tmp_path, saved_zero
+):
+    paths = [_write_system(tmp_path / f"data{index}") for index in range(2)]
+    positive = np.nextafter(0.0, 1.0)
+    current_probs = [positive if saved_zero else 0.0, 1.0]
+    data = DeepmdDataSystem(paths, 2, 1, sys_probs=current_probs)
+    initial = data.state_dict()
+    invalid = copy.deepcopy(initial)
+    invalid["sys_probs"] = [0.0 if saved_zero else positive, 1.0]
+    with pytest.raises(ValueError, match="probabilities"):
+        data.load_state_dict(invalid)
+    assert data.state_dict() == initial
+
+
+def test_system_probabilities_are_not_restored_before_source_validation(tmp_path):
+    paths = [_write_system(tmp_path / f"data{index}") for index in range(2)]
+    data = DeepmdDataSystem(paths, 2, 1, sys_probs=[0.3, 0.7])
+    initial = data.state_dict()
+    invalid = copy.deepcopy(initial)
+    invalid["sys_probs"][0] = np.nextafter(0.3, 1.0)
+    invalid["systems"][-1]["version"] = 99
+    with pytest.raises(ValueError):
+        data.load_state_dict(invalid)
+    assert data.state_dict() == initial
+
+
 def test_checkpoint_is_compact_and_detached(tmp_path):
     path = _write_system(tmp_path / "data", nframes=10000)
     data = DeepmdData(path)

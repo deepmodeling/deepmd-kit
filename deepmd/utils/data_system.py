@@ -500,7 +500,18 @@ class DeepmdDataSystem:
             raise ValueError("Unsupported DeepmdDataSystem progress version")
         if state.get("batch_size") != [int(size) for size in self.batch_size]:
             raise ValueError("DeepmdDataSystem progress has different batch sizes")
-        if state.get("sys_probs") != np.asarray(self.sys_probs).tolist():
+        try:
+            saved_probs = np.array(state.get("sys_probs"), dtype=float, copy=True)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "DeepmdDataSystem progress has invalid probabilities"
+            ) from error
+        if (
+            saved_probs.shape != (self.nsystems,)
+            or not np.all(np.isfinite(saved_probs))
+            or np.any(saved_probs < 0)
+            or not np.allclose(saved_probs, self.sys_probs, rtol=1e-12, atol=0)
+        ):
             raise ValueError("DeepmdDataSystem progress has different probabilities")
         if state.get("mixed_systems") != self.mixed_systems:
             raise ValueError("DeepmdDataSystem progress has a different batching mode")
@@ -515,6 +526,13 @@ class DeepmdDataSystem:
             data._validate_state_dict(data_state)
         for data, data_state in zip(self.data_systems, states, strict=True):
             data.load_state_dict(data_state)
+        # Tolerate recomputation roundoff, but retain the checkpoint's exact
+        # selection thresholds so the restored RNG resumes the same stream.
+        # Preserve an exactly matching dtype too: NumPy uses it to choose
+        # the tolerance for checking whether probabilities sum to one.
+        if np.array_equal(saved_probs, self.sys_probs):
+            saved_probs = np.array(self.sys_probs, copy=True)
+        self.sys_probs = saved_probs
         self.pick_idx = pick_idx
         self.__dict__.pop("test_data", None)
 
