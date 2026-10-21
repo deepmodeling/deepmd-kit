@@ -853,6 +853,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
             lmax,
             n_focus,
             rank,
+            0,  # CPU tensors take the reference path; level 0 keeps it
         )
         (grad_fused,) = torch.autograd.grad(fused, basis_fused, grad_out)
 
@@ -2200,131 +2201,199 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                     gx_fused, gx_ref, atol=1e-5 * max(scale, 1.0), rtol=1e-5
                 )
 
-    def test_autograd_branch_follows_env_flag(self):
-        """The autograd backward dispatches on ``DP_ROT_MIX_BWD_FUSED_INFER``."""
+    def _record_fused_backward(self, run):
+        """Run ``run()`` while counting fused-backward launches; pass through."""
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
+        calls = []
+        original = vp._rotate_mix_bwd_fused_op
+
+        def recorder(*args, **kwargs):
+            calls.append(args)
+            return original(*args, **kwargs)
+
+        with mock.patch.object(vp, "_rotate_mix_bwd_fused_op", side_effect=recorder):
+            result = run()
+        torch.cuda.synchronize()
+        return len(calls), result
+
+    def test_autograd_branch_follows_forward_level(self):
+        """The autograd backward dispatches on the level the forward was given.
+
+        The level argument stands in for the per-block value captured at
+        construction; the ambient environment is cleared to zero throughout
+        so the check proves the argument (not the environment) governs.
+        """
+        import os
+
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        for name in ("DP_TRITON_INFER", "DP_TRITON_TRAIN"):
+            os.environ.pop(name, None)
         lmax, channels, n_focus, rank = 3, 32, 2, 1
         grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
-        xg = x.clone().requires_grad_(True)
-        wg = wigner.clone().requires_grad_(True)
-        kg = kc.clone().requires_grad_(True)
         src_order = torch.argsort(src)
         boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
         src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
-        out = vp._rotate_mix_op(
-            xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank
-        )
-        grads = {}
-        for flag in (False, True):
-            import os
 
-            saved = os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER")
-            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1" if flag else "0"
-            try:
-                grads[flag] = torch.autograd.grad(
+        grads, launches = {}, {}
+        for level in (0, 1):
+            xg = x.clone().requires_grad_(True)
+            wg = wigner.clone().requires_grad_(True)
+            kg = kc.clone().requires_grad_(True)
+            out = vp._rotate_mix_op(
+                xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank, level
+            )
+            launches[level], grads[level] = self._record_fused_backward(
+                lambda: torch.autograd.grad(
                     out, [xg, wg, kg], grad_u, retain_graph=True
                 )
-            finally:
-                if saved is None:
-                    os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
-                else:
-                    os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
+            )
+        # The counting stand-in proves the selection happened; gradient
+        # equality alone could pass with both levels on the unfused path.
+        self.assertEqual(launches[0], 0)
+        self.assertEqual(launches[1], 1)
         # All three agree at fp32 rounding level: grad_x by accumulation
         # order, gw/gkc by instruction scheduling of the same math.
-        scale = grads[False][0].abs().max().item()
+        scale = grads[0][0].abs().max().item()
         torch.testing.assert_close(
-            grads[True][0], grads[False][0], atol=1e-5 * max(scale, 1.0), rtol=1e-5
+            grads[1][0], grads[0][0], atol=1e-5 * max(scale, 1.0), rtol=1e-5
         )
         for i in (1, 2):
-            s = grads[False][i].abs().max().item()
+            s_i = grads[0][i].abs().max().item()
             torch.testing.assert_close(
-                grads[True][i], grads[False][i], atol=1e-6 * max(s, 1.0), rtol=1e-5
+                grads[1][i], grads[0][i], atol=1e-6 * max(s_i, 1.0), rtol=1e-5
             )
 
-    def test_higher_order_backward_preserved_with_flag_on(self):
-        """With the flag on, ``create_graph=True`` keeps the supported path.
+    def test_higher_order_backward_preserved_at_level_one(self):
+        """At level 1, ``create_graph=True`` keeps the supported path.
 
         The fused operator registers only a fake (meta) implementation and
         no next-derivative formula; the backward of the backward must
         therefore route through the unfused backward + segment-sum pair
-        even when ``DP_ROT_MIX_BWD_FUSED_INFER`` is enabled.  Both flag
-        settings take that same path here, so the second-order results
-        agree.
+        even with the level-1 selection active.  The counting stand-in
+        asserts the fused backward never launches during either order, and
+        the second-order results agree with a level-0 run.
         """
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
         lmax, channels, n_focus, rank = 3, 32, 2, 1
         grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
-        xg = x.clone().requires_grad_(True)
-        wg = wigner.clone().requires_grad_(True)
-        kg = kc.clone().requires_grad_(True)
         src_order = torch.argsort(src)
         boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
         src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
-        out = vp._rotate_mix_op(
-            xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank
-        )
-        second = {}
-        for flag in (False, True):
-            import os
 
-            saved = os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER")
-            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1" if flag else "0"
-            try:
-                (g1,) = torch.autograd.grad(
+        second, launches = {}, {}
+        for level in (0, 1):
+            xg = x.clone().requires_grad_(True)
+            wg = wigner.clone().requires_grad_(True)
+            kg = kc.clone().requires_grad_(True)
+            out = vp._rotate_mix_op(
+                xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank, level
+            )
+            launches[level], (g1,) = self._record_fused_backward(
+                lambda: torch.autograd.grad(
                     out, xg, grad_u, create_graph=True, retain_graph=True
                 )
-                second[flag] = torch.autograd.grad(g1.sum(), [wg, kg])
-            finally:
-                if saved is None:
-                    os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
-                else:
-                    os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
+            )
+            second[level] = torch.autograd.grad(g1.sum(), [wg, kg])
+        self.assertEqual(launches[0], 0)
+        self.assertEqual(launches[1], 0)
         for i in (0, 1):
-            s = second[False][i].abs().max().item()
+            s_i = second[0][i].abs().max().item()
             torch.testing.assert_close(
-                second[True][i],
-                second[False][i],
-                atol=1e-6 * max(s, 1.0),
+                second[1][i],
+                second[0][i],
+                atol=1e-6 * max(s_i, 1.0),
                 rtol=1e-5,
             )
 
-    def test_rank_above_one_falls_back(self):
-        """``rank > 1`` never takes the fused path (flag or not).
+    def test_rank_above_one_falls_back_at_level_one(self):
+        """``rank > 1`` never takes the fused path, level or not.
 
-        Both flag settings take the same unfused path; that chain is not
-        bitwise deterministic across runs, so agreement is checked at
-        fp32-rounding tolerance.
+        The rank guard stands even with the level-1 selection active; the
+        counting stand-in asserts the unfused chain, and the rank>1 chain
+        is not bitwise deterministic across runs, so agreement between the
+        two levels is checked at fp32-rounding tolerance.
         """
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
         lmax, channels, n_focus, rank = 3, 32, 2, 2
         grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
-        xg = x.clone().requires_grad_(True)
         src_order = torch.argsort(src)
         boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
         src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
-        out = vp._rotate_mix_op(
-            xg, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank
-        )
-        grads = {}
-        for flag in (False, True):
-            import os
 
-            saved = os.environ.get("DP_ROT_MIX_BWD_FUSED_INFER")
-            os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = "1" if flag else "0"
-            try:
-                (grads[flag],) = torch.autograd.grad(out, xg, grad_u, retain_graph=True)
-            finally:
-                if saved is None:
-                    os.environ.pop("DP_ROT_MIX_BWD_FUSED_INFER", None)
-                else:
-                    os.environ["DP_ROT_MIX_BWD_FUSED_INFER"] = saved
-        # The rank>1 chain itself is not bitwise deterministic across runs
-        # (atomic accumulation), so compare at fp32-rounding tolerance: the
-        # point is that both flag settings take the same unfused path.
-        s = grads[False].abs().max().item()
+        grads, launches = {}, {}
+        for level in (0, 1):
+            xg = x.clone().requires_grad_(True)
+            out = vp._rotate_mix_op(
+                xg,
+                src,
+                src_order,
+                src_rowptr,
+                wigner,
+                kc,
+                cb,
+                lmax,
+                n_focus,
+                rank,
+                level,
+            )
+            launches[level], (grads[level],) = self._record_fused_backward(
+                lambda: torch.autograd.grad(out, xg, grad_u, retain_graph=True)
+            )
+        self.assertEqual(launches[0], 0)
+        self.assertEqual(launches[1], 0)
+        s_i = grads[0].abs().max().item()
         torch.testing.assert_close(
-            grads[True], grads[False], atol=1e-6 * max(s, 1.0), rtol=1e-5
+            grads[1], grads[0], atol=1e-6 * max(s_i, 1.0), rtol=1e-5
         )
+
+    def test_backward_retains_construction_level_across_env_restore(self):
+        """The wrapper's captured level governs the backward, not ambient env.
+
+        A module constructed with ``DP_TRITON_INFER=1`` keeps its Triton
+        forward after the environment is restored to the default; its
+        backward must retain the same selection instead of rereading the
+        (now zero) ambient level and silently falling back.
+        """
+        import os
+        from types import SimpleNamespace
+
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, channels, n_focus, rank = 3, 32, 2, 0
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+        edge_cache = SimpleNamespace(
+            src=src,
+            D_full=wigner,
+            csr_cache={"src": (src_order, src_rowptr)},
+        )
+        radial_feat = kc if rank == 0 else None
+
+        for captured, expected_launches in ((1, 1), (0, 0)):
+            with self.subTest(captured_infer_level=captured):
+                conv = SimpleNamespace(
+                    radial_hidden_proj=None,
+                    radial_degree_mixer=None,
+                    lmax=lmax,
+                    n_focus=n_focus,
+                    training=False,
+                    triton_infer_level=captured,
+                    triton_train_level=0,
+                )
+                wrapper = vp._TritonRotateMix(conv)
+                for name in ("DP_TRITON_INFER", "DP_TRITON_TRAIN"):
+                    os.environ.pop(name, None)
+                xg = x.clone().requires_grad_(True)
+                out, _rad = wrapper(xg, edge_cache, radial_feat)
+                launches, _grads = self._record_fused_backward(
+                    lambda: torch.autograd.grad(
+                        out, xg, grad_u.reshape(out.shape), retain_graph=True
+                    )
+                )
+                self.assertEqual(launches, expected_launches)

@@ -104,10 +104,6 @@ from torch.library import (
     wrap_triton,
 )
 
-from ...utils import (
-    triton_infer_level,
-    triton_train_level,
-)
 from .gated_activation import (
     gated_activation_second_order,
     gated_activation_second_order_reference,
@@ -2727,10 +2723,14 @@ def _rotate_mix_impl(
     lmax: int,
     n_focus: int,
     rank: int,
+    level: int,
 ) -> Tensor:
     # The source CSR view rides through the forward untouched so the autograd
-    # context can hand it to the backward's segment reduction.
-    del src_order, src_rowptr
+    # context can hand it to the backward's segment reduction.  The level is
+    # likewise inert here: it reaches the backward through the autograd
+    # context (``ctx.level``), retaining the selection the forward's caller
+    # made instead of rereading the ambient environment.
+    del src_order, src_rowptr, level
     if not _use_triton(x):
         return _rotate_mix_reference(x, src, wigner, kc, cb, lmax, n_focus, rank)
     n_edge = src.shape[0]
@@ -3964,7 +3964,8 @@ _gated_act_bwd_op = torch.library.triton_op(
 
 
 @_rotate_mix_op.register_fake
-def _(x, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank):
+def _(x, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank, level):
+    del level
     focus_dim = x.shape[2] // n_focus
     return x.new_empty((n_focus, src.shape[0], (3 * lmax + 1) * focus_dim))
 
@@ -4190,11 +4191,12 @@ def rotate_mix_basis_grad(
 
 
 def _rotate_mix_setup_context(ctx, inputs, output):
-    x, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank = inputs
+    x, src, src_order, src_rowptr, wigner, kc, cb, lmax, n_focus, rank, level = inputs
     ctx.save_for_backward(x, src, src_order, src_rowptr, wigner, kc, cb)
     ctx.lmax = lmax
     ctx.n_focus = n_focus
     ctx.rank = rank
+    ctx.level = level
 
 
 def _rotate_mix_backward(ctx, grad_u):
@@ -4207,20 +4209,15 @@ def _rotate_mix_backward(ctx, grad_u):
     # unfused backward and segment-sum operators do support the next
     # derivative -- so higher-order callers keep the supported pair and the
     # fused path engages only when no higher-order graph is being built.
-    # The gate is read here rather than at module import: the repository
-    # convention for these switches is construction/call time, not import
-    # time, and a read here is baked into the traced graph at trace time
-    # just the same (one environment lookup per backward invocation).
-    # The fused backward rides the level-1 universal-kernel contract of
-    # the rotate-mix family (no tunable configuration; it strictly removes
-    # the (E, D, C_wide) node-gradient round-trip).  The existing
-    # inference/training boundary is preserved: whichever level selected
-    # this operator's forward governs its backward too.
-    if (
-        max(triton_infer_level(), triton_train_level()) >= 1
-        and int(ctx.rank) <= 1
-        and not torch.is_grad_enabled()
-    ):
+    # The fused backward rides the level-1 universal-kernel contract of the
+    # rotate-mix family (no tunable configuration; it strictly removes the
+    # (E, D, C_wide) node-gradient round-trip).  The governing level is the
+    # one the forward's caller passed as an explicit argument -- the
+    # per-block value captured at construction, following the module's
+    # current train/eval mode -- so the backward retains exactly the
+    # selection the forward made and never rereads the ambient environment
+    # (which may have been restored between construction and evaluation).
+    if int(ctx.level) >= 1 and int(ctx.rank) <= 1 and not torch.is_grad_enabled():
         # Fused path: the node gradient accumulates on chip inside the
         # kernel; the (E, D, C_wide) ``gxe`` HBM round-trip never exists.
         grad_x, grad_wigner, grad_kc = _rotate_mix_bwd_fused_op(
@@ -4250,7 +4247,20 @@ def _rotate_mix_backward(ctx, grad_u):
         if int(ctx.rank) > 0 and ctx.needs_input_grad[6]
         else None
     )
-    return grad_x, None, None, None, grad_wigner, grad_kc, grad_cb, None, None, None
+    # The trailing None is the level argument: integers carry no gradient.
+    return (
+        grad_x,
+        None,
+        None,
+        None,
+        grad_wigner,
+        grad_kc,
+        grad_cb,
+        None,
+        None,
+        None,
+        None,
+    )
 
 
 def _rotate_mix_bwd_setup_context(ctx, inputs, output):
@@ -4283,8 +4293,22 @@ def _rotate_mix_bwd_backward(ctx, grad_grad_x, grad_grad_wigner, grad_grad_kc):
     edge_src = torch.arange(src.shape[0], device=src.device, dtype=src.dtype)
 
     def forward(x_arg: Tensor, src_arg: Tensor, w_arg: Tensor, k_arg: Tensor) -> Tensor:
+        # The level argument is inert on this re-entry: grad mode stays
+        # enabled while the second order is being built, so the inner
+        # operator's own backward can never take the fused path whatever
+        # this value is; 1 documents the family's level-1 contract.
         return _rotate_mix_op(
-            x_arg, src_arg, edge_src, edge_src, w_arg, k_arg, cb, lmax, n_focus, rank
+            x_arg,
+            src_arg,
+            edge_src,
+            edge_src,
+            w_arg,
+            k_arg,
+            cb,
+            lmax,
+            n_focus,
+            rank,
+            1,
         )
 
     def backward(
@@ -5471,6 +5495,11 @@ class _TritonRotateMix:
             conv.lmax,
             conv.n_focus,
             rank,
+            # The per-block levels were captured at construction; the
+            # backward must retain the same selection this forward made
+            # (training level in training mode, inference level
+            # otherwise), not reread the ambient environment.
+            conv.triton_train_level if conv.training else conv.triton_infer_level,
         )
         return u0, rad_feat
 
@@ -5703,6 +5732,11 @@ class _TritonSO2ValuePath:
             conv.lmax,
             conv.n_focus,
             rank,
+            # The per-block levels were captured at construction; the
+            # backward must retain the same selection this forward made
+            # (training level in training mode, inference level
+            # otherwise), not reread the ambient environment.
+            conv.triton_train_level if conv.training else conv.triton_infer_level,
         )
 
         # === Step 3. Cross-focus competition weight from the l = 0 scalars ===
