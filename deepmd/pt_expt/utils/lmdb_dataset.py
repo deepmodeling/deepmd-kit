@@ -150,6 +150,14 @@ class LmdbDataSystem:
         del sys_idx
         return next(self._batch_iterator)
 
+    def state_dict(self) -> dict[str, Any]:
+        """Return the next training-batch cursor, excluding statistical reads."""
+        return self._batch_iterator.state_dict()
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore training progress without drawing or decoding any batch."""
+        self._batch_iterator.load_state_dict(state)
+
     def get_stat_batch(self, sys_idx: int) -> dict[str, Any]:
         """Return one batch from a homogeneous statistical system.
 

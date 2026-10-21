@@ -5,7 +5,9 @@ All code here is pure Python/NumPy/lmdb/msgpack — no framework dependency.
 Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 """
 
+import copy
 import dataclasses
+import hashlib
 import logging
 import math
 import multiprocessing
@@ -29,6 +31,9 @@ from concurrent.futures.process import (
 )
 from dataclasses import (
     dataclass,
+)
+from itertools import (
+    islice,
 )
 from pathlib import (
     Path,
@@ -1726,6 +1731,12 @@ class LmdbBatchIterator:
         self._reader = reader
         self._sampler = sampler
         self._epoch = 0
+        # These name the next batch the consumer will see, not the pass that
+        # the one-ahead decoder (or the sampler itself) has already entered.
+        self._next_epoch = 0
+        self._next_batch_index = 0
+        self._resume_batch_index = 0
+        self._restore_config: dict[str, Any] | None = None
         self._queued_pass_length = 0
         self._last_pass_length: int | None = None
         self._iterator = self._iter_epoch()
@@ -1753,6 +1764,10 @@ class LmdbBatchIterator:
             batch = self._decode(indices)
 
         self._last_pass_length = self._queued_pass_length
+        self._next_batch_index += 1
+        if self._next_batch_index == self._last_pass_length:
+            self._next_epoch += 1
+            self._next_batch_index = 0
         indices, self._queued_pass_length = self._next_indices()
         self._schedule(indices)
         return batch
@@ -1844,6 +1859,9 @@ class LmdbBatchIterator:
 
     def _iter_epoch(self) -> Iterator[tuple[list[int], int]]:
         """Tag batches with the length of the sampler pass that owns them."""
+        if self._restore_config is not None:
+            self._check_restore_config(self._restore_config)
+            self._restore_config = None
         set_epoch = getattr(self._sampler, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self._epoch)
@@ -1851,8 +1869,122 @@ class LmdbBatchIterator:
         # enter another pass before the current batch reaches its consumer.
         # Snapshot the length lazily, after data requirements and layout are set.
         pass_length = len(self._sampler)
-        for indices in self._sampler:
+        if pass_length == 0 and self._resume_batch_index == 0:
+            return
+        if not 0 <= self._resume_batch_index < pass_length:
+            raise ValueError(
+                f"LMDB batch index {self._resume_batch_index} is out of range "
+                f"for epoch {self._epoch} with {pass_length} batches"
+            )
+        # This iterator already owns epoch advancement. Retain the sampler's
+        # current pass instead of its standalone __iter__ advancing and
+        # invalidating it, so diagnostic reads can rewind within the pass.
+        pass_batches = (
+            self._sampler.batches()
+            if isinstance(self._sampler, LmdbBatchSampler)
+            else self._sampler
+        )
+        batches = islice(pass_batches, self._resume_batch_index, None)
+        self._resume_batch_index = 0
+        for indices in batches:
             yield indices, pass_length
+
+    def _sampling_config(self) -> dict[str, Any]:
+        """Describe sampling without building a pass or reading any frames."""
+        reader, sampler = self._reader, self._sampler
+        if not isinstance(sampler, (LmdbBatchSampler, DistributedLmdbBatchSampler)):
+            raise TypeError("LMDB progress requires an LMDB batch sampler")
+        return {
+            "path": reader.lmdb_path,
+            "transaction": reader._transaction().id(),
+            "nframes": len(reader),
+            "type_map": list(reader.type_map),
+            "batch_rule": [
+                reader.batch_size,
+                reader._auto_rule,
+                reader._max_rule,
+                reader._filter_rule,
+                reader._mix_rule,
+            ],
+            "ragged": reader.ragged_batches,
+            "availability_keys": list(
+                _availability_requirement_keys(reader._data_requirements)
+            ),
+            "shuffle": sampler._shuffle,
+            "configured_seed": sampler._configured_seed,
+            "world_size": getattr(sampler, "world_size", 1),
+            "block_targets": hashlib.sha256(
+                msgpack.packb(sampler._block_targets, use_bin_type=True)
+            ).hexdigest(),
+        }
+
+    def _check_restore_config(
+        self, config: dict[str, Any], *, final: bool = True
+    ) -> None:
+        """Reject changed sampling, deferring trainer-selected configuration."""
+        current = self._sampling_config()
+        for key in current:
+            if not final and key in {"ragged", "availability_keys"}:
+                continue
+            if config.get(key) != current[key]:
+                raise ValueError(f"LMDB data progress is incompatible: {key} changed")
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return a compact next-batch checkpoint for this rank.
+
+        No decoded frames, permutations or prefetched work are serialized.
+        Each rank restores its deterministic partition using its own consumed
+        cursor. Filtering can advance ranks differently, so distributed
+        checkpoint writers must retain every rank's state.
+        """
+        config = (
+            self._restore_config
+            if self._restore_config is not None
+            else self._sampling_config()
+        )
+        return {
+            "version": 1,
+            "epoch": self._next_epoch,
+            "batch_index": self._next_batch_index,
+            "seed": self._sampler._seed,
+            "config": copy.deepcopy(config),
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore without sampling or decoding, even before trainer setup.
+
+        Data requirements and the ragged layout may still be registered after
+        this call. Their identity and the saved offset are checked lazily on
+        the first batch, before decoding it. Rebuilding only the saved pass
+        skips batch indices, never the frames of earlier batches or epochs.
+        """
+        if self._closed:
+            raise RuntimeError("cannot restore a closed LMDB batch iterator")
+        if state.get("version") != 1:
+            raise ValueError("Unsupported LMDB data progress version")
+        for key in ("epoch", "batch_index", "seed"):
+            if type(state.get(key)) is not int or state[key] < 0:
+                raise ValueError(f"LMDB data progress {key} must be a non-negative int")
+        config = state.get("config")
+        if not isinstance(config, dict):
+            raise ValueError("LMDB data progress is missing its sampling configuration")
+        self._check_restore_config(config, final=False)
+        # A diagnostic read can restore this cursor many times during a run.
+        # Discard its queued result, but keep the shared pool alive. Already
+        # running read-only tasks may finish; their results are never consumed.
+        if self._pending is not None:
+            for future in self._pending.futures:
+                future.cancel()
+        self._pending = None
+        self._deferred_indices = None
+        self._sampler.set_seed(state["seed"])
+        self._sampler.set_epoch(state["epoch"])
+        self._epoch = self._next_epoch = state["epoch"]
+        self._next_batch_index = self._resume_batch_index = state["batch_index"]
+        self._restore_config = copy.deepcopy(config)
+        self._queued_pass_length = 0
+        self._last_pass_length = None
+        self._iterator = self._iter_epoch()
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
         """Submit one batch as balanced contiguous chunks.
@@ -3642,11 +3774,15 @@ class LmdbBatchSampler:
     ) -> None:
         self._reader = reader
         self._shuffle = shuffle
-        self._seed = seed
+        self._configured_seed = seed
+        # Draw entropy once, not once per epoch, so even an unseeded run can
+        # reconstruct its next pass from a compact checkpoint.
+        self._seed = int(np.random.SeedSequence().entropy) if seed is None else seed
         self._epoch = 0
         self._block_targets = block_targets
         self._batches: list[list[int]] | None = None
         self._data_requirements_revision = -1
+        self._ragged_batches: bool | None = None
 
     def batches(self) -> list[list[int]]:
         """Return the batch list of the pending pass, building it if needed.
@@ -3657,16 +3793,27 @@ class LmdbBatchSampler:
             Dataset indices grouped into batches.
         """
         revision = self._reader.data_requirements_revision
-        if self._batches is None or self._data_requirements_revision != revision:
-            seed = None if self._seed is None else self._seed + self._epoch
+        ragged = self._reader.mixed_nloc and self._reader.ragged_batches
+        if (
+            self._batches is None
+            or self._data_requirements_revision != revision
+            or self._ragged_batches != ragged
+        ):
             self._batches = _build_all_batches(
                 self._reader,
                 self._shuffle,
-                np.random.default_rng(seed),
+                np.random.default_rng(self._seed + self._epoch),
                 self._block_targets,
             )
             self._data_requirements_revision = revision
+            self._ragged_batches = ragged
         return self._batches
+
+    def set_seed(self, seed: int) -> None:
+        """Restore the effective seed, invalidating any cached pass."""
+        if seed != self._seed:
+            self._seed = seed
+            self._batches = None
 
     def set_epoch(self, epoch: int) -> None:
         """Select the pass to serve, discarding any pass still pending.
@@ -3743,10 +3890,17 @@ class DistributedLmdbBatchSampler:
         self._rank = rank
         self._world_size = world_size
         self._shuffle = shuffle
+        self._configured_seed = seed
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
         self._global: LmdbBatchSampler | None = None
+
+    def set_seed(self, seed: int) -> None:
+        """Restore the common seed, invalidating any cached global pass."""
+        if seed != self._seed:
+            self._seed = seed
+            self._global = None
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.

@@ -4,6 +4,7 @@
 import bisect
 import copy
 import functools
+import hashlib
 import logging
 from collections.abc import (
     Iterable,
@@ -148,6 +149,8 @@ class DeepmdData:
         # set counters
         self.set_count = 0
         self.iterator = 0
+        self._batch_set_size = 0
+        self._batch_shuffle_state = None
         self.shuffle_test = shuffle_test
         # set modifier
         self.modifier = modifier
@@ -236,6 +239,7 @@ class DeepmdData:
             # only non-standard tensors need this extra shape contract.
             data_config["special_shape"] = special_shape
         self.data_dict[key] = data_config
+        self._invalidate_data_cache()
         return self
 
     def reduce(self, key_out: str, key_in: str) -> "DeepmdData":
@@ -264,7 +268,15 @@ class DeepmdData:
             "repeat": 1,
             "reduce": key_in,
         }
+        self._invalidate_data_cache()
         return self
+
+    def _invalidate_data_cache(self) -> None:
+        """Discard arrays whose data requirements are no longer current."""
+        for key in ("batch_set", "_batch_indices", "test_set"):
+            self.__dict__.pop(key, None)
+        if hasattr(self, "_modified_frame_cache"):
+            self._modified_frame_cache.clear()
 
     def get_data_dict(self) -> dict:
         """Get the `data_dict`."""
@@ -330,18 +342,26 @@ class DeepmdData:
         batch_size
             size of the batch
         """
-        if hasattr(self, "batch_set"):
-            set_size = self.batch_set["coord"].shape[0]
-        else:
-            set_size = 0
-        if self.iterator + batch_size > set_size:
+        if self.iterator + batch_size > self._batch_set_size:
             self._load_batch_set(self.dirs[self.set_count % self.get_numb_set()])
             self.set_count += 1
-            set_size = self.batch_set["coord"].shape[0]
+        elif not hasattr(self, "_batch_indices"):
+            # Restore the active order only when it is actually needed. An
+            # exhausted set can advance directly to the next one above.
+            iterator = self.iterator
+            set_size = self._batch_set_size
+            self._load_batch_set(
+                self.dirs[(self.set_count - 1) % self.get_numb_set()],
+                shuffle_state=self._batch_shuffle_state,
+            )
+            if self._batch_set_size != set_size:
+                raise ValueError("The restored data set has a different numb_copy size")
+            self.iterator = iterator
+        set_size = self._batch_set_size
         iterator_1 = self.iterator + batch_size
         if iterator_1 >= set_size:
             iterator_1 = set_size
-        idx = np.arange(self.iterator, iterator_1, dtype=np.int64)
+        idx = self._batch_indices[self.iterator : iterator_1]
         self.iterator += batch_size
         ret = self._get_subdata(self.batch_set, idx)
         if "pair_margin" in self.data_dict:
@@ -352,6 +372,84 @@ class DeepmdData:
                 ret["type"],
             )
         return ret
+
+    def _progress_identity(self) -> dict[str, Any]:
+        """Describe the source using metadata already read at construction."""
+        return {
+            "sets": [str(path) for path in self.dirs],
+            "prefix_sum": self.prefix_sum,
+            "atom_types": hashlib.sha256(self.atom_type.tobytes()).hexdigest(),
+            "type_map": self.type_map,
+            "sort_atoms": self.sort_atoms,
+            "mixed_type": self.mixed_type,
+            "pbc": self.pbc,
+        }
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return compact batch progress, without frame arrays or permutations.
+
+        The shared :mod:`deepmd.utils.random` state must be checkpointed
+        separately, once for all readers. Only the state before the active
+        set's shuffle is retained here to reconstruct its order lazily.
+        """
+        return copy.deepcopy(
+            {
+                "version": 1,
+                "identity": self._progress_identity(),
+                "set_count": int(self.set_count),
+                "iterator": int(self.iterator),
+                "set_size": int(self._batch_set_size),
+                "shuffle_state": self._batch_shuffle_state,
+            }
+        )
+
+    def _validate_state_dict(self, state: dict[str, Any]) -> None:
+        if state.get("version") != 1:
+            raise ValueError("Unsupported DeepmdData progress version")
+        if state.get("identity") != self._progress_identity():
+            raise ValueError("DeepmdData progress does not match the data source")
+        for key in ("set_count", "iterator", "set_size"):
+            if type(state.get(key)) is not int or state[key] < 0:
+                raise ValueError(f"Invalid DeepmdData progress {key}")
+        shuffle_state = state.get("shuffle_state")
+        if state["set_count"] == 0:
+            if state["iterator"] or state["set_size"] or shuffle_state is not None:
+                raise ValueError("Invalid unstarted DeepmdData progress")
+        elif shuffle_state is None:
+            raise ValueError("Missing DeepmdData shuffle state")
+        if shuffle_state is not None:
+            # Validation uses a private generator, never the shared RNG.
+            try:
+                np.random.RandomState(0).set_state(shuffle_state)
+            except (TypeError, ValueError, IndexError) as error:
+                raise ValueError("Invalid DeepmdData shuffle state") from error
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore logical progress without loading or scanning frame data.
+
+        A same-set canonical cache may be reused when its requirements have
+        not changed. New readers reconstruct arrays only on the next batch.
+        """
+        self._validate_state_dict(state)
+        active_set = (
+            self.dirs[(state["set_count"] - 1) % self.get_numb_set()]
+            if state["set_count"]
+            else None
+        )
+        keep_set = hasattr(self, "batch_set") and self._batch_set_name == active_set
+        keep_order = (
+            keep_set
+            and self._batch_shuffle_state == state["shuffle_state"]
+            and self._batch_set_size == state["set_size"]
+        )
+        if not keep_set:
+            self.__dict__.pop("batch_set", None)
+        if not keep_order:
+            self.__dict__.pop("_batch_indices", None)
+        self.set_count = state["set_count"]
+        self.iterator = state["iterator"]
+        self._batch_set_size = state["set_size"]
+        self._batch_shuffle_state = copy.deepcopy(state["shuffle_state"])
 
     def _derive_pair_margin(
         self,
@@ -789,12 +887,32 @@ class DeepmdData:
                     new_data[ii] = dd
         return new_data
 
-    def _load_batch_set(self, set_name: DPPath) -> None:
-        if not hasattr(self, "batch_set") or self.get_numb_set() > 1:
-            self.batch_set = self._load_set(set_name)
+    def _load_batch_set(
+        self, set_name: DPPath, *, shuffle_state: tuple | None = None
+    ) -> None:
+        if not hasattr(self, "batch_set") or self._batch_set_name != set_name:
+            batch_set = self._load_set(set_name)
             if self.modifier is not None:
-                self.modifier.modify_data(self.batch_set, self)
-        self.batch_set, _ = self._shuffle_data(self.batch_set)
+                self.modifier.modify_data(batch_set, self)
+            self.batch_set = batch_set
+            self._batch_set_name = set_name
+        # Always index the canonical source order. Shuffling an already
+        # shuffled cache cannot be reconstructed from just the latest RNG
+        # state, and repeatedly expands frames with numb_copy > 1.
+        nframes = self.batch_set["coord"].shape[0]
+        self._batch_indices = np.repeat(
+            np.arange(nframes, dtype=np.int64),
+            self.batch_set["numb_copy"].reshape(nframes),
+        )
+        if shuffle_state is None:
+            self._batch_shuffle_state = dp_random.get_state()
+            dp_random.shuffle(self._batch_indices)
+        else:
+            self._batch_shuffle_state = copy.deepcopy(shuffle_state)
+            rng = np.random.RandomState(0)
+            rng.set_state(shuffle_state)
+            rng.shuffle(self._batch_indices)
+        self._batch_set_size = len(self._batch_indices)
         self.reset_get_batch()
 
     def reset_get_batch(self) -> None:

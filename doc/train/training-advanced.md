@@ -145,6 +145,27 @@ checkpoints from the same family numbered above `N`. This prevents remnants of
 a longer earlier run from displacing the newly written checkpoint from the
 retention window.
 
+PyTorch Exportable optimizer checkpoints also retain each rank's per-task
+training-data cursor and task/system selection RNG. With the same immutable
+data, batching settings, and number of ranks, a restart continues with the next LMDB or directory/HDF5
+training batches rather than starting their iteration again. Data-source
+progress is compact and restored lazily; checkpoints do not store decoded
+frames or shuffle permutations. Statistics, compilation warmup, and learning
+curve evaluation do not consume this training progression.
+Distributed ranks exchange this compact state at checkpoint boundaries, not
+on every batch; rank-local filtering may legitimately advance their cursors
+by different amounts.
+
+Directory/HDF5 batches now shuffle indices into a canonical, unshuffled set.
+For a single-set source, later passes therefore differ from older releases
+that shuffled their already shuffled cache. This also prevents `numb_copy`
+multiplicities from compounding over repeated passes.
+
+Older checkpoints without data progress retain the previous restart behavior.
+`--init-model`, finetuning, and EMA-only deployment snapshots do not restore data
+progress. This is a data-order guarantee, not a guarantee of bitwise-identical
+training or of restoring every stochastic data transform.
+
 **`--init-frz-model frozen_model.pb`**, initializes the training with an existing model that is stored in `frozen_model.pb`.
 
 **`--skip-neighbor-stat`** will skip calculating neighbor statistics if one is concerned about performance. Some features will be disabled.

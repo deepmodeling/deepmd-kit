@@ -61,6 +61,12 @@ from deepmd.dpmodel.train import (
     change_model_out_bias_by_task,
     resolve_step_schedule,
 )
+from deepmd.dpmodel.train.data_progress import (
+    DATA_PROGRESS_CHECKPOINT_KEY,
+    collect_training_data_progress,
+    preserve_training_data_progress,
+    restore_training_data_progress,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
@@ -146,6 +152,7 @@ from deepmd.pt_expt.utils.env import (
 from deepmd.pt_expt.utils.stat import (
     make_stat_input,
 )
+from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
     DataRequirementItem,
     min_pair_dist_requirement,
@@ -2009,7 +2016,10 @@ class Trainer(AbstractTrainer):
                 _n: int = _nbatch,
                 _min_pair_dist: float = self.min_pair_dist_by_task[model_key],
             ) -> list[dict[str, np.ndarray]]:
-                return make_stat_input(_d, _n, _min_pair_dist)
+                # Statistics run only on the chief. They must not advance its
+                # training cursor or the shared task/system selection RNG.
+                with preserve_training_data_progress({"statistics": _d}):
+                    return make_stat_input(_d, _n, _min_pair_dist)
 
             self._sample_funcs[model_key] = _make_sample
 
@@ -2130,6 +2140,7 @@ class Trainer(AbstractTrainer):
         # cannot be copied into sharded parameters.
         ema_state_dict = None
         optimizer_state_dict = None
+        data_progress = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             is_pte = resume_model.endswith((".pte", ".pt2"))
@@ -2152,6 +2163,11 @@ class Trainer(AbstractTrainer):
                     )
                     ema_state_dict = (
                         state_dict.get(EMA_CHECKPOINT_KEY) if continues_run else None
+                    )
+                    data_progress = (
+                        state_dict.get(DATA_PROGRESS_CHECKPOINT_KEY)
+                        if continues_run
+                        else None
                     )
                     state_dict = state_dict["model"]
                 else:
@@ -2463,6 +2479,10 @@ class Trainer(AbstractTrainer):
                 {key: count_parameters(self.models[key]) for key in self.model_keys},
                 multi_task=self.multi_task,
             )
+
+        # Data requirements, layout, statistics and compilation may all draw
+        # batches during setup. Restore only after those steps have finished.
+        self._restore_data_progress(data_progress)
 
     def _create_full_validators(
         self,
@@ -3056,7 +3076,38 @@ class Trainer(AbstractTrainer):
     @property
     def checkpoint_is_collective(self) -> bool:
         """Whether assembling a checkpoint needs every rank."""
-        return self.sharding.enabled
+        # Frame filtering can consume different numbers of local batches, so
+        # even plain DDP must contribute every rank's cursor at save time.
+        return self.is_distributed or self.sharding.enabled
+
+    def _collect_data_progress(self) -> dict[str, Any]:
+        """Gather compact rank-local progress only at a checkpoint boundary."""
+        local_progress = collect_training_data_progress(self.training_data_by_task)
+        ranks: list[Any] = [local_progress]
+        if self.is_distributed:
+            ranks = [None] * self.world_size
+            dist.all_gather_object(ranks, local_progress)
+        return {"version": 1, "world_size": self.world_size, "ranks": ranks}
+
+    def _restore_data_progress(self, progress: Mapping[str, Any] | None) -> None:
+        """Restore this rank's cursor, rejecting a changed distributed world."""
+        if progress is None:
+            return
+        if not isinstance(progress, Mapping):
+            raise ValueError("Data-progress checkpoint must be a mapping.")
+        if type(progress.get("version")) is not int or progress["version"] != 1:
+            raise ValueError("Unsupported distributed data-progress version.")
+        if (
+            type(progress.get("world_size")) is not int
+            or progress["world_size"] != self.world_size
+        ):
+            raise ValueError("Data-progress checkpoint world size does not match.")
+        ranks = progress.get("ranks")
+        if not isinstance(ranks, list) or len(ranks) != self.world_size:
+            raise ValueError("Data-progress checkpoint must contain every rank.")
+        if not all(isinstance(state, Mapping) for state in ranks):
+            raise ValueError("Data-progress checkpoint rank states must be mappings.")
+        restore_training_data_progress(self.training_data_by_task, ranks[self.rank])
 
     def save_checkpoint(self, step: int) -> None:
         # Abort before writing if any gradient norm since the previous
@@ -3080,10 +3131,12 @@ class Trainer(AbstractTrainer):
         save_path: Path,
         lr: float = 0.0,
         step: int = 0,
+        *,
+        data_progress: dict[str, Any] | None = None,
     ) -> None:
         """Save a checkpoint selected by full validation."""
         del lr
-        self._save_checkpoint_to_path(save_path, step=step)
+        self._save_checkpoint_to_path(save_path, step=step, data_progress=data_progress)
 
     def _save_full_validation_ema_checkpoint(
         self,
@@ -3105,6 +3158,7 @@ class Trainer(AbstractTrainer):
         *,
         step: int,
         use_ema_weights: bool = False,
+        data_progress: dict[str, Any] | None = None,
     ) -> None:
         """Serialize the current trainer state to an explicit checkpoint path.
 
@@ -3119,6 +3173,9 @@ class Trainer(AbstractTrainer):
             Such a checkpoint is a deployment snapshot: it carries neither the
             optimizer state nor the EMA state, both of which describe the live
             weights it does not contain.
+        data_progress : dict or None, optional
+            Rank-local progress already gathered before chief-only validation.
+            Ordinary checkpoints collect it on every rank while being written.
         """
         if use_ema_weights:
             with self.model_ema.apply_shadow(self.model):
@@ -3129,7 +3186,7 @@ class Trainer(AbstractTrainer):
                     include_ema_state=False,
                 )
             return
-        self._write_checkpoint(ckpt_path, step=step)
+        self._write_checkpoint(ckpt_path, step=step, data_progress=data_progress)
 
     def _write_checkpoint(
         self,
@@ -3138,6 +3195,7 @@ class Trainer(AbstractTrainer):
         step: int,
         include_optimizer: bool = True,
         include_ema_state: bool = True,
+        data_progress: dict[str, Any] | None = None,
     ) -> None:
         """Serialize the wrapper, and optionally optimizer and EMA state."""
         self._unwrapped.train_infos["step"] = step
@@ -3160,6 +3218,8 @@ class Trainer(AbstractTrainer):
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
+        if include_optimizer and data_progress is None:
+            data_progress = self._collect_data_progress()
         # Sharded state is assembled on the chief; the other ranks have played
         # their part in the collectives above and hold nothing to write.
         if self.rank != 0:
@@ -3167,6 +3227,7 @@ class Trainer(AbstractTrainer):
         state: dict[str, Any] = {"model": model_state}
         if optim_state is not None:
             state["optimizer"] = optim_state
+            state[DATA_PROGRESS_CHECKPOINT_KEY] = data_progress
         if include_ema_state and self.model_ema is not None:
             state[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
         ckpt_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3276,15 +3337,16 @@ class Trainer(AbstractTrainer):
         trainable_parameters = tuple(
             parameter for parameter in inner.parameters() if parameter.requires_grad
         )
-        for task in self.training_tasks:
-            input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
-            _, loss, _ = inner(
-                **input_dict,
-                cur_lr=self.scheduler.get_last_lr()[0],
-                label=label_dict,
-                task_key=task.key,
-            )
-            torch.autograd.grad(loss, trainable_parameters, allow_unused=True)
+        with preserve_training_data_progress(self.training_data_by_task):
+            for task in self.training_tasks:
+                input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
+                _, loss, _ = inner(
+                    **input_dict,
+                    cur_lr=self.scheduler.get_last_lr()[0],
+                    label=label_dict,
+                    task_key=task.key,
+                )
+                torch.autograd.grad(loss, trainable_parameters, allow_unused=True)
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         log.info(
@@ -3309,7 +3371,7 @@ class Trainer(AbstractTrainer):
             super().run(self.training_tasks)
             if self.change_bias_after_training and self.num_steps > self.start_step:
                 self._change_bias_after_training()
-                if self.rank_context.is_chief:
+                if self._participates_in_checkpoint():
                     self.save_checkpoint(self.num_steps)
         finally:
             self._close_data_systems()
@@ -3352,25 +3414,43 @@ class Trainer(AbstractTrainer):
         learning_rate: float,
     ) -> None:
         """Run the active full validation flows for one step."""
-        for validator, save_checkpoint in (
-            (self.full_validator, self._save_full_validation_checkpoint),
-            (self.ema_full_validator, self._save_full_validation_ema_checkpoint),
+        for validator, save_checkpoint, include_progress in (
+            (self.full_validator, self._save_full_validation_checkpoint, True),
+            (self.ema_full_validator, self._save_full_validation_ema_checkpoint, False),
         ):
-            if validator is None:
+            if validator is None or not validator.should_run(display_step):
                 continue
-            validator.run(
-                step_id=display_step,
-                display_step=display_step,
-                lr=learning_rate,
-                save_checkpoint=save_checkpoint,
-            )
+            # Plain DDP's validator calls its save hook only on the chief.
+            # Gather before entering it, while every rank is here, and pass
+            # the result through so that hook never starts another collective.
+            if include_progress and validator.save_best:
+                save_checkpoint = functools.partial(
+                    save_checkpoint, data_progress=self._collect_data_progress()
+                )
+            random_state = dp_random.get_state()
+
+            def save_with_training_rng(
+                *args: Any, _save: Callable = save_checkpoint, **kwargs: Any
+            ) -> None:
+                # Best checkpoints are written inside validation. Record the
+                # training RNG, not the draws made by validation-data reads.
+                dp_random.set_state(random_state)
+                _save(*args, **kwargs)
+
+            try:
+                validator.run(
+                    step_id=display_step,
+                    display_step=display_step,
+                    lr=learning_rate,
+                    save_checkpoint=save_with_training_rng,
+                )
+            finally:
+                dp_random.set_state(random_state)
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
         """Select a task using DeePMD's seeded random helper."""
         if not tasks.is_multitask:
             return tasks[tasks.keys[0]]
-        from deepmd.utils import random as dp_random
-
         model_index = dp_random.choice(
             np.arange(len(tasks), dtype=np.int_),
             p=tasks.probabilities,
@@ -3393,12 +3473,22 @@ class Trainer(AbstractTrainer):
         self.wrapper.eval()
         self._display_cur_lr_sched = step_result.payload["cur_lr_sched"]
         try:
-            return super().collect_display_results(
-                tasks,
-                active_task=active_task,
-                step=step,
-                step_result=step_result,
-            )
+            # Only inactive tasks need extra training batches for display.
+            # The chief alone evaluates them, so those reads must be peeks.
+            # Preserving the RNG also isolates validation, whose cursor is not
+            # part of a training checkpoint, from future task/system choices.
+            display_data = {
+                task.key: task.training_data
+                for task in tasks
+                if task.key != active_task.key and self.metric_accumulator is None
+            }
+            with preserve_training_data_progress(display_data):
+                return super().collect_display_results(
+                    tasks,
+                    active_task=active_task,
+                    step=step,
+                    step_result=step_result,
+                )
         finally:
             self._display_cur_lr_sched = None
             self.wrapper.train()
