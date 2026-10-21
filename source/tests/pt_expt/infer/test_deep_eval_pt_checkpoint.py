@@ -433,10 +433,13 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
             ("cuda", 1, True, False, "nv"),
             ("cuda", 4, False, True, "vesin"),
             ("cpu", 1, True, True, "vesin"),
+            ("cuda", 1, False, False, None),
+            ("cpu", 1, False, True, "vesin"),
+            ("cpu", 1, True, False, None),
+            ("cpu", 1, False, False, None),
         )
         for device, nf, nv_available, vesin_available, expected in cases:
             with self.subTest(device=device, nf=nf, expected=expected):
-                builder = auto_neighbor_list.AutoNeighborList(skin=1.0)
                 coord = mock.Mock(device=torch.device(device))
                 atype = np.zeros((nf, 2), dtype=np.int64)
                 with (
@@ -448,10 +451,20 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                         "is_vesin_torch_available",
                         return_value=vesin_available,
                     ),
-                    mock.patch.object(builder._vesin, "build", return_value="vesin"),
-                    mock.patch.object(builder._nv, "build", return_value="nv"),
                 ):
-                    actual = builder.build(coord, atype, None, 3.0, [4])
+                    builder = auto_neighbor_list.make_neighbor_list(
+                        "auto", coord.device, skin=1.0
+                    )
+                    if expected is None:
+                        self.assertIsNone(builder)
+                        continue
+                    with (
+                        mock.patch.object(
+                            builder._vesin, "build", return_value="vesin"
+                        ),
+                        mock.patch.object(builder._nv, "build", return_value="nv"),
+                    ):
+                        actual = builder.build(coord, atype, None, 3.0, [4])
                 self.assertEqual(actual, expected)
 
     def test_explicit_resolution(self) -> None:

@@ -2359,9 +2359,14 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
         return is_vesin_torch_available()
 
     def test_default_is_auto(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+
         dp = DeepPot(self.tmpfile.name)
         self.assertEqual(
-            dp.deep_eval._nlist_builder is not None, self._vesin_available()
+            dp.deep_eval._nlist_builder is not None,
+            self._vesin_available() or (DEVICE.type == "cuda" and is_nv_available()),
         )
 
     def test_native_disables_vesin(self) -> None:

@@ -2,6 +2,9 @@
 from dataclasses import (
     replace,
 )
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import pytest
@@ -259,6 +262,48 @@ def test_cached_search_keeps_frames_independent() -> None:
         expected = build_neighbor_graph(coord, atype, box, 2.0, canonicalize=True)
         assert _valid_edge_set(actual) == _valid_edge_set(expected)
         coord[1, 1, 0] += 0.2
+
+
+@pytest.mark.parametrize("return_vectors", [False, True])
+def test_cached_search_rebuilds_for_cell_contraction(return_vectors: bool) -> None:
+    """Cell contraction includes images absent from the previous candidates."""
+    from vesin_torch import (
+        NeighborList,
+    )
+
+    points = torch.zeros((1, 3), dtype=torch.float64)
+    cell = torch.diag(torch.tensor([2.35, 10.0, 10.0], dtype=torch.float64))
+    other_cell = cell.clone()
+    search = VesinNeighborSearch(skin=1.0)
+    with mock.patch("vesin_torch.NeighborList", wraps=NeighborList) as constructor:
+        for frame in (0, 1):
+            ii, _, _ = search.compute(points, cell, 6.0, frame=frame)
+            assert ii.numel() == 4
+        search.compute(points, cell.clone(), 6.0)
+        assert constructor.call_count == 2
+
+        # The third image moves from 7.05 to 5.85 angstrom, crossing both
+        # the old candidate radius (7.0) and the physical cutoff (6.0).
+        cell[0, 0] = 1.95
+        ii, jj, geometry = search.compute(
+            points, cell, 6.0, return_vectors=return_vectors
+        )
+        assert ii.numel() == 6
+        assert torch.count_nonzero(ii) == torch.count_nonzero(jj) == 0
+        expected = torch.tensor([-3, -2, -1, 1, 2, 3], dtype=geometry.dtype)
+        if return_vectors:
+            expected *= cell[0, 0]
+        torch.testing.assert_close(geometry[:, 0].sort().values, expected)
+        assert torch.count_nonzero(geometry[:, 1:]) == 0
+        assert constructor.call_count == 3
+
+        ii, _, _ = search.compute(points, other_cell, 6.0, frame=1)
+        assert ii.numel() == 4
+        assert constructor.call_count == 3
+        ii, _, _ = search.compute(points, None, 6.0)
+        assert ii.numel() == 0
+        ii, _, _ = search.compute(points, cell, 6.0)
+        assert ii.numel() == 6
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])

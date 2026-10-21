@@ -43,7 +43,7 @@ class VesinNeighborSearch:
         self.skin = float(skin)
         self.sorted = sorted
         self._key: tuple[float, torch.device] | None = None
-        self._calculators: list[NeighborList] = []
+        self._frames: dict[int, tuple[NeighborList, torch.Tensor | None]] = {}
 
     def compute(
         self,
@@ -93,17 +93,34 @@ class VesinNeighborSearch:
         device = positions.device
         key = (float(rcut), device)
         if self._key != key:
-            self._calculators.clear()
+            self._frames.clear()
             self._key = key
-        while len(self._calculators) <= frame:
-            self._calculators.append(
-                NeighborList(
-                    cutoff=float(rcut),
-                    full_list=True,
-                    sorted=self.sorted,
-                    skin=self.skin,
+        calculator, previous_cell = self._frames.get(frame, (None, None))
+        # Cell deformation can bring uncached periodic images inside the
+        # cutoff even when Vesin's single-cell displacement bound permits
+        # reuse. Comparing CUDA cells synchronizes this invalidation decision.
+        if calculator is None or (
+            self.skin > 0
+            and (
+                (cell is None) != (previous_cell is None)
+                or (
+                    cell is not None
+                    and previous_cell is not None
+                    and not torch.equal(cell, previous_cell)
                 )
             )
+        ):
+            calculator = NeighborList(
+                cutoff=float(rcut),
+                full_list=True,
+                sorted=self.sorted,
+                skin=self.skin,
+            )
+            # An independent snapshot detects in-place updates to the input.
+            previous_cell = (
+                cell.detach().clone() if self.skin > 0 and cell is not None else None
+            )
+            self._frames[frame] = calculator, previous_cell
         box = (
             cell
             if cell is not None
@@ -111,7 +128,7 @@ class VesinNeighborSearch:
         )
         with torch.device(device):
             try:
-                ii, jj, geometry = self._calculators[frame].compute(
+                ii, jj, geometry = calculator.compute(
                     points=positions.detach(),
                     box=box.detach(),
                     periodic=cell is not None,
