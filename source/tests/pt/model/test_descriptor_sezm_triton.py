@@ -2570,7 +2570,9 @@ class TestSeZMFreezeAutotuneRouting(unittest.TestCase):
     """
 
     def _record_autotune(self):
-        from deepmd.pt_expt.kernels.triton.sezm import sweep_tile_configs
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            sweep_tile_configs,
+        )
 
         calls = []
 

@@ -2250,7 +2250,9 @@ def sweep_stack_bwd_fused(
     # The sweep must observe each candidate actually engaging the fused
     # launch (output equality alone passes with both runs on the relay), so
     # a counting stand-in wraps the real launcher for the whole measurement.
-    from deepmd.pt_expt.kernels.triton.sezm import so2_value_path
+    from deepmd.pt_expt.kernels.triton.sezm import (
+        so2_value_path,
+    )
 
     fused_launches = [0]
     real_launch = so2_value_path._launch_stack_bwd_fused
