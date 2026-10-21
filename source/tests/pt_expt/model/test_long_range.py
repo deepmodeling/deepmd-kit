@@ -454,8 +454,24 @@ def test_parameter_gradients_and_freezing(kernel: str) -> None:
     loss = out["energy"].square().sum() + out["force"].square().sum()
     loss.backward()
     long_range = model.atomic_model.long_range
+    # The charge constraint fixes the uniform offset of the constrained
+    # channel, so its entry in the output bias of the charge net is redundant
+    # by construction and carries an exactly zero gradient.
+    output_bias = long_range.charge_net.nets._module_networks["0"].layers[-1].b
+    constrained = (
+        long_range.charge_constraint["channel"]
+        if long_range.charge_constraint is not None
+        else None
+    )
     for name, parameter in long_range.named_parameters():
-        assert parameter.grad is not None and parameter.grad.abs().max() > 0, name
+        assert parameter.grad is not None, name
+        grad = parameter.grad.abs()
+        if parameter is output_bias and constrained is not None:
+            grad = grad[[c for c in range(grad.shape[0]) if c != constrained]]
+            if grad.numel() == 0:
+                # every channel is constrained
+                continue
+        assert grad.max() > 0, name
 
     config = _config(kernel)
     config["long_range"]["kernel"]["trainable"] = False
