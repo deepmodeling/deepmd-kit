@@ -1950,8 +1950,10 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
                     ul_row[:, None] + (rp + nc)[None, :], un_rp - zrp * sig_g, mask=cm
                 )
                 # Gate-logit gradient and its register-dot fold onto the
-                # scalar rows.
-                g_logit = (gr0 * zr0 + grn * zrn + grp_v * zrp) * sig_g * (1.0 - sig_g)
+                # scalar rows; the shared cotangent helper keeps the
+                # training kernel on the same derivative definition as the
+                # other stack kernels.
+                g_logit = _sigmoid_bwd(gr0 * zr0 + grn * zrn + grp_v * zrp, sig_g)
                 tl.store(gq_row[:, None] + (grp * CF + nc)[None, :], g_logit, mask=cm)
                 gz_s = tl.dot(g_logit, tl.trans(gw_g), gz_s, input_precision="ieee")
             if HAS_GZUP:
@@ -2180,11 +2182,14 @@ if SO2_VALUE_PATH_TRITON_AVAILABLE:
             mask=m_mask,
         )
 
-    # Launch geometry for the fused per-layer backward below.  BLOCK_M=64 /
-    # BLOCK_N=64 with 4 warps fills the 255-register budget and spills 226
-    # slots; the spill traffic eats the fusion win, so the M dimension is
-    # halved instead.  BLOCK_K is not free here: it must equal the channel
-    # group width so one K tile is exactly one row group (see the kernel).
+    # Launch geometry for the fused per-layer backward below.  The baseline
+    # choice came from the register budget: BLOCK_M=64 / BLOCK_N=64 with 4
+    # warps fills the 255-register budget and spills 226 slots, and the
+    # spill traffic eats the fusion win, so the M dimension is halved
+    # instead.  BLOCK_M/BLOCK_N and the warp/stage counts are per-shape
+    # decisions of the ``stack_bwd_fused`` sweep table; BLOCK_K is not free
+    # here: it must equal the channel group width so one K tile is exactly
+    # one row group (see the kernel).
     @triton.jit
     def _stack_bwd_fused_kernel(
         g_ptr,  # (F, E, ROW) upstream gradient of the layer output, focus-major
@@ -5783,3 +5788,27 @@ def make_triton_value_path(conv: SO2Convolution) -> _TritonSO2ValuePath | None:
     if not SO2_VALUE_PATH_TRITON_AVAILABLE or not _is_supported(conv):
         return None
     return _TritonSO2ValuePath(conv)
+
+
+def _freeze_autotune(model: torch.nn.Module, level: int, device: torch.device) -> None:
+    """Run the SeZM freeze-time launch-table tuning for ``model``.
+
+    Thin seam for the freeze-time autotuner registry
+    (:mod:`deepmd.pt_expt.kernels.autotune`): the actual flow lives in
+    :func:`.sweep_tile_configs.autotune_sezm`, shared with the PT freeze
+    path.  Imported lazily so the sweep module and this module stay
+    import-cycle-free.
+    """
+    from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
+        autotune_sezm,
+    )
+
+    autotune_sezm(model, level, device)
+
+
+if SO2_VALUE_PATH_TRITON_AVAILABLE:
+    from deepmd.pt_expt.kernels.autotune import (
+        register_autotuner,
+    )
+
+    register_autotuner("sezm_value_path", _freeze_autotune)

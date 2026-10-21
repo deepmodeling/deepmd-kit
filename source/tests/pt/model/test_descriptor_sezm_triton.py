@@ -2103,7 +2103,7 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         register_tile_configs("stack_bwd_fused", {key: entry})
         self.addCleanup(restore)
 
-    N_EDGE = 20000
+    N_EDGE = 20001
     N_FOCUS = 2
     N_LAYERS = 4  # one final linear layer plus three gated layers
     CASES = ((1, 32, False), (3, 32, False), (3, 32, True))  # lmax, Cf, apply_alpha
@@ -2180,7 +2180,7 @@ class TestSeZMStackBwdFused(unittest.TestCase):
 
     def _recorded_traversal(self, inputs, lmax, focus_dim, apply_alpha):
         """Run the traversal while counting fused launches; return outputs."""
-        import deepmd.pt_expt.kernels.triton.sezm.so2_value_path as vp
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
         calls = []
         original = vp._launch_stack_bwd_fused
@@ -2217,6 +2217,99 @@ class TestSeZMStackBwdFused(unittest.TestCase):
                 # traversal leaves it uninitialized otherwise.
                 if apply_alpha:
                     self.assertTrue(torch.equal(ref[1], fused[1]))
+
+    def test_fused_matches_unfused_partial_tile(self):
+        """A partial final row tile matches the relay bit-for-bit too.
+
+        Both the large fixture above and the dispatch fixtures use edge
+        counts that are multiples of the candidate BLOCK_M = 32, so the
+        fused kernel's row-tail mask was never exercised numerically;
+        129 = 4 * 32 + 1 leaves one partial row tile.
+        """
+        saved_edges = self.N_EDGE
+        type(self).N_EDGE = 129
+        try:
+            generator = torch.Generator(device="cuda").manual_seed(5)
+            inputs = self._bwd_inputs(1, 32, generator)
+        finally:
+            type(self).N_EDGE = saved_edges
+        key = (32, 1)
+        self._register_fused(key, None)
+        ref, relay_launches = self._recorded_traversal(inputs, 1, 32, False)
+        self.assertEqual(relay_launches, 0)
+        self._register_fused(key, self.FUSED_CFG)
+        fused, fused_launches = self._recorded_traversal(inputs, 1, 32, False)
+        self.assertEqual(fused_launches, self.N_LAYERS - 1)
+        self.assertTrue(torch.equal(ref[0], fused[0]))
+
+    def test_caller_option_guards_fall_back_with_winning_entry(self):
+        """The caller-option guards keep the relay with an entry present.
+
+        ``with_weights``, ``keep``, and an upstream cotangent request the
+        per-layer surfaces or weight contractions the fused kernel does not
+        produce, and a focus width of 48 is neither a power of two nor equal
+        to the shared backward GEMM's block width, breaking the row-group
+        tiling contract.  Each keeps the relay with a winning entry
+        registered.  Dispatch-only, hence the small edge count.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        for name, lmax, cf, overrides, with_upstream, u_focus_major in (
+            ("with_weights", 1, 32, {"with_weights": True}, False, True),
+            ("keep", 1, 32, {"keep": True}, False, False),
+            ("grad_z_upstream", 1, 32, {}, True, False),
+            ("non_pow2_cf", 1, 48, {}, False, False),
+        ):
+            with self.subTest(guard=name):
+                call_kwargs = {"with_weights": False, "keep": False}
+                call_kwargs.update(overrides)
+                self._register_fused((cf, lmax), self.FUSED_CFG)
+                saved_edges = self.N_EDGE
+                type(self).N_EDGE = 512
+                try:
+                    generator = torch.Generator(device="cuda").manual_seed(13)
+                    inputs = self._bwd_inputs(lmax, cf, generator)
+                finally:
+                    type(self).N_EDGE = saved_edges
+                # The relay's weight-contraction fallback expects the final
+                # activation focus-major, unlike the edge-major output the
+                # forward returns; this check exercises the dispatch guard,
+                # so the fixture follows that branch's contract.
+                u_final = inputs[4]
+                if u_focus_major:
+                    u_final = u_final.permute(1, 0, 2).contiguous()
+                grad_z_upstream = torch.randn_like(inputs[3]) if with_upstream else None
+                calls = []
+                original = vp._launch_stack_bwd_fused
+
+                def recorder(*args, **kwargs_):
+                    calls.append(args[8])  # the layer index
+                    return original(*args, **kwargs_)
+
+                with mock.patch.object(
+                    vp, "_launch_stack_bwd_fused", side_effect=recorder
+                ):
+                    with torch.no_grad():
+                        g, _ga, _weights, _state = vp._stack_backward_traversal(
+                            inputs[0],
+                            inputs[1],
+                            inputs[3],
+                            u_final,
+                            inputs[2],
+                            inputs[5],
+                            inputs[6],
+                            inputs[7],
+                            inputs[8],
+                            grad_z_upstream,
+                            None,
+                            lmax,
+                            cf,
+                            False,
+                            **call_kwargs,
+                        )
+                torch.cuda.synchronize()
+                self.assertEqual(calls, [])
+                self.assertTrue(torch.isfinite(g).all())
 
     def test_higher_order_backward_preserved_with_winning_entry(self):
         """``create_graph=True`` keeps the supported path with an entry present.
@@ -2288,7 +2381,7 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         self, lmax, focus_dim, apply_alpha=False, dtype=torch.float32, n_edge=None
     ):
         """Run the traversal with a recording stand-in for the fused launch."""
-        import deepmd.pt_expt.kernels.triton.sezm.so2_value_path as vp
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
         calls = []
         original = vp._launch_stack_bwd_fused
@@ -2359,6 +2452,177 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         calls, out = self._record_launches(3, 32, dtype=torch.bfloat16, n_edge=512)
         self.assertEqual(calls, [])
         self.assertTrue(torch.isfinite(out[0]).all())
+
+
+class TestSeZMStackBwdSweepPolicy(unittest.TestCase):
+    """CPU checks of the ``stack_bwd_fused`` sweep's measurement policy.
+
+    The sweep drives the real traversal, so a misconfigured level or an
+    internal failure must be refused loudly rather than recorded as a
+    measured conclusion.  The traversal and the timer are replaced by
+    doubles here; these checks verify the policy, not the kernel.
+    """
+
+    KEY = (32, 1)
+
+    def setUp(self):
+        self._saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_TRITON_INFER"] = "2"
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
+            _runtime_tile_configs,
+        )
+
+        runtime = _runtime_tile_configs("stack_bwd_fused")
+        self._saved_table = dict(runtime)
+        runtime.pop(self.KEY, None)
+
+        def restore_table():
+            runtime.clear()
+            runtime.update(self._saved_table)
+
+        self.addCleanup(restore_table)
+
+    def tearDown(self):
+        if self._saved_level is None:
+            os.environ.pop("DP_TRITON_INFER", None)
+        else:
+            os.environ["DP_TRITON_INFER"] = self._saved_level
+
+    def test_sweep_refuses_levels_below_two(self):
+        """A sweep at a lower level would time the relay against itself."""
+        from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
+            sweep_stack_bwd_fused,
+        )
+
+        os.environ["DP_TRITON_INFER"] = "0"
+        with self.assertRaisesRegex(RuntimeError, "DP_TRITON_INFER"):
+            sweep_stack_bwd_fused(32, 1, n_edge=129, device="cpu")
+
+    def _stub_sweep(self, *, fail_candidates):
+        """Run the sweep against traversal/timer doubles; return its result."""
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+        from deepmd.pt_expt.kernels.triton.sezm import sweep_tile_configs as sweep_mod
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
+            _runtime_tile_configs,
+        )
+
+        outputs = (
+            torch.zeros(2, 3, dtype=torch.float32, device="cpu"),
+            torch.zeros(2, 3, dtype=torch.float32, device="cpu"),
+            None,
+            None,
+        )
+
+        def stub_traversal(*args, **kwargs):
+            entry = _runtime_tile_configs("stack_bwd_fused").get(self.KEY, "missing")
+            if entry is None:
+                return tuple(t.clone() if torch.is_tensor(t) else t for t in outputs)
+            # The dispatch would launch the fused kernel here; calling the
+            # (doubled) launcher stands in for that engagement.
+            vp._launch_stack_bwd_fused()
+            if fail_candidates:
+                raise AssertionError("injected internal failure")
+            return tuple(t.clone() if torch.is_tensor(t) else t for t in outputs)
+
+        def fake_bench(fn, iters=20):
+            entry = _runtime_tile_configs("stack_bwd_fused").get(self.KEY, "missing")
+            return 2.0 if entry is None else 1.0
+
+        with (
+            mock.patch.object(vp, "_stack_backward_traversal", stub_traversal),
+            mock.patch.object(vp, "_launch_stack_bwd_fused", lambda *a, **k: None),
+            mock.patch.object(sweep_mod, "_bench", fake_bench),
+        ):
+            return sweep_mod.sweep_stack_bwd_fused(32, 1, n_edge=129, device="cpu")
+
+    def test_unexpected_candidate_failure_aborts_and_leaves_key_uncovered(self):
+        """An internal error must not become a recorded relay win."""
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
+            has_tile_config,
+        )
+
+        with self.assertRaisesRegex(AssertionError, "injected internal failure"):
+            self._stub_sweep(fail_candidates=True)
+        self.assertFalse(has_tile_config("stack_bwd_fused", self.KEY))
+
+    def test_engaged_fast_candidate_registers_a_winner(self):
+        """Positive control: a measured winner is registered and covered."""
+        from deepmd.pt_expt.kernels.triton.sezm.tile_configs import (
+            _runtime_tile_configs,
+        )
+
+        result = self._stub_sweep(fail_candidates=False)
+        # Every candidate times at 1.0 ms against the relay's 2.0 ms, so
+        # the fastest-by-tiebreak candidate wins and the key is covered.
+        self.assertEqual(result["stack_bwd_fused"][self.KEY], (16, 64, 4, 2))
+        self.assertEqual(
+            _runtime_tile_configs("stack_bwd_fused")[self.KEY], (16, 64, 4, 2)
+        )
+
+
+class TestSeZMFreezeAutotuneRouting(unittest.TestCase):
+    """Both freeze paths must reach the shared SeZM tuning flow.
+
+    The PT ``.pt2`` freeze calls ``autotune_sezm`` through its own seam and
+    the PT-expt export reaches it through the freeze-time autotuner
+    registry; routing only, so the shared flow itself is replaced by a
+    recording double and CUDA availability is mocked.
+    """
+
+    def _record_autotune(self):
+        from deepmd.pt_expt.kernels.triton.sezm import sweep_tile_configs
+
+        calls = []
+
+        def fake_autotune(model, level, device):
+            calls.append((model, level, device))
+
+        return calls, mock.patch.object(
+            sweep_tile_configs, "autotune_sezm", fake_autotune
+        )
+
+    def test_pt_freeze_seam_reaches_shared_flow(self):
+        import deepmd.pt.entrypoints.freeze_pt2 as freeze_pt2
+
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_TRITON_INFER"] = "2"
+        try:
+            calls, patched = self._record_autotune()
+            model = torch.nn.Module()
+            device = torch.device("cuda", 0)
+            with patched:
+                freeze_pt2._tune_triton_configs(model, device)
+            self.assertEqual(calls, [(model, 2, device)])
+        finally:
+            if saved_level is None:
+                os.environ.pop("DP_TRITON_INFER", None)
+            else:
+                os.environ["DP_TRITON_INFER"] = saved_level
+
+    def test_pt_expt_registry_reaches_shared_flow(self):
+        from deepmd.pt_expt.kernels.autotune import (
+            _AUTOTUNERS,
+            run_autotune,
+        )
+
+        self.assertIn("sezm_value_path", _AUTOTUNERS)
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        os.environ["DP_TRITON_INFER"] = "2"
+        try:
+            calls, patched = self._record_autotune()
+            model = torch.nn.Module()
+            device = torch.device("cuda", 0)
+            with (
+                patched,
+                mock.patch("torch.cuda.is_available", return_value=True),
+            ):
+                run_autotune(model, device)
+            self.assertEqual(calls, [(model, 2, device)])
+        finally:
+            if saved_level is None:
+                os.environ.pop("DP_TRITON_INFER", None)
+            else:
+                os.environ["DP_TRITON_INFER"] = saved_level
 
 
 if __name__ == "__main__":

@@ -57,7 +57,6 @@ from deepmd.pt.model.descriptor.sezm_nn.embedding import (
     GeometricInitialEmbedding,
 )
 from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-    SO2Convolution,
     SO2Linear,
 )
 from deepmd.pt.model.model import (
@@ -331,55 +330,20 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     width/degree) are swept here on the local GPU -- the exact hardware the
     ``.pt2`` will run on, since AOTInductor artifacts are not portable across
     GPU models -- and registered for the current process before tracing.
-    Keys already covered cost nothing.
+    Keys already covered cost nothing.  The fused value-path entries are
+    then rebound (the mixing-stack operator selection, fp32 versus fp16x3,
+    is fixed at construction time, which predates the registrations).
 
-    The fused value-path entries are then rebound: the mixing-stack operator
-    selection (fp32 versus fp16x3) is fixed at construction time, which
-    predates the registrations made here.
+    The whole flow lives in
+    :func:`deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs.autotune_sezm`
+    and is shared with the PT-expt export path, which reaches it through
+    the freeze-time autotuner registry.
     """
-    if triton_infer_level() < 2:
-        return
-    if target_device.type != "cuda" or not torch.cuda.is_available():
-        return
-    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
-        SO2_VALUE_PATH_TRITON_AVAILABLE,
-        make_triton_value_path,
-    )
-
-    if not SO2_VALUE_PATH_TRITON_AVAILABLE:
-        return
     from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
-        collect_model_shape_keys,
-        tune_missing_configs,
+        autotune_sezm,
     )
 
-    # The built-in tables and the sweep both resolve against the current
-    # device; pin it to the AOTI target so a freeze aimed at a secondary GPU
-    # tunes and looks up the right hardware (mixed-model hosts).
-    if target_device.index is not None:
-        torch.cuda.set_device(target_device)
-
-    shape_keys = collect_model_shape_keys(model)
-    registered = tune_missing_configs(
-        shape_keys, level=triton_infer_level(), device=target_device
-    )
-    if registered:
-        log.info(
-            "Registered freshly tuned Triton launch configurations: %s",
-            {family: sorted(entries) for family, entries in registered.items()},
-        )
-    else:
-        log.info(
-            "Triton launch tables already cover this checkpoint's shapes on %s; "
-            "no tuning needed.",
-            torch.cuda.get_device_name(target_device),
-        )
-    # Rebind unconditionally: the fp32-versus-fp16x3 stack selection was made
-    # at construction time, possibly against a different current device's
-    # tables, and must reflect the target device and any fresh registrations.
-    for module in model.modules():
-        if isinstance(module, SO2Convolution) and module.triton_infer_level >= 2:
-            module._triton_value_path = make_triton_value_path(module)
+    autotune_sezm(model, triton_infer_level(), target_device)
 
 
 # The trace-time sendlist for the with-comm artifact embeds the address of a
