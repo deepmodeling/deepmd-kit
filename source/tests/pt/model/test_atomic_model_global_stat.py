@@ -698,6 +698,43 @@ class TestModelPresetBias(unittest.TestCase):
                     to_numpy_array(loaded.get_out_bias()).reshape(-1), bias, atol=1e-10
                 )
 
+    def test_empty_override_recovers_nonfinite_checkpoint_bias(self) -> None:
+        for value in (np.nan, np.inf, -np.inf):
+            with self.subTest(value=value):
+                loaded = EnergyModel.deserialize(self.model.serialize())
+                loaded.atomic_model.preset_out_bias = {
+                    "energy": [[-10.0], [-13.6], [-3.0]]
+                }
+                loaded.atomic_model.out_bias[0, :, 0] = to_torch_tensor(
+                    np.array([value, 7.0, value])
+                )
+                loaded = EnergyModel.deserialize(loaded.serialize())
+                forward = loaded.predict_atomic_outputs_for_stat
+                seen = []
+
+                def check_forward(*args, **kwargs):
+                    seen.append(
+                        to_numpy_array(loaded.get_out_bias()).reshape(-1).copy()
+                    )
+                    return forward(*args, **kwargs)
+
+                with patch.object(
+                    loaded, "predict_atomic_outputs_for_stat", check_forward
+                ):
+                    loaded.change_out_bias(self.sampled, preset_out_bias={})
+                self.assertTrue(seen)
+                for baseline in seen:
+                    np.testing.assert_allclose(baseline, [-10.0, 7.0, -3.0])
+                bias = to_numpy_array(loaded.get_out_bias()).reshape(-1)
+                self.assertTrue(np.isfinite(bias).all())
+                self.assertAlmostEqual(bias[2], -3.0)
+                prediction = loaded(self.sampled[0]["coord"], self.sampled[0]["atype"])
+                np.testing.assert_allclose(
+                    to_numpy_array(prediction["energy"]),
+                    to_numpy_array(self.sampled[0]["energy"]),
+                    atol=1e-5,
+                )
+
     def test_change_type_map_remaps_preset(self) -> None:
         self.model.change_out_bias(self.sampled, bias_adjust_mode="set-by-statistic")
         # H is dropped, O keeps its preset, B and C are unassigned

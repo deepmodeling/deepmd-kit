@@ -436,7 +436,22 @@ class SeZMSpinModel(SeZMModel):
         bias_adjust_mode: str = "change-by-statistic",
         preset_out_bias: dict | None = None,
     ) -> None:
-        """Change output bias using spin-expanded sampled data."""
+        """Change output bias using spin-expanded sampled data.
+
+        Parameters
+        ----------
+        merged : callable or list[dict]
+            Samples containing real-atom coordinates, types and spins.
+        bias_adjust_mode : str
+            'change-by-statistic' fits residual shifts; 'set-by-statistic'
+            fits absolute biases.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
+        """
         preset_out_bias = remap_preset_out_bias(
             normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
             list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),

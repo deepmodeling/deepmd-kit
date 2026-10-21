@@ -937,6 +937,11 @@ def make_model(
             bias_adjust_mode : str
                 The mode for changing output bias:
                 'change-by-statistic' or 'set-by-statistic'.
+            preset_out_bias : dict, optional
+                Per-call preset override. Omit to use the configured preset;
+                pass an empty dict to fit without fixing preset outputs.
+                Non-finite stored cells covered by the checkpoint preset are
+                recovered before residual fitting; finite values are retained.
             """
             self.atomic_model.change_out_bias(
                 merged,

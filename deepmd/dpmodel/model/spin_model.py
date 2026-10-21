@@ -625,6 +625,12 @@ class SpinModel(NativeOP):
             'change-by-statistic' : perform predictions on labels of target dataset,
                     and do least square on the errors to obtain the target shift as bias.
             'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
         """
         preset_out_bias = remap_preset_out_bias(
             normalize_preset_out_bias(preset_out_bias, self.get_type_map()),

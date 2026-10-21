@@ -249,6 +249,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 'change-by-statistic' : perform predictions on labels of target dataset,
                         and do least square on the errors to obtain the target shift as bias.
                 'set-by-statistic' : directly use the statistic output bias in the target dataset.
+            preset_out_bias : dict, optional
+                Per-call preset override. Omit to use the configured preset;
+                pass an empty dict to fit without fixing preset outputs.
+                Non-finite stored cells covered by the checkpoint preset are
+                recovered before residual fitting; finite values are retained.
             """
             self.atomic_model.change_out_bias(
                 merged,

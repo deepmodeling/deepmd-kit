@@ -51,6 +51,7 @@ from deepmd.utils.preset_out_bias import (
     check_preset_out_bias,
     normalize_preset_out_bias,
     preset_out_bias_rows,
+    recover_nonfinite_preset_bias,
     remap_preset_out_bias,
 )
 
@@ -852,6 +853,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             The model preset is used when omitted, preserving training and
             fine-tuning behavior. Pass an empty dict to fit from the data
             without reapplying the model's stored preset.
+            Before residual fitting, non-finite stored cells covered by the
+            checkpoint preset are recovered; finite adjusted cells are retained.
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         observed_type : list[str], optional
@@ -874,6 +877,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         distinguish_types = self.get_compute_stats_distinguish_types()
         check_preset_out_bias(preset, self.bias_keys, distinguish_types)
         sampled = sample_merged
+        # A per-call override must not propagate a corrupt checkpoint baseline.
+        if change and preset_out_bias is not None and self.preset_out_bias:
+            recovered = recover_nonfinite_preset_bias(
+                self.preset_out_bias,
+                self.type_map,
+                to_numpy_array(self.out_bias),
+                self.bias_keys,
+                [self.atomic_output_def()[kk].size for kk in self.bias_keys],
+            )
+            self._store_out_stat(recovered)
         # === Step 1. Outputs fixed by the preset ===
         fitted_keys = self.bias_keys
         if preset:
