@@ -131,7 +131,6 @@ if TYPE_CHECKING:
     )
 
 
-@BaseDescriptor.register("SeZM")
 def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     """Whether one block's *currently selected* rotation consumers address
     the band.
@@ -178,6 +177,7 @@ def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     )
 
 
+@BaseDescriptor.register("SeZM")
 @BaseDescriptor.register("sezm")
 @BaseDescriptor.register("DPA4")
 @BaseDescriptor.register("dpa4")

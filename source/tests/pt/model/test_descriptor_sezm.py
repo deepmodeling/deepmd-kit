@@ -699,6 +699,24 @@ class TestDescrptSeZM(_SeZMTestCase):
             with self.subTest(mode=name):
                 self._assert_forward_backward_smoke(**model_kwargs)
 
+    def test_registry_construction(self) -> None:
+        """Every type key must resolve to the descriptor class in the registry.
+
+        A module-level helper once ended up decorated with
+        ``register("SeZM")``, which silently replaced the class with a
+        plain function in the registry and broke factory construction.
+        """
+        from deepmd.pt.model.descriptor.base_descriptor import (
+            BaseDescriptor,
+        )
+
+        for type_name in ("SeZM", "sezm", "DPA4", "dpa4"):
+            with self.subTest(type=type_name):
+                cls = BaseDescriptor.get_class_by_type(type_name)
+                self.assertIs(cls, DescrptSeZM)
+                model = cls(**_descriptor_kwargs())
+                self.assertIsInstance(model, DescrptSeZM)
+
     def test_fixed_basis_types_freeze_the_basis(self) -> None:
         """``/fix`` basis types keep the basis parameters out of training only."""
         for family in ("bessel", "gaussian"):
