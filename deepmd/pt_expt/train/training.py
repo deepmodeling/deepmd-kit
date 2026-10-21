@@ -3090,23 +3090,35 @@ class Trainer(AbstractTrainer):
         return {"version": 1, "world_size": self.world_size, "ranks": ranks}
 
     def _restore_data_progress(self, progress: Mapping[str, Any] | None) -> None:
-        """Restore this rank's cursor, rejecting a changed distributed world."""
+        """Restore rank-local progress, or retain fresh data after a topology change."""
         if progress is None:
             return
         if not isinstance(progress, Mapping):
             raise ValueError("Data-progress checkpoint must be a mapping.")
         if type(progress.get("version")) is not int or progress["version"] != 1:
             raise ValueError("Unsupported distributed data-progress version.")
-        if (
-            type(progress.get("world_size")) is not int
-            or progress["world_size"] != self.world_size
-        ):
-            raise ValueError("Data-progress checkpoint world size does not match.")
+        saved_world_size = progress.get("world_size")
+        if type(saved_world_size) is not int or saved_world_size < 1:
+            raise ValueError("Data-progress checkpoint world size must be positive.")
         ranks = progress.get("ranks")
-        if not isinstance(ranks, list) or len(ranks) != self.world_size:
+        if not isinstance(ranks, list) or len(ranks) != saved_world_size:
             raise ValueError("Data-progress checkpoint must contain every rank.")
         if not all(isinstance(state, Mapping) for state in ranks):
             raise ValueError("Data-progress checkpoint rank states must be mappings.")
+        if saved_world_size != self.world_size:
+            # Model/optimizer/step restart has always allowed a new topology.
+            # Rank-local cursors cannot be remapped safely, particularly after
+            # filtering, so retain the freshly initialized data and RNG instead.
+            if self.rank == 0:
+                log.warning(
+                    "Checkpoint world size changed from %d to %d. Model, optimizer "
+                    "and step are restored, but training data order and selection "
+                    "RNG restart from their newly initialized state; exact "
+                    "data-order continuation is unavailable.",
+                    saved_world_size,
+                    self.world_size,
+                )
+            return
         restore_training_data_progress(self.training_data_by_task, ranks[self.rank])
 
     def save_checkpoint(self, step: int) -> None:

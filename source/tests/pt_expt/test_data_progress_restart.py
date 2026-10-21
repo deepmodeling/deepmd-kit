@@ -310,6 +310,56 @@ def test_legacy_init_finetune_and_deployment(tmp_path, monkeypatch) -> None:
         fresh._close_data_systems()
 
 
+@pytest.mark.parametrize("mode", ["directory", "lmdb"])
+def test_changed_world_size_retains_legacy_optimizer_restart(
+    tmp_path, monkeypatch, caplog, mode
+) -> None:
+    """A changed topology keeps native restart state, but not saved data order."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    path = tmp_path / ("data" if mode == "directory" else "data.lmdb")
+    if mode == "directory":
+        _write_directory(path)
+    else:
+        _write_lmdb(path, mixed=False)
+    config = _config(path, mode=mode, multitask=False)
+    config["training"].update(numb_steps=3, save_freq=3)
+    original = get_trainer(deepcopy(config))
+    original.run()
+    state = torch.load(tmp_path / "model.ckpt-3.pt", weights_only=True)
+    progress = state.pop(DATA_PROGRESS_CHECKPOINT_KEY)
+    legacy_path = tmp_path / "legacy.pt"
+    torch.save(state, legacy_path)
+    # Exercise the topology fallback at the native checkpoint-load boundary.
+    # The real 1-to-2-rank integration case remains in TestDDPRestart.
+    progress.update(world_size=2, ranks=progress["ranks"] * 2)
+    state[DATA_PROGRESS_CHECKPOINT_KEY] = progress
+    changed_path = tmp_path / "changed-world.pt"
+    torch.save(state, changed_path)
+    config["training"]["numb_steps"] = 6
+
+    dp_random.seed(9876)
+    legacy = get_trainer(deepcopy(config), restart_model=str(legacy_path))
+    expected_lr = legacy.scheduler.get_last_lr()
+    expected = _record_training(legacy)
+    dp_random.seed(9876)
+    changed = get_trainer(deepcopy(config), restart_model=str(changed_path))
+    assert "world size changed from 2 to 1" in caplog.text
+    assert "exact data-order continuation is unavailable" in caplog.text
+    assert changed.start_step == 3
+    assert changed.scheduler.get_last_lr() == expected_lr
+    torch.testing.assert_close(
+        changed.optimizer.state_dict()["state"], state["optimizer"]["state"]
+    )
+    for key, value in state["model"].items():
+        if torch.is_tensor(value):
+            torch.testing.assert_close(value, changed._unwrapped.state_dict()[key])
+    _assert_records_equal(expected, _record_training(changed))
+    for key, value in legacy._unwrapped.state_dict().items():
+        if torch.is_tensor(value):
+            torch.testing.assert_close(value, changed._unwrapped.state_dict()[key])
+
+
 def test_chief_display_preserves_training_progress(tmp_path, monkeypatch) -> None:
     """Chief-only inactive-task and validation reads cannot move rank cursors."""
     monkeypatch.chdir(tmp_path)
@@ -550,23 +600,59 @@ def test_filtered_rank_progress_restores_its_own_cursor(tmp_path, monkeypatch) -
 
 
 @pytest.mark.parametrize(
+    "saved_size,current_size,rank", [(1, 2, 0), (1, 2, 1), (2, 1, 0), (2, 3, 2)]
+)
+def test_changed_world_size_leaves_data_and_rng_untouched(
+    caplog, saved_size, current_size, rank
+) -> None:
+    """Topology fallback neither remaps a cursor nor restores another rank's RNG."""
+    trainer = Trainer.__new__(Trainer)
+    trainer.rank = rank
+    trainer.world_size = current_size
+    source = Mock()
+    source.state_dict.return_value = {"cursor": 11}
+    trainer.training_data_by_task = {"Default": source}
+    local = collect_training_data_progress(trainer.training_data_by_task)
+    local["tasks"]["Default"] = {"cursor": 99}
+    progress = {"version": 1, "world_size": saved_size, "ranks": [local] * saved_size}
+    dp_random.random(5)
+    before = collect_training_data_progress(trainer.training_data_by_task)
+    with patch(
+        "deepmd.pt_expt.train.training.restore_training_data_progress"
+    ) as restore:
+        trainer._restore_data_progress(progress)
+    restore.assert_not_called()
+    source.load_state_dict.assert_not_called()
+    assert collect_training_data_progress(trainer.training_data_by_task) == before
+    assert ("Checkpoint world size changed" in caplog.text) == (rank == 0)
+
+
+@pytest.mark.parametrize("world_size", [1, 2])
+@pytest.mark.parametrize(
     "changed",
     [
         {"version": 2},
         {"world_size": 3},
+        {"world_size": 0},
+        {"world_size": -1},
+        {"world_size": True},
+        {"world_size": 2.0},
+        {"world_size": "2"},
         {"ranks": []},
         {"ranks": {}},
         {"ranks": [None, None]},
     ],
 )
-def test_malformed_rank_envelope_is_rejected(changed) -> None:
+def test_malformed_rank_envelope_is_rejected(changed, world_size, caplog) -> None:
     trainer = Trainer.__new__(Trainer)
-    _set_mock_rank(trainer, 1)
+    trainer.rank = 0
+    trainer.world_size = world_size
     trainer.training_data_by_task = {}
     local = collect_training_data_progress({})
     progress = {"version": 1, "world_size": 2, "ranks": [local, local]}
     with pytest.raises(ValueError, match=r"[Dd]ata-progress"):
         trainer._restore_data_progress(progress | changed)
+    assert "Checkpoint world size changed" not in caplog.text
     trainer._restore_data_progress(None)
 
 

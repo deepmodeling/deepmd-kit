@@ -156,6 +156,13 @@ Distributed ranks exchange this compact state at checkpoint boundaries, not
 on every batch; rank-local filtering may legitimately advance their cursors
 by different amounts.
 
+Restarting with a different number of ranks still restores the model, optimizer,
+and training step, but warns and keeps newly initialized data cursors and
+selection RNG instead of remapping the saved rank-local progress. Data may be
+repeated, and exact data-order continuation is not guaranteed in this case.
+Malformed progress envelopes and incompatible data settings at the same world
+size remain errors.
+
 Directory/HDF5 batches now shuffle indices into a canonical, unshuffled set.
 For a single-set source, later passes therefore differ from older releases
 that shuffled their already shuffled cache. This also prevents `numb_copy`
