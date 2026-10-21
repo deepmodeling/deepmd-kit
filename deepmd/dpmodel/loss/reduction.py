@@ -204,3 +204,36 @@ def masked_atom_num(mask: Array | None, natoms: Any, dtype: Any) -> Any:
         return natoms
     xp = array_api_compat.array_namespace(mask)
     return xp.mean(xp.astype(xp.sum(mask, axis=-1), dtype))
+
+
+def masked_global_rmse(diff: Array, mask: Array | None, natoms: Any) -> Array:
+    """Display-only RMSE of an extensive global term, normalized per atom.
+
+    Without a mask every frame has ``natoms`` atoms and the RMSE of the whole
+    batch is divided by it. With a mask, frames may hold different numbers of
+    real atoms, so each frame's mean squared error is normalized by its own
+    squared atom count before averaging over frames. A batch then reports the
+    same value as the mean of its frames' squared RMSEs taken one at a time.
+
+    Parameters
+    ----------
+    diff : Array
+        Global prediction error of shape ``[nf, ncomp]``.
+    mask : Array or None
+        Per-atom mask of shape ``[nf, nloc]``, or ``None`` when not mixed_type.
+    natoms
+        Atom count used when ``mask`` is ``None``.
+
+    Returns
+    -------
+    Array
+        ``sqrt(mean(diff**2)) / natoms`` without a mask, else
+        ``sqrt(mean_f(mean(diff_f**2) / n_f**2))`` with ``n_f`` the number of
+        real atoms of frame ``f``.
+    """
+    xp = array_api_compat.array_namespace(diff)
+    if mask is None:
+        return xp.sqrt(xp.mean(xp.square(diff))) / natoms
+    real_natoms = xp.astype(xp.sum(mask, axis=-1), diff.dtype)
+    frame_mse = xp.mean(xp.square(diff), axis=-1)
+    return xp.sqrt(xp.mean(frame_mse / xp.square(real_natoms)))
