@@ -36,6 +36,9 @@ from deepmd.utils.bridging import (
     DEFAULT_FRACTION_INNER,
     DEFAULT_FRACTION_OUTER,
 )
+from deepmd.utils.data_config import (
+    data_group_configs,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     FULL_VALIDATION_PROFILES,
@@ -5773,15 +5776,15 @@ def loss_args() -> list[Argument]:
 
 
 #  --- Training configurations: --- #
-def training_data_args() -> list[
-    Argument
-]:  # ! added by Ziyao: new specification style for data systems.
+def training_data_args() -> Argument:
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item is expanded recursively in input order. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "either directly or beneath a parent directory."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -5800,7 +5803,12 @@ If MPI is used, the value should be considered as the batch size per task.'
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. A group expanding to multiple "
+        "sources including LMDB must omit this option; use separate training_data "
+        "groups with prob to assign source probabilities."
+    )
     doc_min_pair_dist = (
         "Minimum pairwise atomic distance threshold in Å. "
         "Frames containing any atom pair closer than this distance are excluded "
@@ -5842,7 +5850,10 @@ If MPI is used, the value should be considered as the batch size per task.'
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " When a group expands to multiple sources including LMDB, only "
+            "prob_sys_size is supported. Use separate groups to configure "
+            "individual LMDB system probabilities.",
             alias=[
                 "auto_prob_style",
             ],
@@ -5862,12 +5873,28 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=0.0,
             doc=supported_backends("pt", "pt_expt") + doc_min_pair_dist,
         ),
+        Argument(
+            "prob",
+            [float, None],
+            optional=True,
+            default=None,
+            doc="The probability of selecting a training batch from this entire "
+            "group. Applies when training_data is a list of group dictionaries. "
+            "Assigned probabilities must be non-negative and sum to at most one. "
+            "Groups without prob share the remaining probability in proportion "
+            "to their batch counts. If every group specifies prob, their sum "
+            "must be one. Within-group auto_prob and sys_probs remain independent.",
+        ),
     ]
 
-    doc_training_data = "Configurations of training data."
+    doc_training_data = (
+        "Training data configured as one dictionary or a nonempty list of group "
+        "dictionaries. Each group has its own systems, batch_size and within-group "
+        "sampling rules; prob optionally controls the group's total probability."
+    )
     return Argument(
         "training_data",
-        dict,
+        [dict, list[dict]],
         optional=True,
         sub_fields=args,
         sub_variants=[],
@@ -5884,7 +5911,9 @@ def validation_data_args() -> list[
         "The data systems for validation. "
         "This key can be a list or a str. "
         "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
-        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories. "
+        "The PyTorch and PyTorch Exportable backends also recognize LMDB datasets, "
+        "including multiple LMDB paths and parent directories containing LMDB datasets."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
@@ -5901,7 +5930,11 @@ def validation_data_args() -> list[
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
-    doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
+    doc_sys_probs = (
+        "A list of float if specified. Should be of the same length as `systems`, "
+        "specifying the probability of each system. Must be omitted when the "
+        "validation data expands to multiple sources including LMDB."
+    )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
 
     args = [
@@ -5928,7 +5961,9 @@ def validation_data_args() -> list[
             str,
             optional=True,
             default="prob_sys_size",
-            doc=doc_auto_prob_style,
+            doc=doc_auto_prob_style
+            + " Only prob_sys_size is supported when systems expands to "
+            "multiple sources including LMDB.",
             alias=[
                 "auto_prob_style",
             ],
@@ -6883,6 +6918,7 @@ def gen_json_schema(multi_task: bool = False) -> str:
         JSON schema.
     """
     from deepmd.utils.json_schema import (
+        with_data_groups,
         with_model_presets,
     )
 
@@ -6894,7 +6930,9 @@ def gen_json_schema(multi_task: bool = False) -> str:
     )
     return json.dumps(
         with_model_presets(
-            generate_json_schema(arg), generate_json_schema(model_args()), multi_task
+            with_data_groups(generate_json_schema(arg), multi_task),
+            generate_json_schema(model_args()),
+            multi_task,
         )
     )
 
@@ -6973,6 +7011,23 @@ def normalize(
     """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
+    training = data.get("training", {})
+    task_configs = training.get("data_dict", {}).values() if multi_task else (training,)
+    group_argument = training_data_args()
+    for task in task_configs:
+        groups = task.get("training_data")
+        if groups is None:
+            continue
+        data_group_configs(groups)
+        if isinstance(groups, list):
+            normalized = [
+                group_argument.normalize_value(group, trim_pattern="_*")
+                for group in groups
+            ]
+            if check:
+                for group in normalized:
+                    group_argument.check_value(group, strict=True)
+            task["training_data"] = normalized
     if check:
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)

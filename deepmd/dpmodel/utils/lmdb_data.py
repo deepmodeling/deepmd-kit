@@ -60,6 +60,7 @@ from deepmd.utils.data import (
     DataRequirementItem,
     DataRequirementSourcePolicy,
 )
+from deepmd.utils.data_path import is_lmdb as is_lmdb
 
 log = logging.getLogger(__name__)
 
@@ -1928,11 +1929,6 @@ class LmdbBatchIterator:
             _release_lmdb_executor(self._num_workers)
 
 
-def is_lmdb(systems: str) -> bool:
-    """Check if systems points to an LMDB dataset."""
-    return systems.endswith(".lmdb") or Path(systems, "data.mdb").is_file()
-
-
 def _parse_metadata(meta: dict) -> tuple[int, str, list[int]]:
     """Parse LMDB metadata into (nframes, frame_fmt, natoms_per_type).
 
@@ -3015,7 +3011,7 @@ def compute_block_targets(
         Each element is ``(system_indices_in_block, target_frame_count)``.
         Returns empty list if no expansion is needed (all targets == actual).
     """
-    from deepmd.utils.data_system import (
+    from deepmd.utils.data_sampling import (
         prob_sys_size_ext,
     )
 

@@ -2,8 +2,14 @@
 import collections
 import logging
 import warnings
+from collections.abc import (
+    Callable,
+)
 from functools import (
     cached_property,
+)
+from types import (
+    SimpleNamespace,
 )
 from typing import (
     Any,
@@ -13,9 +19,7 @@ import numpy as np
 
 import deepmd.utils.random as dp_random
 from deepmd.common import (
-    expand_sys_str,
     make_default_mesh,
-    rglob_sys_str,
 )
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -23,6 +27,24 @@ from deepmd.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
     DeepmdData,
+)
+from deepmd.utils.data_config import (
+    DataConfig,
+    check_type_map_consistency,
+    resolve_data_groups,
+    resolve_data_sources,
+)
+from deepmd.utils.data_path import (
+    is_lmdb,
+)
+from deepmd.utils.data_path import process_systems as process_systems
+from deepmd.utils.data_sampling import (
+    data_child_seeds,
+)
+from deepmd.utils.data_sampling import prob_sys_size_ext as prob_sys_size_ext
+from deepmd.utils.data_sampling import process_sys_probs as process_sys_probs
+from deepmd.utils.data_sampling import (
+    system_probabilities,
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
@@ -230,7 +252,7 @@ class DeepmdDataSystem:
                 self.data_systems[ii].get_sys_numb_batch(self.batch_size[ii])
             )
             type_map_list.append(self.data_systems[ii].get_type_map())
-        self.type_map = self._check_type_map_consistency(type_map_list)
+        self.type_map = check_type_map_consistency(type_map_list)
 
         # ! altered by Marián Rynik
         # test size
@@ -434,23 +456,9 @@ class DeepmdDataSystem:
         sys_probs: list[float] | None = None,
         auto_prob_style: str = "prob_sys_size",
     ) -> None:
-        if sys_probs is None:
-            if auto_prob_style == "prob_uniform":
-                prob_v = 1.0 / float(self.nsystems)
-                probs = [prob_v for ii in range(self.nsystems)]
-            elif auto_prob_style[:13] == "prob_sys_size":
-                if auto_prob_style == "prob_sys_size":
-                    prob_style = f"prob_sys_size;0:{self.get_nsystems()}:1.0"
-                else:
-                    prob_style = auto_prob_style
-                probs = prob_sys_size_ext(
-                    prob_style, self.get_nsystems(), self.nbatches
-                )
-            else:
-                raise RuntimeError("Unknown auto prob style: " + auto_prob_style)
-        else:
-            probs = process_sys_probs(sys_probs, self.nbatches)
-        self.sys_probs = probs
+        self.sys_probs = system_probabilities(
+            self.nbatches, sys_probs=sys_probs, auto_prob=auto_prob_style
+        )
 
     def get_batch(self, sys_idx: int | None = None) -> dict:
         # batch generation style altered by Ziyao Li:
@@ -668,6 +676,10 @@ class DeepmdDataSystem:
 
         return compute_total_numb_batch(self.nbatches, self.sys_probs)
 
+    def get_epoch_batch_counts(self, world_size: int) -> np.ndarray:
+        """Return optimizer workloads for the replicated NumPy data reader."""
+        return np.asarray(self.nbatches, dtype=np.float64) / world_size
+
     def print_summary(self, name: str) -> None:
         print_summary(
             name,
@@ -699,24 +711,6 @@ class DeepmdDataSystem:
             ts.append(tsi)
 
         return ts
-
-    def _check_type_map_consistency(
-        self, type_map_list: list[list[str] | None]
-    ) -> list[str]:
-        ret = []
-        for ii in type_map_list:
-            if ii is not None:
-                min_len = min([len(ii), len(ret)])
-                for idx in range(min_len):
-                    if ii[idx] != ret[idx]:
-                        raise RuntimeError(
-                            f"Inconsistent type map: {ret!s} {ii!s} in different data systems. "
-                            "If you didn't set model/type_map, please set it, "
-                            "since the type map of the model cannot be decided by data."
-                        )
-                if len(ii) > len(ret):
-                    ret = ii
-        return ret
 
 
 def _format_name_length(name: str, width: int) -> str:
@@ -820,115 +814,22 @@ def print_summary(
     )
 
 
-def process_sys_probs(sys_probs: list[float], nbatch: int) -> np.ndarray:
-    sys_probs = np.array(sys_probs)
-    type_filter = sys_probs >= 0
-    assigned_sum_prob = np.sum(type_filter * sys_probs)
-    # 1e-8 is to handle floating point error; See #1917
-    assert assigned_sum_prob <= 1.0 + 1e-8, (
-        "the sum of assigned probability should be less than 1"
-    )
-    rest_sum_prob = 1.0 - assigned_sum_prob
-    if not np.isclose(rest_sum_prob, 0):
-        rest_nbatch = (1 - type_filter) * nbatch
-        rest_prob = rest_sum_prob * rest_nbatch / np.sum(rest_nbatch)
-        ret_prob = rest_prob + type_filter * sys_probs
-    else:
-        ret_prob = sys_probs
-    assert np.isclose(np.sum(ret_prob), 1), "sum of probs should be 1"
-    return ret_prob
-
-
-def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
-    block_str = keywords.split(";")[1:]
-    block_stt = []
-    block_end = []
-    block_weights = []
-    for ii in block_str:
-        stt = int(ii.split(":")[0])
-        end = int(ii.split(":")[1])
-        weight = float(ii.split(":")[2])
-        assert weight >= 0, "the weight of a block should be no less than 0"
-        block_stt.append(stt)
-        block_end.append(end)
-        block_weights.append(weight)
-    nblocks = len(block_str)
-    block_probs = np.array(block_weights) / np.sum(block_weights)
-    sys_probs = np.zeros([nsystems], dtype=np.float64)
-    for ii in range(nblocks):
-        nbatch_block = nbatch[block_stt[ii] : block_end[ii]]
-        tmp_prob = [float(i) for i in nbatch_block] / np.sum(nbatch_block)
-        sys_probs[block_stt[ii] : block_end[ii]] = tmp_prob * block_probs[ii]
-    return sys_probs
-
-
-def process_systems(
-    systems: str | list[str], patterns: list[str] | None = None
-) -> list[str]:
-    """Process the user-input systems.
-
-    If it is a single directory, search for all the systems in the directory.
-    If it is a list, each item in the list is treated as a directory to search.
-    If it is a single LMDB path, return it directly without expansion.
-    Check if the systems are valid.
-
-    Parameters
-    ----------
-    systems : str or list of str
-        The user-input systems
-    patterns : list of str, optional
-        The patterns to match the systems, by default None
-
-    Returns
-    -------
-    result_systems: list of str
-        The valid systems
-    """
-    from deepmd.dpmodel.utils.lmdb_data import (
-        is_lmdb,
-    )
-
-    # LMDB path: return directly without expansion
-    if isinstance(systems, str) and is_lmdb(systems):
-        return [systems]
-
-    # Normalize input to a list of paths to search
-    if isinstance(systems, str):
-        search_paths = [systems]
-    elif isinstance(systems, list):
-        search_paths = systems
-    else:
-        # Handle unsupported input types
-        raise ValueError(
-            f"Invalid systems type: {type(systems)}. Must be str or list[str]."
-        )
-
-    # Iterate over the search_paths list and apply expansion logic to each path
-    result_systems = []
-    for path in search_paths:
-        if patterns is None:
-            expanded_paths = expand_sys_str(path)
-        else:
-            expanded_paths = rglob_sys_str(path, patterns)
-
-        result_systems.extend(expanded_paths)
-
-    return result_systems
-
-
 def get_data(
-    jdata: dict[str, Any],
+    jdata: DataConfig,
     rcut: float,
     type_map: list[str] | None,
     modifier: Any | None,
     multi_task_mode: bool = False,
-) -> DeepmdDataSystem:
-    """Get the data system.
+    *,
+    lmdb_factory: Callable[[str, int | str, str | None], Any] | None = None,
+    seed: int | None = None,
+) -> Any:
+    """Build native data readers and compose independently configured groups.
 
     Parameters
     ----------
     jdata
-        The json data
+        A data dictionary or a nonempty list of group dictionaries.
     rcut
         The cut-off radius, not used
     type_map
@@ -937,33 +838,100 @@ def get_data(
         The data modifier
     multi_task_mode
         If in multi task mode
+    lmdb_factory
+        Optional backend adapter accepting an LMDB path, batch size, and
+        internal auto-probability rule. Without it, only NPY/HDF5 sources
+        are discovered.
+    seed
+        Seed for group selection. If omitted, draws from the shared training
+        random generator seed the group-selection streams.
 
     Returns
     -------
-    DeepmdDataSystem
-        The data system
+    object
+        A native data system for a single source, or a grouped data system
+        with the same batch, statistics, and sampling-metadata interface.
     """
-    systems = jdata["systems"]
-    rglob_patterns = jdata.get("rglob_patterns")
-    systems = process_systems(systems, patterns=rglob_patterns)
-
-    batch_size = jdata["batch_size"]
-    sys_probs = jdata.get("sys_probs")
-    auto_prob = jdata.get("auto_prob", "prob_sys_size")
-    optional_type_map = not multi_task_mode
-
-    data = DeepmdDataSystem(
-        systems=systems,
-        batch_size=batch_size,
-        test_size=1,  # to satisfy the old api
-        shuffle_test=True,  # to satisfy the old api
-        rcut=rcut,
-        type_map=type_map,
-        optional_type_map=optional_type_map,
-        modifier=modifier,
-        trn_all_set=True,  # sample from all sets
-        sys_probs=sys_probs,
-        auto_prob_style=auto_prob,
+    from deepmd.utils.data_group import (
+        GroupedDataSystem,
     )
 
-    return data
+    groups = resolve_data_groups(
+        jdata, formats=("deepmd", "lmdb") if lmdb_factory is not None else ("deepmd",)
+    )
+    needs_composition = len(groups) > 1 or any(
+        len(group.systems) > 1 and any(is_lmdb(path) for path in group.systems)
+        for group in groups
+    )
+    seeds = (
+        iter(data_child_seeds(seed, len(groups) + 1)) if needs_composition else iter(())
+    )
+    datasets = []
+    for group in groups:
+        sources = resolve_data_sources(group)
+        has_lmdb = any(source.format == "lmdb" for source in sources)
+        children = []
+        for source in sources:
+            if source.format == "deepmd":
+                child = DeepmdDataSystem(
+                    systems=list(source.systems),
+                    batch_size=source.batch_size,
+                    test_size=1,
+                    shuffle_test=True,
+                    rcut=rcut,
+                    type_map=type_map,
+                    optional_type_map=not multi_task_mode,
+                    modifier=modifier,
+                    trn_all_set=True,
+                    sys_probs=group.sys_probs if not has_lmdb else None,
+                    auto_prob_style=group.auto_prob or "prob_sys_size",
+                )
+            else:
+                assert lmdb_factory is not None
+                child = lmdb_factory(
+                    source.systems[0], source.batch_size, group.auto_prob
+                )
+            children.append(child)
+        data = (
+            children[0]
+            if len(children) == 1
+            else GroupedDataSystem(children, [None] * len(children), seed=next(seeds))
+        )
+        datasets.append(data)
+    return (
+        datasets[0]
+        if len(datasets) == 1
+        else GroupedDataSystem(
+            datasets, [group.prob for group in groups], seed=next(seeds)
+        )
+    )
+
+
+def get_neighbor_stat_data(jdata: DataConfig, type_map: list[str] | None) -> Any:
+    """Expose every discovered source to backend neighbor-statistic kernels."""
+    sources = []
+    for group in resolve_data_groups(jdata):
+        for source in resolve_data_sources(group):
+            if source.format == "deepmd":
+                sources.append(
+                    DeepmdDataSystem(
+                        list(source.systems),
+                        source.batch_size,
+                        1,
+                        type_map=type_map,
+                        trn_all_set=True,
+                    )
+                )
+            else:
+                from deepmd.dpmodel.utils.lmdb_data import (
+                    make_neighbor_stat_data,
+                )
+
+                sources.append(make_neighbor_stat_data(source.systems[0], type_map))
+    return SimpleNamespace(
+        data_systems=[system for source in sources for system in source.data_systems],
+        system_dirs=[path for source in sources for path in source.system_dirs],
+        mixed_type=any(source.mixed_type for source in sources),
+        get_ntypes=lambda: max(source.get_ntypes() for source in sources),
+        get_batch=lambda: None,
+    )

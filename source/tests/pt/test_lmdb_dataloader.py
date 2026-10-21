@@ -6,6 +6,13 @@ remapping, auto_prob) live in source/tests/common/dpmodel/test_lmdb_data.py.
 Consistency tests (dpmodel vs pt) live in source/tests/consistent/test_lmdb_data.py.
 """
 
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
+
 import lmdb
 import msgpack
 import numpy as np
@@ -30,6 +37,10 @@ from deepmd.dpmodel.utils.lmdb_data import (
 from deepmd.pt.loss.ener import (
     EnergyStdLoss,
 )
+from deepmd.pt.utils.dataloader import (
+    create_dataloader,
+    create_dataset,
+)
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbBatchDataLoader,
     LmdbDataset,
@@ -38,8 +49,17 @@ from deepmd.pt.utils.lmdb_dataset import (
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
+from deepmd.pt_expt.utils.lmdb_dataset import (
+    LmdbDataSystem,
+)
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.data_group import (
+    iter_data_sources,
+)
+from deepmd.utils.data_system import (
+    get_data,
 )
 
 
@@ -1491,7 +1511,13 @@ class TestMultitaskLmdbTraining:
     All assertions are in a single test to avoid creating multiple trainers.
     """
 
-    def test_multitask_lmdb_end_to_end(self, multitask_lmdb_setup, monkeypatch):
+    @pytest.mark.parametrize("grouped", [False, True])
+    def test_multitask_lmdb_end_to_end(
+        self,
+        multitask_lmdb_setup: tuple[dict[str, Any], Path],
+        monkeypatch: pytest.MonkeyPatch,
+        grouped: bool,
+    ) -> None:
         from copy import (
             deepcopy,
         )
@@ -1510,6 +1536,20 @@ class TestMultitaskLmdbTraining:
         )
 
         config, tmp_path = multitask_lmdb_setup
+        if grouped:
+            branches = config["training"]["data_dict"]
+            branches["model_1"]["training_data"] = [
+                {
+                    **branches["model_1"]["training_data"],
+                    "prob": 0.6,
+                    "min_pair_dist": 0.1,
+                },
+                {**branches["model_2"]["training_data"], "prob": 0.4},
+            ]
+            branches["model_1"]["validation_data"]["systems"] = [
+                branches["model_1"]["validation_data"]["systems"],
+                branches["model_2"]["validation_data"]["systems"],
+            ]
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "2")
         config = update_deepmd_input(deepcopy(config), warning=True)
@@ -1536,21 +1576,112 @@ class TestMultitaskLmdbTraining:
             )
             assert "coord" in input_dict
             assert "sid" in log_dict
-        assert (
-            trainer.training_dataloader["model_1"]._batch_iterator._pool
-            is trainer.training_dataloader["model_2"]._batch_iterator._pool
-        )
+        native_loaders = [
+            source.loader
+            for loader in trainer.training_dataloader.values()
+            for source in iter_data_sources(loader)
+        ]
+        for loader in native_loaders:
+            next(iter(loader))
+        assert len({id(loader._batch_iterator._pool) for loader in native_loaders}) == 1
 
         # -- training run assertions --
         trainer.run()
         assert len(list(tmp_path.glob("model.ckpt*.pt"))) > 0
-        assert trainer.training_dataloader["model_1"]._batch_iterator.closed
-        assert trainer.training_dataloader["model_2"]._batch_iterator.closed
-        assert trainer.training_dataloader["model_1"].dataset._reader.closed
-        assert trainer.training_dataloader["model_2"].dataset._reader.closed
+        assert all(loader._batch_iterator.closed for loader in native_loaders)
+        assert all(loader.dataset._reader.closed for loader in native_loaders)
 
         # Explicit cleanup to free memory on CI
         import gc
 
         del trainer
         gc.collect()
+
+
+def test_multiple_lmdb_loader_uses_native_batch_sizes(
+    lmdb_dir: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    parent = tmp_path / "nested"
+    parent.mkdir()
+    second = parent / "second.lmdb"
+    _create_test_lmdb(str(second), nframes=4, natoms=8)
+    config = {"systems": [lmdb_dir, str(parent)], "batch_size": 2}
+    data = create_dataset(config, ["O", "H"])
+    loader = create_dataloader(data, config, seed=0)
+    try:
+        np.testing.assert_allclose(loader.probabilities, [5 / 7, 2 / 7])
+        assert loader.epoch_length == 7
+        batches = [batch for _ in range(3) for batch in loader]
+        assert {int(batch["sid"]) for batch in batches} == {0, 1}
+        assert {batch["coord"].shape[1] for batch in batches} == {6, 8}
+    finally:
+        loader.close()
+    assert all(source._reader.closed for source in iter_data_sources(data))
+
+
+def test_filter_can_remove_the_numpy_subset_of_a_mixed_group(
+    lmdb_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    numpy = str(Path(__file__).parent / "water" / "data" / "single")
+    config = {"systems": [numpy, lmdb_dir], "batch_size": "filter:8"}
+    pt_data = create_dataset(config, ["O", "H"])
+    numpy_data = get_data(
+        config,
+        0,
+        ["O", "H"],
+        None,
+        lmdb_factory=lambda path, batch_size, auto_prob: LmdbDataSystem(
+            path, ["O", "H"], batch_size, auto_prob, num_workers=0
+        ),
+    )
+    try:
+        assert isinstance(pt_data, LmdbDataset)
+        assert numpy_data.get_batch()["coord"].shape == (1, 6, 3)
+    finally:
+        pt_data.close()
+        numpy_data.close()
+
+
+def test_group_probability_preserves_single_lmdb_auto_prob(
+    auto_prob_lmdb: str, lmdb_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    config = [
+        {
+            "systems": auto_prob_lmdb,
+            "batch_size": 2,
+            "auto_prob": "prob_sys_size;0:1:0.5;1:3:0.5",
+            "prob": 0.6,
+        },
+        {"systems": lmdb_dir, "batch_size": 2, "prob": 0.4},
+    ]
+    data = create_dataset(config, ["O", "H"])
+    loader = create_dataloader(data, config, seed=0)
+    try:
+        assert data.children[0]._block_targets
+        np.testing.assert_allclose(loader.probabilities, [0.6, 0.4])
+        assert len(data.dataloaders) == 2
+    finally:
+        loader.close()
+
+
+def test_distributed_lmdb_groups_separate_mass_from_local_padding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    paths = [str(tmp_path / f"source_{index}.lmdb") for index in range(2)]
+    for path, frames in zip(paths, (1, 3), strict=True):
+        _create_test_lmdb(path, nframes=frames)
+    config = {"systems": paths, "batch_size": 1}
+    for rank in (0, 1):
+        data = create_dataset(config, ["O", "H"])
+        loader = create_dataloader(data, config, seed=0, rank=rank, world_size=2)
+        try:
+            np.testing.assert_allclose(loader.probabilities, [0.25, 0.75])
+            np.testing.assert_array_equal(loader.batch_counts, [1, 2])
+            np.testing.assert_array_equal(loader.sampling_sizes, [1, 3])
+            assert loader.epoch_length == 4
+        finally:
+            loader.close()

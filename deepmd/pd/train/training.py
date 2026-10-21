@@ -24,15 +24,11 @@ from paddle.distributed.fleet.utils import hybrid_parallel_util as hpu
 from paddle.framework import (
     core,
 )
-from paddle.io import (
-    DataLoader,
-)
 
 from deepmd.common import (
     symlink_prefix_files,
 )
 from deepmd.dpmodel.utils import (
-    compute_total_numb_batch,
     resolve_model_prob,
     resolve_model_prob_from_epochs,
 )
@@ -59,7 +55,7 @@ from deepmd.pd.utils import (
 )
 from deepmd.pd.utils.dataloader import (
     BufferedIterator,
-    get_sampler_from_params,
+    create_dataloader,
 )
 from deepmd.pd.utils.env import (
     CINN,
@@ -67,7 +63,6 @@ from deepmd.pd.utils.env import (
     DEFAULT_PRECISION,
     DEVICE,
     JIT,
-    NUM_WORKERS,
     SAMPLER_RECORD,
     enable_prim,
 )
@@ -185,23 +180,10 @@ class Trainer:
             def get_dataloader_and_buffer(
                 _data: Any, _params: dict[str, Any]
             ) -> tuple[Any, Any]:
-                _sampler = get_sampler_from_params(_data, _params)
-                if _sampler is None:
-                    log.warning(
-                        "Sampler not specified!"
-                    )  # None sampler will lead to a premature stop iteration. Replacement should be True in attribute of the sampler to produce expected number of items in one iteration.
-                _dataloader = DataLoader(
-                    _data,
-                    batch_sampler=paddle.io.BatchSampler(
-                        sampler=_sampler,
-                        drop_last=False,
-                    ),
-                    num_workers=NUM_WORKERS
-                    if dist.is_available()
-                    else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
-                    collate_fn=lambda batch: batch[0],  # prevent extra conversion
+                _dataloader = create_dataloader(
+                    _data, _params, seed=_training_params.get("seed")
                 )
-                _data_buffered = BufferedIterator(iter(_dataloader))
+                _data_buffered = BufferedIterator(_dataloader)
                 return _dataloader, _data_buffered
 
             training_dataloader, training_data_buffered = get_dataloader_and_buffer(
@@ -336,17 +318,9 @@ class Trainer:
                 self.validation_data,
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
-            training_data.print_summary(
-                "training",
-                to_numpy_array(self.training_dataloader.batch_sampler.sampler.weights),
-            )
+            self.training_dataloader.print_summary("training")
             if validation_data is not None:
-                validation_data.print_summary(
-                    "validation",
-                    to_numpy_array(
-                        self.validation_dataloader.batch_sampler.sampler.weights
-                    ),
-                )
+                self.validation_dataloader.print_summary("validation")
         else:
             (
                 self.training_dataloader,
@@ -385,25 +359,15 @@ class Trainer:
                     training_params["data_dict"][model_key],
                 )
 
-                training_data[model_key].print_summary(
-                    f"training in {model_key}",
-                    to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    ),
+                self.training_dataloader[model_key].print_summary(
+                    f"training in {model_key}"
                 )
                 if (
                     validation_data is not None
                     and validation_data[model_key] is not None
                 ):
-                    validation_data[model_key].print_summary(
-                        f"validation in {model_key}",
-                        to_numpy_array(
-                            self.validation_dataloader[
-                                model_key
-                            ].batch_sampler.sampler.weights
-                        ),
+                    self.validation_dataloader[model_key].print_summary(
+                        f"validation in {model_key}"
                     )
 
         per_task_total = []
@@ -415,13 +379,7 @@ class Trainer:
                     )
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader.batch_sampler.sampler.weights
-                )
-                total_numb_batch = compute_total_numb_batch(
-                    training_data.index,
-                    sampler_weights,
-                )
+                total_numb_batch = self.training_dataloader.epoch_length
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -441,16 +399,8 @@ class Trainer:
                         "are mutually exclusive."
                     )
                 for model_key in self.model_keys:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader[
-                            model_key
-                        ].batch_sampler.sampler.weights
-                    )
                     per_task_total.append(
-                        compute_total_numb_batch(
-                            training_data[model_key].index,
-                            sampler_weights,
-                        )
+                        self.training_dataloader[model_key].epoch_length
                     )
                 (
                     self.model_prob,
@@ -1184,9 +1134,7 @@ class Trainer:
                     batch_data = next(iter(self.training_data))
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
-                    self.training_data = BufferedIterator(
-                        iter(self.training_dataloader)
-                    )
+                    self.training_data = BufferedIterator(self.training_dataloader)
                     batch_data = next(iter(self.training_data))
             else:
                 if self.validation_data is None:
@@ -1194,9 +1142,7 @@ class Trainer:
                 try:
                     batch_data = next(iter(self.validation_data))
                 except StopIteration:
-                    self.validation_data = BufferedIterator(
-                        iter(self.validation_dataloader)
-                    )
+                    self.validation_data = BufferedIterator(self.validation_dataloader)
                     batch_data = next(iter(self.validation_data))
         else:
             if is_train:
@@ -1205,7 +1151,7 @@ class Trainer:
                 except StopIteration:
                     # Refresh the status of the dataloader to start from a new epoch
                     self.training_data[task_key] = BufferedIterator(
-                        iter(self.training_dataloader[task_key])
+                        self.training_dataloader[task_key]
                     )
                     batch_data = next(iter(self.training_data[task_key]))
             else:
@@ -1215,7 +1161,7 @@ class Trainer:
                     batch_data = next(iter(self.validation_data[task_key]))
                 except StopIteration:
                     self.validation_data[task_key] = BufferedIterator(
-                        iter(self.validation_dataloader[task_key])
+                        self.validation_dataloader[task_key]
                     )
                     batch_data = next(iter(self.validation_data[task_key]))
 

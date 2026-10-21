@@ -8,6 +8,9 @@ from pathlib import (
 import h5py
 import numpy as np
 
+from deepmd.utils.data_system import (
+    process_systems,
+)
 from deepmd.utils.path import (
     DPH5Path,
     DPPath,
@@ -74,3 +77,56 @@ class TestH5PathReadOnly(unittest.TestCase):
             (self.path / "value").save_numpy(np.ones(1))
         with self.assertRaisesRegex(ValueError, "read-only"):
             (self.path / "group").mkdir()
+
+
+class TestSystemDiscovery(unittest.TestCase):
+    def test_lmdb_paths_and_parent_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            direct = root / "direct.lmdb"
+            direct.mkdir()
+            parent = root / "collection"
+            nested = parent / "nested" / "frames"
+            nested.mkdir(parents=True)
+            (nested / "data.mdb").touch()
+            npy = parent / "npy"
+            npy.mkdir()
+            (npy / "type.raw").touch()
+
+            found = process_systems([str(direct), str(parent)])
+
+            self.assertEqual(found[0], str(direct))
+            self.assertCountEqual(found, [str(direct), str(nested), str(npy)])
+
+    def test_lmdb_pattern_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "train.lmdb"
+            first.mkdir()
+            second = root / "test.lmdb"
+            second.mkdir()
+
+            self.assertEqual(
+                process_systems(str(root), patterns=["train*.lmdb"]),
+                [str(first)],
+            )
+
+    def test_lmdb_is_terminal_even_when_patterns_exclude_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            internal = root / "frames.lmdb" / "nested"
+            internal.mkdir(parents=True)
+            (internal / "type.raw").touch()
+            self.assertEqual(process_systems(str(root), patterns=["nested"]), [])
+
+    def test_hdf5_paths_expand_inside_containers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            container = Path(directory) / "systems.h5"
+            with h5py.File(container, "w") as handle:
+                handle.create_dataset("first/type.raw", data=[0])
+                handle.create_dataset("nested/second/type.raw", data=[0, 1])
+            expected = [f"{container}#/first", f"{container}#/nested/second"]
+            self.assertEqual(process_systems(str(container)), expected)
+            self.assertEqual(
+                process_systems([expected[1], expected[0]]), expected[::-1]
+            )

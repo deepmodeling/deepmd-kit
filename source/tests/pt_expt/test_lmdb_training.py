@@ -35,6 +35,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     collate_lmdb_frames,
 )
 from deepmd.pt_expt.entrypoints.main import (
+    _build_data_system,
     get_trainer,
 )
 from deepmd.pt_expt.loss import (
@@ -42,6 +43,9 @@ from deepmd.pt_expt.loss import (
 )
 from deepmd.pt_expt.train.training import (
     Trainer,
+)
+from deepmd.pt_expt.train.validation import (
+    FullValidator,
 )
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
@@ -57,6 +61,12 @@ from deepmd.utils.compat import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.data_group import (
+    GroupedDataSystem,
+)
+from deepmd.utils.data_system import (
+    get_neighbor_stat_data,
 )
 
 from .compile_utils import (
@@ -452,7 +462,7 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
                 trainer.multi_task = False
                 trainer.world_size = 1
                 trainer.training_data_by_task = {"Default": data}
-                trainer.min_pair_dist_by_task = {"Default": 0.5}
+                trainer.pair_filter_enabled_by_task = {"Default": True}
                 try:
                     # This shuffle packs five batches and leaves frame 3 last;
                     # the following shuffle packs four batches.
@@ -700,6 +710,97 @@ class TestLmdbDataSystemGetBatch(unittest.TestCase):
             )
 
 
+class TestLmdbDatasetGroups(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = directory.name
+        self.first = os.path.join(self.directory, "first.lmdb")
+        self.parent = os.path.join(self.directory, "nested")
+        os.mkdir(self.parent)
+        self.second = os.path.join(self.parent, "second.lmdb")
+        _create_test_lmdb(self.first, nframes=2, natoms=6)
+        _create_test_lmdb(self.second, nframes=8, natoms=8)
+        workers = patch.dict(os.environ, {"DP_LMDB_NUM_WORKERS": "0"})
+        workers.start()
+        self.addCleanup(workers.stop)
+
+    def test_multiple_paths_and_recursive_parent_use_flat_sampling(self) -> None:
+        for systems in ([self.first, self.parent], self.directory):
+            with self.subTest(systems=systems):
+                data = _build_data_system(
+                    {"systems": systems, "batch_size": 1, "auto_prob": "prob_sys_size"},
+                    ["O", "H"],
+                    seed=0,
+                )
+                self.addCleanup(data.close)
+                self.assertIsInstance(data, GroupedDataSystem)
+                np.testing.assert_allclose(data.sys_probs, [0.2, 0.8])
+                shapes = {data.get_batch()["coord"].shape[1] for _ in range(20)}
+                self.assertEqual(shapes, {6, 8})
+
+    def test_group_probability_and_statistics_keep_sources_separate(self) -> None:
+        data = _build_data_system(
+            [
+                {"systems": self.first, "batch_size": 1, "prob": 0.6},
+                {"systems": self.parent, "batch_size": 2, "prob": 0.4},
+            ],
+            ["O", "H"],
+            seed=0,
+        )
+        self.addCleanup(data.close)
+        np.testing.assert_allclose(data.sys_probs, [0.6, 0.4])
+        samples = make_stat_input(data, 1)
+        self.assertEqual(len(samples), 2)
+        self.assertEqual([sample["coord"].shape[1] for sample in samples], [6, 8])
+        self.assertEqual([sample["coord"].shape[0] for sample in samples], [1, 2])
+
+    def test_full_validation_caches_each_lmdb_separately(self) -> None:
+        data = _build_data_system(
+            {"systems": [self.first, self.second], "batch_size": 1}, ["O", "H"]
+        )
+        self.addCleanup(data.close)
+        validator = FullValidator.__new__(FullValidator)
+        validator.validation_data = data
+        validator._lmdb_snapshots = {}
+        first = list(validator._iter_validation_data_systems())
+        snapshots = dict(validator._lmdb_snapshots)
+        second = list(validator._iter_validation_data_systems())
+        self.assertEqual(len(first), 2)
+        self.assertEqual(len(snapshots), 2)
+        self.assertEqual(validator._lmdb_snapshots, snapshots)
+        self.assertEqual(
+            [system.get_test()["coord"].shape[0] for system in second], [2, 8]
+        )
+
+    def test_distributed_epoch_accounts_for_each_leaf_padding(self) -> None:
+        paths = [
+            os.path.join(self.directory, f"tiny_{index}.lmdb") for index in range(2)
+        ]
+        for path in paths:
+            _create_test_lmdb(path, nframes=1, natoms=6)
+        for rank in (0, 1):
+            data = _build_data_system(
+                {"systems": paths, "batch_size": 1},
+                ["O", "H"],
+                seed=0,
+                rank=rank,
+                world_size=2,
+            )
+            self.addCleanup(data.close)
+            trainer = Trainer.__new__(Trainer)
+            trainer.training_data_by_task = {"Default": data}
+            trainer.world_size = 2
+            self.assertEqual(trainer._epoch_length("Default"), 2)
+
+    def test_neighbor_statistics_visit_both_lmdbs(self) -> None:
+        data = get_neighbor_stat_data(
+            {"systems": [self.first, self.parent], "batch_size": 1}, ["O", "H"]
+        )
+        self.assertEqual(data.get_ntypes(), 2)
+        self.assertEqual([system.get_natoms() for system in data.data_systems], [6, 8])
+
+
 class TestLmdbTrainingLoop(unittest.TestCase):
     """End-to-end: get_trainer routes an LMDB path and runs training steps."""
 
@@ -782,6 +883,31 @@ class TestLmdbTrainingLoop(unittest.TestCase):
         try:
             trainer = get_trainer(config)
             self.assertIsInstance(trainer.training_data, LmdbDataSystem)
+            trainer.run()
+        finally:
+            os.chdir(cwd)
+
+    def test_get_trainer_runs_weighted_lmdb_groups(self) -> None:
+        config = self._make_lmdb_config(numb_steps=2)
+        config["training"]["training_data"] = [
+            {
+                "systems": self.lmdb_path,
+                "batch_size": 1,
+                "prob": 0.6,
+                "min_pair_dist": 0.1,
+            },
+            {"systems": self.val_lmdb_path, "batch_size": 2, "prob": 0.4},
+        ]
+        config["training"]["validation_data"]["systems"] = [
+            self.lmdb_path,
+            self.val_lmdb_path,
+        ]
+        config = normalize(update_deepmd_input(config, warning=False))
+        cwd = os.getcwd()
+        os.chdir(self.tmpdir)
+        try:
+            trainer = get_trainer(config)
+            np.testing.assert_allclose(trainer.training_data.sys_probs, [0.6, 0.4])
             trainer.run()
         finally:
             os.chdir(cwd)
