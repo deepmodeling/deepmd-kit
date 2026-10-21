@@ -2359,7 +2359,9 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         (now zero) ambient level and silently falling back.
         """
         import os
-        from types import SimpleNamespace
+        from types import (
+            SimpleNamespace,
+        )
 
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
