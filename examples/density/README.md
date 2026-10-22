@@ -32,7 +32,7 @@ The training/validation data follows the standard **`deepmd/npy`** format, with 
 | `coord.npy`       | `[nframes, natoms * 3]` | Atomic coordinates                 |
 | `box.npy`         | `[nframes, 9]`          | Simulation cell vectors            |
 | `type.raw`        | `[natoms]`              | Atom type indices                  |
-| `type_map.raw`    | `[ntypes]`              | Real element types in this dataset  |
+| `type_map.raw`    | `[ntypes]`              | Real element types in this dataset |
 | **`grid.npy`**    | `[nframes, ngrid, 3]`   | **Grid point coordinates**         |
 | **`density.npy`** | `[nframes, ngrid, 1]`   | **Charge density labels on grids** |
 

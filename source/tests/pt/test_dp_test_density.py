@@ -315,11 +315,11 @@ class TestDPTestDensity(unittest.TestCase):
         # which is what model freezing relies on. The model must go through
         # BaseModel.deserialize, which dispatches on the serialized fitting
         # type ("density") and is what dp convert-backend uses.
-        from deepmd.pt.model.model.model import (
-            BaseModel,
-        )
         from deepmd.pt.loss.charge import (
             GridDensityLoss,
+        )
+        from deepmd.pt.model.model.model import (
+            BaseModel,
         )
 
         fitting = self.torch_model.atomic_model.fitting_net
