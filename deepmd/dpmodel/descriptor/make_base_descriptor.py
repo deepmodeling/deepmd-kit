@@ -287,6 +287,18 @@ def make_base_descriptor(
             """
             return None
 
+        def supports_graph_vacuum(self) -> bool:
+            """Whether isolated-atom references can use the graph interface.
+
+            Opting in requires ``call_graph`` to produce the same isolated
+            reference as the dense compatibility path, when one exists;
+            graph-only descriptors may also opt in. This is distinct from
+            ``uses_graph_lower``: some legacy descriptors retain different
+            padding semantics on their dense and graph paths, so switching
+            their reference would change the model's energy zero.
+            """
+            return False
+
         @abstractmethod
         def need_sorted_nlist_for_lower(self) -> bool:
             """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""

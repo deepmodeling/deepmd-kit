@@ -501,7 +501,7 @@ def build_synthetic_graph_inputs(
     Single source of the trace-time graph inputs, shared by ``.pt2`` export
     (:func:`_trace_and_export`) and compiled training
     (:func:`deepmd.pt_expt.train.training._trace_and_compile_graph`). Builds a
-    small random system and runs the carry-all
+    small deterministic system and runs the carry-all
     :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
     padded ``GraphLayout(edge_capacity=e_max)`` trace sample. Export uses the
     destination-major graph with CSR metadata; compiled training selects the
@@ -519,8 +519,10 @@ def build_synthetic_graph_inputs(
     (before ``fparam``/``aparam``); there is no ``charge_spin`` slot at all
     (native spin rejects ``add_chg_spin_ebd`` at build).
 
-    The system (``rng(42)``, ``box = rcut*3``, centered coords, ``atype[:, i] =
-    i % ntypes``) is identical for both callers.
+    The system is identical for both callers and independent of dense neighbor
+    capacities. For at least four atoms it includes an isolated center and a
+    connected three-atom cluster. The highest atom type occurs in the cluster
+    even when the type map is larger than the sample.
 
     Parameters
     ----------
@@ -587,9 +589,21 @@ def build_synthetic_graph_inputs(
     box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
     rng = np.random.default_rng(42)
     coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
+    if nloc >= 4:
+        # Exercise multi-edge aggregation and empty neighborhoods in the same
+        # trace. Every other atom lies in [.75*rcut, 2.25*rcut]^3, so the
+        # origin is isolated even under periodic minimum-image distances.
+        coord_np[:, [0, 2, 3]] = rcut * np.array(
+            [[1.5, 1.5, 1.5], [1.6, 1.5, 1.5], [1.5, 1.65, 1.5]]
+        )
+        # Keep the isolated center inside n_local (the final atom is a
+        # synthetic ghost), including the minimal four-atom fixture.
+        coord_np[:, 1] = 0.0
     atype_np = np.zeros((nframes, nloc), dtype=np.int64)
     for i in range(nloc):
         atype_np[:, i] = i % ntypes
+    # Include the upper type-index boundary without growing the node axis.
+    atype_np[:, 0] = ntypes - 1
 
     coord_t = torch.tensor(coord_np, dtype=dtype, device=device)
     atype_t = torch.tensor(atype_np, dtype=torch.int64, device=device)
@@ -1760,6 +1774,70 @@ def _trace_and_export(
         )
 
 
+@contextlib.contextmanager
+def _cpu_reference_descriptors(model: torch.nn.Module) -> Iterator[None]:
+    """Temporarily use CPU reference descriptors for the eager vacuum fold.
+
+    Deployment descriptors bind accelerator operators at construction, before
+    they move to CPU for fake tracing. Changing their device or the kernel
+    environment cannot unbind those operators. Rebuild only descriptors whose
+    fittings still need a reference, leaving the folded bias and non-persistent
+    vacuum table on the original fitting. Restore the deployment descriptors
+    before tracing so their optimized bindings remain intact.
+    """
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
+    from deepmd.pt_expt.utils import (
+        env,
+    )
+
+    atomic_models = [
+        module
+        for module in model.modules()
+        if isinstance(module, DPAtomicModel)
+        and module.fitting_net.needs_vacuum_descriptor()
+    ]
+    if not atomic_models:
+        yield
+        return
+
+    levels = (
+        "DP_CUDA_INFER",
+        "DP_TRITON_INFER",
+        "DP_CUTILE_INFER",
+        "DP_CUTE_INFER",
+        "DP_CUDA_TRAIN",
+        "DP_TRITON_TRAIN",
+        "DP_AMP_INFER",
+    )
+    saved_levels = {name: os.environ.get(name) for name in levels}
+    saved_device = env.DEVICE
+    descriptors = []
+    try:
+        env.DEVICE = torch.device("cpu")
+        os.environ.update(dict.fromkeys(levels, "0"))
+        for atomic_model in atomic_models:
+            descriptor = atomic_model.descriptor
+            reference = type(descriptor).deserialize(descriptor.serialize()).eval()
+            # Virtual-spin backbones can disable this route at runtime; that
+            # choice is deliberately absent from the portable descriptor.
+            if not descriptor.uses_graph_lower() and reference.uses_graph_lower():
+                reference.disable_graph_lower()
+            descriptors.append((atomic_model, descriptor))
+            atomic_model.descriptor = reference
+        yield
+    finally:
+        for atomic_model, descriptor in descriptors:
+            atomic_model.descriptor = descriptor
+        env.DEVICE = saved_device
+        for name, value in saved_levels.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
 def _trace_and_export_impl(
     data: dict,
     model_json_override: dict | None = None,
@@ -1843,12 +1921,15 @@ def _trace_and_export_impl(
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
     model.eval()
-    # The vacuum reference is resolved on the export object, folded into the
-    # fitting bias or stored as a per-type table, so the exported graph
-    # carries no reference atoms; the move to the tracing device follows, so
-    # the table lands there with the rest of the model.
-    model.fold_vacuum_reference()
+    # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
+    # evaluates an isolated atom of every type through the descriptor; on CUDA
+    # that path can allocate several GiB even when export already holds most of
+    # the GPU. Move first so the fold runs where tracing will, and so the
+    # folded bias or vacuum table stays on that device with the rest of the
+    # model.
     model.to("cpu")
+    with torch.no_grad(), _cpu_reference_descriptors(model):
+        model.fold_vacuum_reference()
 
     # Device-dependent Python branches resolve on the CPU tracing inputs, so
     # pin them to the AOTI target. Non-CPU targets bake the block-diagonal SO(2)
