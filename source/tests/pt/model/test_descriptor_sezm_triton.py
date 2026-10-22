@@ -2217,6 +2217,30 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         torch.cuda.synchronize()
         return len(calls), result
 
+    def _clear_and_restore_levels(self):
+        """Clear both Triton level variables; restore the prior values on exit.
+
+        The override is registered as a cleanup, so the configured
+        environment survives even when an assertion fails mid-test.
+        """
+        import os
+
+        saved = {
+            name: os.environ.get(name)
+            for name in ("DP_TRITON_INFER", "DP_TRITON_TRAIN")
+        }
+
+        def restore():
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        for name in saved:
+            os.environ.pop(name, None)
+        self.addCleanup(restore)
+
     def test_autograd_branch_follows_forward_level(self):
         """The autograd backward dispatches on the level the forward was given.
 
@@ -2224,12 +2248,11 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         construction; the ambient environment is cleared to zero throughout
         so the check proves the argument (not the environment) governs.
         """
-        import os
-
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
-        for name in ("DP_TRITON_INFER", "DP_TRITON_TRAIN"):
-            os.environ.pop(name, None)
+        # Scope the override: the cleared levels are restored even when an
+        # assertion fails, so later tests keep the configured environment.
+        self._clear_and_restore_levels()
         lmax, channels, n_focus, rank = 3, 32, 2, 1
         grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
         src_order = torch.argsort(src)
@@ -2358,13 +2381,15 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
         backward must retain the same selection instead of rereading the
         (now zero) ambient level and silently falling back.
         """
-        import os
         from types import (
             SimpleNamespace,
         )
 
         from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
 
+        # Scope the ambient-env restore once: the cleared levels come back
+        # even when a subTest assertion fails.
+        self._clear_and_restore_levels()
         lmax, channels, n_focus, rank = 3, 32, 2, 0
         grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
         src_order = torch.argsort(src)
@@ -2389,8 +2414,6 @@ class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
                     triton_train_level=0,
                 )
                 wrapper = vp._TritonRotateMix(conv)
-                for name in ("DP_TRITON_INFER", "DP_TRITON_TRAIN"):
-                    os.environ.pop(name, None)
                 xg = x.clone().requires_grad_(True)
                 out, _rad = wrapper(xg, edge_cache, radial_feat)
                 launches, _grads = self._record_fused_backward(
