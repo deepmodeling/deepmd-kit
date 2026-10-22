@@ -337,8 +337,22 @@ def _tune_triton_configs(model: torch.nn.Module, target_device: torch.device) ->
     The whole flow lives in
     :func:`deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs.autotune_sezm`
     and is shared with the PT-expt export path, which reaches it through
-    the freeze-time autotuner registry.
+    the freeze-time autotuner registry.  The early returns below must stay
+    ahead of the sweep-module import: that module imports Triton
+    unconditionally, and this helper runs on every freeze -- a CPU-only or
+    otherwise Triton-less installation must skip tuning (as it always did)
+    instead of failing the import.
     """
+    if triton_infer_level() < 2:
+        return
+    if target_device.type != "cuda" or not torch.cuda.is_available():
+        return
+    from deepmd.pt_expt.kernels.triton.sezm.so2_value_path import (
+        SO2_VALUE_PATH_TRITON_AVAILABLE,
+    )
+
+    if not SO2_VALUE_PATH_TRITON_AVAILABLE:
+        return
     from deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs import (
         autotune_sezm,
     )

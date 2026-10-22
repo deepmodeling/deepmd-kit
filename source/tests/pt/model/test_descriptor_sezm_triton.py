@@ -22,6 +22,7 @@ reference:
    lowering the resulting graph through AOTAutograd's forward-only compiler.
 """
 
+import contextlib
 import math
 import os
 import typing
@@ -2454,6 +2455,7 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         self.assertTrue(torch.isfinite(out[0]).all())
 
 
+@unittest.skipUnless(TRITON_AVAILABLE, "Triton is required for the sweep module")
 class TestSeZMStackBwdSweepPolicy(unittest.TestCase):
     """CPU checks of the ``stack_bwd_fused`` sweep's measurement policy.
 
@@ -2560,6 +2562,7 @@ class TestSeZMStackBwdSweepPolicy(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(TRITON_AVAILABLE, "Triton is required for the sweep module")
 class TestSeZMFreezeAutotuneRouting(unittest.TestCase):
     """Both freeze paths must reach the shared SeZM tuning flow.
 
@@ -2592,9 +2595,77 @@ class TestSeZMFreezeAutotuneRouting(unittest.TestCase):
             calls, patched = self._record_autotune()
             model = torch.nn.Module()
             device = torch.device("cuda", 0)
-            with patched:
+            with patched, mock.patch("torch.cuda.is_available", return_value=True):
                 freeze_pt2._tune_triton_configs(model, device)
             self.assertEqual(calls, [(model, 2, device)])
+        finally:
+            if saved_level is None:
+                os.environ.pop("DP_TRITON_INFER", None)
+            else:
+                os.environ["DP_TRITON_INFER"] = saved_level
+
+    def test_pt_freeze_seam_skips_before_sweep_import(self):
+        """Untuned/Triton-less freezes must skip, not import the sweep module.
+
+        The sweep module imports Triton unconditionally, so the freeze seam
+        must return at its level/device/availability guards before that
+        import; blocking the module in ``sys.modules`` makes any premature
+        import fail loudly.
+        """
+        import sys
+
+        import deepmd.pt.entrypoints.freeze_pt2 as freeze_pt2
+        from deepmd.pt_expt.kernels.triton.sezm import (
+            so2_value_path,
+        )
+
+        blocked = {
+            "deepmd.pt_expt.kernels.triton.sezm.sweep_tile_configs": None,
+        }
+        saved_level = os.environ.get("DP_TRITON_INFER")
+        try:
+            cases = (
+                ("default-level cpu", {}, torch.device("cpu"), None),
+                ("level-2 cpu", {"DP_TRITON_INFER": "2"}, torch.device("cpu"), None),
+                (
+                    "level-2 cuda-unavailable",
+                    {"DP_TRITON_INFER": "2"},
+                    torch.device("cuda", 0),
+                    False,
+                ),
+                (
+                    "level-2 triton-unavailable",
+                    {"DP_TRITON_INFER": "2"},
+                    torch.device("cuda", 0),
+                    True,
+                ),
+            )
+            for name, env, device, cuda_available in cases:
+                with self.subTest(case=name):
+                    if env:
+                        os.environ["DP_TRITON_INFER"] = env["DP_TRITON_INFER"]
+                    else:
+                        os.environ.pop("DP_TRITON_INFER", None)
+                    patches = [mock.patch.dict(sys.modules, blocked)]
+                    if cuda_available is not None:
+                        patches.append(
+                            mock.patch(
+                                "torch.cuda.is_available",
+                                return_value=cuda_available,
+                            )
+                        )
+                    if name == "level-2 triton-unavailable":
+                        patches.append(
+                            mock.patch.object(
+                                so2_value_path,
+                                "SO2_VALUE_PATH_TRITON_AVAILABLE",
+                                False,
+                            )
+                        )
+                    with contextlib.ExitStack() as stack:
+                        for patch_ in patches:
+                            stack.enter_context(patch_)
+                        freeze_pt2._tune_triton_configs(torch.nn.Module(), device)
         finally:
             if saved_level is None:
                 os.environ.pop("DP_TRITON_INFER", None)

@@ -2174,13 +2174,15 @@ def sweep_stack_bwd_fused(
     # selects it only at Triton level >= 2 (the table-tuned level); the
     # sweep drives that same dispatch.  At a lower ambient level every
     # "candidate" timing would silently run the relay, so refuse to measure
-    # a comparison that never engaged the candidates.
+    # a comparison that never engaged the candidates.  The training level
+    # tops out at 1, so in practice only DP_TRITON_INFER>=2 satisfies the
+    # dispatch predicate the sweep mirrors.
     if max(triton_infer_level(), triton_train_level()) < 2:
         raise RuntimeError(
-            "sweep_stack_bwd_fused requires DP_TRITON_INFER>=2 (or "
-            "DP_TRITON_TRAIN>=2) in the environment: the production dispatch "
-            "engages the fused candidate only at that level, so a sweep at a "
-            "lower level would time the relay against itself"
+            "sweep_stack_bwd_fused requires DP_TRITON_INFER>=2 in the "
+            "environment: the production dispatch engages the fused "
+            "candidate only at that level, so a sweep at a lower level "
+            "would time the relay against itself"
         )
 
     n_layers = 4
@@ -2625,9 +2627,6 @@ def autotune_sezm(
 
     if not SO2_VALUE_PATH_TRITON_AVAILABLE:
         return {}
-    from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-        SO2Convolution,
-    )
 
     # The built-in tables and the sweep both resolve against the current
     # device; pin it to the freeze target so a freeze aimed at a secondary
@@ -2651,9 +2650,14 @@ def autotune_sezm(
     # Rebind unconditionally: the fp32-versus-fp16x3 stack selection was
     # made at construction time, possibly against a different current
     # device's tables, and must reflect the target device and any fresh
-    # registrations.
+    # registrations.  The interface probe (not an isinstance against a
+    # backend-specific SO2Convolution class) keeps the rebind effective
+    # for both the PT and the PT-expt descriptor modules.
     for module in model.modules():
-        if isinstance(module, SO2Convolution) and module.triton_infer_level >= 2:
+        if (
+            _has_so2_value_path_interface(module)
+            and getattr(module, "triton_infer_level", 0) >= 2
+        ):
             module._triton_value_path = make_triton_value_path(module)
     return registered
 
