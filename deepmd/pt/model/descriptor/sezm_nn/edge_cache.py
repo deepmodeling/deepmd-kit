@@ -665,7 +665,12 @@ def _build_edge_wigner(
     wigner_calc: WignerCalculatorFn,
     build_full: bool = True,
     packed_wigner: bool = False,
-) -> tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]:
+) -> tuple[
+    torch.Tensor | None,
+    torch.Tensor | None,
+    torch.Tensor,
+    torch.Tensor | None,
+]:
     """
     Build packed Wigner-D blocks from edge vectors.
 
@@ -690,16 +695,22 @@ def _build_edge_wigner(
     packed_wigner
         Whether every selected rotation consumer addresses the banded
         layout. The banded storage is only chosen when this holds; any
-        dense-layout consumer (the cuTile value path, the fused CUDA
-        convolution, or the plain SO2 reference path) keeps the dense
-        surfaces even with ``DP_PACKED_D_INFER`` set.
+        dense-layout consumer keeps the dense surfaces even with
+        ``DP_PACKED_D_INFER`` set.  See
+        :func:`deepmd.pt.model.descriptor.sezm.block_supports_packed_wigner`
+        for the full exclusion set (the cuTile value path, the fused CUDA
+        convolution, the CUDA training value path, the plain SO2 reference
+        path, and the aggregation routes that rotate messages back through
+        ``Dt_full``; training is dense by construction).
 
     Returns
     -------
-    tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor]
+    tuple[torch.Tensor | None, torch.Tensor | None, torch.Tensor, torch.Tensor | None]
         Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``
-        (or ``None`` when ``build_full`` is False) and the quaternion used to
-        build them with shape ``(E, 4)``.
+        (or ``None`` when ``build_full`` is False), the quaternion used to
+        build them with shape ``(E, 4)``, and the banded storage ``D_packed``
+        with shape ``(E, 3 * D - 2)`` when the banded layout was selected
+        (``None`` otherwise, including every training build).
     """
     # === Step 1. Build edge-aligned quaternions ===
     edge_quat = build_edge_quaternion(

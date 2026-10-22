@@ -133,20 +133,25 @@ if TYPE_CHECKING:
 
 def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     """Whether one block's *currently selected* rotation consumers address
-    the band.
+    the band (inference only).
 
     The banded layout serves the Triton value path and the Triton
     rotate-mix path (whose kernels address the band directly) together
     with the Triton flash aggregation and the GIE coupling that read the
     same tensor.  Every dense-layout consumer keeps the dense surfaces:
-    the cuTile value path, the fused CUDA convolution, the CUDA training
-    value path, the plain SO2 reference path, and the aggregation routes
-    that rotate messages back through ``Dt_full`` (no attention heads,
-    a projected-attention layout, or a training flash that did not bind
-    for training).  Levels derive from the per-block values captured at
-    construction -- the same numbers ``active_triton_level`` resolves
-    dispatch with -- and the train/eval mode is read per cache build.
+    the cuTile value path, the fused CUDA convolution, the plain SO2
+    reference path, and the aggregation routes that rotate messages back
+    through ``Dt_full`` (no attention heads or a projected-attention
+    layout).  Training always keeps the dense layout: the registered
+    parameter-gradient consumers (the channel-basis backward of the
+    rotate-mix operator among them) address the dense surface, so a
+    training cache must never carry the band even when the bound kernels
+    could read it.  The level derives from the per-block value captured
+    at construction -- the same number ``active_triton_level`` resolves
+    dispatch with -- and the gate is evaluated per cache build.
     """
+    if training:
+        return False
     if getattr(so2_conv, "_cutile_value_path", None) is not None:
         return False
     if getattr(so2_conv, "_cuda_conv_fn", None) is not None:
@@ -154,23 +159,15 @@ def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     if getattr(so2_conv, "_cuda_value_train", None) is not None:
         return False
     # Inverse-rotation consumer: without a bound flash aggregation the
-    # message is rotated back through the dense inverse matrix.  In
-    # training the aggregation is packed-capable only when the flash
-    # operator was bound for training too.
-    flash = getattr(so2_conv, "_flash_atten_fn", None)
-    if flash is None:
-        return False
-    if training and not getattr(so2_conv, "_flash_atten_trains", False):
+    # message is rotated back through the dense inverse matrix.
+    if getattr(so2_conv, "_flash_atten_fn", None) is None:
         return False
     # Dispatch resolves against the per-block levels captured at
     # construction (``active_triton_level``), not the ambient environment;
     # eligibility must derive from the same captured numbers.
-    level = so2_conv.triton_train_level if training else so2_conv.triton_infer_level
-    if level < 1:
+    if so2_conv.triton_infer_level < 1:
         return False
     # Forward-rotation consumer selected at the captured level.
-    if training:
-        return getattr(so2_conv, "_triton_rotate_mix", None) is not None
     return getattr(so2_conv, "_triton_value_path", None) is not None or (
         getattr(so2_conv, "_triton_value_path", None) is None
         and getattr(so2_conv, "_triton_rotate_mix", None) is not None

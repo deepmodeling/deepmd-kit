@@ -390,9 +390,12 @@ def use_packed_d_infer() -> bool:
     configuration supports it), the edge cache stores only the ``3 * D - 2``
     structural band entries of the block-diagonal Wigner matrices per edge
     instead of the dense ``(E, D, D)`` surfaces; the fused Triton consumers
-    (rotate-mix, flash aggregation) address the band directly, and paths that
-    still need the dense layout unpack it on demand. The stored values are the
-    same floats, so consumer outputs are bit-identical to the dense mode.
+    (rotate-mix, flash aggregation) address the band directly. There is no
+    unpack: the dense surfaces simply never exist in that mode, the Triton
+    launchers reject a banded input on the dense-addressing paths, and
+    reference (non-Triton) execution must not enable the flag. The stored
+    values are the same floats the dense layout keeps at those positions, so
+    consumer outputs are bit-identical to the dense mode.
 
     Returns
     -------

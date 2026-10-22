@@ -670,7 +670,7 @@ class WignerDCalculator(nn.Module):
         consumers read:
 
         - slots ``[0, D)``: ``D[l^2 + l, d]`` (the ``m = 0`` row),
-        - slots ``[D, 2D - 2)``: ``D[l^2 + l - 1, d]`` (``m = -1`` row,
+        - slots ``[D, 2D - 1)``: ``D[l^2 + l - 1, d]`` (``m = -1`` row,
           degrees ``l >= 1`` only, stored at slot ``D + d - 1``),
         - slots ``[2D - 1, 3D - 2)``: ``D[l^2 + l + 1, d]`` (``m = +1`` row,
           stored at slot ``2D + d - 2``).
@@ -2259,5 +2259,35 @@ def wigner_band_op(
     exp_l3: list[int],
     lmax: int,
 ) -> torch.Tensor:
-    """Public entry for the op-bound banded Wigner assembly."""
+    """Public entry for the op-bound banded Wigner band assembly.
+
+    Same values as :meth:`WignerDCalculator.forward_band` behind the
+    ``sezm_triton::wigner_band`` operator boundary, so the compiled graph
+    saves the ``(E, 3 * dim_full - 2)`` band for the backward instead of
+    replaying the quaternion -> monomial -> product chain.
+
+    Parameters
+    ----------
+    quat
+        Unit quaternions with shape ``(E, 4)``.
+    l1_perm
+        Degree-1 row permutation index with shape ``(3,)``.
+    l1_sign_outer
+        Sign outer product for the degree-1 block with shape ``(3, 3)``.
+    coeff_l2
+        Degree-2 monomial coefficient table.
+    c_l3
+        Degree-3 case-coefficient table (``CaseCoefficients.C_l3``).
+    exp_l2
+        Flattened degree-2 monomial exponents.
+    exp_l3
+        Flattened degree-3 monomial exponents.
+    lmax
+        Maximum spherical harmonic degree; 1..3.
+
+    Returns
+    -------
+    torch.Tensor
+        Band tensor with shape ``(E, 3 * (lmax + 1)**2 - 2)``.
+    """
     return _wigner_band_op(quat, l1_perm, l1_sign, coeff_l2, c_l3, exp_l2, exp_l3, lmax)

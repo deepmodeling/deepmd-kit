@@ -2160,8 +2160,11 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
         self._with_levels("1", "1")  # ambient disagrees on purpose
         self.assertTrue(block_supports_packed_wigner(packed_conv, False))
         self.assertFalse(block_supports_packed_wigner(packed_conv, True))
-        # Captured inference 0 / training 1: eval rejects; a training-
-        # bound rotate-mix block whose flash binds for training passes.
+        # Captured inference 0 / training 1: eval rejects; training never
+        # carries the band -- the parameter-gradient consumers (the
+        # channel-basis backward) address the dense surface -- so even a
+        # training-bound rotate-mix block whose flash binds for training
+        # keeps the dense layout in training mode.
         train_conv = self._conv(
             _triton_rotate_mix=object(),
             _flash_atten_fn=object(),
@@ -2170,16 +2173,13 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
             triton_train_level=1,
         )
         self.assertFalse(block_supports_packed_wigner(train_conv, False))
-        self.assertTrue(block_supports_packed_wigner(train_conv, True))
-        # Training flash bound for inference only: the training-mode
-        # aggregation rotates back through the dense inverse, so the band
-        # is rejected even with a training-bound rotate-mix forward.
+        self.assertFalse(block_supports_packed_wigner(train_conv, True))
         self.assertFalse(
             block_supports_packed_wigner(
                 self._conv(
-                    _triton_rotate_mix=object(),
+                    _triton_value_path=object(),
                     _flash_atten_fn=object(),
-                    _flash_atten_trains=False,
+                    _flash_atten_trains=True,
                     triton_infer_level=2,
                     triton_train_level=1,
                 ),
@@ -2377,6 +2377,32 @@ class TestSeZMWignerBandOp(unittest.TestCase):
             calc._monomial_exponents_flat["exp_l3"],
             int(calc.lmax),
         )
+
+    @_GPU_KERNELS
+    def test_fused_falls_back_to_composition_when_op_unsupported(self):
+        """Training keeps the plain composition (the op is eval-only)."""
+        import torch as torch_mod
+
+        calc = self._make_calc(3)
+        calc.train()
+        self.assertFalse(calc.band_op_supported())
+        quat = torch_mod.randn(16, 4, device="cuda")
+        quat = quat / quat.norm(dim=-1, keepdim=True)
+        fused = calc.forward_band_fused(quat)
+        plain = calc.forward_band(quat)
+        self.assertTrue(torch.equal(fused, plain))
+
+    def test_band_rejects_lmax_at_poly_lmin(self):
+        """`lmax >= poly_lmin` has no per-degree ladder below the tail."""
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator,
+        )
+
+        calc = WignerDCalculator(lmax=11, dtype=torch.float32).cpu()
+        self.assertFalse(calc.band_supported())
+        quat = torch.randn(4, 4, dtype=torch.float32, device="cpu")
+        with self.assertRaisesRegex(RuntimeError, "lmax < 11"):
+            calc.forward_band(quat)
 
     @_GPU_KERNELS
     def test_matches_composition_with_grads(self):
