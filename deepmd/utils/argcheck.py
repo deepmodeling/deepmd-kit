@@ -6039,6 +6039,16 @@ def training_args(
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_reset_data_progress = (
+        "On --restart, discard the saved training-data cursors and task/system "
+        "selection RNG, retaining their newly initialized state. Model weights, "
+        "optimizer, learning-rate schedule and training step still resume. "
+        "Use this explicit reset when relocating data or intentionally changing "
+        "data settings; batches may repeat and exact data-order continuation "
+        "is unavailable. By default, saved data progress is restored strictly, "
+        "including dataset locations. Has no effect on fresh training, "
+        "initialization, finetuning or checkpoints without data progress."
+    )
     doc_save_dir = (
         "The directory in which periodic checkpoint files are written, "
         "including the regular checkpoints (the `save_ckpt` prefix) and, when "
@@ -6236,6 +6246,13 @@ def training_args(
         ),
         Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
+        ),
+        Argument(
+            "reset_data_progress",
+            bool,
+            optional=True,
+            default=False,
+            doc=supported_backends("pt_expt") + doc_reset_data_progress,
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
         Argument(

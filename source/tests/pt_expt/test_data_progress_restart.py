@@ -7,11 +7,16 @@ from copy import (
 from pathlib import (
     Path,
 )
+from shutil import (
+    copyfile,
+    copytree,
+)
 from unittest.mock import (
     Mock,
     patch,
 )
 
+import h5py
 import lmdb
 import msgpack
 import numpy as np
@@ -29,6 +34,9 @@ from deepmd.dpmodel.train.data_progress import (
 )
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
+)
+from deepmd.pt_expt.train.ema import (
+    EMA_CHECKPOINT_KEY,
 )
 from deepmd.pt_expt.train.training import (
     Trainer,
@@ -110,7 +118,7 @@ def _write_lmdb(path: Path, *, mixed: bool) -> None:
                 )
 
 
-def _config(path: Path, *, mode: str, multitask: bool = True) -> dict:
+def _config(path: str | Path, *, mode: str, multitask: bool = True) -> dict:
     descriptor = {
         "type": "se_e2_a",
         "sel": [4, 4],
@@ -280,14 +288,20 @@ def test_best_validation_checkpoint_resumes_training(tmp_path, monkeypatch) -> N
     _assert_records_equal(expected[3:], _record_training(restarted))
 
 
-def test_legacy_init_finetune_and_deployment(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("reset", [False, True])
+def test_legacy_init_finetune_and_deployment(
+    tmp_path, monkeypatch, caplog, reset
+) -> None:
     """Only a restart restores progress; deployment snapshots omit it."""
     monkeypatch.chdir(tmp_path)
     path = tmp_path / "data"
     _write_directory(path)
     config = _config(path, mode="directory", multitask=False)
-    config["training"].update(numb_steps=3, save_freq=3, enable_ema=True)
+    config["training"].update(
+        numb_steps=3, save_freq=3, enable_ema=True, reset_data_progress=reset
+    )
     trainer = get_trainer(deepcopy(config))
+    assert trainer.start_step == 0
     trainer.run()
     checkpoint = tmp_path / "model.ckpt-3.pt"
     state = torch.load(checkpoint, weights_only=True)
@@ -308,6 +322,98 @@ def test_legacy_init_finetune_and_deployment(tmp_path, monkeypatch) -> None:
         fresh = get_trainer(deepcopy(config), **{option: str(checkpoint)})
         assert fresh.start_step == 0
         fresh._close_data_systems()
+    assert "training.reset_data_progress is true" not in caplog.text
+
+
+@pytest.mark.parametrize("mode", ["directory", "hdf5", "lmdb"])
+def test_relocated_restart_can_reset_only_data_progress(
+    tmp_path, monkeypatch, caplog, mode
+) -> None:
+    """Opting out after a move has exactly the legacy restart semantics."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    if mode == "lmdb":
+        path = tmp_path / "data.lmdb"
+        _write_lmdb(path, mixed=False)
+    else:
+        path = tmp_path / "data"
+        _write_directory(path)
+        if mode == "hdf5":
+            directory = path
+            path = tmp_path / "data.h5"
+            with h5py.File(path, "w") as handle:
+                handle.create_dataset("system/type.raw", data=[0, 1, 1])
+                handle.create_dataset("system/type_map.raw", data=[b"O", b"H"])
+                for array in directory.glob("set.*/*.npy"):
+                    handle.create_dataset(
+                        "system/" + array.relative_to(directory).as_posix(),
+                        data=np.load(array),
+                    )
+    system = str(path) + ("#/system" if mode == "hdf5" else "")
+    config_mode = "lmdb" if mode == "lmdb" else "directory"
+    config = _config(system, mode=config_mode)
+    config["training"].update(numb_steps=3, save_freq=3, enable_ema=True)
+    original = get_trainer(deepcopy(config))
+    original.run()
+    checkpoint = tmp_path / "model.ckpt-3.pt"
+    state = torch.load(checkpoint, weights_only=True)
+    assert DATA_PROGRESS_CHECKPOINT_KEY in state
+    legacy_state = deepcopy(state)
+    del legacy_state[DATA_PROGRESS_CHECKPOINT_KEY]
+    legacy_path = tmp_path / "legacy.pt"
+    torch.save(legacy_state, legacy_path)
+
+    relocated = path.with_name("relocated" + path.suffix)
+    if mode == "hdf5":
+        copyfile(path, relocated)
+    else:
+        copytree(path, relocated)
+    system = str(relocated) + ("#/system" if mode == "hdf5" else "")
+    config = _config(system, mode=config_mode)
+    config["training"].update(numb_steps=9, save_freq=3, enable_ema=True)
+    assert config["training"]["reset_data_progress"] is False
+    with pytest.raises(ValueError, match=r"[Pp]rogress"):
+        get_trainer(deepcopy(config), restart_model=str(checkpoint))
+    assert "training.reset_data_progress is true" not in caplog.text
+
+    dp_random.seed(9876)
+    legacy = get_trainer(deepcopy(config), restart_model=str(legacy_path))
+    expected_lr = legacy.scheduler.get_last_lr()
+    expected_optimizer = deepcopy(legacy.optimizer.state_dict())
+    expected_progress = collect_training_data_progress(legacy.training_data_by_task)
+    expected = _record_training(legacy)
+    dp_random.seed(9876)
+    config["training"]["reset_data_progress"] = True
+    reset = get_trainer(deepcopy(config), restart_model=str(checkpoint))
+    assert "training.reset_data_progress is true" in caplog.text
+    assert "Batches may repeat" in caplog.text
+    assert "exact data-order continuation is unavailable" in caplog.text
+    assert reset.start_step == legacy.start_step == 3
+    assert reset.scheduler.get_last_lr() == expected_lr
+    assert (
+        collect_training_data_progress(reset.training_data_by_task) == expected_progress
+    )
+    torch.testing.assert_close(reset.optimizer.state_dict(), expected_optimizer)
+    torch.testing.assert_close(
+        reset.optimizer.state_dict()["state"], state["optimizer"]["state"]
+    )
+    torch.testing.assert_close(reset.model_ema.state_dict(), state[EMA_CHECKPOINT_KEY])
+    for key, value in state["model"].items():
+        if torch.is_tensor(value):
+            torch.testing.assert_close(value, reset._unwrapped.state_dict()[key])
+    _assert_records_equal(expected, _record_training(reset))
+    assert reset.scheduler.get_last_lr() == legacy.scheduler.get_last_lr()
+    torch.testing.assert_close(
+        reset.optimizer.state_dict(), legacy.optimizer.state_dict()
+    )
+    torch.testing.assert_close(
+        reset.model_ema.state_dict(), legacy.model_ema.state_dict()
+    )
+    for key, value in legacy._unwrapped.state_dict().items():
+        if torch.is_tensor(value):
+            torch.testing.assert_close(
+                value, reset._unwrapped.state_dict()[key], rtol=1e-12, atol=1e-12
+            )
 
 
 @pytest.mark.parametrize("mode", ["directory", "lmdb"])
@@ -627,6 +733,39 @@ def test_changed_world_size_leaves_data_and_rng_untouched(
     assert ("Checkpoint world size changed" in caplog.text) == (rank == 0)
 
 
+@pytest.mark.parametrize("rank", [0, 1])
+def test_explicit_reset_leaves_every_task_and_rng_untouched(caplog, rank) -> None:
+    """An explicit reset does not even invoke a task or shared RNG restore."""
+    trainer = Trainer.__new__(Trainer)
+    _set_mock_rank(trainer, rank)
+    sources = {"first": Mock(), "second": Mock()}
+    for index, source in enumerate(sources.values()):
+        source.state_dict.return_value = {"cursor": index + 10}
+    trainer.training_data_by_task = sources
+    dp_random.seed(42)
+    local = collect_training_data_progress(sources)
+    for task in local["tasks"]:
+        local["tasks"][task] = {"cursor": 99}
+    progress = {"version": 1, "world_size": 2, "ranks": [local, local]}
+    dp_random.random(5)
+    before = collect_training_data_progress(sources)
+    with (
+        patch(
+            "deepmd.pt_expt.train.training.restore_training_data_progress"
+        ) as restore,
+        patch.object(dp_random, "set_state") as set_rng,
+    ):
+        trainer._restore_data_progress(progress, reset=True)
+    restore.assert_not_called()
+    set_rng.assert_not_called()
+    for source in sources.values():
+        source.load_state_dict.assert_not_called()
+    assert collect_training_data_progress(sources) == before
+    assert ("training.reset_data_progress is true" in caplog.text) == (rank == 0)
+    assert "Checkpoint world size changed" not in caplog.text
+
+
+@pytest.mark.parametrize("reset", [False, True])
 @pytest.mark.parametrize("world_size", [1, 2])
 @pytest.mark.parametrize(
     "changed",
@@ -643,7 +782,9 @@ def test_changed_world_size_leaves_data_and_rng_untouched(
         {"ranks": [None, None]},
     ],
 )
-def test_malformed_rank_envelope_is_rejected(changed, world_size, caplog) -> None:
+def test_malformed_rank_envelope_is_rejected(
+    changed, world_size, caplog, reset
+) -> None:
     trainer = Trainer.__new__(Trainer)
     trainer.rank = 0
     trainer.world_size = world_size
@@ -651,9 +792,11 @@ def test_malformed_rank_envelope_is_rejected(changed, world_size, caplog) -> Non
     local = collect_training_data_progress({})
     progress = {"version": 1, "world_size": 2, "ranks": [local, local]}
     with pytest.raises(ValueError, match=r"[Dd]ata-progress"):
-        trainer._restore_data_progress(progress | changed)
+        trainer._restore_data_progress(progress | changed, reset=reset)
     assert "Checkpoint world size changed" not in caplog.text
-    trainer._restore_data_progress(None)
+    assert "training.reset_data_progress is true" not in caplog.text
+    trainer._restore_data_progress(None, reset=reset)
+    assert "training.reset_data_progress is true" not in caplog.text
 
 
 def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -> None:

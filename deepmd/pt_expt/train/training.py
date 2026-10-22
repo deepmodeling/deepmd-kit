@@ -2482,7 +2482,9 @@ class Trainer(AbstractTrainer):
 
         # Data requirements, layout, statistics and compilation may all draw
         # batches during setup. Restore only after those steps have finished.
-        self._restore_data_progress(data_progress)
+        self._restore_data_progress(
+            data_progress, reset=training_params.get("reset_data_progress", False)
+        )
 
     def _create_full_validators(
         self,
@@ -3089,8 +3091,15 @@ class Trainer(AbstractTrainer):
             dist.all_gather_object(ranks, local_progress)
         return {"version": 1, "world_size": self.world_size, "ranks": ranks}
 
-    def _restore_data_progress(self, progress: Mapping[str, Any] | None) -> None:
-        """Restore rank-local progress, or retain fresh data after a topology change."""
+    def _restore_data_progress(
+        self, progress: Mapping[str, Any] | None, *, reset: bool = False
+    ) -> None:
+        """Restore progress unless an explicit reset or topology change prevents it.
+
+        Validate the rank envelope before either fallback. An explicit reset
+        retains all newly initialized sources and the selection RNG together,
+        without partially applying saved task state or bypassing model restart.
+        """
         if progress is None:
             return
         if not isinstance(progress, Mapping):
@@ -3105,6 +3114,15 @@ class Trainer(AbstractTrainer):
             raise ValueError("Data-progress checkpoint must contain every rank.")
         if not all(isinstance(state, Mapping) for state in ranks):
             raise ValueError("Data-progress checkpoint rank states must be mappings.")
+        if reset:
+            if self.rank == 0:
+                log.warning(
+                    "training.reset_data_progress is true. Model, optimizer and "
+                    "step are restored, but training data order and selection "
+                    "RNG restart from their newly initialized state. Batches "
+                    "may repeat; exact data-order continuation is unavailable."
+                )
+            return
         if saved_world_size != self.world_size:
             # Model/optimizer/step restart has always allowed a new topology.
             # Rank-local cursors cannot be remapped safely, particularly after

@@ -147,8 +147,9 @@ retention window.
 
 PyTorch Exportable optimizer checkpoints also retain each rank's per-task
 training-data cursor and task/system selection RNG. With the same immutable
-data, batching settings, and number of ranks, a restart continues with the next LMDB or directory/HDF5
-training batches rather than starting their iteration again. Data-source
+data at the same locations, batching settings, and number of ranks, a restart
+continues with the next LMDB or directory/HDF5 training batches rather than
+starting their iteration again. Data-source
 progress is compact and restored lazily; checkpoints do not store decoded
 frames or shuffle permutations. Statistics, compilation warmup, and learning
 curve evaluation do not consume this training progression.
@@ -160,8 +161,26 @@ Restarting with a different number of ranks still restores the model, optimizer,
 and training step, but warns and keeps newly initialized data cursors and
 selection RNG instead of remapping the saved rank-local progress. Data may be
 repeated, and exact data-order continuation is not guaranteed in this case.
-Malformed progress envelopes and incompatible data settings at the same world
-size remain errors.
+Malformed progress envelopes remain errors; by default, so do incompatible data
+settings at the same world size.
+
+For PyTorch Exportable, set `training.reset_data_progress` to `true` when
+intentionally restarting with relocated data or changed data settings. This
+explicitly keeps newly initialized data cursors and task/system selection RNG
+for **all** training tasks; model weights, optimizer, learning-rate schedule,
+and training step still resume. A warning explains that batches may repeat and
+exact data-order continuation is unavailable. The default is `false`, which
+retains strict data-source compatibility checks. Malformed progress envelopes
+remain errors even when resetting.
+
+Source paths are identity guards, not content fingerprints: equal frame counts,
+atom types, or LMDB transaction numbers do not prove that two datasets contain
+the same frames. Consequently, copying an unchanged dataset to another location
+requires an explicit data-progress reset; automatic exact continuation after
+relocation is not supported. Directory/HDF5 paths must also retain the same path
+spelling, including the HDF5 group. `reset_data_progress` has no effect on fresh
+training, `--init-model`, finetuning, frozen models, or older checkpoints without
+data progress.
 
 Directory/HDF5 batches now shuffle indices into a canonical, unshuffled set.
 For a single-set source, later passes therefore differ from older releases
