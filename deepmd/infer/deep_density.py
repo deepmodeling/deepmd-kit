@@ -66,7 +66,8 @@ class DeepDensity(DeepEval):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         mixed_type: bool = False,
-        **kwargs: dict[str, Any],
+        grid_batch_size: int | None = 4096,
+        **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate the density on grid points.
 
@@ -88,6 +89,10 @@ class DeepDensity(DeepEval):
             The atomic parameters, by default None.
         mixed_type : bool, optional
             Whether the atom_types is mixed type, by default False.
+        grid_batch_size : int or None, optional
+            Maximum number of grid points evaluated in one model call. Grid
+            chunks are concatenated in their original order. The default is
+            4096; set to None to evaluate the full grid in one call.
         **kwargs : dict[str, Any]
             Keyword arguments. ``charge_spin`` (nframes, 2) is forwarded to
             models with charge spin embedding; when omitted, such models use
@@ -107,17 +112,30 @@ class DeepDensity(DeepEval):
             nframes,
             _,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
-        results = self.deep_eval.eval(
-            coords,
-            cells,
-            atom_types,
-            False,
-            fparam=fparam,
-            aparam=aparam,
-            grid=self._standard_grid(grid, nframes),
-            **kwargs,
-        )
-        return results["density"].reshape(nframes, -1)
+        grid = self._standard_grid(grid, nframes)
+        if grid_batch_size is not None and grid_batch_size <= 0:
+            raise ValueError("grid_batch_size must be positive or None")
+        if grid_batch_size is None or grid.shape[1] <= grid_batch_size:
+            grid_slices = (grid,)
+        else:
+            grid_slices = tuple(
+                grid[:, begin : begin + grid_batch_size]
+                for begin in range(0, grid.shape[1], grid_batch_size)
+            )
+        density_chunks = []
+        for grid_chunk in grid_slices:
+            results = self.deep_eval.eval(
+                coords,
+                cells,
+                atom_types,
+                False,
+                fparam=fparam,
+                aparam=aparam,
+                grid=grid_chunk,
+                **kwargs,
+            )
+            density_chunks.append(results["density"].reshape(nframes, -1))
+        return np.concatenate(density_chunks, axis=1)
 
     @staticmethod
     def _standard_grid(grid: np.ndarray, nframes: int) -> np.ndarray:
@@ -141,6 +159,8 @@ class DeepDensity(DeepEval):
             )
         if arr.shape[0] != nframes:
             raise ValueError(f"grid has {arr.shape[0]} frames but coord has {nframes}")
+        if arr.shape[1] == 0:
+            raise ValueError("grid must contain at least one point per frame")
         return arr
 
 

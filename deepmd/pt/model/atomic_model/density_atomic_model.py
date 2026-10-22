@@ -102,6 +102,19 @@ class DPDensityAtomicModel(DPAtomicModel):
             frame parameter. nf x ndf
         aparam
             atomic parameter. nf x nloc x nda
+        comm_dict
+            Data needed for communication during parallel inference.
+        grid
+            Grid coordinates. nf x ngrid x 3.
+        grid_type
+            Reserved grid-point types. nf x ngrid.
+        grid_nlist
+            Directional grid-to-atom neighbor list. nf x ngrid x nsel.
+        charge_spin
+            Frame charge and spin conditions. nf x 2.
+        return_atomic_feature
+            Whether atomic features are requested. Density models do not
+            currently return them.
 
         Returns
         -------
@@ -215,6 +228,14 @@ class DPDensityAtomicModel(DPAtomicModel):
             atomic parameter, shape: nf x nloc x dim_aparam
         comm_dict
             The data needed for communication for parallel inference.
+        grid
+            Grid coordinates, shape: nf x ngrid x 3.
+        grid_type
+            Reserved grid-point types, shape: nf x ngrid.
+        grid_nlist
+            Directional grid-to-atom neighbor list, shape: nf x ngrid x nsel.
+        charge_spin
+            Frame charge and spin conditions, shape: nf x 2.
 
         Returns
         -------
@@ -466,8 +487,16 @@ class DPDensityAtomicModel(DPAtomicModel):
                 dstd = block["dstd"]
                 davg[-1] = grid_davg.to(device=davg.device, dtype=davg.dtype)
                 dstd[-1] = grid_dstd.to(device=dstd.device, dtype=dstd.dtype)
-            if stat_file_path is not None:
+            if (
+                stat_file_path is not None
+                and getattr(stat_file_path, "mode", None) != "r"
+            ):
                 self._write_back_grid_stat(stat_file_path, grid_stats)
+            elif stat_file_path is not None:
+                log.warning(
+                    "Grid-type statistics were patched in memory but were not "
+                    "written back because the statistics cache is read-only."
+                )
 
     def _descriptor_stat_blocks(self) -> list:
         """Collect every descriptor block that carries davg/dstd statistics.
@@ -540,9 +569,13 @@ class DPDensityAtomicModel(DPAtomicModel):
             keys = env_stat.get_stat_keys()
             if not cache.is_dir() or any(not (cache / kk).is_file() for kk in keys):
                 return True
-            # number of samples of the grid-type row; zero means placeholder
-            if float((cache / f"r_{grid_type}").load_numpy()[0]) == 0.0:
-                return True
+            # Every component of the grid-type row must carry samples. In
+            # particular, a valid radial row must not hide a placeholder
+            # angular row left by an interrupted or legacy cache update.
+            suffix = f"_{grid_type}"
+            for key in keys:
+                if key.endswith(suffix) and float((cache / key).load_numpy()[0]) == 0.0:
+                    return True
         return False
 
     def _write_back_grid_stat(

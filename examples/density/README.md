@@ -32,14 +32,15 @@ The training/validation data follows the standard **`deepmd/npy`** format, with 
 | `coord.npy`       | `[nframes, natoms * 3]` | Atomic coordinates                 |
 | `box.npy`         | `[nframes, 9]`          | Simulation cell vectors            |
 | `type.raw`        | `[natoms]`              | Atom type indices                  |
-| `type_map.raw`    | `[ntypes]`              | Type map (e.g., `C H N O ... X`)   |
+| `type_map.raw`    | `[ntypes]`              | Real element types in this dataset  |
 | **`grid.npy`**    | `[nframes, ngrid, 3]`   | **Grid point coordinates**         |
 | **`density.npy`** | `[nframes, ngrid, 1]`   | **Charge density labels on grids** |
 
 > **Notes:**
 >
 > - `grid.npy` and `density.npy` are required for the density model. The number of grid points (`ngrid`) must match between `grid.npy` and `density.npy`, and is allowed to differ from `natoms`.
-> - The **last entry of `type_map` is reserved as a virtual "grid point type"** (e.g. `X` in the example): internally, grid points are assigned this type when building the grid-to-atom neighbor list. Make sure your `type_map` contains one more entry than the real element types. For descriptors with a per-type `sel` list (e.g. `se_e2_a`), set its **last entry to 0** (grid points are only centers, never neighbors); scalar `sel` descriptors such as DPA-2/DPA-3 need no change. The descriptor input statistics for the grid type are computed from the actual `grid.npy` data during training initialization.
+> - The **last entry of the model configuration's `type_map` is reserved as a virtual "grid point type"** (e.g. `X` in the example): internally, grid points are assigned this type when building the grid-to-atom neighbor list. Make sure the model `type_map` contains one more entry than the real element types. `type_map.raw` may list only the real types actually present in that dataset, as the bundled example does. For descriptors with a per-type `sel` list (e.g. `se_e2_a`), set its **last entry to 0** (grid points are only centers, never neighbors); scalar `sel` descriptors such as DPA-2/DPA-3 need no change. The descriptor input statistics for the grid type are computed from the actual `grid.npy` data during training initialization.
+> - Every frame in one system must contain the same positive number of grid points. Python inference chunks large grids into groups of 4096 points by default to limit temporary neighbor-list memory.
 > - **Always set a positive `env_protection`** in the descriptor configuration (e.g. `"env_protection": 0.1`, as in `dpa3/input.json`). Grid points may legitimately coincide with atoms, and the default `env_protection = 0.0` would let the `1/r` terms in the environment matrix produce `NaN` densities and poison the training gradients at such points.
 
 ______________________________________________________________________
@@ -187,7 +188,9 @@ python dptest_density_script.py \
 | `--output`    | If provided, save screen output to this file as well                      |
 | `--pred-file` | File to save paired `[prediction, label]` array (default: `result.d.out`) |
 
-> **Note:** The script registers the `grid`/`density` dpdata types with a hard-coded grid count (`125`, matching this example). If your dataset uses a different `ngrid`, edit the `shape=(Axis.NFRAMES, 125, ...)` lines at the top of the script.
+> **Note:** Each individual system must use one fixed `ngrid`, but different
+> systems discovered by the script may use different grid extents. Large grids
+> are evaluated in chunks by the Python inference interface.
 
 ### Option 3: Python interface
 
@@ -196,7 +199,13 @@ import numpy as np
 from deepmd.infer import DeepEval
 
 dp = DeepEval("frozen_model.pth")  # dispatched to DeepDensity automatically
-density = dp.eval(coord, box, atype, grid=grid)  # (nframes, ngrid)
+density = dp.eval(
+    coord,
+    box,
+    atype,
+    grid=grid,
+    grid_batch_size=4096,
+)  # (nframes, ngrid)
 ```
 
 ______________________________________________________________________

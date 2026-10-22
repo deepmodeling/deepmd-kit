@@ -28,6 +28,12 @@ The training/validation data follows the standard `deepmd/npy` format, with two 
 
 The number of grid points `ngrid` may differ from the number of atoms. The last entry of `type_map` is reserved as a virtual "grid point type": internally, grid points are assigned this type when building the grid-to-atom neighbor list, so `type_map` must contain one more entry than the real element types. For descriptors with a per-type `sel` list (e.g. `se_e2_a`), set its last entry to 0, since grid points are only centers, never neighbors.
 
+Every frame in one system must use the same positive `ngrid`; empty grids are
+rejected. Python inference evaluates large grids in chunks of 4096 points by
+default, which bounds the temporary directional-neighbor matrix. Pass
+`grid_batch_size=None` to `DeepDensity.eval` only when evaluating the complete
+grid in one call is known to fit in memory.
+
 It is recommended to set a positive `env_protection` in the descriptor configuration (e.g. `"env_protection": 0.1`). Grid points may legitimately coincide with atoms, and the default `env_protection = 0.0` would let the `1/r` terms in the environment matrix produce `NaN` densities. If `env_protection` is not set for a density model, it is automatically set to `1e-6` with a warning.
 
 ## The fitting network
@@ -61,7 +67,12 @@ The grid density model is trained with the `grid_density` loss, which minimises 
 ```
 
 - {ref}`type <loss/type>` should be written as `grid_density`.
-- `start_pref_d` and `limit_pref_d` specify the weight of the density loss at the start and at the end of the training. If both are set to 0, the density term is skipped (and the graph is kept connected). Note that `density.npy` is **required** in every training and validation system — it is the model's only supervision signal, and a missing file aborts training at load time.
+- `start_pref_d` and `limit_pref_d` specify the weight of the density loss at the start and at the end of the training. If both are set to 0, the density term is skipped (and the graph is kept connected). When either prefactor is nonzero, `density.npy` is **required** in every training and validation system; when both are zero, the file is optional.
+
+The loss gives every grid point equal weight. Non-uniform quadrature weights,
+integrated-charge constraints, and output non-negativity are not imposed by
+this fitting type; datasets that need those properties must account for them
+in their sampling or preprocessing.
 
 ## Evaluation
 
@@ -71,5 +82,11 @@ The grid density model is trained with the `grid_density` loss, which minimises 
 from deepmd.infer import DeepEval
 
 dp = DeepEval("model.pth")
-density = dp.eval(coord, box, atype, grid=grid)  # (nframes, ngrid)
+density = dp.eval(
+    coord,
+    box,
+    atype,
+    grid=grid,
+    grid_batch_size=4096,
+)  # (nframes, ngrid)
 ```

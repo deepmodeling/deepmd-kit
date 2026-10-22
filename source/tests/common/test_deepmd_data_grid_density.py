@@ -88,6 +88,11 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         self.assertEqual(loaded["grid"].shape, (NFRAMES, NGRID, 3))
         self.assertEqual(loaded["density"].shape, (NFRAMES, NGRID, 1))
 
+    def test_iter_test_uses_frame_major_extent_for_chunking(self) -> None:
+        data = self.build_data()
+        chunks = list(data.iter_test(chunk_atoms=NGRID * 2))
+        self.assertEqual([chunk["box"].shape[0] for chunk in chunks], [2, 2])
+
     def test_single_frame(self) -> None:
         data = self.build_data()
         frame = data.get_single_frame(0, 0)
@@ -96,27 +101,29 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         self.assertEqual(frame["grid"].shape, (NGRID, 3))
         self.assertEqual(frame["density"].shape, (NGRID, 1))
 
-    def test_frame_count_mismatch_load_set(self) -> None:
+    def test_frame_count_mismatch(self) -> None:
         self.set_data("grid", np.zeros((NFRAMES - 1, NGRID, 3), dtype=np.float32))
-        with self.assertRaisesRegex(ValueError, "frame count"):
-            self.build_data()._load_set(self.set_dir)
+        loaders = {
+            "set": lambda data: data._load_set(self.set_dir),
+            "single frame": lambda data: data.get_single_frame(0, 0),
+        }
+        for name, load in loaders.items():
+            with self.subTest(loader=name):
+                with self.assertRaisesRegex(ValueError, "frame count"):
+                    load(self.build_data())
 
-    def test_frame_count_mismatch_single_frame(self) -> None:
-        self.set_data("density", np.zeros((NFRAMES - 1, NGRID, 1), dtype=np.float32))
-        with self.assertRaisesRegex(ValueError, "frame count"):
-            self.build_data().get_single_frame(0, 0)
-
-    def test_missing_frame_dimension_load_set(self) -> None:
+    def test_missing_frame_dimension(self) -> None:
         # stored without a leading frame dimension: rejected rather than
         # silently misaligned with the frames
         self.set_data("grid", np.zeros((NGRID, 3), dtype=np.float32))
-        with self.assertRaisesRegex(ValueError, r"frame count|leading frame"):
-            self.build_data()._load_set(self.set_dir)
-
-    def test_missing_frame_dimension_single_frame(self) -> None:
-        self.set_data("density", np.zeros((NGRID, 1), dtype=np.float32))
-        with self.assertRaisesRegex(ValueError, r"frame count|leading frame"):
-            self.build_data().get_single_frame(0, 0)
+        loaders = {
+            "set": lambda data: data._load_set(self.set_dir),
+            "single frame": lambda data: data.get_single_frame(0, 0),
+        }
+        for name, load in loaders.items():
+            with self.subTest(loader=name):
+                with self.assertRaisesRegex(ValueError, r"frame count|leading frame"):
+                    load(self.build_data())
 
     def test_missing_file_optional(self) -> None:
         # optional labels absent: the loader must not fail and must signal
@@ -128,20 +135,26 @@ class TestDeepmdDataGridDensity(unittest.TestCase):
         frame = data.get_single_frame(0, 0)
         self.assertEqual(frame["find_density"], 0.0)
 
-    def test_ndof_mismatch(self) -> None:
-        # 3D layout: trailing dim must be exactly ndof (a divisible-but-wrong
-        # width like 6 would silently double ngrid downstream)
-        for width in (4, 6):
-            self.set_data("grid", np.zeros((NFRAMES, NGRID, width), dtype=np.float32))
-            with self.assertRaisesRegex(ValueError, "ndof"):
-                self.build_data()._load_set(self.set_dir)
-            with self.assertRaisesRegex(ValueError, "ndof"):
-                self.build_data().get_single_frame(0, 0)
-        # flattened layout: width must be a multiple of ndof
-        self.set_data("grid", np.zeros((NFRAMES, NGRID * 3 + 1), dtype=np.float32))
-        with self.assertRaisesRegex(ValueError, "ndof"):
-            self.build_data()._load_set(self.set_dir)
-        # correct flattened layout passes
+    def test_invalid_frame_major_layout(self) -> None:
+        invalid = (
+            ("wrong trailing width", (NFRAMES, NGRID, 4), "ndof"),
+            ("divisible wrong width", (NFRAMES, NGRID, 6), "ndof"),
+            ("invalid flattened width", (NFRAMES, NGRID * 3 + 1), "ndof"),
+            ("empty", (NFRAMES, 0, 3), "at least one point"),
+            ("rank four", (NFRAMES, 1, NGRID, 3), "must have shape"),
+        )
+        loaders = {
+            "set": lambda data: data._load_set(self.set_dir),
+            "single frame": lambda data: data.get_single_frame(0, 0),
+        }
+        for case, shape, message in invalid:
+            self.set_data("grid", np.zeros(shape, dtype=np.float32))
+            for loader_name, load in loaders.items():
+                with self.subTest(case=case, loader=loader_name):
+                    with self.assertRaisesRegex(ValueError, message):
+                        load(self.build_data())
+
+        # A correctly flattened frame-major array remains accepted.
         self.set_data("grid", np.zeros((NFRAMES, NGRID * 3), dtype=np.float32))
         loaded = self.build_data()._load_set(self.set_dir)
         self.assertEqual(loaded["find_grid"], 1.0)

@@ -109,6 +109,8 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             )
             del coord, grid, box, fparam, aparam
             gg = gg.view(gg.shape[0], -1, 3)
+            if gg.shape[1] == 0:
+                raise ValueError("grid must contain at least one point per frame")
             if bb is not None:
                 # wrap grid points into the primary cell: the atomic
                 # coordinates are normalized and extended with ghosts, so
@@ -235,6 +237,8 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             assert grid is not None
             assert grid_type is not None
             assert grid_nlist is not None
+            if grid.shape[1] == 0:
+                raise ValueError("grid must contain at least one point per frame")
             cc_ext, gg, _, fp, ap, input_prec = self._input_type_cast(
                 extended_coord, grid=grid, fparam=fparam, aparam=aparam
             )

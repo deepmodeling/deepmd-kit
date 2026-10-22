@@ -14,35 +14,14 @@ import os
 import random
 import sys
 
-import dpdata
 import numpy as np
-from dpdata.data_type import (
-    Axis,
-    DataType,
-)
-from tqdm import (
-    tqdm,
-)
 
 from deepmd.infer import (
     DeepEval,
 )
-
-# Register custom dpdata types for grid density
-_GRID_DATA_TYPE = DataType(
-    "grid",
-    np.ndarray,
-    shape=(Axis.NFRAMES, 125, 3),
-    required=False,
+from deepmd.utils.data import (
+    DeepmdData,
 )
-_DENSITY_DATA_TYPE = DataType(
-    "density",
-    np.ndarray,
-    shape=(Axis.NFRAMES, 125, 1),
-    required=False,
-)
-dpdata.System.register_data_type(_GRID_DATA_TYPE)
-dpdata.System.register_data_type(_DENSITY_DATA_TYPE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -98,6 +77,8 @@ def evaluate(
     model_path: str, data_dir: str, ratio: float
 ) -> tuple[np.ndarray, np.ndarray]:
     """Run inference and return (predictions, labels)."""
+    if not 0.0 < ratio <= 1.0:
+        raise ValueError(f"ratio must be in (0, 1], got {ratio}")
     # DeepEval dispatches density models to DeepDensity automatically.
     dm = DeepEval(model_path)
     type_map = dm.get_type_map()
@@ -109,26 +90,52 @@ def evaluate(
     if not systems:
         raise RuntimeError(f"No deepmd/npy systems found under '{data_dir}'")
 
-    for f in tqdm(systems, desc="Systems"):
+    for f in systems:
         sys_name = os.path.dirname(f)
-        s = dpdata.System(sys_name, fmt="deepmd/npy", type_map=type_map)
+        data = DeepmdData(sys_name, type_map=type_map)
+        data.add(
+            "grid",
+            3,
+            atomic=False,
+            must=True,
+            high_prec=True,
+            special_shape="frame_major",
+        )
+        data.add(
+            "density",
+            1,
+            atomic=False,
+            must=True,
+            high_prec=True,
+            special_shape="frame_major",
+        )
+        test_data = data.get_test()
 
-        n_frames = len(s)
+        n_frames = test_data["coord"].shape[0]
         n_sample = max(1, math.floor(n_frames * ratio))
         indices = random.sample(range(n_frames), n_sample)
-        s = s.sub_system(indices)
 
-        coord = s.data["coords"].reshape(len(s), -1)
-        atype = list(s.data["atom_types"])
-        cell = s.data["cells"].reshape(len(s), -1)
-        # DeepDensity.eval accepts only the (nframes, ngrid, 3) layout
-        grid = s.data["grid"].reshape(len(s), -1, 3)
+        coord = test_data["coord"][indices].reshape(n_sample, -1)
+        if data.mixed_type:
+            atype = test_data["type"][indices].reshape(n_sample, -1)
+        else:
+            atype = test_data["type"][0]
+        cell = test_data["box"][indices] if data.pbc else None
+        grid = test_data["grid"][indices].reshape(n_sample, -1, 3)
 
-        density_pred = dm.eval(coord, cell, atype, grid=grid)
-        density_label = s.data["density"].reshape(len(s), -1)
+        density_pred = dm.eval(
+            coord,
+            cell,
+            atype,
+            grid=grid,
+            mixed_type=data.mixed_type,
+        )
+        density_label = test_data["density"][indices].reshape(n_sample, -1)
 
-        pred_list.append(density_pred)
-        label_list.append(density_label)
+        # Flatten each system before concatenating so systems may carry
+        # different grid extents.
+        pred_list.append(density_pred.reshape(-1))
+        label_list.append(density_label.reshape(-1))
         sys.stdout.write(f"  {sys_name:60s}  frames={n_sample}/{n_frames}" + "\n")
 
     predictions = np.concatenate(pred_list)

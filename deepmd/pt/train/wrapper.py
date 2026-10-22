@@ -163,7 +163,6 @@ class ModelWrapper(torch.nn.Module):
         coord: torch.Tensor,
         atype: torch.Tensor,
         spin: torch.Tensor | None = None,
-        grid: torch.Tensor | None = None,
         box: torch.Tensor | None = None,
         cur_lr: torch.Tensor | None = None,
         label: torch.Tensor | None = None,
@@ -173,6 +172,7 @@ class ModelWrapper(torch.nn.Module):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        grid: torch.Tensor | None = None,
     ) -> tuple[Any, Any, Any]:
         if not self.multi_task:
             task_key = "Default"

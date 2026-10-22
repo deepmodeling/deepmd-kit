@@ -496,16 +496,19 @@ class DeepmdData:
         chunk_atoms: int,
         numb_test: float = float("inf"),
     ) -> Iterator[dict]:
-        """Yield the test data in chunks of at most ``chunk_atoms`` atoms.
+        """Yield test data in chunks bounded by ``chunk_atoms`` work units.
 
         The complete test system is materialized first, so chunking here bounds
         the evaluation batch and its predictions rather than source-data memory.
+        For ordinary systems one frame costs ``natoms`` work units. For
+        frame-major data such as density grids, the largest point extent also
+        contributes so grids with many more points than atoms remain bounded.
 
         Parameters
         ----------
         chunk_atoms : int
-            Upper bound on the number of atoms per chunk. A chunk always
-            carries at least one frame, however many atoms it has.
+            Upper bound on the per-chunk work proxy. A chunk always carries at
+            least one frame, however many atoms or frame-major points it has.
         numb_test : float, optional
             Upper bound on the number of frames served. A non-finite bound
             serves the whole test set.
@@ -520,7 +523,17 @@ class DeepmdData:
         total = int(self.test_set["type"].shape[0])
         if np.isfinite(numb_test):
             total = min(total, int(numb_test))
-        step = max(1, int(chunk_atoms) // max(1, self.natoms))
+        frame_size = self.natoms
+        for key, requirement in self.data_dict.items():
+            if requirement.get("special_shape") != "frame_major":
+                continue
+            value = self.test_set.get(key)
+            if not isinstance(value, np.ndarray) or value.ndim < 2:
+                continue
+            ndof = int(requirement["ndof"])
+            extent = int(np.prod(value.shape[1:], dtype=np.int64)) // ndof
+            frame_size = max(frame_size, extent)
+        step = max(1, int(chunk_atoms) // max(1, frame_size))
         for begin in range(0, total, step):
             idx = np.arange(begin, min(begin + step, total), dtype=np.int64)
             chunk = self._get_subdata(self.test_set, idx=idx)
@@ -1091,10 +1104,11 @@ class DeepmdData:
         path = self._get_data_path(set_name, key)
         if special_shape == "frame_major" and path.is_file():
             data = path.load_numpy().astype(dtype)
-            if data.ndim < 2:
+            if data.ndim not in (2, 3):
                 raise ValueError(
-                    f"The data {key} in {set_name} must have a leading frame "
-                    f"dimension, but got shape {data.shape}"
+                    f"The frame-major data {key} in {set_name} must have shape "
+                    f"(nframes, npoints * ndof) or (nframes, npoints, ndof), "
+                    f"but got {data.shape}"
                 )
             if data.shape[0] != nframes:
                 raise ValueError(
@@ -1115,6 +1129,12 @@ class DeepmdData:
                     f"The data {key} in {set_name} has trailing dimension "
                     f"{data.shape[-1]}, which is not a multiple of the "
                     f"declared ndof {ndof_}"
+                )
+            npoints = data.shape[1] if data.ndim == 3 else data.shape[1] // ndof_
+            if npoints == 0:
+                raise ValueError(
+                    f"The frame-major data {key} in {set_name} must contain "
+                    "at least one point per frame"
                 )
             return np.float32(1.0), data
         if path.is_file():
@@ -1277,10 +1297,11 @@ class DeepmdData:
         # Validate frame-major layout before indexing, so that shuffling
         # cannot pair a structure with another frame's grid or density label.
         if vv.get("special_shape") == "frame_major":
-            if mmap_obj.ndim < 2:
+            if mmap_obj.ndim not in (2, 3):
                 raise ValueError(
-                    f"The data {key} in {set_dir} must have a leading frame "
-                    f"dimension, but got shape {mmap_obj.shape}"
+                    f"The frame-major data {key} in {set_dir} must have shape "
+                    f"(nframes, npoints * ndof) or (nframes, npoints, ndof), "
+                    f"but got {mmap_obj.shape}"
                 )
             if mmap_obj.shape[0] != set_nframes:
                 raise ValueError(
@@ -1300,6 +1321,14 @@ class DeepmdData:
                     f"The data {key} in {set_dir} has trailing dimension "
                     f"{mmap_obj.shape[-1]}, which is not a multiple of the "
                     f"declared ndof {ndof}"
+                )
+            npoints = (
+                mmap_obj.shape[1] if mmap_obj.ndim == 3 else mmap_obj.shape[1] // ndof
+            )
+            if npoints == 0:
+                raise ValueError(
+                    f"The frame-major data {key} in {set_dir} must contain "
+                    "at least one point per frame"
                 )
 
         # corner case: single frame. frame-major arrays always carry a
