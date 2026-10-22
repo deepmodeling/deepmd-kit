@@ -315,7 +315,11 @@ class DeepEval(DeepEvalBackend):
                 )
             if method == "auto":
                 method = nlist_backend
-            configure(make_neighbor_list(method, DEVICE, self._neighbor_skin))
+            configure(
+                make_neighbor_list(
+                    method, DEVICE, self._neighbor_skin, return_mode="edges"
+                )
+            )
             return
         if self._neighbor_graph_method != "auto":
             raise ValueError(

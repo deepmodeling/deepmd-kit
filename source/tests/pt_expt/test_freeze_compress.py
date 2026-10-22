@@ -29,9 +29,18 @@ from deepmd.main import (
 )
 from deepmd.pt_expt.entrypoints import compress as compression
 from deepmd.pt_expt.entrypoints import main as entrypoints
+from deepmd.pt_expt.model.get_model import (
+    get_model,
+)
+from deepmd.pt_expt.train.wrapper import (
+    ModelWrapper,
+)
 from deepmd.pt_expt.utils import (
     env,
     serialization,
+)
+from deepmd.utils.vacuum_reference import (
+    reference_charge_spin,
 )
 
 from .test_calculator import (
@@ -88,10 +97,58 @@ def test_freeze_compression_changes_snapshot_before_export(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compress: bool
 ) -> None:
     config = _config("dpa4c")
+    config["descriptor"].update(add_chg_spin_ebd=True, default_chg_spin=[1, 2])
     config["fitting_net"]["vacuum_ref"] = True
     config["preset_out_bias"] = {"energy": {"O": 0.0, "H": 0.0}}
     checkpoint = _write_checkpoint(tmp_path / "model.pt", "dpa4c", config=config)
     original = checkpoint.read_bytes()
+    reference = get_model(config).eval()
+    ModelWrapper(reference, model_params=config).load_state_dict(
+        torch.load(checkpoint, map_location="cpu", weights_only=True)["model"]
+    )
+    fitting = reference.atomic_model.fitting_net
+    original_bias = fitting.bias_atom_e.detach().numpy().copy()
+    fitting.vacuum_ref = False
+    with torch.no_grad():
+        fitting.bias_atom_e.zero_()
+        reference.atomic_model.out_bias.zero_()
+    coord = torch.zeros((2, 1, 3), dtype=torch.float64)
+    atype = torch.arange(2, dtype=torch.int64).reshape(2, 1)
+    neutral = (
+        reference.call_common(
+            coord,
+            atype,
+            None,
+            charge_spin=torch.as_tensor(reference_charge_spin(config["type_map"])),
+        )["energy"]
+        .detach()
+        .numpy()
+        .reshape(2, 1)
+    )
+    deployment = (
+        reference.call_common(coord, atype, None)["energy"]
+        .detach()
+        .numpy()
+        .reshape(2, 1)
+    )
+    # The deployment state must differ from the neutral isolated-atom reference.
+    assert np.max(np.abs(deployment - neutral)) > 1e-5
+    enable_compression = type(reference).enable_compression
+
+    def check_reference_before_compression(
+        model: torch.nn.Module, *args: object, **kwargs: object
+    ) -> None:
+        np.testing.assert_allclose(
+            model.atomic_model.fitting_net.bias_atom_e.detach().numpy(),
+            original_bias - neutral,
+            rtol=1e-6,
+            atol=1e-7,
+        )
+        enable_compression(model, *args, **kwargs)
+
+    monkeypatch.setattr(
+        type(reference), "enable_compression", check_reference_before_compression
+    )
     captured = {}
 
     def capture(model_file: str, data: dict, **kwargs: object) -> None:
@@ -108,6 +165,12 @@ def test_freeze_compression_changes_snapshot_before_export(
     model = captured["data"]["model"]
     assert ("compress" in model["descriptor"]) is compress
     assert model["fitting"]["vacuum_ref"] is (not compress)
+    np.testing.assert_allclose(
+        model["fitting"]["@variables"]["bias_atom_e"],
+        original_bias - neutral if compress else original_bias,
+        rtol=1e-6,
+        atol=1e-7,
+    )
     assert captured["options"]["with_comm"] is False
     assert captured["options"]["lower_kind"] == ("auto" if compress else "graph")
     assert checkpoint.read_bytes() == original

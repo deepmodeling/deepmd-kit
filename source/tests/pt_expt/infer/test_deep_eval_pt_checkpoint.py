@@ -467,6 +467,47 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
                         actual = builder.build(coord, atype, None, 3.0, [4])
                 self.assertEqual(actual, expected)
 
+    def test_native_edge_strategy_uses_frame_count(self) -> None:
+        """Native edge inputs use the shared carry-all strategy on every host."""
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        for device, nf, expected in (
+            ("cpu", 1, "vesin"),
+            ("cpu", 4, "nv"),
+            ("cuda", 1, "nv"),
+            ("cuda", 4, "nv"),
+        ):
+            with (
+                self.subTest(device=device, nf=nf),
+                mock.patch.object(
+                    auto_neighbor_list, "is_nv_available", return_value=True
+                ),
+                mock.patch.object(
+                    auto_neighbor_list, "is_vesin_torch_available", return_value=True
+                ),
+                mock.patch.object(
+                    auto_neighbor_list.VesinNeighborList, "build", return_value="vesin"
+                ) as vesin_build,
+                mock.patch.object(
+                    auto_neighbor_list.NvNeighborList, "build", return_value="nv"
+                ) as nv_build,
+            ):
+                coord = mock.Mock(device=torch.device(device))
+                atype = np.zeros((nf, 2), dtype=np.int64)
+                builder = auto_neighbor_list.make_neighbor_list(
+                    "native", coord.device, return_mode="edges"
+                )
+                actual = builder.build(
+                    coord, atype, None, 3.0, [1], return_mode="edges"
+                )
+                selected = vesin_build if expected == "vesin" else nv_build
+                selected.assert_called_once_with(
+                    coord, atype, None, 3.0, [1], return_mode="edges", pair_excl=None
+                )
+                self.assertEqual(actual, expected)
+
     def test_explicit_resolution(self) -> None:
         """Every implemented graph builder is accepted without rewriting."""
         for method in ("dense", "ase", "cell", "vesin", "nv"):

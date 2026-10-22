@@ -400,7 +400,16 @@ class DeepEval(DeepEvalBackend):
                     "supplied ASE neighbor_list; pass only one."
                 )
         self._nlist_builder = (
-            make_neighbor_list(nlist_backend, DEVICE, self._neighbor_skin)
+            make_neighbor_list(
+                nlist_backend,
+                DEVICE,
+                self._neighbor_skin,
+                return_mode=(
+                    "edges"
+                    if self.metadata.get("lower_input_kind") == "edge_vec"
+                    else "extended"
+                ),
+            )
             if unsupported is None and not ase_provided
             else None
         )

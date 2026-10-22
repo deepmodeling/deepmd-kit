@@ -334,7 +334,7 @@ def test_native_spin_edge_freeze_preserves_neighbor_options(tmp_path: Path) -> N
         mixed_type=True,
     )
     frames = [
-        native.eval(
+        original.eval(
             batch_coords[frame : frame + 1],
             batch_cells[frame : frame + 1],
             batch_types[frame],
@@ -538,7 +538,12 @@ def test_automatic_freeze_single_artifact_matches_eager(
     kind: str,
     inference_device: str,
 ) -> None:
-    checkpoint = _write_checkpoint(tmp_path / "model.pt", kind)
+    config = _config(kind)
+    options = {}
+    if kind == "pt":
+        config["descriptor"]["sel"] = [1, 0]
+        options["nlist_backend"] = "native"
+    checkpoint = _write_checkpoint(tmp_path / "model.pt", kind, config=config)
     original = checkpoint.read_bytes()
     atoms = Atoms(
         "OH2",
@@ -546,14 +551,14 @@ def test_automatic_freeze_single_artifact_matches_eager(
         cell=[8.0, 8.0, 8.0],
         pbc=True,
     )
-    atoms.calc = DP(checkpoint)
+    atoms.calc = DP(checkpoint, **options)
     expected = (atoms.get_potential_energy(), atoms.get_forces(), atoms.get_stress())
     caplog.clear()
     with mock.patch(
         "torch._inductor.aoti_compile_and_package",
         wraps=torch._inductor.aoti_compile_and_package,
     ) as compile_package:
-        atoms.calc = DP(checkpoint, freeze=True)
+        atoms.calc = DP(checkpoint, freeze=True, **options)
     assert compile_package.call_count == 1
     if kind == "dpa4c":
         exported = compile_package.call_args.args[0]
