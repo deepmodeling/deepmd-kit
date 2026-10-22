@@ -229,11 +229,21 @@ def masked_global_rmse(diff: Array, mask: Array | None, natoms: Any) -> Array:
     Array
         ``sqrt(mean(diff**2)) / natoms`` without a mask, else
         ``sqrt(mean_f(mean(diff_f**2) / n_f**2))`` with ``n_f`` the number of
-        real atoms of frame ``f``.
+        real atoms of frame ``f``. Frames without any real atom are excluded
+        from the average; a batch with none reports ``0``.
     """
     xp = array_api_compat.array_namespace(diff)
     if mask is None:
         return xp.sqrt(xp.mean(xp.square(diff))) / natoms
     real_natoms = xp.astype(xp.sum(mask, axis=-1), diff.dtype)
     frame_mse = xp.mean(xp.square(diff), axis=-1)
-    return xp.sqrt(xp.mean(frame_mse / xp.square(real_natoms)))
+    # A frame of nothing but padding has no atom to normalize by; it is left
+    # out of the average, and a batch without any real atom reports 0.
+    has_atoms = real_natoms > 0
+    safe_natoms = xp.where(has_atoms, real_natoms, xp.ones_like(real_natoms))
+    frame_val = xp.where(
+        has_atoms, frame_mse / xp.square(safe_natoms), xp.zeros_like(frame_mse)
+    )
+    nvalid = xp.sum(xp.astype(has_atoms, diff.dtype))
+    safe_nvalid = xp.where(nvalid > 0, nvalid, xp.ones_like(nvalid))
+    return xp.sqrt(xp.sum(frame_val) / safe_nvalid)
