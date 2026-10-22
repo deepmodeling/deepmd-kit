@@ -39,7 +39,9 @@ void open_socket_(int* psockfd, int* inet, int* port, const char* host);
 */
 void writebuffer_(int* psockfd, char* data, int len);
 
-/* Reads from a socket.
+/* Reads exactly len bytes from a socket. Interrupted reads are retried.
+   Exits on premature EOF, another read error, or a negative length.
+   A zero-length request succeeds without reading.
    Args:
    psockfd: The id of the socket that will be read from.
    data: The storage array for data read from the socket.
