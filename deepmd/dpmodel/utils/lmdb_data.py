@@ -657,16 +657,27 @@ def _scan_lmdb_path_in_worker(
         executor.shutdown(wait=True, cancel_futures=True)
 
 
-def _remap_atom_types(atype: np.ndarray, type_remap: np.ndarray) -> np.ndarray:
-    """Remap real atom types while preserving negative virtual sentinels.
-
-    Positive indices retain NumPy's normal bounds checking, so malformed LMDB
-    data cannot be silently reinterpreted as a different species.
-    """
-    remapped_atype = atype.astype(np.int64, copy=True)
-    real_atom_mask = remapped_atype >= 0
-    remapped_atype[real_atom_mask] = type_remap[remapped_atype[real_atom_mask]]
-    return remapped_atype
+def _make_type_remap(
+    lmdb_type_map: list[str] | None, type_map: list[str] | None
+) -> np.ndarray | None:
+    """Map declared source types to model indices, marking unsupported entries."""
+    if (
+        lmdb_type_map is None
+        or type_map is None
+        or list(lmdb_type_map) == list(type_map)
+    ):
+        return None
+    remap = np.array(
+        [type_map.index(name) if name in type_map else -1 for name in lmdb_type_map],
+        dtype=np.int32,
+    )
+    log.info(
+        "Type remapping: LMDB %s -> model %s, remap=%s",
+        lmdb_type_map,
+        type_map,
+        remap,
+    )
+    return remap
 
 
 @dataclass
@@ -685,7 +696,8 @@ class LmdbDecodeConfig:
     natoms
         Fallback atom count for records without ``atom_types``.
     type_remap
-        Optional LMDB-type to model-type lookup table.
+        Optional LMDB-type to model-type lookup table. Negative entries denote
+        unsupported elements, rejected only when referenced by a real atom.
     data_requirements
         Registered data requirements keyed by field name.
     dataset
@@ -699,6 +711,9 @@ class LmdbDecodeConfig:
         their inputs and derive their labels here, before the model runs, which
         is the only place that works for a backend whose loss never sees the
         model. ``None``, the default, leaves decoding unchanged.
+    lmdb_type_map
+        Source element symbols used to identify unsupported atom types in
+        frame-level diagnostics.
     """
 
     ntypes: int
@@ -708,6 +723,7 @@ class LmdbDecodeConfig:
     dataset: str = "<unknown LMDB>"
     type_map: list[str] | None = None
     frame_transform: Callable[[dict[str, Any], int], dict[str, Any]] | None = None
+    lmdb_type_map: list[str] | None = None
 
 
 def _requirement_dtype(requirement: Any) -> np.dtype:
@@ -1041,7 +1057,26 @@ def decode_lmdb_frame(
     if "atype" in frame and isinstance(frame["atype"], np.ndarray):
         frame["atype"] = frame["atype"].reshape(-1).astype(np.int64, copy=False)
         if config.type_remap is not None:
-            frame["atype"] = _remap_atom_types(frame["atype"], config.type_remap)
+            atype = frame["atype"]
+            real_atom_mask = atype >= 0
+            real_types = atype[real_atom_mask]
+            # Negative input sentinels are not lookup indices. Positive indices
+            # retain NumPy's bounds checks for malformed source type indices.
+            mapped = config.type_remap[real_types]
+            unsupported = mapped < 0
+            if np.any(unsupported):
+                indices = np.unique(real_types[unsupported])
+                missing = (
+                    [config.lmdb_type_map[index] for index in indices]
+                    if config.lmdb_type_map is not None
+                    else indices.tolist()
+                )
+                raise ValueError(
+                    f"LMDB frame {original_key} in '{config.dataset}' uses atom "
+                    f"types {missing} not found in model type_map {config.type_map}"
+                )
+            frame["atype"] = atype.copy()
+            frame["atype"][real_atom_mask] = mapped
     if "virial" in frame and isinstance(frame["virial"], np.ndarray):
         frame["virial"] = (
             frame["virial"]
@@ -2055,6 +2090,8 @@ class LmdbDataReader:
 
     Reads LMDB frames and returns dicts of numpy arrays.
     Backend-specific Dataset classes (PyTorch, JAX, etc.) wrap this.
+    Element compatibility is checked on decoded real atoms, not on unused
+    entries in the dataset's element table.
 
     An LMDB typically holds frames of many different atom counts. The
     ``batch_size`` rule decides how those frames are grouped:
@@ -2121,25 +2158,8 @@ class LmdbDataReader:
         self._natoms = sum(self._natoms_per_type)
         self._ntypes = len(type_map)
 
-        # Build type remapping if LMDB's type_map differs from model's type_map
-        lmdb_type_map = meta.get("type_map")
-        self._lmdb_type_map = lmdb_type_map
-        self._type_remap: np.ndarray | None = None
-        if lmdb_type_map is not None and list(lmdb_type_map) != list(type_map):
-            # Build remap: lmdb_type_idx -> model_type_idx
-            remap = np.empty(len(lmdb_type_map), dtype=np.int32)
-            for i, name in enumerate(lmdb_type_map):
-                if name not in type_map:
-                    raise ValueError(
-                        f"Element '{name}' in LMDB type_map {lmdb_type_map} "
-                        f"not found in model type_map {type_map}"
-                    )
-                remap[i] = type_map.index(name)
-            self._type_remap = remap
-            log.info(
-                f"Type remapping: LMDB {lmdb_type_map} -> model {type_map}, "
-                f"remap={remap}"
-            )
+        self._lmdb_type_map = meta.get("type_map")
+        self._type_remap = _make_type_remap(self._lmdb_type_map, type_map)
 
         # The parent transaction serves synchronous reads. Decoder workers open
         # independent process-local environments and transactions.
@@ -2303,6 +2323,7 @@ class LmdbDataReader:
             data_requirements=self._data_requirements,
             dataset=self.lmdb_path,
             type_map=self._type_map,
+            lmdb_type_map=self._lmdb_type_map,
         )
         # Which fields carry an atom axis follows from the registered
         # requirements, so this cache is invalidated when they change.
@@ -3889,6 +3910,8 @@ class LmdbTestData:
 
     For mixed-nloc datasets, frames are grouped by nloc.
     get_test(nloc=...) returns data for a specific group.
+    Only types used by decoded frames must be supported by the model;
+    unused element-table entries do not restrict the model's type map.
     """
 
     def __init__(
@@ -3912,28 +3935,8 @@ class LmdbTestData:
             len(self._type_map) if self._type_map else len(self._natoms_per_type)
         )
 
-        # Build type remapping if LMDB's type_map differs from model's type_map
-        lmdb_type_map = meta.get("type_map")
-        self._lmdb_type_map = lmdb_type_map
-        self._type_remap: np.ndarray | None = None
-        if (
-            lmdb_type_map is not None
-            and self._type_map
-            and list(lmdb_type_map) != list(self._type_map)
-        ):
-            remap = np.empty(len(lmdb_type_map), dtype=np.int32)
-            for i, name in enumerate(lmdb_type_map):
-                if name not in self._type_map:
-                    raise ValueError(
-                        f"Element '{name}' in LMDB type_map {lmdb_type_map} "
-                        f"not found in model type_map {self._type_map}"
-                    )
-                remap[i] = self._type_map.index(name)
-            self._type_remap = remap
-            log.info(
-                f"LmdbTestData type remapping: LMDB {lmdb_type_map} -> "
-                f"model {self._type_map}, remap={remap}"
-            )
+        self._lmdb_type_map = meta.get("type_map")
+        self._type_remap = _make_type_remap(self._lmdb_type_map, self._type_map or None)
 
         # Select the frames to test, without reading any of them. Atom counts
         # come from the metadata, so grouping, shuffling and truncation are
@@ -3954,6 +3957,7 @@ class LmdbTestData:
             data_requirements=self._requirements,
             dataset=self.lmdb_path,
             type_map=self._type_map,
+            lmdb_type_map=self._lmdb_type_map,
         )
 
         # Detect PBC from the first retained frame.

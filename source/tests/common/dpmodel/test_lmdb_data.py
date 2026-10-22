@@ -48,7 +48,6 @@ from deepmd.dpmodel.utils.lmdb_data import (
     _chop_mixed_nloc,
     _expand_indices_by_blocks,
     _merge_lmdb_chunks,
-    _remap_atom_types,
     collate_lmdb_frames,
     collect_lmdb_sampling_groups,
     compute_block_targets,
@@ -1888,6 +1887,80 @@ class TestTypeMapRemapping(unittest.TestCase):
     def tearDownClass(cls):
         cls._tmpdir.cleanup()
 
+    def _subset_type_map_lmdb(self, name: str, second_type: int = 2) -> str:
+        """Build two frames using a sparse source type map and a virtual atom."""
+        path = _create_lmdb_with_virtual_type(f"{self._tmpdir.name}/{name}.lmdb")
+        with lmdb.open(path) as environment, environment.begin(write=True) as txn:
+            meta = msgpack.unpackb(txn.get(b"__metadata__"), raw=False)
+            meta.update(
+                nframes=2,
+                type_map=["O", "He", "H"],
+                frame_nlocs=[3, 3],
+                system_info={"natoms": [1, 0, 1]},
+            )
+            txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+            frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
+            for index, last_type in enumerate((2, second_type)):
+                frame["atom_types"] = {
+                    "type": "<i8",
+                    "shape": [3],
+                    "data": np.array([0, -1, last_type], dtype=np.int64).tobytes(),
+                }
+                txn.put(
+                    format(index, "012d").encode(),
+                    msgpack.packb(frame, use_bin_type=True),
+                )
+        return path
+
+    def test_unused_elements_allow_a_reordered_model_subset(self) -> None:
+        path = self._subset_type_map_lmdb("unused_elements")
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        for index in range(2):
+            np.testing.assert_array_equal(reader[index]["atype"], [1, -1, 0])
+            np.testing.assert_array_equal(reader[index]["natoms"], [3, 3, 1, 1])
+        batch = reader.decode_batch([0, 1])
+        np.testing.assert_array_equal(batch["atype"], [[1, -1, 0], [1, -1, 0]])
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        np.testing.assert_array_equal(test_data.get_test()["type"], batch["atype"])
+        original_types = LmdbTestData(path, shuffle_test=False)
+        np.testing.assert_array_equal(
+            original_types.get_test()["type"], [[0, -1, 2], [0, -1, 2]]
+        )
+
+    def test_unsupported_element_in_a_later_frame_is_rejected(self) -> None:
+        path = self._subset_type_map_lmdb("used_unsupported_element", second_type=1)
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        np.testing.assert_array_equal(reader[0]["atype"], [1, -1, 0])
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            reader[1]
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            reader.decode_batch([0, 1])
+        iterator = LmdbBatchIterator(
+            reader, LmdbBatchSampler(reader, shuffle=False), num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            next(iterator)
+        test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+        with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
+            test_data.get_test()
+        selected = LmdbTestData(
+            path, type_map=["H", "O"], shuffle_test=False, max_frames=1
+        )
+        np.testing.assert_array_equal(selected.get_test()["type"], [[1, -1, 0]])
+
+    def test_subset_remapping_reaches_parallel_decoder_workers(self) -> None:
+        path = self._subset_type_map_lmdb("parallel_subset")
+        reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+        self.addCleanup(reader.close)
+        iterator = LmdbBatchIterator(
+            reader, LmdbBatchSampler(reader, shuffle=False), num_workers=2
+        )
+        self.addCleanup(iterator.close)
+        np.testing.assert_array_equal(next(iterator)["atype"], [[1, -1, 0], [1, -1, 0]])
+
     def test_reader_no_remap_when_match(self):
         reader = LmdbDataReader(self._lmdb_path, ["O", "H"])
         self.assertIsNone(reader._type_remap)
@@ -1914,8 +1987,10 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.assertEqual(natoms[3], 2)  # O count
 
     def test_reader_missing_element_raises(self):
+        reader = LmdbDataReader(self._lmdb_path, ["O"])
+        self.addCleanup(reader.close)
         with self.assertRaises(ValueError):
-            LmdbDataReader(self._lmdb_path, ["O"])
+            reader[0]
 
     def test_reader_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -1971,8 +2046,11 @@ class TestTypeMapRemapping(unittest.TestCase):
 
     def test_positive_out_of_range_type_still_raises(self):
         """A malformed real type must not be mistaken for a virtual sentinel."""
+        path = self._subset_type_map_lmdb("invalid_type_index", second_type=3)
+        reader = LmdbDataReader(path, ["H", "O"])
+        self.addCleanup(reader.close)
         with self.assertRaises(IndexError):
-            _remap_atom_types(np.array([0, 2]), np.array([1, 0]))
+            reader[1]
 
 
 # ============================================================
