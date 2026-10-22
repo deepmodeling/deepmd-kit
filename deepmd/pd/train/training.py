@@ -748,6 +748,25 @@ class Trainer:
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
 
     def run(self) -> None:
+        """Train while releasing native readers and producer threads on exit."""
+        try:
+            self._run_training()
+        finally:
+            pipelines = (
+                self.training_data,
+                self.validation_data,
+                self.training_dataloader,
+                self.validation_dataloader,
+            )
+            for pipeline in pipelines:
+                sources = (
+                    pipeline.values() if isinstance(pipeline, dict) else (pipeline,)
+                )
+                for source in sources:
+                    if source is not None:
+                        source.close()
+
+    def _run_training(self) -> None:
         fout = (
             open(
                 self.disp_file,

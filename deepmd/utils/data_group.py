@@ -15,6 +15,7 @@ import numpy as np
 
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
+    get_training_data_size,
 )
 from deepmd.utils.data_config import (
     check_type_map_consistency,
@@ -77,6 +78,13 @@ class GroupedDataSystem:
     node owns only the probability of selecting that child. Training and
     statistical system indices are separate flattened views: an LMDB is one
     training source but may expose several homogeneous statistical systems.
+
+    Uniform composition selects each native source with weight ``M / n``,
+    where ``M`` counts its retained systems and ``n`` is its next batch's
+    frame count, or its mean batch size for a persistent fixed-pass stream.
+    Each system therefore supplies the same long-run frame share despite
+    different native batch sizes. Nominal epoch weights use pass means;
+    runtime weights can change as LMDB packing advances.
     """
 
     def __init__(
@@ -85,11 +93,13 @@ class GroupedDataSystem:
         probabilities: Sequence[float | None],
         *,
         seed: int | None = None,
+        uniform: bool = False,
     ) -> None:
         if not children or len(children) != len(probabilities):
             raise ValueError("Data groups require one probability per nonempty child.")
         self.children = tuple(children)
         self._assigned_probabilities = tuple(probabilities)
+        self._uniform = uniform
         self._rng = np.random.default_rng(data_child_seeds(seed, 1)[0])
         self._probabilities: np.ndarray | None = None
         self._cdf: np.ndarray | None = None
@@ -99,27 +109,12 @@ class GroupedDataSystem:
         self._align_metadata()
 
     def _align_metadata(self) -> None:
-        """Preserve dataset-wide NumPy type-map and atom-count contracts."""
-        from deepmd.utils.data_system import (
-            DeepmdDataSystem,
-        )
-
+        """Resolve metadata shared by the native data sources."""
         sources = list(iter_data_sources(self))
         self.type_map = check_type_map_consistency(
             [source.get_type_map() for source in sources]
         )
         self._ntypes = max(source.get_ntypes() for source in sources)
-        numpy_sources = [
-            source for source in sources if isinstance(source, DeepmdDataSystem)
-        ]
-        if len({source.mixed_type for source in numpy_sources}) > 1:
-            raise ValueError("All NumPy data systems must agree on mixed_type.")
-        for source in numpy_sources:
-            source.sys_ntypes = self._ntypes
-            source.natoms_vec = [
-                system.get_natoms_vec(self._ntypes).astype(int)
-                for system in source.data_systems
-            ]
         self.mixed_type = any(source.mixed_type for source in sources)
 
     @property
@@ -127,7 +122,10 @@ class GroupedDataSystem:
         """Return this sampling pass's probabilities over child datasets."""
         if self._probabilities is None:
             self._probabilities = group_probabilities(
-                [sum(child.nbatches) for child in self.children],
+                [
+                    child.uniform_nominal_mass if self._uniform else sum(child.nbatches)
+                    for child in self.children
+                ],
                 self._assigned_probabilities,
             )
         return self._probabilities
@@ -195,7 +193,15 @@ class GroupedDataSystem:
         if self._remaining == 0:
             self._start_pass()
         assert self._cdf is not None
-        index = int(np.searchsorted(self._cdf, self._rng.random(), side="right"))
+        cdf = self._cdf
+        if self._uniform:
+            probabilities = group_probabilities(
+                [child.uniform_sampling_mass for child in self.children],
+                self._assigned_probabilities,
+            )
+            cdf = np.cumsum(probabilities)
+            cdf[-1] = 1.0
+        index = int(np.searchsorted(cdf, self._rng.random(), side="right"))
         self._remaining -= 1
         return self._batch_context(self.children[index].get_batch(), index)
 
@@ -258,6 +264,10 @@ class GroupedDataSystem:
     def get_nsystems(self) -> int:
         return sum(child.get_nsystems() for child in self.children)
 
+    def get_model_sampling_size(self) -> int:
+        """Sum native data sizes without applying within-task batch probabilities."""
+        return sum(get_training_data_size(child) for child in self.children)
+
     def get_ntypes(self) -> int:
         return self._ntypes
 
@@ -319,6 +329,8 @@ class GroupedDataset:
         children: Sequence[Any],
         configs: Sequence[Mapping[str, Any]],
         probabilities: Sequence[float | None],
+        *,
+        uniform: bool = False,
     ) -> None:
         if not children or not len(children) == len(configs) == len(probabilities):
             raise ValueError(
@@ -327,6 +339,7 @@ class GroupedDataset:
         self.children = tuple(children)
         self.configs = tuple(configs)
         self.probability_specs = tuple(probabilities)
+        self.uniform = uniform
         self.filter_enabled: tuple[bool, ...] | None = None
 
     def __len__(self) -> int:
@@ -391,14 +404,22 @@ class TrainingDataLoader:
         batch_counts: Callable[[], Sequence[int]],
         *,
         sampling_sizes: Callable[[], Sequence[int]] | None = None,
-        iterator_factory: Callable[[], Iterator[dict[str, Any]]] | None = None,
+        uniform_sampling: Any = None,
     ) -> None:
         self.dataset = dataset
         self.loader = loader
         self.probabilities = np.asarray(probabilities, dtype=np.float64)
         self._batch_counts = batch_counts
         self._sampling_sizes = sampling_sizes or batch_counts
-        self._iterator_factory = iterator_factory or loader.__iter__
+        self._uniform_sampling = uniform_sampling
+
+    @property
+    def uniform_sampling_mass(self) -> float:
+        return self._uniform_sampling.uniform_sampling_mass
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        return self._uniform_sampling.uniform_nominal_mass
 
     @property
     def batch_counts(self) -> np.ndarray:
@@ -418,7 +439,7 @@ class TrainingDataLoader:
         return compute_total_numb_batch(self.batch_counts, self.system_probabilities)
 
     def __iter__(self) -> Iterator[dict[str, Any]]:
-        return self._iterator_factory()
+        return iter(self.loader)
 
     def __len__(self) -> int:
         return len(self.loader)
@@ -452,7 +473,12 @@ class GroupedTrainingDataLoader:
     @property
     def probabilities(self) -> np.ndarray:
         return group_probabilities(
-            [float(child.sampling_sizes.sum()) for child in self.children],
+            [
+                child.uniform_nominal_mass
+                if self.dataset.uniform
+                else float(child.sampling_sizes.sum())
+                for child in self.children
+            ],
             self.dataset.probability_specs,
         )
 
@@ -493,6 +519,13 @@ class GroupedTrainingDataLoader:
         )
         offsets = np.cumsum([0, *(len(child.batch_counts) for child in self.children)])
         for _ in range(count):
+            if self.dataset.uniform:
+                probabilities = group_probabilities(
+                    [child.uniform_sampling_mass for child in self.children],
+                    self.dataset.probability_specs,
+                )
+                cdf = np.cumsum(probabilities)
+                cdf[-1] = 1.0
             index = int(np.searchsorted(cdf, self._rng.random(), side="right"))
             if index not in self._iterators:
                 self._iterators[index] = iter(self.children[index])

@@ -1728,6 +1728,7 @@ class LmdbBatchIterator:
         self._sampler = sampler
         self._epoch = 0
         self._queued_pass_length = 0
+        self._queued_nframes = 0.0
         self._last_pass_length: int | None = None
         self._iterator = self._iter_epoch()
         self._num_workers = num_workers
@@ -1748,13 +1749,15 @@ class LmdbBatchIterator:
             batch = self._collect(pending)
         elif self._deferred_indices is not None:
             indices, self._deferred_indices = self._deferred_indices, None
-            batch = self._reader.decode_batch(indices)
+            batch = self._decode(indices)
         else:
-            indices, self._queued_pass_length = self._next_indices()
+            indices, self._queued_pass_length, self._queued_nframes = (
+                self._next_indices()
+            )
             batch = self._decode(indices)
 
         self._last_pass_length = self._queued_pass_length
-        indices, self._queued_pass_length = self._next_indices()
+        indices, self._queued_pass_length, self._queued_nframes = self._next_indices()
         self._schedule(indices)
         return batch
 
@@ -1834,7 +1837,7 @@ class LmdbBatchIterator:
             "decoders outlive the session that started it."
         )
 
-    def _next_indices(self) -> tuple[list[int], int]:
+    def _next_indices(self) -> tuple[list[int], int, float]:
         """Return the next sampler batch and restart after exhaustion."""
         try:
             return next(self._iterator)
@@ -1843,8 +1846,8 @@ class LmdbBatchIterator:
             self._iterator = self._iter_epoch()
             return next(self._iterator)
 
-    def _iter_epoch(self) -> Iterator[tuple[list[int], int]]:
-        """Tag batches with the length of the sampler pass that owns them."""
+    def _iter_epoch(self) -> Iterator[tuple[list[int], int, float]]:
+        """Snapshot each batch's pass length and rank-averaged frame count."""
         set_epoch = getattr(self._sampler, "set_epoch", None)
         if callable(set_epoch):
             set_epoch(self._epoch)
@@ -1852,8 +1855,39 @@ class LmdbBatchIterator:
         # enter another pass before the current batch reaches its consumer.
         # Snapshot the length lazily, after data requirements and layout are set.
         pass_length = len(self._sampler)
-        for indices in self._sampler:
-            yield indices, pass_length
+        frame_counts = getattr(self._sampler, "batch_frame_counts", None)
+        counts = frame_counts() if frame_counts is not None else None
+        for index, indices in enumerate(self._sampler):
+            nframes = len(indices) if counts is None else counts[index]
+            yield indices, pass_length, float(nframes)
+
+    @property
+    def uniform_sampling_mass(self) -> float:
+        """Weight the next batch by its retained systems per sampled frame.
+
+        Only sampler indices are inspected; no extra batch is decoded. The
+        frame count belongs to the queued batch, even when prefetching has
+        already advanced the sampler to another pass. Distributed samplers
+        report the same rank-averaged count on every rank.
+        """
+        nsystems = self._reader.sampling_nsystems
+        if not nsystems:
+            return 0.0
+        if self._pending is None and self._deferred_indices is None:
+            (
+                self._deferred_indices,
+                self._queued_pass_length,
+                self._queued_nframes,
+            ) = self._next_indices()
+        return nsystems / self._queued_nframes
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        """Return the systems-per-frame weight averaged over a sampler pass."""
+        nsystems = self._reader.sampling_nsystems
+        if not nsystems:
+            return 0.0
+        return nsystems / float(np.mean(self._sampler.batch_frame_counts()))
 
     def _submit(self, indices: list[int]) -> list[Future[dict[str, Any]]]:
         """Submit one batch as balanced contiguous chunks.
@@ -1898,7 +1932,7 @@ class LmdbBatchIterator:
     def batch_pass_length(self) -> int:
         """Length of the last returned batch's pass, or the first pending pass."""
         if self._last_pass_length is None:
-            return len(self._sampler)
+            return self._queued_pass_length or len(self._sampler)
         return self._last_pass_length
 
     @property
@@ -2267,6 +2301,7 @@ class LmdbDataReader:
             ).tolist()
         else:
             self._system_nframes = [self.nframes]
+        self.sampling_nsystems = sum(count > 0 for count in self._system_nframes)
 
         # Nominal batch size, reported to callers that want a single number.
         # The sampler never uses it: same-nloc modes go through
@@ -3015,6 +3050,13 @@ def compute_block_targets(
         prob_sys_size_ext,
     )
 
+    if auto_prob_style == "prob_uniform":
+        retained = [index for index, count in enumerate(system_nframes) if count > 0]
+        target = max(system_nframes, default=0)
+        if all(system_nframes[index] == target for index in retained):
+            return []
+        return [([index], target) for index in retained]
+
     # Parse block definitions from the auto_prob string
     # Format: "prob_sys_size;stt:end:weight;stt:end:weight;..."
     block_str = auto_prob_style.split(";")[1:]
@@ -3686,6 +3728,10 @@ class LmdbBatchSampler:
         """Number of batches the pending pass holds."""
         return len(self.batches())
 
+    def batch_frame_counts(self) -> np.ndarray:
+        """Return the number of frames in each pending optimizer batch."""
+        return np.fromiter((len(batch) for batch in self.batches()), dtype=np.float64)
+
     @property
     def total_batches(self) -> int:
         """Number of batches the pending pass holds over the whole dataset.
@@ -3799,6 +3845,22 @@ class DistributedLmdbBatchSampler:
     def __len__(self) -> int:
         """Number of batches for this rank."""
         return len(self._partition_batches(self._global_batches()))
+
+    def batch_frame_counts(self) -> np.ndarray:
+        """Return rank-averaged frame counts for each pending optimizer step.
+
+        Padding matches the strided partition, so every rank obtains identical
+        source-selection weights even when their local batch sizes differ.
+        Custom partitioning strategies must provide their corresponding
+        rank-averaged counts when used with uniform source sampling.
+        """
+        counts = np.fromiter(
+            (len(batch) for batch in self._global_batches()), dtype=np.float64
+        )
+        if counts.size == 0:
+            return counts
+        padded = np.resize(counts, len(self) * self._world_size)
+        return padded.reshape(-1, self._world_size).mean(axis=1)
 
     @property
     def total_batches(self) -> int:

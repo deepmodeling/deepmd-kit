@@ -130,3 +130,7 @@ class TestSystemDiscovery(unittest.TestCase):
             self.assertEqual(
                 process_systems([expected[1], expected[0]]), expected[::-1]
             )
+            self.assertEqual(
+                process_systems("systems.h5#/nested", root_dir=directory),
+                [expected[1]],
+            )

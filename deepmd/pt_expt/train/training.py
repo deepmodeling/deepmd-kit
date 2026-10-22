@@ -2837,8 +2837,9 @@ class Trainer(AbstractTrainer):
         The epoch length is ``ceil(max_i(local_batches[i] / sys_probs[i]))``.
         Each LMDB contributes its sampler's rank-local workload, including
         its own distributed padding. Replicated NumPy readers contribute
-        their global batch counts divided by world size. Sampling probabilities
-        use global source sizes and do not change with per-rank padding.
+        their global batch counts divided by world size. Size-based sampling
+        uses global source sizes without per-rank padding; uniform sampling
+        corrects for each native stream's rank-averaged batch frame count.
         This scheduled workload differs from a replicated reader's pass length,
         which is exposed separately through ``get_batch_pass_length``.
         """

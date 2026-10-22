@@ -5800,7 +5800,7 @@ def training_data_args() -> Argument:
 - string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model and needs no configuration of its own: a descriptor reading a flat node axis (the graph route of the PyTorch Exportable backend) takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms with `atype = -1` that the neighbor list, the model and the loss all skip. Unlike `"max:N"`, which leaves an under-filled batch whenever an nloc group is small, this keeps every batch close to `N` atoms. A lone frame with nloc > `N` still forms a batch of its own.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
     doc_sys_probs = (
@@ -5852,7 +5852,7 @@ If MPI is used, the value should be considered as the batch size per task.'
             default="prob_sys_size",
             doc=doc_auto_prob_style
             + " When a group expands to multiple sources including LMDB, only "
-            "prob_sys_size is supported. Use separate groups to configure "
+            "prob_sys_size and prob_uniform are supported. Use separate groups to configure "
             "individual LMDB system probabilities.",
             alias=[
                 "auto_prob_style",
@@ -5927,7 +5927,7 @@ def validation_data_args() -> list[
 - string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
 - string "mix:N": LMDB data only. Frames of different atom counts share a batch, filled until the next frame would push the atom axis of the batch past `N`. How that axis is laid out follows from the model: a descriptor reading a flat node axis takes the frames of a batch concatenated, so `N` counts real atoms and nothing is padded; every other descriptor takes them padded to the widest frame of the batch, so `N` counts the padded slots `nframes * max_nloc` and the shorter frames carry phantom atoms that the neighbor list, the model and the loss all skip.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
-- "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
+- "prob_uniform" : each retained system supplies the same long-run share of sampled frames. This includes internal LMDB systems and corrects for differing batch frame counts.\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
     doc_sys_probs = (
@@ -5962,7 +5962,7 @@ def validation_data_args() -> list[
             optional=True,
             default="prob_sys_size",
             doc=doc_auto_prob_style
-            + " Only prob_sys_size is supported when systems expands to "
+            + " Only prob_sys_size and prob_uniform are supported when systems expands to "
             "multiple sources including LMDB.",
             alias=[
                 "auto_prob_style",
@@ -6161,8 +6161,11 @@ def training_args(
     doc_model_prob = (
         "The visiting probability of each model for each training step in the "
         "multi-task mode. Only used when num_epoch_dict is not set. If not set "
-        "or an empty dict, defaults to weights proportional to the number of "
-        "systems per task."
+        "or an empty dict, defaults to each task's native data size: the number "
+        "of NPY/HDF5 systems, or retained LMDB frames on the PyTorch and "
+        "PyTorch Exportable backends. Grouped inputs sum their native sizes "
+        "without applying group probabilities. Batch size and nominal epoch "
+        "length do not affect these default weights."
     )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."

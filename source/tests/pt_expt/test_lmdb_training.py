@@ -22,6 +22,7 @@ import lmdb
 import msgpack
 import numpy as np
 
+import deepmd.utils.random as dp_random
 from deepmd.dpmodel.utils import lmdb_data as lmdb_data_module
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
@@ -724,6 +725,24 @@ class TestLmdbDatasetGroups(unittest.TestCase):
         workers = patch.dict(os.environ, {"DP_LMDB_NUM_WORKERS": "0"})
         workers.start()
         self.addCleanup(workers.stop)
+
+    def test_unseeded_distributed_groups_share_source_choices(self) -> None:
+        sequences = []
+        for rank in range(2):
+            dp_random.seed(17 + rank)
+            data = _build_data_system(
+                {
+                    "systems": [self.first, self.second],
+                    "batch_size": 1,
+                    "auto_prob": "prob_uniform",
+                },
+                ["O", "H"],
+                rank=rank,
+                world_size=2,
+            )
+            self.addCleanup(data.close)
+            sequences.append([data.get_batch()["coord"].shape[1] for _ in range(24)])
+        self.assertEqual(sequences[0], sequences[1])
 
     def test_multiple_paths_and_recursive_parent_use_flat_sampling(self) -> None:
         for systems in ([self.first, self.parent], self.directory):

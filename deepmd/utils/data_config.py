@@ -160,10 +160,14 @@ def resolve_data_groups(
         if not systems:
             raise ValueError(f"Data group {index} contains no supported data systems.")
         if len(systems) > 1 and any(is_lmdb(path) for path in systems):
-            if group.get("auto_prob", "prob_sys_size") != "prob_sys_size":
+            if group.get("auto_prob", "prob_sys_size") not in (
+                "prob_sys_size",
+                "prob_uniform",
+            ):
                 raise ValueError(
                     f"Data group {index} expands to multiple sources including LMDB, "
-                    "so auto_prob must be prob_sys_size. Use separate training_data groups "
+                    "so auto_prob must be prob_sys_size or prob_uniform. "
+                    "Use separate training_data groups "
                     "to configure each LMDB's internal system probabilities."
                 )
             if group.get("sys_probs") is not None:

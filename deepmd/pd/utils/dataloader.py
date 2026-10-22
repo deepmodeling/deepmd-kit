@@ -7,10 +7,14 @@ from collections.abc import (
     Iterable,
     Iterator,
 )
+from functools import (
+    cached_property,
+)
 from multiprocessing.dummy import (
     Pool,
 )
 from threading import (
+    Event,
     Thread,
 )
 from typing import (
@@ -242,6 +246,22 @@ class DpLoaderSet(Dataset):
     def __len__(self) -> int:
         return len(self.dataloaders)
 
+    @cached_property
+    def mean_batch_nframes(self) -> np.ndarray:
+        """Count frames per native batch, including tails and distributed padding."""
+        return np.asarray(
+            [
+                (
+                    sampler.num_samples
+                    if isinstance(sampler, DistributedBatchSampler)
+                    else len(sampler.sampler)
+                )
+                / count
+                for sampler, count in zip(self.sampler_list, self.index, strict=True)
+            ],
+            dtype=np.float64,
+        )
+
     def __getitem__(self, idx: int) -> dict:
         # log.warning(str(paddle.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
         try:
@@ -291,13 +311,32 @@ class BackgroundConsumer(Thread):
         self._queue = queue
         self._source = source  # Main DL iterator
         self._max_len = max_len
+        self._stop_requested = Event()
 
     def run(self) -> None:
         for item in self._source:
-            self._queue.put(item)  # Blocking if the queue is full
+            if self._stop_requested.is_set():
+                return
+            if not self._put(item):
+                return
 
         # Signal the consumer we are done.
-        self._queue.put(_sentinel)
+        self._put(_sentinel)
+
+    def _put(self, item: Any) -> bool:
+        """Wait for buffer capacity while allowing the owner to stop loading."""
+        while not self._stop_requested.is_set():
+            try:
+                self._queue.put(item, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def close(self) -> None:
+        """Stop producing batches and wait for the active read to complete."""
+        self._stop_requested.set()
+        self.join()
 
 
 class BufferedIterator:
@@ -322,6 +361,8 @@ class BufferedIterator:
         return self.total
 
     def __next__(self) -> Any:
+        if self._iterable is None:
+            raise StopIteration
         # Create consumer if not created yet
         if self._consumer is None:
             self._create_consumer()
@@ -344,8 +385,18 @@ class BufferedIterator:
         if isinstance(item, Exception):
             raise item
         if item is _sentinel:
+            self.close()
             raise StopIteration
         return item
+
+    def close(self) -> None:
+        """Release buffered batches before the owner closes the native loader."""
+        if self._consumer is not None:
+            self._consumer.close()
+            self._consumer = None
+        self._iterable = None
+        while not self._queue.empty():
+            self._queue.get_nowait()
 
 
 def collate_batch(batch: list[dict]) -> dict:
@@ -366,6 +417,26 @@ def collate_batch(batch: list[dict]) -> dict:
     return result
 
 
+class DpDataLoader(DataLoader):
+    """Own native reader threads and persistent per-system worker cursors."""
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        self._active_iterator = super().__iter__()
+        return self._active_iterator
+
+    def close(self) -> None:
+        """Release native threads or workers, including a partially consumed pass."""
+        iterator = getattr(self, "_active_iterator", None)
+        if iterator is not None:
+            iterator._try_shutdown_all()
+            self._active_iterator = None
+            self._iterator = None
+
+    def __del__(self) -> None:
+        """Release workers if construction or initialization ends before training."""
+        self.close()
+
+
 def get_weighted_sampler(
     training_data: DpLoaderSet, prob_style: str | list[float], sys_prob: bool = False
 ) -> WeightedRandomSampler:
@@ -373,6 +444,11 @@ def get_weighted_sampler(
         training_data.index,
         sys_probs=prob_style if sys_prob else None,
         auto_prob="prob_sys_size" if sys_prob else prob_style,
+        batch_nframes=(
+            training_data.mean_batch_nframes
+            if not sys_prob and prob_style == "prob_uniform"
+            else None
+        ),
     )
     log.debug("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iteraters
@@ -438,10 +514,16 @@ def create_dataloader(
         return GroupedTrainingDataLoader(data, children, seeds[0])
     params = config[0] if isinstance(config, list) else config
     sampler = get_sampler_from_params(data, params)
-    loader = DataLoader(
+    num_workers = env.NUM_WORKERS if dist.is_available() else 0
+    loader = DpDataLoader(
         data,
         batch_sampler=BatchSampler(sampler=sampler, drop_last=False),
-        num_workers=env.NUM_WORKERS if dist.is_available() else 0,
+        num_workers=num_workers,
+        persistent_workers=(
+            num_workers > 0
+            and params.get("auto_prob") == "prob_uniform"
+            and params.get("sys_probs") is None
+        ),
         collate_fn=lambda batch: batch[0],
     )
     return TrainingDataLoader(

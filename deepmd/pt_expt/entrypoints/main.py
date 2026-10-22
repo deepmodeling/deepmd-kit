@@ -104,6 +104,8 @@ def _build_data_system(
     world_size: int = 1,
 ) -> Any:
     """Bind native LMDB batching to the common grouped-data factory."""
+    if seed is None and world_size > 1:
+        seed = 0
 
     def build_lmdb(
         path: str, batch_size: int | str, auto_prob: str | None

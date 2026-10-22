@@ -39,7 +39,7 @@ def test_group_and_system_probabilities_are_independent() -> None:
 
 
 @pytest.mark.parametrize("systems_as_list", [False, True])
-def test_multi_lmdb_requires_default_auto_prob(
+def test_multi_lmdb_accepts_size_and_uniform_auto_prob(
     tmp_path: Path, systems_as_list: bool
 ) -> None:
     first = tmp_path / "first.lmdb"
@@ -55,9 +55,10 @@ def test_multi_lmdb_requires_default_auto_prob(
         {"systems": systems, "auto_prob": "prob_sys_size"}
     )
     assert explicit_default[0].systems == groups[0].systems
-    for custom in ("prob_uniform", "prob_sys_size;0:1:1"):
-        with pytest.raises(ValueError, match="auto_prob must be prob_sys_size"):
-            resolve_data_groups({"systems": systems, "auto_prob": custom})
+    uniform = resolve_data_groups({"systems": systems, "auto_prob": "prob_uniform"})
+    assert uniform[0].systems == groups[0].systems
+    with pytest.raises(ValueError, match="auto_prob must be prob_sys_size"):
+        resolve_data_groups({"systems": systems, "auto_prob": "prob_sys_size;0:1:1"})
     with pytest.raises(ValueError, match="sys_probs is not supported"):
         resolve_data_groups({"systems": systems, "sys_probs": [-1, -1]})
 

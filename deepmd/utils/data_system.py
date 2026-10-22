@@ -45,6 +45,7 @@ from deepmd.utils.data_sampling import prob_sys_size_ext as prob_sys_size_ext
 from deepmd.utils.data_sampling import process_sys_probs as process_sys_probs
 from deepmd.utils.data_sampling import (
     system_probabilities,
+    uniform_sampling_weights,
 )
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
@@ -106,7 +107,7 @@ class DeepmdDataSystem:
                 automatically by the number of batches in the system.
         auto_prob_style : str
             Determine the probability of systems automatically. The method is assigned by this key and can be
-            - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()
+            - "prob_uniform" : every system supplies the same sampled frame share.
             - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system
             - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." :
                                 the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`,
@@ -457,8 +458,40 @@ class DeepmdDataSystem:
         auto_prob_style: str = "prob_sys_size",
     ) -> None:
         self.sys_probs = system_probabilities(
-            self.nbatches, sys_probs=sys_probs, auto_prob=auto_prob_style
+            self.nbatches,
+            sys_probs=sys_probs,
+            auto_prob=auto_prob_style,
+            batch_nframes=(
+                self.mean_batch_nframes
+                if sys_probs is None and auto_prob_style == "prob_uniform"
+                else None
+            ),
         )
+
+    @cached_property
+    def mean_batch_nframes(self) -> np.ndarray:
+        """Return native mean batch sizes for per-system selection."""
+        if self.mixed_systems:
+            return np.ones(self.nsystems, dtype=np.float64)
+        return np.asarray(
+            [
+                system.get_mean_batch_nframes(size)
+                for system, size in zip(self.data_systems, self.batch_size, strict=True)
+            ],
+            dtype=np.float64,
+        )
+
+    @cached_property
+    def uniform_sampling_mass(self) -> float:
+        """Return the summed systems-per-frame weights of the native streams."""
+        if self.mixed_systems:
+            return float(self.nsystems / self.batch_size[0])
+        return float(uniform_sampling_weights(self.mean_batch_nframes).sum())
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        """Return the systems-per-frame weight averaged over native passes."""
+        return self.uniform_sampling_mass
 
     def get_batch(self, sys_idx: int | None = None) -> dict:
         # batch generation style altered by Ziyao Li:
@@ -505,7 +538,6 @@ class DeepmdDataSystem:
         if sys_idx is not None:
             self.pick_idx = sys_idx
         else:
-            # prob = self._get_sys_probs(sys_probs, auto_prob_style)
             self.pick_idx = dp_random.choice(
                 np.arange(self.nsystems, dtype=np.int32), p=self.sys_probs
             )
@@ -866,7 +898,7 @@ def get_data(
     seeds = (
         iter(data_child_seeds(seed, len(groups) + 1)) if needs_composition else iter(())
     )
-    datasets = []
+    group_sources = []
     for group in groups:
         sources = resolve_data_sources(group)
         has_lmdb = any(source.format == "lmdb" for source in sources)
@@ -892,12 +924,33 @@ def get_data(
                     source.systems[0], source.batch_size, group.auto_prob
                 )
             children.append(child)
-        data = (
+        group_sources.append(children)
+
+    sources = [source for children in group_sources for source in children]
+    numpy_sources = [
+        source for source in sources if isinstance(source, DeepmdDataSystem)
+    ]
+    if len({source.mixed_type for source in numpy_sources}) > 1:
+        raise ValueError("All NumPy data systems must agree on mixed_type.")
+    ntypes = max(source.get_ntypes() for source in sources)
+    for source in numpy_sources:
+        source.sys_ntypes = ntypes
+        source.natoms_vec = [
+            system.get_natoms_vec(ntypes).astype(int) for system in source.data_systems
+        ]
+    datasets = [
+        (
             children[0]
             if len(children) == 1
-            else GroupedDataSystem(children, [None] * len(children), seed=next(seeds))
+            else GroupedDataSystem(
+                children,
+                [None] * len(children),
+                seed=next(seeds),
+                uniform=group.auto_prob == "prob_uniform",
+            )
         )
-        datasets.append(data)
+        for group, children in zip(groups, group_sources, strict=True)
+    ]
     return (
         datasets[0]
         if len(datasets) == 1

@@ -2015,6 +2015,14 @@ class TestAutoProb(unittest.TestCase):
         self.assertIsNone(reader.frame_system_ids)
         tmpdir.cleanup()
 
+    def test_uniform_targets_balance_retained_systems(self) -> None:
+        self.assertEqual(
+            compute_block_targets("prob_uniform", 3, [1, 0, 9]),
+            [([0], 9), ([2], 9)],
+        )
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [9, 9]), [])
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [0, 0]), [])
+
     def test_compute_block_targets_equal_weight(self):
         result = compute_block_targets(
             "prob_sys_size;0:1:0.5;1:2:0.5", nsystems=2, system_nframes=[100, 100]

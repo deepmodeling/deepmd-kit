@@ -1267,15 +1267,11 @@ class TestSkippedTrainingBatch(unittest.TestCase):
 
 class TestEMATraining(unittest.TestCase):
     def setUp(self) -> None:
-        import deepmd.pt.train.training as training_module
         import deepmd.pt.utils.env as env_module
 
-        self._num_workers_state = (
-            (env_module, env_module.NUM_WORKERS),
-            (training_module, training_module.NUM_WORKERS),
-        )
+        self._num_workers_state = env_module.NUM_WORKERS
+        self.addCleanup(setattr, env_module, "NUM_WORKERS", self._num_workers_state)
         env_module.NUM_WORKERS = 0
-        training_module.NUM_WORKERS = 0
         self._cwd = os.getcwd()
         self._tmpdir = tempfile.TemporaryDirectory()
         os.chdir(self._tmpdir.name)
@@ -1306,8 +1302,6 @@ class TestEMATraining(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
-        for module, num_workers in self._num_workers_state:
-            module.NUM_WORKERS = num_workers
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 

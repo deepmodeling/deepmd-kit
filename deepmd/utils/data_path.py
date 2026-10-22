@@ -71,9 +71,11 @@ def expand_sys_str(
         name = str(candidate)
         if isinstance(candidate, DPOSPath):
             path = candidate.path
-            if _inside_lmdb(path, root.path):
+            if not candidate.is_dir():
                 continue
-            if candidate.is_dir() and is_lmdb(name):
+            if path != root.path and _inside_lmdb(path, root.path):
+                continue
+            if is_lmdb(name):
                 if "lmdb" in formats:
                     systems[name] = None
                 continue
@@ -92,18 +94,26 @@ def process_systems(
     patterns: list[str] | None = None,
     *,
     formats: tuple[DatasetFormat, ...] = ("deepmd", "lmdb"),
+    root_dir: str | Path | None = None,
 ) -> list[str]:
     """Expand every input path through the same format-aware discovery.
 
     Explicit input order and repeated input paths are preserved, so an
     input list defines the order used by per-system sampling probabilities.
     Each entry may name a dataset directly or a parent containing datasets.
+    When ``root_dir`` is supplied, relative filesystem paths are resolved
+    against it before discovery; HDF5 group fragments remain unchanged.
     """
     paths = [systems] if isinstance(systems, str) else systems
     if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
         raise ValueError(
             f"Invalid systems value {systems!r}: expected str or list[str]."
         )
+    if root_dir is not None:
+        paths = [
+            str((Path(root_dir) / file_name).resolve()) + separator + group
+            for file_name, separator, group in (path.partition("#") for path in paths)
+        ]
     return [
         system
         for path in paths

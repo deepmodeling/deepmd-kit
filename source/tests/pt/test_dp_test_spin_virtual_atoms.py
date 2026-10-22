@@ -147,9 +147,10 @@ def test_dp_test_spin_virtual_atom_metrics(tmp_path, monkeypatch, padding_label)
         capture_output=True,
         text=True,
         timeout=120,
-        check=True,
+        check=False,
     )
     output = result.stdout + result.stderr
+    assert result.returncode == 0, output
     for label, key in (("Force atom RMSE", "rmse_fr"), ("Force spin RMSE", "rmse_fm")):
         assert label in output
         assert f"{expected[key][0]:e}" in output

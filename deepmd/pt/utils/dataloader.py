@@ -4,6 +4,9 @@ import os
 from collections.abc import (
     Iterator,
 )
+from functools import (
+    cached_property,
+)
 from multiprocessing.dummy import (
     Pool,
 )
@@ -216,6 +219,23 @@ class DpLoaderSet(Dataset):
     def __len__(self) -> int:
         return len(self.dataloaders)
 
+    @cached_property
+    def mean_batch_nframes(self) -> np.ndarray:
+        """Count frames per native batch, including tails and distributed padding."""
+        return np.asarray(
+            [len(loader.sampler) / len(loader) for loader in self.dataloaders],
+            dtype=np.float64,
+        )
+
+    @cached_property
+    def uniform_sampling_mass(self) -> float:
+        """Return the summed systems-per-frame weights of the native streams."""
+        return float(np.reciprocal(self.mean_batch_nframes).sum())
+
+    @property
+    def uniform_nominal_mass(self) -> float:
+        return self.uniform_sampling_mass
+
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         # log.warning(str(torch.distributed.get_rank())+" idx: "+str(idx)+" index: "+str(self.index[idx]))
         with torch.device("cpu"):
@@ -278,6 +298,20 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+class DpDataLoader(DataLoader):
+    """Own native CPU loading and persistent per-system reader cursors."""
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        with torch.device("cpu"):
+            return super().__iter__()
+
+    def close(self) -> None:
+        """Release the persistent worker pool owned by this loader."""
+        if self._iterator is not None:
+            self._iterator._shutdown_workers()
+            self._iterator = None
+
+
 def get_weighted_sampler(
     training_data: Any, prob_style: str | list[float], sys_prob: bool = False
 ) -> WeightedRandomSampler:
@@ -285,6 +319,11 @@ def get_weighted_sampler(
         training_data.index,
         sys_probs=prob_style if sys_prob else None,
         auto_prob="prob_sys_size" if sys_prob else prob_style,
+        batch_nframes=(
+            training_data.mean_batch_nframes
+            if not sys_prob and prob_style == "prob_uniform"
+            else None
+        ),
     )
     log.debug("Generated weighted sampler with prob array: " + str(probs))
     # training_data.total_batch is the size of one epoch, you can increase it to avoid too many  rebuilding of iterators
@@ -353,7 +392,12 @@ def create_dataset(
         datasets.append(
             children[0]
             if len(children) == 1
-            else GroupedDataset(children, child_configs, [None] * len(children))
+            else GroupedDataset(
+                children,
+                child_configs,
+                [None] * len(children),
+                uniform=group.auto_prob == "prob_uniform",
+            )
         )
     return (
         datasets[0]
@@ -405,22 +449,25 @@ def create_dataloader(
             np.ones(1, dtype=np.float64),
             lambda: [len(loader)],
             sampling_sizes=lambda: [sampler.total_batches],
+            uniform_sampling=loader._batch_iterator,
         )
     params = config[0] if isinstance(config, list) else config
     sampler = get_sampler_from_params(data, params)
-    loader = DataLoader(
+    num_workers = env.NUM_WORKERS if dist.is_available() else 0
+    loader = DpDataLoader(
         data,
         sampler=sampler,
         batch_size=None,
-        num_workers=env.NUM_WORKERS if dist.is_available() else 0,
+        num_workers=num_workers,
+        persistent_workers=(
+            num_workers > 0
+            and params.get("auto_prob") == "prob_uniform"
+            and params.get("sys_probs") is None
+        ),
         drop_last=False,
         collate_fn=lambda batch: batch,
         pin_memory=DEVICE.type != "cpu",
     )
-
-    def iterate() -> Iterator[dict[str, Any]]:
-        with torch.device("cpu"):
-            return iter(loader)
 
     return TrainingDataLoader(
         data,
@@ -430,5 +477,5 @@ def create_dataloader(
         sampling_sizes=lambda: global_batch_counts(
             [len(system) for system in data.systems], data.batch_sizes
         ),
-        iterator_factory=iterate,
+        uniform_sampling=data,
     )

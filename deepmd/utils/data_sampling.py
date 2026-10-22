@@ -68,20 +68,39 @@ def prob_sys_size_ext(
     return sys_probs
 
 
+def uniform_sampling_weights(batch_nframes: Sequence[float] | np.ndarray) -> np.ndarray:
+    """Return inverse batch sizes, excluding streams that supply no frames."""
+    sizes = np.asarray(batch_nframes, dtype=np.float64)
+    return np.divide(1.0, sizes, out=np.zeros_like(sizes), where=sizes > 0)
+
+
 def system_probabilities(
     nbatches: Sequence[int] | np.ndarray,
     *,
     sys_probs: Sequence[float] | None = None,
     auto_prob: str = "prob_sys_size",
+    batch_nframes: Sequence[float] | np.ndarray | None = None,
 ) -> np.ndarray:
-    """Resolve the established per-system sampling rules."""
+    """Resolve batch probabilities, correcting uniform sampling for frame counts.
+
+    ``batch_nframes`` gives the mean frames per batch of each native stream.
+    Its reciprocal makes ``prob_uniform`` allocate equal sampled frame shares
+    rather than equal batch counts. Without batching metadata, every draw is
+    treated as one frame. Explicit ``sys_probs`` remain batch probabilities.
+    """
     nsystems = len(nbatches)
     if nsystems == 0:
         raise ValueError("No systems provided.")
     if sys_probs is not None:
         return process_sys_probs(sys_probs, nbatches)
     if auto_prob == "prob_uniform":
-        return np.full(nsystems, 1.0 / nsystems, dtype=np.float64)
+        sizes = (
+            np.ones(nsystems, dtype=np.float64)
+            if batch_nframes is None
+            else batch_nframes
+        )
+        weights = uniform_sampling_weights(sizes)
+        return group_probabilities(weights, [None] * nsystems)
     if auto_prob == "prob_sys_size":
         auto_prob = f"prob_sys_size;0:{nsystems}:1.0"
     if not auto_prob.startswith("prob_sys_size;"):
@@ -90,7 +109,7 @@ def system_probabilities(
 
 
 def group_probabilities(
-    sizes: Sequence[int] | np.ndarray, probabilities: Sequence[float | None]
+    sizes: Sequence[float] | np.ndarray, probabilities: Sequence[float | None]
 ) -> np.ndarray:
     """Assign group probabilities, sharing any remainder by group size."""
     if len(sizes) != len(probabilities):
