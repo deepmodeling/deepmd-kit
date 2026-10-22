@@ -33,6 +33,9 @@ from deepmd.pt.entrypoints.main import (
 from deepmd.pt.model.atomic_model.density_atomic_model import (
     DPDensityAtomicModel,
 )
+from deepmd.pt.model.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
 from deepmd.pt.model.descriptor.hybrid import (
     DescrptHybrid,
 )
@@ -609,9 +612,7 @@ class TestDPTestDensity(unittest.TestCase):
             self.assertIsNotNone(update_path)
             # The parent pass writes a complete cache with the ordinary
             # zero-sample placeholder for the reserved grid type.
-            super(DPDensityAtomicModel, atomic_model).compute_or_load_stat(
-                sampler, update_path
-            )
+            DPAtomicModel.compute_or_load_stat(atomic_model, sampler, update_path)
         original = stat_file.read_bytes()
 
         with open_stat_file(StatFileSpec(str(stat_file), "read")) as read_path:
