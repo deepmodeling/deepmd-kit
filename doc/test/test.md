@@ -23,7 +23,7 @@ An explanation will be provided
 For periodic systems whose test data contain virial labels (`virial.npy`), `dp test` additionally reports the stress error of energy models.
 The stress is derived from the virial as $\sigma = -\Xi / V$, where $\Xi$ is the virial and $V$ is the cell volume, i.e. the tensile-positive convention in units of eV/Å³.
 Frames with a singular cell are excluded from the stress error.
-The summary of each system, as well as the average over all systems, then contains
+When at least one frame has a non-singular cell, the summary of each system, as well as the average over all systems, contains
 
 ```
 Stress MAE         : ... eV/Å³
