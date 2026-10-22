@@ -78,20 +78,25 @@ def _wigner_d_assemble_impl(
     return d_full
 
 
-_wigner_d_assemble_op = torch.library.custom_op(
-    "sezm_nn::wigner_d_assemble", mutates_args=()
-)(_wigner_d_assemble_impl)
+_wigner_d_assemble_op: Any = None
+if hasattr(torch.library, "custom_op"):
+    # torch.library.custom_op / register_fake / register_autograd arrived in
+    # torch 2.4 while the declared minimum is 2.1: on a 2.1-2.3 install the
+    # operator stays unregistered (None) and both the eager and the traced
+    # route below keep the autograd-through-scatter implementation.
+    _wigner_d_assemble_op = torch.library.custom_op(
+        "sezm_nn::wigner_d_assemble", mutates_args=()
+    )(_wigner_d_assemble_impl)
 
-
-@_wigner_d_assemble_op.register_fake
-def _(
-    blocks: list[torch.Tensor],
-    dim_full: int,
-    poly_lmin: int,
-    n_regular: int,
-) -> torch.Tensor:
-    ref = blocks[0]
-    return ref.new_zeros((ref.shape[0], dim_full, dim_full))
+    @_wigner_d_assemble_op.register_fake
+    def _(
+        blocks: list[torch.Tensor],
+        dim_full: int,
+        poly_lmin: int,
+        n_regular: int,
+    ) -> torch.Tensor:
+        ref = blocks[0]
+        return ref.new_zeros((ref.shape[0], dim_full, dim_full))
 
 
 def _wigner_d_assemble_setup(ctx: Any, inputs: Any, output: Any) -> None:
@@ -121,9 +126,10 @@ def _wigner_d_assemble_backward(
     return grads, None, None, None
 
 
-_wigner_d_assemble_op.register_autograd(
-    _wigner_d_assemble_backward, setup_context=_wigner_d_assemble_setup
-)
+if _wigner_d_assemble_op is not None:
+    _wigner_d_assemble_op.register_autograd(
+        _wigner_d_assemble_backward, setup_context=_wigner_d_assemble_setup
+    )
 
 
 class CaseCoefficients(nn.Module):
@@ -736,7 +742,7 @@ class WignerDCalculator(nn.Module):
                 device=edge_quaternion.device,
             )
             D_full[:, 0, 0] = 1.0
-        elif tracing:
+        elif tracing and _wigner_d_assemble_op is not None:
             D_full = _wigner_d_assemble_op(
                 all_blocks,
                 self.dim_full,
