@@ -585,7 +585,7 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
             d_atom_energy.data(), d_out_force.data(), d_graph_virial.data(),
             cvflag_atom ? d_atom_virial.data() : nullptr,
             compact_graph.d_model_type.data(), compact_graph.d_source.data(),
-            compact_graph.d_edge_vec.data(),
+            DP_CANONICAL_INDEX32, compact_graph.d_edge_vec.data(),
             compact_graph.d_destination_row_ptr.data(),
             source_csr ? compact_graph.d_source_row_ptr.data() : nullptr,
             source_csr ? compact_graph.d_source_order.data() : nullptr,

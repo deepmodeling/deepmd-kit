@@ -1915,8 +1915,10 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
                 )
             arguments = run.call_args.args
             self.assertEqual(len(arguments), 8)
-            self.assertEqual(arguments[3].dtype, torch.uint32)
-            self.assertEqual(arguments[7].dtype, torch.uint32)
+            # A small graph passes its uint32 source words as their bytes.
+            self.assertEqual(arguments[3].dtype, torch.uint8)
+            self.assertEqual(arguments[3].shape[-1], 4)
+            self.assertEqual(arguments[7].dtype, torch.int64)
             self.assertEqual(arguments[4].dtype, torch.float32)
             self.assertGreater(float(reference["force"].abs().max()), 1e-8)
             for value, key in zip(
@@ -1963,7 +1965,8 @@ class TestDpa1GraphCompressEnergyForce(unittest.TestCase):
 
         self.assertEqual(metadata["lower_input_kind"], "dpa1_canonical")
         self.assertEqual(metadata["graph_edge_dtype"], "float32")
-        self.assertEqual(metadata["canonical_index_dtype"], "uint32")
+        self.assertEqual(metadata["canonical_index_dtype"], "auto")
+        self.assertEqual(metadata["canonical_index_storage"], "byte_words")
         self.assertNotIn("graph_index_dtype", metadata)
         self.assertEqual(
             output_keys,

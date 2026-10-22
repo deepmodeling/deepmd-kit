@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "DeepBaseModel.h"
+#include "canonical_graph.h"
 #include "common.h"
 #include "neighbor_list.h"
 
@@ -427,15 +428,16 @@ class DeepPotBackend : public DeepBaseModelBackend {
       double* d_virial,
       double* d_atom_virial,
       const std::int64_t* d_atype,
-      const std::uint32_t* d_source,
+      const void* d_source,
+      DP_CanonicalIndexWidth index_width,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
       const std::int64_t* d_source_row_ptr,
-      const std::uint32_t* d_source_order,
+      const std::int64_t* d_source_order,
       const double* d_coord,
       void* world,
-      const int nloc,
-      const int nall_nodes,
+      const std::int64_t nloc,
+      const std::int64_t nall_nodes,
       const std::int64_t edge_storage,
       void* stream);
   virtual bool supports_device_edge_inference() const;
@@ -932,12 +934,13 @@ class DeepPot : public DeepBaseModel {
    * null when the per-atom virial is not requested.
    * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
    * @param[in] d_source Source node per edge storage slot.
+   * @param[in] index_width Width of each source index, four or eight bytes.
    * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
    * @param[in] d_destination_row_ptr Destination CSR offsets.
    * @param[in] d_source_row_ptr Source CSR offsets. May be null together with
    * ``d_source_order`` and ``d_atom_virial`` unless
    * canonical_graph_requires_source_csr().
-   * @param[in] d_source_order Source-grouped edge storage positions.
+   * @param[in] d_source_order Source-grouped int64 edge storage positions.
    * @param[in] d_coord Node positions in the length unit of the model, shape
    * ``(nall_nodes, 3)``, in the order of ``d_atype``, or null. Only a model
    * with a long-range module (has_long_range()) reads them, and it requires
@@ -980,15 +983,16 @@ class DeepPot : public DeepBaseModel {
                                    double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::uint32_t* d_source_order,
+                                   const std::int64_t* d_source_order,
                                    const double* d_coord,
                                    void* world,
-                                   const int nloc,
-                                   const int nall_nodes,
+                                   const std::int64_t nloc,
+                                   const std::int64_t nall_nodes,
                                    const std::int64_t edge_storage,
                                    void* stream = nullptr);
 

@@ -14,6 +14,9 @@ from deepmd.pt_expt.model.get_model import (
 from deepmd.pt_expt.utils import (
     env,
 )
+from deepmd.pt_expt.utils.canonical_graph import (
+    canonical_index_bytes,
+)
 from deepmd.pt_expt.utils.serialization import (
     _resolve_lower_kind,
     _trace_and_export,
@@ -619,7 +622,8 @@ def test_compact_canonical_graph_export(
     assert isinstance(exported, torch.export.ExportedProgram)
     assert metadata["lower_input_kind"] == "dpa4c_canonical"
     assert metadata["graph_edge_dtype"] == "float32"
-    assert metadata["canonical_index_dtype"] == "uint32"
+    assert metadata["canonical_index_dtype"] == "auto"
+    assert metadata["canonical_index_storage"] == "byte_words"
 
 
 @_GPU
@@ -665,6 +669,40 @@ def test_compact_canonical_export_accepts_source_csr_placeholders(
     for key, value in complete.items():
         if key != "atom_virial":
             assert torch.equal(declined[key], value), key
+
+
+@_GPU
+@pytest.mark.parametrize("index_dtype", [torch.uint32, torch.int64])
+def test_canonical_atom_virial_sums_to_frame(
+    monkeypatch: pytest.MonkeyPatch,
+    index_dtype: torch.dtype,
+) -> None:
+    """The complete source CSR attributes the frame virial to its atoms."""
+    monkeypatch.setenv("DP_CUDA_INFER", "2")
+    model = get_model(_compressed_config(64)).to(env.DEVICE).eval()
+    graph, atype, _spin = _sample(model)
+    model.get_descriptor().enable_compression(min_nbor_dist=0.5)
+    physical = int(graph.destination_row_ptr[-1])
+    result = model.forward_lower_canonical_graph(
+        atype,
+        graph.n_node,
+        graph.n_node.clone(),
+        graph.edge_index[0, :physical].to(index_dtype).contiguous(),
+        graph.edge_vec[:physical].contiguous(),
+        graph.destination_row_ptr,
+        graph.source_row_ptr,
+        graph.source_order[:physical].to(torch.int64).contiguous(),
+        do_atomic_virial=True,
+    )
+    assert torch.isfinite(result["atom_virial"]).all()
+    assert result["atom_virial"].any()
+    torch.testing.assert_close(
+        result["atom_virial"].reshape(-1, 3, 3).sum(0),
+        result["virial"].reshape(3, 3),
+        atol=8e-6,
+        rtol=1e-4,
+        check_dtype=False,
+    )
 
 
 @_GPU
@@ -749,16 +787,19 @@ def test_a_case_embedding_deploys_on_the_compact_canonical_lower(
         destination_sorted=bool(graph.destination_sorted),
     )
     physical = int(graph.destination_row_ptr[-1])
-    deployed = exported.module()(
+    inputs = (
         atype,
         graph.n_node,
         graph.n_node.clone(),
-        graph.edge_index[0][:physical].to(torch.uint32).contiguous(),
+        canonical_index_bytes(
+            graph.edge_index[0][:physical].to(torch.uint32).contiguous()
+        ),
         graph.edge_vec[:physical].contiguous(),
         graph.destination_row_ptr,
         graph.source_row_ptr,
-        graph.source_order[:physical].to(torch.uint32).contiguous(),
+        graph.source_order[:physical].to(torch.int64).contiguous(),
     )
+    deployed = exported.module()(*inputs)
     _assert_exported_outputs(deployed, reference)
 
 
@@ -981,11 +1022,11 @@ def test_compressed_spin_lowers_match_autograd(
         atype,
         graph.n_node,
         graph.n_node.clone(),
-        graph.edge_index[0][:physical].to(torch.uint32).contiguous(),
+        graph.edge_index[0][:physical].to(torch.int64).contiguous(),
         graph.edge_vec[:physical].contiguous(),
         graph.destination_row_ptr,
         graph.source_row_ptr,
-        graph.source_order[:physical].to(torch.uint32).contiguous(),
+        graph.source_order[:physical].to(torch.int64).contiguous(),
         do_atomic_virial=False,
         spin=spin,
     )

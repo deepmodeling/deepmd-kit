@@ -1374,21 +1374,22 @@ class DeepPot : public DeepBaseModel {
                                    double* d_virial,
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
-                                   const uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
                                    const int64_t* d_source_row_ptr,
-                                   const uint32_t* d_source_order,
+                                   const int64_t* d_source_order,
                                    const double* d_coord,
                                    void* world,
-                                   const int nloc,
-                                   const int nall_nodes,
+                                   const int64_t nloc,
+                                   const int64_t nall_nodes,
                                    const int64_t edge_storage,
                                    void* stream = nullptr) {
     DP_DPA4ComputeCanonicalGraphGPU(
         dp, d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
-        d_edge_vec, d_destination_row_ptr, d_source_row_ptr, d_source_order,
-        d_coord, world, nloc, nall_nodes, edge_storage, stream);
+        index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
+        d_source_order, d_coord, world, nloc, nall_nodes, edge_storage, stream);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   }
 
@@ -1965,20 +1966,22 @@ class DeepSpin : public DeepBaseModel {
                                    double* d_virial,
                                    double* d_atom_virial,
                                    const int64_t* d_atype,
-                                   const uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const int64_t* d_destination_row_ptr,
                                    const int64_t* d_source_row_ptr,
-                                   const uint32_t* d_source_order,
+                                   const int64_t* d_source_order,
                                    const float* d_spin,
-                                   const int nloc,
-                                   const int nall_nodes,
+                                   const int64_t nloc,
+                                   const int64_t nall_nodes,
                                    const int64_t edge_storage,
                                    void* stream = nullptr) {
     DP_DPA4SpinComputeCanonicalGraphGPU(
         dp, d_atom_energy, d_force, d_force_mag, d_virial, d_atom_virial,
-        d_atype, d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
-        d_source_order, d_spin, nloc, nall_nodes, edge_storage, stream);
+        d_atype, d_source, index_width, d_edge_vec, d_destination_row_ptr,
+        d_source_row_ptr, d_source_order, d_spin, nloc, nall_nodes,
+        edge_storage, stream);
     DP_CHECK_OK(DP_DeepSpinCheckOK, dp);
   }
 

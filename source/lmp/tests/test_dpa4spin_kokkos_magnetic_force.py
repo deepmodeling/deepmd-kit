@@ -90,7 +90,8 @@ def kokkos_model():
     with zipfile.ZipFile(model) as archive:
         meta = json.loads(archive.read("model/extra/metadata.json"))
     assert meta["lower_input_kind"] == "dpa4c_canonical"
-    assert meta["canonical_index_dtype"] == "uint32"
+    assert meta["canonical_index_dtype"] == "auto"
+    assert meta["canonical_index_storage"] == "byte_words"
     assert meta["graph_edge_dtype"] == "float32"
     assert meta["spin_scheme"] == "native"
     assert meta["type_map"] == ["Ni", "O"]

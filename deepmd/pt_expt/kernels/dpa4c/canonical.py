@@ -391,6 +391,11 @@ def _generic_topology(
     destination_row_ptr: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Materialize the generic topology of a compact graph for the CPU paths."""
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_index_words,
+    )
+
+    source = canonical_index_words(source)
     physical_edge_count = int(destination_row_ptr[-1].item())
     node_count = destination_row_ptr.shape[0] - 1
     destination = torch.repeat_interleave(
@@ -585,9 +590,11 @@ def dpa4c_canonical_compress_energy_force(
     fitting
         Eligible pt_expt energy fitting network.
     graph
-        Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` and
-        whose ``destination_row_ptr`` has shape ``(N + 1,)`` in ``int64``.
-        Its source CSR is either complete or a two-entry placeholder.
+        Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` or
+        ``int64``, or shape ``(E, W)`` in ``uint8`` for the exported bytes of
+        those words, and whose ``destination_row_ptr`` has shape ``(N + 1,)``
+        in ``int64``. Its source CSR is either complete or a two-entry
+        placeholder.
     atype
         Flat node atom types with shape ``(N,)``; a negative type marks a
         virtual node, which contributes no energy.

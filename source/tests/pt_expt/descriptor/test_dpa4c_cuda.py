@@ -4008,6 +4008,9 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
     from deepmd.pt_expt.kernels import (
         fitting_routes,
     )
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_index_bytes,
+    )
     from deepmd.pt_expt.utils.serialization import (
         _trace_and_export,
         deserialize_to_file,
@@ -4027,7 +4030,7 @@ def _frozen_route_kernels(directory: str) -> dict[str, Any]:
         atype,
         graph.n_node,
         graph.n_local,
-        graph.source,
+        canonical_index_bytes(graph.source),
         graph.edge_vec,
         graph.destination_row_ptr,
         graph.source_row_ptr,

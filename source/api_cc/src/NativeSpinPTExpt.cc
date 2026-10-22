@@ -390,9 +390,12 @@ void NativeSpinPTExpt::init(const std::string& model,
           "compact canonical graph artifacts require float32 edge vectors.");
     }
     if (!metadata.obj_val.count("canonical_index_dtype") ||
-        metadata["canonical_index_dtype"].as_string() != "uint32") {
+        metadata["canonical_index_dtype"].as_string() != "auto" ||
+        !metadata.obj_val.count("canonical_index_storage") ||
+        metadata["canonical_index_storage"].as_string() != "byte_words") {
       throw deepmd::deepmd_exception(
-          "compact canonical graph artifacts require uint32 topology; "
+          "compact canonical graph artifacts require automatic-width byte "
+          "indices; "
           "re-freeze the model with the current DeePMD-kit version.");
     }
     // The compact lower is traced with the nine graph and moment inputs
@@ -583,10 +586,10 @@ std::vector<torch::Tensor> NativeSpinPTExpt::run_model_canonical(
   // The moment shares the float32 precision of the compact geometry; the cast
   // is a no-op for a caller that already holds a float32 tensor.
   const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
-  return loader->run({graph.atype, graph.n_node, graph.n_local, graph.source,
-                      graph.edge_vec, graph.destination_row_ptr,
-                      graph.source_row_ptr, graph.source_order,
-                      spin.to(torch::kFloat32)});
+  return loader->run({graph.atype, graph.n_node, graph.n_local,
+                      canonicalIndexBytes(graph.source), graph.edge_vec,
+                      graph.destination_row_ptr, graph.source_row_ptr,
+                      graph.source_order, spin.to(torch::kFloat32)});
 }
 
 std::vector<torch::Tensor> NativeSpinPTExpt::run_model_graph(
@@ -1368,14 +1371,15 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
     double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
+    const std::int64_t* d_source_order,
     const float* d_spin,
-    const int nloc,
-    const int nall_nodes,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
     const std::int64_t edge_storage,
     void* stream) {
   if (!canonical_abi_) {
@@ -1388,12 +1392,11 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
     throw deepmd::deepmd_exception(
         "compute_canonical_graph_gpu requires a CUDA device.");
   }
-  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2 ||
-      static_cast<std::uint64_t>(edge_storage) >
-          std::numeric_limits<std::uint32_t>::max()) {
+  if (nloc < 0 || nall_nodes <= 0 || nloc > nall_nodes || edge_storage < 2) {
     throw deepmd::deepmd_exception(
         "invalid compact canonical graph dimensions.");
   }
+  ptexpt::check_canonical_index(d_source, index_width, nall_nodes);
   if (d_force == nullptr || d_force_mag == nullptr || d_atype == nullptr ||
       d_source == nullptr || d_edge_vec == nullptr ||
       d_destination_row_ptr == nullptr || d_spin == nullptr ||
@@ -1422,12 +1425,14 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
     const ptexpt::CallerStreamScope stream_scope(stream, gpu_id);
     const auto opt_i64 =
         torch::TensorOptions().dtype(torch::kInt64).device(device);
-    const auto opt_u32 = torch::TensorOptions()
-                             .dtype(deepmd::canonicalGraphIndexType())
-                             .device(device);
+    const auto opt_index =
+        torch::TensorOptions()
+            .dtype(index_width == DP_CANONICAL_INDEX32 ? torch::kInt32
+                                                       : torch::kInt64)
+            .device(device);
     if (!has_source_csr && !source_row_placeholder_.defined()) {
       source_row_placeholder_ = torch::zeros({2}, opt_i64);
-      source_order_placeholder_ = torch::zeros({2}, opt_u32);
+      source_order_placeholder_ = torch::zeros({2}, opt_i64);
     }
     const void* const source_row_data =
         has_source_csr ? d_source_row_ptr : source_row_placeholder_.data_ptr();
@@ -1445,8 +1450,8 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
       CanonicalGraphTensorPack inputs;
       inputs.atype = torch::from_blob(const_cast<std::int64_t*>(d_atype),
                                       {nall_nodes}, opt_i64);
-      inputs.source = torch::from_blob(const_cast<std::uint32_t*>(d_source),
-                                       {edge_storage}, opt_u32);
+      inputs.source = torch::from_blob(const_cast<void*>(d_source),
+                                       {edge_storage}, opt_index);
       inputs.edge_vec = torch::from_blob(const_cast<float*>(d_edge_vec),
                                          {edge_storage, 3}, opt_f32);
       inputs.destination_row_ptr =
@@ -1459,8 +1464,8 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
               : source_row_placeholder_;
       inputs.source_order =
           has_source_csr
-              ? torch::from_blob(const_cast<std::uint32_t*>(d_source_order),
-                                 {edge_storage}, opt_u32)
+              ? torch::from_blob(const_cast<std::int64_t*>(d_source_order),
+                                 {edge_storage}, opt_i64)
               : source_order_placeholder_;
       const auto spin = torch::from_blob(const_cast<float*>(d_spin),
                                          {nall_nodes, 3}, opt_f32);
@@ -1515,7 +1520,7 @@ void NativeSpinPTExpt::compute_canonical_graph_gpu(
            ptexpt::address_key(d_destination_row_ptr),
            ptexpt::address_key(source_row_data),
            ptexpt::address_key(source_order_data), ptexpt::address_key(d_spin),
-           nloc, nall_nodes, edge_storage},
+           nloc, nall_nodes, edge_storage, index_width},
           gpu_id, evaluate);
     }
     if (stream == nullptr) {

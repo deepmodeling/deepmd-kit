@@ -24,6 +24,7 @@
 #include <tuple>
 #include <vector>
 
+#include "../canonical_index.h"
 #include "../graph_ops.h"
 #include "graph_compress_launch.h"
 
@@ -911,6 +912,7 @@ std::tuple<torch::Tensor, torch::Tensor> dpa4c_canonical_compress(
     double degree_floor,
     double f_inner,
     double f_outer) {
+  source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa4c_canonical_compress: source and edge_vec must share the "
               "edge axis");
@@ -957,6 +959,7 @@ dpa4c_canonical_compress_backward_common(torch::Tensor descriptor_gradient,
                                          double f_inner,
                                          double f_outer,
                                          bool reuse_state) {
+  source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa4c_canonical_compress_backward: source and edge_vec must "
               "share the edge axis");
@@ -1451,6 +1454,7 @@ dpa4c_canonical_compress_energy_force(
   TORCH_CHECK(edge_vec.is_cuda(),
               "dpa4c_canonical_compress_energy_force: edge_vec must be a CUDA "
               "tensor");
+  source = deepmd::canonical_index_view(source);
   TORCH_CHECK(source.dim() == 1 && source.numel() == edge_vec.size(0),
               "dpa4c_canonical_compress_energy_force: source and edge_vec "
               "must share the edge axis");
@@ -1502,14 +1506,15 @@ dpa4c_canonical_compress_energy_force(
       "virial; got ",
       source_row_ptr.numel(), " and ", source_order.numel());
   if (atom_virial) {
-    TORCH_CHECK(source.scalar_type() == torch::kUInt32 &&
+    TORCH_CHECK((source.scalar_type() == torch::kUInt32 ||
+                 source.scalar_type() == torch::kInt64) &&
                     on_device(source_row_ptr) &&
                     source_row_ptr.scalar_type() == torch::kInt64 &&
                     on_device(source_order) &&
-                    source_order.scalar_type() == torch::kUInt32,
+                    source_order.scalar_type() == torch::kInt64,
                 "dpa4c_canonical_compress_energy_force: the per-atom virial "
-                "needs uint32 sources and a source CSR of contiguous int64 "
-                "row pointers and uint32 positions on the device of edge_vec");
+                "needs uint32 or int64 sources and a source CSR of contiguous "
+                "int64 row pointers and positions on the device of edge_vec");
   }
   const int channels = static_cast<int>(type_embedding.size(1));
   const bool has_spin = spin.dim() == 2;

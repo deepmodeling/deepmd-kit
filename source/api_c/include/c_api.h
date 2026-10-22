@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 #include <stdint.h>
+
+#include "canonical_graph.h"
 #ifdef __cplusplus
 extern "C" {
 #else
@@ -441,12 +443,13 @@ extern void DP_DeepPotComputeEdgesGPUFloat32(DP_DeepPot* dp,
  * NULL when the per-atom virial is not requested.
  * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
  * @param[in] d_source Source node per edge storage slot.
+ * @param[in] index_width Width of each source index, four or eight bytes.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
  * @param[in] d_source_row_ptr Source CSR offsets. May be NULL together with
  * ``d_source_order`` and ``d_atom_virial`` unless
  * DP_DeepPotCanonicalGraphRequiresSourceCSR reports otherwise.
- * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] d_source_order Source-grouped int64 edge storage positions.
  * @param[in] d_coord Node positions in the length unit of the model, shape
  * ``(nall_nodes, 3)``, in the order of ``d_atype``, or NULL. Only a model
  * with a long-range module (DP_DeepPotHasLongRange) reads them, and it
@@ -495,15 +498,16 @@ extern void DP_DPA4ComputeCanonicalGraphGPU(
     double* d_virial,
     double* d_atom_virial,
     const int64_t* d_atype,
-    const uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
-    const uint32_t* d_source_order,
+    const int64_t* d_source_order,
     const double* d_coord,
     void* world,
-    int nloc,
-    int nall_nodes,
+    int64_t nloc,
+    int64_t nall_nodes,
     int64_t edge_storage,
     void* stream);
 
@@ -1335,12 +1339,13 @@ extern void DP_DeepSpinComputeNListf3(DP_DeepSpin* dp,
  * NULL when the per-atom virial is not requested.
  * @param[in] d_atype Per-node atom types, shape ``(nall_nodes)``.
  * @param[in] d_source Source node per edge storage slot.
+ * @param[in] index_width Width of each source index, four or eight bytes.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
  * @param[in] d_source_row_ptr Source CSR offsets, read only for the per-atom
  * virial. May be NULL together with ``d_source_order`` when ``d_atom_virial``
  * is NULL.
- * @param[in] d_source_order Source-grouped edge storage positions.
+ * @param[in] d_source_order Source-grouped int64 edge storage positions.
  * @param[in] d_spin FP32 per-node magnetic moment, shape ``(nall_nodes, 3)``;
  * halo rows carry their owner's moment.
  * @param[in] nloc Number of owned local nodes.
@@ -1364,14 +1369,15 @@ extern void DP_DPA4SpinComputeCanonicalGraphGPU(
     double* d_virial,
     double* d_atom_virial,
     const int64_t* d_atype,
-    const uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
     const int64_t* d_source_row_ptr,
-    const uint32_t* d_source_order,
+    const int64_t* d_source_order,
     const float* d_spin,
-    int nloc,
-    int nall_nodes,
+    int64_t nloc,
+    int64_t nall_nodes,
     int64_t edge_storage,
     void* stream);
 

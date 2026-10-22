@@ -581,9 +581,9 @@ torch::Tensor canonical_source_virial(const torch::Tensor& edge_gradient,
                                       long node_count) {
   TORCH_CHECK(edge_gradient.scalar_type() == torch::kFloat32 &&
                   edge_vec.scalar_type() == torch::kFloat32 &&
-                  source_order.scalar_type() == torch::kUInt32 &&
+                  source_order.scalar_type() == torch::kInt64 &&
                   source_row_ptr.scalar_type() == torch::kInt64,
-              "canonical_source_virial: fp32 edges, uint32 order and int64 "
+              "canonical_source_virial: fp32 edges, int64 order and int64 "
               "row pointers expected");
   const auto resident = [&](const torch::Tensor& tensor) {
     return tensor.is_cuda() &&
@@ -608,13 +608,12 @@ torch::Tensor canonical_source_virial(const torch::Tensor& edge_gradient,
   }
   const int node_blocks =
       static_cast<int>((node_count + kWarpsPerBlock - 1) / kWarpsPerBlock);
-  edge_force_virial_kernel<float, std::uint32_t, false>
+  edge_force_virial_kernel<float, long, false>
       <<<node_blocks, kThreads, 0, at::cuda::getCurrentCUDAStream()>>>(
           node_count, edge_gradient.data_ptr<float>(),
           edge_vec.data_ptr<float>(), nullptr, nullptr, nullptr,
-          source_order.data_ptr<std::uint32_t>(),
-          source_row_ptr.data_ptr<long>(), nullptr, nullptr,
-          atom_virial.data_ptr<float>(), nullptr);
+          source_order.data_ptr<long>(), source_row_ptr.data_ptr<long>(),
+          nullptr, nullptr, atom_virial.data_ptr<float>(), nullptr);
   FORCE_CHECK_LAUNCH("canonical_source_virial");
   return atom_virial;
 }

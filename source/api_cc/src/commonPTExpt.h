@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "canonical_graph.h"
 #include "common.h"  // for remap_comm_sendlist
 #include "errors.h"
 #include "neighbor_list.h"
@@ -42,6 +43,24 @@
 
 namespace deepmd {
 namespace ptexpt {
+
+/** Validate source width before wrapping caller buffers or replaying a graph.
+ */
+inline void check_canonical_index(const void* source,
+                                  DP_CanonicalIndexWidth width,
+                                  std::int64_t node_count) {
+  if (width != DP_CANONICAL_INDEX32 && width != DP_CANONICAL_INDEX64) {
+    throw deepmd_exception("canonical index width must be four or eight bytes");
+  }
+  if (width == DP_CANONICAL_INDEX32 &&
+      canonical_index_width(node_count) != width) {
+    throw deepmd_exception("canonical node count requires 64-bit indices");
+  }
+  if (reinterpret_cast<std::uintptr_t>(source) % width != 0) {
+    throw deepmd_exception(
+        "canonical source must be aligned to its word width");
+  }
+}
 
 /**
  * @brief Make a caller's accelerator stream current for one scope.

@@ -142,34 +142,32 @@ __device__ __forceinline__ float compact_canonical_displacement(const int qj,
 // Exclusive prefix of the published totals of every block before ``block``,
 // by the decoupled look-back of a single-pass prefix scan. The warp reads the
 // status words of 32 predecessors at once, nearest first, and sums the totals
-// down to the nearest inclusive prefix; a window that still holds an
-// unpublished word before that prefix is read again.
+// down to the nearest inclusive prefix. Zero marks an unpublished block;
+// partial totals are stored plus one, and the high bit marks an inclusive
+// prefix whose remaining 63 bits cover the nonnegative int64 edge axis.
 __device__ __forceinline__ unsigned long long compact_canonical_look_back(
-    const int block,
-    const int lane,
-    const unsigned long long stamp,
-    unsigned long long* status) {
+    const int block, const int lane, unsigned long long* status) {
   constexpr unsigned kFull = 0xffffffffu;
-  constexpr unsigned long long kInclusive = 2ull << 32;
+  constexpr unsigned long long kInclusive = 1ull << 63;
   unsigned long long prefix = 0;
   for (int base = block - 1; base >= 0;) {
     const int predecessor = base - lane;
-    unsigned long long value = stamp | kInclusive;
+    unsigned long long value = kInclusive;
     if (predecessor >= 0) {
       value =
           *(static_cast<volatile unsigned long long*>(status) + predecessor);
     }
-    const bool current = (value & ~((1ull << 34) - 1)) == stamp;
-    const unsigned long long state = current ? (value & (3ull << 32)) : 0ull;
-    const unsigned inclusive = __ballot_sync(kFull, state == kInclusive);
-    const unsigned pending = __ballot_sync(kFull, state == 0ull);
+    const unsigned inclusive = __ballot_sync(kFull, (value & kInclusive) != 0);
+    const unsigned pending = __ballot_sync(kFull, value == 0ull);
     const int stop = inclusive ? __ffs(inclusive) - 1 : 31;
     const unsigned needed = stop == 31 ? kFull : ((2u << stop) - 1u);
     if (pending & needed) {
       continue;
     }
     unsigned long long part =
-        lane <= stop ? static_cast<unsigned long long>(value & kFull) : 0ull;
+        lane <= stop
+            ? ((value & kInclusive) ? value & ~kInclusive : value - 1ull)
+            : 0ull;
 #pragma unroll
     for (int offset = 16; offset > 0; offset >>= 1) {
       part += __shfl_xor_sync(kFull, part, offset);
@@ -184,19 +182,17 @@ __device__ __forceinline__ unsigned long long compact_canonical_look_back(
 }
 
 // The place of one block in the decoupled look-back of the single-pass build:
-// its index, the stamp of the build, the status words of every block, the
-// total of the block, and the shared words through which the warp that
-// resolves the block offset claims the look-back and hands the offset to the
-// other warps. The total and the inclusive prefix of a block may reach its
-// status word in either order, since different warps may store them: the
-// total is exact and the inclusive prefix is the sum of every total up to the
-// block, so a later block that reads either derives the same offset, and one
-// that reads the total merely looks further back. A sum that saturates the
-// inclusive value yields an offset at least as large as that value either
-// way, which the host rejects.
+// its index, the status words of every block, the total of the block, and the
+// shared words through which the warp that resolves the block offset claims
+// the look-back and hands the offset to the other warps. The total and the
+// inclusive prefix of a block may reach its status word in either order, since
+// different warps may store them: the total is exact and the inclusive prefix
+// is the sum of every total up to the block, so a later block that reads
+// either derives the same offset, and one that reads the total merely looks
+// further back. The pack kernel clears every status word before each fill
+// attempt on the same execution stream.
 struct CompactCanonicalScan {
   int block;
-  unsigned long long stamp;
   unsigned long long* status;
   unsigned total;
   int* claim;
@@ -208,25 +204,18 @@ struct CompactCanonicalScan {
   // the look-back before; the first warp to arrive runs it.
   __device__ __forceinline__ void resolve_once(const int lane) const {
     constexpr unsigned kFull = 0xffffffffu;
-    constexpr unsigned long long kInclusive = 2ull << 32;
+    constexpr unsigned long long kInclusive = 1ull << 63;
     const int claimed = lane == 0 ? atomicExch(claim, 1) : 0;
     if (__shfl_sync(kFull, claimed, 0) != 0) {
       return;
     }
     const unsigned long long prefix =
-        compact_canonical_look_back(block, lane, stamp, status);
+        compact_canonical_look_back(block, lane, status);
     if (lane == 0) {
       if (block != 0) {
-        // The inclusive value saturates at the largest 32-bit value, so a
-        // graph of that many edges or more carries a prefix of at least that
-        // value through every later block into the end of the last row,
-        // which the host reads back and rejects.
         const unsigned long long inclusive = prefix + total;
-        const unsigned long long saturated =
-            inclusive < kFull ? inclusive
-                              : static_cast<unsigned long long>(kFull);
         *(static_cast<volatile unsigned long long*>(status) + block) =
-            stamp | kInclusive | saturated;
+            kInclusive | inclusive;
       }
       *offset = prefix;
       __threadfence_block();
@@ -455,7 +444,7 @@ __device__ __forceinline__ void compact_canonical_finish_row(
             vector_scale;
         if (count_sources) {
           Kokkos::atomic_fetch_add(&source_counts(record[u].w),
-                                   std::uint32_t{1});
+                                   std::int64_t{1});
         }
       }
     }
@@ -488,11 +477,11 @@ __device__ __forceinline__ void compact_canonical_finish_row(
 // tickets taken before its own, which belong to running or finished blocks,
 // so the scan cannot deadlock.
 //
-// A status word holds the build epoch above a two-bit state above a 32-bit
-// value, so a word left by an earlier build reads as not yet published and the
-// array never needs clearing. Edges beyond ``capacity`` are not written; the
-// caller compares the total with the capacity and repeats the build with
-// larger arrays.
+// A status word is zero before publication, holds a block total plus one for
+// a partial sum, or holds an inclusive prefix with bit 63 set. The packing
+// kernel clears the status words and ticket counter before every fill attempt.
+// Edges beyond ``capacity`` are not written; the caller compares the total
+// with the capacity and repeats the build with larger arrays.
 //
 // The keys of up to ``32 * K`` candidates are formed in the registers of the
 // warp: the squared bond length quantized to the 23 bits above the nine bits
@@ -540,9 +529,7 @@ template <int K,
 KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
     const int rank,
     unsigned long long* ticket_counter,
-    const unsigned long long ticket_base,
     unsigned long long* status,
-    const unsigned epoch,
     const int inum,
     const int tail_begin,
     const int tail_end,
@@ -571,13 +558,11 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
   // Highest length level of a survivor, one below the levels the key holds.
   constexpr std::uint32_t kTopLevel =
       (std::uint32_t{1} << (32 - kCompactCanonicalSlotBits)) - 2u;
-  constexpr unsigned long long kAggregate = 1ull << 32;
-  constexpr unsigned long long kInclusive = 2ull << 32;
+  constexpr unsigned long long kInclusive = 1ull << 63;
   // Candidate slots of one row; the row stride adds four, which spreads the
   // stores of a warp, eight centers by four slots, over all 32 banks.
   constexpr int kSlots = 32 * K;
   constexpr int kSlotStride = kSlots + 4;
-  const unsigned long long stamp = static_cast<unsigned long long>(epoch) << 34;
 
   // === Take the ticket that orders this block ===
   const int lane = rank & 31;
@@ -595,7 +580,7 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
     ready = 0;
   }
   __syncthreads();
-  const int block = static_cast<int>(block_ticket - ticket_base);
+  const int block = static_cast<int>(block_ticket);
   const int center = block * Warps + warp;
   const bool active = center < inum;
   const int i = active ? center : 0;
@@ -720,7 +705,8 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
   // === Publish the block total ===
   if (warp == 0 && lane == 0) {
     *(static_cast<volatile unsigned long long*>(status) + block) =
-        stamp | (block == 0 ? kInclusive : kAggregate) | block_total;
+        block == 0 ? kInclusive | block_total
+                   : static_cast<unsigned long long>(block_total) + 1ull;
   }
   if (!active) {
     return;
@@ -729,7 +715,7 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
   // === Place, order and emit the row on the fewest registers that hold it ===
   // Every block has the center of its first warp, so some warp of the block
   // resolves the block offset.
-  const CompactCanonicalScan scan{block,  stamp,         status, block_total,
+  const CompactCanonicalScan scan{block,  status,        block_total,
                                   &claim, &block_offset, &ready};
 #define DEEPMD_COMPACT_CANONICAL_FINISH(KS)                               \
   compact_canonical_finish_row<KS, K>(                                    \
@@ -754,12 +740,12 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_fill_row(
 // the largest value and sort behind it.
 template <int K>
 __device__ __forceinline__ void compact_canonical_sort_in_registers(
-    std::uint32_t* row, const int count, const int lane) {
-  std::uint32_t key[K];
+    std::int64_t* row, const int count, const int lane) {
+  std::int64_t key[K];
 #pragma unroll
   for (int k = 0; k < K; ++k) {
     const int index = k * 32 + lane;
-    key[k] = index < count ? row[index] : ~std::uint32_t{0};
+    key[k] = index < count ? row[index] : INT64_MAX;
   }
   compact_canonical_warp_sort<K, CompactCanonicalLayout::kRegisterMajor>(key,
                                                                          lane);
@@ -775,13 +761,13 @@ __device__ __forceinline__ void compact_canonical_sort_in_registers(
 // Sort a row too long for the registers of a warp in place, ascending, by
 // odd-even transposition: ``count`` rounds of disjoint neighbour exchanges,
 // which the lanes of the warp share.
-__device__ inline void compact_canonical_sort_in_memory(std::uint32_t* row,
+__device__ inline void compact_canonical_sort_in_memory(std::int64_t* row,
                                                         const long count,
                                                         const int lane) {
   for (long round = 0; round < count; ++round) {
     for (long index = (round & 1) + 2 * lane; index + 1 < count; index += 64) {
-      const std::uint32_t low = row[index];
-      const std::uint32_t high = row[index + 1];
+      const std::int64_t low = row[index];
+      const std::int64_t high = row[index + 1];
       if (low > high) {
         row[index] = high;
         row[index + 1] = low;
@@ -814,7 +800,7 @@ KOKKOS_INLINE_FUNCTION void compact_canonical_sort_source_rows(
   }
   const std::int64_t begin = source_row_ptr(node);
   const std::int64_t count = source_row_ptr(node + 1) - begin;
-  std::uint32_t* row = source_order.data() + begin;
+  std::int64_t* row = source_order.data() + begin;
   if (count <= 1) {
     return;
   }
@@ -968,10 +954,10 @@ class CompactCanonicalGhostFold {
 // Device-resident model node set and compact canonical neighbor graph.
 //
 // A ``.pt2`` artifact frozen with the compact canonical lower consumes a
-// destination-major topology over a contiguous range of model nodes: uint32
-// source indices, float32 edge vectors and an int64 row pointer per node. The
-// source-major CSR -- a second row pointer and the permutation that reorders
-// the edge list into source order -- is built only on request, for an
+// destination-major topology over a contiguous range of model nodes, with
+// 32-bit source-node indices, float32 edge vectors and 64-bit CSR positions.
+// The source-major CSR -- a second row pointer and the permutation that
+// reorders the edge list into source order -- is built only on request, for an
 // artifact whose force assembly groups edges by source or for an evaluation
 // that wants the source-attributed per-atom virial. This component derives
 // the graph from the Kokkos device neighbor list and leaves it on the device,
@@ -988,9 +974,7 @@ class CompactCanonicalGhostFold {
 // ghost a node of its own -- the extended node set -- and leaves the pair
 // style to fold the ghost outputs onto their owners by reverse communication.
 //
-// build() is one function, and public, because CUDA forbids extended device
-// lambdas inside non-public members: its stages that launch device lambdas
-// cannot be split into private helpers.
+// Functions that enclose extended device lambdas are public, as CUDA requires.
 template <class DeviceType>
 class CompactCanonicalGraphKokkos : protected Pointers {
  public:
@@ -1120,9 +1104,30 @@ class CompactCanonicalGraphKokkos : protected Pointers {
              double dist_unit_cvt_factor,
              bool source_csr) {
     refresh_nodes();
-
     auto* k_list = static_cast<NeighListKokkos<DeviceType>*>(list);
     const int inum = k_list->inum;
+    // The candidate lists move only with the neighbor list: their longest
+    // entry selects the fill, and the candidates of the model centers bound
+    // the edge count until the next rebuild.
+    if (neighbor->ago == 0 || longest_candidates < 0) {
+      auto numneigh = k_list->d_numneigh;
+      auto ilist = k_list->d_ilist;
+      auto loc2model = d_loc2model;
+      int longest = 0;
+      std::int64_t total = 0;
+      Kokkos::parallel_reduce(
+          "compact_canonical:candidates",
+          Kokkos::RangePolicy<DeviceType>(0, inum),
+          KOKKOS_LAMBDA(const int ii, int& value, std::int64_t& sum) {
+            const int i = ilist(ii);
+            const int count = numneigh(i);
+            value = count > value ? count : value;
+            sum += loc2model(i) >= 0 ? count : 0;
+          },
+          Kokkos::Max<int>(longest), Kokkos::Sum<std::int64_t>(total));
+      longest_candidates = longest;
+      candidate_total = total;
+    }
     auto d_numneigh = k_list->d_numneigh;
     auto d_neighbors = k_list->d_neighbors;
     auto d_ilist = k_list->d_ilist;
@@ -1156,16 +1161,16 @@ class CompactCanonicalGraphKokkos : protected Pointers {
           "compact_canonical:destination_row_ptr", node_count + 1);
     }
     if (source_csr && d_source_row_ptr.extent(0) < node_count + 1) {
-      d_source_counts = Kokkos::View<std::uint32_t*, DeviceType>(
+      d_source_counts = Kokkos::View<std::int64_t*, DeviceType>(
           "compact_canonical:source_counts", node_count);
       d_source_row_ptr = Kokkos::View<std::int64_t*, DeviceType>(
           "compact_canonical:source_row_ptr", node_count + 1);
-      d_source_cursor = Kokkos::View<std::uint32_t*, DeviceType>(
+      d_source_cursor = Kokkos::View<std::int64_t*, DeviceType>(
           "compact_canonical:source_cursor", node_count);
     }
     if (source_csr) {
       Kokkos::deep_copy(typename DeviceType::execution_space(), d_source_counts,
-                        std::uint32_t{0});
+                        std::int64_t{0});
     }
     if (node_count_int == 0) {
       storage_count = 0;
@@ -1234,25 +1239,6 @@ class CompactCanonicalGraphKokkos : protected Pointers {
     const double fill_key_levels =
         static_cast<double>((1u << (32 - kCompactCanonicalSlotBits)) - 1u);
     const double key_scale = 65535.0 / cutsq;
-    // The candidate lists move only with the neighbor list: their longest
-    // entry selects the fill, and the candidates of the model centers bound
-    // the edge count until the next rebuild.
-    if (neighbor->ago == 0 || longest_candidates < 0) {
-      int longest = 0;
-      std::int64_t total = 0;
-      Kokkos::parallel_reduce(
-          "compact_canonical:candidates",
-          Kokkos::RangePolicy<DeviceType>(0, inum),
-          KOKKOS_LAMBDA(const int ii, int& value, std::int64_t& sum) {
-            const int i = d_ilist(ii);
-            const int jnum = d_numneigh(i);
-            value = jnum > value ? jnum : value;
-            sum += loc2model(i) >= 0 ? jnum : 0;
-          },
-          Kokkos::Max<int>(longest), Kokkos::Sum<std::int64_t>(total));
-      longest_candidates = longest;
-      candidate_total = total;
-    }
     std::int64_t edge_count = 0;
     // The single-pass fill lays the rows out in the order of the centers and
     // writes the row pointer and the type of a local node from its own center,
@@ -1284,21 +1270,12 @@ class CompactCanonicalGraphKokkos : protected Pointers {
           std::ilogb(std::ldexp(1.0, 29) / neighbor->cutneighmax);
       const double position_scale = std::ldexp(1.0, position_bits);
       const double step = std::ldexp(1.0, -position_bits);
+      const float vector_scale = static_cast<float>(step * inv_dist);
       if ((int)d_packed.extent(0) < nall) {
         d_packed = Kokkos::View<int* [4], Kokkos::LayoutRight, DeviceType>(
             "compact_canonical:packed", nall);
       }
       auto packed = d_packed;
-      Kokkos::parallel_for(
-          "compact_canonical:pack", Kokkos::RangePolicy<DeviceType>(0, nall),
-          KOKKOS_LAMBDA(const int a) {
-            for (int d = 0; d < 3; ++d) {
-              packed(a, d) = static_cast<int>(
-                  static_cast<std::uint32_t>(static_cast<std::int64_t>(
-                      Kokkos::nearbyint(x(a, d) * position_scale))));
-            }
-            packed(a, 3) = candidate_to_model(a);
-          });
       // The cutoff and the key scale in squared fixed-point steps. The scale
       // derives from the rounded cutoff, which keeps every key of a squared
       // length below that cutoff within the key bits.
@@ -1306,7 +1283,6 @@ class CompactCanonicalGraphKokkos : protected Pointers {
           static_cast<float>(cutsq * position_scale * position_scale);
       const float fill_key_scale =
           static_cast<float>(fill_key_levels / fill_cutsq);
-      const float vector_scale = static_cast<float>(step * inv_dist);
       const int teams = (inum + fill_warps - 1) / fill_warps;
       if ((int)d_fill_status.extent(0) < teams) {
         d_fill_status = Kokkos::View<unsigned long long*, DeviceType>(
@@ -1315,88 +1291,56 @@ class CompactCanonicalGraphKokkos : protected Pointers {
       if (d_fill_ticket.extent(0) == 0) {
         d_fill_ticket = Kokkos::View<unsigned long long*, DeviceType>(
             "compact_canonical:fill_ticket", 1);
-        ticket_base = 0;
       }
-      const int tail_begin = nloc_model;
+      auto status = d_fill_status;
+      auto ticket = d_fill_ticket;
       // Edges are a subset of the candidates, so storage sized by the
       // candidate total cannot overflow before the next rebuild and the edge
       // count can stay on the device. Systems whose candidate storage exceeds
       // the bound read the count back instead, which their step amortizes.
       const bool bounded =
-          !source_csr &&
-          static_cast<std::uint64_t>(candidate_total) * edge_storage_bytes <=
-              bounded_storage_bytes();
-      if (bounded) {
-        reserve_edges(candidate_total);
-      }
+          !source_csr && static_cast<std::uint64_t>(candidate_total) <=
+                             bounded_storage_bytes() / edge_storage_bytes;
+      reserve_edges(bounded ? candidate_total
+                            : static_cast<std::int64_t>(edge_capacity));
       for (;;) {
-        // The epoch distinguishes the status words of this build from those
-        // of every earlier one, and the ticket counter runs on across builds.
-        fill_epoch = (fill_epoch + 1) & ((1u << 30) - 1);
-        const unsigned epoch = fill_epoch;
-        const unsigned long long base = ticket_base;
-        // A block takes one ticket, so the tickets of one build number its
-        // blocks.
-        ticket_base += static_cast<unsigned long long>(teams);
-        unsigned long long* ticket_counter = d_fill_ticket.data();
-        unsigned long long* status = d_fill_status.data();
-        std::int64_t* fill_total = d_fill_total.data();
+        // Packing initializes the scan before each fill attempt, including a
+        // retry after growing edge storage. Every block owns at least one
+        // center, so the atom axis covers every active status word.
+        Kokkos::parallel_for(
+            "compact_canonical:pack", Kokkos::RangePolicy<DeviceType>(0, nall),
+            KOKKOS_LAMBDA(const int a) {
+              for (int d = 0; d < 3; ++d) {
+                packed(a, d) = static_cast<int>(
+                    static_cast<std::uint32_t>(static_cast<std::int64_t>(
+                        Kokkos::nearbyint(x(a, d) * position_scale))));
+              }
+              packed(a, 3) = candidate_to_model(a);
+              if (a < teams) {
+                status(a) = 0ull;
+              }
+              if (a == 0) {
+                ticket(0) = 0ull;
+              }
+            });
         const std::int64_t capacity = static_cast<std::int64_t>(edge_capacity);
-        auto source = d_source;
-        auto edge_vec = d_edge_vec;
         if (longest_candidates <= 8 * neighbor_lanes) {
-          Kokkos::parallel_for(
-              "compact_canonical:fill",
-              fill_policy(teams, fill_warps * neighbor_lanes),
-              KOKKOS_LAMBDA(const typename fill_policy::member_type& team) {
-                compact_canonical_fill_row<8, fill_warps>(
-                    team.team_rank(), ticket_counter, base, status, epoch, inum,
-                    tail_begin, node_count_int, capacity, fill_total,
-                    fill_cutsq, fill_key_scale, vector_scale, d_numneigh,
-                    d_neighbors, loc2model, model2loc, tag, packed, type,
-                    type_map, model_type, destination_row_ptr, source, edge_vec,
-                    source_csr, source_counts);
-              });
+          fill_rows<8, fill_warps>(
+              fill_policy(teams, fill_warps * neighbor_lanes), k_list,
+              fill_cutsq, fill_key_scale, vector_scale, source_csr);
         } else if (longest_candidates <= 12 * neighbor_lanes) {
-          Kokkos::parallel_for(
-              "compact_canonical:fill",
-              fill_policy(teams, fill_warps * neighbor_lanes),
-              KOKKOS_LAMBDA(const typename fill_policy::member_type& team) {
-                compact_canonical_fill_row<12, fill_warps>(
-                    team.team_rank(), ticket_counter, base, status, epoch, inum,
-                    tail_begin, node_count_int, capacity, fill_total,
-                    fill_cutsq, fill_key_scale, vector_scale, d_numneigh,
-                    d_neighbors, loc2model, model2loc, tag, packed, type,
-                    type_map, model_type, destination_row_ptr, source, edge_vec,
-                    source_csr, source_counts);
-              });
+          fill_rows<12, fill_warps>(
+              fill_policy(teams, fill_warps * neighbor_lanes), k_list,
+              fill_cutsq, fill_key_scale, vector_scale, source_csr);
         } else {
-          Kokkos::parallel_for(
-              "compact_canonical:fill",
-              wide_fill_policy(teams, fill_warps * neighbor_lanes),
-              KOKKOS_LAMBDA(
-                  const typename wide_fill_policy::member_type& team) {
-                compact_canonical_fill_row<16, fill_warps>(
-                    team.team_rank(), ticket_counter, base, status, epoch, inum,
-                    tail_begin, node_count_int, capacity, fill_total,
-                    fill_cutsq, fill_key_scale, vector_scale, d_numneigh,
-                    d_neighbors, loc2model, model2loc, tag, packed, type,
-                    type_map, model_type, destination_row_ptr, source, edge_vec,
-                    source_csr, source_counts);
-              });
+          fill_rows<16, fill_warps>(
+              wide_fill_policy(teams, fill_warps * neighbor_lanes), k_list,
+              fill_cutsq, fill_key_scale, vector_scale, source_csr);
         }
         if (bounded) {
           break;
         }
         edge_count = read_edge_count(node_count_int);
-        // The look-back saturates at the largest 32-bit value, so a total of
-        // that value or more is a graph beyond the edge-index range.
-        if (static_cast<std::uint64_t>(edge_count) >=
-            std::numeric_limits<std::uint32_t>::max()) {
-          error->one(FLERR,
-                     "Compact canonical graph exceeds the uint32 edge-index "
-                     "range");
-        }
         if (edge_count <= capacity) {
           break;
         }
@@ -1405,7 +1349,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
         reserve_edges(edge_count);
         if (source_csr) {
           Kokkos::deep_copy(typename DeviceType::execution_space(),
-                            d_source_counts, std::uint32_t{0});
+                            d_source_counts, std::int64_t{0});
         }
       }
     } else {
@@ -1555,7 +1499,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
               edge_vec(3 * position + 2) =
                   static_cast<float>((x(j, 2) - zi) * inv_dist);
               if (source_csr) {
-                Kokkos::atomic_fetch_add(&source_counts(mj), std::uint32_t{1});
+                Kokkos::atomic_fetch_add(&source_counts(mj), std::int64_t{1});
               }
             }
           });
@@ -1586,7 +1530,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
 
     // === Source-major CSR and the permutation into source order ===
     if (d_source_order.extent(0) < edge_capacity) {
-      d_source_order = Kokkos::View<std::uint32_t*, DeviceType>(
+      d_source_order = Kokkos::View<std::int64_t*, DeviceType>(
           "compact_canonical:source_order", edge_capacity);
     }
     auto source_row_ptr = d_source_row_ptr;
@@ -1609,8 +1553,7 @@ class CompactCanonicalGraphKokkos : protected Pointers {
         "compact_canonical:source_cursor",
         Kokkos::RangePolicy<DeviceType>(0, node_count_int),
         KOKKOS_LAMBDA(const int node) {
-          source_cursor(node) =
-              static_cast<std::uint32_t>(source_row_ptr(node));
+          source_cursor(node) = source_row_ptr(node);
         });
     auto source = d_source;
     auto source_order = d_source_order;
@@ -1620,8 +1563,8 @@ class CompactCanonicalGraphKokkos : protected Pointers {
             0, edge_count),
         KOKKOS_LAMBDA(const std::int64_t edge) {
           const auto position = Kokkos::atomic_fetch_add(
-              &source_cursor(source(edge)), std::uint32_t{1});
-          source_order(position) = static_cast<std::uint32_t>(edge);
+              &source_cursor(source(edge)), std::int64_t{1});
+          source_order(position) = edge;
         });
     // The cursor places the edges of a source row in the order their threads
     // arrive, which varies from run to run, so every row is then sorted by
@@ -1673,9 +1616,49 @@ class CompactCanonicalGraphKokkos : protected Pointers {
           Kokkos::RangePolicy<DeviceType, Kokkos::IndexType<std::int64_t>>(
               edge_count, storage_count),
           KOKKOS_LAMBDA(const std::int64_t edge) {
-            source_order(edge) = static_cast<std::uint32_t>(edge);
+            source_order(edge) = edge;
           });
     }
+  }
+
+  // CUDA requires a named public enclosing function for an extended lambda.
+  template <int K, int Warps, class Policy>
+  void fill_rows(const Policy& policy,
+                 NeighListKokkos<DeviceType>* list,
+                 float cutsq,
+                 float key_scale,
+                 float vector_scale,
+                 bool source_csr) {
+    const int inum = list->inum;
+    const int tail_begin = nloc_model;
+    const int tail_end = nnode_model;
+    const auto capacity = static_cast<std::int64_t>(edge_capacity);
+    auto numneigh = list->d_numneigh;
+    auto neighbors = list->d_neighbors;
+    auto loc2model = d_loc2model;
+    auto model2loc = d_model2loc;
+    auto tag = atomKK->k_tag.template view<DeviceType>();
+    auto type = atomKK->k_type.template view<DeviceType>();
+    auto packed = d_packed;
+    auto type_map = d_type_map;
+    auto model_type = d_model_type;
+    auto destination_row_ptr = d_destination_row_ptr;
+    auto source = d_source;
+    auto edge_vec = d_edge_vec;
+    auto source_counts = d_source_counts;
+    auto* ticket_counter = d_fill_ticket.data();
+    auto* status = d_fill_status.data();
+    auto* fill_total = d_fill_total.data();
+    Kokkos::parallel_for(
+        "compact_canonical:fill", policy,
+        KOKKOS_LAMBDA(const typename Policy::member_type& team) {
+          compact_canonical_fill_row<K, Warps>(
+              team.team_rank(), ticket_counter, status, inum, tail_begin,
+              tail_end, capacity, fill_total, cutsq, key_scale, vector_scale,
+              numneigh, neighbors, loc2model, model2loc, tag, packed, type,
+              type_map, model_type, destination_row_ptr, source, edge_vec,
+              source_csr, source_counts);
+        });
   }
 
   // === Node set, valid after refresh_nodes() ===
@@ -1701,12 +1684,14 @@ class CompactCanonicalGraphKokkos : protected Pointers {
   // are guards that carry a zero bond vector on node zero.
   std::int64_t storage_count;
   Kokkos::View<std::int64_t*, DeviceType> d_model_type;  // (nnode_model)
-  Kokkos::View<std::uint32_t*, DeviceType> d_source;     // (storage_count)
-  Kokkos::View<float*, DeviceType> d_edge_vec;           // (3 * storage_count)
+  // Source model nodes take 32 bits, since the local and ghost atoms of a rank
+  // stay below 2^31; edge positions and row pointers are 64-bit.
+  Kokkos::View<std::uint32_t*, DeviceType> d_source;  // (storage_count)
+  Kokkos::View<float*, DeviceType> d_edge_vec;        // (3 * storage_count)
   Kokkos::View<std::int64_t*, DeviceType> d_destination_row_ptr;
   // Source-major CSR, current only after a build() that asked for it.
   Kokkos::View<std::int64_t*, DeviceType> d_source_row_ptr;
-  Kokkos::View<std::uint32_t*, DeviceType> d_source_order;
+  Kokkos::View<std::int64_t*, DeviceType> d_source_order;
 
  private:
   // Shortest edge axis the traced program accepts.
@@ -1749,29 +1734,26 @@ class CompactCanonicalGraphKokkos : protected Pointers {
   void reserve_edges(const std::int64_t edge_count) {
     const std::int64_t storage =
         std::max<std::int64_t>(edge_count, min_storage_edges);
-    if (static_cast<std::uint64_t>(storage) >
-        std::numeric_limits<std::uint32_t>::max()) {
+    // The vector allocation is the largest individual buffer per edge.
+    constexpr std::size_t max_storage =
+        std::numeric_limits<std::size_t>::max() / (3 * sizeof(float));
+    if (static_cast<std::uint64_t>(storage) > max_storage) {
       error->one(FLERR,
-                 "Compact canonical graph exceeds the uint32 edge-index range");
+                 "Compact canonical graph exceeds addressable edge storage");
     }
     const std::size_t required = static_cast<std::size_t>(storage);
-    if (edge_capacity >= required) {
-      return;
+    if (edge_capacity < required) {
+      // A reserve of 2% covers thermal fluctuations without retaining large
+      // unused buffers, bounded by the addressable size of its arrays.
+      const std::size_t slack = required / 50 + 64;
+      edge_capacity = std::min<std::size_t>(required + slack, max_storage);
+      d_source = Kokkos::View<std::uint32_t*, DeviceType>(
+          "compact_canonical:source", edge_capacity);
+      d_edge_vec = Kokkos::View<float*, DeviceType>(
+          "compact_canonical:edge_vec", edge_capacity * 3);
+      // Fresh storage is zero, so no row of it needs clearing.
+      Kokkos::deep_copy(d_fill_total, std::int64_t{0});
     }
-    // A reserve of 2% covers the thermal fluctuations of the cutoff counts,
-    // so that the storage is not reallocated from step to step, without
-    // retaining several GiB of unused storage at billion-edge scale. The
-    // reserve stops at the uint32 range that the model addresses edges in,
-    // which ``required`` already lies within.
-    const std::size_t slack = required / 50 + 64;
-    edge_capacity = std::min<std::size_t>(
-        required + slack, std::numeric_limits<std::uint32_t>::max());
-    d_source = Kokkos::View<std::uint32_t*, DeviceType>(
-        "compact_canonical:source", edge_capacity);
-    d_edge_vec = Kokkos::View<float*, DeviceType>("compact_canonical:edge_vec",
-                                                  edge_capacity * 3);
-    // Fresh storage is zero, so no row of it needs clearing.
-    Kokkos::deep_copy(d_fill_total, std::int64_t{0});
   }
 
   ExecutionSpace execution_space;
@@ -1784,26 +1766,23 @@ class CompactCanonicalGraphKokkos : protected Pointers {
   int longest_candidates = -1;
   std::int64_t candidate_total = 0;
   // State of the single-pass fill: one status word per block of centers, in
-  // an array sized by the center count, the ticket counter, the tickets
-  // issued by earlier builds, and the build epoch.
+  // an array sized by the center count, and the ticket counter. The pack
+  // kernel clears both before every fill attempt.
   Kokkos::View<unsigned long long*, DeviceType> d_fill_status;
   Kokkos::View<unsigned long long*, DeviceType> d_fill_ticket;
   // Fixed-point coordinates and candidate model node of every atom, one
-  // 16-byte record per atom, which the single-pass fill gathers in place of
-  // the two arrays.
+  // 16-byte record per atom consumed by the fill.
   Kokkos::View<int* [4], Kokkos::LayoutRight, DeviceType> d_packed;
   // Rows of the edge storage the last build wrote, by either fill; storage
   // past it is zero.
   Kokkos::View<std::int64_t, DeviceType> d_fill_total;
-  unsigned long long ticket_base = 0;
-  unsigned fill_epoch = 0;
 
   DAT::tdual_int_1d k_loc2model;
   DAT::tdual_int_1d k_candidate_to_model;
-  // Per-node counts are bounded by the LAMMPS neighbor limit. CSR offsets
-  // remain int64 so the compact graph retains its full global edge range.
-  Kokkos::View<std::uint32_t*, DeviceType> d_source_counts;
-  Kokkos::View<std::uint32_t*, DeviceType> d_source_cursor;
+  // Source counts and scatter cursors cover the full global edge range,
+  // including source rows assembled from many destination rows.
+  Kokkos::View<std::int64_t*, DeviceType> d_source_counts;
+  Kokkos::View<std::int64_t*, DeviceType> d_source_cursor;
 };
 
 }  // namespace LAMMPS_NS

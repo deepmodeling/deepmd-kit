@@ -38,7 +38,8 @@ using DPA4SpinKokkosCommBuffer = DAT::tdual_double_1d;
 
 // GPU-resident inference for exported native-spin ``.pt2`` models whose forward
 // consumes the compact canonical graph: a dual-CSR neighbor topology with
-// uint32 indices and float32 edge vectors, plus the per-node magnetic moment.
+// 32-bit source indices, int64 row pointers and positions, and float32 edge
+// vectors, plus the per-node magnetic moment.
 // It is dispatched through ``DeepSpin::compute_canonical_graph_gpu``.
 //
 // The neighbor list, the compact graph, the moment and the model outputs all

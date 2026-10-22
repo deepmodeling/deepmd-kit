@@ -706,6 +706,7 @@ def build_synthetic_canonical_graph_inputs(
     )
     from deepmd.pt_expt.utils.canonical_graph import (
         canonical_graph_from_neighbor_graph,
+        canonical_index_bytes,
     )
 
     sample = build_synthetic_graph_inputs(
@@ -750,7 +751,7 @@ def build_synthetic_canonical_graph_inputs(
         atype,
         compact.n_node,
         compact.n_local,
-        compact.source,
+        canonical_index_bytes(compact.source),
         compact.edge_vec,
         compact.destination_row_ptr,
         compact.source_row_ptr,
@@ -759,40 +760,27 @@ def build_synthetic_canonical_graph_inputs(
     return compact_sample if spin is None else (*compact_sample, spin)
 
 
-def _build_canonical_graph_dynamic_shapes(
-    *sample_inputs: torch.Tensor,
-) -> tuple:
-    """Build dynamic shapes for the compact deployment ABI.
-
-    The trailing spin slot is present only for a native-spin model, so the
-    sample length selects the shape tuple.
-    """
-    from deepmd.pt_expt.utils.canonical_graph import (
-        UINT32_MAX,
-    )
-
+def _build_canonical_graph_dynamic_shapes(*, want_spin: bool) -> tuple:
+    """Build dynamic node, edge and index-word axes for the compact ABI."""
     nframes_dim = torch.export.Dim("nframes", min=1)
     node_dim = torch.export.Dim("n_node_total", min=1)
-    edge_storage_dim = torch.export.Dim(
-        "nedge_storage",
-        min=2,
-        max=UINT32_MAX,
-    )
+    edge_storage_dim = torch.export.Dim("nedge_storage", min=2)
     # The source CSR keeps extents of its own: a caller that declines the
     # per-atom virial passes two-entry placeholders in its place.
     source_row_dim = torch.export.Dim("n_source_row", min=2)
-    source_order_dim = torch.export.Dim("n_source_order", min=2, max=UINT32_MAX)
+    source_order_dim = torch.export.Dim("n_source_order", min=2)
+    word_bytes_dim = torch.export.Dim("index_word_bytes", min=4, max=8)
     shapes = (
         {0: node_dim},
         {0: nframes_dim},
         {0: nframes_dim},
-        {0: edge_storage_dim},
+        {0: edge_storage_dim, 1: word_bytes_dim},
         {0: edge_storage_dim},
         {0: node_dim + 1},
         {0: source_row_dim},
         {0: source_order_dim},
     )
-    return shapes if len(sample_inputs) == len(shapes) else (*shapes, {0: node_dim})
+    return (*shapes, {0: node_dim}) if want_spin else shapes
 
 
 def count_synthetic_graph_edges(
@@ -1275,7 +1263,8 @@ def _collect_metadata(
     meta["lower_input_kind"] = lower_kind
     meta["graph_edge_dtype"] = graph_edge_dtype(model, lower_kind)
     if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
-        meta["canonical_index_dtype"] = "uint32"
+        meta["canonical_index_dtype"] = "auto"
+        meta["canonical_index_storage"] = "byte_words"
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
@@ -1783,6 +1772,20 @@ def deserialize_to_file(
             )
 
 
+def _canonical_symbolic_shapes(lower_kind: str) -> contextlib.AbstractContextManager:
+    """Preserve zero and one in the canonical program's dynamic shape ranges.
+
+    A single frame is a valid deployment input, including graphs with zero
+    or one physical edge. Size-oblivious symbols retain these extents through
+    tracing and AOTInductor compilation without disabling runtime guards.
+    """
+    if lower_kind not in ("dpa1_canonical", "dpa4c_canonical"):
+        return contextlib.nullcontext()
+    from torch.fx.experimental import _config as symbolic_config
+
+    return symbolic_config.patch(backed_size_oblivious=True)
+
+
 def _trace_and_export(
     data: dict,
     model_json_override: dict | None = None,
@@ -1794,7 +1797,10 @@ def _trace_and_export(
     import deepmd.pt_expt.utils.env as _env
 
     target_device = _env.DEVICE
-    with _dpa4_kernel_levels_for_target(data["model"], target_device):
+    with (
+        _dpa4_kernel_levels_for_target(data["model"], target_device),
+        _canonical_symbolic_shapes(lower_kind),
+    ):
         return _trace_and_export_impl(
             data,
             model_json_override,
@@ -2136,7 +2142,9 @@ def _trace_and_export_impl(
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
-            dynamic_shapes = _build_canonical_graph_dynamic_shapes(*sample_inputs)
+            dynamic_shapes = _build_canonical_graph_dynamic_shapes(
+                want_spin=is_native_spin
+            )
         elif with_comm_dict:
             # Load libdeepmd_op_pt.so and register border_op fake/autograd
             # metadata now, mirroring the dense with-comm precedent below.
@@ -2834,9 +2842,10 @@ def _deserialize_to_file_pt2(
         "typically several minutes)...",
         _env.DEVICE,
     )
-    aoti_compile_and_package(
-        exported, package_path=model_file, inductor_configs=lower_configs
-    )
+    with _canonical_symbolic_shapes(lower_kind):
+        aoti_compile_and_package(
+            exported, package_path=model_file, inductor_configs=lower_configs
+        )
 
     # Charge-state fold. Present only for a compressed charge-conditioned
     # descriptor, whose frozen tables the deployment rebuilds once when the

@@ -55,8 +55,9 @@ struct CanonicalGraphTensorPack;
  *   graph-lower descriptor can be frozen this way.
  * - ``lower_input_kind == "dpa4c_canonical"``, the compact deployment ABI
  *   (``forward_lower_canonical_graph_exportable``): the eight dual-CSR graph
- *   tensors -- uint32 topology and float32 edge vectors -- and the moment at
- *   positional index 8, with no conditional tail.
+ *   tensors -- source words of four or eight bytes, int64 row pointers and
+ *   positions, and float32 edge vectors -- and the moment at positional
+ *   index 8, with no conditional tail.
  *
  * Three entry points share the selected forward:
  *
@@ -320,14 +321,15 @@ class NativeSpinPTExpt : public DeepSpinBackend {
                                    double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::uint32_t* d_source_order,
+                                   const std::int64_t* d_source_order,
                                    const float* d_spin,
-                                   const int nloc,
-                                   const int nall_nodes,
+                                   const std::int64_t nloc,
+                                   const std::int64_t nall_nodes,
                                    const std::int64_t edge_storage,
                                    void* stream) override;
 

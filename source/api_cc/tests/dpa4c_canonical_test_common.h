@@ -518,27 +518,25 @@ class TestInferDpa4cCanonicalPtExpt : public ::testing::Test {
     double* const atom_virial =
         source_csr ? out_atom_virial.data_ptr<double>() : nullptr;
     const auto* const atype = graph_atype.data_ptr<std::int64_t>();
-    const auto* const source =
-        static_cast<const std::uint32_t*>(graph_source.data_ptr());
+    const auto* const source = graph_source.data_ptr();
     const float* const edge_vec = graph_edge_vec.data_ptr<float>();
     const auto* const destination_row_ptr =
         graph_destination_row_ptr.data_ptr<std::int64_t>();
     const std::int64_t* const source_row_ptr =
         source_csr ? graph_source_row_ptr.data_ptr<std::int64_t>() : nullptr;
-    const std::uint32_t* const source_order =
-        source_csr
-            ? static_cast<const std::uint32_t*>(graph_source_order.data_ptr())
-            : nullptr;
+    const std::int64_t* const source_order =
+        source_csr ? graph_source_order.data_ptr<std::int64_t>() : nullptr;
     if constexpr (Case::kSpin) {
       dp.compute_canonical_graph_gpu(
           atom_energy, force, out_force_mag.data_ptr<double>(), total_virial,
-          atom_virial, atype, source, edge_vec, destination_row_ptr,
-          source_row_ptr, source_order, graph_spin.data_ptr<float>(), natoms,
-          nodes, edge_storage, stream);
+          atom_virial, atype, source, deepmd::canonical_index_width(nodes),
+          edge_vec, destination_row_ptr, source_row_ptr, source_order,
+          graph_spin.data_ptr<float>(), natoms, nodes, edge_storage, stream);
     } else {
       dp.compute_canonical_graph_gpu(
           atom_energy, force, total_virial, atom_virial, atype, source,
-          edge_vec, destination_row_ptr, source_row_ptr, source_order,
+          deepmd::canonical_index_width(nodes), edge_vec, destination_row_ptr,
+          source_row_ptr, source_order,
           /*d_coord=*/nullptr, /*world=*/nullptr, natoms, nodes, edge_storage,
           stream);
     }

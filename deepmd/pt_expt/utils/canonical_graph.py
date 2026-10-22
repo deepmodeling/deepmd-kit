@@ -19,7 +19,37 @@ if TYPE_CHECKING:
         NeighborGraph,
     )
 
-UINT32_MAX = (1 << 32) - 1
+INT32_MAX = (1 << 31) - 1
+
+
+def canonical_index_dtype(node_count: int) -> torch.dtype:
+    """Choose node-index width; edge counts and CSR positions always use int64.
+
+    Four-byte words retain a signed representation at native host boundaries.
+    """
+    return torch.uint32 if node_count <= INT32_MAX + 1 else torch.int64
+
+
+def canonical_index_bytes(index: torch.Tensor) -> torch.Tensor:
+    """Expose contiguous integer words as bytes with a final word-size axis."""
+    return index.view(torch.uint8).reshape(*index.shape, index.element_size())
+
+
+def canonical_index_words(storage: torch.Tensor) -> torch.Tensor:
+    """Restore a canonical byte carrier to integer words without copying."""
+    if storage.dtype != torch.uint8:
+        return storage
+    if storage.ndim < 2 or not storage.is_contiguous():
+        raise ValueError(
+            "canonical index bytes require contiguous storage and a word axis"
+        )
+    width = storage.shape[-1]
+    if width not in (4, 8):
+        raise ValueError(
+            f"canonical index word width must be 4 or 8 bytes, got {width}"
+        )
+    dtype = torch.int64 if width == 8 else torch.uint32
+    return storage.view(dtype).squeeze(-1)
 
 
 @dataclass(frozen=True)
@@ -43,7 +73,9 @@ class CanonicalGraph:
         Per-frame owned node counts with shape ``(nf,)``, int64.
     source
         Source-node index for each edge storage slot with shape ``(S,)``,
-        uint32.
+        uint32 or int64, selected from the node extent.
+        Exported programs carry these words as uint8 with shape ``(S, W)``,
+        where the dynamic word width ``W`` is four or eight bytes.
     edge_vec
         Neighbor-minus-center vectors with shape ``(S, 3)``, float32.
     destination_row_ptr
@@ -51,8 +83,8 @@ class CanonicalGraph:
     source_row_ptr
         Source CSR offsets with shape ``(N + 1,)``, int64, or a placeholder.
     source_order
-        Edge storage positions grouped by source with shape ``(S,)`` and the
-        same dtype as ``source``, or a placeholder.
+        Edge storage positions grouped by source with shape ``(S,)``, int64,
+        or a placeholder. This width is independent of the node indices.
     """
 
     n_node: torch.Tensor
@@ -75,10 +107,13 @@ def validate_canonical_graph_shapes(
     deployment trace keeps its extents independent of the node and edge axes.
     """
     index_dtype = graph.source.dtype
-    if index_dtype != torch.uint32:
-        raise ValueError("canonical graph source must be uint32")
-    if graph.source_order.dtype != index_dtype:
-        raise ValueError("canonical graph source and source_order dtypes must match")
+    byte_storage = index_dtype == torch.uint8
+    if index_dtype not in (torch.uint8, torch.uint32, torch.int64):
+        raise ValueError(
+            "canonical graph source must be uint32, int64 or exported bytes"
+        )
+    if graph.source_order.dtype != torch.int64:
+        raise ValueError("canonical graph source_order must be int64")
     if graph.edge_vec.dtype != torch.float32:
         raise ValueError("canonical graph edge_vec must be float32")
     if graph.n_node.dtype != torch.int64 or graph.n_local.dtype != torch.int64:
@@ -88,31 +123,24 @@ def validate_canonical_graph_shapes(
         or graph.source_row_ptr.dtype != torch.int64
     ):
         raise ValueError("canonical graph row pointers must be int64")
-    if graph.source.ndim != 1 or graph.source_order.ndim != 1:
-        raise ValueError("canonical graph source arrays must be one-dimensional")
+    if graph.source.ndim != (2 if byte_storage else 1) or graph.source_order.ndim != 1:
+        raise ValueError("canonical graph source arrays have invalid rank")
+    # A traced word width is a symbol of range [4, 8]: a bound adds no guard,
+    # and the operators that read the words accept only four or eight bytes.
+    if byte_storage and not 4 <= graph.source.shape[-1] <= 8:
+        raise ValueError("canonical index word width must be four or eight bytes")
+    if index_dtype == torch.uint32 and node_count > INT32_MAX + 1:
+        raise ValueError("canonical graph nodes require int64 indices")
     if graph.edge_vec.shape != (graph.source.shape[0], 3):
-        raise ValueError("canonical graph edge_vec must have shape (S, 3)")
+        raise ValueError("canonical edge_vec must have shape (S, 3) matching source")
     if graph.source.shape[0] < 2:
         raise ValueError("canonical graph edge storage must contain at least two slots")
-    if graph.source.shape[0] > UINT32_MAX:
-        raise ValueError("canonical graph edge storage exceeds the uint32 range")
     if graph.destination_row_ptr.shape != (node_count + 1,):
         raise ValueError("destination_row_ptr must have shape (N + 1,)")
     if graph.source_row_ptr.ndim != 1:
         raise ValueError("source_row_ptr must be one-dimensional")
     if graph.n_node.shape != graph.n_local.shape or graph.n_node.ndim != 1:
         raise ValueError("n_node and n_local must share shape (nf,)")
-    devices = {
-        graph.n_node.device,
-        graph.n_local.device,
-        graph.source.device,
-        graph.edge_vec.device,
-        graph.destination_row_ptr.device,
-        graph.source_row_ptr.device,
-        graph.source_order.device,
-    }
-    if len(devices) != 1:
-        raise ValueError("canonical graph tensors must reside on one device")
     tensors = (
         graph.n_node,
         graph.n_local,
@@ -122,6 +150,8 @@ def validate_canonical_graph_shapes(
         graph.source_row_ptr,
         graph.source_order,
     )
+    if len({tensor.device for tensor in tensors}) != 1:
+        raise ValueError("canonical graph tensors must reside on one device")
     if not all(tensor.is_contiguous() for tensor in tensors):
         raise ValueError("canonical graph tensors must be contiguous")
 
@@ -170,11 +200,9 @@ def canonical_graph_from_neighbor_graph(
     node_count = graph.destination_row_ptr.shape[0] - 1
 
     storage_edge_count = max(physical_edge_count, 2)
-    if storage_edge_count > UINT32_MAX:
-        raise ValueError("canonical graph edge storage exceeds the uint32 range")
     source = torch.zeros(
         storage_edge_count,
-        dtype=torch.uint32,
+        dtype=canonical_index_dtype(node_count),
         device=graph.edge_index.device,
     )
     edge_vec = torch.zeros(
@@ -187,17 +215,17 @@ def canonical_graph_from_neighbor_graph(
         storage_edge_count,
         dtype=torch.int64,
         device=graph.edge_index.device,
-    ).to(torch.uint32)
+    )
     if physical_edge_count:
         source[:physical_edge_count] = graph.edge_index[0, :physical_edge_count].to(
-            torch.uint32
+            source.dtype
         )
         edge_vec[:physical_edge_count] = graph.edge_vec[:physical_edge_count].to(
             torch.float32
         )
         source_order[:physical_edge_count] = graph.source_order[
             :physical_edge_count
-        ].to(torch.uint32)
+        ].to(torch.int64)
 
     result = CanonicalGraph(
         n_node=graph.n_node.contiguous(),
@@ -240,8 +268,6 @@ def canonical_graph_from_pairs(
         All nodes are local; no coordinate differentiation is required.
     """
     edge_count = source.shape[0]
-    if max(edge_count, node_count) > UINT32_MAX:
-        raise ValueError("canonical graph node or edge count exceeds the uint32 range")
     destination_order = torch.argsort(center, stable=True)
     center = center.index_select(0, destination_order)
     source = source.index_select(0, destination_order)
@@ -268,18 +294,21 @@ def canonical_graph_from_pairs(
     return CanonicalGraph(
         n_node=n_node,
         n_local=n_node,
-        source=source.to(torch.uint32),
+        source=source.to(canonical_index_dtype(node_count)),
         edge_vec=edge_vec,
         destination_row_ptr=destination_row_ptr,
         source_row_ptr=source_row_ptr,
-        source_order=source_order.to(torch.uint32),
+        source_order=source_order,
     )
 
 
 __all__ = [
-    "UINT32_MAX",
+    "INT32_MAX",
     "CanonicalGraph",
     "canonical_graph_from_neighbor_graph",
     "canonical_graph_from_pairs",
+    "canonical_index_bytes",
+    "canonical_index_dtype",
+    "canonical_index_words",
     "validate_canonical_graph_shapes",
 ]

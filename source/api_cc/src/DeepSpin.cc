@@ -476,14 +476,15 @@ void DeepSpinBackend::compute_canonical_graph_gpu(
     double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
+    const std::int64_t* d_source_order,
     const float* d_spin,
-    const int nloc,
-    const int nall_nodes,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
     const std::int64_t edge_storage,
     void* stream) {
   (void)d_atom_energy;
@@ -518,24 +519,26 @@ void DeepSpin::compute_canonical_graph_gpu(
     double* d_virial,
     double* d_atom_virial,
     const std::int64_t* d_atype,
-    const std::uint32_t* d_source,
+    const void* d_source,
+    DP_CanonicalIndexWidth index_width,
     const float* d_edge_vec,
     const std::int64_t* d_destination_row_ptr,
     const std::int64_t* d_source_row_ptr,
-    const std::uint32_t* d_source_order,
+    const std::int64_t* d_source_order,
     const float* d_spin,
-    const int nloc,
-    const int nall_nodes,
+    const std::int64_t nloc,
+    const std::int64_t nall_nodes,
     const std::int64_t edge_storage,
     void* stream) {
   // Backend-agnostic dispatch: backends that implement device-resident
   // canonical inference override the hook, while the others inherit the
   // throwing default. ``libdeepmd_cc`` does not link any backend, so the
   // dispatch stays virtual rather than casting to a concrete backend type.
-  dp->compute_canonical_graph_gpu(
-      d_atom_energy, d_force, d_force_mag, d_virial, d_atom_virial, d_atype,
-      d_source, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
-      d_source_order, d_spin, nloc, nall_nodes, edge_storage, stream);
+  dp->compute_canonical_graph_gpu(d_atom_energy, d_force, d_force_mag, d_virial,
+                                  d_atom_virial, d_atype, d_source, index_width,
+                                  d_edge_vec, d_destination_row_ptr,
+                                  d_source_row_ptr, d_source_order, d_spin,
+                                  nloc, nall_nodes, edge_storage, stream);
 }
 
 bool DeepSpin::uses_canonical_graph_inference() const {

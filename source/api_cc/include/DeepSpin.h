@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "DeepBaseModel.h"
+#include "canonical_graph.h"
 #include "common.h"
 #include "neighbor_list.h"
 
@@ -293,14 +294,15 @@ class DeepSpinBackend : public DeepBaseModelBackend {
       double* d_virial,
       double* d_atom_virial,
       const std::int64_t* d_atype,
-      const std::uint32_t* d_source,
+      const void* d_source,
+      DP_CanonicalIndexWidth index_width,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
       const std::int64_t* d_source_row_ptr,
-      const std::uint32_t* d_source_order,
+      const std::int64_t* d_source_order,
       const float* d_spin,
-      const int nloc,
-      const int nall_nodes,
+      const std::int64_t nloc,
+      const std::int64_t nall_nodes,
       const std::int64_t edge_storage,
       void* stream);
   virtual bool uses_canonical_graph_inference() const;
@@ -663,14 +665,15 @@ class DeepSpin : public DeepBaseModel {
                                    double* d_virial,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
-                                   const std::uint32_t* d_source,
+                                   const void* d_source,
+                                   DP_CanonicalIndexWidth index_width,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
                                    const std::int64_t* d_source_row_ptr,
-                                   const std::uint32_t* d_source_order,
+                                   const std::int64_t* d_source_order,
                                    const float* d_spin,
-                                   const int nloc,
-                                   const int nall_nodes,
+                                   const std::int64_t nloc,
+                                   const std::int64_t nall_nodes,
                                    const std::int64_t edge_storage,
                                    void* stream = nullptr);
 

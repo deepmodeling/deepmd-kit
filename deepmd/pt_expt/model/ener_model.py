@@ -151,7 +151,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         n_local
             Per-frame owned node counts with shape ``(nf,)``, int64.
         source
-            Source-node indices with shape ``(S,)``, uint32.
+            Source-node indices with shape ``(S,)``, uint32 or int64, or their
+            exported byte carrier with shape ``(S, W)`` for ``W`` equal to
+            four or eight bytes.
         edge_vec
             Destination-major edge vectors with shape ``(S, 3)``, float32.
         destination_row_ptr
@@ -161,9 +163,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             also accepts a two-entry placeholder, which declines the
             per-atom virial; that output is then zero.
         source_order
-            Source-grouped edge positions with shape ``(S,)`` and the same
-            dtype as ``source``, or a two-entry placeholder alongside a
-            placeholder ``source_row_ptr``.
+            Source-grouped edge positions with shape ``(S,)``, int64, or a
+            two-entry placeholder alongside a placeholder ``source_row_ptr``.
         do_atomic_virial
             Whether to return the per-node virial.
         spin
