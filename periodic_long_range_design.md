@@ -186,8 +186,24 @@ def build_k_grid(box, alpha=None, sigma0=None, eps=1e-8):
   15 Å 立方盒约 $9^3-1 \approx 700$ 个 k 点；$\hat\rho$ 计算量 $O(N_k\cdot N\cdot C)$。
 - 每帧网格不同（box 不同）→ batch 拼接时需要逐帧归属（§5.2）。
 - **compile：ragged 动态轴**（`nk` 成为第四个符号轴，照 `npair` 协议，
-  flatten/unflatten 为 k_grid 携 `(frame, vec, mask, volume, coord, strain)`）——
-  固定 nk + mask 方案未采用：拓扑协议已原生支持动态轴，零额外复杂度。
+  flatten/unflatten 为 k_grid 携 `(frame, vec, mask, volume, coord, strain)`）。
+- **固定网格 + mask（已实现，`k_grid_mode: fixed`）**：v1 时未采用，后按需求
+  补上作为可选模式。整数网格 $\mathbf{n} \in [-n_d, n_d]^3$（不含零矢量）
+  由数据统计中最大 cell 的逐方向界 $n_d = \lceil k_{max}|a_d|/2\pi \rceil$
+  一次性枚举（`enumerate_k_grid_bounds`，可用 `k_grid_bounds` 配置覆盖），
+  存入模型并随其序列化；每个 batch 以静态形状 matmul 求各帧波矢
+  $\mathbf{k} = 2\pi B_f^{-1}\mathbf{n}$（k 轴长度固定为 $n_f \times n_k$，无
+  guard 点），帧达不到的点（$|k| > k_{max}$，$k_{max}$ 取构建时 kernel 参数）
+  由 mask 屏蔽（`build_fixed_k_grid`）。网格是硬性的：cell 超出网格容量或
+  kernel 漂移使 $k_{max}$ 越界时，该帧仅以网格内 k 点截断求和（倒格点欠采样的
+  近似，力和位力仍是该近似能量的精确导数），并发 warning。零矢量不入网格：LES 的 $\hat K$ 在
+  $k=0$ 奇异，masked 的 inf 会在反向传播产生 NaN。开销约为 ragged 球内点数
+  的 ~2 倍（各向同性 cell），换来完全静态的形状。
+- **解耦开关（`decouple_k_grid: true`）**：默认（耦合）每 batch 以当前 kernel
+  参数现算 $k_{max}$，kernel 漂移 → 网格跟随，能量定义始终是当前 kernel 的收敛
+  能量；置 true 后 $k_{max}$ 在构造时按初始参数冻结（`frozen_k_max`，随模型
+  序列化），kernel 漂移不再影响 k 点选择，图内 $\hat K(k)$ 仍用活参数求值
+  （梯度不受影响）。两种模式共用；fixed 模式下解耦后 mask 也不再随漂移收紧。
 
 ### 5.2 图内计算（伪代码，全部纯张量运算，无 data-dependent 控制流）
 

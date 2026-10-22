@@ -25,7 +25,9 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     K_GRID,
     KGrid,
     build_topologies,
+    enumerate_k_grid_bounds,
     frame_id_from_n_node,
+    k_grid_bounds_of_cells,
     segment_sum,
 )
 from deepmd.dpmodel.utils.seed import (
@@ -116,6 +118,28 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
     kspace_tolerance
         The relative weight of the slowest-decaying kernel mode at the
         wave-number cutoff of the k grid of a periodic batch.
+    k_grid_mode
+        How the k grid of a periodic batch is laid out: ``"ragged"``
+        enumerates the wave numbers of every frame eagerly, so the k axis is
+        a dynamic dimension; ``"fixed"`` shares one integer grid over the
+        frames — sized by the largest cell of the data statistics, or by
+        ``k_grid_bounds`` — evaluates every frame on it by a static-shaped
+        transform, and masks the points a frame does not reach. The fixed
+        grid is hard: a frame needing an integer index beyond it (a larger
+        cell, or a kernel that moved the cutoff out) is served by the grid
+        alone, so its k-sum is truncated to the grid with a warning.
+    k_grid_bounds
+        The per-axis integer bounds :math:`n_d^{max}` of the fixed grid, in
+        place of the data statistics; only meaningful with
+        ``k_grid_mode="fixed"``.
+    decouple_k_grid
+        Decouple the k-point selection of a periodic batch from the kernel
+        parameters: the wave-number cutoff is derived once from the initial
+        parameters and kept for the life of the model, so training the
+        kernel no longer moves the k grid. The kernel values the grid is
+        evaluated with still follow the live parameters. The frozen cutoff
+        is serialized with the model, so a restarted run keeps the grid the
+        model was built with. Requires ``periodic=True``.
     """
 
     def __init__(
@@ -125,6 +149,9 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         charge_constraint: dict | None = None,
         periodic: bool = False,
         kspace_tolerance: float = 1e-8,
+        k_grid_mode: str = "ragged",
+        k_grid_bounds: list[int] | None = None,
+        decouple_k_grid: bool = False,
     ) -> None:
         if charge_net.vacuum_ref:
             raise ValueError(
@@ -148,6 +175,38 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         # The frame charge/spin condition a compressed model is specialized
         # to; see :meth:`fold_charge_state`.
         self.charge_state = None
+        self.k_grid_mode = str(k_grid_mode)
+        if self.k_grid_mode not in ("ragged", "fixed"):
+            raise ValueError(
+                f"`k_grid_mode` must be 'ragged' or 'fixed', got {self.k_grid_mode!r}"
+            )
+        if self.k_grid_mode == "fixed" and not self.periodic:
+            raise ValueError("`k_grid_mode='fixed'` requires `periodic=True`")
+        if k_grid_bounds is not None and self.k_grid_mode != "fixed":
+            raise ValueError(
+                "`k_grid_bounds` is only meaningful with `k_grid_mode='fixed'`"
+            )
+        self.decouple_k_grid = bool(decouple_k_grid)
+        if self.decouple_k_grid and not self.periodic:
+            raise ValueError("`decouple_k_grid` requires `periodic=True`")
+        # A decoupled grid reads the kernel once, at construction: the k-point
+        # selection stays at the initial kernel however training moves it,
+        # while the kernel values in the graph still use the live parameters.
+        self.frozen_k_max = (
+            float(self.kernel.kspace_cutoff(self.kspace_tolerance))
+            if self.decouple_k_grid
+            else None
+        )
+        # The shared integer grid of the fixed mode, empty until the data
+        # statistics size it (see :meth:`compute_input_stats`) — an array even
+        # then, so a backend keeping arrays in its state dict sees a stable
+        # set of keys and a checkpoint restores the sized grid.
+        if k_grid_bounds is not None:
+            self.k_grid_n = enumerate_k_grid_bounds(k_grid_bounds)
+        elif self.k_grid_mode == "fixed":
+            self.k_grid_n = np.zeros((0, 3), dtype=np.int64)
+        else:
+            self.k_grid_n = None
 
     @staticmethod
     def _normalize_constraint(
@@ -237,7 +296,21 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             config.get("charge_constraint"),
             periodic=config.get("periodic", False),
             kspace_tolerance=config.get("kspace_tolerance", 1e-8),
+            k_grid_mode=config.get("k_grid_mode", "ragged"),
+            k_grid_bounds=config.get("k_grid_bounds"),
+            decouple_k_grid=config.get("decouple_k_grid", False),
         )
+
+    def _k_max(self) -> float:
+        """The wave-number cutoff selecting the k points of a periodic batch.
+
+        A coupled grid reads the current kernel parameters, so a trained
+        kernel re-derives its grid every batch; a decoupled grid keeps the
+        cutoff of the initial parameters.
+        """
+        if self.decouple_k_grid:
+            return self.frozen_k_max
+        return float(self.kernel.kspace_cutoff(self.kspace_tolerance))
 
     def build_topologies(
         self,
@@ -253,11 +326,22 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
 
         The k grid of a periodic batch is enumerated from the cells with the
         wave-number cutoff of the kernel (the trainable parameters are read at
-        build time, so a drifting kernel re-derives its grid every batch).
+        build time, so a drifting kernel re-derives its grid every batch,
+        unless the grid is decoupled from them by ``decouple_k_grid``). In
+        the fixed grid mode the batch is evaluated on the shared integer grid
+        instead, whose mask the same cutoff derives.
         """
         params = {}
         if self.periodic:
-            params[K_GRID] = {"k_max": self.kernel.kspace_cutoff(self.kspace_tolerance)}
+            params[K_GRID] = {"k_max": self._k_max()}
+            if self.k_grid_mode == "fixed":
+                if self.k_grid_n is None or self.k_grid_n.shape[0] == 0:
+                    raise ValueError(
+                        "the fixed k grid is not sized yet: run the data "
+                        "statistics (`compute_input_stats`) on periodic "
+                        "frames, or configure `k_grid_bounds`"
+                    )
+                params[K_GRID]["n_grid"] = self.k_grid_n
         return build_topologies(
             self.required_topologies(),
             coord,
@@ -539,9 +623,46 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         protection: float = 1e-2,
         stat_file_path: DPPath | None = None,
     ) -> None:
+        if self.k_grid_mode == "fixed" and (
+            self.k_grid_n is None or self.k_grid_n.shape[0] == 0
+        ):
+            # Materialize the samples once for the grid sizing and the
+            # networks; a lazy sampler is shared by the callers.
+            sampled = merged() if callable(merged) else merged
+            self._size_k_grid(sampled)
+            merged = sampled
         self.charge_net.compute_input_stats(
             merged, protection=protection, stat_file_path=stat_file_path
         )
+
+    def _size_k_grid(self, sampled: list[dict]) -> None:
+        r"""Size the fixed integer k grid by the largest sampled cell.
+
+        Every sampled frame needs :math:`|n_d| \le k_{max} |a_d| / 2\pi` per
+        axis at the wave-number cutoff of the kernel; the grid takes the
+        elementwise maximum of the bounds over the frames. The kernel
+        parameters are read now, so a grid is sized for the kernel at
+        statistics time — frames that later outgrow it (larger cells, or a
+        kernel moving its cutoff out) are truncated to the grid.
+        """
+        k_max = self._k_max()
+        bounds = None
+        for frame in sampled:
+            box = frame.get("box")
+            if box is None:
+                continue
+            box = np.asarray(to_numpy_array(box), dtype=np.float64)
+            if box.size == 0:
+                continue
+            frame_max = np.max(k_grid_bounds_of_cells(box, k_max), axis=0)
+            bounds = frame_max if bounds is None else np.maximum(bounds, frame_max)
+        if bounds is None:
+            raise ValueError(
+                "the fixed k grid takes its size from the data statistics, "
+                "but the sampled frames hold no simulation cell; provide "
+                "periodic training data or configure `k_grid_bounds`"
+            )
+        self.k_grid_n = enumerate_k_grid_bounds(bounds)
 
     def change_type_map(self, type_map: list[str]) -> None:
         self.charge_net.change_type_map(type_map=type_map)
@@ -561,6 +682,13 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         if self.periodic:
             data["periodic"] = True
             data["kspace_tolerance"] = self.kspace_tolerance
+        if self.k_grid_mode != "ragged":
+            data["k_grid_mode"] = self.k_grid_mode
+        if self.k_grid_n is not None and self.k_grid_n.shape[0] > 0:
+            data["k_grid_n"] = to_numpy_array(self.k_grid_n).tolist()
+        if self.decouple_k_grid:
+            data["decouple_k_grid"] = True
+            data["frozen_k_max"] = self.frozen_k_max
         if self.charge_state is not None:
             data["charge_state"] = to_numpy_array(self.charge_state).tolist()
         return data
@@ -575,7 +703,16 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             data["charge_constraint"],
             periodic=data.get("periodic", False),
             kspace_tolerance=data.get("kspace_tolerance", 1e-8),
+            k_grid_mode=data.get("k_grid_mode", "ragged"),
+            decouple_k_grid=data.get("decouple_k_grid", False),
         )
+        if data.get("frozen_k_max") is not None:
+            # The constructor derives the frozen cutoff from the (possibly
+            # trained) kernel; the record holds the value the grid was
+            # actually built with.
+            obj.frozen_k_max = float(data["frozen_k_max"])
+        if data.get("k_grid_n") is not None:
+            obj.k_grid_n = np.asarray(data["k_grid_n"], dtype=np.int64).reshape(-1, 3)
         if data.get("charge_state") is not None:
             obj.fold_charge_state(np.asarray(data["charge_state"]).reshape(-1).tolist())
         return obj

@@ -1145,3 +1145,273 @@ def test_periodic_compression_is_rejected(kernel: str) -> None:
     model = get_model(config).to(env.DEVICE).eval()
     with pytest.raises(NotImplementedError, match="reciprocal-space"):
         model.atomic_model.enable_compression(0.5)
+
+
+# ---------------------------------------------------------------------------
+# Periodic fixed k-grid mode
+# ---------------------------------------------------------------------------
+
+
+def _periodic_fixed_model(
+    kernel: str, boxes: np.ndarray | None = None, **kwargs: object
+) -> torch.nn.Module:
+    """A periodic model in the fixed k-grid mode, sized by the given cells."""
+    config = _config(kernel, **kwargs)
+    config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = "fixed"
+    model = get_model(config).to(env.DEVICE).eval()
+    if boxes is not None:
+        boxes = torch.as_tensor(np.asarray(boxes, dtype=np.float64).reshape(-1, 9))
+        model.atomic_model.long_range.compute_input_stats([{"box": boxes}])
+    return model
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_fixed_grid_matches_ragged(kernel: str) -> None:
+    """The fixed grid with its mask evaluates like the ragged enumeration."""
+    coord, atype, box = _periodic_case()
+    ragged = _periodic_model(kernel)
+    fixed = _periodic_fixed_model(kernel, box)
+    # the state dicts of the two grid modes differ by the fixed grid buffer
+    fixed.load_state_dict(ragged.state_dict(), strict=False)
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    expected = ragged(coord_t, atype_t, box=box_t)
+    got = fixed(coord_t, atype_t, box=box_t)
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(got[key], expected[key], rtol=1e-9, atol=1e-12)
+    # the gradient reaches the charge network and the kernel without NaN,
+    # though masked points carry a singular kernel transform nowhere
+    fixed.train()
+    out = fixed(coord_t, atype_t, box=box_t)
+    loss = out["energy"].square().sum() + out["force"].square().sum()
+    loss.backward()
+    grads = [
+        parameter.grad
+        for parameter in fixed.atomic_model.long_range.parameters()
+        if parameter.grad is not None
+    ]
+    assert grads and all(torch.isfinite(grad).all() for grad in grads)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_fixed_grid_mixed_cells(kernel: str) -> None:
+    """One shared grid serves a batch of different cells, each masked to its sphere."""
+    coord, atype, box = _periodic_case()
+    coord2 = np.concatenate([coord, coord + 0.1], axis=0)
+    atype2 = np.concatenate([atype, atype], axis=0)
+    box2 = np.concatenate([box, box * 1.4], axis=0)
+    fixed = _periodic_fixed_model(kernel, box2)
+    ragged = _periodic_model(kernel)
+    ragged.load_state_dict(fixed.state_dict(), strict=False)
+    coord_t, atype_t, box_t = (
+        _tensor(coord2),
+        _tensor(atype2, torch.int64),
+        _tensor(box2),
+    )
+    batched = fixed(coord_t, atype_t, box=box_t)
+    expected = ragged(coord_t, atype_t, box=box_t)
+    torch.testing.assert_close(
+        batched["energy"], expected["energy"], rtol=1e-9, atol=1e-12
+    )
+    torch.testing.assert_close(
+        batched["force"], expected["force"], rtol=1e-9, atol=1e-12
+    )
+    # the batched energy of a frame equals its standalone evaluation
+    for frame in range(2):
+        alone = fixed(
+            _tensor(coord2[frame : frame + 1]),
+            _tensor(atype2[frame : frame + 1], torch.int64),
+            box=_tensor(box2[frame : frame + 1]),
+        )
+        torch.testing.assert_close(
+            alone["energy"][0], batched["energy"][frame], rtol=1e-10, atol=1e-10
+        )
+
+
+def _kspace_reference_bounded(
+    coord: np.ndarray,
+    charge: np.ndarray,
+    box: np.ndarray,
+    kernel: str,
+    bounds: np.ndarray,
+) -> float:
+    """The k-space reference of :func:`_kspace_reference` restricted to the
+    integer indices within ``bounds`` — the truncated sum of a fixed grid.
+    """
+    rec = 2.0 * np.pi * np.linalg.inv(box)
+    if kernel == "les":
+        k_max = 2.0 * 0.8 * np.sqrt(np.log(1e8))
+    else:
+        k_max = np.sqrt(2.0 * np.log(1e8)) / 0.8
+    grids = np.meshgrid(
+        *[np.arange(-n, n + 1, dtype=float) for n in bounds], indexing="ij"
+    )
+    n_all = np.stack(grids, axis=-1).reshape(-1, 3)
+    k = n_all @ rec.T
+    k2 = np.sum(k * k, axis=-1)
+    keep = (k2 > 0) & (k2 <= k_max * k_max)
+    k, k2 = k[keep], k2[keep]
+    phase = k @ coord.T
+    rho = (np.cos(phase) + 1j * np.sin(phase)) @ charge
+    s_sq = (np.abs(rho) ** 2).sum(axis=-1)
+    if kernel == "les":
+        k_hat = 4.0 * np.pi * np.exp(-k2 / (4.0 * 0.8**2)) / k2
+        k0 = 2.0 * 0.8 / np.sqrt(np.pi)
+    else:
+        amplitude = np.array([0.7, -0.2, 0.1])
+        width = np.array([0.8, 1.7, 3.2])
+        k_hat = np.sum(
+            amplitude[None, :]
+            * (2.0 * np.pi) ** 1.5
+            * width[None, :] ** 3
+            * np.exp(-0.5 * k2[:, None] * width[None, :] ** 2),
+            axis=-1,
+        )
+        k0 = amplitude.sum()
+    volume = abs(np.linalg.det(box))
+    return float(
+        COULOMB_CONSTANT
+        * ((k_hat * s_sq).sum() / (2 * volume) - 0.5 * k0 * (charge * charge).sum())
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_fixed_grid_truncates_oversized_cells(kernel: str) -> None:
+    """A cell beyond the grid is evaluated with the grid alone, not an error."""
+    coord, atype, box = _periodic_case()
+    model = _periodic_fixed_model(kernel, box, constraint=None)
+    _set_constant_charges(model, [1.0, -0.5])
+    big_box = box * 3.0
+    with pytest.warns(UserWarning, match="truncated"):
+        out = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(big_box))
+    grid_n = model.atomic_model.long_range.k_grid_n
+    grid_n = grid_n.detach().cpu().numpy() if hasattr(grid_n, "detach") else grid_n
+    bounds = np.abs(np.asarray(grid_n)).max(axis=0)
+    charge = np.zeros((6, CHANNELS[kernel]))
+    charge[:, 0] = [1.0, -0.5, 1.0, -0.5, -0.5, 1.0]
+    expected = _kspace_reference_bounded(coord[0], charge, big_box[0], kernel, bounds)
+    np.testing.assert_allclose(out["energy"].item(), expected, rtol=1e-9, atol=1e-9)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_fixed_grid_needs_statistics_or_bounds(kernel: str) -> None:
+    """Without statistics or explicit bounds the grid is not sized; bounds skip them."""
+    coord, atype, box = _periodic_case()
+    unsized = _periodic_fixed_model(kernel)
+    with pytest.raises(ValueError, match="not sized yet"):
+        unsized(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    config = _config(kernel)
+    config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = "fixed"
+    config["long_range"]["k_grid_bounds"] = [12, 12, 12]
+    model = get_model(config).to(env.DEVICE).eval()
+    assert model.atomic_model.long_range.k_grid_n.shape == (25**3 - 1, 3)
+    out = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    reference = _periodic_model(kernel)
+    reference.load_state_dict(model.state_dict(), strict=False)
+    expected = reference(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    torch.testing.assert_close(out["energy"], expected["energy"], rtol=1e-9, atol=1e-12)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_fixed_grid_serialization_round_trip(kernel: str) -> None:
+    """The record keeps the sized grid and evaluates identically."""
+    from deepmd.dpmodel.model.base_model import BaseModel as BaseModelDP
+
+    coord, atype, box = _periodic_case()
+    model = _periodic_fixed_model(kernel, box)
+    record = model.serialize()
+    assert record["long_range"]["k_grid_mode"] == "fixed"
+    assert "k_grid_n" in record["long_range"]
+    reference = BaseModelDP.deserialize(record)
+    assert reference.atomic_model.long_range.k_grid_mode == "fixed"
+    expected = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    ret = reference.call_common(coord, atype, box, neighbor_graph_method="dense")
+    np.testing.assert_allclose(
+        ret["energy_redu"].reshape(-1),
+        expected["energy"].detach().cpu().numpy().reshape(-1),
+        rtol=1e-9,
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+@REQUIRES_SUPPORTED_COMPILE
+def test_periodic_fixed_grid_compiled_matches_eager(kernel: str) -> None:
+    """The compiled graph lower evaluates the fixed-grid model like the eager one."""
+    coord, atype, box = _periodic_case()
+    model = _periodic_fixed_model(kernel, box)
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    model.train()
+    runner = _CompiledModel(model, _get_model_structure_key(model))
+    runner.train()
+    reference = model.eval()(coord_t, atype_t, box=box_t)
+    model.train()
+    out = runner(coord_t, atype_t, box=box_t)
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(out[key], reference[key], rtol=1e-6, atol=1e-8)
+    loss = out["energy"].square().sum() + out["force"].square().sum()
+    loss.backward()
+    grads = [parameter.grad for parameter in model.atomic_model.long_range.parameters()]
+    assert grads and all(grad is not None for grad in grads)
+
+
+# ---------------------------------------------------------------------------
+# Periodic decoupled k grid
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_decoupled_grid_ignores_kernel_drift(kernel: str) -> None:
+    """A decoupled model selects the k points with the initial kernel but
+    evaluates them with the live one: the drift moves the energy, not the grid.
+    """
+    config = _config(kernel)
+    config["long_range"]["periodic"] = True
+    config["long_range"]["decouple_k_grid"] = True
+    model = get_model(config).to(env.DEVICE).eval()
+    coord, atype, box = _periodic_case()
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    long_range = model.atomic_model.long_range
+    grid_args = (
+        coord_t.reshape(-1, 3),
+        torch.tensor([6], dtype=torch.int64, device=env.DEVICE),
+        box_t,
+    )
+    before = long_range.build_topologies(*grid_args, atype=atype_t.reshape(-1))[
+        "k_grid"
+    ]
+    energy_before = model(coord_t, atype_t, box=box_t)["energy"]
+    # move the kernel far enough that a coupled grid would change
+    with torch.no_grad():
+        if kernel == "les":
+            long_range.kernel.log_alpha.add_(1.0)
+        else:
+            long_range.kernel.log_width.sub_(1.0)
+    after = long_range.build_topologies(*grid_args, atype=atype_t.reshape(-1))["k_grid"]
+    torch.testing.assert_close(after.vec, before.vec)
+    torch.testing.assert_close(after.mask, before.mask)
+    # the kernel values still follow the live parameters
+    energy_after = model(coord_t, atype_t, box=box_t)["energy"]
+    assert not torch.allclose(energy_after, energy_before)
+    # and the drifted kernel still takes a finite gradient through the graph
+    model.train()
+    out = model(coord_t, atype_t, box=box_t)
+    loss = out["energy"].square().sum() + out["force"].square().sum()
+    loss.backward()
+    kernel_grads = [parameter.grad for parameter in long_range.kernel.parameters()]
+    assert kernel_grads and all(
+        grad is not None and torch.isfinite(grad).all() for grad in kernel_grads
+    )

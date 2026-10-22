@@ -3704,6 +3704,30 @@ def long_range_latent_charge() -> list[Argument]:
         "The relative weight of the slowest-decaying kernel mode at the "
         "wave-number cutoff of the k grid of a periodic batch."
     )
+    doc_k_grid_mode = (
+        "How the k grid of a periodic batch is laid out: 'ragged' enumerates "
+        "the wave numbers of every frame eagerly (the k axis is a dynamic "
+        "dimension); 'fixed' shares one integer grid over the frames, sized "
+        "by the largest cell of the data statistics or by `k_grid_bounds`, "
+        "and masks the points a frame does not reach, so the k axis has a "
+        "static length. The fixed grid is hard: a frame needing an index "
+        "beyond it (a larger cell, or a kernel that moved the cutoff out) "
+        "has its k-sum truncated to the grid, with a warning. Requires "
+        "`periodic: true` for 'fixed'."
+    )
+    doc_k_grid_bounds = (
+        "The per-axis integer bounds [n1, n2, n3] of the fixed k grid, in "
+        "place of the data statistics; only meaningful with "
+        "`k_grid_mode: fixed`."
+    )
+    doc_decouple_k_grid = (
+        "Decouple the k-point selection of a periodic batch from the kernel "
+        "parameters: the wave-number cutoff is derived once from the initial "
+        "parameters and kept for the life of the model, so training the "
+        "kernel no longer moves the k grid (the kernel values the grid is "
+        "evaluated with still follow the live parameters). The frozen cutoff "
+        "is serialized with the model. Requires `periodic: true`."
+    )
     return [
         Argument("channels", int, optional=True, default=1, doc=doc_channels),
         Argument(
@@ -3741,6 +3765,27 @@ def long_range_latent_charge() -> list[Argument]:
             optional=True,
             default=1e-8,
             doc=doc_kspace_tolerance,
+        ),
+        Argument(
+            "k_grid_mode",
+            str,
+            optional=True,
+            default="ragged",
+            doc=doc_k_grid_mode,
+        ),
+        Argument(
+            "k_grid_bounds",
+            list[int],
+            optional=True,
+            default=None,
+            doc=doc_k_grid_bounds,
+        ),
+        Argument(
+            "decouple_k_grid",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_decouple_k_grid,
         ),
     ]
 

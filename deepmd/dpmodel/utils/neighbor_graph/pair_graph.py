@@ -23,6 +23,7 @@ from __future__ import (
 )
 
 import math
+import warnings
 from dataclasses import (
     dataclass,
 )
@@ -267,6 +268,155 @@ def build_k_grid(
     )
 
 
+def k_grid_bounds_of_cells(box: Array, k_max: float) -> np.ndarray:
+    r"""Per-axis integer wave-number bounds the cells need at ``k_max``.
+
+    A wave number :math:`\mathbf{k} = 2\pi B^{-1}\mathbf{n}` with
+    :math:`|\mathbf{k}| \le k_{max}` needs :math:`|n_d| \le k_{max} |a_d| / 2\pi`
+    per axis (Cauchy-Schwarz), so the bound of every frame is the ceiling of
+    the right-hand side.
+
+    Parameters
+    ----------
+    box
+        Simulation cells with shape ``(nf, 3, 3)`` or ``(nf, 9)``; rows are
+        the lattice vectors.
+    k_max
+        The wave-number cutoff, in Å⁻¹.
+
+    Returns
+    -------
+    np.ndarray
+        The per-frame, per-axis integer bounds with shape ``(nf, 3)``.
+    """
+    cell = np.asarray(to_numpy_array(box), dtype=np.float64).reshape(-1, 3, 3)
+    a_len = np.linalg.norm(cell, axis=-1)
+    return np.ceil(k_max * a_len / (2.0 * math.pi)).astype(np.int64)
+
+
+def enumerate_k_grid_bounds(bounds: Array | list[int]) -> np.ndarray:
+    r"""Enumerate the integer wave-number indices within per-axis bounds.
+
+    The grid is the full meshgrid of :math:`\mathbf{n}` with
+    :math:`|n_d| \le n_d^{max}`, in lexicographic order (the first axis
+    outermost). The zero vector is left out: its kernel transform is
+    singular and the tin-foil convention drops the :math:`\mathbf{k} = 0`
+    mode anyway.
+
+    Parameters
+    ----------
+    bounds
+        The per-axis bounds :math:`n_d^{max}` with shape ``(3,)``.
+
+    Returns
+    -------
+    np.ndarray
+        The integer indices with shape ``(nk, 3)``, int64.
+    """
+    bounds = np.asarray(to_numpy_array(bounds), dtype=np.int64).reshape(-1)
+    if bounds.shape != (3,) or np.any(bounds < 0):
+        raise ValueError(
+            f"k-grid bounds must be three non-negative integers, got {bounds}"
+        )
+    grids = np.meshgrid(
+        *[np.arange(-n, n + 1, dtype=np.int64) for n in bounds], indexing="ij"
+    )
+    n_grid = np.stack(grids, axis=-1).reshape(-1, 3)
+    return n_grid[np.any(n_grid != 0, axis=-1)]
+
+
+def build_fixed_k_grid(
+    box: Array,
+    n_grid: Array,
+    k_max: float,
+    n_node: Array,
+    coord: Array | None = None,
+) -> KGrid:
+    r"""Evaluate a fixed integer k grid on the cells of the periodic frames.
+
+    Every frame shares the integer indices ``n_grid`` (see
+    :func:`enumerate_k_grid_bounds`), so the k axis has the static length
+    ``nf * nk``; the wave numbers of a frame are
+    :math:`\mathbf{k} = 2\pi B^{-1}\mathbf{n}` and the points the frame does
+    not reach — outside :math:`0 < |\mathbf{k}| \le k_{max}` — are masked out.
+    The mask is evaluated eagerly with the wave-number cutoff current at
+    build time, exactly as in :func:`build_k_grid`. The enumeration runs
+    eagerly beside the ragged one, but no count is data dependent: the grid
+    comes back without guard points.
+
+    The grid is HARD-FIXED: a frame whose cell would need integer indices
+    beyond the grid (a larger cell than the grid was sized for, or a kernel
+    that moved the cutoff out since) is served by the grid alone — its
+    reciprocal lattice is denser than the grid, so its energy is the
+    truncated k-sum of the grid, a well-defined approximation whose forces
+    and virial stay the exact derivatives of that energy. A warning is
+    issued when this happens.
+
+    Parameters
+    ----------
+    box
+        Simulation cells with shape ``(nf, 3, 3)``; rows are the lattice
+        vectors.
+    n_grid
+        The shared integer wave-number indices with shape ``(nk, 3)``.
+    k_max
+        The wave-number cutoff, in Å⁻¹.
+    n_node
+        Per-frame node counts with shape ``(nf,)`` (interface symmetry with
+        :func:`build_k_grid`; the grid does not read it).
+    coord
+        Node positions with shape ``(N, 3)``, stored on the grid as the
+        geometry context (see :attr:`KGrid.coord`).
+
+    Returns
+    -------
+    KGrid
+        The wave numbers of every frame, frame-major over the shared grid.
+
+    Raises
+    ------
+    ValueError
+        Never for an oversized cell (it is truncated, see above); kept for
+        interface symmetry.
+    """
+    xp = array_api_compat.array_namespace(box)
+    device = array_api_compat.device(box)
+    if box.ndim == 2:
+        box = xp.reshape(box, (box.shape[0], 3, 3))
+    nf = box.shape[0]
+    n_grid = np.asarray(to_numpy_array(n_grid), dtype=np.int64).reshape(-1, 3)
+    nk = n_grid.shape[0]
+    bounds = np.max(np.abs(n_grid), axis=0) if nk else np.zeros(3, dtype=np.int64)
+    required = k_grid_bounds_of_cells(box, k_max)
+    over = np.any(required > bounds[None, :], axis=1)
+    if np.any(over):
+        f = int(np.argmax(over))
+        warnings.warn(
+            f"frame {f} needs integer k-grid bounds {required[f].tolist()}, "
+            f"beyond the fixed grid {bounds.tolist()}: its k-sum is truncated "
+            f"to the grid (an approximation for this frame); enlarge "
+            f"`k_grid_bounds` for full accuracy",
+            stacklevel=2,
+        )
+    cells = np.asarray(to_numpy_array(box), dtype=np.float64)
+    rec = 2.0 * math.pi * np.linalg.inv(cells)  # (nf, 3, 3), columns are g_d
+    k = np.einsum("jm,fdm->fjd", n_grid.astype(np.float64), rec)
+    k2 = np.sum(k * k, axis=-1)
+    mask_np = (k2 > 0.0) & (k2 <= k_max * k_max)  # (nf, nk)
+    vec_np = k.reshape(nf * nk, 3)
+    frame_np = np.repeat(np.arange(nf, dtype=np.int64), nk)
+    volume = xp.linalg.det(box)
+    volume = xp.abs(volume)
+    return KGrid(
+        frame=xp.asarray(frame_np, device=device),
+        vec=xp.astype(xp.asarray(vec_np, device=device), box.dtype),
+        mask=xp.asarray(mask_np.reshape(-1), device=device),
+        volume=xp.astype(volume, box.dtype),
+        coord=coord,
+        strain=xp.zeros((nf, 3, 3), dtype=box.dtype, device=device),
+    )
+
+
 def _empty_k_grid(nf: int, like: Array, coord: Array | None) -> KGrid:
     """A guard-only k grid for a batch without periodic frames."""
     xp = array_api_compat.array_namespace(like)
@@ -367,7 +517,9 @@ def build_topologies(
     pair_excl
         The model-level pair exclusion, or ``None``.
     topology_params
-        Per-name build parameters; the k grid takes ``{"k_max": ...}``.
+        Per-name build parameters; the k grid takes ``{"k_max": ...}`` and,
+        for a fixed integer grid, additionally ``{"n_grid": ...}`` (see
+        :func:`build_fixed_k_grid`).
 
     Returns
     -------
@@ -408,9 +560,14 @@ def build_topologies(
                     raise ValueError(
                         f"the {K_GRID!r} topology requires its `k_max` build parameter"
                     )
-                topologies[name] = build_k_grid(
-                    box, params["k_max"], n_node, coord=coord
-                )
+                if "n_grid" in params:
+                    topologies[name] = build_fixed_k_grid(
+                        box, params["n_grid"], params["k_max"], n_node, coord=coord
+                    )
+                else:
+                    topologies[name] = build_k_grid(
+                        box, params["k_max"], n_node, coord=coord
+                    )
         else:
             raise ValueError(
                 f"unknown topology {name!r}; expected one of ({ALL_PAIRS!r}, {K_GRID!r})"

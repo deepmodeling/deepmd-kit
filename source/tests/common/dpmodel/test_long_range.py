@@ -22,6 +22,7 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     build_k_grid,
     build_pair_graph,
     build_topologies,
+    enumerate_k_grid_bounds,
     pair_force_virial,
     unordered_pair_index,
 )
@@ -317,3 +318,242 @@ def test_build_topologies_periodic_branching() -> None:
     # the k grid needs its build parameter
     with pytest.raises(ValueError, match="k_max"):
         build_topologies(names, coord, n_node, box, atype=atype)
+
+
+# ---------------------------------------------------------------------------
+# Fixed k-grid mode
+# ---------------------------------------------------------------------------
+
+
+def _periodic_long_range(**kwargs: object) -> LatentChargeLongRange:
+    charge_net = LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1)
+    return LatentChargeLongRange(
+        charge_net, LESKernel(alpha=0.3), None, periodic=True, **kwargs
+    )
+
+
+def _cells() -> np.ndarray:
+    """Two cells of different sizes, the second the larger one."""
+    return np.array(
+        [
+            [[8.0, 0.6, 0.0], [0.0, 7.5, 0.4], [0.0, 0.0, 9.0]],
+            [[12.0, 0.5, 0.0], [0.2, 11.0, 0.3], [0.1, 0.4, 10.5]],
+        ]
+    )
+
+
+def test_enumerate_k_grid_bounds() -> None:
+    """The grid is the lexicographic meshgrid of the bounds, without the zero vector."""
+    n_grid = enumerate_k_grid_bounds([2, 1, 0])
+    assert n_grid.shape == (5 * 3 * 1 - 1, 3)
+    assert not np.any(np.all(n_grid == 0, axis=-1))
+    expected = [
+        (n0, n1, 0) for n0 in range(-2, 3) for n1 in range(-1, 2) if (n0, n1) != (0, 0)
+    ]
+    np.testing.assert_array_equal(n_grid, np.asarray(expected, dtype=np.int64))
+    with pytest.raises(ValueError, match="bounds"):
+        enumerate_k_grid_bounds([1, -1, 0])
+
+
+def test_fixed_k_grid_matches_ragged_enumeration() -> None:
+    """The masked points of the fixed grid are exactly the ragged k points."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_fixed_k_grid,
+        enumerate_k_grid_bounds,
+        k_grid_bounds_of_cells,
+    )
+
+    box = _cells()
+    k_max = 2.0
+    n_grid = enumerate_k_grid_bounds(np.max(k_grid_bounds_of_cells(box, k_max), axis=0))
+    nk = n_grid.shape[0]
+    fixed = build_fixed_k_grid(box, n_grid, k_max, np.array([4, 5]))
+    # a static, guard-free layout: nf * nk points, frame-major
+    assert fixed.vec.shape == (2 * nk, 3)
+    np.testing.assert_array_equal(fixed.frame, np.repeat([0, 1], nk))
+    ragged = build_k_grid(box, k_max, np.array([4, 5]))
+    for frame in range(2):
+        expected = {
+            tuple(row)
+            for row in np.round(ragged.vec[(ragged.frame == frame) & ragged.mask], 8)
+        }
+        got = {
+            tuple(row)
+            for row in np.round(fixed.vec[(fixed.frame == frame) & fixed.mask], 8)
+        }
+        assert got == expected
+    # the smaller cell masks more points of the shared grid
+    assert fixed.mask[:nk].sum() < fixed.mask[nk:].sum()
+    np.testing.assert_allclose(fixed.volume, np.abs(np.linalg.det(box)), rtol=1e-12)
+
+
+def test_fixed_k_grid_truncates_oversized_cells() -> None:
+    """A cell beyond the grid is served by the grid alone (truncated k-sum), with a warning."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_fixed_k_grid,
+        enumerate_k_grid_bounds,
+        k_grid_bounds_of_cells,
+    )
+
+    box = _cells()
+    k_max = 2.0
+    n_grid = enumerate_k_grid_bounds(np.max(k_grid_bounds_of_cells(box, k_max), axis=0))
+    nk = n_grid.shape[0]
+    with pytest.warns(UserWarning, match="truncated"):
+        bigger = build_fixed_k_grid(box * 2.0, n_grid, k_max, np.array([4, 5]))
+    # the layout is untouched: static, guard-free, every grid point present
+    assert bigger.vec.shape == (2 * nk, 3)
+    np.testing.assert_array_equal(bigger.frame, np.repeat([0, 1], nk))
+    # every grid point is still a valid wave number of the larger cell; the
+    # mask keeps the whole k_max sphere the grid reaches
+    k2 = np.sum(bigger.vec**2, axis=-1)
+    np.testing.assert_array_equal(bigger.mask, (k2 > 0) & (k2 <= k_max * k_max))
+    # the larger cell activates more of the shared grid than the original did
+    original = build_fixed_k_grid(box, n_grid, k_max, np.array([4, 5]))
+    assert bigger.mask.sum() > original.mask.sum()
+    # a larger wave-number cutoff (a drifting kernel) truncates the same way
+    with pytest.warns(UserWarning, match="truncated"):
+        build_fixed_k_grid(box, n_grid, k_max * 2.0, np.array([4, 5]))
+
+
+def test_fixed_k_grid_mode_configuration() -> None:
+    """The fixed mode requires periodicity, and the bounds the fixed mode."""
+    with pytest.raises(ValueError, match="k_grid_mode"):
+        _periodic_long_range(k_grid_mode="dense")
+    with pytest.raises(ValueError, match="periodic"):
+        LatentChargeLongRange(
+            LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+            LESKernel(),
+            None,
+            k_grid_mode="fixed",
+        )
+    with pytest.raises(ValueError, match="k_grid_bounds"):
+        _periodic_long_range(k_grid_bounds=[3, 3, 3])
+    # explicit bounds build the grid at construction, no statistics needed
+    long_range = _periodic_long_range(k_grid_mode="fixed", k_grid_bounds=[2, 2, 2])
+    assert long_range.k_grid_n.shape == (5**3 - 1, 3)
+
+
+def test_fixed_k_grid_stats_size_the_grid() -> None:
+    """The data statistics size the grid by the largest sampled cell."""
+    long_range = _periodic_long_range(k_grid_mode="fixed")
+    # the grid is not sized before the statistics run
+    coord = np.zeros((9, 3))
+    with pytest.raises(ValueError, match="not sized yet"):
+        long_range.build_topologies(
+            coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+        )
+    long_range.compute_input_stats(
+        [{"box": _cells()[:1].reshape(1, 9)}, {"box": _cells()}]
+    )
+    k_max = long_range.kernel.kspace_cutoff(long_range.kspace_tolerance)
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        k_grid_bounds_of_cells,
+    )
+
+    expected = np.max(k_grid_bounds_of_cells(_cells(), k_max), axis=0)
+    np.testing.assert_array_equal(np.max(np.abs(long_range.k_grid_n), axis=0), expected)
+    topologies = long_range.build_topologies(
+        coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+    )
+    assert topologies["k_grid"].vec.shape == (2 * long_range.k_grid_n.shape[0], 3)
+    # statistics without a cell cannot size the grid
+    unsized = _periodic_long_range(k_grid_mode="fixed")
+    with pytest.raises(ValueError, match="no simulation cell"):
+        unsized.compute_input_stats([{"coord": np.zeros((1, 3))}])
+
+
+def test_fixed_k_grid_round_trip() -> None:
+    """The record keeps the grid mode and the sized grid."""
+    long_range = _periodic_long_range(k_grid_mode="fixed")
+    long_range.compute_input_stats([{"box": _cells()}])
+    record = long_range.serialize()
+    assert record["k_grid_mode"] == "fixed"
+    restored = LatentChargeLongRange.deserialize(record)
+    assert restored.k_grid_mode == "fixed"
+    np.testing.assert_array_equal(restored.k_grid_n, long_range.k_grid_n)
+    # the default mode serializes no grid fields
+    plain = LatentChargeLongRange.deserialize(_periodic_long_range().serialize())
+    assert plain.k_grid_mode == "ragged"
+    assert plain.k_grid_n is None
+
+
+# ---------------------------------------------------------------------------
+# Decoupled k grid
+# ---------------------------------------------------------------------------
+
+
+def test_decoupled_k_grid_requires_periodic() -> None:
+    """Decoupling is only meaningful for a periodic module."""
+    with pytest.raises(ValueError, match="decouple_k_grid"):
+        LatentChargeLongRange(
+            LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+            LESKernel(),
+            None,
+            decouple_k_grid=True,
+        )
+
+
+def test_decoupled_k_grid_ignores_kernel_drift() -> None:
+    """A decoupled grid keeps the k points of the initial kernel however the
+    kernel parameters move; a coupled one re-derives them every batch.
+    """
+    coord = np.random.default_rng(3).normal(size=(5, 3))
+    atype = np.zeros(5, dtype=np.int64)
+    n_node = np.array([5])
+    box = np.eye(3)[None] * 8.0
+
+    decoupled = _periodic_long_range(decouple_k_grid=True)
+    coupled = _periodic_long_range()
+    # the frozen cutoff is the cutoff of the initial kernel
+    assert decoupled.frozen_k_max == pytest.approx(
+        LESKernel(alpha=0.3).kspace_cutoff(1e-8)
+    )
+    initial = decoupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    reference = coupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    np.testing.assert_array_equal(initial.vec, reference.vec)
+    # a larger alpha moves the cutoff out, growing the coupled grid
+    for module in (decoupled, coupled):
+        module.kernel.log_alpha = np.log(1.5)
+    drifted = decoupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    moved = coupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    np.testing.assert_array_equal(drifted.vec, initial.vec)
+    np.testing.assert_array_equal(drifted.mask, initial.mask)
+    assert moved.vec.shape[0] > initial.vec.shape[0]
+
+
+def test_decoupled_fixed_grid_keeps_its_mask() -> None:
+    """The mask of a decoupled fixed grid ignores the kernel drift."""
+    coord = np.zeros((5, 3))
+    atype = np.zeros(5, dtype=np.int64)
+    n_node = np.array([5])
+    box = np.eye(3)[None] * 8.0
+
+    long_range = _periodic_long_range(
+        k_grid_mode="fixed", k_grid_bounds=[5, 5, 5], decouple_k_grid=True
+    )
+    before = long_range.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    # a smaller alpha moves the cutoff in; a coupled mask would tighten
+    long_range.kernel.log_alpha = np.log(0.05)
+    after = long_range.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    np.testing.assert_array_equal(after.mask, before.mask)
+    np.testing.assert_array_equal(after.vec, before.vec)
+
+
+def test_decoupled_k_grid_round_trip() -> None:
+    """The frozen cutoff survives serialization, past the kernel drift."""
+    long_range = _periodic_long_range(decouple_k_grid=True)
+    frozen = long_range.frozen_k_max
+    long_range.kernel.log_alpha = np.log(1.5)
+    record = long_range.serialize()
+    assert record["decouple_k_grid"] is True
+    assert record["frozen_k_max"] == pytest.approx(frozen)
+    restored = LatentChargeLongRange.deserialize(record)
+    assert restored.decouple_k_grid
+    assert restored.frozen_k_max == pytest.approx(frozen)
+    # ...even though the restored (drifted) kernel would derive a different one
+    assert restored.kernel.kspace_cutoff(1e-8) != pytest.approx(frozen)
+    # the default stays coupled and serializes nothing
+    plain = LatentChargeLongRange.deserialize(_periodic_long_range().serialize())
+    assert not plain.decouple_k_grid
+    assert plain.frozen_k_max is None
