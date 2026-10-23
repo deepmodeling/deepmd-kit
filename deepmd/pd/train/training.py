@@ -1455,11 +1455,16 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Any,
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> None:
     old_bias = deepcopy(_model.get_out_bias())
+    preset_kwargs = (
+        {"preset_out_bias": preset_out_bias} if preset_out_bias is not None else {}
+    )
     _model.change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
+        **preset_kwargs,
     )
     new_bias = deepcopy(_model.get_out_bias())
 

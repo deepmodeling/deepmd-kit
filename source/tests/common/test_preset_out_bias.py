@@ -18,9 +18,45 @@ from deepmd.utils.preset_out_bias import (
     normalize_preset_out_bias,
     override_assigned_bias,
     preset_out_bias_rows,
+    recover_nonfinite_preset_bias,
     remap_preset_out_bias,
     resolve_preset_out_bias_tables,
 )
+
+
+class TestRecoverNonfinitePresetBias(unittest.TestCase):
+    def test_recovers_only_assigned_nonfinite_cells(self) -> None:
+        stored = np.array(
+            [
+                [[np.nan, 0, 0], [7, 0, 0], [np.inf, 0, 0]],
+                [[1, np.nan, 3], [4, np.inf, 6], [7, 8, -np.inf]],
+                [[np.nan, 0, 0], [1, 0, 0], [2, 0, 0]],
+            ]
+        )
+        original = stored.copy()
+        preset = {
+            "energy": [[-10], [-13.6], [-3]],
+            "tensor": [[10, 11, 12], None, [30, 31, 32]],
+        }
+        rows = recover_nonfinite_preset_bias(
+            preset, ["O", "H", "B"], stored, ["energy", "tensor", "other"], [1, 3, 1]
+        )
+        np.testing.assert_array_equal(rows["energy"], [[-10], [7], [-3]])
+        np.testing.assert_array_equal(
+            rows["tensor"], [[1, 11, 3], [4, np.inf, 6], [7, 8, 32]]
+        )
+        self.assertNotIn("other", rows)
+        np.testing.assert_array_equal(stored, original)
+
+    def test_finite_adjusted_bias_needs_no_recovery(self) -> None:
+        rows = recover_nonfinite_preset_bias(
+            {"energy": [[-10], [-13.6]]},
+            ["O", "H"],
+            np.array([[[7.0], [8.0]]]),
+            ["energy"],
+            [1],
+        )
+        self.assertEqual(rows, {})
 
 
 class TestNormalizePresetOutBias(unittest.TestCase):
