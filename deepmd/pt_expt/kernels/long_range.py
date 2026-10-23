@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Bindings for the direct-sum operator of the latent-charge long range.
+"""Bindings for the operator of the latent-charge long range.
 
-The operator ``deepmd::latent_charge_direct_sum`` evaluates, for the nodes of
+The operator ``deepmd::latent_charge_sum`` evaluates, for the nodes of
 complete frames, the potential that the charges of every other node of the
-frame create at each node and the force between the charges, without listing
-the pairs: its memory is linear in the node count. The CUDA kernel is
-``source/op/pt/long_range/direct_sum.cu``; the CPU kernel registered here is
-the reference it is tested against.
+frame create at each node and the force between the charges. A non-periodic
+frame is summed directly over its pairs without listing them, so that the
+memory is linear in the node count; a periodic frame is summed over the images
+of its cell by the smooth particle-mesh Ewald method, on a mesh sized by the
+cell. The CUDA kernels are in ``source/op/pt/long_range``; the CPU kernel
+registered here is the reference they are tested against.
 
 The operator serves inference. It applies the total-charge constraint of the
 module, and returns the atomic energy, its derivative with respect to the
@@ -44,22 +46,25 @@ from deepmd.pt_expt.long_range.kernel import (
 __all__ = [
     "MAX_CHANNELS",
     "MAX_GAUSSIANS",
+    "MAX_ORDER",
     "kernel_eligible",
     "kernel_operator_arguments",
-    "latent_charge_direct_sum",
+    "latent_charge_sum",
     "op_available",
 ]
 
-#: Charge channels and Gaussians the CUDA kernel is instantiated for.
+#: Charge channels and Gaussians the CUDA kernels are instantiated for.
 MAX_CHANNELS = 8
 MAX_GAUSSIANS = 32
+#: The largest order of the B-splines of the mesh.
+MAX_ORDER = 12
 
 _LES = 0
 _SOG = 1
 
 
 def op_available() -> bool:
-    """Whether the backend device carries the direct-sum operator.
+    """Whether the backend device carries the operator.
 
     The CPU kernel is the reference of this module, which is registered here
     so that the answer does not depend on earlier calls.
@@ -68,7 +73,7 @@ def op_available() -> bool:
     import deepmd.pt.cxx_op  # noqa: F401
 
     ensure_registered()
-    return operator_available("latent_charge_direct_sum")
+    return operator_available("latent_charge_sum")
 
 
 def kernel_eligible(kernel: Any) -> bool:
@@ -89,7 +94,7 @@ def kernel_operator_arguments(kernel: Any) -> tuple[int, torch.Tensor]:
     Returns
     -------
     tuple[int, torch.Tensor]
-        The kernel code and its float32 coefficients: ``alpha`` for the erf
+        The kernel code and its float64 coefficients: ``alpha`` for the erf
         kernel; the amplitudes ``a_k`` and then the rates ``c_k = log2(e) /
         (2 sigma_k^2)`` of ``a_k 2^(-c_k r^2)`` for the sum of Gaussians.
 
@@ -100,14 +105,14 @@ def kernel_operator_arguments(kernel: Any) -> tuple[int, torch.Tensor]:
     """
     if not kernel_eligible(kernel):
         raise ValueError(
-            f"the direct-sum operator does not evaluate {type(kernel).__name__}"
+            f"the long-range operator does not evaluate {type(kernel).__name__}"
         )
     if isinstance(kernel, LESKernel):
-        coefficient = torch.exp(kernel.log_alpha).reshape(1)
-        return _LES, coefficient.detach().to(torch.float32).contiguous()
-    rate = (0.5 / math.log(2.0)) * torch.exp(-2.0 * kernel.log_width)
-    coefficient = torch.cat((kernel.amplitude, rate))
-    return _SOG, coefficient.detach().to(torch.float32).contiguous()
+        coefficient = torch.exp(kernel.log_alpha.to(torch.float64)).reshape(1)
+        return _LES, coefficient.detach().contiguous()
+    rate = (0.5 / math.log(2.0)) * torch.exp(-2.0 * kernel.log_width.to(torch.float64))
+    coefficient = torch.cat((kernel.amplitude.to(torch.float64), rate))
+    return _SOG, coefficient.detach().contiguous()
 
 
 def _kernel_and_slope(
@@ -130,41 +135,48 @@ def _kernel_and_slope(
     return weight @ amplitude, weight @ (-2.0 * math.log(2.0) * rate * amplitude)
 
 
-def _reference(
-    coord: torch.Tensor,
+def _charges_of_frames(
     charge: torch.Tensor,
     node_mask: torch.Tensor,
     n_node_per_frame: torch.Tensor,
     total_charge: torch.Tensor,
-    coefficient: torch.Tensor,
-    communicator: torch.Tensor,
-    kernel: int,
     channel: int,
-    prefactor: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Evaluate the operator over the explicit pairs of every frame, in float64."""
-    if int(communicator.reshape(-1)[0]) != 0:
-        raise NotImplementedError(
-            "the CPU reference of latent_charge_direct_sum evaluates a single "
-            "domain; a communicator of several ranks requires the CUDA kernel"
-        )
-    n = coord.shape[0]
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """The charges of the interactions in float64, shifted in the constrained channel.
+
+    Returns the charges with shape ``(N, C)``, the weights of the charged
+    nodes and the frame of every node with shape ``(N,)``, and the number of
+    charged nodes of every frame, at least one, with shape ``(F,)``.
+    """
+    n = charge.shape[0]
     frame_count = n_node_per_frame.shape[0]
     # Padding nodes belong to no frame and carry no charge.
     frame = frame_id_from_n_node(n_node_per_frame, n_total=n)
-    real = torch.arange(n, dtype=torch.int64, device=coord.device) < torch.sum(
+    real = torch.arange(n, dtype=torch.int64, device=charge.device) < torch.sum(
         n_node_per_frame
     )
     weight = (node_mask & real).to(torch.float64)
     q = charge.to(torch.float64) * weight[:, None]
+    count = weight.new_zeros(frame_count).index_add(0, frame, weight)
+    count = torch.clamp(count, min=1.0)
     if channel >= 0:
-        columns = torch.arange(q.shape[1], dtype=torch.int64, device=coord.device)
-        selector = (columns == channel).to(torch.float64)
-        count = coord.new_zeros(frame_count).index_add(0, frame, weight)
-        count = torch.clamp(count, min=1.0)
-        total = coord.new_zeros(frame_count).index_add(0, frame, q[:, channel])
+        total = weight.new_zeros(frame_count).index_add(0, frame, q[:, channel])
         shift = (total - total_charge.to(torch.float64)) / count
-        q = q - (shift[frame] * weight)[:, None] * selector
+        q = q.clone()
+        q[:, channel] = q[:, channel] - shift[frame] * weight
+    return q, weight, frame, count
+
+
+def _direct_reference(
+    coord: torch.Tensor,
+    q: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+    coefficient: torch.Tensor,
+    kernel: int,
+    prefactor: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Potential, force and atomic virial over the explicit pairs of every frame."""
+    n = coord.shape[0]
     pairs = unordered_pair_index(n_node_per_frame)
     src, dst = pairs[0], pairs[1]
     d = coord[src] - coord[dst]
@@ -175,20 +187,149 @@ def _reference(
     strength = torch.sum(q[src] * q[dst], dim=-1) * slope
     pair_force = -strength[:, None] * d
     force = torch.zeros_like(coord).index_add(0, src, pair_force)
-    force = force.index_add(0, dst, -pair_force)
+    force = prefactor * force.index_add(0, dst, -pair_force)
     half = (-0.5 * strength)[:, None, None] * d[:, :, None] * d[:, None, :]
     atom_virial = coord.new_zeros(n, 3, 3).index_add(0, src, half)
     atom_virial = prefactor * atom_virial.index_add(0, dst, half).reshape(n, 9)
+    return potential, force, atom_virial
+
+
+def _interaction_kernel(coefficient: torch.Tensor, kernel: int) -> Any:
+    """The dpmodel interaction kernel of the coefficients of the operator."""
+    from deepmd.dpmodel.long_range.kernel import LESKernel as LESKernelDP
+    from deepmd.dpmodel.long_range.kernel import SOGKernel as SOGKernelDP
+
+    values = coefficient.detach().to("cpu", torch.float64).numpy()
+    if kernel == _LES:
+        return LESKernelDP(alpha=float(values[0]), precision="float64")
+    amplitude, rate = values.reshape(2, -1)
+    width = (0.5 / (math.log(2.0) * rate)) ** 0.5
+    return SOGKernelDP(
+        amplitude=amplitude.tolist(), width=width.tolist(), precision="float64"
+    )
+
+
+def _mesh_reference(
+    coord: torch.Tensor,
+    q: torch.Tensor,
+    weight: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+    box: torch.Tensor,
+    coefficient: torch.Tensor,
+    kernel: int,
+    prefactor: float,
+    order: int,
+    spacing: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Potential, force and atomic virial on the mesh of every periodic frame.
+
+    Every frame is evaluated on its own mesh by the evaluation of the training
+    path, and differentiated with respect to its charges, its positions and
+    its strain. The atomic virial takes ``F (x) r`` at every node and shares
+    the rest of the virial of the frame evenly over its charged nodes.
+    """
+    from deepmd.dpmodel.long_range.kernel import (
+        COULOMB_CONSTANT,
+    )
+    from deepmd.dpmodel.long_range.reciprocal import (
+        mesh_energy,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_mesh_grid,
+    )
+
+    interaction = _interaction_kernel(coefficient, kernel)
+    potential = torch.zeros_like(q)
+    force = torch.zeros_like(coord)
+    atom_virial = coord.new_zeros(coord.shape[0], 3, 3)
+    begin = 0
+    for f, length in enumerate(n_node_per_frame.tolist()):
+        end = begin + length
+        frame_q = q[begin:end].detach().requires_grad_(True)
+        frame_coord = coord[begin:end].detach().requires_grad_(True)
+        with torch.enable_grad():
+            mesh = build_mesh_grid(box[f].reshape(1, 3, 3), spacing, frame_coord)
+            mesh.strain.requires_grad_(True)
+            frame_id = torch.zeros(length, dtype=torch.int64, device=coord.device)
+            energy = mesh_energy(frame_q, mesh, frame_id, interaction, order).sum()
+            energy = energy * (prefactor / COULOMB_CONSTANT)
+            d_q, d_coord, d_strain = torch.autograd.grad(
+                energy, (frame_q, frame_coord, mesh.strain)
+            )
+        frame_force = -d_coord
+        moment = frame_force[:, :, None] * coord[begin:end, None, :]
+        frame_weight = weight[begin:end]
+        count = torch.clamp(torch.sum(frame_weight), min=1.0)
+        rest = (-d_strain[0] - torch.sum(moment, dim=0)) / count
+        potential[begin:end] = d_q
+        force[begin:end] = frame_force
+        atom_virial[begin:end] = moment + rest * frame_weight[:, None, None]
+        begin = end
+    return potential, force, atom_virial.reshape(-1, 9)
+
+
+def _reference(
+    coord: torch.Tensor,
+    charge: torch.Tensor,
+    node_mask: torch.Tensor,
+    n_node_per_frame: torch.Tensor,
+    total_charge: torch.Tensor,
+    box: torch.Tensor | None,
+    coefficient: torch.Tensor,
+    communicator: torch.Tensor,
+    kernel: int,
+    channel: int,
+    prefactor: float,
+    order: int,
+    spacing: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Evaluate the operator in float64, over the explicit pairs or the meshes."""
+    if int(communicator.reshape(-1)[0]) != 0:
+        raise NotImplementedError(
+            "the CPU reference of latent_charge_sum evaluates a single domain; "
+            "a communicator of several ranks requires the CUDA kernel"
+        )
+    frame_count = n_node_per_frame.shape[0]
+    q, weight, frame, count = _charges_of_frames(
+        charge, node_mask, n_node_per_frame, total_charge, channel
+    )
+    has_cell = (
+        torch.zeros(frame_count, dtype=torch.bool, device="cpu")
+        if box is None
+        else torch.any(box != 0.0, dim=-1)
+    )
+    if bool(torch.any(has_cell)) != bool(torch.all(has_cell)):
+        raise ValueError(
+            "latent_charge_sum: every frame of a call is periodic, or none is"
+        )
+    if bool(torch.any(has_cell)):
+        potential, force, atom_virial = _mesh_reference(
+            coord,
+            q,
+            weight,
+            n_node_per_frame,
+            box.to(coord.device),
+            coefficient,
+            kernel,
+            prefactor,
+            order,
+            spacing,
+        )
+    else:
+        potential, force, atom_virial = _direct_reference(
+            coord, q, n_node_per_frame, coefficient, kernel, prefactor
+        )
     virial = coord.new_zeros(frame_count, 9).index_add(0, frame, atom_virial)
     atom_energy = 0.5 * torch.sum(q * potential, dim=-1, keepdim=True)
     gradient = potential * weight[:, None]
     if channel >= 0:
         mean = coord.new_zeros(frame_count).index_add(0, frame, gradient[:, channel])
-        gradient = gradient - ((mean / count)[frame] * weight)[:, None] * selector
+        gradient = gradient.clone()
+        gradient[:, channel] = gradient[:, channel] - (mean / count)[frame] * weight
     return (
         atom_energy,
         gradient.to(charge.dtype),
-        (prefactor * force).to(charge.dtype),
+        force.to(charge.dtype),
         atom_virial.to(charge.dtype),
         virial.to(charge.dtype),
     )
@@ -200,11 +341,14 @@ def _fake(
     node_mask: torch.Tensor,
     n_node_per_frame: torch.Tensor,
     total_charge: torch.Tensor,
+    box: torch.Tensor | None,
     coefficient: torch.Tensor,
     communicator: torch.Tensor,
     kernel: int,
     channel: int,
     prefactor: float,
+    order: int,
+    spacing: float,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     n = coord.shape[0]
     return (
@@ -218,9 +362,9 @@ def _fake(
 
 @cache
 def _register() -> None:
-    torch.library.register_fake("deepmd::latent_charge_direct_sum")(_fake)
+    torch.library.register_fake("deepmd::latent_charge_sum")(_fake)
     library = torch.library.Library("deepmd", "IMPL")
-    library.impl("latent_charge_direct_sum", _reference, "CPU")
+    library.impl("latent_charge_sum", _reference, "CPU")
     # The registration lives as long as the library object.
     _register.library = library
 
@@ -228,13 +372,13 @@ def _register() -> None:
 def ensure_registered() -> None:
     """Register the fake and CPU implementations when the schema is loaded."""
     if isinstance(
-        getattr(torch.ops.deepmd, "latent_charge_direct_sum", None),
+        getattr(torch.ops.deepmd, "latent_charge_sum", None),
         torch._ops.OpOverloadPacket,
     ):
         _register()
 
 
-def latent_charge_direct_sum(
+def latent_charge_sum(
     coord: torch.Tensor,
     charge: torch.Tensor,
     node_mask: torch.Tensor,
@@ -244,6 +388,9 @@ def latent_charge_direct_sum(
     channel: int,
     prefactor: float,
     communicator: torch.Tensor | None = None,
+    box: torch.Tensor | None = None,
+    order: int = 8,
+    spacing: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Energy, charge gradient, force and virial of the charges of complete frames.
 
@@ -278,20 +425,32 @@ def latent_charge_direct_sum(
         frame, whose charged nodes are those of every rank; the outputs are
         those of the charged nodes of this rank, the other nodes carry no
         charge, and ``virial`` is the share of this rank.
+    box
+        The cells of periodic frames with shape ``(F, 9)``, float64 on the
+        CPU, the rows of every row-major 3x3 cell being its lattice vectors,
+        or ``None`` for non-periodic frames; a zero row marks a non-periodic
+        frame. A periodic frame is evaluated on a mesh of spacing at most
+        ``spacing``, with B-splines of order ``order``.
+    order
+        The order of the B-splines of the mesh, at most :data:`MAX_ORDER`.
+    spacing
+        The largest mesh spacing, in Å.
 
     Returns
     -------
     atom_energy
-        Per-node energy with shape ``(N, 1)`` in eV, float64, each pair
-        energy split half to each of its nodes.
+        Per-node energy with shape ``(N, 1)`` in eV, float64, half of the
+        interaction of the charges of the node with all others.
     charge_gradient
         Derivative of the energy with respect to ``charge`` with shape
         ``(N, C)``, in eV per unit charge, through the constraint.
     force
         Force at fixed charges with shape ``(N, 3)``, in eV/Å.
     atom_virial
-        Per-node virial at fixed charges with shape ``(N, 9)`` in eV, each
-        pair term split half to each of its nodes.
+        Per-node virial at fixed charges with shape ``(N, 9)`` in eV: half of
+        every pair term to each of its nodes in a non-periodic frame; in a
+        periodic frame ``F (x) r`` with the rest of the virial of the cell
+        shared evenly over the charged nodes.
     virial
         Per-frame virial at fixed charges with shape ``(F, 9)`` in eV.
     """
@@ -299,15 +458,18 @@ def latent_charge_direct_sum(
     code, coefficient = kernel_operator_arguments(kernel)
     if communicator is None:
         communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
-    return torch.ops.deepmd.latent_charge_direct_sum(
+    return torch.ops.deepmd.latent_charge_sum(
         coord,
         charge,
         node_mask,
         n_node_per_frame,
         total_charge,
+        box,
         coefficient.to(coord.device),
         communicator,
         code,
         int(channel),
         float(prefactor),
+        int(order),
+        float(spacing),
     )

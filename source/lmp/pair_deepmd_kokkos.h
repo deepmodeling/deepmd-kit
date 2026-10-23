@@ -82,8 +82,9 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
 
-  // Positions of the model nodes in the length unit of the model, which a
-  // long-range module reads; public for the same reason.
+  // Positions of the model nodes relative to the origin of the box, in the
+  // length unit of the model, which a long-range module reads; public for
+  // the same reason.
   const double* model_node_positions();
 
  protected:
@@ -127,7 +128,6 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   int edge_capacity;       // allocated edges in d_edge_index / d_edge_vec
   bool edge_vec_fp32;      // model graph ABI consumes edge vectors in fp32
   bool canonical_graph;    // compact source-only graph artifact
-  bool long_range;         // model reads the positions of every node
   bool device_path_ok;     // resolved once in init_style
   bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // force reverse communication selected host staging

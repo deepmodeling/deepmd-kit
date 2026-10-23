@@ -379,6 +379,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                                    const std::int64_t* d_atype,
                                    const double* d_coord,
                                    void* world,
+                                   const double* box,
                                    const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
@@ -439,6 +440,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       const std::int64_t* d_atype,
       const double* d_coord,
       void* world,
+      const double* box,
       const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
@@ -478,11 +480,15 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool lower_input_is_graph_ = false;
   bool lower_input_is_canonical_ = false;
   bool graph_edge_fp32_ = false;
-  // The model carries a long-range module, whose lower reads the all-pairs
-  // topology of the frame after its other inputs: the pair lists for the graph
-  // lower, the node positions and the communicator of the ranks for the
-  // compact canonical lower.
+  // The model carries a long-range module, whose lower reads the topologies
+  // of the frame after its other inputs: the pair lists, and the mesh of the
+  // cell of a module that serves periodic systems, for the graph lower; the
+  // node positions, the communicator of the ranks and the cell for the compact
+  // canonical lower.
   bool long_range_ = false;
+  // The module serves periodic systems, on a mesh of at most this spacing.
+  bool long_range_periodic_ = false;
+  double mesh_spacing_ = 0.0;
   NeighborListData nlist_data;
   at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
   std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
@@ -626,8 +632,10 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] source_order Source-grouped edge permutation ``(E,)``.
    * @param[in] source_row_ptr Source CSR offsets ``(N + 1,)``.
    * @param[in] coord Positions of the nodes of the single frame, shape
-   * ``(N, 3)`` float64, from which the all-pairs topology of a model with a
-   * long-range module is built; read only for such a model.
+   * ``(N, 3)`` float64, from which the topologies of a model with a
+   * long-range module are built; read only for such a model.
+   * @param[in] box The row-major cell of a periodic frame, nine values, or
+   * empty for a non-periodic one; read only for such a model.
    */
   std::vector<torch::Tensor> run_model_graph(
       const torch::Tensor& atype,
@@ -643,7 +651,8 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
       const torch::Tensor& charge_spin,
-      const torch::Tensor& coord);
+      const torch::Tensor& coord,
+      const std::vector<double>& box);
 
   /**
    * @brief Run a compact canonical ``.pt2`` artifact.
@@ -653,6 +662,9 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of the
    * ranks a decomposed system spans, or NULL for a system that one rank holds
    * whole; a model with a long-range module receives it after the positions.
+   * @param[in] box The row-major cell of a periodic frame, nine values, or
+   * empty for a non-periodic one; a model with a long-range module receives
+   * it after the communicator.
    */
   std::vector<torch::Tensor> run_model_canonical_graph(
       const torch::Tensor& atype,
@@ -664,16 +676,28 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& source_row_ptr,
       const torch::Tensor& source_order,
       const torch::Tensor& coord,
-      const void* world);
+      const void* world,
+      const std::vector<double>& box);
 
   /**
    * @brief Evaluate the long-range module on a rank that holds no node.
    *
    * The compact lower runs on one halo node without edges, which carries no
    * charge and contributes nothing, so that the rank joins the exchanges of
-   * the module with the other ranks of ``world``.
+   * the module with the other ranks of ``world``, in the cell ``box`` of the
+   * system, empty for a non-periodic one.
    */
-  void join_long_range_exchange(const void* world);
+  void join_long_range_exchange(const void* world,
+                                const std::vector<double>& box);
+
+  /**
+   * @brief Check the cell given to a model with a long-range module.
+   *
+   * @param[in] box The row-major cell of a periodic frame, nine values, or
+   * empty for a non-periodic one, which every long-range module serves; a
+   * cell requires a module that serves periodic systems.
+   */
+  void check_long_range_box(const std::vector<double>& box) const;
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.

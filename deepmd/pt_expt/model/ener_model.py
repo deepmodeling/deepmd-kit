@@ -19,7 +19,7 @@ from deepmd.dpmodel.model.make_hessian_model import (
     make_hessian_model,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
-    PairGraph,
+    flatten_topologies,
 )
 from deepmd.dpmodel.utils.neighbor_list import (
     NeighborList,
@@ -144,6 +144,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         spin: torch.Tensor | None = None,
         coord: torch.Tensor | None = None,
         communicator: torch.Tensor | None = None,
+        box: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate an eligible compressed canonical deployment graph.
 
@@ -173,13 +174,19 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model, or ``None``. Ghost rows carry their owner's moment.
         coord
             Node positions with shape ``(N, 3)`` in Å, float64, for a model
-            with a long-range module, whose frames are complete non-periodic
-            systems; ``None`` otherwise.
+            with a long-range module; ``None`` otherwise.
         communicator
             For a model with a long-range module, the address of the MPI_Comm
             handle of a frame decomposed into domains, one per rank, as an
             int64 CPU tensor of one element, whose owned nodes are then those
             of one domain; zero or ``None`` for a complete frame.
+        box
+            For a model with a long-range module, the cells of the frames
+            with shape ``(nf, 9)``, float64 on the CPU, the rows of every
+            row-major 3x3 cell its lattice vectors; a zero row marks a
+            complete non-periodic frame, and ``None`` non-periodic frames.
+            The halo nodes of a periodic frame are images of its owned
+            nodes.
 
         Returns
         -------
@@ -235,7 +242,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 raise ValueError(
                     "a model with a long-range module reads the node positions"
                 )
-            check_owned_frames(n_node, n_local, communicator)
+            check_owned_frames(n_node, n_local, communicator, box)
             force_mag = None
             energy, atom_energy, force, virial, atom_virial = (
                 dpa4c_canonical_long_range_energy_force(
@@ -246,6 +253,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     atype,
                     coord,
                     communicator,
+                    box,
                     output_mask,
                     atom_bias,
                     do_atomic_virial,
@@ -313,6 +321,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         source_order: torch.Tensor,
         coord: torch.Tensor | None = None,
         communicator: torch.Tensor | None = None,
+        box: torch.Tensor | None = None,
         *,
         do_atomic_virial: bool,
         **make_fx_kwargs: Any,
@@ -325,11 +334,12 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Compact graph node and edge tensors.
         destination_row_ptr, source_row_ptr, source_order
             Compact dual-CSR topology.
-        coord, communicator
+        coord, communicator, box
             For a model with a long-range module, sample node positions with
-            shape ``(N, 3)``, float64, and a sample communicator, an int64 CPU
-            tensor of one element, which the traced module then takes as its
-            ninth and tenth inputs; ``None`` otherwise.
+            shape ``(N, 3)``, float64, a sample communicator, an int64 CPU
+            tensor of one element, and sample cells with shape ``(nf, 9)``,
+            float64 on the CPU, which the traced module then takes as its
+            ninth to eleventh inputs; ``None`` otherwise.
         do_atomic_virial
             Whether the traced output includes per-node virial.
         **make_fx_kwargs
@@ -338,14 +348,14 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         Returns
         -------
         torch.nn.Module
-            Traced compact deployment module of eight inputs, or ten with the
-            node positions and the communicator.
+            Traced compact deployment module of eight inputs, or eleven with
+            the node positions, the communicator and the cells.
         """
         model = self
-        if (coord is None) != (communicator is None):
+        if not (coord is None) == (communicator is None) == (box is None):
             raise ValueError(
                 "the compact lower of a model with a long-range module takes "
-                "the node positions and the communicator together"
+                "the node positions, the communicator and the cells together"
             )
 
         if coord is not None:
@@ -361,6 +371,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 source_order: torch.Tensor,
                 coord: torch.Tensor,
                 communicator: torch.Tensor,
+                box: torch.Tensor,
             ) -> dict[str, torch.Tensor]:
                 return model.forward_lower_canonical_graph(
                     atype,
@@ -374,6 +385,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     do_atomic_virial=do_atomic_virial,
                     coord=coord,
                     communicator=communicator,
+                    box=box,
                 )
 
             return make_fx(fn_long_range, **make_fx_kwargs)(
@@ -387,6 +399,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 source_order,
                 coord,
                 communicator,
+                box,
             )
 
         def fn(
@@ -707,7 +720,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
         destination_sorted: bool = False,
-        topologies: dict[str, PairGraph] | None = None,
+        topologies: dict[str, Any] | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower_graph`` into an exportable module with
@@ -742,10 +755,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam, aparam, do_atomic_virial, charge_spin
             As in ``forward_lower``.
         topologies
-            The sample pair topology the atomic model declares, or ``None``;
-            its ``index``, ``vec`` and ``mask`` become the inputs
-            ``pair_index``, ``pair_vec`` and ``pair_mask`` after
-            ``charge_spin``.
+            The sample topologies the atomic model declares, or ``None``;
+            their fields follow ``charge_spin`` as further inputs, in the
+            layout of
+            :func:`~deepmd.dpmodel.utils.neighbor_graph.flatten_topologies`.
         **make_fx_kwargs
             Extra keyword arguments forwarded to ``make_fx``
             (e.g. ``tracing_mode="symbolic"``).
@@ -790,17 +803,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         do_grad_c = self.do_grad_c("energy")
 
         if topologies:
-            # The inputs of the deployed lower keep their names, which the
-            # export reads, so the traced signature spells out the one pair
-            # topology a long-range module declares.
-            if len(topologies) != 1:
-                raise NotImplementedError(
-                    "the deployed graph lower takes one pair topology, got "
-                    f"{list(topologies)}"
-                )
-            (pairs,) = topologies.values()
+            # The topology inputs follow ``charge_spin``, their fields in the
+            # layout of flatten_topologies.
 
-            def fn_pairs(
+            def fn_topologies(
                 atype: torch.Tensor,
                 n_node: torch.Tensor,
                 n_local: torch.Tensor,
@@ -814,9 +820,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
-                pair_index: torch.Tensor,
-                pair_vec: torch.Tensor,
-                pair_mask: torch.Tensor,
+                *topology_vals: torch.Tensor,
             ) -> dict[str, torch.Tensor]:
                 model_ret = traced(
                     atype,
@@ -832,9 +836,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     fparam,
                     aparam,
                     charge_spin,
-                    pair_index,
-                    pair_vec,
-                    pair_mask,
+                    *topology_vals,
                 )
                 return _translate_energy_keys(
                     model_ret,
@@ -844,7 +846,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     local=True,
                 )
 
-            return make_fx(fn_pairs, **make_fx_kwargs)(
+            return make_fx(fn_topologies, **make_fx_kwargs)(
                 atype,
                 n_node,
                 n_local,
@@ -858,9 +860,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 fparam,
                 aparam,
                 charge_spin,
-                pairs.index,
-                pairs.vec,
-                pairs.mask,
+                *flatten_topologies(topologies),
             )
 
         def fn(

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// MPI exchanges of the long-range direct sum (contract in domain_exchange.h).
+// MPI exchanges of the latent-charge long range (contract in
+// domain_exchange.h).
 //
 // With an MPI library that reads device memory (MPIX_Query_cuda_support), the
 // rows travel between device buffers once the current stream has finished
@@ -30,7 +31,7 @@ std::int64_t address_of(const torch::Tensor& communicator) {
   TORCH_CHECK(communicator.device().is_cpu() &&
                   communicator.scalar_type() == torch::kInt64 &&
                   communicator.numel() == 1,
-              "latent_charge_direct_sum: communicator must be an int64 CPU "
+              "latent_charge_sum: communicator must be an int64 CPU "
               "tensor with one element");
   return communicator.contiguous().data_ptr<std::int64_t>()[0];
 }
@@ -64,7 +65,7 @@ Domain domain_of(const torch::Tensor& communicator) {
   int initialized = 0;
   MPI_Initialized(&initialized);
   TORCH_CHECK(initialized != 0,
-              "latent_charge_direct_sum: a communicator was given, but MPI is "
+              "latent_charge_sum: a communicator was given, but MPI is "
               "not initialized");
   const MPI_Comm comm = communicator_of(communicator);
   Domain domain{0, 1};
@@ -73,7 +74,7 @@ Domain domain_of(const torch::Tensor& communicator) {
   return domain;
 #else
   TORCH_CHECK(false,
-              "latent_charge_direct_sum: an evaluation across MPI ranks "
+              "latent_charge_sum: an evaluation across MPI ranks "
               "requires DeePMD-kit built with MPI");
 #endif
 }

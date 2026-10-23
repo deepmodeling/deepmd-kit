@@ -21,22 +21,22 @@ Coulomb constant. Every channel interacts through the same kernel.
 
 For a non-periodic system, the sum runs over the distinct pairs of each frame:
 it has no self term, and no periodic image. For a periodic system (with
-`periodic: true`, see below) the kernel is summed over the reciprocal lattice
-points of the cell instead.
+`periodic: true`, see below) the kernel is summed over the images of the cell
+as well, in reciprocal space.
 
 The charges depend on the atomic environments, so forces and virials, which
 are obtained by differentiating the energy, include the response of the
 charges to the positions as well as the direct dependence of the kernel on
-the distance. Half of each pair energy is attributed to each of its atoms,
-so the atomic energies still sum to the energy of the frame. Every quantity
+the distance. Every atom carries half of the interaction of its charges with
+all others, so the atomic energies still sum to the energy of the frame. Every quantity
 derived from the model sees the complete energy: training, `dp test`, the
 output-bias statistics and change-bias, the Hessian, and a linear
 composition of models.
 
 > [!WARNING]
-> The pair sum covers complete systems. Without `periodic: true`, a periodic
-> cell is rejected; the cost of the non-periodic sum grows with the square of
-> the number of atoms of a frame.
+> The sum covers complete systems. Without `periodic: true`, a periodic cell
+> is rejected. The cost of the non-periodic sum grows with the square of the
+> number of atoms of a frame.
 
 ## Configuration
 
@@ -113,19 +113,17 @@ the model represent interactions that one charge per atom cannot.
 
 With
 {ref}`periodic <model[standard]/long_range[latent_charge]/periodic>` enabled,
-a frame given a cell is evaluated in reciprocal space. The Fourier transform
-of the kernel,
+a frame given a cell is evaluated over the images of the cell. The sum
+converges in reciprocal space, where the Fourier transform of the kernel,
 
-- `les`: $\hat K(\mathbf{k}) = (4\pi/k^2)\, e^{-k^2/4\alpha^2}$, the damped
-  Coulomb transform (the kernel is the interaction of two Gaussian charge
-  clouds, so its transform needs no new parameter), or
-- `sog`: $\hat K(\mathbf{k}) = \sum_m a_m (2\pi)^{3/2} \sigma_m^3\, e^{-\sigma_m^2 k^2/2}$,
-  the term-by-term transform of the Gaussians; with the default amplitudes the
-  coefficient simplifies to $4\pi\ln b\, \sigma_m^2$ and the sum approaches the
-  Coulomb transform $4\pi/k^2$,
+- `les`: $\hat K(\mathbf{k}) = (4\pi/k^2)\, e^{-k^2/4\alpha^2}$, or
+- `sog`: $\hat K(\mathbf{k}) = \sum_k a_k (2\pi)^{3/2} \sigma_k^3\, e^{-\sigma_k^2 k^2/2}$,
+  which with the default amplitudes approaches the Coulomb transform
+  $4\pi/k^2$,
 
-is summed over the wave numbers $\mathbf{k} = 2\pi B^{-1} \mathbf{n}$,
-$\mathbf{n} \in \mathbb{Z}^3 \setminus \{\mathbf{0}\}$, of each cell:
+decays like a Gaussian. Over the wave numbers $\mathbf{k} = 2\pi B^{-1}
+\mathbf{n}$, $\mathbf{n} \in \mathbb{Z}^3 \setminus \{\mathbf{0}\}$, of a cell
+$B$ whose rows are the lattice vectors,
 
 ```math
 E = k_e \left[\frac{1}{2V}\sum_{\mathbf{k}\neq\mathbf{0}} \sum_{c=1}^{C}
@@ -134,24 +132,45 @@ E = k_e \left[\frac{1}{2V}\sum_{\mathbf{k}\neq\mathbf{0}} \sum_{c=1}^{C}
 \qquad \hat\rho_c(\mathbf{k}) = \sum_i q_i^c e^{i\mathbf{k}\cdot\mathbf{r}_i},
 ```
 
-with the cell volume $V$ and the kernel value at contact $K(0)$. The
-wave-number cutoff follows the kernel parameters through
-{ref}`kspace_tolerance <model[standard]/long_range[latent_charge]/kspace_tolerance>`:
-the grid ends where the weight of the slowest-decaying mode falls below it,
-so the truncation is exponentially convergent. The $\mathbf{k}=\mathbf{0}$
-mode is dropped (the tin-foil boundary convention), so every latent channel
-must be neutral: use a `neutral` constraint, or a `charge_spin`/`fparam`
-constraint holding a neutral total charge.
+with the cell volume $V$ and the kernel value at contact $K(0)$, whose term
+removes the interaction of every charge with itself. The
+$\mathbf{k}=\mathbf{0}$ mode is dropped, the tin-foil convention, which places
+a uniform neutralizing background under a channel with a net charge. The
+wave-number cutoff $k_{max}$ is where the weight of the slowest-decaying mode
+falls below
+{ref}`kspace_tolerance <model[standard]/long_range[latent_charge]/kspace_tolerance>`,
+so the truncation converges exponentially; it follows the kernel as it trains,
+unless
+{ref}`decouple_k_grid <model[standard]/long_range[latent_charge]/decouple_k_grid>`
+keeps the cutoff of the initial kernel.
 
-The k grid is enumerated outside the compiled region and enters it as inputs
-of dynamic length, like the pairs of the non-periodic evaluation; a model
-with `periodic: true` still serves non-periodic batches. Forces come from the
-positions the phases are evaluated at, and the virial from a strain the
-energy is differentiated against, so both hold the complete k-space term.
+{ref}`k_grid_mode <model[standard]/long_range[latent_charge]/k_grid_mode>`
+selects how training evaluates the sum:
 
-The periodic evaluation is supported for training, compiled training and the
-Python inference interface. Freezing/export, compression, the C++ interface
-and LAMMPS do not serve a periodic long-range module yet: they reject it.
+- `ragged`: over the wave numbers of every frame within $k_{max}$, listed for
+  every batch; their number grows with the volume of the cell.
+- `fixed`: over one integer grid shared by the frames of a batch, sized by the
+  largest cell of the data statistics or by
+  {ref}`k_grid_bounds <model[standard]/long_range[latent_charge]/k_grid_bounds>`;
+  a frame whose cell needs a wave number beyond the grid is truncated to it,
+  with a warning.
+- `pme`: by the smooth particle-mesh Ewald method. The charges are spread
+  with B-splines of order
+  {ref}`pme_order <model[standard]/long_range[latent_charge]/pme_order>` to a
+  mesh that resolves every cell of the batch at
+  {ref}`pme_spacing <model[standard]/long_range[latent_charge]/pme_spacing>`,
+  whose transform gives the sum; the cost grows nearly linearly with the
+  number of atoms. With the default order 8 and spacing $0.75\pi/k_{max}$, the
+  energy and the forces stay within a few parts in a million of the sum over
+  the wave numbers.
+
+A frozen model evaluates every periodic frame on the mesh of its cell,
+whatever its training mode, so a model trained in another mode can differ
+from its frozen form by the accuracy of the mesh. Forces and virials hold the
+complete periodic term, and a model with `periodic: true` still evaluates
+non-periodic frames by the direct sum. In a `linear_ener` composition, a
+sub-model whose module serves periodic systems takes no other sub-model with
+a long-range module beside it.
 
 ### Total charge
 
@@ -170,16 +189,18 @@ Pairs of the types in `pair_exclude_types` see each other neither in the
 descriptor nor in the long-range interaction, while the `exclude_types` of
 the descriptor act on the descriptor alone. In a `linear_ener` composition,
 `pair_exclude_types` belongs to the composition, whose sub-models share its
-neighbor graph and pair topology. `atom_exclude_types` is not supported with
-a long-range module.
+neighbor graph and pair topology. The reciprocal-space sum of a periodic
+system is global and excludes no pair, so `pair_exclude_types` is not
+supported with a module that serves periodic systems, nor
+`atom_exclude_types` with any long-range module.
 
 ## Training and inference
 
 Training uses the usual energy loss; see
 [training energy models](train-energy.md). With `enable_compile`, the
-long-range interaction is part of the compiled model: the pairs of each frame
-are listed outside the compiled region and enter it as inputs of dynamic
-length.
+long-range interaction is part of the compiled model: the pairs, the wave
+numbers or the mesh of each batch are built outside the compiled region and
+enter it as inputs of dynamic size.
 
 `dp --pt-expt freeze` exports the model, long-range module included, to
 `.pt2` or `.pte`, and `dp --pt-expt compress` compresses its descriptor into a
@@ -187,14 +208,20 @@ length.
 A trained checkpoint (`.pt`) and the frozen model are evaluated by `dp test`
 and the Python inference interface; the C++ interface and LAMMPS, with
 `pair_style deepmd` and `pair_style deepmd/kk`, read the `.pt2` archive.
-Since the pair sum covers the complete system, LAMMPS runs such a model with
-non-periodic boundaries (`f`, `s` or `m`) in every dimension, and rejects a
-periodic one. A model that the dedicated operator described below evaluates,
-a compressed DPA4C model frozen for a CUDA device, also runs on several MPI
-ranks: every rank gathers the positions and charges of the atoms of all ranks
-over MPI and evaluates the pairs of its own atoms, so that the ranks share
-the cost of the pair sum. This requires DeePMD-kit built with MPI. Any other
-model, like an uncompressed one, runs on a single rank.
+Since the sum covers the complete system, LAMMPS runs a model whose module
+serves no periodic system with non-periodic boundaries (`f`, `s` or `m`) in
+every dimension, and a model with `periodic: true` with boundaries periodic in
+every dimension or in none. Several models given to `pair_style deepmd` for
+the model deviation evaluate a non-periodic system together only when every
+one of them carries a long-range module. A model that the dedicated operator described
+below evaluates, a compressed DPA4C model frozen for a CUDA device, also runs
+on several MPI ranks: every rank gathers the positions and charges of the
+atoms of all ranks over MPI and evaluates its own atoms against all of them,
+so that the ranks share the cost of the direct sum, while each evaluates the
+mesh of a periodic system whole. This requires DeePMD-kit built with MPI. Any
+other model, like an uncompressed one, runs on a single rank;
+`pair_style deepmd/kk` evaluates an uncompressed model on non-periodic systems
+only.
 
 Compressing a descriptor conditioned on `charge_spin` specializes the model
 to one charge state at a time, and a constraint that reads its total charge
@@ -202,15 +229,17 @@ from `charge_spin` follows the same state. The compressed archive serves any
 charge state: the Python interface applies the state of each call, and LAMMPS
 the one given by the `charge_spin` keyword of `pair_style deepmd`.
 
-A compressed DPA4C model frozen for a CUDA device evaluates the pair sum with
-a dedicated operator, which reads the positions of the atoms and enumerates
-their pairs itself: its memory grows linearly with the number of atoms, and
-its cost with their square. The operator serves the `les` kernel and the
-`sog` kernel of up to 32 Gaussians, with up to 8 charge channels, a charge
-network without frame or atomic parameters, and no `pair_exclude_types`. Any
-other model, like an uncompressed one, lists the pairs of each frame before
-calling the model, so its memory grows with the square of the number of
-atoms.
+A compressed DPA4C model frozen for a CUDA device evaluates the long-range
+term with a dedicated operator, which reads the positions of the atoms and
+the cell. It enumerates the pairs of a non-periodic system itself, so that its
+memory grows linearly with the number of atoms and its cost with their
+square, and evaluates a periodic system on the mesh of its cell. The operator
+serves the `les` kernel and the `sog` kernel of up to 32 Gaussians, with up to
+8 charge channels, B-splines of order up to 12, a charge network without
+frame or atomic parameters, and no `pair_exclude_types`. Any other model,
+like an uncompressed one, receives the pairs or the mesh of each frame from
+the interface, so the memory of a non-periodic evaluation grows with the
+square of the number of atoms.
 
 The following are not supported for a model with a long-range module:
 multi-rank (domain-decomposed) inference of a model that the dedicated

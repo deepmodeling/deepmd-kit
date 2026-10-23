@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Exchange of the long-range direct sum between the domains of a decomposed
-// system.
+// Exchange of the latent-charge long range between the domains of a
+// decomposed system.
 //
 // A domain is one MPI rank of the communicator that a caller hands to
-// deepmd::latent_charge_direct_sum as an int64 tensor holding the address of
-// its MPI_Comm handle. A zero address stands for a single domain. Both
-// exchanges follow the rank order, so every rank receives the same rows and the
-// same sums, independent of the reduction algorithm of the MPI library.
+// deepmd::latent_charge_sum as an int64 tensor holding the address of its
+// MPI_Comm handle. A zero address stands for a single domain. Both exchanges
+// follow the rank order, so every rank receives the same rows and the same
+// sums, independent of the reduction algorithm of the MPI library.
 
 #pragma once
 

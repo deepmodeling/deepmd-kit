@@ -78,6 +78,10 @@ def make_base_long_range(t_tensor: Any) -> type:
         def required_topologies(self) -> tuple[str, ...]:
             """Names of the topologies the module reads beside the neighbor graph."""
 
+        def topology_params(self) -> dict[str, dict[str, Any]]:
+            """The build parameters of the topologies, by name; none by default."""
+            return {}
+
         @abstractmethod
         def uses_charge_spin(self) -> bool:
             """Whether the module reads the frame-level charge/spin condition."""

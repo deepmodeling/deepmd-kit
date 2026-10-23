@@ -108,9 +108,9 @@ class BaseInteractionKernel(NativeOP, make_plugin_registry("interaction kernel")
     def kspace(self, k_sq: Array) -> Array:
         r"""Fourier transform of the kernel on squared wave numbers.
 
-        :math:`\\hat K(k) = \\int K(r) e^{-i \\mathbf{k} \\cdot \\mathbf{r}} d^3r`,
+        :math:`\hat K(k) = \int K(r) e^{-i \mathbf{k} \cdot \mathbf{r}} d^3r`,
         so that the energy of charges in a periodic cell of volume ``V`` reads
-        :math:`(k_e / 2V) \\sum_{\\mathbf{k} \\neq 0} \\hat K(k) |\\hat\\rho(\\mathbf{k})|^2`.
+        :math:`(k_e / 2V) \sum_{\mathbf{k} \neq 0} \hat K(k) |\hat\rho(\mathbf{k})|^2`.
 
         Parameters
         ----------
@@ -129,7 +129,7 @@ class BaseInteractionKernel(NativeOP, make_plugin_registry("interaction kernel")
         r"""The kernel at contact, :math:`K(0)`, in Å⁻¹.
 
         The k-space lattice sum of a periodic system contains the self terms,
-        which the evaluation subtracts as :math:`\\frac{1}{2} K(0) \\sum_i q_i^2`.
+        which the evaluation subtracts as :math:`\frac{1}{2} K(0) \sum_i q_i^2`.
 
         Parameters
         ----------

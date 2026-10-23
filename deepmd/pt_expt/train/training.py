@@ -73,8 +73,6 @@ from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
-    KGrid,
-    MeshGrid,
     flatten_topologies,
     unflatten_topologies,
 )
@@ -117,6 +115,9 @@ from deepmd.pt_expt.loss import (
 )
 from deepmd.pt_expt.model import (
     get_model,
+)
+from deepmd.pt_expt.model.edge_transform_output import (
+    releaf_topologies,
 )
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
@@ -786,9 +787,10 @@ def _trace_and_compile_graph(
     through the same model-owned translation used by eager execution.
 
     A model declaring topologies (``atomic_model.required_topologies()``)
-    receives each of them as three further inputs, ``(index, vec, mask)`` in
-    the declared order, ahead of the task buffers; its pair axis is a fourth
-    dynamic dimension, kept a distinct symbol like the other three.
+    receives the fields of each, laid out by :func:`flatten_topologies`, as
+    further inputs ahead of the task buffers; their dynamic axes, the pairs,
+    the wave numbers or the axes of the mesh, are symbols distinct from the
+    other three.
 
     Parameters
     ----------
@@ -925,8 +927,8 @@ def _trace_and_compile_graph(
     # tensors, while forward_common_lower_graph takes it after them.
     s_spin = s_conditioning.pop(0) if spin is not None else None
     s_fparam, s_aparam, s_charge_spin = s_conditioning
-    # The pair axis of every topology is a fourth dynamic axis, its sample
-    # length distinct from the other three and from the CSR offsets.
+    # The dynamic axes of the topologies take sample lengths distinct from the
+    # other three and from the CSR offsets.
     s_topologies = build_synthetic_topologies(
         model,
         trace_N,
@@ -936,6 +938,7 @@ def _trace_and_compile_graph(
         dtype=GLOBAL_PT_FLOAT_PRECISION,
         device=_trace_device,
         nframes=trace_nf,
+        forbidden=_forbidden | {e_max},
     )
     topology_names = tuple(s_topologies)
     s_topology_vals = flatten_topologies(s_topologies)
@@ -1721,38 +1724,9 @@ class _CompiledModel(torch.nn.Module):
         edge_vec = ng.edge_vec.detach().requires_grad_(True)
         if spin is not None:
             spin = spin.detach().requires_grad_(True)
-        # Each pair topology enters as (index, vec, mask), its vec a further
-        # leaf; a k grid enters as (frame, vec, mask, volume, coord, strain),
-        # its coord and zero strain further leaves (the k-space force and
-        # virial root at these inputs).
-        topology_vals_list: list[torch.Tensor] = []
-        for topology in topologies.values():
-            if isinstance(topology, KGrid):
-                assert topology.coord is not None and topology.strain is not None
-                topology_vals_list += [
-                    topology.frame,
-                    topology.vec,
-                    topology.mask,
-                    topology.volume,
-                    topology.coord.detach().requires_grad_(True),
-                    topology.strain.detach().requires_grad_(True),
-                ]
-            elif isinstance(topology, MeshGrid):
-                assert topology.coord is not None and topology.strain is not None
-                topology_vals_list += [
-                    topology.box,
-                    topology.volume,
-                    topology.coord.detach().requires_grad_(True),
-                    topology.strain.detach().requires_grad_(True),
-                    topology.mask,
-                ]
-            else:
-                topology_vals_list += [
-                    topology.index,
-                    topology.vec.detach().requires_grad_(True),
-                    topology.mask,
-                ]
-        topology_vals = tuple(topology_vals_list)
+        # The topologies enter as their fields, the geometry of every one a
+        # further leaf.
+        topology_vals = flatten_topologies(releaf_topologies(topologies))
 
         if self._task_buf_order:
             try:
@@ -2344,6 +2318,9 @@ class Trainer(AbstractTrainer):
                     for model_key in self.model_keys
                 }
                 new_state = {}
+                # The atomic models, by module path, whose long-range module
+                # takes its initialization rather than pretrained weights.
+                fresh_long_range: dict[str, str] = {}
                 for key in target_state:
                     if key == "_extra_state":
                         new_state[key] = target_state[key]
@@ -2370,16 +2347,38 @@ class Trainer(AbstractTrainer):
                             finetune_rule.get_random_fitting()
                             and ".descriptor." not in key
                         )
-                        if use_random:
+                        if use_random or pretrained_key not in pretrained_state:
                             new_state[key] = target_state[key]
-                        elif pretrained_key in pretrained_state:
-                            new_state[key] = pretrained_state[pretrained_key]
+                            if ".long_range." in key:
+                                owner = key[: key.index(".long_range.")]
+                                fresh_long_range[owner] = model_key
                         else:
-                            new_state[key] = target_state[key]
+                            new_state[key] = pretrained_state[pretrained_key]
                         break
                     if not matched:
                         new_state[key] = target_state[key]
                 self._unwrapped.load_state_dict(new_state)
+
+                # A long-range module added to the pretrained model takes the
+                # input statistics of the fine-tuning data, as in training from
+                # scratch, before the bias adjustment evaluates the model.
+                for owner, model_key in fresh_long_range.items():
+                    atomic_model = self._unwrapped.get_submodule(owner)
+
+                    def long_range_stat(
+                        _atomic_model: torch.nn.Module = atomic_model,
+                        _model_key: str = model_key,
+                    ) -> None:
+                        _atomic_model.compute_long_range_input_stat(
+                            self._sample_funcs[_model_key]
+                        )
+
+                    self._run_stat_on_chief(
+                        long_range_stat,
+                        operation=f"long-range statistics for task {model_key!r}",
+                    )
+                    if self.is_distributed:
+                        self._broadcast_model_stat(atomic_model.long_range)
 
                 # Per-branch bias adjustment (rank 0 only, then broadcast)
                 for model_key in self.model_keys:

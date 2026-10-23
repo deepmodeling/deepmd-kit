@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import contextlib
 import ctypes
+import dataclasses
 import json
 import logging
 import os
@@ -15,7 +16,6 @@ import numpy as np
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
-    PairGraph,
     flatten_topologies,
 )
 from deepmd.dpmodel.utils.nlist import (
@@ -695,83 +695,88 @@ def build_synthetic_graph_inputs(
 def build_synthetic_topologies(
     model: torch.nn.Module,
     n_node_total: int,
-    n_pair: int,
+    n_entry: int,
     *,
     dtype: torch.dtype,
     device: torch.device,
-    nframes: int | None = None,
-) -> dict[str, PairGraph]:
+    nframes: int,
+    forbidden: set[int] | frozenset[int] = frozenset(),
+) -> dict[str, Any]:
     """Build trace-time samples of the topologies a model declares.
 
     Single source of the trace-time topology inputs, shared by graph export
-    and compiled training. Tracing reads only their shapes, so every topology
-    joins fixed nodes over ``n_pair`` entries, a length the caller keeps
-    distinct from the other dynamic axes. A k grid additionally carries the
-    frame volumes and the node coordinates.
+    and compiled training. Tracing reads only their shapes. Every topology
+    lists ``n_entry`` entries on its own axis, the pairs or the wave numbers,
+    a length the caller keeps distinct from the other dynamic axes; a mesh
+    takes the three smallest even dimensions of at least four that no other
+    axis and no entry of ``forbidden`` has.
 
     Parameters
     ----------
     model : torch.nn.Module
         The model; its atomic model declares the topologies.
     n_node_total : int
-        Length of the node axis the pairs index.
-    n_pair : int
-        Length of the pair axis of every sample.
+        Length of the node axis.
+    n_entry : int
+        Length of the entry axis of every sample.
     dtype : torch.dtype
-        Precision of the pair vectors.
+        Precision of the geometry.
     device : torch.device
         Target device.
-    nframes : int | None
-        The frame count, needed for the volume axis of a k grid; ``None``
-        for a model declaring none.
+    nframes : int
+        Length of the frame axis.
+    forbidden : set[int]
+        Sizes of the static dimensions of the model, which a mesh avoids.
 
     Returns
     -------
-    dict[str, PairGraph]
+    dict[str, PairGraph | KGrid | MeshGrid]
         A sample of every declared topology; empty when none is declared.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         K_GRID,
         PME_MESH,
         KGrid,
-        MeshGrid,
+        PairGraph,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph.reciprocal_graph import (
+        mesh_grid_of_dims,
     )
 
-    index = (
-        torch.arange(2 * n_pair, dtype=torch.int64, device=device).reshape(2, n_pair)
-        % n_node_total
-    )
+    taken = set(forbidden) | {nframes, n_node_total, n_node_total + 1, n_entry}
+    mesh_dims = []
+    for size in range(4, 4 + 2 * len(taken) + 6, 2):
+        if size not in taken and len(mesh_dims) < 3:
+            mesh_dims.append(size)
+    coord = torch.ones(n_node_total, 3, dtype=dtype, device=device)
+    # Contiguous like the inputs at run time: a compiled graph reads the
+    # strides of its samples.
+    box = torch.eye(3, dtype=dtype, device=device).repeat(nframes, 1, 1)
     topologies = {}
     for name in model.atomic_model.required_topologies():
         if name == K_GRID:
-            if nframes is None:
-                raise ValueError(f"a {K_GRID!r} topology sample needs the frame count")
             topologies[name] = KGrid(
-                frame=torch.zeros(n_pair, dtype=torch.int64, device=device),
+                frame=torch.zeros(n_entry, dtype=torch.int64, device=device),
                 # Nonzero wave numbers: the kernel transform carries 1/k^2.
-                vec=torch.ones(n_pair, 3, dtype=dtype, device=device),
-                mask=torch.ones(n_pair, dtype=torch.bool, device=device),
+                vec=torch.ones(n_entry, 3, dtype=dtype, device=device),
+                mask=torch.ones(n_entry, dtype=torch.bool, device=device),
                 volume=torch.ones(nframes, dtype=dtype, device=device),
-                coord=torch.ones(n_node_total, 3, dtype=dtype, device=device),
+                coord=coord,
                 strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
             )
         elif name == PME_MESH:
-            if nframes is None:
-                raise ValueError(
-                    f"a {PME_MESH!r} topology sample needs the frame count"
-                )
-            topologies[name] = MeshGrid(
-                box=torch.eye(3, dtype=dtype, device=device).expand(nframes, 3, 3),
-                volume=torch.ones(nframes, dtype=dtype, device=device),
-                coord=torch.ones(n_node_total, 3, dtype=dtype, device=device),
-                strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
-                mask=torch.ones(nframes, dtype=torch.bool, device=device),
+            topologies[name] = mesh_grid_of_dims(
+                box,
+                coord,
+                tuple(mesh_dims),
+                torch.ones(nframes, dtype=torch.bool, device=device),
             )
         else:
+            index = torch.arange(2 * n_entry, dtype=torch.int64, device=device)
             topologies[name] = PairGraph(
-                index=index,
-                vec=torch.ones(n_pair, 3, dtype=dtype, device=device),
-                mask=torch.ones(n_pair, dtype=torch.bool, device=device),
+                index=index.reshape(2, n_entry) % n_node_total,
+                vec=torch.ones(n_entry, 3, dtype=dtype, device=device),
+                mask=torch.ones(n_entry, dtype=torch.bool, device=device),
             )
     return topologies
 
@@ -790,8 +795,9 @@ def build_synthetic_canonical_graph_inputs(
     compact ABI, matching
     :meth:`~deepmd.pt_expt.model.native_spin_model.NativeSpinEnergyModel.forward_lower_canonical_graph_exportable`.
     ``want_long_range`` appends the inputs that the compact lower of a model
-    with a long-range module reads: the float64 node positions at slot 8 and
-    the int64 communicator, a CPU tensor of one element, at slot 9.
+    with a long-range module reads: the float64 node positions at slot 8, the
+    int64 communicator, a CPU tensor of one element, at slot 9, and the
+    float64 cells of the frames, a CPU tensor of shape ``(nf, 9)``, at slot 10.
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         NeighborGraph,
@@ -857,7 +863,8 @@ def build_synthetic_canonical_graph_inputs(
             3 * atype.shape[0], dtype=torch.float64, device=device
         ).reshape(-1, 3)
         communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
-        return (*compact_sample, coord, communicator)
+        box = torch.zeros(n_node.shape[0], 9, dtype=torch.float64, device="cpu")
+        return (*compact_sample, coord, communicator, box)
     return compact_sample
 
 
@@ -866,10 +873,11 @@ def _build_canonical_graph_dynamic_shapes(
 ) -> tuple:
     """Build dynamic shapes for the compact deployment ABI.
 
-    The trailing slots, the moments of a native-spin model or the positions
-    and the communicator of a model with a long-range module, are present
-    only for such models, so the sample length selects the shape tuple. The
-    communicator holds one address and is static.
+    The trailing slots, the moments of a native-spin model or the positions,
+    the communicator and the cells of a model with a long-range module, are
+    present only for such models, so the sample length selects the shape
+    tuple. The communicator holds one address and is static; the cells follow
+    the frame axis.
     """
     from deepmd.pt_expt.utils.canonical_graph import (
         UINT32_MAX,
@@ -892,7 +900,9 @@ def _build_canonical_graph_dynamic_shapes(
         {0: node_dim + 1},
         {0: edge_storage_dim},
     )
-    trailing = ({0: node_dim}, None)[: len(sample_inputs) - len(shapes)]
+    trailing = ({0: node_dim}, None, {0: nframes_dim})[
+        : len(sample_inputs) - len(shapes)
+    ]
     return (*shapes, *trailing)
 
 
@@ -946,6 +956,47 @@ def count_synthetic_graph_edges(
     return int(edge_mask.sum())
 
 
+def _topology_dynamic_shapes(
+    topology_names: tuple[str, ...], shared: dict[str, Any]
+) -> list[dict[int, Any]]:
+    """Dynamic-shape specifications of the fields of the topologies of a graph lower.
+
+    Every field follows the ``AXES`` its dataclass declares. The frame and
+    node axes are those of the other inputs in ``shared``; the entry axis of
+    every topology is a dimension of its own, of at least the two guard
+    entries; a mesh axis is twice a dimension, since the mesh dimensions are
+    even.
+
+    Parameters
+    ----------
+    topology_names : tuple[str, ...]
+        The topologies, in the order of their inputs.
+    shared : dict[str, Any]
+        The dimensions of the ``"frame"`` and ``"node"`` axes.
+
+    Returns
+    -------
+    list[dict[int, Any]]
+        One specification per field, in the layout of flatten_topologies.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        TOPOLOGY_TYPES,
+    )
+
+    specs = []
+    for name in topology_names:
+        cls = TOPOLOGY_TYPES[name]
+        dims = dict(shared)
+        dims["entry"] = torch.export.Dim(f"{name}_entries", min=2)
+        for axis in ("mesh_1", "mesh_2", "mesh_3"):
+            dims[axis] = 2 * torch.export.Dim(f"{name}_{axis}_half", min=1)
+        specs += [
+            {dim: dims[axis] for dim, axis in cls.AXES[field.name].items()}
+            for field in dataclasses.fields(cls)
+        ]
+    return specs
+
+
 def _build_graph_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     is_native_spin: bool = False,
@@ -978,9 +1029,8 @@ def _build_graph_dynamic_shapes(
         (spin at slot 10) instead of the regular energy ABI (charge_spin at
         slot 12).
     topology_names : tuple[str, ...]
-        Topologies whose ``(index, vec, mask)`` follow the inputs above, each
-        with a dynamic pair axis of its own; the guard pairs of a topology
-        bound it below by two.
+        Topologies whose fields follow the inputs above (see
+        :func:`_topology_dynamic_shapes`).
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
@@ -997,32 +1047,9 @@ def _build_graph_dynamic_shapes(
         {0: nedge_dim},  # source_order: (E,)
         {0: n_node_total_dim + 1},  # source_row_ptr: (N + 1,)
     )
-    topologies = []
-    for name in topology_names:
-        npair_dim = torch.export.Dim(f"npair_{name}", min=2)
-        if name == "k_grid":
-            # (frame, vec, mask, volume, coord, strain): the k axis, the
-            # frame axis and the node axis.
-            topologies += [
-                {0: npair_dim},
-                {0: npair_dim},
-                {0: npair_dim},
-                {0: nframes_dim},
-                {0: n_node_total_dim},
-                {0: nframes_dim},
-            ]
-        elif name == "pme_mesh":
-            # (box, volume, coord, strain, mask): the frame axis and the node
-            # axis; the mesh axes are static and live on the module.
-            topologies += [
-                {0: nframes_dim},
-                {0: nframes_dim},
-                {0: n_node_total_dim},
-                {0: nframes_dim},
-                {0: nframes_dim},
-            ]
-        else:
-            topologies += [{1: npair_dim}, {0: npair_dim}, {0: npair_dim}]
+    topologies = _topology_dynamic_shapes(
+        topology_names, {"frame": nframes_dim, "node": n_node_total_dim}
+    )
     if is_native_spin:
         spin = sample_inputs[10]
         fparam = sample_inputs[11]
@@ -1438,15 +1465,16 @@ def _collect_metadata(
             pair_exclude_types = [[int(ti), int(tj)] for (ti, tj) in pet]
             break
     meta["pair_exclude_types"] = pair_exclude_types
-    # Topologies the lower reads beside the neighbor graph; absent when the
-    # model reads none. The graph lower takes each as its ``(index, vec,
-    # mask)`` after its other inputs (see ``flatten_topologies``), built by the
-    # caller from the coordinates of each frame. The compact canonical lower
-    # takes the node positions instead, from which its operators enumerate the
-    # pairs.
+    # Topologies the lower reads beside the neighbor graph, and the parameters
+    # they are built with; absent when the model reads none. The graph lower
+    # takes the fields of each after its other inputs (see
+    # ``flatten_topologies``), built by the caller from the coordinates and
+    # the cell of each frame. The compact canonical lower takes the node
+    # positions instead, from which its operators evaluate the long range.
     topologies = model.atomic_model.required_topologies()
     if topologies:
         meta["topologies"] = list(topologies)
+        meta["topology_params"] = model.atomic_model.topology_params()
     return meta
 
 
@@ -2058,21 +2086,15 @@ def _trace_and_export_impl(
         # pt_expt BaseModel registry returns this backend's torch class.
         model = BaseModel.deserialize(data["model"])
     model.eval()
-    # The k-space evaluation of a periodic long-range module needs the
-    # reciprocal grid of the input cells, which no exported lower ABI carries
-    # yet; freeze and compress reject such models until they do.
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        K_GRID,
-        PME_MESH,
+    # A frozen model evaluates the reciprocal sum of a periodic frame on the
+    # mesh of its cell, whatever the mode it was trained in.
+    from deepmd.dpmodel.long_range.latent_charge import (
+        LatentChargeLongRange,
     )
 
-    if K_GRID in model.atomic_model.required_topologies() or (
-        PME_MESH in model.atomic_model.required_topologies()
-    ):
-        raise NotImplementedError(
-            "a periodic long-range module (the k-grid/mesh topology) cannot be "
-            "frozen or exported yet; serve it through the Python interface"
-        )
+    for module in model.modules():
+        if isinstance(module, LatentChargeLongRange):
+            module.use_mesh_evaluation()
     # Fold the vacuum reference on the CPU tracing device. vacuum_descriptor
     # evaluates an isolated atom of every type through the descriptor; on CUDA
     # that path can allocate several GiB even when export already holds most of
@@ -2243,8 +2265,9 @@ def _trace_and_export_impl(
             e_sample += 1
         if canonical:
             # The compact lower of a model with a long-range module reads the
-            # node positions, from which its operators enumerate the pairs,
-            # and the communicator of the domains of a decomposed frame.
+            # node positions and the cells, from which its operator evaluates
+            # the long range, and the communicator of the domains of a
+            # decomposed frame.
             want_long_range = bool(model.atomic_model.required_topologies())
             sample_inputs = build_synthetic_canonical_graph_inputs(
                 model,
@@ -2345,6 +2368,7 @@ def _trace_and_export_impl(
                 dtype=edge_dtype,
                 device=torch.device("cpu"),
                 nframes=nframes_sample,
+                forbidden=_forbidden | {e_sample},
             )
             if is_native_spin:
                 # Native-spin ABI (NativeSpinEnergyModel.forward_lower_graph_exportable):

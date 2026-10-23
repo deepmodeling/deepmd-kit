@@ -12,6 +12,9 @@ import numpy as np
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    ALL_PAIRS,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
@@ -130,6 +133,23 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             raise NotImplementedError(
                 "`atom_exclude_types` is not supported with a sub-model carrying "
                 "a long-range module"
+            )
+        # The composition builds every topology once for all sub-models: the
+        # pairs of a periodic batch are guards only, which would silence a
+        # module serving non-periodic systems alone, and a reciprocal-space
+        # topology is built with the parameters of a single module.
+        declared = [m.required_topologies() for m in models if m.has_long_range()]
+        periodic = any(name != ALL_PAIRS for names in declared for name in names)
+        if len(declared) > 1 and periodic:
+            raise NotImplementedError(
+                "a sub-model whose long-range module serves periodic systems "
+                "takes no other sub-model carrying a long-range module beside it"
+            )
+        if self.pair_exclude_types and periodic:
+            raise NotImplementedError(
+                "`pair_exclude_types` is not supported with a sub-model whose "
+                "long-range module serves periodic systems, whose "
+                "reciprocal-space sum is global and excludes no pair"
             )
 
         self.models = models
@@ -423,36 +443,17 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         )
 
-    def build_topologies(
-        self,
-        coord: Array,
-        n_node: Array,
-        box: Array | None,
-        *,
-        atype: Array,
-        node_mask: Array | None = None,
-        pair_excl: Any = None,
-    ) -> dict[str, Any]:
-        """Build the topologies of :meth:`required_topologies` for one batch.
+    def topology_params(self) -> dict[str, dict[str, Any]]:
+        """The build parameters of the topologies of the sub-models.
 
-        The first child declaring a name builds it; every child declaring the
-        same name must build it identically.
+        At most one sub-model declares a reciprocal-space topology, the only
+        kind with build parameters, so that the parameters of every topology
+        come from one sub-model.
         """
-        topologies: dict[str, Any] = {}
+        params: dict[str, dict[str, Any]] = {}
         for model in self.models:
-            if not hasattr(model, "build_topologies"):
-                continue
-            built = model.build_topologies(
-                coord,
-                n_node,
-                box,
-                atype=atype,
-                node_mask=node_mask,
-                pair_excl=pair_excl,
-            )
-            for name, topology in built.items():
-                topologies.setdefault(name, topology)
-        return topologies
+            params.update(model.topology_params())
+        return params
 
     def forward_atomic_graph(
         self,

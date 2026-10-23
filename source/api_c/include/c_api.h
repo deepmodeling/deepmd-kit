@@ -480,16 +480,20 @@ extern bool DP_DeepPotUsesFP32EdgeVectors(DP_DeepPot* dp);
 extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
 
 /**
- * @brief Evaluate a compact canonical graph and the node positions on the
- * model device.
+ * @brief Evaluate a compact canonical graph, the node positions and the cell
+ * on the model device.
  *
  * A model with a long-range module reads the positions of the nodes, which
- * must form a complete non-periodic system: held whole by one rank
- * (``nall_nodes == nloc``), or decomposed over the ranks of ``world``, whose
- * owned nodes ``[0, nloc)`` are the share of this rank. With such a model on
- * several ranks, every rank calls this function on every evaluation, also
- * when it holds no node. Any other model ignores the positions and the
- * communicator.
+ * must form a complete system: held whole by one rank, or decomposed over the
+ * ranks of ``world``, whose owned nodes ``[0, nloc)`` are the share of this
+ * rank. A non-periodic system, which every such model serves, comes without a
+ * cell, and one rank then holds every node (``nall_nodes == nloc``); a
+ * periodic system, which a model whose module serves periodic systems
+ * evaluates over the images of its cell, comes with it, and the halo nodes of
+ * a single rank are images of its owned nodes. With such a model on several
+ * ranks, every rank calls this function on every evaluation, also when it
+ * holds no node. Any other model ignores the positions, the communicator and
+ * the cell.
  *
  * @param[in] dp The DP to use.
  * @param[out] d_atom_energy Per-local-atom energy, shape ``(nloc)``.
@@ -500,6 +504,9 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * ``(nall_nodes, 3)``, or NULL for a model without a long-range module.
  * @param[in] world The MPI communicator (a host pointer to an ``MPI_Comm``)
  * of a system decomposed over several ranks, or NULL on a single rank.
+ * @param[in] box The cell of a periodic system in host memory, nine values in
+ * the length unit of the model, row-major with the lattice vectors as rows,
+ * or NULL for a non-periodic system.
  * @param[in] d_source Source node per edge storage slot.
  * @param[in] d_edge_vec FP32 edge vectors, shape ``(edge_storage, 3)``.
  * @param[in] d_destination_row_ptr Destination CSR offsets.
@@ -509,7 +516,7 @@ extern bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp);
  * @param[in] nall_nodes Total local-plus-halo node count.
  * @param[in] edge_storage Number of edge storage slots.
  * @note Supersedes DP_DeepPotComputeCanonicalGraphGPU, adding the node
- * positions and the communicator.
+ * positions, the communicator and the cell.
  * @since API version 31
  */
 extern void DP_DeepPotComputeCanonicalGraphGPU2(
@@ -520,6 +527,7 @@ extern void DP_DeepPotComputeCanonicalGraphGPU2(
     const int64_t* d_atype,
     const double* d_coord,
     void* world,
+    const double* box,
     const uint32_t* d_source,
     const float* d_edge_vec,
     const int64_t* d_destination_row_ptr,
@@ -531,7 +539,7 @@ extern void DP_DeepPotComputeCanonicalGraphGPU2(
 
 /**
  * @brief Query whether the model carries a long-range module, which
- * evaluates complete non-periodic systems.
+ * evaluates complete systems; see DP_DeepPotComputeCanonicalGraphGPU2.
  * @since API version 31
  */
 extern bool DP_DeepPotHasLongRange(DP_DeepPot* dp);
@@ -2742,7 +2750,7 @@ int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Query whether any model of a DP Model Deviation carries a long-range
- * module, which evaluates complete non-periodic systems.
+ * module, which evaluates complete systems.
  * @param[in] dp The DP Model Deviation to use.
  * @since API version 31
  */

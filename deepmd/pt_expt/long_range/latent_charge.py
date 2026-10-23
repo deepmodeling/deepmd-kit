@@ -26,7 +26,7 @@ from .kernel import (
 @BaseLongRange.register("latent_charge")
 @torch_module
 class LatentChargeLongRange(LatentChargeLongRangeDP):
-    """Energy of interacting latent charges in complete non-periodic systems (pt_expt)."""
+    """Energy of interacting latent charges, periodic or not (pt_expt)."""
 
     # The dpmodel class builds the charge network and the kernel, which the
     # assignment converts to these pt_expt modules; importing their classes
@@ -51,16 +51,17 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         }
         return self.kernel.evaluate(r_sq, coefficients)
 
-    def direct_sum_eligible(self) -> bool:
+    def operator_eligible(self) -> bool:
         """Whether :meth:`energy_force_from_coord` evaluates this module.
 
-        The direct-sum operator evaluates the kernels and channel counts it is
-        instantiated for. The compact lower that calls it reads no frame
+        The operator evaluates the kernels, channel counts and B-spline orders
+        it is instantiated for. The compact lower that calls it reads no frame
         input: the charges depend on the descriptor alone, and a constrained
         channel sums to zero or to the total charge of a folded charge state.
         """
         from deepmd.pt_expt.kernels.long_range import (
             MAX_CHANNELS,
+            MAX_ORDER,
             kernel_eligible,
             op_available,
         )
@@ -69,6 +70,7 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             op_available()
             and kernel_eligible(self.kernel)
             and self.charge_net.dim_out <= MAX_CHANNELS
+            and self.pme_order <= MAX_ORDER
             and self.charge_net.numb_fparam == 0
             and self.charge_net.numb_aparam == 0
             and not self.uses_charge_spin()
@@ -82,16 +84,18 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         n_node: torch.Tensor,
         coord: torch.Tensor,
         communicator: torch.Tensor | None = None,
+        box: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Evaluate the module for inference from the positions of the nodes.
 
-        The direct-sum operator enumerates the pairs of every frame itself,
-        so the memory is linear in the node count. It applies the constraint
-        and returns the force at fixed charges and the derivative of the
-        energy with respect to the charges the network predicts; pulled back
-        through the charge network, that derivative is the derivative of the
-        energy with respect to the descriptor, through which the caller adds
-        the response of the charges to the positions.
+        The operator sums a non-periodic frame directly over its pairs, which
+        it enumerates itself, so that the memory is linear in the node count,
+        and a periodic frame on the mesh of its cell. It applies the
+        constraint and returns the force at fixed charges and the derivative
+        of the energy with respect to the charges the network predicts;
+        pulled back through the charge network, that derivative is the
+        derivative of the energy with respect to the descriptor, through which
+        the caller adds the response of the charges to the positions.
 
         Parameters
         ----------
@@ -109,8 +113,13 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         communicator
             The MPI communicator of a frame decomposed into domains, one per
             rank, whose charged nodes are those of every rank, in the form of
-            :func:`~deepmd.pt_expt.kernels.long_range.latent_charge_direct_sum`;
+            :func:`~deepmd.pt_expt.kernels.long_range.latent_charge_sum`;
             ``None`` for a single domain.
+        box
+            The cells of the frames with shape ``(nf, 9)``, float64 on the
+            CPU, a zero row marking a non-periodic frame, or ``None`` when no
+            frame is periodic. A module that does not serve periodic systems
+            evaluates every frame as non-periodic.
 
         Returns
         -------
@@ -129,7 +138,7 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             float32; across domains, the share of the nodes of this rank.
         """
         from deepmd.pt_expt.kernels.long_range import (
-            latent_charge_direct_sum,
+            latent_charge_sum,
         )
 
         leaf = descriptor.detach().requires_grad_(True)
@@ -140,18 +149,21 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         if self.charge_constraint is not None:
             channel = self.charge_constraint["channel"]
             total_charge = self._total_charge(n_node.shape[0], total_charge, None, None)
-        atom_energy, charge_gradient, force, atom_virial, virial = (
-            latent_charge_direct_sum(
-                coord.to(torch.float64).contiguous(),
-                charge.detach().to(torch.float32).contiguous(),
-                node_mask.contiguous(),
-                n_node,
-                total_charge.contiguous(),
-                self.kernel,
-                channel,
-                COULOMB_CONSTANT,
-                communicator,
-            )
+        atom_energy, charge_gradient, force, atom_virial, virial = latent_charge_sum(
+            coord.to(torch.float64).contiguous(),
+            charge.detach().to(torch.float32).contiguous(),
+            node_mask.contiguous(),
+            n_node,
+            total_charge.contiguous(),
+            self.kernel,
+            channel,
+            COULOMB_CONSTANT,
+            communicator,
+            # A module that does not serve periodic systems sums every frame
+            # directly.
+            box if self.periodic else None,
+            self.pme_order,
+            self.mesh_spacing() if self.periodic else 1.0,
         )
         (descriptor_gradient,) = torch.autograd.grad(
             charge, leaf, charge_gradient.to(charge.dtype)

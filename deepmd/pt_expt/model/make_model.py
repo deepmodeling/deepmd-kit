@@ -21,9 +21,6 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
-    KGrid,
-    MeshGrid,
-    PairGraph,
     compact_nodes,
     expand_node_values,
     flatten_topologies,
@@ -48,6 +45,7 @@ from deepmd.pt_expt.utils.graph_csr import (
 
 from .edge_transform_output import (
     fit_output_to_model_output_graph,
+    releaf_topologies,
 )
 from .transform_output import (
     fit_output_to_model_output,
@@ -201,15 +199,18 @@ def check_owned_frames(
     n_node: torch.Tensor,
     n_local: torch.Tensor | None,
     communicator: torch.Tensor | None = None,
+    periodic_marks: torch.Tensor | None = None,
 ) -> None:
-    """Reject halo nodes in the frames of a single domain with a long-range module.
+    """Reject halo nodes in the non-periodic frames of a single domain with a long-range module.
 
-    The module sums over every pair of atoms of a frame, so a frame that one
-    domain holds whole owns all its nodes; halo nodes would carry no charge
-    and remove their interactions from the sum. Across the domains of a
-    communicator, every domain owns its share of the frame instead. The
-    counts are read eagerly only: a traced lower receives them from callers
-    that check them.
+    The module sums over every pair of atoms of a non-periodic frame, so a
+    frame that one domain holds whole owns all its nodes; halo nodes would
+    carry no charge and remove their interactions from the sum. Across the
+    domains of a communicator, every domain owns its share of the frame
+    instead. The halo nodes of a periodic frame are images of its atoms,
+    which carry no charge: the reciprocal-space sum holds the images itself.
+    The counts are read eagerly only: a traced lower receives them from
+    callers that check them.
 
     Parameters
     ----------
@@ -220,11 +221,16 @@ def check_owned_frames(
     communicator
         The communicator input of the compact lower, a CPU tensor holding the
         address of an MPI_Comm handle or zero, or ``None`` for a single domain.
+    periodic_marks
+        A tensor with a nonzero entry when the frames are periodic, such as
+        their cells or the frame mask of a reciprocal-space topology, or
+        ``None`` for non-periodic frames. It is read only after the fake
+        check, so that a traced lower computes nothing on it.
 
     Raises
     ------
     ValueError
-        If a frame of a single domain carries halo nodes.
+        If a non-periodic frame of a single domain carries halo nodes.
     """
     from torch._subclasses.fake_tensor import (
         is_fake,
@@ -234,12 +240,29 @@ def check_owned_frames(
         return
     if communicator is not None and int(communicator.reshape(-1)[0]) != 0:
         return
+    if periodic_marks is not None and bool(torch.any(periodic_marks != 0)):
+        return
     if not torch.equal(n_local, n_node):
         raise ValueError(
-            "a model with a long-range module evaluates complete frames on a "
-            "single domain, whose graph owns every node (n_local == n_node), "
-            f"but got n_local {n_local.tolist()} for n_node {n_node.tolist()}"
+            "a model with a long-range module evaluates complete non-periodic "
+            "frames on a single domain, whose graph owns every node (n_local "
+            f"== n_node), but got n_local {n_local.tolist()} for n_node "
+            f"{n_node.tolist()}"
         )
+
+
+def _reciprocal_masks(topologies: dict[str, Any]) -> torch.Tensor | None:
+    """The mask of the reciprocal-space topology, true on periodic entries, or ``None``."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        PairGraph,
+    )
+
+    masks = [
+        topology.mask
+        for topology in topologies.values()
+        if not isinstance(topology, PairGraph)
+    ]
+    return masks[0] if masks else None
 
 
 def _pad_nlist_for_export(nlist: torch.Tensor) -> torch.Tensor:
@@ -670,7 +693,7 @@ def make_model(
             charge_spin: torch.Tensor | None = None,
             spin: torch.Tensor | None = None,
             comm_dict: dict | None = None,
-            topologies: dict[str, PairGraph] | None = None,
+            topologies: dict[str, Any] | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (dpa1/se_atten concat-tebd, attention included).
 
@@ -762,9 +785,10 @@ def make_model(
             topologies
                 The topologies the atomic model declares by
                 ``required_topologies()``, built on the node axis of the
-                graph from complete systems. Each ``vec`` becomes an autograd
-                leaf next to ``edge_vec``, and force and virial include its
-                pullback. ``None`` (default) for models declaring none.
+                graph. The geometry fields every topology names in its
+                ``LEAVES`` become autograd leaves next to ``edge_vec``, and
+                force and virial include their pullbacks. ``None`` (default)
+                for models declaring none.
 
             Returns
             -------
@@ -787,52 +811,11 @@ def make_model(
                         "the long-range topologies describe complete systems; "
                         "a domain-decomposed system is not supported"
                     )
-                check_owned_frames(n_node, n_local)
-                # Every topology carries a geometry leaf of its own.
-                re_leafed: dict[str, Any] = {}
-                for name, topology in topologies.items():
-                    if isinstance(topology, KGrid):
-                        if topology.coord is None or topology.strain is None:
-                            raise ValueError(
-                                "the k-grid topology carries no coordinates or strain"
-                            )
-                        # The positions are the geometry leaf of the k-space
-                        # energy; the zero strain leaf turns its gradient into
-                        # the k-space virial (see KGrid.strain). Both re-leaf
-                        # here so the backward roots at graph INPUTS — a leaf
-                        # created inside the trace is NaN under inductor.
-                        coord_leaf = topology.coord.detach().requires_grad_(True)
-                        strain_leaf = topology.strain.detach().requires_grad_(True)
-                        re_leafed[name] = KGrid(
-                            frame=topology.frame,
-                            vec=topology.vec,
-                            mask=topology.mask,
-                            volume=topology.volume,
-                            coord=coord_leaf,
-                            strain=strain_leaf,
-                        )
-                    elif isinstance(topology, MeshGrid):
-                        if topology.coord is None or topology.strain is None:
-                            raise ValueError(
-                                "the mesh-grid topology carries no coordinates or strain"
-                            )
-                        # Same re-leaf contract as the k grid (see above).
-                        coord_leaf = topology.coord.detach().requires_grad_(True)
-                        strain_leaf = topology.strain.detach().requires_grad_(True)
-                        re_leafed[name] = MeshGrid(
-                            box=topology.box,
-                            volume=topology.volume,
-                            coord=coord_leaf,
-                            strain=strain_leaf,
-                            mask=topology.mask,
-                        )
-                    else:
-                        re_leafed[name] = PairGraph(
-                            index=topology.index,
-                            vec=topology.vec.detach().requires_grad_(True),
-                            mask=topology.mask,
-                        )
-                topologies = re_leafed
+                check_owned_frames(
+                    n_node, n_local, periodic_marks=_reciprocal_masks(topologies)
+                )
+                # Every topology carries geometry leaves of its own.
+                topologies = releaf_topologies(topologies)
             if spin is not None:
                 # second autograd leaf: force_mag = -dE/dspin (native spin).
                 # Deliberately a SEPARATE leaf/backward from edge_vec rather
@@ -1389,7 +1372,7 @@ def make_model(
             charge_spin: torch.Tensor | None = None,
             spin: torch.Tensor | None = None,
             destination_sorted: bool = False,
-            topologies: dict[str, PairGraph] | None = None,
+            topologies: dict[str, Any] | None = None,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
             """make_fx trace of ``forward_common_lower_graph`` with ``edge_vec``

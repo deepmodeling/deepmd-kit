@@ -59,8 +59,8 @@ def canonical_model_eligible(model: Any) -> bool:
     if getattr(atomic_model, "atom_excl", None) is not None:
         return False
     # A latent-charge long-range module joins the pipeline through the node
-    # positions, which its direct-sum operator reads in place of a pair list;
-    # that pipeline evaluates no pair potential.
+    # positions and the cells, which its operator reads in place of a pair
+    # list or a mesh; that pipeline evaluates no pair potential.
     if parts[0].has_long_range():
         from deepmd.pt_expt.long_range.latent_charge import (
             LatentChargeLongRange,
@@ -69,7 +69,7 @@ def canonical_model_eligible(model: Any) -> bool:
         long_range = parts[0].long_range
         if not (
             isinstance(long_range, LatentChargeLongRange)
-            and long_range.direct_sum_eligible()
+            and long_range.operator_eligible()
             and parts[1] is None
         ):
             return False

@@ -243,6 +243,16 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """
         return ()
 
+    def topology_params(self) -> dict[str, dict[str, Any]]:
+        """The build parameters of the topologies of :meth:`required_topologies`.
+
+        Generic capability (concrete default: none) in the sense of
+        :meth:`required_topologies`: a module whose topology depends on its
+        own state, such as the wave-number cutoff of a periodic long-range
+        module, which follows its kernel, gives it here, by topology name.
+        """
+        return {}
+
     def build_topologies(
         self,
         coord: Any,
@@ -255,9 +265,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     ) -> dict[str, Any]:
         """Build the topologies of :meth:`required_topologies` for one batch.
 
-        The default builds them from their names; a module that owns build
-        parameters (e.g. the wave-number cutoff of the k grid of a periodic
-        long-range module) overrides this so they stay with it.
+        See :func:`~deepmd.dpmodel.utils.neighbor_graph.build_topologies`;
+        the build parameters are those of :meth:`topology_params`.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             build_topologies,
@@ -271,6 +280,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             node_mask,
             atype=atype,
             pair_excl=pair_excl,
+            topology_params=self.topology_params(),
         )
 
     def supports_native_spin(self) -> bool:

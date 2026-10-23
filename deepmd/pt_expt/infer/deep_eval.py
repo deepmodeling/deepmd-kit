@@ -23,8 +23,10 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
     build_topologies,
     check_complete_frames,
+    check_periodic_cells,
     flatten_topologies,
     unflatten_topologies,
 )
@@ -727,6 +729,7 @@ class DeepEval(DeepEvalBackend):
         }
         if topology_names:
             self.metadata["topologies"] = list(topology_names)
+            self.metadata["topology_params"] = model.atomic_model.topology_params()
         if use_graph_lower:
             from deepmd.pt_expt.model.graph_lower import (
                 graph_edge_dtype,
@@ -2400,8 +2403,9 @@ class DeepEval(DeepEvalBackend):
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
         destination_order, destination_row_ptr, source_order, source_row_ptr,
         fparam, aparam, charge_spin)`` to the graph forward, followed by the
-        ``(index, vec, mask)`` of every topology the ``topologies`` metadata
-        names. Exported AOTI artifacts use dynamic edge and pair axes, so no
+        fields of every topology the ``topologies`` metadata names, built with
+        its ``topology_params``. Exported AOTI artifacts use dynamic edge,
+        pair and mesh axes, so no
         ``edge_capacity`` padding is needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
         compressed DPA1 and float64 for generic graph descriptors. The forward
         returns local public keys directly, so results are reshaped without
@@ -2516,16 +2520,30 @@ class DeepEval(DeepEvalBackend):
                 compact.source_row_ptr,
                 compact.source_order,
             )
-            if self.metadata.get("topologies"):
+            topology_names = self.metadata.get("topologies", ())
+            if topology_names:
                 # The compact lower of a model with a long-range module reads
-                # the positions of complete non-periodic frames, and the zero
-                # communicator of a frame held whole.
-                check_complete_frames(box_input)
+                # the positions and the cells of the frames, and the zero
+                # communicator of frames held whole; a module that serves no
+                # periodic system takes no cell, and the zero cell that marks
+                # a non-periodic frame is never one a caller passes.
+                if PME_MESH not in topology_names:
+                    check_complete_frames(box_input)
+                elif box_input is not None:
+                    check_periodic_cells(box_input)
+                box_t = (
+                    torch.zeros(nframes, 9, dtype=torch.float64, device="cpu")
+                    if box_input is None
+                    else torch.as_tensor(
+                        np.asarray(box_input, dtype=np.float64).reshape(nframes, 9)
+                    )
+                )
                 model_inputs += (
                     torch.as_tensor(
                         coord_input.reshape(-1, 3), dtype=torch.float64, device=DEVICE
                     ),
                     torch.zeros(1, dtype=torch.int64, device="cpu"),
+                    box_t,
                 )
         else:
             fparam_t, aparam_t = self._prepare_optional_lower_inputs(
@@ -2570,37 +2588,18 @@ class DeepEval(DeepEvalBackend):
                     if box_input is not None
                     else None
                 )
-                if self._dpmodel is not None:
-                    # The live model builds its own topologies, so the k-grid
-                    # cutoff follows the kernel parameters.
-                    topologies = self._dpmodel.atomic_model.build_topologies(
-                        coord_flat_t,
-                        n_node_t,
-                        box_t,
-                        atype=atype_t,
-                        node_mask=atype_t >= 0,
-                        pair_excl=self._model_pair_excl(),
-                    )
-                else:
-                    from deepmd.dpmodel.utils.neighbor_graph import (
-                        K_GRID,
-                        PME_MESH,
-                    )
-
-                    if K_GRID in topology_names or PME_MESH in topology_names:
-                        raise NotImplementedError(
-                            "a periodic long-range model cannot be evaluated from "
-                            "a .pt2/.pte archive yet"
-                        )
-                    topologies = build_topologies(
-                        topology_names,
-                        coord_flat_t,
-                        n_node_t,
-                        box_t,
-                        node_mask=atype_t >= 0,
-                        atype=atype_t,
-                        pair_excl=self._model_pair_excl(),
-                    )
+                # The parameters are those of the archive, or those of the
+                # live model of a checkpoint.
+                topologies = build_topologies(
+                    topology_names,
+                    coord_flat_t,
+                    n_node_t,
+                    box_t,
+                    node_mask=atype_t >= 0,
+                    atype=atype_t,
+                    pair_excl=self._model_pair_excl(),
+                    topology_params=self.metadata.get("topology_params"),
+                )
                 model_inputs += flatten_topologies(topologies)
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)

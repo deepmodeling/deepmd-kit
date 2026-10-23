@@ -173,6 +173,10 @@ class DPAtomicModel(BaseAtomicModel):
 
     def _check_long_range(self) -> None:
         """Validate that the long-range module can join this descriptor and fitting."""
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            ALL_PAIRS,
+        )
+
         check_long_range_support(self.descriptor)
         if not self.descriptor.uses_graph_lower():
             raise NotImplementedError(
@@ -188,6 +192,14 @@ class DPAtomicModel(BaseAtomicModel):
             raise NotImplementedError(
                 "`atom_exclude_types` is not supported with a long-range module, "
                 "which attributes each pair energy to both atoms of the pair"
+            )
+        if self.pair_exclude_types and any(
+            name != ALL_PAIRS for name in self.long_range.required_topologies()
+        ):
+            raise NotImplementedError(
+                "`pair_exclude_types` is not supported with a long-range module "
+                "that serves periodic systems, whose reciprocal-space sum is "
+                "global and excludes no pair"
             )
         if self.long_range.uses_charge_spin() and not self.add_chg_spin_ebd:
             raise ValueError(
@@ -273,28 +285,11 @@ class DPAtomicModel(BaseAtomicModel):
             return ()
         return self.long_range.required_topologies()
 
-    def build_topologies(
-        self,
-        coord: Array,
-        n_node: Array,
-        box: Array | None,
-        *,
-        atype: Array,
-        node_mask: Array | None = None,
-        pair_excl: Any = None,
-    ) -> dict[str, Any]:
-        """Build the topologies of :meth:`required_topologies` for one batch.
-
-        The module builds its own topologies so that its build parameters
-        (e.g. the wave-number cutoff of the k grid, which follows the kernel)
-        stay with it. A model without a long-range module declares no
-        topologies.
-        """
+    def topology_params(self) -> dict[str, dict[str, Any]]:
+        """The build parameters of the topologies of the long-range module."""
         if self.long_range is None:
             return {}
-        return self.long_range.build_topologies(
-            coord, n_node, box, atype=atype, node_mask=node_mask, pair_excl=pair_excl
-        )
+        return self.long_range.topology_params()
 
     def has_message_passing_across_ranks(self) -> bool:
         """Delegates to this model's own descriptor."""
@@ -415,12 +410,6 @@ class DPAtomicModel(BaseAtomicModel):
         )
         if self.long_range is not None and self.long_range.uses_charge_spin():
             self.long_range.fold_charge_state(self.descriptor.get_default_chg_spin())
-        if self.long_range is not None and getattr(self.long_range, "periodic", False):
-            raise NotImplementedError(
-                "a periodic long-range module evaluates its reciprocal-space sum "
-                "with a k grid the compressed path does not serve; compress only "
-                "non-periodic long-range models"
-            )
 
     def forward_atomic(
         self,
@@ -984,6 +973,31 @@ class DPAtomicModel(BaseAtomicModel):
                 protection=self.data_stat_protect,
                 stat_file_path=stat_file_path,
             )
+
+    def compute_long_range_input_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        """Compute the input statistics of the long-range module alone.
+
+        A fine-tuning run that adds a long-range module to a pretrained model
+        calls it for the new module, whose statistics, unlike those of the
+        inherited descriptor and fitting, the pretrained model cannot provide.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data
+            systems.
+        stat_file_path
+            The path to the stat file.
+        """
+        self.long_range.compute_input_stats(
+            self._make_wrapped_sampler(sampled_func),
+            protection=self.data_stat_protect,
+            stat_file_path=stat_file_path,
+        )
 
     def serialize(self) -> dict:
         dd = super().serialize()
