@@ -576,6 +576,16 @@ double PairDeepBaseModel::init_one(int i, int j) {
 
 void* PairDeepBaseModel::extract(const char* str, int& dim) {
   if (strcmp(str, "cut_coul") == 0) {
+    // A regular Deep Potential cutoff is not a Coulomb cutoff.  Advertising
+    // it as one makes pair_style hybrid/overlay reject a legitimate
+    // combination with a long-range Coulomb sub-style whenever their cutoffs
+    // differ (for example, a 6 A DPRc model and 9 A TIP4P electrostatics).
+    // PPPM/DPLR is the exception: that solver intentionally uses the DeepMD
+    // model cutoff to split its short- and long-range contributions.
+    if (force->kspace_style == nullptr ||
+        strcmp(force->kspace_style, "pppm/dplr") != 0) {
+      return nullptr;
+    }
     dim = 0;
     return (void*)&cutoff;
   }
