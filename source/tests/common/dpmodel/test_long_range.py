@@ -13,6 +13,7 @@ from deepmd.dpmodel.fitting.latent_charge import (
     LatentChargeFitting,
 )
 from deepmd.dpmodel.long_range import (
+    COULOMB_CONSTANT,
     BaseInteractionKernel,
     LatentChargeLongRange,
     LESKernel,
@@ -557,3 +558,207 @@ def test_decoupled_k_grid_round_trip() -> None:
     plain = LatentChargeLongRange.deserialize(_periodic_long_range().serialize())
     assert not plain.decouple_k_grid
     assert plain.frozen_k_max is None
+
+
+# ---------------------------------------------------------------------------
+# PME mesh mode
+# ---------------------------------------------------------------------------
+
+
+def _pme_long_range(**kwargs: object) -> LatentChargeLongRange:
+    kwargs.setdefault("k_grid_mode", "pme")
+    return _periodic_long_range(**kwargs)
+
+
+def test_pme_mesh_grid_build_and_flatten() -> None:
+    """The mesh grid packs the cells, flags the frames, and flattens to 4 tensors."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        PME_MESH,
+        build_topologies,
+        flatten_topologies,
+        unflatten_topologies,
+    )
+
+    coord = np.random.default_rng(1).normal(size=(4, 3))
+    atype = np.array([0, 1, 1, 0])
+    box = _cells()
+    params = {PME_MESH: {"n_mesh": np.array([16, 16, 16]), "spacing": 1.0}}
+    tops = build_topologies(
+        ("all_pairs", PME_MESH),
+        coord,
+        np.array([2, 2]),
+        box,
+        atype=atype,
+        topology_params=params,
+    )
+    mesh = tops[PME_MESH]
+    np.testing.assert_array_equal(mesh.box, box)
+    assert mesh.mask.shape == (2,) and mesh.mask.all()
+    assert tops["all_pairs"].index.shape[1] == 2  # guards only
+    flat = flatten_topologies(tops)
+    assert len(flat) == 3 + 5
+    back = unflatten_topologies(("all_pairs", PME_MESH), flat)
+    np.testing.assert_array_equal(back[PME_MESH].box, box)
+    np.testing.assert_array_equal(back[PME_MESH].mask, mesh.mask)
+    # a non-periodic batch: real pairs, masked-out mesh
+    tops_np = build_topologies(
+        ("all_pairs", PME_MESH),
+        coord,
+        np.array([2, 2]),
+        None,
+        atype=atype,
+        topology_params=params,
+    )
+    assert tops_np["all_pairs"].mask.any()
+    assert not tops_np[PME_MESH].mask.any()
+    # missing build parameters are an error
+    with pytest.raises(ValueError, match="n_mesh"):
+        build_topologies((PME_MESH,), coord, np.array([4]), box, atype=atype)
+
+
+def test_pme_fft_smooth() -> None:
+    from deepmd.dpmodel.long_range.latent_charge import (
+        _fft_smooth,
+    )
+
+    assert _fft_smooth(1) == 1
+    assert _fft_smooth(17) == 18
+    assert _fft_smooth(19) == 20
+    assert _fft_smooth(23) == 24
+    assert _fft_smooth(29) == 30
+    assert _fft_smooth(31) == 32
+    assert _fft_smooth(37) == 40
+
+
+def _pme_energy(module, charge, coord, box) -> float:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        PME_MESH,
+        frame_id_from_n_node,
+    )
+
+    n_node = np.array([coord.shape[0]])
+    tops = module.build_topologies(
+        coord, n_node, box[None], atype=np.zeros(len(coord), dtype=np.int64)
+    )
+    fid = frame_id_from_n_node(n_node, n_total=coord.shape[0])
+    e = module._pme_branch(
+        charge, tops[PME_MESH], fid, np.ones(len(coord), dtype=bool), n_node
+    )
+    return float(np.sum(e))
+
+
+def test_pme_energy_converges_to_direct_reference() -> None:
+    """The PME energy approaches the direct k-space sum as the mesh refines."""
+    coord = 3.0 + np.random.default_rng(7).uniform(0.0, 1.4, (6, 3))
+    box = np.array([[9.0, 0.4, 0.0], [0.0, 8.5, 0.3], [0.0, 0.0, 9.5]])
+    charge = np.array([[1.0], [-0.5], [1.0], [-0.5], [-0.5], [1.0]])
+    charge = charge - charge.mean(axis=0, keepdims=True)
+
+    kernel = LESKernel(alpha=0.3)
+    module = LatentChargeLongRange(
+        LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+        kernel,
+        None,
+        periodic=True,
+        k_grid_mode="pme",
+        pme_mesh=[40, 40, 40],
+    )
+    # converged direct k-space reference (tol 1e-10)
+    k_max = kernel.kspace_cutoff(1e-10)
+    rec = 2.0 * np.pi * np.linalg.inv(box)
+    n_d = np.ceil(k_max * np.linalg.norm(box, axis=1) / (2 * np.pi)).astype(int)
+    grids = np.meshgrid(*[np.arange(-n, n + 1) for n in n_d], indexing="ij")
+    n_all = np.stack(grids, -1).reshape(-1, 3)
+    k = n_all @ rec.T
+    k2 = (k * k).sum(-1)
+    keep = (k2 > 0) & (k2 <= k_max * k_max)
+    k, k2 = k[keep], k2[keep]
+    phase = k @ coord.T
+    rho = (np.cos(phase) + 1j * np.sin(phase)) @ charge
+    s_sq = (np.abs(rho) ** 2).sum(-1)
+    k_hat = kernel.kspace(k2)
+    volume = abs(np.linalg.det(box))
+    k0 = 2.0 * 0.3 / np.sqrt(np.pi)
+    e_ref = COULOMB_CONSTANT * (
+        (k_hat * s_sq).sum() / (2 * volume) - 0.5 * k0 * (charge * charge).sum()
+    )
+    errors = []
+    for dims in ([16, 16, 16], [40, 40, 40]):
+        module.pme_mesh = np.asarray(dims)
+        module._pme_n = tuple(dims)
+        errors.append(abs(_pme_energy(module, charge, coord, box) - e_ref))
+    assert errors[1] < errors[0]  # refinement improves the energy
+    assert errors[1] < 1e-2
+
+
+def test_pme_mesh_stats_size_the_mesh() -> None:
+    """The data statistics size the mesh by the largest sampled cell."""
+    import math
+
+    long_range = _pme_long_range()
+    coord = np.zeros((9, 3))
+    with pytest.raises(ValueError, match="not sized yet"):
+        long_range.build_topologies(
+            coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+        )
+    long_range.compute_input_stats(
+        [{"box": _cells()[:1].reshape(1, 9)}, {"box": _cells()}]
+    )
+    spacing = math.pi / long_range.kernel.kspace_cutoff(long_range.kspace_tolerance)
+    a_max = np.max(np.linalg.norm(_cells(), axis=-1), axis=0)
+    for d in range(3):
+        assert long_range.pme_mesh[d] >= math.ceil(a_max[d] / spacing)
+        # FFT-smooth dimensions
+        m = int(long_range.pme_mesh[d])
+        for p in (2, 3, 5, 7):
+            while m % p == 0:
+                m //= p
+        assert m == 1
+    topologies = long_range.build_topologies(
+        coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+    )
+    assert topologies["pme_mesh"].mask.all()
+    # explicit mesh skips the statistics
+    explicit = _pme_long_range(pme_mesh=[16, 16, 16])
+    assert explicit._pme_dims() == (16, 16, 16)
+    # statistics without a cell cannot size the mesh
+    unsized = _pme_long_range()
+    with pytest.raises(ValueError, match="no simulation cell"):
+        unsized.compute_input_stats([{"coord": np.zeros((1, 3))}])
+
+
+def test_pme_mode_configuration() -> None:
+    """The pme mode requires periodicity, and its parameters the pme mode."""
+    with pytest.raises(ValueError, match="periodic"):
+        LatentChargeLongRange(
+            LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+            LESKernel(),
+            None,
+            k_grid_mode="pme",
+        )
+    with pytest.raises(ValueError, match="pme_mesh"):
+        _periodic_long_range(pme_mesh=[8, 8, 8])
+    with pytest.raises(ValueError, match="pme_spacing"):
+        _periodic_long_range(pme_spacing=1.0)
+    with pytest.raises(ValueError, match="pme_order"):
+        _pme_long_range(pme_order=1)
+    with pytest.raises(ValueError, match="pme_mesh"):
+        _pme_long_range(pme_mesh=[8, 8])
+    with pytest.raises(ValueError, match="k_grid_mode"):
+        _periodic_long_range(k_grid_mode="dense")
+
+
+def test_pme_round_trip() -> None:
+    """The record keeps the pme mode, the sized mesh and the spacing."""
+    long_range = _pme_long_range(pme_spacing=1.0, pme_order=5)
+    long_range.compute_input_stats([{"box": _cells()}])
+    record = long_range.serialize()
+    assert record["k_grid_mode"] == "pme"
+    assert record["pme_order"] == 5
+    assert record["pme_spacing"] == 1.0
+    restored = LatentChargeLongRange.deserialize(record)
+    assert restored.k_grid_mode == "pme"
+    assert restored.pme_order == 5
+    assert restored.pme_spacing == 1.0
+    np.testing.assert_array_equal(restored.pme_mesh, long_range.pme_mesh)
+    assert restored._pme_dims() == long_range._pme_dims()

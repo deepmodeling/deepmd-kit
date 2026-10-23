@@ -204,6 +204,24 @@ def build_k_grid(box, alpha=None, sigma0=None, eps=1e-8):
   能量；置 true 后 $k_{max}$ 在构造时按初始参数冻结（`frozen_k_max`，随模型
   序列化），kernel 漂移不再影响 k 点选择，图内 $\hat K(k)$ 仍用活参数求值
   （梯度不受影响）。两种模式共用；fixed 模式下解耦后 mask 也不再随漂移收紧。
+- **PME 网格模式（`k_grid_mode: "pme"`）**：不直接枚举 k 点，而是把电荷用
+  p 阶 B 样条撒到全 batch 共享的静态实空间网格，FFT 后乘影响函数（SPME）：
+  $E = \frac{k_e}{2V}\sum_{m\neq 0}\hat K(|k(m)|)\,|B(m)|^2\,|\hat\rho_{\rm mesh}(m)|^2$，
+  其中 $|B(m)|^2 = \prod_d |\sum_l M_p(l+1)e^{2\pi i m_d l/n_d}|^{-2}$ 是样条去卷积
+  修正（构造时按 Essmann 公式计算），$k(m) = 2\pi B^{-1} m$（$m$ 为网格模式的整数
+  Miller 指标），$m=0$ 置零（tin-foil）。网格尺寸由数据统计的最大 cell 按目标
+  间距 $h$（缺省 $\pi/\_k\_max()$，尊重解耦开关；或 `pme_spacing` 显式）定
+  $n_d = \lceil |a_d|/h \rceil$ 并上取 FFT 光滑数（2·3·5·7），或 `pme_mesh`
+  显式跳过统计；随模型序列化。大 cell 超出统计 → 有效间距变粗（平滑的精度退化，
+  力/位力仍是该近似能量的精确导数，不发 warning——网格尺寸是用户的显式责任）。代价 $O(N p^3 C + M\log M)$ 近线性，无相位矩阵显存墙。
+  拓扑 `PME_MESH` 无 ragged 轴，flatten 为 `(box, volume, coord, strain, mask)`
+  （arity 5，volume 同 KGrid 一样 eager 计算）；应变族与直接求和相同（分数坐标
+  应变不变，撒点不带应变；$k'=S^{-T}k$、$V'=V\det S$——strain leaf 的
+  `linalg.inv`/`linalg.det` 反向与 KGrid 路径同族，已验证 nf=1 符号帧数下编译
+  反向正确）。eager/compiled 训练与 Python 接口均支持。
+  实现坑（已踩过）：$k(m)$ 里 $m$ 是**整数** Miller 指标（不是 $m/n$——那是
+  把网格当成只跨 $1/n_d$ 的 cell）；tin-foil 的 `where` 掩码条件别写反
+  （`where(keep, influence, 0)`）。
 
 ### 5.2 图内计算（伪代码，全部纯张量运算，无 data-dependent 控制流）
 

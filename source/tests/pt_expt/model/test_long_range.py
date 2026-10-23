@@ -559,6 +559,57 @@ def test_checkpoint_inference_matches_direct_forward(tmp_path, kernel: str) -> N
     np.testing.assert_allclose(moved[0], actual["energy"], rtol=0, atol=1e-12)
 
 
+@pytest.mark.parametrize("grid_mode", ["ragged", "pme"])
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_checkpoint_inference_matches_direct_forward(
+    tmp_path, kernel: str, grid_mode: str
+) -> None:
+    """DeepPot on a periodic checkpoint builds the periodic topology and matches."""
+    if grid_mode == "pme":
+        model = _periodic_pme_model(kernel)
+        config = _config(kernel)
+        config["long_range"]["periodic"] = True
+        config["long_range"]["k_grid_mode"] = "pme"
+        config["long_range"]["pme_mesh"] = [32, 32, 32]
+    else:
+        model = _periodic_model(kernel)
+        config = _config(kernel)
+        config["long_range"]["periodic"] = True
+    checkpoint = tmp_path / f"periodic_{kernel}_{grid_mode}.pt"
+    wrapper = ModelWrapper(model, model_params=config)
+    torch.save({"model": wrapper.state_dict()}, checkpoint)
+    coord, atype, box = _periodic_case()
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    expected = model(coord_t, atype_t, box=box_t, do_atomic_virial=True)
+    dp = DeepPot(str(checkpoint), auto_batch_size=False)
+    names = ("energy", "force", "virial", "atom_energy", "atom_virial")
+    actual = dict(
+        zip(
+            names,
+            dp.eval(
+                coord,
+                box,
+                atype,
+                atomic=True,
+                mixed_type=True,
+            ),
+            strict=True,
+        )
+    )
+    for name in names:
+        np.testing.assert_allclose(
+            actual[name],
+            expected[name].detach().cpu().numpy(),
+            rtol=1e-9,
+            atol=1e-9,
+            err_msg=name,
+        )
+
+
 @pytest.mark.parametrize(
     ("kernel", "source", "suffix"),
     [("les", "neutral", ".pt2"), ("sog", "neutral", ".pte"), ("les", "fparam", ".pte")],
@@ -1415,3 +1466,216 @@ def test_periodic_decoupled_grid_ignores_kernel_drift(kernel: str) -> None:
     assert kernel_grads and all(
         grad is not None and torch.isfinite(grad).all() for grad in kernel_grads
     )
+
+
+# ---------------------------------------------------------------------------
+# Periodic PME mesh mode
+# ---------------------------------------------------------------------------
+
+
+def _periodic_pme_model(
+    kernel: str, boxes: np.ndarray | None = None, **kwargs: object
+) -> torch.nn.Module:
+    """A periodic model in the PME mesh mode.
+
+    Sized by the given cells through the data statistics, or by an explicit
+    ``pme_mesh`` in ``kwargs``.
+    """
+    pme_kwargs = {
+        key: kwargs.pop(key)
+        for key in ("pme_mesh", "pme_spacing", "pme_order")
+        if key in kwargs
+    }
+    config = _config(kernel, **kwargs)
+    config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = "pme"
+    config["long_range"].update(pme_kwargs)
+    if boxes is None:
+        config["long_range"].setdefault("pme_mesh", [32, 32, 32])
+    model = get_model(config).to(env.DEVICE).eval()
+    if boxes is not None:
+        boxes_t = torch.as_tensor(np.asarray(boxes, dtype=np.float64).reshape(-1, 9))
+        model.atomic_model.long_range.compute_input_stats([{"box": boxes_t}])
+    return model
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_matches_kspace_reference(kernel: str) -> None:
+    """With fixed charges the PME energy approaches the converged k-space sum."""
+    model = _periodic_pme_model(kernel, constraint=None, pme_mesh=[48, 48, 48])
+    _set_constant_charges(model, [1.0, -0.5])
+    coord, atype, box = _periodic_case()
+    out = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    charge = np.zeros((6, CHANNELS[kernel]))
+    charge[:, 0] = [1.0, -0.5, 1.0, -0.5, -0.5, 1.0]
+    expected = _kspace_reference(coord[0], charge, box[0], kernel)
+    # the PME energy is a mesh approximation of the converged lattice sum
+    np.testing.assert_allclose(out["energy"].item(), expected, atol=1e-2)
+    np.testing.assert_allclose(out["atom_energy"].sum().item(), expected, atol=1e-2)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_force_virial_match_finite_differences(kernel: str) -> None:
+    """Force and strain virial are the exact derivatives of the PME energy."""
+    model = _periodic_pme_model(kernel)
+    coord, atype, box = _periodic_case()
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    out = model(coord_t, atype_t, box=box_t)
+
+    def energy(c: np.ndarray, b: np.ndarray) -> float:
+        return model(_tensor(c), atype_t, box=_tensor(b))["energy"].item()
+
+    h = 1e-5
+    force_fd = np.zeros((6, 3))
+    for i in range(6):
+        for d in range(3):
+            plus, minus = coord.copy(), coord.copy()
+            plus[0, i, d] += h
+            minus[0, i, d] -= h
+            force_fd[i, d] = -(energy(plus, box) - energy(minus, box)) / (2 * h)
+    np.testing.assert_allclose(
+        out["force"][0].detach().cpu().numpy(), force_fd, atol=1e-5
+    )
+
+    # the strain family of the mesh strain leaf: r -> (I + eps) r and
+    # B -> B (I + eps)^T leave the fractional coordinates invariant
+    virial_fd = np.zeros((3, 3))
+    for a in range(3):
+        for b in range(3):
+            strain = np.zeros((3, 3))
+            strain[a, b] = h
+            plus = coord @ (np.eye(3) + strain).T
+            minus = coord @ (np.eye(3) - strain).T
+            box_plus = box @ (np.eye(3) + strain).T
+            box_minus = box @ (np.eye(3) - strain).T
+            virial_fd[a, b] = -(energy(plus, box_plus) - energy(minus, box_minus)) / (
+                2 * h
+            )
+    np.testing.assert_allclose(
+        out["virial"][0].detach().cpu().numpy().reshape(3, 3), virial_fd, atol=1e-4
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_frames_are_independent(kernel: str) -> None:
+    """Each frame's mesh energy is independent of the rest of the batch."""
+    model = _periodic_pme_model(kernel)
+    coord, atype, box = _periodic_case()
+    coord2 = np.concatenate([coord, coord + 0.1], axis=0)
+    atype2 = np.concatenate([atype, atype], axis=0)
+    box2 = np.concatenate([box, box * 1.1], axis=0)
+    batched = model(_tensor(coord2), _tensor(atype2, torch.int64), box=_tensor(box2))
+    for frame in range(2):
+        alone = model(
+            _tensor(coord2[frame : frame + 1]),
+            _tensor(atype2[frame : frame + 1], torch.int64),
+            box=_tensor(box2[frame : frame + 1]),
+        )
+        torch.testing.assert_close(
+            alone["energy"][0], batched["energy"][frame], rtol=1e-10, atol=1e-10
+        )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_serves_non_periodic_batches(kernel: str) -> None:
+    """A PME model keeps its non-periodic pair evaluation."""
+    model = _periodic_pme_model(kernel)
+    plain = _model(kernel)
+    plain.load_state_dict(model.state_dict(), strict=False)
+    coord, atype = _batch()
+    mesh_out = model(coord, atype)
+    plain_out = plain(coord, atype)
+    torch.testing.assert_close(mesh_out["energy"], plain_out["energy"])
+    torch.testing.assert_close(mesh_out["force"], plain_out["force"])
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_needs_statistics_or_bounds(kernel: str) -> None:
+    """Without statistics or an explicit mesh the mesh is not sized."""
+    config = _config(kernel)
+    config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = "pme"
+    model = get_model(config).to(env.DEVICE).eval()
+    coord, atype, box = _periodic_case()
+    with pytest.raises(ValueError, match="not sized yet"):
+        model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    sized = _periodic_pme_model(kernel, box)
+    out = sized(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    # the statistics-sized model evaluates exactly like a model given the
+    # same mesh explicitly
+    mesh = sized.atomic_model.long_range.pme_mesh.tolist()
+    reference = _periodic_pme_model(kernel, pme_mesh=mesh)
+    reference.load_state_dict(sized.state_dict())
+    expected = reference(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    torch.testing.assert_close(out["energy"], expected["energy"])
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_serialization_round_trip(kernel: str) -> None:
+    """The record keeps the pme mode and the sized mesh, and evaluates identically."""
+    from deepmd.dpmodel.model.base_model import BaseModel as BaseModelDP
+
+    coord, atype, box = _periodic_case()
+    model = _periodic_pme_model(kernel, box)
+    record = model.serialize()
+    assert record["long_range"]["k_grid_mode"] == "pme"
+    assert "pme_mesh" in record["long_range"]
+    reference = BaseModelDP.deserialize(record)
+    assert reference.atomic_model.long_range.k_grid_mode == "pme"
+    expected = model(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    ret = reference.call_common(coord, atype, box, neighbor_graph_method="dense")
+    np.testing.assert_allclose(
+        ret["energy_redu"].reshape(-1),
+        expected["energy"].detach().cpu().numpy().reshape(-1),
+        rtol=1e-9,
+        atol=1e-9,
+    )
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+@REQUIRES_SUPPORTED_COMPILE
+def test_periodic_pme_compiled_matches_eager(kernel: str) -> None:
+    """The compiled graph lower evaluates the PME model like the eager one."""
+    model = _periodic_pme_model(kernel)
+    coord, atype, box = _periodic_case()
+    coord_t, atype_t, box_t = (
+        _tensor(coord),
+        _tensor(atype, torch.int64),
+        _tensor(box),
+    )
+    model.train()
+    runner = _CompiledModel(model, _get_model_structure_key(model))
+    runner.train()
+    reference = model.eval()(coord_t, atype_t, box=box_t)
+    model.train()
+    out = runner(coord_t, atype_t, box=box_t)
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(out[key], reference[key], rtol=1e-6, atol=1e-8)
+    # the backward reaches the charge network and the kernel through the
+    # compiled graph
+    loss = out["energy"].square().sum() + out["force"].square().sum()
+    loss.backward()
+    grads = [parameter.grad for parameter in model.atomic_model.long_range.parameters()]
+    assert grads and all(grad is not None for grad in grads)
+    assert all(torch.isfinite(grad).all() for grad in grads)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_periodic_pme_checkpoint_restores_sized_mesh(kernel: str) -> None:
+    """A checkpoint restores the stats-sized mesh through the state dict alone."""
+    coord, atype, box = _periodic_case()
+    trained = _periodic_pme_model(kernel, box)
+    state = trained.state_dict()
+    # a fresh model from the bare config is unsized
+    fresh = _periodic_pme_model(kernel, pme_mesh=None)
+    with pytest.raises(ValueError, match="not sized yet"):
+        fresh(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    fresh.load_state_dict(state)
+    assert fresh.atomic_model.long_range._pme_dims() is not None
+    out = fresh(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    expected = trained(_tensor(coord), _tensor(atype, torch.int64), box=_tensor(box))
+    torch.testing.assert_close(out["energy"], expected["energy"])

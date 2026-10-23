@@ -3705,15 +3705,20 @@ def long_range_latent_charge() -> list[Argument]:
         "wave-number cutoff of the k grid of a periodic batch."
     )
     doc_k_grid_mode = (
-        "How the k grid of a periodic batch is laid out: 'ragged' enumerates "
-        "the wave numbers of every frame eagerly (the k axis is a dynamic "
-        "dimension); 'fixed' shares one integer grid over the frames, sized "
-        "by the largest cell of the data statistics or by `k_grid_bounds`, "
-        "and masks the points a frame does not reach, so the k axis has a "
-        "static length. The fixed grid is hard: a frame needing an index "
-        "beyond it (a larger cell, or a kernel that moved the cutoff out) "
-        "has its k-sum truncated to the grid, with a warning. Requires "
-        "`periodic: true` for 'fixed'."
+        "How the reciprocal sum of a periodic batch is evaluated: 'ragged' "
+        "enumerates the wave numbers of every frame eagerly (the k axis is a "
+        "dynamic dimension); 'fixed' shares one integer grid over the frames, "
+        "sized by the largest cell of the data statistics or by "
+        "`k_grid_bounds`, and masks the points a frame does not reach, so the "
+        "k axis has a static length; 'pme' spreads the charges to a static "
+        "real-space mesh with a B-spline and evaluates the sum by an FFT "
+        "(SPME), sized by the largest cell of the data statistics or by "
+        "`pme_mesh`. The fixed grid is hard: a frame needing an index beyond "
+        "it (a larger cell, or a kernel that moved the cutoff out) has its "
+        "k-sum truncated to the grid, with a warning; on the mesh such a "
+        "frame is evaluated with a coarser effective spacing (a smooth "
+        "accuracy degradation, without a warning). Requires `periodic: true` "
+        "for 'fixed' and 'pme'."
     )
     doc_k_grid_bounds = (
         "The per-axis integer bounds [n1, n2, n3] of the fixed k grid, in "
@@ -3727,6 +3732,16 @@ def long_range_latent_charge() -> list[Argument]:
         "kernel no longer moves the k grid (the kernel values the grid is "
         "evaluated with still follow the live parameters). The frozen cutoff "
         "is serialized with the model. Requires `periodic: true`."
+    )
+    doc_pme_spacing = (
+        "The target real-space mesh spacing of the 'pme' mode, in Angstrom; "
+        "the default is the Nyquist spacing of the kernel's wave-number "
+        "cutoff, pi / k_max."
+    )
+    doc_pme_order = "The B-spline order of the 'pme' charge assignment."
+    doc_pme_mesh = (
+        "The per-axis mesh dimensions [n1, n2, n3] of the 'pme' mode, in "
+        "place of the data statistics."
     )
     return [
         Argument("channels", int, optional=True, default=1, doc=doc_channels),
@@ -3786,6 +3801,27 @@ def long_range_latent_charge() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_decouple_k_grid,
+        ),
+        Argument(
+            "pme_spacing",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_pme_spacing,
+        ),
+        Argument(
+            "pme_order",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_pme_order,
+        ),
+        Argument(
+            "pme_mesh",
+            list[int],
+            optional=True,
+            default=None,
+            doc=doc_pme_mesh,
         ),
     ]
 

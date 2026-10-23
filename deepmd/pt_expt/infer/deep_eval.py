@@ -2555,9 +2555,20 @@ class DeepEval(DeepEvalBackend):
             topology_names = self.metadata.get("topologies", ())
             if topology_names:
                 # Padding slots of a mixed-type batch are no atoms and join
-                # no pair.
+                # no pair. The cell is torch like the coordinates: the
+                # topologies it namespaces feed the torch graph lower
+                # directly (a numpy cell would produce numpy leaves).
                 coord_flat_t = torch.as_tensor(
                     coord_input.reshape(-1, 3), dtype=edge_dtype, device=DEVICE
+                )
+                box_t = (
+                    torch.as_tensor(
+                        np.asarray(box_input).reshape(n_node_t.shape[0], 3, 3),
+                        dtype=edge_dtype,
+                        device=DEVICE,
+                    )
+                    if box_input is not None
+                    else None
                 )
                 if self._dpmodel is not None:
                     # The live model builds its own topologies, so the k-grid
@@ -2565,7 +2576,7 @@ class DeepEval(DeepEvalBackend):
                     topologies = self._dpmodel.atomic_model.build_topologies(
                         coord_flat_t,
                         n_node_t,
-                        box_input,
+                        box_t,
                         atype=atype_t,
                         node_mask=atype_t >= 0,
                         pair_excl=self._model_pair_excl(),
@@ -2573,9 +2584,10 @@ class DeepEval(DeepEvalBackend):
                 else:
                     from deepmd.dpmodel.utils.neighbor_graph import (
                         K_GRID,
+                        PME_MESH,
                     )
 
-                    if K_GRID in topology_names:
+                    if K_GRID in topology_names or PME_MESH in topology_names:
                         raise NotImplementedError(
                             "a periodic long-range model cannot be evaluated from "
                             "a .pt2/.pte archive yet"
@@ -2584,7 +2596,7 @@ class DeepEval(DeepEvalBackend):
                         topology_names,
                         coord_flat_t,
                         n_node_t,
-                        box_input,
+                        box_t,
                         node_mask=atype_t >= 0,
                         atype=atype_t,
                         pair_excl=self._model_pair_excl(),

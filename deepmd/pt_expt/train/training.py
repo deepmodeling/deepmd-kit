@@ -74,6 +74,7 @@ from deepmd.dpmodel.utils.learning_rate import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     KGrid,
+    MeshGrid,
     flatten_topologies,
     unflatten_topologies,
 )
@@ -1735,6 +1736,15 @@ class _CompiledModel(torch.nn.Module):
                     topology.volume,
                     topology.coord.detach().requires_grad_(True),
                     topology.strain.detach().requires_grad_(True),
+                ]
+            elif isinstance(topology, MeshGrid):
+                assert topology.coord is not None and topology.strain is not None
+                topology_vals_list += [
+                    topology.box,
+                    topology.volume,
+                    topology.coord.detach().requires_grad_(True),
+                    topology.strain.detach().requires_grad_(True),
+                    topology.mask,
                 ]
             else:
                 topology_vals_list += [

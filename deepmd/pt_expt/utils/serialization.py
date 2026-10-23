@@ -718,7 +718,9 @@ def build_synthetic_topologies(
     """
     from deepmd.dpmodel.utils.neighbor_graph import (
         K_GRID,
+        PME_MESH,
         KGrid,
+        MeshGrid,
     )
 
     index = (
@@ -738,6 +740,18 @@ def build_synthetic_topologies(
                 volume=torch.ones(nframes, dtype=dtype, device=device),
                 coord=torch.ones(n_node_total, 3, dtype=dtype, device=device),
                 strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
+            )
+        elif name == PME_MESH:
+            if nframes is None:
+                raise ValueError(
+                    f"a {PME_MESH!r} topology sample needs the frame count"
+                )
+            topologies[name] = MeshGrid(
+                box=torch.eye(3, dtype=dtype, device=device).expand(nframes, 3, 3),
+                volume=torch.ones(nframes, dtype=dtype, device=device),
+                coord=torch.ones(n_node_total, 3, dtype=dtype, device=device),
+                strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
+                mask=torch.ones(nframes, dtype=torch.bool, device=device),
             )
         else:
             topologies[name] = PairGraph(
@@ -981,6 +995,16 @@ def _build_graph_dynamic_shapes(
                 {0: npair_dim},
                 {0: nframes_dim},
                 {0: n_node_total_dim},
+                {0: nframes_dim},
+            ]
+        elif name == "pme_mesh":
+            # (box, volume, coord, strain, mask): the frame axis and the node
+            # axis; the mesh axes are static and live on the module.
+            topologies += [
+                {0: nframes_dim},
+                {0: nframes_dim},
+                {0: n_node_total_dim},
+                {0: nframes_dim},
                 {0: nframes_dim},
             ]
         else:
@@ -1961,11 +1985,14 @@ def _trace_and_export_impl(
     # yet; freeze and compress reject such models until they do.
     from deepmd.dpmodel.utils.neighbor_graph import (
         K_GRID,
+        PME_MESH,
     )
 
-    if K_GRID in model.atomic_model.required_topologies():
+    if K_GRID in model.atomic_model.required_topologies() or (
+        PME_MESH in model.atomic_model.required_topologies()
+    ):
         raise NotImplementedError(
-            "a periodic long-range module (the k-grid topology) cannot be "
+            "a periodic long-range module (the k-grid/mesh topology) cannot be "
             "frozen or exported yet; serve it through the Python interface"
         )
     # The vacuum reference is resolved on the export object, folded into the

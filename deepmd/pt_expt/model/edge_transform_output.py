@@ -26,6 +26,7 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     KGrid,
+    MeshGrid,
     NeighborGraph,
     PairGraph,
     edge_force_virial,
@@ -455,7 +456,7 @@ def fit_output_to_model_output_graph(
         coord_leaf = strain_leaf = None
         if topologies:
             for topology in topologies.values():
-                if isinstance(topology, KGrid):
+                if isinstance(topology, (KGrid, MeshGrid)):
                     coord_leaf = topology.coord
                     strain_leaf = topology.strain
         ff_list: list[torch.Tensor] = []

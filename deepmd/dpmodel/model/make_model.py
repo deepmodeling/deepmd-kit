@@ -891,10 +891,11 @@ def make_model(
                 spin=spin,
             )
             if topologies:
-                # The pair vectors and the k-grid geometry are geometry like
-                # the edge vectors.
+                # The pair vectors and the k-grid/mesh geometry are geometry
+                # like the edge vectors.
                 from deepmd.dpmodel.utils.neighbor_graph import (
                     KGrid,
+                    MeshGrid,
                 )
 
                 xp = array_api_compat.array_namespace(edge_vec)
@@ -912,6 +913,18 @@ def make_model(
                                 else xp.astype(topology.coord, edge_vec.dtype)
                             ),
                             strain=topology.strain,
+                        )
+                    elif isinstance(topology, MeshGrid):
+                        cast[name] = MeshGrid(
+                            box=xp.astype(topology.box, edge_vec.dtype),
+                            volume=xp.astype(topology.volume, edge_vec.dtype),
+                            coord=(
+                                None
+                                if topology.coord is None
+                                else xp.astype(topology.coord, edge_vec.dtype)
+                            ),
+                            strain=topology.strain,
+                            mask=topology.mask,
                         )
                     else:
                         cast[name] = PairGraph(

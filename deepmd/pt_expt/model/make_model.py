@@ -22,6 +22,7 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     KGrid,
+    MeshGrid,
     PairGraph,
     compact_nodes,
     expand_node_values,
@@ -763,6 +764,21 @@ def make_model(
                             volume=topology.volume,
                             coord=coord_leaf,
                             strain=strain_leaf,
+                        )
+                    elif isinstance(topology, MeshGrid):
+                        if topology.coord is None or topology.strain is None:
+                            raise ValueError(
+                                "the mesh-grid topology carries no coordinates or strain"
+                            )
+                        # Same re-leaf contract as the k grid (see above).
+                        coord_leaf = topology.coord.detach().requires_grad_(True)
+                        strain_leaf = topology.strain.detach().requires_grad_(True)
+                        re_leafed[name] = MeshGrid(
+                            box=topology.box,
+                            volume=topology.volume,
+                            coord=coord_leaf,
+                            strain=strain_leaf,
+                            mask=topology.mask,
                         )
                     else:
                         re_leafed[name] = PairGraph(

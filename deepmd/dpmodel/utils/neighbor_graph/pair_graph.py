@@ -70,6 +70,17 @@ periodic systems: the reciprocal-space evaluation of the pair kernel needs the
 wave numbers, which the pair topology cannot carry.
 """
 
+PME_MESH = "pme_mesh"
+"""Name of the topology carrying the cells of periodic frames for a mesh evaluation.
+
+A long-range module declares it beside :data:`ALL_PAIRS` when it evaluates the
+reciprocal sum of a smooth kernel on a real-space mesh (SPME): charges spread
+to a static mesh by a B-spline, transformed by an FFT, and convolved with the
+kernel transform. The mesh axes are static and live on the module, so the
+topology holds no ragged axis of its own — only the per-frame cells and the
+geometry leaves.
+"""
+
 
 @dataclass
 class PairGraph:
@@ -119,6 +130,42 @@ class KGrid:
     input of the traced graph — a leaf created INSIDE a ``make_fx`` trace
     produces a NaN gradient under inductor.
     """
+
+
+@dataclass
+class MeshGrid:
+    r"""Cells and geometry of the periodic frames for a mesh (FFT) evaluation.
+
+    The reciprocal sum is evaluated on a static real-space mesh shared by the
+    frames, so the topology carries no ragged axis: the cells (for the
+    reciprocal vectors), the volumes, the geometry leaves, and a per-frame
+    flag telling periodic frames from non-periodic ones (a batch without a
+    cell comes back with an all-false mask). The volume is computed eagerly
+    (as in :class:`KGrid`): the graph lower only rescales it by the strain
+    determinant, which keeps ``linalg.det`` out of the traced graph.
+    """
+
+    box: Array
+    """(nf, 3, 3) float  simulation cells; rows are the lattice vectors."""
+    volume: Array
+    """(nf,) float  the cell volumes, in Å³."""
+    coord: Array | None
+    """(N, 3) float  node positions; the geometry leaf of the mesh energy.
+
+    ``None`` when the grid is reconstructed from flattened inputs (export); a
+    graph lower re-leafs it before the evaluation.
+    """
+    strain: Array | None
+    """(nf, 3, 3) float  zero strain leaf for the mesh virial.
+
+    Same contract as :attr:`KGrid.strain`: the energy is evaluated with the
+    coordinates strained by ``I + strain`` and the cells by
+    ``B' = B (I + strain)^T`` with the lattice vectors as rows, so the
+    fractional coordinates are strain-invariant and the gradient with respect
+    to the leaf is the negative virial.
+    """
+    mask: Array
+    """(nf,) bool  periodic (1) vs non-periodic (0) frames."""
 
 
 def unordered_pair_index(n_node: Array, node_mask: Array | None = None) -> Array:
@@ -433,6 +480,67 @@ def _empty_k_grid(nf: int, like: Array, coord: Array | None) -> KGrid:
     )
 
 
+def _empty_mesh_grid(nf: int, like: Array, coord: Array | None) -> MeshGrid:
+    """A non-periodic mesh grid: every frame masked out, identity cells."""
+    xp = array_api_compat.array_namespace(like)
+    device = array_api_compat.device(like)
+    return MeshGrid(
+        box=xp.tile(xp.eye(3, dtype=like.dtype, device=device), (nf, 1, 1)),
+        volume=xp.ones((nf,), dtype=like.dtype, device=device),
+        coord=coord,
+        strain=xp.zeros((nf, 3, 3), dtype=like.dtype, device=device),
+        mask=xp.zeros((nf,), dtype=xp.bool, device=device),
+    )
+
+
+def build_mesh_grid(
+    box: Array,
+    n_mesh: Array,
+    coord: Array | None = None,
+) -> MeshGrid:
+    r"""Pack the cells of the periodic frames for the mesh (FFT) evaluation.
+
+    The mesh is shared by every frame; a frame whose cell is larger than the
+    mesh was sized for is evaluated with a coarser effective spacing
+    :math:`|a_d|/n_d` than the target — an undersampled kernel spectrum, a
+    well-defined approximation whose forces and virial stay the exact
+    derivatives of that energy. Sizing the mesh (data statistics or
+    ``pme_mesh``) is the caller's responsibility; no warning is issued here.
+
+    Parameters
+    ----------
+    box
+        Simulation cells with shape ``(nf, 3, 3)``; rows are the lattice
+        vectors.
+    n_mesh
+        The per-axis mesh dimensions with shape ``(3,)``.
+    coord
+        Node positions with shape ``(N, 3)``, stored on the grid as the
+        geometry context (see :attr:`MeshGrid.coord`).
+
+    Returns
+    -------
+    MeshGrid
+        The cells and geometry of the frames, every frame flagged periodic.
+    """
+    xp = array_api_compat.array_namespace(box)
+    if box.ndim == 2:
+        box = xp.reshape(box, (box.shape[0], 3, 3))
+    volume = xp.linalg.det(box)
+    volume = xp.abs(volume)
+    return MeshGrid(
+        box=box,
+        volume=xp.astype(volume, box.dtype),
+        coord=coord,
+        strain=xp.zeros(
+            (box.shape[0], 3, 3), dtype=box.dtype, device=array_api_compat.device(box)
+        ),
+        mask=xp.ones(
+            (box.shape[0],), dtype=xp.bool, device=array_api_compat.device(box)
+        ),
+    )
+
+
 def _empty_pair_graph(like: Array, atype: Array) -> PairGraph:
     """A guard-only pair topology for a batch without non-periodic frames."""
     xp = array_api_compat.array_namespace(like)
@@ -534,15 +642,16 @@ def build_topologies(
     ValueError
         If a name is unknown, or the k grid parameters are missing.
     """
-    topologies: dict[str, PairGraph | KGrid] = {}
+    topologies: dict[str, PairGraph | KGrid | MeshGrid] = {}
     for name in names:
         if name == ALL_PAIRS:
             if box is None:
                 topologies[name] = build_pair_graph(
                     coord, n_node, atype, node_mask, pair_excl
                 )
-            elif K_GRID in names:
-                # A periodic-capable module reads the k grid for these frames.
+            elif K_GRID in names or PME_MESH in names:
+                # A periodic-capable module reads the k grid or the mesh for
+                # these frames.
                 topologies[name] = _empty_pair_graph(coord, atype)
             else:
                 check_complete_frames(box)
@@ -568,9 +677,26 @@ def build_topologies(
                     topologies[name] = build_k_grid(
                         box, params["k_max"], n_node, coord=coord
                     )
+        elif name == PME_MESH:
+            if box is None:
+                topologies[name] = _empty_mesh_grid(n_node.shape[0], coord, coord)
+            else:
+                if pair_excl is not None:
+                    raise NotImplementedError(
+                        "the k-space sum of a periodic system is global; "
+                        "`pair_exclude_types` cannot exclude pairs from it"
+                    )
+                params = (topology_params or {}).get(PME_MESH, {})
+                if "n_mesh" not in params:
+                    raise ValueError(
+                        f"the {PME_MESH!r} topology requires its `n_mesh` "
+                        f"build parameter"
+                    )
+                topologies[name] = build_mesh_grid(box, params["n_mesh"], coord=coord)
         else:
             raise ValueError(
-                f"unknown topology {name!r}; expected one of ({ALL_PAIRS!r}, {K_GRID!r})"
+                f"unknown topology {name!r}; expected one of "
+                f"({ALL_PAIRS!r}, {K_GRID!r}, {PME_MESH!r})"
             )
     return topologies
 
@@ -622,7 +748,7 @@ def flatten_topologies(topologies: dict[str, PairGraph | KGrid]) -> tuple[Array,
     )
 
 
-def topology_flat_fields(topology: PairGraph | KGrid) -> tuple[Array, ...]:
+def topology_flat_fields(topology: PairGraph | KGrid | MeshGrid) -> tuple[Array, ...]:
     """The positional tensors of one topology."""
     if isinstance(topology, KGrid):
         if topology.coord is None or topology.strain is None:
@@ -637,6 +763,19 @@ def topology_flat_fields(topology: PairGraph | KGrid) -> tuple[Array, ...]:
             topology.volume,
             topology.coord,
             topology.strain,
+        )
+    if isinstance(topology, MeshGrid):
+        if topology.coord is None or topology.strain is None:
+            raise ValueError(
+                "a mesh grid carries no coordinates or strain; it cannot be laid "
+                "out positionally"
+            )
+        return (
+            topology.box,
+            topology.volume,
+            topology.coord,
+            topology.strain,
+            topology.mask,
         )
     return (topology.index, topology.vec, topology.mask)
 
@@ -663,8 +802,8 @@ def unflatten_topologies(
     ValueError
         If the number of values does not match the layout of the names.
     """
-    arity = {ALL_PAIRS: 3, K_GRID: 6}
-    topologies: dict[str, PairGraph | KGrid] = {}
+    arity = {ALL_PAIRS: 3, K_GRID: 6, PME_MESH: 5}
+    topologies: dict[str, PairGraph | KGrid | MeshGrid] = {}
     offset = 0
     for name in names:
         if name not in arity:
@@ -677,8 +816,10 @@ def unflatten_topologies(
             )
         if name == ALL_PAIRS:
             topologies[name] = PairGraph(*fields)
-        else:
+        elif name == K_GRID:
             topologies[name] = KGrid(*fields)
+        else:
+            topologies[name] = MeshGrid(*fields)
         offset += arity[name]
     if offset != len(values):
         raise ValueError(
