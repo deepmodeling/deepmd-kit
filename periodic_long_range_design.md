@@ -214,6 +214,10 @@ def build_k_grid(box, alpha=None, sigma0=None, eps=1e-8):
   $n_d = \lceil |a_d|/h \rceil$ 并上取 FFT 光滑数（2·3·5·7），或 `pme_mesh`
   显式跳过统计；随模型序列化。大 cell 超出统计 → 有效间距变粗（平滑的精度退化，
   力/位力仍是该近似能量的精确导数，不发 warning——网格尺寸是用户的显式责任）。代价 $O(N p^3 C + M\log M)$ 近线性，无相位矩阵显存墙。
+  性能实现（profile 驱动）：$|k|^2$ 走度规二次型 $(2\pi)^2 m^\mathsf{T}W m$
+  （6 个静态单项式 × 6 个逐帧系数，全 elementwise），**不构造 k 矢量**——
+  batched 3×3 GEMM 曾占训练步 56%；FFT 用 rfftn 半谱（$m_3 \ge 0$，内部面加倍
+  权重 ×2、$m_3=0$ 与 Nyquist 面 ×1）；f64 下 40³ 网格前向 34→6ms。
   拓扑 `PME_MESH` 无 ragged 轴，flatten 为 `(box, volume, coord, strain, mask)`
   （arity 5，volume 同 KGrid 一样 eager 计算）；应变族与直接求和相同（分数坐标
   应变不变，撒点不带应变；$k'=S^{-T}k$、$V'=V\det S$——strain leaf 的

@@ -696,18 +696,17 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         )
         return e_rec + e_self
 
-    def _pme_b_factor(self, xp: Any, dtype: Any, device: Any) -> Array:
-        r"""The SPME assignment correction :math:`|B(m)|^2` on the mesh.
+    def _pme_b_factor(self, xp: Any, dtype: Any, device: Any, m_axes: list) -> Array:
+        r"""The SPME assignment correction :math:`|B(m)|^2` on the mesh modes.
 
         Per axis :math:`|D_d(m)|^2 = |\sum_l M_p(l+1) e^{2\pi i m l / n_d}|^2`
         (equal to :math:`\mathrm{sinc}(m/n_d)^{2p}`), the full factor the
-        three-axis outer product, in the ``fftfreq`` index order.
+        three-axis outer product. ``m_axes`` holds the integer mode values of
+        each axis (the third axis carries only the non-negative rfft modes).
         """
         w = _bspline_integer_weights(self.pme_order)
         axes = []
-        for n_d in self._pme_dims():
-            m = xp.arange(n_d, dtype=dtype, device=device)
-            m = xp.where(m > n_d // 2, m - n_d, m)
+        for m, n_d in zip(m_axes, self._pme_dims(), strict=True):
             theta = 2.0 * math.pi * m / n_d
             re = xp.zeros_like(theta)
             im = xp.zeros_like(theta)
@@ -730,14 +729,21 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
 
         Evaluates the same lattice sum as :meth:`_kspace_branch` by the SPME
         algorithm: the charges spread to a static real-space mesh with a
-        B-spline of order :attr:`pme_order`, the mesh transforms by an FFT,
-        and the energy convolves with the kernel transform corrected by the
-        assignment factor (:meth:`_pme_b_factor`). The strain leaf enters the
-        coordinates by ``I + strain`` and the cells by
-        ``B (I + strain)^T`` — the fractional coordinates are strain-
-        invariant, so the assignment is unstrained and the virial comes from
-        the reciprocal vectors and the volume alone. Non-periodic frames
-        (``mesh.mask`` false) carry no mesh energy and no self term.
+        B-spline of order :attr:`pme_order`, the mesh transforms by a
+        real-input FFT (only the non-negative :math:`m_3` half-spectrum), and
+        the energy convolves with the kernel transform corrected by the
+        assignment factor (:meth:`_pme_b_factor`) and the hermitian doubling
+        weight of the interior :math:`m_3` planes. No wave-number vector is
+        ever formed: the kernel reads :math:`|k|^2 = (2\pi)^2 m^\mathsf{T} W m`
+        with the per-frame metric :math:`W = (B^{-1})^\mathsf{T} B^{-1}` —
+        six static monomials of the mode indices times six per-frame metric
+        entries, all elementwise. The strain leaf enters the metric by
+        :math:`W' = A^\mathsf{T} A` with :math:`A = S^{-\mathsf{T}} B^{-1}`
+        (:math:`S = I +` strain) and the volume by :math:`\det S` — the
+        fractional coordinates are strain-invariant, so the assignment is
+        unstrained and the virial comes from the metric and the volume alone.
+        Non-periodic frames (``mesh.mask`` false) carry no mesh energy and no
+        self term.
         """
         xp = array_api_compat.array_namespace(charge)
         device = array_api_compat.device(charge)
@@ -751,8 +757,9 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         volume = xp.astype(mesh.volume, charge.dtype)
         b_inv = _inv3(xp, box)  # (nf, 3, 3); columns are g_d / 2pi
         b_inv_node = xp.take(b_inv, frame_id, axis=0)  # (N, 3, 3)
-        # fractional coordinates, wrapped to [0, 1): frac = r B^-1
-        frac = xp.matmul(coord[:, None, :], b_inv_node)[:, 0, :]
+        # fractional coordinates, wrapped to [0, 1): frac_d = sum_j r_j B^-1_jd
+        # (elementwise; a batched 3x3 GEMV is the worst GEMM shape on GPU)
+        frac = xp.sum(coord[:, :, None] * b_inv_node, axis=1)
         frac = frac - xp.floor(frac)
         # per-axis assignment: weights (N, p) and mesh indices (N, p)
         weights = []
@@ -792,45 +799,70 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
                 q_mesh, xp.reshape(target, (-1,)), xp.reshape(value, (-1,))
             )
         q_mesh = xp.reshape(q_mesh, (nf * n_channel, n1, n2, n3))
-        rho = xp.fft.fftn(q_mesh, axes=(-3, -2, -1))
+        # the charge mesh is real: only the non-negative m3 half-spectrum is
+        # transformed and summed (with the doubling weight below)
+        rho = xp.fft.rfftn(q_mesh, axes=(-3, -2, -1))
         rho_sq = xp.real(rho) ** 2 + xp.imag(rho) ** 2
-        rho_sq = xp.reshape(rho_sq, (nf, n_channel, m_total))
-        # the reciprocal vectors of every frame on the mesh: mode m is the
-        # integer Miller index, k(m) = 2 pi B^-1 m
-        h_axes = []
-        for n_d in (n1, n2, n3):
-            m = xp.arange(n_d, dtype=charge.dtype, device=device)
-            m = xp.where(m > n_d // 2, m - n_d, m)
-            h_axes.append(m)
-        g1, g2, g3 = xp.meshgrid(*h_axes, indexing="ij")
-        h = xp.stack(
-            [xp.reshape(g1, (-1,)), xp.reshape(g2, (-1,)), xp.reshape(g3, (-1,))],
-            axis=-1,
-        )  # (M, 3)
-        k_vec = 2.0 * math.pi * xp.matmul(h[None, :, :], xp.matrix_transpose(b_inv))
+        m_half = n1 * n2 * (n3 // 2 + 1)
+        rho_sq = xp.reshape(rho_sq, (nf, n_channel, m_half))
+        # the reciprocal-lattice metric: |k|^2 = (2 pi)^2 m^T W m with
+        # W = (B^-1)^T B^-1; the strain folds in through A = S^-T B^-1 (the
+        # linalg inverse of S keeps its registered backward, safe under a
+        # symbolic frame count)
         if mesh.strain is not None:
-            # The strain family of the virial: B' = B S^T with S = I + strain.
-            # The fractional coordinates are exactly strain-invariant, so the
-            # assignment above needs no strain; the reciprocal vectors and the
-            # volume pick it up: k' = S^-T k, V' = V det(S). The 3x3 inverse
-            # and determinant stay on linalg — its registered backward handles
-            # a symbolic frame count, unlike hand-written select/cross forms.
             eye = xp.eye(3, dtype=charge.dtype, device=device)
             s = xp.astype(mesh.strain, charge.dtype) + eye  # (nf, 3, 3)
             s_inv = xp.linalg.inv(s)
-            # rows: k'_i = sum_j k_j (S^-1)[j, i]
-            k_vec = xp.matmul(k_vec, s_inv)
+            a = xp.matmul(xp.matrix_transpose(s_inv), b_inv)
+            w_metric = xp.matmul(xp.matrix_transpose(a), a)
             volume = volume * xp.linalg.det(s)
-        k_sq = xp.reshape(xp.sum(k_vec * k_vec, axis=-1), (-1,))  # (nf * M,)
+        else:
+            w_metric = xp.matmul(xp.matrix_transpose(b_inv), b_inv)
+        # static integer mode grids: full fftfreq order on axes 1, 2; the rfft
+        # axis keeps m3 = 0 .. n3//2
+        m_axes = []
+        for d, n_d in enumerate((n1, n2, n3)):
+            m = xp.arange(n_d, dtype=charge.dtype, device=device)
+            if d == 2:
+                m = m[: n_d // 2 + 1]
+            else:
+                m = xp.where(m > n_d // 2, m - n_d, m)
+            m_axes.append(m)
+        g1, g2, g3 = xp.meshgrid(*m_axes, indexing="ij")
+        m1f = xp.reshape(g1, (-1,))
+        m2f = xp.reshape(g2, (-1,))
+        m3f = xp.reshape(g3, (-1,))
+        # six static monomials x six per-frame metric entries, no GEMM
+        two_pi_sq = (2.0 * math.pi) ** 2
+        k_sq = two_pi_sq * (
+            w_metric[:, 0, 0][:, None] * (m1f * m1f)[None, :]
+            + w_metric[:, 1, 1][:, None] * (m2f * m2f)[None, :]
+            + w_metric[:, 2, 2][:, None] * (m3f * m3f)[None, :]
+            + 2.0 * w_metric[:, 0, 1][:, None] * (m1f * m2f)[None, :]
+            + 2.0 * w_metric[:, 0, 2][:, None] * (m1f * m3f)[None, :]
+            + 2.0 * w_metric[:, 1, 2][:, None] * (m2f * m3f)[None, :]
+        )  # (nf, m_half)
         # the zero mode sits at flat index 0; guard the singular kernel there
         safe = xp.where(k_sq == 0.0, xp.ones_like(k_sq), k_sq)
-        influence = xp.reshape(self.kernel.kspace(safe), (nf, m_total))
-        influence = influence * self._pme_b_factor(xp, charge.dtype, device)[None, :]
+        influence = xp.reshape(
+            self.kernel.kspace(xp.reshape(safe, (-1,))), (nf, m_half)
+        )
+        influence = (
+            influence * self._pme_b_factor(xp, charge.dtype, device, m_axes)[None, :]
+        )
+        # the spectrum of a real mesh is hermitian: interior m3 planes count
+        # twice, the m3 = 0 and Nyquist planes once
+        w_rfft = xp.where(
+            (m3f > 0) & (m3f < n3 / 2.0),
+            2.0 * xp.ones_like(m3f),
+            xp.ones_like(m3f),
+        )
+        influence = influence * w_rfft[None, :]
         # the zero mode sits at flat index 0 (tin-foil); keep everything else
         keep = xp.concat(
             [
                 xp.zeros((1,), dtype=xp.bool, device=device),
-                xp.ones((m_total - 1,), dtype=xp.bool, device=device),
+                xp.ones((m_half - 1,), dtype=xp.bool, device=device),
             ]
         )
         influence = xp.where(keep[None, :], influence, xp.zeros_like(influence))
