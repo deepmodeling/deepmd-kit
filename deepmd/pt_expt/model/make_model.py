@@ -21,8 +21,9 @@ from deepmd.dpmodel.output_def import (
     OutputVariableDef,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    KGrid,
+    MeshGrid,
     PairGraph,
-    build_topologies,
     compact_nodes,
     expand_node_values,
     flatten_topologies,
@@ -452,8 +453,7 @@ class _WrapperForwardEnergyGraph:
         )
         # The topologies follow the same coordinates, so the Hessian holds
         # every geometry path of the energy and the blocks coupling them.
-        topologies = build_topologies(
-            self.model.atomic_model.required_topologies(),
+        topologies = self.model.atomic_model.build_topologies(
             coord_flat.reshape(self.nloc, 3),
             ng.n_node,
             self.box,
@@ -789,14 +789,50 @@ def make_model(
                     )
                 check_owned_frames(n_node, n_local)
                 # Every topology carries a geometry leaf of its own.
-                topologies = {
-                    name: PairGraph(
-                        index=pairs.index,
-                        vec=pairs.vec.detach().requires_grad_(True),
-                        mask=pairs.mask,
-                    )
-                    for name, pairs in topologies.items()
-                }
+                re_leafed: dict[str, Any] = {}
+                for name, topology in topologies.items():
+                    if isinstance(topology, KGrid):
+                        if topology.coord is None or topology.strain is None:
+                            raise ValueError(
+                                "the k-grid topology carries no coordinates or strain"
+                            )
+                        # The positions are the geometry leaf of the k-space
+                        # energy; the zero strain leaf turns its gradient into
+                        # the k-space virial (see KGrid.strain). Both re-leaf
+                        # here so the backward roots at graph INPUTS — a leaf
+                        # created inside the trace is NaN under inductor.
+                        coord_leaf = topology.coord.detach().requires_grad_(True)
+                        strain_leaf = topology.strain.detach().requires_grad_(True)
+                        re_leafed[name] = KGrid(
+                            frame=topology.frame,
+                            vec=topology.vec,
+                            mask=topology.mask,
+                            volume=topology.volume,
+                            coord=coord_leaf,
+                            strain=strain_leaf,
+                        )
+                    elif isinstance(topology, MeshGrid):
+                        if topology.coord is None or topology.strain is None:
+                            raise ValueError(
+                                "the mesh-grid topology carries no coordinates or strain"
+                            )
+                        # Same re-leaf contract as the k grid (see above).
+                        coord_leaf = topology.coord.detach().requires_grad_(True)
+                        strain_leaf = topology.strain.detach().requires_grad_(True)
+                        re_leafed[name] = MeshGrid(
+                            box=topology.box,
+                            volume=topology.volume,
+                            coord=coord_leaf,
+                            strain=strain_leaf,
+                            mask=topology.mask,
+                        )
+                    else:
+                        re_leafed[name] = PairGraph(
+                            index=topology.index,
+                            vec=topology.vec.detach().requires_grad_(True),
+                            mask=topology.mask,
+                        )
+                topologies = re_leafed
             if spin is not None:
                 # second autograd leaf: force_mag = -dE/dspin (native spin).
                 # Deliberately a SEPARATE leaf/backward from edge_vec rather
@@ -989,8 +1025,7 @@ def make_model(
                 self.get_rcut(),
                 pair_excl,
             )
-            topologies = build_topologies(
-                self.atomic_model.required_topologies(),
+            topologies = self.atomic_model.build_topologies(
                 coord.detach(),
                 graph.n_node,
                 box,
@@ -1119,8 +1154,7 @@ def make_model(
             spin_flat = (
                 spin.reshape(n_padded, 3)[node_index] if spin is not None else None
             )
-            topologies = build_topologies(
-                self.atomic_model.required_topologies(),
+            topologies = self.atomic_model.build_topologies(
                 cc.detach().reshape(n_padded, 3)[node_index],
                 ng.n_node,
                 bb,

@@ -13,14 +13,17 @@ from deepmd.dpmodel.fitting.latent_charge import (
     LatentChargeFitting,
 )
 from deepmd.dpmodel.long_range import (
+    COULOMB_CONSTANT,
     BaseInteractionKernel,
     LatentChargeLongRange,
     LESKernel,
     SOGKernel,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    build_k_grid,
     build_pair_graph,
     build_topologies,
+    enumerate_k_grid_bounds,
     pair_force_virial,
     unordered_pair_index,
 )
@@ -199,3 +202,563 @@ def test_long_range_round_trip() -> None:
     assert restored.serialize()["charge_constraint"] == record["charge_constraint"]
     assert restored.required_topologies() == ("all_pairs",)
     assert not restored.uses_charge_spin()
+
+
+# ---------------------------------------------------------------------------
+# Periodic (k-space) primitives
+# ---------------------------------------------------------------------------
+
+
+def _spherical_ft(
+    kernel: str, k: float, n_r: int = 20000, r_max: float = 60.0
+) -> float:
+    """Isotropic Fourier transform of the kernel by direct radial quadrature."""
+    r = np.linspace(1e-9, r_max, n_r)
+    if kernel == "les":
+        k_r = erf(0.8 * r) / r
+    else:
+        amplitude = np.array([0.7, -0.2, 0.1])
+        width = np.array([0.8, 1.7, 3.2])
+        k_r = np.sum(
+            amplitude[None, :] * np.exp(-(r[:, None] ** 2) / (2 * width**2)), -1
+        )
+    return float(np.trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(k * r / np.pi), r))
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_kernel_kspace_matches_radial_ft(kernel: str) -> None:
+    """``kernel.kspace`` is the analytic Fourier transform of the real-space kernel."""
+    k_sq = np.array([0.5, 1.0, 2.0, 5.0]) ** 2
+    if kernel == "les":
+        mod = LESKernel(alpha=0.8)
+    else:
+        mod = SOGKernel(amplitude=[0.7, -0.2, 0.1], width=[0.8, 1.7, 3.2])
+    got = mod.kspace(k_sq)
+    for kk, value in zip(np.sqrt(k_sq), got, strict=True):
+        if kernel == "les":
+            # erf(alpha r)/r is not integrable; quadrature of the integrable
+            # complement erfc(alpha r)/r = 1/r - erf(alpha r)/r converges, and
+            # K_hat(k) = 4 pi / k^2 - FT(erfc(alpha r)/r).
+            r = np.linspace(1e-9, 60.0, 20000)
+            k_r = (1.0 - erf(0.8 * r)) / r  # erfc(0.8 r)/r
+            expected = 4.0 * np.pi / kk**2 - float(
+                np.trapezoid(4.0 * np.pi * r**2 * k_r * np.sinc(kk * r / np.pi), r)
+            )
+        else:
+            expected = _spherical_ft(kernel, kk)
+        np.testing.assert_allclose(value, expected, rtol=1e-3, atol=1e-5)
+
+
+@pytest.mark.parametrize("kernel", ["les", "sog"])
+def test_kernel_contact_value_matches_real_space_limit(kernel: str) -> None:
+    """``kernel.contact_value`` is K(r) at contact."""
+    if kernel == "les":
+        mod = LESKernel(alpha=0.8)
+    else:
+        mod = SOGKernel(amplitude=[0.7, -0.2, 0.1], width=[0.8, 1.7, 3.2])
+    r_sq = np.array([1e-12])
+    np.testing.assert_allclose(
+        mod.contact_value(r_sq), mod(r_sq)[0], rtol=1e-6, atol=1e-9
+    )
+
+
+def test_build_k_grid_orthogonality_and_guards() -> None:
+    """The k points satisfy k . a_d = 2 pi n_d, are ordered and carry guards."""
+    box = np.array([[8.0, 0.6, 0.0], [0.0, 7.5, 0.4], [0.0, 0.0, 9.0]])[None]
+    grid = build_k_grid(box, 2.0, np.array([4]), coord=np.zeros((4, 3)))
+    # guard points are two masked (1e-6, 0, 0) entries
+    assert grid.mask[-2:].tolist() == [False, False]
+    assert grid.mask[:-2].all()
+    n_integer = grid.vec[:-2] @ box[0].T / (2 * np.pi)
+    np.testing.assert_allclose(n_integer, np.round(n_integer), atol=1e-10)
+    k_sq = np.sum(grid.vec[:-2] ** 2, axis=-1)
+    assert (k_sq > 0).all() and (k_sq <= 4.0 + 1e-12).all()
+    np.testing.assert_allclose(grid.volume, np.abs(np.linalg.det(box[0])))
+    # every integer point inside the sphere is present exactly once
+    ns = np.round(n_integer).astype(int)
+    assert len({tuple(row) for row in ns}) == ns.shape[0]
+    rec = 2 * np.pi * np.linalg.inv(box[0])
+    n_d = np.ceil(2.0 * np.linalg.norm(box[0], axis=1) / (2 * np.pi)).astype(int)
+    count = 0
+    for n0 in range(-n_d[0], n_d[0] + 1):
+        for n1 in range(-n_d[1], n_d[1] + 1):
+            for n2 in range(-n_d[2], n_d[2] + 1):
+                if (n0, n1, n2) != (0, 0, 0):
+                    k = rec @ np.array([n0, n1, n2], dtype=float)
+                    count += int(np.sum(k * k) <= 4.0)
+    assert count == ns.shape[0]
+
+
+def test_build_topologies_periodic_branching() -> None:
+    """A cell switches the pair topology to guards and the k grid on, and back."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        ALL_PAIRS,
+        K_GRID,
+    )
+
+    coord = np.random.default_rng(1).normal(size=(4, 3))
+    atype = np.array([0, 1, 1, 0])
+    n_node = np.array([4])
+    box = np.eye(3)[None] * 10.0
+    names = (ALL_PAIRS, K_GRID)
+    params = {K_GRID: {"k_max": 2.0}}
+    with_box = build_topologies(
+        names, coord, n_node, box, atype=atype, topology_params=params
+    )
+    assert with_box[ALL_PAIRS].index.shape[1] == 2  # guards only
+    assert not with_box[ALL_PAIRS].mask.any()
+    assert with_box[K_GRID].mask.sum() > 0
+    without_box = build_topologies(
+        names, coord, n_node, None, atype=atype, topology_params=params
+    )
+    assert without_box[ALL_PAIRS].mask.any()
+    assert not without_box[K_GRID].mask.any()  # guards only
+    # a pair-only declaration still rejects a cell loudly
+    with pytest.raises(NotImplementedError, match="non-periodic"):
+        build_topologies((ALL_PAIRS,), coord, n_node, box, atype=atype)
+    # the k grid needs its build parameter
+    with pytest.raises(ValueError, match="k_max"):
+        build_topologies(names, coord, n_node, box, atype=atype)
+
+
+# ---------------------------------------------------------------------------
+# Fixed k-grid mode
+# ---------------------------------------------------------------------------
+
+
+def _periodic_long_range(**kwargs: object) -> LatentChargeLongRange:
+    charge_net = LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1)
+    return LatentChargeLongRange(
+        charge_net, LESKernel(alpha=0.3), None, periodic=True, **kwargs
+    )
+
+
+def _cells() -> np.ndarray:
+    """Two cells of different sizes, the second the larger one."""
+    return np.array(
+        [
+            [[8.0, 0.6, 0.0], [0.0, 7.5, 0.4], [0.0, 0.0, 9.0]],
+            [[12.0, 0.5, 0.0], [0.2, 11.0, 0.3], [0.1, 0.4, 10.5]],
+        ]
+    )
+
+
+def test_enumerate_k_grid_bounds() -> None:
+    """The grid is the lexicographic meshgrid of the bounds, without the zero vector."""
+    n_grid = enumerate_k_grid_bounds([2, 1, 0])
+    assert n_grid.shape == (5 * 3 * 1 - 1, 3)
+    assert not np.any(np.all(n_grid == 0, axis=-1))
+    expected = [
+        (n0, n1, 0) for n0 in range(-2, 3) for n1 in range(-1, 2) if (n0, n1) != (0, 0)
+    ]
+    np.testing.assert_array_equal(n_grid, np.asarray(expected, dtype=np.int64))
+    with pytest.raises(ValueError, match="bounds"):
+        enumerate_k_grid_bounds([1, -1, 0])
+
+
+def test_fixed_k_grid_matches_ragged_enumeration() -> None:
+    """The masked points of the fixed grid are exactly the ragged k points."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_fixed_k_grid,
+        enumerate_k_grid_bounds,
+        k_grid_bounds_of_cells,
+    )
+
+    box = _cells()
+    k_max = 2.0
+    n_grid = enumerate_k_grid_bounds(np.max(k_grid_bounds_of_cells(box, k_max), axis=0))
+    nk = n_grid.shape[0]
+    fixed = build_fixed_k_grid(box, n_grid, k_max, np.array([4, 5]))
+    # a static, guard-free layout: nf * nk points, frame-major
+    assert fixed.vec.shape == (2 * nk, 3)
+    np.testing.assert_array_equal(fixed.frame, np.repeat([0, 1], nk))
+    ragged = build_k_grid(box, k_max, np.array([4, 5]))
+    for frame in range(2):
+        expected = {
+            tuple(row)
+            for row in np.round(ragged.vec[(ragged.frame == frame) & ragged.mask], 8)
+        }
+        got = {
+            tuple(row)
+            for row in np.round(fixed.vec[(fixed.frame == frame) & fixed.mask], 8)
+        }
+        assert got == expected
+    # the smaller cell masks more points of the shared grid
+    assert fixed.mask[:nk].sum() < fixed.mask[nk:].sum()
+    np.testing.assert_allclose(fixed.volume, np.abs(np.linalg.det(box)), rtol=1e-12)
+
+
+def test_fixed_k_grid_truncates_oversized_cells() -> None:
+    """A cell beyond the grid is served by the grid alone (truncated k-sum), with a warning."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_fixed_k_grid,
+        enumerate_k_grid_bounds,
+        k_grid_bounds_of_cells,
+    )
+
+    box = _cells()
+    k_max = 2.0
+    n_grid = enumerate_k_grid_bounds(np.max(k_grid_bounds_of_cells(box, k_max), axis=0))
+    nk = n_grid.shape[0]
+    with pytest.warns(UserWarning, match="truncated"):
+        bigger = build_fixed_k_grid(box * 2.0, n_grid, k_max, np.array([4, 5]))
+    # the layout is untouched: static, guard-free, every grid point present
+    assert bigger.vec.shape == (2 * nk, 3)
+    np.testing.assert_array_equal(bigger.frame, np.repeat([0, 1], nk))
+    # every grid point is still a valid wave number of the larger cell; the
+    # mask keeps the whole k_max sphere the grid reaches
+    k2 = np.sum(bigger.vec**2, axis=-1)
+    np.testing.assert_array_equal(bigger.mask, (k2 > 0) & (k2 <= k_max * k_max))
+    # the larger cell activates more of the shared grid than the original did
+    original = build_fixed_k_grid(box, n_grid, k_max, np.array([4, 5]))
+    assert bigger.mask.sum() > original.mask.sum()
+    # a larger wave-number cutoff (a drifting kernel) truncates the same way
+    with pytest.warns(UserWarning, match="truncated"):
+        build_fixed_k_grid(box, n_grid, k_max * 2.0, np.array([4, 5]))
+
+
+def test_fixed_k_grid_mode_configuration() -> None:
+    """The fixed mode requires periodicity, and the bounds the fixed mode."""
+    with pytest.raises(ValueError, match="k_grid_mode"):
+        _periodic_long_range(k_grid_mode="dense")
+    with pytest.raises(ValueError, match="periodic"):
+        LatentChargeLongRange(
+            LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+            LESKernel(),
+            None,
+            k_grid_mode="fixed",
+        )
+    with pytest.raises(ValueError, match="k_grid_bounds"):
+        _periodic_long_range(k_grid_bounds=[3, 3, 3])
+    # explicit bounds build the grid at construction, no statistics needed
+    long_range = _periodic_long_range(k_grid_mode="fixed", k_grid_bounds=[2, 2, 2])
+    assert long_range.k_grid_n.shape == (5**3 - 1, 3)
+
+
+def test_fixed_k_grid_stats_size_the_grid() -> None:
+    """The data statistics size the grid by the largest sampled cell."""
+    long_range = _periodic_long_range(k_grid_mode="fixed")
+    # the grid is not sized before the statistics run
+    coord = np.zeros((9, 3))
+    with pytest.raises(ValueError, match="not sized yet"):
+        long_range.build_topologies(
+            coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+        )
+    long_range.compute_input_stats(
+        [{"box": _cells()[:1].reshape(1, 9)}, {"box": _cells()}]
+    )
+    k_max = long_range.kernel.kspace_cutoff(long_range.kspace_tolerance)
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        k_grid_bounds_of_cells,
+    )
+
+    expected = np.max(k_grid_bounds_of_cells(_cells(), k_max), axis=0)
+    np.testing.assert_array_equal(np.max(np.abs(long_range.k_grid_n), axis=0), expected)
+    topologies = long_range.build_topologies(
+        coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+    )
+    assert topologies["k_grid"].vec.shape == (2 * long_range.k_grid_n.shape[0], 3)
+    # statistics without a cell cannot size the grid
+    unsized = _periodic_long_range(k_grid_mode="fixed")
+    with pytest.raises(ValueError, match="no simulation cell"):
+        unsized.compute_input_stats([{"coord": np.zeros((1, 3))}])
+
+
+def test_fixed_k_grid_round_trip() -> None:
+    """The record keeps the grid mode and the sized grid."""
+    long_range = _periodic_long_range(k_grid_mode="fixed")
+    long_range.compute_input_stats([{"box": _cells()}])
+    record = long_range.serialize()
+    assert record["k_grid_mode"] == "fixed"
+    restored = LatentChargeLongRange.deserialize(record)
+    assert restored.k_grid_mode == "fixed"
+    np.testing.assert_array_equal(restored.k_grid_n, long_range.k_grid_n)
+    # the default mode serializes no grid fields
+    plain = LatentChargeLongRange.deserialize(_periodic_long_range().serialize())
+    assert plain.k_grid_mode == "ragged"
+    assert plain.k_grid_n is None
+
+
+# ---------------------------------------------------------------------------
+# Decoupled k grid
+# ---------------------------------------------------------------------------
+
+
+def test_decoupled_k_grid_requires_periodic() -> None:
+    """Decoupling is only meaningful for a periodic module."""
+    with pytest.raises(ValueError, match="decouple_k_grid"):
+        LatentChargeLongRange(
+            LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+            LESKernel(),
+            None,
+            decouple_k_grid=True,
+        )
+
+
+def test_decoupled_k_grid_ignores_kernel_drift() -> None:
+    """A decoupled grid keeps the k points of the initial kernel however the
+    kernel parameters move; a coupled one re-derives them every batch.
+    """
+    coord = np.random.default_rng(3).normal(size=(5, 3))
+    atype = np.zeros(5, dtype=np.int64)
+    n_node = np.array([5])
+    box = np.eye(3)[None] * 8.0
+
+    decoupled = _periodic_long_range(decouple_k_grid=True)
+    coupled = _periodic_long_range()
+    # the frozen cutoff is the cutoff of the initial kernel
+    assert decoupled.frozen_k_max == pytest.approx(
+        LESKernel(alpha=0.3).kspace_cutoff(1e-8)
+    )
+    initial = decoupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    reference = coupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    np.testing.assert_array_equal(initial.vec, reference.vec)
+    # a larger alpha moves the cutoff out, growing the coupled grid
+    for module in (decoupled, coupled):
+        module.kernel.log_alpha = np.log(1.5)
+    drifted = decoupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    moved = coupled.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    np.testing.assert_array_equal(drifted.vec, initial.vec)
+    np.testing.assert_array_equal(drifted.mask, initial.mask)
+    assert moved.vec.shape[0] > initial.vec.shape[0]
+
+
+def test_decoupled_fixed_grid_keeps_its_mask() -> None:
+    """The mask of a decoupled fixed grid ignores the kernel drift."""
+    coord = np.zeros((5, 3))
+    atype = np.zeros(5, dtype=np.int64)
+    n_node = np.array([5])
+    box = np.eye(3)[None] * 8.0
+
+    long_range = _periodic_long_range(
+        k_grid_mode="fixed", k_grid_bounds=[5, 5, 5], decouple_k_grid=True
+    )
+    before = long_range.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    # a smaller alpha moves the cutoff in; a coupled mask would tighten
+    long_range.kernel.log_alpha = np.log(0.05)
+    after = long_range.build_topologies(coord, n_node, box, atype=atype)["k_grid"]
+    np.testing.assert_array_equal(after.mask, before.mask)
+    np.testing.assert_array_equal(after.vec, before.vec)
+
+
+def test_decoupled_k_grid_round_trip() -> None:
+    """The frozen cutoff survives serialization, past the kernel drift."""
+    long_range = _periodic_long_range(decouple_k_grid=True)
+    frozen = long_range.frozen_k_max
+    long_range.kernel.log_alpha = np.log(1.5)
+    record = long_range.serialize()
+    assert record["decouple_k_grid"] is True
+    assert record["frozen_k_max"] == pytest.approx(frozen)
+    restored = LatentChargeLongRange.deserialize(record)
+    assert restored.decouple_k_grid
+    assert restored.frozen_k_max == pytest.approx(frozen)
+    # ...even though the restored (drifted) kernel would derive a different one
+    assert restored.kernel.kspace_cutoff(1e-8) != pytest.approx(frozen)
+    # the default stays coupled and serializes nothing
+    plain = LatentChargeLongRange.deserialize(_periodic_long_range().serialize())
+    assert not plain.decouple_k_grid
+    assert plain.frozen_k_max is None
+
+
+# ---------------------------------------------------------------------------
+# PME mesh mode
+# ---------------------------------------------------------------------------
+
+
+def _pme_long_range(**kwargs: object) -> LatentChargeLongRange:
+    kwargs.setdefault("k_grid_mode", "pme")
+    return _periodic_long_range(**kwargs)
+
+
+def test_pme_mesh_grid_build_and_flatten() -> None:
+    """The mesh grid packs the cells, flags the frames, and flattens to 4 tensors."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        PME_MESH,
+        build_topologies,
+        flatten_topologies,
+        unflatten_topologies,
+    )
+
+    coord = np.random.default_rng(1).normal(size=(4, 3))
+    atype = np.array([0, 1, 1, 0])
+    box = _cells()
+    params = {PME_MESH: {"n_mesh": np.array([16, 16, 16]), "spacing": 1.0}}
+    tops = build_topologies(
+        ("all_pairs", PME_MESH),
+        coord,
+        np.array([2, 2]),
+        box,
+        atype=atype,
+        topology_params=params,
+    )
+    mesh = tops[PME_MESH]
+    np.testing.assert_array_equal(mesh.box, box)
+    assert mesh.mask.shape == (2,) and mesh.mask.all()
+    assert tops["all_pairs"].index.shape[1] == 2  # guards only
+    flat = flatten_topologies(tops)
+    assert len(flat) == 3 + 5
+    back = unflatten_topologies(("all_pairs", PME_MESH), flat)
+    np.testing.assert_array_equal(back[PME_MESH].box, box)
+    np.testing.assert_array_equal(back[PME_MESH].mask, mesh.mask)
+    # a non-periodic batch: real pairs, masked-out mesh
+    tops_np = build_topologies(
+        ("all_pairs", PME_MESH),
+        coord,
+        np.array([2, 2]),
+        None,
+        atype=atype,
+        topology_params=params,
+    )
+    assert tops_np["all_pairs"].mask.any()
+    assert not tops_np[PME_MESH].mask.any()
+    # missing build parameters are an error
+    with pytest.raises(ValueError, match="n_mesh"):
+        build_topologies((PME_MESH,), coord, np.array([4]), box, atype=atype)
+
+
+def test_pme_fft_smooth() -> None:
+    from deepmd.dpmodel.long_range.latent_charge import (
+        _fft_smooth,
+    )
+
+    assert _fft_smooth(1) == 1
+    assert _fft_smooth(17) == 18
+    assert _fft_smooth(19) == 20
+    assert _fft_smooth(23) == 24
+    assert _fft_smooth(29) == 30
+    assert _fft_smooth(31) == 32
+    assert _fft_smooth(37) == 40
+
+
+def _pme_energy(module, charge, coord, box) -> float:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        PME_MESH,
+        frame_id_from_n_node,
+    )
+
+    n_node = np.array([coord.shape[0]])
+    tops = module.build_topologies(
+        coord, n_node, box[None], atype=np.zeros(len(coord), dtype=np.int64)
+    )
+    fid = frame_id_from_n_node(n_node, n_total=coord.shape[0])
+    e = module._pme_branch(
+        charge, tops[PME_MESH], fid, np.ones(len(coord), dtype=bool), n_node
+    )
+    return float(np.sum(e))
+
+
+def test_pme_energy_converges_to_direct_reference() -> None:
+    """The PME energy approaches the direct k-space sum as the mesh refines."""
+    coord = 3.0 + np.random.default_rng(7).uniform(0.0, 1.4, (6, 3))
+    box = np.array([[9.0, 0.4, 0.0], [0.0, 8.5, 0.3], [0.0, 0.0, 9.5]])
+    charge = np.array([[1.0], [-0.5], [1.0], [-0.5], [-0.5], [1.0]])
+    charge = charge - charge.mean(axis=0, keepdims=True)
+
+    kernel = LESKernel(alpha=0.3)
+    module = LatentChargeLongRange(
+        LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+        kernel,
+        None,
+        periodic=True,
+        k_grid_mode="pme",
+        pme_mesh=[40, 40, 40],
+    )
+    # converged direct k-space reference (tol 1e-10)
+    k_max = kernel.kspace_cutoff(1e-10)
+    rec = 2.0 * np.pi * np.linalg.inv(box)
+    n_d = np.ceil(k_max * np.linalg.norm(box, axis=1) / (2 * np.pi)).astype(int)
+    grids = np.meshgrid(*[np.arange(-n, n + 1) for n in n_d], indexing="ij")
+    n_all = np.stack(grids, -1).reshape(-1, 3)
+    k = n_all @ rec.T
+    k2 = (k * k).sum(-1)
+    keep = (k2 > 0) & (k2 <= k_max * k_max)
+    k, k2 = k[keep], k2[keep]
+    phase = k @ coord.T
+    rho = (np.cos(phase) + 1j * np.sin(phase)) @ charge
+    s_sq = (np.abs(rho) ** 2).sum(-1)
+    k_hat = kernel.kspace(k2)
+    volume = abs(np.linalg.det(box))
+    k0 = 2.0 * 0.3 / np.sqrt(np.pi)
+    e_ref = COULOMB_CONSTANT * (
+        (k_hat * s_sq).sum() / (2 * volume) - 0.5 * k0 * (charge * charge).sum()
+    )
+    errors = []
+    for dims in ([16, 16, 16], [40, 40, 40]):
+        module.pme_mesh = np.asarray(dims)
+        module._pme_n = tuple(dims)
+        errors.append(abs(_pme_energy(module, charge, coord, box) - e_ref))
+    assert errors[1] < errors[0]  # refinement improves the energy
+    assert errors[1] < 1e-2
+
+
+def test_pme_mesh_stats_size_the_mesh() -> None:
+    """The data statistics size the mesh by the largest sampled cell."""
+    import math
+
+    long_range = _pme_long_range()
+    coord = np.zeros((9, 3))
+    with pytest.raises(ValueError, match="not sized yet"):
+        long_range.build_topologies(
+            coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+        )
+    long_range.compute_input_stats(
+        [{"box": _cells()[:1].reshape(1, 9)}, {"box": _cells()}]
+    )
+    spacing = math.pi / long_range.kernel.kspace_cutoff(long_range.kspace_tolerance)
+    a_max = np.max(np.linalg.norm(_cells(), axis=-1), axis=0)
+    for d in range(3):
+        assert long_range.pme_mesh[d] >= math.ceil(a_max[d] / spacing)
+        # FFT-smooth dimensions
+        m = int(long_range.pme_mesh[d])
+        for p in (2, 3, 5, 7):
+            while m % p == 0:
+                m //= p
+        assert m == 1
+    topologies = long_range.build_topologies(
+        coord, np.array([4, 5]), _cells(), atype=np.zeros(9, dtype=np.int64)
+    )
+    assert topologies["pme_mesh"].mask.all()
+    # explicit mesh skips the statistics
+    explicit = _pme_long_range(pme_mesh=[16, 16, 16])
+    assert explicit._pme_dims() == (16, 16, 16)
+    # statistics without a cell cannot size the mesh
+    unsized = _pme_long_range()
+    with pytest.raises(ValueError, match="no simulation cell"):
+        unsized.compute_input_stats([{"coord": np.zeros((1, 3))}])
+
+
+def test_pme_mode_configuration() -> None:
+    """The pme mode requires periodicity, and its parameters the pme mode."""
+    with pytest.raises(ValueError, match="periodic"):
+        LatentChargeLongRange(
+            LatentChargeFitting("latent_charge", 2, 4, 1, neuron=[4], seed=1),
+            LESKernel(),
+            None,
+            k_grid_mode="pme",
+        )
+    with pytest.raises(ValueError, match="pme_mesh"):
+        _periodic_long_range(pme_mesh=[8, 8, 8])
+    with pytest.raises(ValueError, match="pme_spacing"):
+        _periodic_long_range(pme_spacing=1.0)
+    with pytest.raises(ValueError, match="pme_order"):
+        _pme_long_range(pme_order=1)
+    with pytest.raises(ValueError, match="pme_mesh"):
+        _pme_long_range(pme_mesh=[8, 8])
+    with pytest.raises(ValueError, match="k_grid_mode"):
+        _periodic_long_range(k_grid_mode="dense")
+
+
+def test_pme_round_trip() -> None:
+    """The record keeps the pme mode, the sized mesh and the spacing."""
+    long_range = _pme_long_range(pme_spacing=1.0, pme_order=5)
+    long_range.compute_input_stats([{"box": _cells()}])
+    record = long_range.serialize()
+    assert record["k_grid_mode"] == "pme"
+    assert record["pme_order"] == 5
+    assert record["pme_spacing"] == 1.0
+    restored = LatentChargeLongRange.deserialize(record)
+    assert restored.k_grid_mode == "pme"
+    assert restored.pme_order == 5
+    assert restored.pme_spacing == 1.0
+    np.testing.assert_array_equal(restored.pme_mesh, long_range.pme_mesh)
+    assert restored._pme_dims() == long_range._pme_dims()

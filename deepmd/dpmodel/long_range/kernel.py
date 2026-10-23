@@ -105,6 +105,53 @@ class BaseInteractionKernel(NativeOP, make_plugin_registry("interaction kernel")
         """
         raise NotImplementedError
 
+    def kspace(self, k_sq: Array) -> Array:
+        r"""Fourier transform of the kernel on squared wave numbers.
+
+        :math:`\\hat K(k) = \\int K(r) e^{-i \\mathbf{k} \\cdot \\mathbf{r}} d^3r`,
+        so that the energy of charges in a periodic cell of volume ``V`` reads
+        :math:`(k_e / 2V) \\sum_{\\mathbf{k} \\neq 0} \\hat K(k) |\\hat\\rho(\\mathbf{k})|^2`.
+
+        Parameters
+        ----------
+        k_sq
+            Squared wave numbers with shape ``(nk,)``, in Å⁻²; every entry
+            must be positive.
+
+        Returns
+        -------
+        Array
+            The transformed kernel with shape ``(nk,)``, in Å³.
+        """
+        raise NotImplementedError
+
+    def contact_value(self, like: Array) -> Array:
+        r"""The kernel at contact, :math:`K(0)`, in Å⁻¹.
+
+        The k-space lattice sum of a periodic system contains the self terms,
+        which the evaluation subtracts as :math:`\\frac{1}{2} K(0) \\sum_i q_i^2`.
+
+        Parameters
+        ----------
+        like
+            An array giving the namespace, dtype and device of the result.
+        """
+        raise NotImplementedError
+
+    def kspace_cutoff(self, tolerance: float = 1e-8) -> float:
+        """Wave number at which the kernel weight falls below ``tolerance``.
+
+        The Gaussian tail of the Fourier-transformed kernel makes the k-space
+        truncation exponentially convergent; the k grid of a periodic
+        evaluation ends at this wave number.
+
+        Parameters
+        ----------
+        tolerance
+            The relative weight of the slowest-decaying mode at the cutoff.
+        """
+        raise NotImplementedError
+
     def _parameter(self, name: str, like: Array) -> Array:
         """A parameter in the namespace, dtype and device of ``like``, autograd kept."""
         xp = array_api_compat.array_namespace(like)
@@ -218,6 +265,24 @@ class LESKernel(BaseInteractionKernel):
             series = series * x_sq_near + coefficient
         return alpha * xp.where(near, series, xp_erf(x_far) / x_far)
 
+    def kspace(self, k_sq: Array) -> Array:
+        xp = array_api_compat.array_namespace(k_sq)
+        # erf(alpha r)/r is the interaction of two Gaussian charge clouds of
+        # width 1/(sqrt(2) alpha); its transform is the damped Coulomb
+        # 4 pi exp(-k^2 / 4 alpha^2) / k^2.
+        alpha = xp.exp(self._parameter("log_alpha", k_sq))
+        return 4.0 * np.pi * xp.exp(-k_sq / (4.0 * alpha * alpha)) / k_sq
+
+    def contact_value(self, like: Array) -> Array:
+        xp = array_api_compat.array_namespace(like)
+        alpha = xp.exp(self._parameter("log_alpha", like))
+        return 2.0 * alpha / np.sqrt(np.pi)
+
+    def kspace_cutoff(self, tolerance: float = 1e-8) -> float:
+        # exp(-k^2 / 4 alpha^2) < tolerance
+        alpha = float(np.exp(to_numpy_array(self.log_alpha).astype(np.float64)))
+        return 2.0 * alpha * np.sqrt(np.log(1.0 / tolerance))
+
 
 @BaseInteractionKernel.register("sog")
 class SOGKernel(BaseInteractionKernel):
@@ -306,6 +371,38 @@ class SOGKernel(BaseInteractionKernel):
         xp = array_api_compat.array_namespace(r_sq)
         gaussian = xp.exp(-r_sq[:, None] * coefficients["inv_two_width_sq"])
         return xp.sum(coefficients["amplitude"] * gaussian, axis=-1)
+
+    def kspace(self, k_sq: Array) -> Array:
+        xp = array_api_compat.array_namespace(k_sq)
+        amplitude = self._parameter("amplitude", k_sq)
+        width = xp.exp(self._parameter("log_width", k_sq))
+        # FT of a_k exp(-r^2 / 2 sigma_k^2) is a_k (2 pi)^{3/2} sigma_k^3
+        # exp(-sigma_k^2 k^2 / 2); for the default amplitudes
+        # a_k = sqrt(2/pi) ln b / sigma_k the coefficient is 4 pi ln b sigma_k^2,
+        # whose ln-sigma trapezoid sum approaches 4 pi / k^2. The mode loop is
+        # unrolled: a (nk, M) intermediate breaks inductor's double backward of
+        # the k-space virial (NaN), while per-mode (nk,) terms compile fine.
+        terms = [
+            amplitude[m]
+            * (2.0 * np.pi) ** 1.5
+            * width[m] ** 3
+            * xp.exp(-0.5 * width[m] ** 2 * k_sq)
+            for m in range(width.shape[0])
+        ]
+        return sum(terms[1:], terms[0])
+
+    def contact_value(self, like: Array) -> Array:
+        xp = array_api_compat.array_namespace(like)
+        amplitude = self._parameter("amplitude", like)
+        return xp.sum(amplitude)
+
+    def kspace_cutoff(self, tolerance: float = 1e-8) -> float:
+        # the slowest-decaying mode is the NARROWEST Gaussian:
+        # exp(-sigma_min^2 k^2 / 2) < tolerance
+        sigma_min = float(
+            np.exp(np.min(to_numpy_array(self.log_width).astype(np.float64)))
+        )
+        return np.sqrt(2.0 * np.log(1.0 / tolerance)) / sigma_min
 
     @classmethod
     def _shape_kwargs(cls, variables: dict[str, np.ndarray]) -> dict[str, Any]:

@@ -17,9 +17,12 @@ E = \sum_i E_i^{\text{SR}} + k_e \sum_{i<j} \sum_{c=1}^{C} q_i^c q_j^c\, K(r_{ij
 where $E_i^{\text{SR}}$ is the atomic energy of the fitting, $q_i^c$ is the
 charge of atom $i$ in channel $c$ (in units of the elementary charge),
 $K(r)$ is the interaction kernel in Å⁻¹, and $k_e = 14.3996$ eV Å is the
-Coulomb constant. Every channel interacts through the same kernel. The sum
-runs over the distinct pairs of each frame only: it has no self term, and
-no periodic image.
+Coulomb constant. Every channel interacts through the same kernel.
+
+For a non-periodic system, the sum runs over the distinct pairs of each frame:
+it has no self term, and no periodic image. For a periodic system (with
+`periodic: true`, see below) the kernel is summed over the reciprocal lattice
+points of the cell instead.
 
 The charges depend on the atomic environments, so forces and virials, which
 are obtained by differentiating the energy, include the response of the
@@ -31,9 +34,9 @@ output-bias statistics and change-bias, the Hessian, and a linear
 composition of models.
 
 > [!WARNING]
-> The pair sum covers complete non-periodic systems: frames without a cell,
-> such as isolated molecules and clusters. A periodic cell is rejected. The
-> cost of the sum grows with the square of the number of atoms of a frame.
+> The pair sum covers complete systems. Without `periodic: true`, a periodic
+> cell is rejected; the cost of the non-periodic sum grows with the square of
+> the number of atoms of a frame.
 
 ## Configuration
 
@@ -105,6 +108,50 @@ training.
 Several charge channels, set by
 {ref}`channels <model[standard]/long_range[latent_charge]/channels>`, let
 the model represent interactions that one charge per atom cannot.
+
+### Periodic systems
+
+With
+{ref}`periodic <model[standard]/long_range[latent_charge]/periodic>` enabled,
+a frame given a cell is evaluated in reciprocal space. The Fourier transform
+of the kernel,
+
+- `les`: $\hat K(\mathbf{k}) = (4\pi/k^2)\, e^{-k^2/4\alpha^2}$, the damped
+  Coulomb transform (the kernel is the interaction of two Gaussian charge
+  clouds, so its transform needs no new parameter), or
+- `sog`: $\hat K(\mathbf{k}) = \sum_m a_m (2\pi)^{3/2} \sigma_m^3\, e^{-\sigma_m^2 k^2/2}$,
+  the term-by-term transform of the Gaussians; with the default amplitudes the
+  coefficient simplifies to $4\pi\ln b\, \sigma_m^2$ and the sum approaches the
+  Coulomb transform $4\pi/k^2$,
+
+is summed over the wave numbers $\mathbf{k} = 2\pi B^{-1} \mathbf{n}$,
+$\mathbf{n} \in \mathbb{Z}^3 \setminus \{\mathbf{0}\}$, of each cell:
+
+```math
+E = k_e \left[\frac{1}{2V}\sum_{\mathbf{k}\neq\mathbf{0}} \sum_{c=1}^{C}
+\hat K(\mathbf{k})\, |\hat\rho_c(\mathbf{k})|^2
+- \frac{1}{2} K(0) \sum_{i,c} (q_i^c)^2 \right],
+\qquad \hat\rho_c(\mathbf{k}) = \sum_i q_i^c e^{i\mathbf{k}\cdot\mathbf{r}_i},
+```
+
+with the cell volume $V$ and the kernel value at contact $K(0)$. The
+wave-number cutoff follows the kernel parameters through
+{ref}`kspace_tolerance <model[standard]/long_range[latent_charge]/kspace_tolerance>`:
+the grid ends where the weight of the slowest-decaying mode falls below it,
+so the truncation is exponentially convergent. The $\mathbf{k}=\mathbf{0}$
+mode is dropped (the tin-foil boundary convention), so every latent channel
+must be neutral: use a `neutral` constraint, or a `charge_spin`/`fparam`
+constraint holding a neutral total charge.
+
+The k grid is enumerated outside the compiled region and enters it as inputs
+of dynamic length, like the pairs of the non-periodic evaluation; a model
+with `periodic: true` still serves non-periodic batches. Forces come from the
+positions the phases are evaluated at, and the virial from a strain the
+energy is differentiated against, so both hold the complete k-space term.
+
+The periodic evaluation is supported for training, compiled training and the
+Python inference interface. Freezing/export, compression, the C++ interface
+and LAMMPS do not serve a periodic long-range module yet: they reject it.
 
 ### Total charge
 

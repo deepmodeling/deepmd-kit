@@ -73,7 +73,8 @@ from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
-    build_topologies,
+    KGrid,
+    MeshGrid,
     flatten_topologies,
     unflatten_topologies,
 )
@@ -934,6 +935,7 @@ def _trace_and_compile_graph(
         ),
         dtype=GLOBAL_PT_FLOAT_PRECISION,
         device=_trace_device,
+        nframes=trace_nf,
     )
     topology_names = tuple(s_topologies)
     s_topology_vals = flatten_topologies(s_topologies)
@@ -1685,8 +1687,7 @@ class _CompiledModel(torch.nn.Module):
                 spin = spin[node_index]
         # The topologies the atomic model declares are built here as well,
         # outside the compiled region, on the node axis of the graph.
-        topologies = build_topologies(
-            _model.atomic_model.required_topologies(),
+        topologies = _model.atomic_model.build_topologies(
             coord_3d if ragged else coord_3d.reshape(n_padded, 3)[node_index],
             ng.n_node,
             box_flat,
@@ -1721,16 +1722,37 @@ class _CompiledModel(torch.nn.Module):
         if spin is not None:
             spin = spin.detach().requires_grad_(True)
         # Each pair topology enters as (index, vec, mask), its vec a further
-        # leaf.
-        topology_vals = tuple(
-            tensor
-            for pairs in topologies.values()
-            for tensor in (
-                pairs.index,
-                pairs.vec.detach().requires_grad_(True),
-                pairs.mask,
-            )
-        )
+        # leaf; a k grid enters as (frame, vec, mask, volume, coord, strain),
+        # its coord and zero strain further leaves (the k-space force and
+        # virial root at these inputs).
+        topology_vals_list: list[torch.Tensor] = []
+        for topology in topologies.values():
+            if isinstance(topology, KGrid):
+                assert topology.coord is not None and topology.strain is not None
+                topology_vals_list += [
+                    topology.frame,
+                    topology.vec,
+                    topology.mask,
+                    topology.volume,
+                    topology.coord.detach().requires_grad_(True),
+                    topology.strain.detach().requires_grad_(True),
+                ]
+            elif isinstance(topology, MeshGrid):
+                assert topology.coord is not None and topology.strain is not None
+                topology_vals_list += [
+                    topology.box,
+                    topology.volume,
+                    topology.coord.detach().requires_grad_(True),
+                    topology.strain.detach().requires_grad_(True),
+                    topology.mask,
+                ]
+            else:
+                topology_vals_list += [
+                    topology.index,
+                    topology.vec.detach().requires_grad_(True),
+                    topology.mask,
+                ]
+        topology_vals = tuple(topology_vals_list)
 
         if self._task_buf_order:
             try:

@@ -423,6 +423,37 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             )
         )
 
+    def build_topologies(
+        self,
+        coord: Array,
+        n_node: Array,
+        box: Array | None,
+        *,
+        atype: Array,
+        node_mask: Array | None = None,
+        pair_excl: Any = None,
+    ) -> dict[str, Any]:
+        """Build the topologies of :meth:`required_topologies` for one batch.
+
+        The first child declaring a name builds it; every child declaring the
+        same name must build it identically.
+        """
+        topologies: dict[str, Any] = {}
+        for model in self.models:
+            if not hasattr(model, "build_topologies"):
+                continue
+            built = model.build_topologies(
+                coord,
+                n_node,
+                box,
+                atype=atype,
+                node_mask=node_mask,
+                pair_excl=pair_excl,
+            )
+            for name, topology in built.items():
+                topologies.setdefault(name, topology)
+        return topologies
+
     def forward_atomic_graph(
         self,
         graph: Any,

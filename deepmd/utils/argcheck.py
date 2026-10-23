@@ -3675,8 +3675,10 @@ def charge_constraint_args() -> list[Argument]:
 
 @long_range_args_plugin.register(
     "latent_charge",
-    doc="Interaction of latent charges predicted from the descriptor, summed "
-    "directly over every pair of atoms of a complete non-periodic system. "
+    doc="Interaction of latent charges predicted from the descriptor. "
+    "For a non-periodic system the kernel is summed directly over every pair "
+    "of atoms; for a periodic system (``periodic: true``) its Fourier "
+    "transform is summed over the reciprocal lattice points of the cell. "
     "Every channel interacts through the same kernel; half of each pair energy "
     "is attributed to each atom.",
 )
@@ -3692,6 +3694,55 @@ def long_range_latent_charge() -> list[Argument]:
         "Shift one latent charge channel uniformly over the atoms of every frame "
         "so that it sums to the total charge of the frame. Unconstrained if not "
         "set."
+    )
+    doc_periodic = (
+        "Evaluate the module on periodic systems in reciprocal space: the "
+        "Fourier transform of the kernel is summed over the wave numbers of "
+        "each cell, with the tin-foil boundary convention, and the self term "
+        "subtracted. Every latent channel must be neutral."
+    )
+    doc_kspace_tolerance = (
+        "The relative weight of the slowest-decaying kernel mode at the "
+        "wave-number cutoff of the k grid of a periodic batch."
+    )
+    doc_k_grid_mode = (
+        "How the reciprocal sum of a periodic batch is evaluated: 'ragged' "
+        "enumerates the wave numbers of every frame eagerly (the k axis is a "
+        "dynamic dimension); 'fixed' shares one integer grid over the frames, "
+        "sized by the largest cell of the data statistics or by "
+        "`k_grid_bounds`, and masks the points a frame does not reach, so the "
+        "k axis has a static length; 'pme' spreads the charges to a static "
+        "real-space mesh with a B-spline and evaluates the sum by an FFT "
+        "(SPME), sized by the largest cell of the data statistics or by "
+        "`pme_mesh`. The fixed grid is hard: a frame needing an index beyond "
+        "it (a larger cell, or a kernel that moved the cutoff out) has its "
+        "k-sum truncated to the grid, with a warning; on the mesh such a "
+        "frame is evaluated with a coarser effective spacing (a smooth "
+        "accuracy degradation, without a warning). Requires `periodic: true` "
+        "for 'fixed' and 'pme'."
+    )
+    doc_k_grid_bounds = (
+        "The per-axis integer bounds [n1, n2, n3] of the fixed k grid, in "
+        "place of the data statistics; only meaningful with "
+        "`k_grid_mode: fixed`."
+    )
+    doc_decouple_k_grid = (
+        "Decouple the k-point selection of a periodic batch from the kernel "
+        "parameters: the wave-number cutoff is derived once from the initial "
+        "parameters and kept for the life of the model, so training the "
+        "kernel no longer moves the k grid (the kernel values the grid is "
+        "evaluated with still follow the live parameters). The frozen cutoff "
+        "is serialized with the model. Requires `periodic: true`."
+    )
+    doc_pme_spacing = (
+        "The target real-space mesh spacing of the 'pme' mode, in Angstrom; "
+        "the default is the Nyquist spacing of the kernel's wave-number "
+        "cutoff, pi / k_max."
+    )
+    doc_pme_order = "The B-spline order of the 'pme' charge assignment."
+    doc_pme_mesh = (
+        "The per-axis mesh dimensions [n1, n2, n3] of the 'pme' mode, in "
+        "place of the data statistics."
     )
     return [
         Argument("channels", int, optional=True, default=1, doc=doc_channels),
@@ -3723,15 +3774,65 @@ def long_range_latent_charge() -> list[Argument]:
             default=None,
             doc=doc_charge_constraint,
         ),
+        Argument("periodic", bool, optional=True, default=False, doc=doc_periodic),
+        Argument(
+            "kspace_tolerance",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=doc_kspace_tolerance,
+        ),
+        Argument(
+            "k_grid_mode",
+            str,
+            optional=True,
+            default="ragged",
+            doc=doc_k_grid_mode,
+        ),
+        Argument(
+            "k_grid_bounds",
+            list[int],
+            optional=True,
+            default=None,
+            doc=doc_k_grid_bounds,
+        ),
+        Argument(
+            "decouple_k_grid",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_decouple_k_grid,
+        ),
+        Argument(
+            "pme_spacing",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_pme_spacing,
+        ),
+        Argument(
+            "pme_order",
+            int,
+            optional=True,
+            default=4,
+            doc=doc_pme_order,
+        ),
+        Argument(
+            "pme_mesh",
+            list[int],
+            optional=True,
+            default=None,
+            doc=doc_pme_mesh,
+        ),
     ]
 
 
 def long_range_args() -> Argument:
     doc_long_range = (
         "A long-range module added to the atomic energy of the energy fitting. "
-        "It reads the same descriptor and is evaluated on complete "
-        "non-periodic systems; a periodic cell is rejected. Currently validated "
-        "with the DPA4C descriptor."
+        "It reads the same descriptor and is evaluated on complete systems; "
+        "non-periodic directly, periodic in reciprocal space when the module "
+        "enables it. Currently validated with the DPA4C descriptor."
     )
     return Argument(
         "long_range",

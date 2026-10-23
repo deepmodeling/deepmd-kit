@@ -49,7 +49,6 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     PairGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
-    build_topologies,
     compact_nodes,
     expand_node_values,
 )
@@ -567,8 +566,7 @@ def make_model(
             # identity.
             ng, node_index = compact_nodes(ng, atype_flat >= 0)
             atype_real = xp.take(atype_flat, node_index, axis=0)
-            topologies = build_topologies(
-                self.atomic_model.required_topologies(),
+            topologies = self.atomic_model.build_topologies(
                 xp.take(xp.reshape(cc, (n_padded, 3)), node_index, axis=0),
                 ng.n_node,
                 bb,
@@ -893,14 +891,48 @@ def make_model(
                 spin=spin,
             )
             if topologies:
-                # The pair vectors are geometry like the edge vectors.
+                # The pair vectors and the k-grid/mesh geometry are geometry
+                # like the edge vectors.
+                from deepmd.dpmodel.utils.neighbor_graph import (
+                    KGrid,
+                    MeshGrid,
+                )
+
                 xp = array_api_compat.array_namespace(edge_vec)
-                topologies = {
-                    name: PairGraph(
-                        pairs.index, xp.astype(pairs.vec, edge_vec.dtype), pairs.mask
-                    )
-                    for name, pairs in topologies.items()
-                }
+                cast = {}
+                for name, topology in topologies.items():
+                    if isinstance(topology, KGrid):
+                        cast[name] = KGrid(
+                            frame=topology.frame,
+                            vec=xp.astype(topology.vec, edge_vec.dtype),
+                            mask=topology.mask,
+                            volume=xp.astype(topology.volume, edge_vec.dtype),
+                            coord=(
+                                None
+                                if topology.coord is None
+                                else xp.astype(topology.coord, edge_vec.dtype)
+                            ),
+                            strain=topology.strain,
+                        )
+                    elif isinstance(topology, MeshGrid):
+                        cast[name] = MeshGrid(
+                            box=xp.astype(topology.box, edge_vec.dtype),
+                            volume=xp.astype(topology.volume, edge_vec.dtype),
+                            coord=(
+                                None
+                                if topology.coord is None
+                                else xp.astype(topology.coord, edge_vec.dtype)
+                            ),
+                            strain=topology.strain,
+                            mask=topology.mask,
+                        )
+                    else:
+                        cast[name] = PairGraph(
+                            topology.index,
+                            xp.astype(topology.vec, edge_vec.dtype),
+                            topology.mask,
+                        )
+                topologies = cast
             model_predict = self.forward_common_atomic_graph(
                 atype,
                 n_node,

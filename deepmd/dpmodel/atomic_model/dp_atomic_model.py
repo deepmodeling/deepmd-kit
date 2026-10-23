@@ -273,6 +273,29 @@ class DPAtomicModel(BaseAtomicModel):
             return ()
         return self.long_range.required_topologies()
 
+    def build_topologies(
+        self,
+        coord: Array,
+        n_node: Array,
+        box: Array | None,
+        *,
+        atype: Array,
+        node_mask: Array | None = None,
+        pair_excl: Any = None,
+    ) -> dict[str, Any]:
+        """Build the topologies of :meth:`required_topologies` for one batch.
+
+        The module builds its own topologies so that its build parameters
+        (e.g. the wave-number cutoff of the k grid, which follows the kernel)
+        stay with it. A model without a long-range module declares no
+        topologies.
+        """
+        if self.long_range is None:
+            return {}
+        return self.long_range.build_topologies(
+            coord, n_node, box, atype=atype, node_mask=node_mask, pair_excl=pair_excl
+        )
+
     def has_message_passing_across_ranks(self) -> bool:
         """Delegates to this model's own descriptor."""
         return bool(self.descriptor.has_message_passing_across_ranks())
@@ -392,6 +415,12 @@ class DPAtomicModel(BaseAtomicModel):
         )
         if self.long_range is not None and self.long_range.uses_charge_spin():
             self.long_range.fold_charge_state(self.descriptor.get_default_chg_spin())
+        if self.long_range is not None and getattr(self.long_range, "periodic", False):
+            raise NotImplementedError(
+                "a periodic long-range module evaluates its reciprocal-space sum "
+                "with a k grid the compressed path does not serve; compress only "
+                "non-periodic long-range models"
+            )
 
     def forward_atomic(
         self,

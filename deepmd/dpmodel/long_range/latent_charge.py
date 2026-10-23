@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import math
 from collections.abc import (
     Callable,
 )
@@ -11,6 +12,7 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_add_at,
 )
 from deepmd.dpmodel.common import (
     GLOBAL_NP_FLOAT_PRECISION,
@@ -22,7 +24,14 @@ from deepmd.dpmodel.fitting.latent_charge import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     ALL_PAIRS,
+    K_GRID,
+    PME_MESH,
+    KGrid,
+    MeshGrid,
+    build_topologies,
+    enumerate_k_grid_bounds,
     frame_id_from_n_node,
+    k_grid_bounds_of_cells,
     segment_sum,
 )
 from deepmd.dpmodel.utils.seed import (
@@ -58,25 +67,102 @@ when the fitting and descriptor seeds coincide.
 """
 
 
+def _fft_smooth(n: int) -> int:
+    """The smallest integer >= ``n`` whose prime factors are among 2, 3, 5, 7."""
+
+    def smooth(m: int) -> bool:
+        for p in (2, 3, 5, 7):
+            while m % p == 0:
+                m //= p
+        return m == 1
+
+    m = max(1, n)
+    while not smooth(m):
+        m += 1
+    return m
+
+
+def _bspline_integer_weights(p: int) -> np.ndarray:
+    r"""The order-``p`` cardinal B-spline at :math:`M_p(l+1)`, ``l = 0..p-2``.
+
+    The weights of the SPME denominator
+    :math:`D(\theta) = \sum_l M_p(l+1) e^{i \theta l}`.
+    """
+    out = []
+    for l in range(p - 1):
+        x = float(l + 1)
+        out.append(
+            sum(
+                (-1.0) ** j * math.comb(p, j) * max(x - j, 0.0) ** (p - 1)
+                for j in range(p + 1)
+            )
+            / math.factorial(p - 1)
+        )
+    return np.asarray(out)
+
+
+def _bspline_eval(xp: Any, x: Array, p: int) -> Array:
+    r"""The order-``p`` cardinal B-spline :math:`M_p(x)` elementwise.
+
+    :math:`M_p(x) = \frac{1}{(p-1)!} \sum_j (-1)^j \binom{p}{j}
+    \mathrm{relu}(x - j)^{p-1}` — a piecewise polynomial, differentiable
+    (twice for :math:`p \ge 4`) with respect to ``x``.
+    """
+    w = None
+    for j in range(p + 1):
+        term = ((-1.0) ** j * math.comb(p, j)) * xp.maximum(
+            x - j, xp.zeros_like(x)
+        ) ** (p - 1)
+        w = term if w is None else w + term
+    return w / math.factorial(p - 1)
+
+
+def _inv3(xp: Any, m: Array) -> Array:
+    """Inverse of a batch of 3x3 matrices, adjugate over determinant.
+
+    Rows a, b, c: the columns of the inverse are (b x c)/det, (c x a)/det,
+    (a x b)/det. The closed form is cheap and forward-only here — the cell is
+    not an autograd leaf; the strain leaf keeps ``linalg.inv`` whose
+    registered backward handles a symbolic frame count.
+    """
+    a, b, c = m[..., 0, :], m[..., 1, :], m[..., 2, :]
+    bc = xp.linalg.cross(b, c)
+    ca = xp.linalg.cross(c, a)
+    ab = xp.linalg.cross(a, b)
+    det = xp.sum(a * bc, axis=-1)
+    inv = xp.stack([bc, ca, ab], axis=-1)  # columns
+    return inv / det[..., None, None]
+
+
 @BaseLongRange.register("latent_charge")
 class LatentChargeLongRange(NativeOP, BaseLongRange):
-    r"""Energy of interacting latent charges in complete non-periodic systems.
+    r"""Energy of interacting latent charges, periodic or not.
 
     A charge network predicts :math:`C` latent charge channels
     :math:`q_i^c` per atom, in units of :math:`e`, from the descriptor shared
     with the energy fitting; padding and atoms owned by another rank carry no
-    charge. The energy is the direct sum over the pairs of atoms of each frame
-    listed by the :data:`~deepmd.dpmodel.utils.neighbor_graph.ALL_PAIRS`
-    topology, each unordered pair once,
+    charge. For a non-periodic batch the energy is the direct sum over the
+    pairs of atoms of each frame listed by the
+    :data:`~deepmd.dpmodel.utils.neighbor_graph.ALL_PAIRS` topology, each
+    unordered pair once; for a periodic batch (with ``periodic=True``) it is
+    the reciprocal-space lattice sum over the wave numbers of the
+    :data:`~deepmd.dpmodel.utils.neighbor_graph.K_GRID` topology,
 
     .. math::
-        E = k_e \sum_{i<j} \sum_{c=1}^{C} q_i^c q_j^c K(r_{ij}),
+        E_{\rm non-periodic} = k_e \sum_{i<j} \sum_{c=1}^{C} q_i^c q_j^c K(r_{ij}),
+        \qquad
+        E_{\rm periodic} = k_e \Big[
+        \frac{1}{2V} \sum_{\mathbf{k} \neq \mathbf{0}} \sum_{c=1}^{C}
+        \hat K(\mathbf{k}) \, |\hat\rho_c(\mathbf{k})|^2
+        - \frac{1}{2} K(0) \sum_{i,c} (q_i^c)^2 \Big],
 
-    with the Coulomb constant :math:`k_e` and the kernel :math:`K` in Å⁻¹:
-    every channel interacts through the same kernel and channels do not mix.
-    The sum holds pair terms only; there is no self or background term and no
-    periodic image. Half of each pair energy is attributed to each of its two
-    atoms.
+    with the Coulomb constant :math:`k_e`, the kernel :math:`K` in Å⁻¹ and its
+    Fourier transform :math:`\hat K`; every channel interacts through the same
+    kernel and channels do not mix. The periodic sum uses the tin-foil boundary
+    convention (the :math:`\mathbf{k} = \mathbf{0}` mode is dropped) and
+    requires every channel to be neutral: a constrained channel must sum to
+    zero, so set ``charge_constraint`` to ``neutral`` or to a source holding a
+    neutral total charge.
 
     An optional constraint shifts one channel uniformly over the atoms of
     every frame so that it sums to the total charge of the frame; this channel
@@ -95,6 +181,51 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         first column of the frame charge/spin condition, or ``"fparam"`` for
         the frame-parameter column ``fparam_index``) and the constrained
         ``channel``.
+    periodic
+        Whether the module serves periodic systems: it then declares the
+        :data:`~deepmd.dpmodel.utils.neighbor_graph.K_GRID` topology beside
+        :data:`~deepmd.dpmodel.utils.neighbor_graph.ALL_PAIRS` and evaluates
+        batches by their cells. Non-periodic batches keep working.
+    kspace_tolerance
+        The relative weight of the slowest-decaying kernel mode at the
+        wave-number cutoff of the k grid of a periodic batch.
+    k_grid_mode
+        How the reciprocal sum of a periodic batch is evaluated: ``"ragged"``
+        enumerates the wave numbers of every frame eagerly, so the k axis is
+        a dynamic dimension; ``"fixed"`` shares one integer grid over the
+        frames — sized by the largest cell of the data statistics, or by
+        ``k_grid_bounds`` — evaluates every frame on it by a static-shaped
+        transform, and masks the points a frame does not reach; ``"pme"``
+        spreads the charges to a static real-space mesh with a B-spline and
+        evaluates the sum by an FFT (SPME), sized by the largest cell of the
+        data statistics or by ``pme_mesh``. The fixed grid is hard: a frame
+        needing an integer index beyond it (a larger cell, or a kernel that
+        moved the cutoff out) is served by the grid alone, so its k-sum is
+        truncated to the grid with a warning; on the mesh such a frame is
+        evaluated with a coarser effective spacing (a smooth accuracy
+        degradation; no warning — sizing the mesh is the caller's
+        responsibility).
+    k_grid_bounds
+        The per-axis integer bounds :math:`n_d^{max}` of the fixed grid, in
+        place of the data statistics; only meaningful with
+        ``k_grid_mode="fixed"``.
+    decouple_k_grid
+        Decouple the k-point selection of a periodic batch from the kernel
+        parameters: the wave-number cutoff is derived once from the initial
+        parameters and kept for the life of the model, so training the
+        kernel no longer moves the k grid. The kernel values the grid is
+        evaluated with still follow the live parameters. The frozen cutoff
+        is serialized with the model, so a restarted run keeps the grid the
+        model was built with. Requires ``periodic=True``.
+    pme_spacing
+        The target real-space mesh spacing of the ``"pme"`` mode, in Å; the
+        default is the Nyquist spacing of the kernel's wave-number cutoff,
+        :math:`\pi / k_{max}`.
+    pme_order
+        The B-spline order of the ``"pme"`` charge assignment.
+    pme_mesh
+        The per-axis mesh dimensions :math:`(n_1, n_2, n_3)` of the
+        ``"pme"`` mode, in place of the data statistics.
     """
 
     def __init__(
@@ -102,6 +233,14 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         charge_net: LatentChargeFitting,
         kernel: BaseInteractionKernel,
         charge_constraint: dict | None = None,
+        periodic: bool = False,
+        kspace_tolerance: float = 1e-8,
+        k_grid_mode: str = "ragged",
+        k_grid_bounds: list[int] | None = None,
+        decouple_k_grid: bool = False,
+        pme_spacing: float | None = None,
+        pme_order: int = 4,
+        pme_mesh: list[int] | None = None,
     ) -> None:
         if charge_net.vacuum_ref:
             raise ValueError(
@@ -113,9 +252,104 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         self.charge_constraint = self._normalize_constraint(
             charge_constraint, charge_net
         )
+        self.periodic = bool(periodic)
+        self.kspace_tolerance = float(kspace_tolerance)
+        if (
+            not np.isfinite(self.kspace_tolerance)
+            or not 0.0 < self.kspace_tolerance < 1.0
+        ):
+            raise ValueError(
+                f"`kspace_tolerance` must be in (0, 1), got {self.kspace_tolerance}"
+            )
         # The frame charge/spin condition a compressed model is specialized
         # to; see :meth:`fold_charge_state`.
         self.charge_state = None
+        self.k_grid_mode = str(k_grid_mode)
+        if self.k_grid_mode not in ("ragged", "fixed", "pme"):
+            raise ValueError(
+                f"`k_grid_mode` must be 'ragged', 'fixed' or 'pme', got {self.k_grid_mode!r}"
+            )
+        if self.k_grid_mode in ("fixed", "pme") and not self.periodic:
+            raise ValueError(
+                f"`k_grid_mode='{self.k_grid_mode}'` requires `periodic=True`"
+            )
+        if k_grid_bounds is not None and self.k_grid_mode != "fixed":
+            raise ValueError(
+                "`k_grid_bounds` is only meaningful with `k_grid_mode='fixed'`"
+            )
+        self.decouple_k_grid = bool(decouple_k_grid)
+        if self.decouple_k_grid and not self.periodic:
+            raise ValueError("`decouple_k_grid` requires `periodic=True`")
+        # A decoupled grid reads the kernel once, at construction: the k-point
+        # selection stays at the initial kernel however training moves it,
+        # while the kernel values in the graph still use the live parameters.
+        self.frozen_k_max = (
+            float(self.kernel.kspace_cutoff(self.kspace_tolerance))
+            if self.decouple_k_grid
+            else None
+        )
+        # The shared integer grid of the fixed mode, empty until the data
+        # statistics size it (see :meth:`compute_input_stats`) — an array even
+        # then, so a backend keeping arrays in its state dict sees a stable
+        # set of keys and a checkpoint restores the sized grid.
+        if k_grid_bounds is not None:
+            self.k_grid_n = enumerate_k_grid_bounds(k_grid_bounds)
+        elif self.k_grid_mode == "fixed":
+            self.k_grid_n = np.zeros((0, 3), dtype=np.int64)
+        else:
+            self.k_grid_n = None
+        # The PME mesh parameters. The mesh dims are an array even while
+        # unsized, so a backend keeping arrays in its state dict sees a
+        # stable set of keys and a checkpoint restores the sized mesh; the
+        # plain-integer copy is what a trace reads as static shapes.
+        self.pme_order = int(pme_order)
+        if self.pme_order < 2:
+            raise ValueError(f"`pme_order` must be at least 2, got {self.pme_order}")
+        if pme_spacing is not None:
+            pme_spacing = float(pme_spacing)
+            if not np.isfinite(pme_spacing) or pme_spacing <= 0.0:
+                raise ValueError(
+                    f"`pme_spacing` must be finite and positive, got {pme_spacing}"
+                )
+        self.pme_spacing = pme_spacing
+        if self.k_grid_mode != "pme":
+            if pme_spacing is not None or pme_mesh is not None:
+                raise ValueError(
+                    "`pme_spacing`/`pme_mesh` are only meaningful with "
+                    "`k_grid_mode='pme'`"
+                )
+            self.pme_mesh = None
+            self._pme_n = None
+        elif pme_mesh is not None:
+            mesh = np.asarray(pme_mesh, dtype=np.int64).reshape(-1)
+            if mesh.shape != (3,) or np.any(mesh < 1):
+                raise ValueError(
+                    f"`pme_mesh` must be three positive integers, got {pme_mesh}"
+                )
+            self.pme_mesh = mesh
+            self._pme_n = (int(mesh[0]), int(mesh[1]), int(mesh[2]))
+        else:
+            # Unsized sentinel: the data statistics size it (see
+            # :meth:`compute_input_stats`), or a checkpoint restores the
+            # sized mesh through the state dict.
+            self.pme_mesh = np.zeros((3,), dtype=np.int64)
+            self._pme_n = None
+
+    def _pme_dims(self) -> tuple[int, int, int] | None:
+        """The mesh dimensions as plain integers, or ``None`` when unsized.
+
+        The plain-integer cache is what a trace reads as static shapes; it is
+        set at construction and at statistics time. A backend restoring the
+        sized mesh through its state dict (a checkpoint does not run
+        :meth:`compute_input_stats`) is picked up lazily from the mesh array.
+        """
+        if self._pme_n is not None:
+            return self._pme_n
+        if self.pme_mesh is None or int(self.pme_mesh[0]) < 1:
+            return None
+        mesh = self.pme_mesh
+        self._pme_n = (int(mesh[0]), int(mesh[1]), int(mesh[2]))
+        return self._pme_n
 
     @staticmethod
     def _normalize_constraint(
@@ -203,9 +437,93 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             charge_net,
             kernel_cls(**kernel_config),
             config.get("charge_constraint"),
+            periodic=config.get("periodic", False),
+            kspace_tolerance=config.get("kspace_tolerance", 1e-8),
+            k_grid_mode=config.get("k_grid_mode", "ragged"),
+            k_grid_bounds=config.get("k_grid_bounds"),
+            decouple_k_grid=config.get("decouple_k_grid", False),
+            pme_spacing=config.get("pme_spacing"),
+            pme_order=config.get("pme_order", 4),
+            pme_mesh=config.get("pme_mesh"),
+        )
+
+    def _k_max(self) -> float:
+        """The wave-number cutoff selecting the k points of a periodic batch.
+
+        A coupled grid reads the current kernel parameters, so a trained
+        kernel re-derives its grid every batch; a decoupled grid keeps the
+        cutoff of the initial parameters.
+        """
+        if self.decouple_k_grid:
+            return self.frozen_k_max
+        return float(self.kernel.kspace_cutoff(self.kspace_tolerance))
+
+    def _pme_target_spacing(self) -> float:
+        r"""The target PME mesh spacing, in Å.
+
+        The explicit ``pme_spacing``, or the Nyquist spacing of the kernel's
+        wave-number cutoff :math:`\pi / k_{max}` — fine enough that the
+        kernel's spectral weight at the mesh cutoff is negligible.
+        """
+        if self.pme_spacing is not None:
+            return self.pme_spacing
+        return math.pi / self._k_max()
+
+    def build_topologies(
+        self,
+        coord: Array,
+        n_node: Array,
+        box: Array | None,
+        *,
+        atype: Array,
+        node_mask: Array | None = None,
+        pair_excl: Any = None,
+    ) -> dict[str, Any]:
+        """Build the topologies of the module for one batch.
+
+        The k grid of a periodic batch is enumerated from the cells with the
+        wave-number cutoff of the kernel (the trainable parameters are read at
+        build time, so a drifting kernel re-derives its grid every batch,
+        unless the grid is decoupled from them by ``decouple_k_grid``). In
+        the fixed grid mode the batch is evaluated on the shared integer grid
+        instead, whose mask the same cutoff derives.
+        """
+        params = {}
+        if self.periodic:
+            if self.k_grid_mode == "pme":
+                if self._pme_dims() is None:
+                    raise ValueError(
+                        "the PME mesh is not sized yet: run the data "
+                        "statistics (`compute_input_stats`) on periodic "
+                        "frames, or configure `pme_mesh`"
+                    )
+                params[PME_MESH] = {"n_mesh": self.pme_mesh}
+            else:
+                params[K_GRID] = {"k_max": self._k_max()}
+                if self.k_grid_mode == "fixed":
+                    if self.k_grid_n is None or self.k_grid_n.shape[0] == 0:
+                        raise ValueError(
+                            "the fixed k grid is not sized yet: run the data "
+                            "statistics (`compute_input_stats`) on periodic "
+                            "frames, or configure `k_grid_bounds`"
+                        )
+                    params[K_GRID]["n_grid"] = self.k_grid_n
+        return build_topologies(
+            self.required_topologies(),
+            coord,
+            n_node,
+            box,
+            node_mask,
+            atype=atype,
+            pair_excl=pair_excl,
+            topology_params=params,
         )
 
     def required_topologies(self) -> tuple[str, ...]:
+        if self.periodic:
+            if self.k_grid_mode == "pme":
+                return (ALL_PAIRS, PME_MESH)
+            return (ALL_PAIRS, K_GRID)
         return (ALL_PAIRS,)
 
     def uses_charge_spin(self) -> bool:
@@ -274,6 +592,21 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             charge = self._constrain(
                 charge, node_mask, frame_id, n_node, fparam, charge_spin
             )
+        energy = self._pair_branch(charge, pairs, n)
+        if self.periodic:
+            if self.k_grid_mode == "pme":
+                energy = energy + self._pme_branch(
+                    charge, topologies[PME_MESH], frame_id, node_mask, n_node
+                )
+            else:
+                energy = energy + self._kspace_branch(
+                    charge, topologies[K_GRID], frame_id, node_mask, n_node
+                )
+        return xp.reshape(energy, (n, 1))
+
+    def _pair_branch(self, charge: Array, pairs: Any, n: int) -> Array:
+        """Direct pair sum over the non-periodic frames, per atom."""
+        xp = array_api_compat.array_namespace(charge)
         src = pairs.index[0]
         dst = pairs.index[1]
         pair_charge = xp.sum(
@@ -284,8 +617,271 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         half_energy = (0.5 * COULOMB_CONSTANT) * xp.where(
             pairs.mask, pair_energy, xp.zeros_like(r_sq)
         )
-        energy = segment_sum(half_energy, src, n) + segment_sum(half_energy, dst, n)
-        return xp.reshape(energy, (n, 1))
+        return segment_sum(half_energy, src, n) + segment_sum(half_energy, dst, n)
+
+    def _kspace_branch(
+        self,
+        charge: Array,
+        k_grid: KGrid,
+        frame_id: Array,
+        node_mask: Array,
+        n_node: Array,
+    ) -> Array:
+        r"""Reciprocal-space energy of the periodic frames, per atom.
+
+        Evaluates
+        :math:`E_f = k_e [ \frac{1}{2V_f} \sum_{\mathbf{k}\neq\mathbf{0}}
+        \hat K(\mathbf{k}) |\hat\rho(\mathbf{k})|^2
+        - \frac{1}{2} K(0) \sum_{i \in f} |q_i|^2 ]`
+        on the strained geometry of :attr:`KGrid.strain` (identity when no
+        strain leaf is set): coordinates by ``I + strain``, wave numbers by
+        ``(I + strain)^{-1}`` on their row layout and volumes by
+        ``det(I + strain)``, so that the gradient of the energy with respect
+        to the strain leaf is the negative k-space virial of the frame. The
+        reciprocal energy is attributed to the charged atoms of the frame in
+        equal shares; the self term is per atom by construction. Guard points
+        carry a zero mask.
+        """
+        xp = array_api_compat.array_namespace(charge)
+        nf = n_node.shape[0]
+        coord = k_grid.coord
+        if coord is None:
+            raise ValueError(
+                "the k-grid topology carries no coordinates; the graph lower "
+                "re-leafs them before the evaluation"
+            )
+        coord = xp.astype(coord, charge.dtype)
+        k_vec = xp.astype(k_grid.vec, charge.dtype)
+        volume = xp.astype(k_grid.volume, charge.dtype)
+        if k_grid.strain is not None:
+            eye = xp.eye(3, dtype=charge.dtype, device=array_api_compat.device(charge))
+            s = xp.astype(k_grid.strain, charge.dtype) + eye  # (nf, 3, 3)
+            # r' = S r (columns)
+            s_node = xp.take(s, frame_id, axis=0)  # (N, 3, 3)
+            coord = xp.matmul(s_node, coord[:, :, None])[:, :, 0]
+            # k' = S^{-T} k (columns), i.e. rows multiplied by S^{-1}
+            s_inv_t = xp.matrix_transpose(xp.linalg.inv(s))
+            s_inv_t_k = xp.take(s_inv_t, k_grid.frame, axis=0)  # (nk, 3, 3)
+            k_vec = xp.matmul(s_inv_t_k, k_vec[:, :, None])[:, :, 0]
+            volume = volume * xp.linalg.det(s)
+        phase = xp.matmul(k_vec, xp.matrix_transpose(coord))  # (nk, N)
+        same_frame = frame_id[None, :] == k_grid.frame[:, None]
+        cos_phase = xp.cos(phase) * same_frame
+        sin_phase = xp.sin(phase) * same_frame
+        rho_real = xp.matmul(cos_phase, charge)  # (nk, C)
+        rho_imag = xp.matmul(sin_phase, charge)  # (nk, C)
+        s_sq = xp.sum(rho_real**2 + rho_imag**2, axis=-1)  # (nk,)
+        k_sq = xp.sum(k_vec * k_vec, axis=-1)
+        kernel_value = self.kernel.kspace(k_sq)  # (nk,)
+        half_ke = 0.5 * COULOMB_CONSTANT
+        volume_k = xp.take(volume, k_grid.frame, axis=0)
+        energy_k = half_ke * kernel_value * s_sq / volume_k
+        energy_k = xp.where(k_grid.mask, energy_k, xp.zeros_like(energy_k))
+        e_rec_frame = segment_sum(energy_k, k_grid.frame, nf)  # (nf,)
+        weight = xp.astype(node_mask, charge.dtype)
+        count = segment_sum(weight, frame_id, nf)
+        count = xp.maximum(count, xp.ones_like(count))
+        e_rec = xp.take(e_rec_frame / count, frame_id, axis=0) * weight  # (N,)
+        # The self term belongs to the periodic lattice sum alone: a frame
+        # without real k points (a non-periodic batch on a periodic-enabled
+        # model) keeps its non-periodic self-free energy.
+        periodic_frame = (
+            segment_sum(xp.astype(k_grid.mask, charge.dtype), k_grid.frame, nf) > 0
+        )
+        e_self = (
+            -half_ke
+            * self.kernel.contact_value(charge)
+            * xp.sum(charge * charge, axis=-1)
+            * xp.astype(xp.take(periodic_frame, frame_id, axis=0), charge.dtype)
+        )
+        return e_rec + e_self
+
+    def _pme_b_factor(self, xp: Any, dtype: Any, device: Any, m_axes: list) -> Array:
+        r"""The SPME assignment correction :math:`|B(m)|^2` on the mesh modes.
+
+        Per axis :math:`|D_d(m)|^2 = |\sum_l M_p(l+1) e^{2\pi i m l / n_d}|^2`
+        (equal to :math:`\mathrm{sinc}(m/n_d)^{2p}`), the full factor the
+        three-axis outer product. ``m_axes`` holds the integer mode values of
+        each axis (the third axis carries only the non-negative rfft modes).
+        """
+        w = _bspline_integer_weights(self.pme_order)
+        axes = []
+        for m, n_d in zip(m_axes, self._pme_dims(), strict=True):
+            theta = 2.0 * math.pi * m / n_d
+            re = xp.zeros_like(theta)
+            im = xp.zeros_like(theta)
+            for l, wl in enumerate(w):
+                re = re + float(wl) * xp.cos(theta * l)
+                im = im + float(wl) * xp.sin(theta * l)
+            axes.append(1.0 / (re * re + im * im))
+        b = axes[0][:, None, None] * axes[1][None, :, None] * axes[2][None, None, :]
+        return xp.reshape(b, (-1,))
+
+    def _pme_branch(
+        self,
+        charge: Array,
+        mesh: MeshGrid,
+        frame_id: Array,
+        node_mask: Array,
+        n_node: Array,
+    ) -> Array:
+        r"""Reciprocal-space energy of the periodic frames on a mesh, per atom.
+
+        Evaluates the same lattice sum as :meth:`_kspace_branch` by the SPME
+        algorithm: the charges spread to a static real-space mesh with a
+        B-spline of order :attr:`pme_order`, the mesh transforms by a
+        real-input FFT (only the non-negative :math:`m_3` half-spectrum), and
+        the energy convolves with the kernel transform corrected by the
+        assignment factor (:meth:`_pme_b_factor`) and the hermitian doubling
+        weight of the interior :math:`m_3` planes. No wave-number vector is
+        ever formed: the kernel reads :math:`|k|^2 = (2\pi)^2 m^\mathsf{T} W m`
+        with the per-frame metric :math:`W = (B^{-1})^\mathsf{T} B^{-1}` —
+        six static monomials of the mode indices times six per-frame metric
+        entries, all elementwise. The strain leaf enters the metric by
+        :math:`W' = A^\mathsf{T} A` with :math:`A = S^{-\mathsf{T}} B^{-1}`
+        (:math:`S = I +` strain) and the volume by :math:`\det S` — the
+        fractional coordinates are strain-invariant, so the assignment is
+        unstrained and the virial comes from the metric and the volume alone.
+        Non-periodic frames (``mesh.mask`` false) carry no mesh energy and no
+        self term.
+        """
+        xp = array_api_compat.array_namespace(charge)
+        device = array_api_compat.device(charge)
+        nf = n_node.shape[0]
+        n_channel = charge.shape[-1]
+        n1, n2, n3 = self._pme_dims()
+        p = self.pme_order
+        m_total = n1 * n2 * n3
+        box = xp.astype(mesh.box, charge.dtype)
+        coord = xp.astype(mesh.coord, charge.dtype)
+        volume = xp.astype(mesh.volume, charge.dtype)
+        b_inv = _inv3(xp, box)  # (nf, 3, 3); columns are g_d / 2pi
+        b_inv_node = xp.take(b_inv, frame_id, axis=0)  # (N, 3, 3)
+        # fractional coordinates, wrapped to [0, 1): frac_d = sum_j r_j B^-1_jd
+        # (elementwise; a batched 3x3 GEMV is the worst GEMM shape on GPU)
+        frac = xp.sum(coord[:, :, None] * b_inv_node, axis=1)
+        frac = frac - xp.floor(frac)
+        # per-axis assignment: weights (N, p) and mesh indices (N, p)
+        weights = []
+        indices = []
+        for d, n_d in enumerate((n1, n2, n3)):
+            u = frac[:, d] * n_d
+            base = xp.floor(u)
+            t = (u - base)[:, None]
+            shift = xp.arange(p, dtype=charge.dtype, device=device)[None, :]
+            # x_k = t + p - 1 - k lies in the support [0, p] of M_p
+            weights.append(_bspline_eval(xp, t + (p - 1) - shift, p))
+            idx = (
+                xp.astype(base, xp.int64)[:, None]
+                - (p - 1)
+                + xp.arange(p, dtype=xp.int64, device=device)[None, :]
+            )
+            indices.append(idx % n_d)
+        w1, w2, w3 = weights
+        j1, j2, j3 = indices
+        w = xp.reshape(
+            w1[:, :, None, None] * w2[:, None, :, None] * w3[:, None, None, :],
+            (frac.shape[0], p**3),
+        )
+        lin = xp.reshape(
+            (j1[:, :, None, None] * n2 + j2[:, None, :, None]) * n3
+            + j3[:, None, None, :],
+            (frac.shape[0], p**3),
+        )
+        # spread the charges to the mesh, frame- and channel-major
+        q_mesh = xp.zeros(
+            (nf * n_channel * m_total,), dtype=charge.dtype, device=device
+        )
+        for c in range(n_channel):
+            target = ((frame_id * n_channel + c) * m_total)[:, None] + lin
+            value = charge[:, c][:, None] * w
+            q_mesh = xp_add_at(
+                q_mesh, xp.reshape(target, (-1,)), xp.reshape(value, (-1,))
+            )
+        q_mesh = xp.reshape(q_mesh, (nf * n_channel, n1, n2, n3))
+        # the charge mesh is real: only the non-negative m3 half-spectrum is
+        # transformed and summed (with the doubling weight below)
+        rho = xp.fft.rfftn(q_mesh, axes=(-3, -2, -1))
+        rho_sq = xp.real(rho) ** 2 + xp.imag(rho) ** 2
+        m_half = n1 * n2 * (n3 // 2 + 1)
+        rho_sq = xp.reshape(rho_sq, (nf, n_channel, m_half))
+        # the reciprocal-lattice metric: |k|^2 = (2 pi)^2 m^T W m with
+        # W = (B^-1)^T B^-1; the strain folds in through A = S^-T B^-1 (the
+        # linalg inverse of S keeps its registered backward, safe under a
+        # symbolic frame count)
+        if mesh.strain is not None:
+            eye = xp.eye(3, dtype=charge.dtype, device=device)
+            s = xp.astype(mesh.strain, charge.dtype) + eye  # (nf, 3, 3)
+            s_inv = xp.linalg.inv(s)
+            a = xp.matmul(xp.matrix_transpose(s_inv), b_inv)
+            w_metric = xp.matmul(xp.matrix_transpose(a), a)
+            volume = volume * xp.linalg.det(s)
+        else:
+            w_metric = xp.matmul(xp.matrix_transpose(b_inv), b_inv)
+        # static integer mode grids: full fftfreq order on axes 1, 2; the rfft
+        # axis keeps m3 = 0 .. n3//2
+        m_axes = []
+        for d, n_d in enumerate((n1, n2, n3)):
+            m = xp.arange(n_d, dtype=charge.dtype, device=device)
+            if d == 2:
+                m = m[: n_d // 2 + 1]
+            else:
+                m = xp.where(m > n_d // 2, m - n_d, m)
+            m_axes.append(m)
+        g1, g2, g3 = xp.meshgrid(*m_axes, indexing="ij")
+        m1f = xp.reshape(g1, (-1,))
+        m2f = xp.reshape(g2, (-1,))
+        m3f = xp.reshape(g3, (-1,))
+        # six static monomials x six per-frame metric entries, no GEMM
+        two_pi_sq = (2.0 * math.pi) ** 2
+        k_sq = two_pi_sq * (
+            w_metric[:, 0, 0][:, None] * (m1f * m1f)[None, :]
+            + w_metric[:, 1, 1][:, None] * (m2f * m2f)[None, :]
+            + w_metric[:, 2, 2][:, None] * (m3f * m3f)[None, :]
+            + 2.0 * w_metric[:, 0, 1][:, None] * (m1f * m2f)[None, :]
+            + 2.0 * w_metric[:, 0, 2][:, None] * (m1f * m3f)[None, :]
+            + 2.0 * w_metric[:, 1, 2][:, None] * (m2f * m3f)[None, :]
+        )  # (nf, m_half)
+        # the zero mode sits at flat index 0; guard the singular kernel there
+        safe = xp.where(k_sq == 0.0, xp.ones_like(k_sq), k_sq)
+        influence = xp.reshape(
+            self.kernel.kspace(xp.reshape(safe, (-1,))), (nf, m_half)
+        )
+        influence = (
+            influence * self._pme_b_factor(xp, charge.dtype, device, m_axes)[None, :]
+        )
+        # the spectrum of a real mesh is hermitian: interior m3 planes count
+        # twice, the m3 = 0 and Nyquist planes once
+        w_rfft = xp.where(
+            (m3f > 0) & (m3f < n3 / 2.0),
+            2.0 * xp.ones_like(m3f),
+            xp.ones_like(m3f),
+        )
+        influence = influence * w_rfft[None, :]
+        # the zero mode sits at flat index 0 (tin-foil); keep everything else
+        keep = xp.concat(
+            [
+                xp.zeros((1,), dtype=xp.bool, device=device),
+                xp.ones((m_half - 1,), dtype=xp.bool, device=device),
+            ]
+        )
+        influence = xp.where(keep[None, :], influence, xp.zeros_like(influence))
+        influence = influence * xp.astype(mesh.mask, charge.dtype)[:, None]
+        half_ke = 0.5 * COULOMB_CONSTANT
+        e_frame = (
+            half_ke * xp.sum(influence * xp.sum(rho_sq, axis=1), axis=-1) / volume
+        )  # (nf,)
+        weight = xp.astype(node_mask, charge.dtype)
+        count = segment_sum(weight, frame_id, nf)
+        count = xp.maximum(count, xp.ones_like(count))
+        e_rec = xp.take(e_frame / count, frame_id, axis=0) * weight  # (N,)
+        e_self = (
+            -half_ke
+            * self.kernel.contact_value(charge)
+            * xp.sum(charge * charge, axis=-1)
+            * xp.astype(xp.take(mesh.mask, frame_id, axis=0), charge.dtype)
+        )
+        return e_rec + e_self
 
     def _pair_kernel(self, r_sq: Array, src: Array, n: int) -> Array:
         """Kernel values of the pairs.
@@ -387,9 +983,81 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         protection: float = 1e-2,
         stat_file_path: DPPath | None = None,
     ) -> None:
+        if self.k_grid_mode == "fixed" and (
+            self.k_grid_n is None or self.k_grid_n.shape[0] == 0
+        ):
+            # Materialize the samples once for the grid sizing and the
+            # networks; a lazy sampler is shared by the callers.
+            sampled = merged() if callable(merged) else merged
+            self._size_k_grid(sampled)
+            merged = sampled
+        elif self.k_grid_mode == "pme" and self._pme_dims() is None:
+            sampled = merged() if callable(merged) else merged
+            self._size_pme_mesh(sampled)
+            merged = sampled
         self.charge_net.compute_input_stats(
             merged, protection=protection, stat_file_path=stat_file_path
         )
+
+    def _size_k_grid(self, sampled: list[dict]) -> None:
+        r"""Size the fixed integer k grid by the largest sampled cell.
+
+        Every sampled frame needs :math:`|n_d| \le k_{max} |a_d| / 2\pi` per
+        axis at the wave-number cutoff of the kernel; the grid takes the
+        elementwise maximum of the bounds over the frames. The kernel
+        parameters are read now, so a grid is sized for the kernel at
+        statistics time — frames that later outgrow it (larger cells, or a
+        kernel moving its cutoff out) are truncated to the grid.
+        """
+        k_max = self._k_max()
+        bounds = None
+        for frame in sampled:
+            box = frame.get("box")
+            if box is None:
+                continue
+            box = np.asarray(to_numpy_array(box), dtype=np.float64)
+            if box.size == 0:
+                continue
+            frame_max = np.max(k_grid_bounds_of_cells(box, k_max), axis=0)
+            bounds = frame_max if bounds is None else np.maximum(bounds, frame_max)
+        if bounds is None:
+            raise ValueError(
+                "the fixed k grid takes its size from the data statistics, "
+                "but the sampled frames hold no simulation cell; provide "
+                "periodic training data or configure `k_grid_bounds`"
+            )
+        self.k_grid_n = enumerate_k_grid_bounds(bounds)
+
+    def _size_pme_mesh(self, sampled: list[dict]) -> None:
+        r"""Size the PME mesh by the largest sampled cell.
+
+        Every frame is evaluated on the shared mesh with the effective
+        spacing :math:`|a_d|/n_d` per axis; the mesh takes the largest sampled
+        cell axis down to the target spacing, rounded up to an FFT-smooth
+        dimension. A frame larger than the mesh (a larger cell than the
+        statistics saw) is evaluated with a coarser effective spacing — a
+        smooth accuracy degradation, by design without a warning.
+        """
+        spacing = self._pme_target_spacing()
+        a_max = None
+        for frame in sampled:
+            box = frame.get("box")
+            if box is None:
+                continue
+            box = np.asarray(to_numpy_array(box), dtype=np.float64)
+            if box.size == 0:
+                continue
+            frame_max = np.max(np.linalg.norm(box.reshape(-1, 3, 3), axis=-1), axis=0)
+            a_max = frame_max if a_max is None else np.maximum(a_max, frame_max)
+        if a_max is None:
+            raise ValueError(
+                "the PME mesh takes its size from the data statistics, "
+                "but the sampled frames hold no simulation cell; provide "
+                "periodic training data or configure `pme_mesh`"
+            )
+        dims = [_fft_smooth(int(np.ceil(a / spacing))) for a in a_max]
+        self.pme_mesh = np.asarray(dims, dtype=np.int64)
+        self._pme_n = (dims[0], dims[1], dims[2])
 
     def change_type_map(self, type_map: list[str]) -> None:
         self.charge_net.change_type_map(type_map=type_map)
@@ -406,6 +1074,22 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             "kernel": self.kernel.serialize(),
             "charge_constraint": self.charge_constraint,
         }
+        if self.periodic:
+            data["periodic"] = True
+            data["kspace_tolerance"] = self.kspace_tolerance
+        if self.k_grid_mode != "ragged":
+            data["k_grid_mode"] = self.k_grid_mode
+        if self.k_grid_n is not None and self.k_grid_n.shape[0] > 0:
+            data["k_grid_n"] = to_numpy_array(self.k_grid_n).tolist()
+        if self.decouple_k_grid:
+            data["decouple_k_grid"] = True
+            data["frozen_k_max"] = self.frozen_k_max
+        if self.k_grid_mode == "pme":
+            data["pme_order"] = self.pme_order
+            if self.pme_spacing is not None:
+                data["pme_spacing"] = self.pme_spacing
+            if self._pme_dims() is not None:
+                data["pme_mesh"] = to_numpy_array(self.pme_mesh).tolist()
         if self.charge_state is not None:
             data["charge_state"] = to_numpy_array(self.charge_state).tolist()
         return data
@@ -418,7 +1102,21 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             LatentChargeFitting.deserialize(data["charge_net"]),
             BaseInteractionKernel.deserialize(data["kernel"]),
             data["charge_constraint"],
+            periodic=data.get("periodic", False),
+            kspace_tolerance=data.get("kspace_tolerance", 1e-8),
+            k_grid_mode=data.get("k_grid_mode", "ragged"),
+            decouple_k_grid=data.get("decouple_k_grid", False),
+            pme_spacing=data.get("pme_spacing"),
+            pme_order=data.get("pme_order", 4),
+            pme_mesh=data.get("pme_mesh"),
         )
+        if data.get("frozen_k_max") is not None:
+            # The constructor derives the frozen cutoff from the (possibly
+            # trained) kernel; the record holds the value the grid was
+            # actually built with.
+            obj.frozen_k_max = float(data["frozen_k_max"])
+        if data.get("k_grid_n") is not None:
+            obj.k_grid_n = np.asarray(data["k_grid_n"], dtype=np.int64).reshape(-1, 3)
         if data.get("charge_state") is not None:
             obj.fold_charge_state(np.asarray(data["charge_state"]).reshape(-1).tolist())
         return obj
