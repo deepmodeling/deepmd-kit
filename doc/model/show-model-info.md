@@ -17,6 +17,7 @@ dp --pt show <INPUT> <ATTRIBUTES...>
   - `fitting-net`: Displays parameters of the fitting network.
   - `size`: (Supported Backends: PyTorch and PaddlePaddle) Shows the parameter counts for various components.
   - `observed-type`: (Supported Backends: PyTorch) Shows the observed types (elements) of the model during data statistics. Only energy models are supported now.
+  - `serialization-tree`: Shows the tree structure of the serialized model data, with the number of parameters in each node.
 
 ## Example Usage
 
@@ -65,6 +66,11 @@ Depending on the provided attributes and the model type, the output includes:
   - Displays the count and list of observed element types of the model during data statistics.
   - For multitask models, it shows the observed types for each branch.
   - Note: This info shows the types observed during training data statistics, which may differ from the type map.
+
+- **serialization-tree**
+
+  - Prints the model as a tree of the serialized components (e.g. model, descriptor, fitting network, and their sub-networks), each annotated with its number of parameters. Identical sibling nodes are merged into one entry.
+  - For multitask models, it shows the tree for each branch.
 
 ## Example Output
 
