@@ -2264,7 +2264,7 @@ class LmdbDataReader:
 
         # Re-key _frame_nlocs / _frame_system_ids into the dataset-index
         # space so that every downstream consumer (nloc_groups, system_groups,
-        # LmdbBatchSampler, _expand_indices_by_blocks) operates in a single,
+        # LmdbBatchSampler, _resample_indices_by_blocks) operates in a single,
         # self-consistent indexing scheme.
         keys_are_identity = retained_keys.size == self.nframes
         self._keys_are_identity = keys_are_identity
@@ -3027,9 +3027,11 @@ def compute_block_targets(
 ) -> list[tuple[list[int], int]]:
     """Compute target frame count per block from auto_prob config.
 
-    Uses the same ``prob_sys_size_ext`` logic as the npy pipeline to parse
-    the ``auto_prob`` string, then converts per-system probabilities into
-    per-block target frame counts using the "max(frames/prob)" strategy.
+    Uniform sampling assigns each retained system the rounded-up mean frame
+    count. With ``N`` retained frames and ``M`` nonempty systems, the sampled
+    pass contains ``M * ceil(N / M)`` frames, fewer than ``N + M``.
+    Custom block rules use ``prob_sys_size_ext`` and the non-shrinking
+    ``max(frames / probability)`` strategy.
 
     Parameters
     ----------
@@ -3044,7 +3046,7 @@ def compute_block_targets(
     -------
     list[tuple[list[int], int]]
         Each element is ``(system_indices_in_block, target_frame_count)``.
-        Returns empty list if no expansion is needed (all targets == actual).
+        Returns an empty list if no resampling is needed (all targets == actual).
     """
     from deepmd.utils.data_sampling import (
         prob_sys_size_ext,
@@ -3052,7 +3054,9 @@ def compute_block_targets(
 
     if auto_prob_style == "prob_uniform":
         retained = [index for index, count in enumerate(system_nframes) if count > 0]
-        target = max(system_nframes, default=0)
+        if not retained:
+            return []
+        target = (sum(system_nframes) + len(retained) - 1) // len(retained)
         if all(system_nframes[index] == target for index in retained):
             return []
         return [([index], target) for index in retained]
@@ -3145,118 +3149,76 @@ def compute_block_targets(
     return result
 
 
-def _expand_indices_by_blocks(
-    indices: list[int],
+def _resample_indices_by_blocks(
+    indices: np.ndarray | list[int],
     frame_system_ids: np.ndarray,
-    block_targets: list[tuple[list[int], int]],
+    lookup: np.ndarray,
+    group_targets: list[int],
     rng: np.random.Generator,
-    _block_total_actual: list[int] | None = None,
-    _sid_to_blk_arr: np.ndarray | None = None,
-    _group_block_targets: list[int] | None = None,
 ) -> list[int]:
-    """Expand frame indices according to block targets.
+    """Resample a homogeneous group's frames to its exact block targets.
 
-    For each block, computes the proportional target for the subset of
-    indices belonging to that block (within the current nloc group),
-    then applies full-copy + remainder sampling.
+    Targets are allocated globally by :func:`_allocate_group_block_targets`.
+    A smaller target selects frames without replacement; a larger target
+    uses full-copy + remainder sampling.
 
     Parameters
     ----------
-    indices : list[int]
-        Frame indices in the current nloc group.
+    indices : numpy.ndarray or list[int]
+        Frame indices in the current homogeneous group.
     frame_system_ids : np.ndarray
         Per-frame system id for the entire dataset.
-    block_targets : list[tuple[list[int], int]]
-        Per-block (system_ids, total_target_frames).
+    lookup : numpy.ndarray
+        System-id to block-index table from :func:`system_block_lookup`.
+    group_targets : list[int]
+        Exact target for each block in this group.
     rng : np.random.Generator
-        RNG for remainder sampling.
-    _block_total_actual : list[int] or None
-        Pre-computed total actual frame count per block (across all nloc
-        groups).  When provided, avoids an O(N) scan of frame_system_ids.
-    _sid_to_blk_arr : np.ndarray or None
-        Pre-computed lookup from :func:`system_block_lookup`. When provided,
-        avoids rebuilding the mapping for each call.
-    _group_block_targets : list[int] or None
-        Exact target for each block in this group. Production samplers
-        allocate these targets globally across all groups so independent
-        rounding cannot change a block's total size.
+        RNG for subset and remainder sampling.
 
     Returns
     -------
     list[int]
-        Expanded indices.
+        Resampled indices.
     """
-    n_blocks = len(block_targets)
-
-    if _sid_to_blk_arr is None:
-        _sid_to_blk_arr = system_block_lookup(block_targets)
-
-    sid_arr = np.asarray(frame_system_ids)
     idx_arr = np.asarray(indices, dtype=np.int64)
-    idx_blks = resolve_frame_blocks(idx_arr, sid_arr, _sid_to_blk_arr)
-
-    # Pre-compute block_total_actual if not provided
-    if _block_total_actual is None and _group_block_targets is None:
-        _block_total_actual = count_group_blocks(
-            np.arange(sid_arr.size, dtype=np.int64),
-            sid_arr,
-            _sid_to_blk_arr,
-            n_blocks,
-        ).tolist()
-
-    expanded_parts: list[np.ndarray] = []
+    idx_blks = resolve_frame_blocks(idx_arr, frame_system_ids, lookup)
+    sampled_parts: list[np.ndarray] = []
 
     # Unassigned indices
     unassigned_mask = idx_blks == -1
     if np.any(unassigned_mask):
-        expanded_parts.append(idx_arr[unassigned_mask])
+        sampled_parts.append(idx_arr[unassigned_mask])
 
-    for blk_idx in range(n_blocks):
+    for blk_idx, target in enumerate(group_targets):
         blk_mask = idx_blks == blk_idx
         blk_idxs = idx_arr[blk_mask]
         n_actual = len(blk_idxs)
         if n_actual == 0:
             continue
 
-        if _group_block_targets is not None:
-            target = _group_block_targets[blk_idx]
-        else:
-            _, block_total_target = block_targets[blk_idx]
-            block_total_act = _block_total_actual[blk_idx]
-
-            # Backward-compatible fallback for direct callers. Samplers pass
-            # exact group targets allocated by _allocate_group_block_targets.
-            if block_total_act > 0:
-                target = round(block_total_target * n_actual / block_total_act)
-            else:
-                target = n_actual
-            target = max(target, n_actual)  # never shrink
-
         if target < n_actual:
-            raise ValueError(
-                "Per-group auto-probability target cannot shrink original frames: "
-                f"target={target}, actual={n_actual}, block={blk_idx}"
-            )
+            sampled_parts.append(rng.choice(blk_idxs, size=target, replace=False))
+            continue
 
         # Full copies + remainder
         deficit = target - n_actual
         if deficit <= 0:
-            expanded_parts.append(blk_idxs)
+            sampled_parts.append(blk_idxs)
         else:
             full_copies = deficit // n_actual
             remainder = deficit % n_actual
             # Original + full copies
             if full_copies > 0:
-                expanded_parts.append(np.tile(blk_idxs, 1 + full_copies))
+                sampled_parts.append(np.tile(blk_idxs, 1 + full_copies))
             else:
-                expanded_parts.append(blk_idxs)
+                sampled_parts.append(blk_idxs)
             # Remainder: sample without replacement
             if remainder > 0:
                 sampled = rng.choice(blk_idxs, size=remainder, replace=False)
-                expanded_parts.append(sampled)
+                sampled_parts.append(sampled)
 
-    if expanded_parts:
-        return np.concatenate(expanded_parts).tolist()
+    if sampled_parts:
+        return np.concatenate(sampled_parts).tolist()
     return []
 
 
@@ -3403,13 +3365,16 @@ def _allocate_group_block_targets(
     groups: list[np.ndarray],
     frame_system_ids: np.ndarray,
     block_targets: list[tuple[list[int], int]],
+    rng: np.random.Generator,
 ) -> list[list[int]]:
     """Allocate every block target exactly across homogeneous groups.
 
-    Original frames form the non-shrinking baseline. Each block's expansion
+    For expansion, original frames form the non-shrinking baseline. Each block's
     deficit is apportioned by actual group size using the integer largest-
     remainder method. Stable group order breaks equal-remainder ties, which
     keeps distributed ranks deterministic without floating-point rounding.
+    A smaller target instead samples group counts from a uniform subset of
+    the block's frames, so no small group is permanently excluded by rounding.
     """
     lookup = system_block_lookup(block_targets)
     group_actual = [
@@ -3422,17 +3387,26 @@ def _allocate_group_block_targets(
     group_targets = [counts.copy() for counts in group_actual]
     for block_index, (_system_ids, block_target) in enumerate(block_targets):
         block_actual = sum(counts[block_index] for counts in group_actual)
-        if block_target < block_actual:
-            raise ValueError(
-                "Auto-probability block target cannot shrink original frames: "
-                f"target={block_target}, actual={block_actual}, block={block_index}"
-            )
         if block_actual == 0:
             if block_target != 0:
                 raise ValueError(
                     "Cannot allocate a nonzero auto-probability target to an "
                     f"empty block: target={block_target}, block={block_index}"
                 )
+            continue
+
+        if block_target < block_actual:
+            # Uniform positions in the concatenated groups give the group
+            # counts of a global sample without replacement. Sampling within
+            # each group then gives every block frame the same inclusion chance.
+            stops = np.cumsum(
+                [counts[block_index] for counts in group_actual], dtype=np.int64
+            )
+            positions = rng.choice(block_actual, size=block_target, replace=False)
+            sampled_groups = np.searchsorted(stops, positions, side="right")
+            counts = np.bincount(sampled_groups, minlength=len(groups))
+            for group_index, target in enumerate(counts):
+                group_targets[group_index][block_index] = int(target)
             continue
 
         deficit = block_target - block_actual
@@ -3579,7 +3553,7 @@ def _build_all_batches(
         Random number generator (deterministic for reproducibility).
     block_targets : list[tuple[list[int], int]] or None
         Per-block (system_ids, target_frame_count) from compute_block_targets.
-        When provided, indices are expanded via full-copy + remainder sampling.
+        When provided, each block is resampled to its target frame count.
 
     Returns
     -------
@@ -3599,22 +3573,21 @@ def _build_all_batches(
     if block_targets and reader.frame_system_ids is not None:
         sid_arr = reader.frame_system_ids
         group_block_targets = _allocate_group_block_targets(
-            groups, sid_arr, block_targets
+            groups, sid_arr, block_targets, rng
         )
         sid_to_blk_arr = system_block_lookup(block_targets)
 
     for group_index, original_indices in enumerate(groups):
         indices = original_indices
-        # Expand each group independently using targets that were allocated
+        # Resample each group independently using targets that were allocated
         # globally, so that a block's total size is preserved exactly.
         if block_targets and sid_arr is not None and group_block_targets is not None:
-            indices = _expand_indices_by_blocks(
+            indices = _resample_indices_by_blocks(
                 indices,
                 sid_arr,
-                block_targets,
+                sid_to_blk_arr,
+                group_block_targets[group_index],
                 rng,
-                _sid_to_blk_arr=sid_to_blk_arr,
-                _group_block_targets=group_block_targets[group_index],
             )
         if shuffle:
             # ``permutation`` returns a copy, which matters because a group
@@ -3668,7 +3641,7 @@ class LmdbBatchSampler:
     seed : int or None
         Random seed for reproducibility.
     block_targets : list[tuple[list[int], int]] or None
-        Per-block expansion targets from compute_block_targets.
+        Per-block resampling targets from compute_block_targets.
     """
 
     def __init__(
@@ -3769,7 +3742,7 @@ class DistributedLmdbBatchSampler:
     seed : int or None
         Base seed for deterministic RNG. All ranks must use the same seed.
     block_targets : list[tuple[list[int], int]] or None
-        Per-block expansion targets from compute_block_targets.
+        Per-block resampling targets from compute_block_targets.
     """
 
     def __init__(

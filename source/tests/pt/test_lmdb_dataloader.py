@@ -1075,6 +1075,31 @@ def auto_prob_lmdb(tmp_path):
 class TestAutoProbDataset:
     """Test LmdbDataset with auto_prob_style."""
 
+    @pytest.mark.parametrize(
+        ("auto_prob", "expected_frames"),
+        [("prob_uniform", 300), ("prob_sys_size;0:1:0.5;1:2:0.5", 350)],
+    )
+    def test_summary_reports_exact_pass_frames(
+        self,
+        auto_prob_lmdb: str,
+        caplog: pytest.LogCaptureFixture,
+        auto_prob: str,
+        expected_frames: int,
+    ) -> None:
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style=auto_prob,
+        )
+        try:
+            with caplog.at_level("INFO", logger="deepmd.pt.utils.lmdb_dataset"):
+                ds.print_summary("training", None)
+            assert f"300->{expected_frames} frames" in caplog.text
+            assert sum(len(batch) for batch in ds._batch_sampler) == expected_frames
+        finally:
+            ds.close()
+
     def test_dataset_auto_prob_passthrough(self, auto_prob_lmdb):
         ds = LmdbDataset(
             auto_prob_lmdb,
@@ -1732,11 +1757,11 @@ def uniform_sources(tmp_path: Path) -> tuple[list[str], list[np.ndarray]]:
         ("pt", 1, False, False),
         ("pt", "max:24", True, False),
         ("pt", "filter:12", False, False),
-        ("pt", "mix:30", True, False),
+        ("pt", "mix:50", True, False),
         ("pt_expt", 1, True, False),
         ("pt_expt", "filter:12", True, False),
-        ("pt_expt", "mix:30", False, False),
-        ("pt_expt", "mix:30", False, True),
+        ("pt_expt", "mix:50", False, False),
+        ("pt_expt", "mix:50", False, True),
     ],
 )
 def test_uniform_groups_balance_internal_system_frames(
@@ -1796,7 +1821,7 @@ def test_uniform_groups_balance_internal_system_frames(
         counts[:eligible] / counts.sum(), 1 / eligible, atol=0.025
     )
     assert counts[eligible:].sum() == 0
-    if batch_size == "mix:30":
+    if batch_size == "mix:50":
         assert mixed
 
 
