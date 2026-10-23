@@ -100,7 +100,7 @@ __global__ void prepare_nodes(const double* __restrict__ coord,
                               int node_count,
                               int channels,
                               int channel,
-                              const float* __restrict__ alpha,
+                              const double* __restrict__ alpha,
                               const double* __restrict__ frame_stat,
                               float4* __restrict__ head,
                               float4* __restrict__ tail,
@@ -110,7 +110,7 @@ __global__ void prepare_nodes(const double* __restrict__ coord,
   if (node >= node_count) {
     return;
   }
-  const double scale = alpha == nullptr ? 1.0 : static_cast<double>(*alpha);
+  const double scale = alpha == nullptr ? 1.0 : *alpha;
   const int f = frame_of(frame_ptr, frame_count, node);
   double3 offset = make_double3(0.0, 0.0, 0.0);
   if (f >= 0) {
@@ -413,7 +413,7 @@ __global__ void __launch_bounds__(kThreads)
                       const int64_t* __restrict__ frame_ptr,
                       int owner_begin,
                       int owner_count,
-                      const float* __restrict__ coefficient,
+                      const double* __restrict__ coefficient,
                       int gaussian_count,
                       float* __restrict__ partial) {
   constexpr int kWidth = sum_width<kChannels>();
@@ -431,8 +431,8 @@ __global__ void __launch_bounds__(kThreads)
 
   if constexpr (kKernel == kSog) {
     for (int k = threadIdx.x; k < gaussian_count; k += kThreads) {
-      const float amplitude = coefficient[k];
-      const float rate = coefficient[gaussian_count + k];
+      const float amplitude = static_cast<float>(coefficient[k]);
+      const float rate = static_cast<float>(coefficient[gaussian_count + k]);
       gaussians[k] = make_float4(amplitude, -rate,
                                  -1.38629436111989061f * rate * amplitude, 0.f);
     }
@@ -548,7 +548,7 @@ __global__ void reduce_chunks(const float* __restrict__ partial,
                               int owner_count,
                               int chunk_count,
                               double prefactor,
-                              const float* __restrict__ alpha,
+                              const double* __restrict__ alpha,
                               float* __restrict__ potential,
                               float* __restrict__ force,
                               float* __restrict__ atom_virial) {
@@ -565,7 +565,7 @@ __global__ void reduce_chunks(const float* __restrict__ partial,
     value +=
         partial[static_cast<int64_t>(chunk) * kWidth * owner_count + index];
   }
-  const double unit = alpha == nullptr ? 1.0 : static_cast<double>(*alpha);
+  const double unit = alpha == nullptr ? 1.0 : *alpha;
   if (component < kChannels) {
     potential[node * kChannels + component] =
         static_cast<float>(prefactor * unit * value);
@@ -698,15 +698,17 @@ int chunk_count_for(int owner_count,
 
 // The staged partners, one row per node, and the sums of the owners.
 struct DirectSumBuffers {
-  const torch::Tensor& head;
-  const torch::Tensor& tail;
-  const torch::Tensor& charge;
-  const torch::Tensor& frame;
-  const torch::Tensor& frame_ptr;
-  const torch::Tensor& coefficient;
-  torch::Tensor& potential;
-  torch::Tensor& force;
-  torch::Tensor& atom_virial;
+  const float4* head;
+  const float4* tail;
+  const float* charge;
+  const int* frame;
+  const int64_t* frame_ptr;
+  int node_count;
+  const double* coefficient;
+  int gaussian_count;
+  float* potential;
+  float* force;
+  float* atom_virial;
 };
 
 template <int kKernel, int kChannels>
@@ -730,28 +732,25 @@ void launch(const DirectSumBuffers& buffers,
             cudaStream_t stream) {
   constexpr int kWidth = sum_width<kChannels>();
   const int chunk_count =
-      chunk_count_for(owner_count, static_cast<int>(buffers.head.size(0)),
+      chunk_count_for(owner_count, buffers.node_count,
                       resident_blocks_per_multiprocessor<kKernel, kChannels>());
   auto partial =
       torch::empty({static_cast<int64_t>(chunk_count) * owner_count * kWidth},
-                   buffers.charge.options());
+                   torch::TensorOptions()
+                       .dtype(torch::kFloat32)
+                       .device(torch::kCUDA, c10::cuda::current_device()));
   const dim3 grid((owner_count + kThreads - 1) / kThreads, chunk_count);
   direct_sum_kernel<kKernel, kChannels><<<grid, kThreads, 0, stream>>>(
-      reinterpret_cast<const float4*>(buffers.head.data_ptr<float>()),
-      reinterpret_cast<const float4*>(buffers.tail.data_ptr<float>()),
-      buffers.charge.data_ptr<float>(), buffers.frame.data_ptr<int>(),
-      buffers.frame_ptr.data_ptr<int64_t>(), owner_begin, owner_count,
-      buffers.coefficient.data_ptr<float>(),
-      static_cast<int>(buffers.coefficient.numel() / 2),
-      partial.data_ptr<float>());
+      buffers.head, buffers.tail, buffers.charge, buffers.frame,
+      buffers.frame_ptr, owner_begin, owner_count, buffers.coefficient,
+      buffers.gaussian_count, partial.data_ptr<float>());
   C10_CUDA_KERNEL_LAUNCH_CHECK();
   const int64_t reduce_threads = static_cast<int64_t>(kWidth) * owner_count;
   reduce_chunks<kChannels>
       <<<static_cast<unsigned>((reduce_threads + 255) / 256), 256, 0, stream>>>(
           partial.data_ptr<float>(), owner_count, chunk_count, prefactor,
-          kKernel == kLes ? buffers.coefficient.data_ptr<float>() : nullptr,
-          buffers.potential.data_ptr<float>(), buffers.force.data_ptr<float>(),
-          buffers.atom_virial.data_ptr<float>());
+          kKernel == kLes ? buffers.coefficient : nullptr, buffers.potential,
+          buffers.force, buffers.atom_virial);
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
@@ -844,14 +843,6 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
   auto virial = torch::empty({frame_count, 9}, float_options);
 
   const auto counts = n_node_per_frame.to(torch::kInt64).contiguous();
-  auto frame_ptr = torch::empty({frame_count + 1}, counts.options());
-  auto head = torch::empty({node_count, 4}, float_options);
-  auto tail = torch::empty({node_count, 4}, float_options);
-  auto frame = torch::empty({node_count}, coord.options().dtype(torch::kInt32));
-  auto pair_charge = torch::empty({node_count, channels}, float_options);
-  auto potential = torch::empty({owner_count, channels}, float_options);
-  auto frame_stat = torch::empty({constrained ? frame_count * kStatWidth : 0},
-                                 double_options);
   const auto slices_for = [frame_count](int64_t nodes) {
     const int64_t average_nodes = (nodes + frame_count - 1) / frame_count;
     return static_cast<int>(std::min<int64_t>(
@@ -859,42 +850,73 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
         std::max<int64_t>(1, (average_nodes + kSliceNodes - 1) / kSliceNodes)));
   };
   const int slice_count = slices_for(node_count);
-  const dim3 slice_grid(frame_count, slice_count);
+  const int owner_slice_count = slices_for(owner_count);
+  const int components = constrained ? 10 : 9;
+  Workspace workspace;
+  const int64_t frame_ptr_at = workspace.reserve<int64_t>(frame_count + 1);
+  const int64_t head_at = workspace.reserve<float4>(node_count);
+  const int64_t tail_at = workspace.reserve<float4>(node_count);
+  const int64_t frame_at = workspace.reserve<int>(node_count);
+  const int64_t pair_charge_at =
+      workspace.reserve<float>(int64_t{node_count} * channels);
+  const int64_t potential_at =
+      workspace.reserve<float>(int64_t{owner_count} * channels);
+  const int64_t frame_stat_at =
+      workspace.reserve<double>(int64_t{frame_count} * kStatWidth);
+  const int64_t slice_charge_at =
+      workspace.reserve<double>(int64_t{frame_count} * slice_count * 2);
+  const int64_t slice_virial_at = workspace.reserve<double>(
+      int64_t{frame_count} * owner_slice_count * components);
+  workspace.allocate(coord.device());
+  auto* frame_ptr = workspace.at<int64_t>(frame_ptr_at);
+  auto* head = workspace.at<float4>(head_at);
+  auto* tail = workspace.at<float4>(tail_at);
+  auto* frame = workspace.at<int>(frame_at);
+  auto* pair_charge = workspace.at<float>(pair_charge_at);
+  auto* potential = workspace.at<float>(potential_at);
+  auto* frame_stat =
+      constrained ? workspace.at<double>(frame_stat_at) : nullptr;
+  auto* slice_charge = workspace.at<double>(slice_charge_at);
+  auto* slice_virial = workspace.at<double>(slice_virial_at);
+
   const auto stream = at::cuda::getCurrentCUDAStream();
-  frame_offsets<<<1, kOffsetThreads, 0, stream>>>(
-      counts.data_ptr<int64_t>(), frame_count, frame_ptr.data_ptr<int64_t>());
+  frame_offsets<<<1, kOffsetThreads, 0, stream>>>(counts.data_ptr<int64_t>(),
+                                                  frame_count, frame_ptr);
   C10_CUDA_KERNEL_LAUNCH_CHECK();
   if (constrained) {
-    auto slice_charge = torch::empty(
-        {static_cast<int64_t>(frame_count) * slice_count * 2}, double_options);
-    charge_slices<<<slice_grid, kFrameThreads, 0, stream>>>(
-        charge.data_ptr<float>(), node_mask.data_ptr<bool>(),
-        frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
-        constrained_channel, slice_charge.data_ptr<double>());
+    charge_slices<<<dim3(frame_count, slice_count), kFrameThreads, 0, stream>>>(
+        charge.data_ptr<float>(), node_mask.data_ptr<bool>(), frame_ptr,
+        static_cast<int>(channels), constrained_channel, slice_charge);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     charge_shift<<<(frame_count + kFrameThreads - 1) / kFrameThreads,
                    kFrameThreads, 0, stream>>>(
-        slice_charge.data_ptr<double>(), slice_count, frame_count,
-        total_charge.data_ptr<double>(), frame_stat.data_ptr<double>());
+        slice_charge, slice_count, frame_count, total_charge.data_ptr<double>(),
+        frame_stat);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
   }
   // Alpha stays on the device, so that a call never waits for it.
+  const double* alpha =
+      kernel == kLes ? coefficient.data_ptr<double>() : nullptr;
   prepare_nodes<<<(node_count + kThreads - 1) / kThreads, kThreads, 0,
-                  stream>>>(
-      coord.data_ptr<double>(), charge.data_ptr<float>(),
-      node_mask.data_ptr<bool>(), frame_ptr.data_ptr<int64_t>(), frame_count,
-      node_count, static_cast<int>(channels), constrained_channel,
-      kernel == kLes ? coefficient.data_ptr<float>() : nullptr,
-      constrained ? frame_stat.data_ptr<double>() : nullptr,
-      reinterpret_cast<float4*>(head.data_ptr<float>()),
-      reinterpret_cast<float4*>(tail.data_ptr<float>()), frame.data_ptr<int>(),
-      pair_charge.data_ptr<float>());
+                  stream>>>(coord.data_ptr<double>(), charge.data_ptr<float>(),
+                            node_mask.data_ptr<bool>(), frame_ptr, frame_count,
+                            node_count, static_cast<int>(channels),
+                            constrained_channel, alpha, frame_stat, head, tail,
+                            frame, pair_charge);
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 
   if (owner_count > 0) {
-    const DirectSumBuffers buffers{head,      tail,      pair_charge,
-                                   frame,     frame_ptr, coefficient,
-                                   potential, force,     atom_virial};
+    const DirectSumBuffers buffers{head,
+                                   tail,
+                                   pair_charge,
+                                   frame,
+                                   frame_ptr,
+                                   node_count,
+                                   coefficient.data_ptr<double>(),
+                                   static_cast<int>(coefficient.numel() / 2),
+                                   potential,
+                                   force.data_ptr<float>(),
+                                   atom_virial.data_ptr<float>()};
     if (kernel == kLes) {
       dispatch_channels<kLes>(static_cast<int>(channels), buffers, owner_begin,
                               owner_count, prefactor, stream.stream());
@@ -906,54 +928,46 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
   // The frames of the owners, on the axis of the owners: the frames
   // themselves when every node is an owner, else the one frame the owners
   // share, written on the device.
-  torch::Tensor owner_frame_ptr = frame_ptr;
+  torch::Tensor owner_frame_tensor;
+  const int64_t* owner_frame_ptr = frame_ptr;
   if (!every_node) {
-    owner_frame_ptr =
-        torch::full({2}, int64_t{owner_count}, frame_ptr.options());
-    owner_frame_ptr.select(0, 0).zero_();
+    owner_frame_tensor =
+        torch::full({2}, int64_t{owner_count}, counts.options());
+    owner_frame_tensor.select(0, 0).zero_();
+    owner_frame_ptr = owner_frame_tensor.data_ptr<int64_t>();
   }
   const bool* owner_mask = node_mask.data_ptr<bool>() + owner_begin;
-  const int owner_slice_count = slices_for(owner_count);
   const dim3 owner_slice_grid(frame_count, owner_slice_count);
-  const int components = constrained ? 10 : 9;
-  auto slice_virial = torch::empty(
-      {static_cast<int64_t>(frame_count) * owner_slice_count * components},
-      double_options);
   if (constrained) {
     virial_slices<true><<<owner_slice_grid, kFrameThreads, 0, stream>>>(
-        atom_virial.data_ptr<float>(), potential.data_ptr<float>(), owner_mask,
-        owner_frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
-        constrained_channel, slice_virial.data_ptr<double>());
+        atom_virial.data_ptr<float>(), potential, owner_mask, owner_frame_ptr,
+        static_cast<int>(channels), constrained_channel, slice_virial);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     virial_total<true><<<frame_count, 32, 0, stream>>>(
-        slice_virial.data_ptr<double>(), owner_slice_count,
-        virial.data_ptr<float>(), frame_stat.data_ptr<double>());
+        slice_virial, owner_slice_count, virial.data_ptr<float>(), frame_stat);
   } else {
     virial_slices<false><<<owner_slice_grid, kFrameThreads, 0, stream>>>(
-        atom_virial.data_ptr<float>(), potential.data_ptr<float>(), owner_mask,
-        owner_frame_ptr.data_ptr<int64_t>(), static_cast<int>(channels),
-        constrained_channel, slice_virial.data_ptr<double>());
+        atom_virial.data_ptr<float>(), potential, owner_mask, owner_frame_ptr,
+        static_cast<int>(channels), constrained_channel, slice_virial);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     virial_total<false><<<frame_count, 32, 0, stream>>>(
-        slice_virial.data_ptr<double>(), owner_slice_count,
-        virial.data_ptr<float>(), nullptr);
+        slice_virial, owner_slice_count, virial.data_ptr<float>(), nullptr);
   }
   C10_CUDA_KERNEL_LAUNCH_CHECK();
   if (constrained && communicator != nullptr) {
     // The mean potential of the constraint runs over the charged nodes of
     // every domain.
-    auto potential_sum =
-        frame_stat.view({frame_count, kStatWidth}).select(1, kStatPotential);
+    auto stat =
+        torch::from_blob(frame_stat, {frame_count, kStatWidth}, double_options);
+    auto potential_sum = stat.select(1, kStatPotential);
     potential_sum.copy_(
         sum_over_domains(*communicator, potential_sum.contiguous()));
   }
   if (owner_count > 0) {
     project_charges<<<(owner_count + kThreads - 1) / kThreads, kThreads, 0,
                       stream>>>(
-        potential.data_ptr<float>(),
-        pair_charge.data_ptr<float>() + int64_t{owner_begin} * channels,
-        owner_mask, frame.data_ptr<int>() + owner_begin,
-        constrained ? frame_stat.data_ptr<double>() : nullptr, owner_count,
+        potential, pair_charge + int64_t{owner_begin} * channels, owner_mask,
+        frame + owner_begin, frame_stat, owner_count,
         static_cast<int>(channels), constrained_channel,
         atom_energy.data_ptr<double>(), charge_gradient.data_ptr<float>());
     C10_CUDA_KERNEL_LAUNCH_CHECK();

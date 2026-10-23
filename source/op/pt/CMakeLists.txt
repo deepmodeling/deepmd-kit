@@ -218,7 +218,8 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     set_property(TARGET deepmd_op_pt PROPERTY CUDA_ARCHITECTURES
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
-  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublas CUDA::cublasLt)
+  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublas CUDA::cublasLt
+                                             CUDA::cufft)
   # libtorch headers require at least C++17, and PyTorch 2.14+ requires C++20.
   # Preserve an explicitly higher CUDA standard requested by the user.
   set(DEEPMD_PT_CUDA_STANDARD 17)

@@ -11,8 +11,9 @@ a pair sum: padding nodes and frames do not interact, the forces of a frame
 cancel, and the energy, force, charge gradient and virial follow from one
 another.
 
-For periodic frames the CUDA kernels evaluate the mesh sum in float64, and are
-held to the mesh evaluation of the training path, differentiated by autograd.
+For periodic frames the CUDA kernels evaluate the mesh sum in float32 on
+B-spline weights formed in float64, and are held to the float64 mesh
+evaluation of the training path, differentiated by autograd.
 """
 
 from __future__ import (
@@ -29,6 +30,9 @@ import torch
 
 from deepmd.dpmodel.long_range import (
     COULOMB_CONSTANT,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    mesh_dims_of_cells,
 )
 from deepmd.pt_expt.kernels.long_range import (
     _reference,
@@ -322,17 +326,17 @@ def test_mesh_virial_is_the_strain_derivative(kernel_name: str) -> None:
 
     Straining the positions and the cell together by ``I + eps`` changes the
     energy by ``-W : eps``; the atomic virial of the charged nodes sums to W.
-    The mesh interpolates in float32, whose rounding the central difference
-    divides by its step, so that the step stays large against it.
+    The central difference takes the float64 mesh energy, whose rounding stays
+    far below that of the float32 outputs of the operator.
     """
     system = _system([60], 2, 0, 13, 0.0)
     coord, charge, node_mask, n_node, total_charge = system
     box = _cells(1, 10.0)
     kernel = KERNELS[kernel_name]()
-    atom_energy, _, _, atom_virial, virial = latent_charge_sum(
+    _, _, _, atom_virial, virial = latent_charge_sum(
         *system, kernel, 0, COULOMB_CONSTANT, box=box, spacing=0.5
     )
-    h = 1e-3
+    h = 1e-5
     finite = np.zeros((3, 3))
     for a in range(3):
         for b in range(3):
@@ -348,26 +352,48 @@ def test_mesh_virial_is_the_strain_derivative(kernel_name: str) -> None:
                     total_charge,
                 )
                 cell = box.reshape(3, 3) @ strain.T
+                # Both strained cells keep the mesh of the cell.
+                assert mesh_dims_of_cells(cell.reshape(1, 9).numpy(), 0.5) == (
+                    mesh_dims_of_cells(box.numpy(), 0.5)
+                )
                 energies.append(
-                    latent_charge_sum(
-                        *strained,
-                        kernel,
-                        0,
-                        COULOMB_CONSTANT,
-                        box=cell.reshape(1, 9),
-                        spacing=0.5,
-                    )[0].sum()
+                    _reference_of(strained, kernel, 0, cell.reshape(1, 9), 8, 0.5)[
+                        0
+                    ].sum()
                 )
             finite[a, b] = -(energies[0] - energies[1]).item() / (2 * h)
     scale = np.abs(finite).max()
     np.testing.assert_allclose(
-        virial[0].double().cpu().numpy().reshape(3, 3), finite, atol=2e-4 * scale
+        virial[0].double().cpu().numpy().reshape(3, 3), finite, atol=2e-6 * scale
     )
     np.testing.assert_allclose(
         atom_virial.double().sum(0).cpu().numpy().reshape(3, 3),
         finite,
-        atol=2e-4 * scale,
+        atol=2e-6 * scale,
     )
+
+
+@pytest.mark.parametrize("order", [2, 3, 5, 7, 9, 10, 11, 12])
+def test_mesh_orders(order: int) -> None:
+    """Every B-spline order agrees with the mesh evaluation of training.
+
+    The atomic energies of these small cells are a fraction of the self
+    energy, to a few 1e-7 of which the float32 mesh resolves them.
+    """
+    system = _system([40, 23], 2, 3, 5, -5.0)
+    box = _cells(2, 9.0)
+    actual, expected = _evaluate(system, KERNELS["sog"](), 1, box, order, 0.7)
+    _assert_close(actual, expected, 1e-5)
+
+
+def test_mesh_stencil_wider_than_the_axis() -> None:
+    """A stencil wider than an axis of the mesh wraps around it more than once."""
+    system = _system([12], 1, 0, 9, 0.0)
+    box = _cells(1, 3.0)
+    # Four points per axis, against eight of the stencil.
+    assert mesh_dims_of_cells(box.numpy(), 1.0) == (4, 4, 4)
+    actual, expected = _evaluate(system, KERNELS["les"](), 0, box, 8, 1.0)
+    _assert_close(actual, expected, 1e-6)
 
 
 @pytest.mark.parametrize("periodic", [False, True])

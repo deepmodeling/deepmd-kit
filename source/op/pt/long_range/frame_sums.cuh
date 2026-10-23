@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
 // Per-frame bookkeeping shared by the CUDA units of the latent-charge long
-// range: the offsets of the frames on the node axis, the sums over the nodes
-// of every frame in a fixed order, and the statistics of the charge
-// constraint.
+// range: the workspace of a call, the offsets of the frames on the node axis,
+// the sums over the nodes of every frame in a fixed order, and the statistics
+// of the charge constraint.
 //
 // The kernels are defined in an unnamed namespace, so that every unit that
 // includes this header compiles its own copy.
@@ -11,10 +11,43 @@
 #pragma once
 
 #include <cuda_runtime.h>
+#include <torch/types.h>
 
+#include <algorithm>
 #include <cstdint>
 
 namespace {
+
+// The intermediate buffers of one call, carved out of a single device
+// allocation: ``reserve`` lays out a buffer of ``count`` elements and returns
+// its byte offset, and ``at`` its address once ``allocate`` has made the
+// allocation. Every buffer starts on a 256-byte boundary.
+class Workspace {
+ public:
+  template <typename T>
+  int64_t reserve(int64_t count) {
+    bytes_ = (bytes_ + kAlignment - 1) / kAlignment * kAlignment;
+    const int64_t offset = bytes_;
+    bytes_ += count * static_cast<int64_t>(sizeof(T));
+    return offset;
+  }
+
+  void allocate(const torch::Device& device) {
+    storage_ = torch::empty(
+        {std::max<int64_t>(bytes_, 1)},
+        torch::TensorOptions().dtype(torch::kUInt8).device(device));
+  }
+
+  template <typename T>
+  T* at(int64_t offset) const {
+    return reinterpret_cast<T*>(storage_.data_ptr<uint8_t>() + offset);
+  }
+
+ private:
+  static constexpr int64_t kAlignment = 256;
+  int64_t bytes_ = 0;
+  torch::Tensor storage_;
+};
 
 // Index of the frame holding ``node``, or -1 for a padding node past every
 // frame. ``frame_ptr`` holds ``frame_count + 1`` offsets.

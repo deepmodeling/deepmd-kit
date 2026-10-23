@@ -14,6 +14,7 @@
 #include <torch/library.h>
 #include <torch/types.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 
@@ -57,9 +58,8 @@ struct Evaluation {
           owner_count, communicator);
     }
     return deepmd::long_range::direct_sum(
-        coord, charge, node_mask, n_node_per_frame, total_charge,
-        coefficient.to(torch::kFloat32), kernel, channel, prefactor,
-        owner_begin, owner_count, communicator);
+        coord, charge, node_mask, n_node_per_frame, total_charge, coefficient,
+        kernel, channel, prefactor, owner_begin, owner_count, communicator);
   }
 };
 
@@ -116,18 +116,25 @@ ChargeSumOutputs evaluate_across_domains(const Evaluation& evaluation,
           virial};
 }
 
-// Whether the frames carry cells: ``box`` is given and no row of it is zero,
-// or no frame carries one.
+// Whether the frames carry cells: true when ``box`` is given and none of its
+// rows is zero, false when it is absent or all of its rows are; a call that
+// mixes the two is rejected.
 bool periodic_frames(const c10::optional<torch::Tensor>& box) {
   if (!box.has_value()) {
     return false;
   }
-  const auto has_cell = box->ne(0.0).any(1);
-  const bool any = has_cell.any().item<bool>();
-  TORCH_CHECK(!any || has_cell.all().item<bool>(),
+  const auto cells = box->contiguous();
+  const double* value = cells.data_ptr<double>();
+  const int64_t frame_count = cells.size(0);
+  int64_t periodic = 0;
+  for (int64_t f = 0; f < frame_count; ++f) {
+    periodic += std::any_of(value + 9 * f, value + 9 * (f + 1),
+                            [](double entry) { return entry != 0.0; });
+  }
+  TORCH_CHECK(periodic == 0 || periodic == frame_count,
               "latent_charge_sum: every frame of a call is periodic, or none "
               "is");
-  return any;
+  return periodic > 0;
 }
 
 ChargeSumOutputs latent_charge_sum(torch::Tensor coord,

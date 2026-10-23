@@ -31,7 +31,7 @@ using ChargeSumOutputs = std::tuple<torch::Tensor,
                                     torch::Tensor,
                                     torch::Tensor>;
 
-// The direct sum. ``coefficient`` holds the float32 coefficients of the
+// The direct sum. ``coefficient`` holds the float64 coefficients of the
 // kernel on the device.
 ChargeSumOutputs direct_sum(const torch::Tensor& coord,
                             const torch::Tensor& charge,
