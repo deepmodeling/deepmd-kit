@@ -2478,7 +2478,7 @@ class LmdbDataReader:
         # workers a chunk of it is shipped to.
         return BatchLayout.over(
             self._frame_nlocs[np.asarray(indices, dtype=np.int64)].astype(np.int64),
-            self.per_atom_strides(),
+            self.per_atom_strides(indices[0]),
             ragged=self._ragged_batches if ragged is None else ragged,
         )
 
@@ -2511,12 +2511,18 @@ class LmdbDataReader:
         """
         self._ragged_batches = ragged and self.mixed_nloc
 
-    def per_atom_strides(self) -> dict[str, int]:
+    def per_atom_strides(self, index: int = 0) -> dict[str, int]:
         """Return the leading-axis entries per atom of each per-atom field.
 
         Every frame of one LMDB exposes the same fields, so the classification
         is a property of the dataset and its registered requirements rather
-        than of a batch, and is resolved from the first frame once.
+        than of a batch, and is resolved from a selected frame once.
+
+        Parameters
+        ----------
+        index : int, optional
+            Dataset index of the frame used to initialize the cached strides.
+            Batch consumers supply a member of their selected indices.
 
         Returns
         -------
@@ -2524,7 +2530,7 @@ class LmdbDataReader:
             Entries per atom, keyed by field name.
         """
         if self._per_atom_strides is None:
-            frame = self[0]
+            frame = self[index]
             self._per_atom_strides = per_atom_strides(
                 frame, resolve_per_atom_keys(frame, self._decode_config)
             )
@@ -3965,11 +3971,13 @@ class LmdbTestData:
         first = next(
             (indices[0] for indices in self._nloc_groups.values() if len(indices)), None
         )
-        probe = self._read_frames([first]) if first is not None else []
-        if probe:
-            box = probe[0].get("box")
-            if not isinstance(box, np.ndarray) or np.allclose(box, 0.0):
-                self.pbc = False
+        if first is not None:
+            with self._env.begin() as transaction:
+                raw = transaction.get(format(first, self._frame_fmt).encode())
+            if raw is not None:
+                frame = _remap_keys(msgpack.unpackb(raw, raw=False))
+                box = _decode_value(frame.get("box"), copy_arrays=False)
+                self.pbc = isinstance(box, np.ndarray) and not np.allclose(box, 0.0)
 
         self.mixed_type = True
 

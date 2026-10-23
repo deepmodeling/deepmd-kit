@@ -1887,7 +1887,9 @@ class TestTypeMapRemapping(unittest.TestCase):
     def tearDownClass(cls):
         cls._tmpdir.cleanup()
 
-    def _subset_type_map_lmdb(self, name: str, second_type: int = 2) -> str:
+    def _subset_type_map_lmdb(
+        self, name: str, second_type: int = 2, *, first_type: int = 2
+    ) -> str:
         """Build two frames using a sparse source type map and a virtual atom."""
         path = _create_lmdb_with_virtual_type(f"{self._tmpdir.name}/{name}.lmdb")
         with lmdb.open(path) as environment, environment.begin(write=True) as txn:
@@ -1900,7 +1902,7 @@ class TestTypeMapRemapping(unittest.TestCase):
             )
             txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
             frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
-            for index, last_type in enumerate((2, second_type)):
+            for index, last_type in enumerate((first_type, second_type)):
                 frame["atom_types"] = {
                     "type": "<i8",
                     "shape": [3],
@@ -1934,7 +1936,7 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.addCleanup(reader.close)
         np.testing.assert_array_equal(reader[0]["atype"], [1, -1, 0])
         with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
-            reader[1]
+            reader.__getitem__(1)
         with self.assertRaisesRegex(ValueError, "frame 1.*He.*model type_map"):
             reader.decode_batch([0, 1])
         iterator = LmdbBatchIterator(
@@ -1950,6 +1952,48 @@ class TestTypeMapRemapping(unittest.TestCase):
             path, type_map=["H", "O"], shuffle_test=False, max_frames=1
         )
         np.testing.assert_array_equal(selected.get_test()["type"], [[1, -1, 0]])
+
+    def test_batch_selection_ignores_unsupported_first_frame(self) -> None:
+        """Layout discovery reads a frame belonging to the requested batch."""
+        path = self._subset_type_map_lmdb("unsupported_first_batch", first_type=1)
+        for num_workers in (0, 2):
+            with self.subTest(num_workers=num_workers):
+                reader = LmdbDataReader(path, ["H", "O"], batch_size=2)
+                self.addCleanup(reader.close)
+                iterator = LmdbBatchIterator(reader, [[1, 1]], num_workers=num_workers)
+                self.addCleanup(iterator.close)
+                np.testing.assert_array_equal(
+                    next(iterator)["atype"], [[1, -1, 0], [1, -1, 0]]
+                )
+                with self.assertRaisesRegex(ValueError, "frame 0.*He.*model type_map"):
+                    reader.decode_batch([0])
+
+    def test_testdata_probe_ignores_unsupported_first_frame(self) -> None:
+        """PBC discovery is independent of element validation and frame selection."""
+        for box_kind in ("cells", "box", "zero", "missing"):
+            with self.subTest(box_kind=box_kind):
+                path = self._subset_type_map_lmdb(
+                    f"unsupported_first_test_{box_kind}", first_type=1
+                )
+                with (
+                    lmdb.open(path) as environment,
+                    environment.begin(write=True) as txn,
+                ):
+                    frame = msgpack.unpackb(txn.get(b"000000000000"), raw=False)
+                    if box_kind == "box":
+                        frame["box"] = frame.pop("cells")
+                    elif box_kind == "zero":
+                        frame["cells"]["data"] = np.zeros((3, 3)).tobytes()
+                    elif box_kind == "missing":
+                        del frame["cells"]
+                    txn.put(b"000000000000", msgpack.packb(frame, use_bin_type=True))
+                test_data = LmdbTestData(path, type_map=["H", "O"], shuffle_test=False)
+                self.assertEqual(test_data.pbc, box_kind in ("cells", "box"))
+                np.testing.assert_array_equal(
+                    test_data.get_test_by_indices([1])["type"], [[1, -1, 0]]
+                )
+                with self.assertRaisesRegex(ValueError, "frame 0.*He.*model type_map"):
+                    test_data.get_test_by_indices([0])
 
     def test_subset_remapping_reaches_parallel_decoder_workers(self) -> None:
         path = self._subset_type_map_lmdb("parallel_subset")
@@ -1990,7 +2034,7 @@ class TestTypeMapRemapping(unittest.TestCase):
         reader = LmdbDataReader(self._lmdb_path, ["O"])
         self.addCleanup(reader.close)
         with self.assertRaises(ValueError):
-            reader[0]
+            reader.__getitem__(0)
 
     def test_reader_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -2020,8 +2064,9 @@ class TestTypeMapRemapping(unittest.TestCase):
         self.assertIsNotNone(td._type_remap)
 
     def test_testdata_missing_element_raises(self):
+        td = LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
         with self.assertRaises(ValueError):
-            LmdbTestData(self._lmdb_path, type_map=["O"], shuffle_test=False)
+            td.get_test()
 
     def test_testdata_no_type_map_in_metadata(self):
         tmpdir = tempfile.TemporaryDirectory()
@@ -2050,7 +2095,7 @@ class TestTypeMapRemapping(unittest.TestCase):
         reader = LmdbDataReader(path, ["H", "O"])
         self.addCleanup(reader.close)
         with self.assertRaises(IndexError):
-            reader[1]
+            reader.__getitem__(1)
 
 
 # ============================================================
