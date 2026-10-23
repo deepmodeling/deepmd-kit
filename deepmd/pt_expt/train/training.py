@@ -156,6 +156,10 @@ from deepmd.utils.data_system import (
 from deepmd.utils.finetune import (
     warn_configuration_mismatch_during_finetune,
 )
+from deepmd.utils.pt_checkpoint import (
+    apply_pt_checkpoint_defaults,
+    normalize_pt_model_params,
+)
 from deepmd.utils.stat_file import (
     StatFileSpec,
     open_stat_file,
@@ -1804,6 +1808,18 @@ class Trainer(AbstractTrainer):
         self.restart_training = restart_model is not None
 
         model_params = config["model"]
+        if resuming and not resume_model.endswith((".pte", ".pt2")):
+            resume_state = torch.load(
+                resume_model, map_location="cpu", weights_only=True
+            )
+            if "model" in resume_state:
+                resume_state = resume_state["model"]
+            resume_model_params = resume_state.get("_extra_state", {}).get(
+                "model_params"
+            )
+            if isinstance(resume_model_params, dict):
+                apply_pt_checkpoint_defaults(model_params, resume_model_params)
+            del resume_state
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}
@@ -2178,7 +2194,9 @@ class Trainer(AbstractTrainer):
                     pretrained_model_params = data["model_def_script"]
                     pretrained_model = BaseModel.deserialize(data["model"]).to(DEVICE)
                 else:
-                    pretrained_model_params = state_dict["_extra_state"]["model_params"]
+                    pretrained_model_params = normalize_pt_model_params(
+                        state_dict["_extra_state"]["model_params"]
+                    )
 
                 # Build pretrained model (single-task or multi-task)
                 if "model_dict" not in pretrained_model_params:
@@ -2329,6 +2347,18 @@ class Trainer(AbstractTrainer):
                 )
             else:
                 # --- Normal resume (init_model / restart) --------------------
+                # Keep the effective model parameters from the current
+                # construction.  Legacy checkpoints omit property
+                # ``distinguish_types``; restoring their extra state here
+                # would make a subsequent save lose an explicit config value.
+                current_extra_state = self._unwrapped.state_dict()["_extra_state"]
+                if self.restart_training:
+                    state_dict["_extra_state"] = {
+                        **state_dict.get("_extra_state", {}),
+                        "model_params": current_extra_state["model_params"],
+                    }
+                else:
+                    state_dict["_extra_state"] = current_extra_state
                 self._unwrapped.load_state_dict(state_dict)
 
             if shared_links is not None:

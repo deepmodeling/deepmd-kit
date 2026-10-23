@@ -17,6 +17,9 @@ from deepmd.utils.finetune import get_finetune_rule_single as get_finetune_rule_
 from deepmd.utils.finetune import (
     get_finetune_rules_from_model_params,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 __all__ = ["get_finetune_rule_single", "get_finetune_rules"]
 
@@ -32,7 +35,7 @@ def get_finetune_rules(
     if "model" in state_dict:
         state_dict = state_dict["model"]
     return get_finetune_rules_from_model_params(
-        state_dict["_extra_state"]["model_params"],
+        normalize_pt_model_params(state_dict["_extra_state"]["model_params"]),
         model_config,
         model_branch=model_branch,
         change_model_params=change_model_params,

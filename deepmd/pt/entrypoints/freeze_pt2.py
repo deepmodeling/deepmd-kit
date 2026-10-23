@@ -85,6 +85,9 @@ from deepmd.utils.bridging import (
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
 )
+from deepmd.utils.pt_checkpoint import (
+    normalize_pt_model_params,
+)
 
 log = logging.getLogger(__name__)
 
@@ -155,7 +158,7 @@ def _extract_state_and_params(
     params = extra.get("model_params")
     if not isinstance(params, dict):
         raise ValueError("Unsupported checkpoint: missing '_extra_state.model_params'.")
-    return inner, params
+    return inner, normalize_pt_model_params(params)
 
 
 def is_sezm_checkpoint(ckpt_path: str) -> bool:
