@@ -17,6 +17,16 @@ from __future__ import (
     annotations,
 )
 
+from contextlib import (
+    nullcontext,
+)
+from types import (
+    SimpleNamespace,
+)
+from typing import (
+    TYPE_CHECKING,
+)
+
 import pytest
 import torch
 from torch._dynamo.testing import (
@@ -40,10 +50,17 @@ from .conditioning import (
     median_deviations,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import (
+        Iterator,
+    )
+
 pytestmark = [
-    pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is required"),
     pytest.mark.skipif(not GRID_PAIR_TRITON_AVAILABLE, reason="Triton is unavailable"),
 ]
+requires_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available(), reason="CUDA is required"
+)
 
 # ``(lmax, n_frames, n_focus, channels, n_grid)`` spanning the deployed grid
 # shapes. The slot count ``(lmax + 1)^2 * n_frames`` drives the operator's
@@ -61,6 +78,93 @@ GRID_SHAPES = [
 # Independent operand draws the verdict is taken over; see
 # :func:`.conditioning.median_deviations`.
 DRAW_SEEDS = (11, 2027, 40529)
+
+
+@pytest.fixture
+def isolated_launch_selection(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Keep selector tests independent of CUDA hardware and prior cache entries."""
+    monkeypatch.setattr(torch.cuda, "device", lambda device: nullcontext())
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda device: "test device")
+    grid_pair_module._select_launch_config.cache_clear()
+    yield
+    grid_pair_module._select_launch_config.cache_clear()
+
+
+@pytest.mark.usefixtures("isolated_launch_selection")
+@pytest.mark.parametrize("failure_stage", ["warmup", "handles"])
+def test_launch_selection_retries_and_caches(
+    failure_stage: str,
+) -> None:
+    """Resource rejection tries the next candidate and caches its admission."""
+    attempts = []
+
+    class Kernel:
+        def warmup(self, *args: object, **kwargs: object) -> SimpleNamespace:
+            attempts.append((kwargs["C_BLK"], kwargs["BLOCK_G"], kwargs["num_stages"]))
+
+            def init_handles() -> None:
+                if len(attempts) <= 2:
+                    raise grid_pair_module.triton.runtime.errors.OutOfResources(
+                        2, 1, "test"
+                    )
+
+            if failure_stage == "warmup":
+                init_handles()
+                return SimpleNamespace(_init_handles=lambda: None)
+            return SimpleNamespace(_init_handles=init_handles)
+
+    kernel = Kernel()
+    shape = ("test_kernel", 147, 64, 2, 3, False, 587, torch.float32)
+    select = grid_pair_module._select_launch_config
+    result = select(kernel, torch.device("cuda:0"), shape, (torch.float32, 2), 1)
+    assert result == (32, 32, 1)
+    assert attempts == [(32, 64, 2), (32, 32, 2), (32, 32, 1)]
+    assert (
+        select(kernel, torch.device("cuda:0"), shape, (torch.float32, 2), 1) == result
+    )
+    assert len(attempts) == 3
+
+
+@pytest.mark.usefixtures("isolated_launch_selection")
+def test_launch_rejection_is_cached_and_reported() -> None:
+    """An exhausted selector prevents execution and reuses its cached miss."""
+    attempts = []
+
+    class Kernel:
+        fn = SimpleNamespace(__name__="test_kernel")
+
+        def warmup(self, *args: object, **kwargs: object) -> None:
+            attempts.append((kwargs["C_BLK"], kwargs["BLOCK_G"], kwargs["num_stages"]))
+            raise grid_pair_module.triton.runtime.errors.OutOfResources(2, 1, "test")
+
+    kernel = Kernel()
+    select = grid_pair_module._select_launch_config
+    value = torch.empty(2, 49, 2, 192, device="cpu")
+    for _ in range(2):
+        with pytest.raises(grid_pair_module._NoViableConfig, match="P=147, C=64"):
+            grid_pair_module._launch(kernel, value, 587, 3, False, (value,), 1)
+    assert len(attempts) == len(set(attempts)) == 8
+    assert select.cache_info().hits == 1
+
+
+@pytest.mark.usefixtures("isolated_launch_selection")
+def test_launch_selection_preserves_compiler_errors() -> None:
+    """A compiler defect must neither select a fallback nor enter the cache."""
+    attempts = []
+
+    class Kernel:
+        def warmup(self, *args: object, **kwargs: object) -> None:
+            attempts.append(kwargs)
+            raise RuntimeError("compiler defect")
+
+    kernel = Kernel()
+    select = grid_pair_module._select_launch_config
+    shape = ("test_kernel", 147, 64, 2, 3, False, 587, torch.float32)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="compiler defect"):
+            select(kernel, torch.device("cuda:0"), shape, (torch.float32, 2), 1)
+    assert len(attempts) == 2
+    assert select.cache_info().currsize == 0
 
 
 def test_blackwell_launch_table_uses_exact_grid_shape() -> None:
@@ -251,6 +355,7 @@ def _compare(
 @pytest.mark.parametrize(
     ("lmax", "n_frames", "n_focus", "channels", "n_grid"), GRID_SHAPES
 )
+@requires_cuda
 def test_float32_matches_eager_conditioning(
     lmax: int, n_frames: int, n_focus: int, channels: int, n_grid: int
 ) -> None:
@@ -261,6 +366,7 @@ def test_float32_matches_eager_conditioning(
 @pytest.mark.parametrize(
     ("lmax", "n_frames", "n_focus", "channels", "n_grid"), GRID_SHAPES
 )
+@requires_cuda
 def test_autocast_bfloat16_matches_eager_conditioning(
     lmax: int, n_frames: int, n_focus: int, channels: int, n_grid: int
 ) -> None:
@@ -268,6 +374,7 @@ def test_autocast_bfloat16_matches_eager_conditioning(
     _compare((lmax, n_frames, n_focus, channels, n_grid), amp=True)
 
 
+@requires_cuda
 def test_noncontiguous_operands_match_eager_conditioning() -> None:
     """Cover the channel-slice strides supplied by production grid nets."""
     _compare(GRID_SHAPES[1], amp=True, strided=True)
@@ -277,6 +384,7 @@ def test_noncontiguous_operands_match_eager_conditioning() -> None:
     ("n_focus", "degree_major"),
     [(1, False), (2, True)],
 )
+@requires_cuda
 def test_symbolic_graph_reuses_layout_across_batch_shapes(
     n_focus: int, degree_major: bool
 ) -> None:
@@ -355,6 +463,7 @@ def test_symbolic_graph_reuses_layout_across_batch_shapes(
         torch.testing.assert_close(got, want)
 
 
+@requires_cuda
 def test_aotautograd_reuses_multifocus_stride_across_batch_shapes() -> None:
     """Keep a producer's batch-dependent coefficient stride out of guards."""
     n_frames, coeff_dim, n_focus, channels, n_grid = 3, 4, 2, 16, 32
@@ -397,13 +506,21 @@ def test_aotautograd_reuses_multifocus_stride_across_batch_shapes() -> None:
 @pytest.mark.parametrize(
     ("n_focus", "channels", "amp", "force_reference"),
     [
-        (2, 64, False, False),
-        (1, 192, False, False),
-        (2, 64, True, False),
-        (1, 192, True, False),
+        (2, 96, False, False),
+        (1, 256, False, False),
+        (2, 96, True, False),
+        (1, 256, True, False),
         (2, 16, False, True),
     ],
+    ids=[
+        "multifocus-fp32",
+        "singlefocus-fp32",
+        "multifocus-amp",
+        "singlefocus-amp",
+        "reference",
+    ],
 )
+@requires_cuda
 def test_cold_compiled_force_backward(
     n_focus: int,
     channels: int,
@@ -419,17 +536,31 @@ def test_cold_compiled_force_backward(
     configuration must retain the reference composition through compilation.
     """
     torch._dynamo.reset()
-    grid_pair_module._select_launch_config.cache_clear()
     monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
     monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
+    fallback_ops = set()
+    reference = grid_pair_module._eager_packed
+
+    def record_fallback(op: str, *args: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        fallback_ops.add(op)
+        return reference(op, *args)
+
+    monkeypatch.setattr(grid_pair_module, "_eager_packed", record_fallback)
     if force_reference:
 
-        def reject_configs(*_args: object, **_kwargs: object) -> None:
-            return None
+        def reject_candidate(*args: object, **kwargs: object) -> None:
+            raise grid_pair_module.triton.runtime.errors.OutOfResources(2, 1, "test")
 
-        monkeypatch.setattr(grid_pair_module, "_select_launch_config", reject_configs)
+        for kernel in (
+            grid_pair_module._grid_pair_fwd_kernel,
+            grid_pair_module._grid_pair_bwd_kernel,
+            grid_pair_module._grid_pair_bwd2_kernel,
+        ):
+            monkeypatch.setattr(kernel, "warmup", reject_candidate)
 
-    n_frames, coeff_dim, n_grid = 3, 36, 344
+    # Degree six reproduces the P=147 resource pressure. The distinct grid
+    # count prevents eager production-shape tests from warming this launch key.
+    n_frames, coeff_dim, n_grid = 3, 49, 587
     device = torch.device("cuda")
     generator = torch.Generator(device=device).manual_seed(40529)
     projectors = tuple(
@@ -501,3 +632,4 @@ def test_cold_compiled_force_backward(
             ):
                 torch.testing.assert_close(got, want)
     assert counter.frame_count == 1
+    assert fallback_ops == ({"fwd", "bwd", "bwd2"} if force_reference else set())
