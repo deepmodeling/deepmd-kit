@@ -109,6 +109,26 @@ class TestNormalizePresetOutBias(unittest.TestCase):
 
 
 class TestBundledTables(unittest.TestCase):
+    def test_openmd(self) -> None:
+        table = load_preset_out_bias_table("openmd")
+        self.assertEqual(len(table), 83)
+        out = normalize_preset_out_bias(
+            {"energy": "openmd"}, ["O", "H", "La", "Bi", "Pu"]
+        )
+        self.assertEqual(
+            out["energy"],
+            [
+                [-443.0343602483389],
+                [-12.560490553805243],
+                [-950.8377156904378],
+                [-6345.199411321936],
+                None,
+            ],
+        )
+        config = {"type_map": ["H"], "preset_out_bias": {"energy": "openmd"}}
+        resolved = resolve_preset_out_bias_tables(config)
+        self.assertEqual(resolved["preset_out_bias"], {"energy": table})
+
     def test_name_before_path(self) -> None:
         tables = bundled_preset_out_bias_tables()
         self.assertEqual(load_preset_out_bias_table("omat24"), tables["omat24"])

@@ -153,6 +153,7 @@ limit of the model is pinned. Two model options provide this together:
 
 | Name     | Reference calculation | Elements                                  |
 | -------- | --------------------- | ----------------------------------------- |
+| `openmd` | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
 | `mptraj` | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
 | `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
 | `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
@@ -165,6 +166,18 @@ The `omat24`, `omol25`, `omc25` and `odac25` tables are the isolated-atom
 reference energies of the UMA training tasks published with fairchem
 (`configs/uma/training_release/element_refs/iso_atom_elem_refs.yaml`, MIT
 license).
+
+The `openmd` table contains the OpenMD ABACUS PBE plane-wave atomic
+reference energies from `ABACUS_PBE_PW_atom_E0.json` (H to Bi), in eV.
+Use `"preset_out_bias": {"energy": "openmd"}` to select it.
+These are ABACUS 3.9.0 `!FINAL_ETOT_IS` values calculated with the OpenMD
+UPF pseudopotentials, a 100 Ry cutoff, a 30 Angstrom cubic cell, Gamma-point
+sampling, `nspin=1`, no SOC, and Gaussian smearing of 0.01 Ry.
+They are finite-smearing, non-spin-polarized references, rather than
+spin-polarized free-atom ground-state energies. The La value
+(-950.8377156904378 eV) is the accepted final-step energy after 120 SCF
+iterations; its final density residual was 1.2043e-7 against a target of
+1e-8. The other 82 elements met that SCF threshold.
 
 Each table is on the energy scale of its own reference calculation
 (the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a

@@ -3643,7 +3643,7 @@ def model_args(
         "For an energy model it is the energy of an isolated atom, so with `vacuum_ref` in the fitting net an atom "
         "without neighbors gives exactly this energy. Four forms are accepted: a dict keyed by element symbol, "
         "e.g. `{'energy': {'O': -430.1, 'H': -13.6}}`; the name of a bundled table of isolated-atom energies, e.g. "
-        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25` and `odac25`, which takes precedence "
+        "`{'energy': 'omat24'}`, one of `mptraj`, `omat24`, `omol25`, `omc25`, `odac25` and `openmd`, which takes precedence "
         "over a file of the same name; "
         "the path of a JSON file holding such a dict, e.g. `{'energy': 'e0.json'}`, relative to the working directory; "
         "or a list with one entry per type of the `type_map` (`null` leaves a type unassigned), which is also the form "
