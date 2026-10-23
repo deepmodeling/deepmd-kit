@@ -914,13 +914,11 @@ class TestRaggedTrainingBatches(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmpdir)
         self.lmdb_path = os.path.join(self.tmpdir, "mixed.lmdb")
         self.spin_lmdb_path = os.path.join(self.tmpdir, "mixed-spin.lmdb")
         _create_mixed_nloc_test_lmdb(self.lmdb_path)
         _create_mixed_nloc_test_lmdb(self.spin_lmdb_path, include_spin=True)
-
-    def tearDown(self) -> None:
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _config_for_model(
         self,
@@ -1064,6 +1062,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         os.chdir(self.tmpdir)
         try:
             trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
             batch = trainer.training_data.get_batch()
             trainer.run()
             return trainer, batch
@@ -1081,6 +1080,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         os.chdir(self.tmpdir)
         try:
             trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
             batch = trainer.training_data.get_batch()
             trainer.run()
             return trainer, batch
@@ -1098,7 +1098,9 @@ class TestRaggedTrainingBatches(unittest.TestCase):
             # rather than its minimum, so the distances that set a splitting
             # threshold are measured on the geometry itself. A unit pair
             # threshold makes each margin the minimum pair distance in Å.
-            batch = get_trainer(copy.deepcopy(config)).training_data.get_batch()
+            probe = get_trainer(copy.deepcopy(config))
+            self.addCleanup(probe._close_data_systems)
+            batch = probe.training_data.get_batch()
             distances = compute_min_pair_margin_batch(
                 np.asarray(batch["coord"]),
                 np.asarray(batch["box"]),
@@ -1111,6 +1113,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
 
             config["training"]["training_data"]["min_pair_dist"] = threshold
             trainer = get_trainer(copy.deepcopy(config))
+            self.addCleanup(trainer._close_data_systems)
             self.assertTrue(trainer.training_data._reader.ragged_batches)
             dropped = False
             for _ in range(6):
@@ -1163,6 +1166,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
                     config = self._config(self._dpa1())
                     config["loss"].update(loss_params)
                     trainer = get_trainer(config)
+                    self.addCleanup(trainer._close_data_systems)
                     self.assertFalse(trainer.training_data._reader.ragged_batches)
         finally:
             os.chdir(cwd)
@@ -1175,6 +1179,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         os.chdir(self.tmpdir)
         try:
             trainer = get_trainer(config)
+            self.addCleanup(trainer._close_data_systems)
             batch = trainer.training_data.get_batch()
         finally:
             os.chdir(cwd)
@@ -1259,6 +1264,7 @@ class TestRaggedTrainingBatches(unittest.TestCase):
         try:
             with patch.object(Trainer, "_epoch_length", record_layout):
                 trainer = get_trainer(config)
+                self.addCleanup(trainer._close_data_systems)
         finally:
             os.chdir(cwd)
 
