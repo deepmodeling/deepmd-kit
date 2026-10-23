@@ -352,7 +352,10 @@ def mesh_energy(
     keep = keep[None, ...] & mesh.mask[:, None, None, None]
     safe_k_sq = xp.where(keep, k_sq, xp.ones_like(k_sq))
     shape = safe_k_sq.shape
-    transform = xp.reshape(kernel.kspace(xp.reshape(safe_k_sq, (-1,))), shape)
+    # One row per frame and first mode index, along which the gradients of
+    # the kernel parameters sum first.
+    rows = xp.reshape(safe_k_sq, (nf * n1, n2 * (n3 // 2 + 1)))
+    transform = xp.reshape(kernel.kspace(rows), shape)
     f1, f2, f3 = _assignment_factor(m_half, (n1, n2, n3), order)
     factor = f1[:, None, None] * f2[None, :, None] * f3[None, None, :]
     influence = (COULOMB_CONSTANT * transform * factor[None, ...]) / volume[

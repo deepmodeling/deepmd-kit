@@ -115,13 +115,13 @@ class BaseInteractionKernel(NativeOP, make_plugin_registry("interaction kernel")
         Parameters
         ----------
         k_sq
-            Squared wave numbers with shape ``(nk,)``, in Å⁻²; every entry
-            must be positive.
+            Squared wave numbers with shape ``(nk,)`` or ``(rows, nk)``, in
+            Å⁻²; every entry must be positive.
 
         Returns
         -------
         Array
-            The transformed kernel with shape ``(nk,)``, in Å³.
+            The transformed kernel with the shape of ``k_sq``, in Å³.
         """
         raise NotImplementedError
 
@@ -161,6 +161,18 @@ class BaseInteractionKernel(NativeOP, make_plugin_registry("interaction kernel")
             dtype=like.dtype,
             device=array_api_compat.device(like),
         )
+
+    @staticmethod
+    def _row_values(value: Array, k_sq: Array) -> Array:
+        """A scalar broadcast to shape ``(..., 1)`` over the leading axes of ``k_sq``.
+
+        The gradient of a parameter of the transform sums over every wave
+        number. Broadcast over the rows, it sums along every row first, a
+        reduction a compiled graph spreads over the rows, and then over the
+        rows, rather than over every wave number in one block.
+        """
+        xp = array_api_compat.array_namespace(k_sq)
+        return xp.broadcast_to(value, (*k_sq.shape[:-1], 1))
 
     def serialize(self) -> dict:
         return {
@@ -270,7 +282,7 @@ class LESKernel(BaseInteractionKernel):
         # erf(alpha r)/r is the interaction of two Gaussian charge clouds of
         # width 1/(sqrt(2) alpha); its transform is the damped Coulomb
         # 4 pi exp(-k^2 / 4 alpha^2) / k^2.
-        alpha = xp.exp(self._parameter("log_alpha", k_sq))
+        alpha = self._row_values(xp.exp(self._parameter("log_alpha", k_sq)), k_sq)
         return 4.0 * np.pi * xp.exp(-k_sq / (4.0 * alpha * alpha)) / k_sq
 
     def contact_value(self, like: Array) -> Array:
@@ -382,13 +394,11 @@ class SOGKernel(BaseInteractionKernel):
         # whose ln-sigma trapezoid sum approaches 4 pi / k^2. The mode loop is
         # unrolled: a (nk, M) intermediate breaks inductor's double backward of
         # the k-space virial (NaN), while per-mode (nk,) terms compile fine.
-        terms = [
-            amplitude[m]
-            * (2.0 * np.pi) ** 1.5
-            * width[m] ** 3
-            * xp.exp(-0.5 * width[m] ** 2 * k_sq)
-            for m in range(width.shape[0])
-        ]
+        terms = []
+        for m in range(width.shape[0]):
+            weight = self._row_values(amplitude[m] * width[m] ** 3, k_sq)
+            rate = self._row_values(0.5 * width[m] ** 2, k_sq)
+            terms.append((2.0 * np.pi) ** 1.5 * weight * xp.exp(-rate * k_sq))
         return sum(terms[1:], terms[0])
 
     def contact_value(self, like: Array) -> Array:
