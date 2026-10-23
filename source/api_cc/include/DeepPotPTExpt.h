@@ -413,6 +413,8 @@ class DeepPotPTExpt : public DeepPotBackend {
    */
   bool uses_fp32_edge_vectors() const override;
   bool uses_canonical_graph_inference() const override;
+  std::vector<double> get_default_chg_spin() const override;
+  bool has_atomic_virial() const override;
 
  private:
   template <typename EDGE_TYPE>
@@ -460,6 +462,8 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
   std::vector<double> default_chg_spin_;
+  // Defer unavailable metadata to the query, preserving single-model loading.
+  std::string default_chg_spin_query_error_;
   /** Half-open row range of each charge-state value, from the archive. */
   std::vector<std::pair<double, double> > chg_spin_table_ranges_;
   double rcut;
