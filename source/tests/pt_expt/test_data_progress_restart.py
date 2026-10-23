@@ -41,6 +41,9 @@ from deepmd.pt_expt.train.ema import (
 from deepmd.pt_expt.train.training import (
     Trainer,
 )
+from deepmd.pt_expt.utils.env import (
+    DEVICE,
+)
 from deepmd.pt_expt.utils.lmdb_dataset import (
     LmdbDataSystem,
 )
@@ -357,6 +360,10 @@ def test_relocated_restart_can_reset_only_data_progress(
     original.run()
     checkpoint = tmp_path / "model.ckpt-3.pt"
     state = torch.load(checkpoint, weights_only=True)
+    # Native restart maps every optimizer tensor, including Adam's step.
+    checkpoint_optimizer = torch.load(
+        checkpoint, map_location=DEVICE, weights_only=True
+    )["optimizer"]["state"]
     assert DATA_PROGRESS_CHECKPOINT_KEY in state
     legacy_state = deepcopy(state)
     del legacy_state[DATA_PROGRESS_CHECKPOINT_KEY]
@@ -395,7 +402,7 @@ def test_relocated_restart_can_reset_only_data_progress(
     )
     torch.testing.assert_close(reset.optimizer.state_dict(), expected_optimizer)
     torch.testing.assert_close(
-        reset.optimizer.state_dict()["state"], state["optimizer"]["state"]
+        reset.optimizer.state_dict()["state"], checkpoint_optimizer
     )
     torch.testing.assert_close(reset.model_ema.state_dict(), state[EMA_CHECKPOINT_KEY])
     for key, value in state["model"].items():
@@ -432,7 +439,11 @@ def test_changed_world_size_retains_legacy_optimizer_restart(
     config["training"].update(numb_steps=3, save_freq=3)
     original = get_trainer(deepcopy(config))
     original.run()
-    state = torch.load(tmp_path / "model.ckpt-3.pt", weights_only=True)
+    checkpoint = tmp_path / "model.ckpt-3.pt"
+    state = torch.load(checkpoint, weights_only=True)
+    checkpoint_optimizer = torch.load(
+        checkpoint, map_location=DEVICE, weights_only=True
+    )["optimizer"]["state"]
     progress = state.pop(DATA_PROGRESS_CHECKPOINT_KEY)
     legacy_path = tmp_path / "legacy.pt"
     torch.save(state, legacy_path)
@@ -455,7 +466,7 @@ def test_changed_world_size_retains_legacy_optimizer_restart(
     assert changed.start_step == 3
     assert changed.scheduler.get_last_lr() == expected_lr
     torch.testing.assert_close(
-        changed.optimizer.state_dict()["state"], state["optimizer"]["state"]
+        changed.optimizer.state_dict()["state"], checkpoint_optimizer
     )
     for key, value in state["model"].items():
         if torch.is_tensor(value):
