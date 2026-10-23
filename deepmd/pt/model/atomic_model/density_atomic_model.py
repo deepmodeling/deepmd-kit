@@ -137,6 +137,11 @@ class DPDensityAtomicModel(DPAtomicModel):
             if default_cs_tensor is not None:
                 default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
                 charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
+            else:
+                raise ValueError(
+                    "charge_spin is required when the descriptor enables "
+                    "charge/spin embedding without default_chg_spin"
+                )
         _, ngrid, _ = grid_nlist.shape
         # nb x (ngrid+nall) x 3
         merged_coord = torch.cat([grid, extended_coord], dim=1)

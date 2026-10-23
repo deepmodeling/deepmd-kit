@@ -435,6 +435,13 @@ class TestDPTestDensity(unittest.TestCase):
             self._training_config(self.system, start=0.0, limit=0.0), workdir
         )
 
+    def test_training_with_disp_avg(self) -> None:
+        # TaskLoss.training_metric_names is consulted before training starts
+        # whenever averaged metrics are requested.
+        config = self._training_config(self.system)
+        config["training"]["disp_avg"] = True
+        self._run_training(config, tempfile.mkdtemp(dir=self.tmpdir.name))
+
     def test_env_protection_default(self) -> None:
         # a density model built without an explicit env_protection gets
         # 1e-6 by default (with a warning), and the recorded def script
@@ -597,6 +604,30 @@ class TestDPTestDensity(unittest.TestCase):
 
         self.assertTrue(atomic_model._grid_stat_missing(stat_dir))
 
+    def test_stat_without_grid_warns_and_uses_defaults(self) -> None:
+        # Statistics can be requested before a sampler is augmented with the
+        # density input; this must take the documented fallback rather than
+        # assuming every sample contains grid coordinates.
+        atomic_model = get_model(deepcopy(model_density)).atomic_model
+        sample = dict(self.input_dict)
+        sample.pop("grid")
+        with self.assertLogs(
+            "deepmd.pt.model.atomic_model.density_atomic_model", level="WARNING"
+        ) as logs:
+            atomic_model.compute_or_load_stat(lambda: [sample])
+        self.assertIn("No grid data", "\n".join(logs.output))
+
+    def test_stat_writeback_skips_missing_cache_directory(self) -> None:
+        atomic_model = get_model(deepcopy(model_density)).atomic_model
+        grid_stats = [
+            (block["davg"][-1].detach().clone(), block["dstd"][-1].detach().clone())
+            for block in atomic_model._descriptor_stat_blocks()
+        ]
+        stat_dir = DPPath(tempfile.mkdtemp(dir=self.tmpdir.name), "w")
+        # A cache can lack one descriptor block (for example, after an older
+        # partial run); that block is deliberately skipped during write-back.
+        atomic_model._write_back_grid_stat(stat_dir, grid_stats)
+
     def test_read_only_stat_cache_patches_grid_row_in_memory(self) -> None:
         # Older complete caches can contain a zero-sample placeholder for the
         # reserved grid type. Read mode may patch that row in memory, but must
@@ -720,6 +751,15 @@ class TestDPTestDensity(unittest.TestCase):
         # and match the default-batching result numerically
         out_default = DeepDensity(self.model_path).eval(coord, box, atype, grid=grid)
         np.testing.assert_allclose(out, out_default)
+
+    def test_eval_without_periodic_box(self) -> None:
+        set_dir = self.system / "set.000"
+        coord = np.load(set_dir / "coord.npy")[:1]
+        grid = np.load(set_dir / "grid.npy")[:1]
+        atype = np.loadtxt(self.system / "type.raw", dtype=int)
+        out = DeepDensity(self.model_path).eval(coord, None, atype, grid=grid)
+        self.assertEqual(out.shape, (1, self.ngrid))
+        self.assertTrue(np.isfinite(out).all())
 
     def test_grid_at_atoms_finite(self) -> None:
         # grid points coincident with atoms are legitimate inputs; with
@@ -1067,6 +1107,19 @@ class TestDPTestDensityChgSpin(unittest.TestCase):
             charge_spin=np.tile([2.0, 1.0], (self.nframes, 1)),
         )
         self.assertFalse(np.allclose(out_default, out_other))
+
+    def test_eval_without_charge_spin_or_default(self) -> None:
+        # A charge/spin-conditioned descriptor needs either an explicit
+        # condition or a configured default; fail clearly before the
+        # descriptor's internal assertion.
+        config = deepcopy(model_density_dpa3_chg_spin)
+        config["descriptor"].pop("default_chg_spin")
+        path = os.path.join(self.tmpdir.name, "no-default-charge-spin.pth")
+        with torch.device("cpu"):
+            torch.jit.save(torch.jit.script(get_model(config)), path)
+        coord, box, grid, atype = self._inputs()
+        with self.assertRaisesRegex(torch.jit.Error, "charge_spin is required"):
+            DeepDensity(path).eval(coord, box, atype, grid=grid)
 
     def test_eval_grid_chunking_dpa3_matches_full_grid(self) -> None:
         coord, box, grid, atype = self._inputs()

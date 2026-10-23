@@ -173,6 +173,11 @@ class GridDensityLoss(TaskLoss):
         return cls(**data)
 
     @property
+    def training_metric_names(self) -> tuple[str, ...]:
+        """Return density metrics displayed by averaged training output."""
+        return ("rmse_d", "mae_d") if self.has_d else ()
+
+    @property
     def label_requirement(self) -> list[DataRequirementItem]:
         """Return data label requirements needed for this loss calculation.
 
