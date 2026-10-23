@@ -376,6 +376,21 @@ class TestSeZMSpinModel(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "native"):
             get_model(self._build_model_params(bridging_method="ZBL"))
 
+    def test_real_type_sequence_bias_override(self) -> None:
+        model = get_model(self._build_model_params()).to(self.device)
+        sample = {
+            "coord": self.coord,
+            "atype": self.atype,
+            "spin": self.spin,
+            "box": self.box,
+        }
+        model.change_out_bias([sample], preset_out_bias={"energy": [1.0, 2.0]})
+        bias = model.get_out_bias()
+        torch.testing.assert_close(
+            bias.reshape(-1),
+            torch.tensor([1.0, 2.0, 0.0, 0.0], dtype=bias.dtype, device=bias.device),
+        )
+
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_matches_eager(self) -> None:
         """Compiled SeZM spin path should match eager predictions."""
