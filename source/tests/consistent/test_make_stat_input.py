@@ -8,6 +8,8 @@ per-system stat dicts for the keys consumed by compute_or_load_stat.
 """
 
 import os
+import shutil
+import tempfile
 import unittest
 
 import numpy as np
@@ -365,6 +367,66 @@ class TestMakeStatInputSpin(unittest.TestCase):
             pt_stat,
             [*_COMMON_CHECK_KEYS, "spin", "find_spin"],
         )
+
+
+def _make_truncated_system(src: str, dst: str, nframes: int) -> str:
+    """Copy the first set of ``src`` to ``dst`` keeping ``nframes`` frames."""
+    os.makedirs(os.path.join(dst, "set.000"))
+    for name in ("type.raw", "type_map.raw"):
+        shutil.copy(os.path.join(src, name), os.path.join(dst, name))
+    src_set = os.path.join(src, "set.000")
+    for name in os.listdir(src_set):
+        arr = np.load(os.path.join(src_set, name))
+        np.save(os.path.join(dst, "set.000", name), arr[:nframes])
+    return dst
+
+
+@unittest.skipUnless(INSTALLED_PT, "PyTorch backend not installed")
+class TestMakeStatInputSmallSystems(unittest.TestCase):
+    """Systems with fewer batches than data_stat_nbatch must not be oversampled."""
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmpdir)
+
+    def test_consistency(self) -> None:
+        src = os.path.join(EXAMPLE_DIR, "data", "data_0")
+        if not os.path.isdir(src):
+            self.skipTest(f"Example data not found: {src}")
+        nframes = [3, 7]
+        systems = [
+            _make_truncated_system(src, os.path.join(self.tmpdir, f"sys_{nf}"), nf)
+            for nf in nframes
+        ]
+        config = _build_config(systems, ["O", "H"], data_stat_nbatch=10)
+
+        universal_stat = _get_universal_stat(config, _ENER_DATA_REQ)
+        pt_stat = _get_pt_stat(config, _ENER_DATA_REQ)
+
+        _compare_stat(self, universal_stat, pt_stat, _COMMON_CHECK_KEYS)
+        for sys_idx, nf in enumerate(nframes):
+            self.assertEqual(universal_stat[sys_idx]["energy"].shape[0], nf)
+            self.assertEqual(pt_stat[sys_idx]["energy"].shape[0], nf)
+
+        # the TF backend collects batches through collect_batches
+        from deepmd.utils.data_system import (
+            DeepmdDataSystem,
+        )
+        from deepmd.utils.model_stat import (
+            collect_batches,
+        )
+
+        data = DeepmdDataSystem(
+            systems=systems,
+            batch_size=1,
+            test_size=1,
+            rcut=config["model"]["descriptor"]["rcut"],
+            type_map=["O", "H"],
+        )
+        all_stat = collect_batches(data, 10, merge_sys=False)
+        self.assertEqual([len(sys_box) for sys_box in all_stat["box"]], nframes)
 
 
 if __name__ == "__main__":
