@@ -669,6 +669,15 @@ def main_parser() -> argparse.ArgumentParser:
         help="The training script of the input frozen model",
     )
     parser_compress.add_argument(
+        "--recompute-min-nbor-dist",
+        action="store_true",
+        help="(Supported backend: PyTorch Exportable) Ignore the minimal neighbor "
+        "distance saved in the model and recompute it from the training data. "
+        "Requires -t,--training-script. Only applies to models whose compression "
+        "consumes the statistic; it is ignored for a model that tabulates over an "
+        "analytically bounded domain",
+    )
+    parser_compress.add_argument(
         "--head",
         "--model-branch",
         default=None,
