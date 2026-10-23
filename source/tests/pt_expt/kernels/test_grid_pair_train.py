@@ -52,7 +52,12 @@ from .conditioning import (
 
 if TYPE_CHECKING:
     from collections.abc import (
+        Callable,
         Iterator,
+    )
+
+    from triton.compiler.compiler import (
+        CompiledKernel,
     )
 
 pytestmark = [
@@ -539,6 +544,8 @@ def test_cold_compiled_force_backward(
     monkeypatch.setattr(torch.backends.cuda.matmul, "allow_tf32", False)
     monkeypatch.setattr(torch.backends.cudnn, "allow_tf32", False)
     fallback_ops = set()
+    probed_ops = set()
+    admitted_ops = set()
     reference = grid_pair_module._eager_packed
 
     def record_fallback(op: str, *args: torch.Tensor) -> tuple[torch.Tensor, ...]:
@@ -546,17 +553,29 @@ def test_cold_compiled_force_backward(
         return reference(op, *args)
 
     monkeypatch.setattr(grid_pair_module, "_eager_packed", record_fallback)
-    if force_reference:
+    for op, kernel in (
+        ("fwd", grid_pair_module._grid_pair_fwd_kernel),
+        ("bwd", grid_pair_module._grid_pair_bwd_kernel),
+        ("bwd2", grid_pair_module._grid_pair_bwd2_kernel),
+    ):
 
-        def reject_candidate(*args: object, **kwargs: object) -> None:
-            raise grid_pair_module.triton.runtime.errors.OutOfResources(2, 1, "test")
+        def validate_candidate(
+            *args: object,
+            _op: str = op,
+            _warmup: Callable[..., CompiledKernel] = kernel.warmup,
+            **kwargs: object,
+        ) -> CompiledKernel:
+            probed_ops.add(_op)
+            if force_reference:
+                raise grid_pair_module.triton.runtime.errors.OutOfResources(
+                    2, 1, "test"
+                )
+            candidate = _warmup(*args, **kwargs)
+            candidate._init_handles()
+            admitted_ops.add(_op)
+            return candidate
 
-        for kernel in (
-            grid_pair_module._grid_pair_fwd_kernel,
-            grid_pair_module._grid_pair_bwd_kernel,
-            grid_pair_module._grid_pair_bwd2_kernel,
-        ):
-            monkeypatch.setattr(kernel, "warmup", reject_candidate)
+        monkeypatch.setattr(kernel, "warmup", validate_candidate)
 
     # Degree six reproduces the P=147 resource pressure. The distinct grid
     # count prevents eager production-shape tests from warming this launch key.
@@ -623,6 +642,12 @@ def test_cold_compiled_force_backward(
             inputs = traced_inputs if n_node == 7 else make_inputs(n_node)
             actual = compiled(*inputs, *projectors)
             actual_gradients = force_loss_gradient(actual, inputs)
+            # Observe compiled selection before eager evaluation can add events.
+            # A cached/unconditional rejection without validation cannot pass.
+            assert probed_ops == {"fwd", "bwd", "bwd2"}
+            assert fallback_ops == probed_ops - admitted_ops
+            if force_reference:
+                assert not admitted_ops
             expected = force_forward(*inputs, *projectors)
             expected_gradients = force_loss_gradient(expected, inputs)
             for got, want in zip(
@@ -632,4 +657,3 @@ def test_cold_compiled_force_backward(
             ):
                 torch.testing.assert_close(got, want)
     assert counter.frame_count == 1
-    assert fallback_ops == ({"fwd", "bwd", "bwd2"} if force_reference else set())
