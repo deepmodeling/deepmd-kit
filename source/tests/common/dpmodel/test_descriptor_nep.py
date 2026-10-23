@@ -86,6 +86,26 @@ class TestDescrptNep(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertEqual(dd.get_dim_out(), 3 + 3 * (2 + 1 + 1))
         self.assertFalse(dd.mixed_types())
 
+    def test_cutoffs_are_finite_and_positive(self) -> None:
+        """Both cutoff domains are validated before descriptor construction."""
+        for name in ("rcut_radial", "rcut_angular"):
+            for value in (0.0, -1.0, np.inf, np.nan):
+                with (
+                    self.subTest(name=name, value=value),
+                    self.assertRaisesRegex(ValueError, f"{name}.*finite.*positive"),
+                ):
+                    self._make(**{name: value})
+
+    def test_four_body_requires_second_order_harmonics(self) -> None:
+        """The default four-body term cannot read an absent L=2 block."""
+        with self.assertRaisesRegex(ValueError, "l_max.*at least 2"):
+            DescrptNep(sel=self.sel, l_max=1)
+
+        descriptor = self._make(l_max=1, l_max_4body=0, l_max_5body=0)
+        result = descriptor(self.coord_ext, self.atype_ext, self.nlist)[0]
+        self.assertEqual(result.shape[-1], 6)
+        self.assertTrue(np.isfinite(result).all())
+
 
 if __name__ == "__main__":
     unittest.main()

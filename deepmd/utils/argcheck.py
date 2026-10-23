@@ -1020,9 +1020,10 @@ def descrpt_nep_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom within `rcut_radial`. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.\n\n\
     - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`.'
-    doc_rcut_radial = "The cut-off radius of the radial descriptor."
+    doc_rcut_radial = "The finite positive cut-off radius of the radial descriptor."
     doc_rcut_angular = (
-        "The cut-off radius of the angular descriptor. Must not exceed `rcut_radial`."
+        "The finite positive cut-off radius of the angular descriptor. "
+        "Must not exceed `rcut_radial`."
     )
     doc_n_max_radial = (
         "Maximum radial expansion index; the radial dimension is `n_max_radial + 1`."
@@ -1031,7 +1032,10 @@ def descrpt_nep_args() -> list[Argument]:
     doc_basis_size_radial = "Maximum radial Chebyshev index; the radial basis size is `basis_size_radial + 1`."
     doc_basis_size_angular = "Maximum angular Chebyshev index; the angular basis size is `basis_size_angular + 1`."
     doc_l_max = "Maximum angular order L of the 3-body invariants."
-    doc_l_max_4body = "Set to 2 to include the 4-body invariant, or 0 to disable it."
+    doc_l_max_4body = (
+        "Set to 2 to include the 4-body invariant, or 0 to disable it. "
+        "Enabling it requires `l_max` to be at least 2."
+    )
     doc_l_max_5body = "Set to 1 to include the 5-body invariant, or 0 to disable it. Requires `l_max_4body` to be 2."
     doc_precision = f"The precision of the expansion coefficients, supported options are {list_to_doc(PRECISION_DICT.keys())} Defaults to float32 to match GPUMD; GPUMD inference of an exported nep.txt is always single precision."
     doc_trainable = "Whether the expansion coefficients are trainable."

@@ -89,8 +89,10 @@ The descriptor hyper-parameter defaults follow GPUMD's NEP4 (`rcut_radial = 8`,
 
 The two cutoffs {ref}`rcut_radial <model[standard]/descriptor[nep]/rcut_radial>`
 and {ref}`rcut_angular <model[standard]/descriptor[nep]/rcut_angular>` control
-the radial and angular ranges respectively, with
-$r_c^A \leq r_c^R$. The descriptor dimension is
+the radial and angular ranges respectively. Both must be finite and positive,
+with $r_c^A \leq r_c^R$. Enabling `l_max_4body = 2` requires `l_max >= 2`
+because the four-body invariant uses the second-order harmonic block.
+The descriptor dimension is
 `(n_max_radial + 1) + (n_max_angular + 1) * num_L`, where `num_L` is
 `l_max + (l_max_4body == 2) + (l_max_5body == 1)`. The radial and angular
 Chebyshev basis sizes are
@@ -143,6 +145,7 @@ automatically narrowed to that set on export; pass `--elements` (CLI) or
 ## Difference among different backends
 
 The descriptor produces identical values across the DP, PyTorch, and JAX
-backends. The expansion coefficients are stored as a single dense tensor of
-shape `(ntypes, ntypes, n_desc, k_max)`, so both the memory footprint and the
-forward cost follow the neighbor count rather than `ntypes ** 2`.
+backends. The radial and angular expansion coefficients are each stored in a
+dense tensor of shape `(ntypes, ntypes, n_desc, k_max)`. Coefficient storage scales as
+`ntypes ** 2`; evaluation gathers only the type pairs of the selected neighbors,
+so the contraction work follows the neighbor count.

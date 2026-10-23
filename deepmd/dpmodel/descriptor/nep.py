@@ -18,10 +18,9 @@ The descriptor is composed of two parts:
 
 The expansion coefficients that turn the Chebyshev basis into the radial and
 angular embeddings are the only trainable parameters of the descriptor. Because
-the mapping ``g_n = sum_k c_{nk} f_k`` is linear in the basis, every centre/
-neighbour type pair is represented as a single bias-free linear layer, stored in
-a :class:`NetworkCollection`. This reuses the existing serialization and
-backend-conversion machinery without any bespoke parameter handling.
+the mapping ``g_n = sum_k c_{nk} f_k`` is linear in the basis, the radial and
+angular expansions each use one dense type-pair coefficient table. Evaluation
+gathers coefficients for the selected neighbor pairs before contracting the basis.
 
 References
 ----------
@@ -493,10 +492,10 @@ class DescrptNep(NativeOP, BaseDescriptor):
     Parameters
     ----------
     rcut_radial
-        Cut-off radius of the radial part :math:`r_c^R`.
+        Finite positive cut-off radius of the radial part :math:`r_c^R`.
     rcut_angular
-        Cut-off radius of the angular part :math:`r_c^A`. Must not exceed
-        ``rcut_radial``.
+        Finite positive cut-off radius of the angular part :math:`r_c^A`.
+        Must not exceed ``rcut_radial``.
     sel : list[int]
         ``sel[i]`` is the maximum number of type-``i`` neighbours within
         ``rcut_radial``.
@@ -516,6 +515,7 @@ class DescrptNep(NativeOP, BaseDescriptor):
         Maximum angular order :math:`L` of the ``3``-body invariants.
     l_max_4body
         ``2`` to include the ``4``-body invariant, ``0`` to disable it.
+        Enabling it requires ``l_max >= 2``.
     l_max_5body
         ``1`` to include the ``5``-body invariant, ``0`` to disable it. Requires
         ``l_max_4body == 2``.
@@ -566,12 +566,22 @@ class DescrptNep(NativeOP, BaseDescriptor):
         del ntypes  # inferred from sel
         if sel is None:
             raise ValueError("sel must be provided for the NEP descriptor")
+        for name, cutoff in (
+            ("rcut_radial", rcut_radial),
+            ("rcut_angular", rcut_angular),
+        ):
+            if not math.isfinite(cutoff) or cutoff <= 0.0:
+                raise ValueError(f"{name} must be finite and positive, got {cutoff}")
         if rcut_angular > rcut_radial:
             raise ValueError("rcut_angular must not exceed rcut_radial")
         if l_max < 1 or l_max > 8:
             raise ValueError("l_max must be in [1, 8]")
         if l_max_4body not in (0, 2):
             raise ValueError("l_max_4body must be 0 or 2")
+        if l_max_4body == 2 and l_max < 2:
+            raise ValueError(
+                "l_max must be at least 2 when 4-body invariants are enabled"
+            )
         if l_max_5body not in (0, 1):
             raise ValueError("l_max_5body must be 0 or 1")
         if l_max_5body == 1 and l_max_4body != 2:
