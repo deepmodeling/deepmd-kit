@@ -524,6 +524,111 @@ class TestPTTensorLossGlobalGradAccum:
         )
 
 
+class TestPTGlobalRMSEDisplayPerFrame:
+    """Global rmse displays normalize each frame by its own real atom count."""
+
+    @staticmethod
+    def _mask():
+        return torch.tensor(
+            [[1.0] * NA + [0.0] * (NP - NA), [1.0] * NB],
+            dtype=torch.float64,
+            device="cpu",
+        )
+
+    @staticmethod
+    def _more_loss(loss_obj, model_pred, label, natoms):
+        _, _, more = loss_obj.forward(
+            input_dict={},
+            model=_MockModel(model_pred),
+            label=label,
+            natoms=natoms,
+            learning_rate=1.0,
+        )
+        return more
+
+    def _assert_matches_frames(self, call, pred, label, keys):
+        batch = call(pred, label, self._mask(), NP)
+        more_A = call(
+            pred[:1],
+            label[:1],
+            torch.ones(1, NA, dtype=torch.float64, device="cpu"),
+            NA,
+        )
+        more_B = call(
+            pred[1:],
+            label[1:],
+            torch.ones(1, NB, dtype=torch.float64, device="cpu"),
+            NB,
+        )
+        for key in keys:
+            expected = np.sqrt((more_A[key].item() ** 2 + more_B[key].item() ** 2) / 2)
+            np.testing.assert_allclose(batch[key].item(), expected, rtol=1e-12)
+
+    def test_dos_and_cdf(self):
+        loss_obj = DOSLoss(
+            starter_learning_rate=1.0,
+            numb_dos=NUMB_DOS,
+            start_pref_dos=1.0,
+            limit_pref_dos=1.0,
+            start_pref_cdf=1.0,
+            limit_pref_cdf=1.0,
+            start_pref_ados=0.0,
+            limit_pref_ados=0.0,
+            start_pref_acdf=0.0,
+            limit_pref_acdf=0.0,
+        )
+
+        def call(pred, label, mask, natoms):
+            return self._more_loss(
+                loss_obj,
+                {"dos": pred, "mask": mask},
+                {"dos": label, "find_dos": 1.0},
+                natoms,
+            )
+
+        # extensive errors [NA, NB]: a per-atom error of 1 in each frame
+        label = _rnd_t(2, NUMB_DOS)
+        pred = label + torch.tensor([[NA], [NB]], dtype=torch.float64, device="cpu")
+        more = call(pred, label, self._mask(), NP)
+        np.testing.assert_allclose(more["rmse_global_dos"].item(), 1.0, rtol=1e-12)
+        cdf = np.sqrt(np.mean(np.square(np.arange(1, NUMB_DOS + 1))))
+        np.testing.assert_allclose(more["rmse_global_cdf"].item(), cdf, rtol=1e-12)
+        self._assert_matches_frames(
+            call,
+            _rnd_t(2, NUMB_DOS),
+            _rnd_t(2, NUMB_DOS),
+            ("rmse_global_dos", "rmse_global_cdf"),
+        )
+
+    def test_tensor(self):
+        loss_obj = TensorLoss(
+            tensor_name="dipole",
+            tensor_size=TENSOR_SIZE,
+            label_name="dipole",
+            pref_atomic=0.0,
+            pref=1.0,
+        )
+
+        def call(pred, label, mask, natoms):
+            return self._more_loss(
+                loss_obj,
+                {"global_dipole": pred, "mask": mask},
+                {"dipole": label, "find_dipole": 1.0},
+                natoms,
+            )
+
+        label = _rnd_t(2, TENSOR_SIZE)
+        pred = label + torch.tensor([[NA], [NB]], dtype=torch.float64, device="cpu")
+        more = call(pred, label, self._mask(), NP)
+        np.testing.assert_allclose(more["rmse_global_dipole"].item(), 1.0, rtol=1e-12)
+        self._assert_matches_frames(
+            call,
+            _rnd_t(2, TENSOR_SIZE),
+            _rnd_t(2, TENSOR_SIZE),
+            ("rmse_global_dipole",),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Task 1: unit tests for TaskLoss._inject_atom_mask
 # ---------------------------------------------------------------------------

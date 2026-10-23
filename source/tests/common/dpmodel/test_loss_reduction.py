@@ -7,6 +7,7 @@ import pytest
 from deepmd.dpmodel.loss.reduction import (
     masked_atom_mean,
     masked_atom_num,
+    masked_global_rmse,
     per_frame_component_mean,
 )
 
@@ -133,3 +134,28 @@ class TestMaskedAtomNum:
         got = masked_atom_num(torch.tensor(mask_np), 3, torch.float32)
         ref = torch.tensor(mask_np).sum(-1).float().mean()
         assert got.item() == ref.item()
+
+
+class TestMaskedGlobalRMSE:
+    """Display-only RMSE of an extensive global term, normalized per frame."""
+
+    def test_all_padding_frame_is_excluded(self) -> None:
+        diff = np.array([[2.0, 2.0], [5.0, 5.0]])
+        mask = np.array([[1.0, 1.0, 0.0], [0.0, 0.0, 0.0]])
+        got = masked_global_rmse(diff, mask, 3)
+        np.testing.assert_allclose(got, 1.0, rtol=1e-12)
+
+    def test_all_padding_batch_is_zero(self) -> None:
+        diff = np.array([[2.0, 2.0], [5.0, 5.0]])
+        mask = np.zeros((2, 3))
+        got = masked_global_rmse(diff, mask, 3)
+        assert np.isfinite(got)
+        assert float(got) == 0.0
+
+    def test_torch_all_padding_frame_is_excluded(self) -> None:
+        diff = torch.tensor([[2.0, 2.0], [5.0, 5.0]], dtype=torch.float64)
+        mask = torch.tensor([[1.0, 1.0, 0.0], [0.0, 0.0, 0.0]], dtype=torch.float64)
+        got = masked_global_rmse(diff, mask, 3)
+        assert got.item() == pytest.approx(1.0, rel=1e-12)
+        got = masked_global_rmse(diff, torch.zeros_like(mask), 3)
+        assert got.item() == 0.0
