@@ -1,18 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """PyTorch extras keep Vesin bindings within their supported versions."""
 
+from pathlib import (
+    Path,
+)
+
 import pytest
 from packaging.requirements import (
     Requirement,
 )
 
-from backend.find_pytorch import (
-    get_pt_requirement,
-)
-
 
 @pytest.mark.parametrize("version", ["2.1.0", "2.2.0", "2.3.0", ""])
 def test_vesin_requirements(version: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The PEP 517 backend belongs to the source checkout, not the installed wheel.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3]))
+    from backend.find_pytorch import (
+        get_pt_requirement,
+    )
+
     monkeypatch.delenv("PYTORCH_VERSION", raising=False)
     monkeypatch.setenv("CIBUILDWHEEL", "0")
     get_pt_requirement.cache_clear()

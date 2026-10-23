@@ -21,8 +21,15 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
+    ModelOutputDef,
+)
 from deepmd.entrypoints.convert_backend import (
     convert_backend,
+)
+from deepmd.pt_expt.infer.deep_eval import (
+    DeepEval,
 )
 from deepmd.pt_expt.model.graph_lower import (
     graph_edge_dtype,
@@ -512,6 +519,34 @@ def test_neighbor_graph_method_rejected_on_nlist_artifact(dpa1_dpmodel_data) -> 
             DeepPot(p, neighbor_graph_method="vesin")
         # The default remains valid for nlist-form artifacts.
         DeepPot(p)
+
+
+@pytest.mark.parametrize(
+    ("method", "backend", "message"),
+    [
+        ("dense", "auto", "Edge-vector artifacts support neighbor_graph_method"),
+        ("vesin", "native", "Select only one"),
+    ],
+)
+def test_edge_vec_neighbor_options_rejected(
+    monkeypatch: pytest.MonkeyPatch, method: str, backend: str, message: str
+) -> None:
+    """The constructor validates edge options independently of compiled loading."""
+
+    def load_metadata(evaluator: DeepEval, model_file: str) -> None:
+        evaluator.metadata = {"lower_input_kind": "edge_vec"}
+
+    monkeypatch.setattr(DeepEval, "_load_pt2", load_metadata)
+    with (
+        pytest.warns(DeprecationWarning, match="deprecated edge_vec lower schema"),
+        pytest.raises(ValueError, match=message),
+    ):
+        DeepEval(
+            "edge.pt2",
+            ModelOutputDef(FittingOutputDef([])),
+            neighbor_graph_method=method,
+            nlist_backend=backend,
+        )
 
 
 class _FakeDesc:

@@ -10,6 +10,9 @@ unavailable.
 """
 
 import copy
+from pathlib import (
+    Path,
+)
 from unittest import (
     mock,
 )
@@ -37,6 +40,10 @@ from deepmd.pt.utils.nv_nlist import (
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
+)
+
+from ...common.sezm_config import (
+    _tiny_sezm_model_params,
 )
 
 # Each O(N) strategy: (backend name, builder class, availability skip mark).
@@ -147,6 +154,31 @@ def _assert_eval_close(dp_ref, dp_test, coords, cells, atype, msg: str) -> None:
 def test_invalid_backend_raises(pt_files) -> None:
     with pytest.raises(ValueError):
         DeepPot(pt_files["se_e2_a"], nlist_backend="bogus")
+
+
+@pytest.mark.parametrize(
+    ("method", "backend", "message"),
+    [
+        ("dense", "auto", "PT SeZM/DPA4 supports neighbor_graph_method"),
+        ("vesin", "native", "Select only one"),
+    ],
+)
+def test_self_built_neighbor_options_rejected(
+    tmp_path: Path, method: str, backend: str, message: str
+) -> None:
+    path = str(tmp_path / "sezm.pt")
+    _save_pt(_tiny_sezm_model_params(), path)
+    with pytest.raises(ValueError, match=message):
+        DeepPot(path, neighbor_graph_method=method, nlist_backend=backend)
+
+
+def test_neighbor_graph_method_rejected_for_dense_model(
+    pt_files: dict[str, str],
+) -> None:
+    with pytest.raises(
+        ValueError, match="neighbor_graph_method applies to PT SeZM/DPA4"
+    ):
+        DeepPot(pt_files["se_e2_a"], neighbor_graph_method="vesin")
 
 
 def test_native_uses_no_strategy(pt_files) -> None:
