@@ -10,6 +10,9 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest import (
+    mock,
+)
 
 import numpy as np
 import torch
@@ -228,6 +231,23 @@ class TestDeepEvalEner(unittest.TestCase):
         # dict equality would try to coerce elementwise array comparisons to a
         # single bool and fail with an ambiguous truth-value error.
         np.testing.assert_equal(data, serialize_from_file(self.tmpfile.name)["model"])
+
+    def test_pte_load_is_independent_of_default_device(self) -> None:
+        """Archive loading and inference retain the recorded tensor devices."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        coords = rng.random((1, 5, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+        expected = self.dp.eval(coords, cells, atom_types, atomic=True)
+        for default_device in ("meta", "cuda:9999999"):
+            with self.subTest(default_device=default_device):
+                with torch.device(default_device):
+                    dp = DeepPot(self.tmpfile.name)
+                    data = serialize_from_file(self.tmpfile.name)
+                    actual = dp.eval(coords, cells, atom_types, atomic=True)
+                np.testing.assert_equal(data["model"], self.model_data["model"])
+                for value, reference in zip(actual, expected, strict=True):
+                    np.testing.assert_allclose(value, reference, rtol=1e-10, atol=1e-10)
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
@@ -2342,12 +2362,19 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
         return is_vesin_torch_available()
 
     def test_default_is_auto(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+
         dp = DeepPot(self.tmpfile.name)
-        self.assertEqual(dp.deep_eval._use_vesin, self._vesin_available())
+        self.assertEqual(
+            dp.deep_eval._nlist_builder is not None,
+            self._vesin_available() or (DEVICE.type == "cuda" and is_nv_available()),
+        )
 
     def test_native_disables_vesin(self) -> None:
         dp = DeepPot(self.tmpfile.name, nlist_backend="native")
-        self.assertFalse(dp.deep_eval._use_vesin)
+        self.assertIsNone(dp.deep_eval._nlist_builder)
 
     def test_invalid_raises(self) -> None:
         with self.assertRaises(ValueError):
@@ -2375,6 +2402,25 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
                 np.testing.assert_allclose(
                     a, b, rtol=1e-10, atol=1e-10, err_msg=f"vesin vs native: {name}"
                 )
+
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA is required")
+    def test_nv_matches_native_multiframe(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+
+        if not is_nv_available():
+            self.skipTest("nvalchemi-toolkit-ops is required")
+        rng = np.random.default_rng(GLOBAL_SEED + 21)
+        coords = rng.random((3, 6, 3)) * 8.0
+        atom_types = np.arange(6, dtype=np.int32) % self.nt
+        cells = np.tile(np.eye(3).reshape(1, 9) * 10.0, (3, 1))
+        native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        accelerated = DeepPot(self.tmpfile.name, nlist_backend="nv")
+        expected = native.eval(coords, cells, atom_types, atomic=True)
+        actual = accelerated.eval(coords, cells, atom_types, atomic=True)
+        for value, reference in zip(actual, expected, strict=True):
+            np.testing.assert_allclose(value, reference, rtol=1e-9, atol=1e-9)
 
     def test_eval_descriptor_vesin_matches_native(self) -> None:
         """eval_descriptor bypasses forward_common_lower's format_nlist, so the
@@ -2542,6 +2588,8 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
     answer for the state the caller asked for.
     """
 
+    lower_kind = "graph"
+
     @classmethod
     def setUpClass(cls) -> None:
         import copy
@@ -2562,7 +2610,12 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
                 "default_chg_spin": [0.0, 1.0],
                 "seed": GLOBAL_SEED,
             },
-            "fitting_net": {"neuron": [8, 8], "precision": "float32", "seed": 1},
+            "fitting_net": {
+                "neuron": [8, 8],
+                "precision": "float32",
+                "resnet_dt": cls.lower_kind == "graph",
+                "seed": 1,
+            },
         }
         model = pt_expt_get_model(copy.deepcopy(config)).to("cuda")
 
@@ -2584,6 +2637,7 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
                     )
                     * 0.3
                 )
+        cls.reference = copy.deepcopy(model).eval()
         model.atomic_model.descriptor.enable_compression(0.5)
 
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
@@ -2591,11 +2645,15 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
         torch.set_default_device(None)
         try:
             deserialize_to_file(
-                cls.tmpfile.name, {"model": model.serialize()}, lower_kind="auto"
+                cls.tmpfile.name,
+                {"model": model.serialize()},
+                lower_kind="auto",
+                with_comm=False,
             )
             # The nested rebuild is loaded as an archive of its own, which
             # reads the default device.
             cls.dp = DeepPot(cls.tmpfile.name)
+            assert cls.dp.deep_eval.metadata["lower_input_kind"] == cls.lower_kind
         finally:
             torch.set_default_device("cuda:9999999")
 
@@ -2653,6 +2711,63 @@ class TestCompressedChargeStateRoutes(unittest.TestCase):
         first = self._routes([0.0, 1.0])
         self._routes([2.0, 3.0])
         np.testing.assert_allclose(self._routes([0.0, 1.0]), first, rtol=1e-6)
+
+
+class TestCanonicalChargeStateRoutes(TestCompressedChargeStateRoutes):
+    """Canonical archives retain charge folding and both graph input paths."""
+
+    lower_kind = "dpa4c_canonical"
+
+    def test_canonical_inputs_match_eager(self) -> None:
+        from deepmd.pt.utils.nv_nlist import (
+            is_nv_available,
+        )
+        from deepmd.pt_expt.utils import (
+            canonical_graph,
+        )
+        from deepmd.pt_expt.utils.vesin_neighbor_list import (
+            is_vesin_torch_available,
+        )
+
+        state = np.array([[2.0, 3.0]])
+        reference = self.reference(
+            torch.as_tensor(self.coords, dtype=torch.float64, device=DEVICE),
+            torch.as_tensor(self.atom_types[None], dtype=torch.int64, device=DEVICE),
+            torch.as_tensor(self.cells, dtype=torch.float64, device=DEVICE),
+            charge_spin=torch.as_tensor(state, dtype=torch.float64, device=DEVICE),
+        )
+        self.assertGreater(float(reference["force"].abs().max()), 1e-8)
+        for method, available in (
+            ("dense", True),
+            ("nv", is_nv_available()),
+            ("vesin", is_vesin_torch_available()),
+        ):
+            with self.subTest(method=method):
+                if not available:
+                    self.skipTest(f"{method} is not installed")
+                dp = DeepPot(
+                    self.tmpfile.name,
+                    auto_batch_size=False,
+                    neighbor_graph_method=method,
+                )
+                with mock.patch.object(
+                    canonical_graph,
+                    "canonical_graph_from_neighbor_graph",
+                    wraps=canonical_graph.canonical_graph_from_neighbor_graph,
+                ) as convert:
+                    actual = dp.eval(
+                        self.coords, self.cells, self.atom_types, charge_spin=state
+                    )
+                self.assertEqual(convert.call_count, 0 if method == "vesin" else 1)
+                for value, key in zip(
+                    actual[:3], ("energy", "force", "virial"), strict=True
+                ):
+                    np.testing.assert_allclose(
+                        value,
+                        reference[key].detach().cpu().numpy(),
+                        rtol=1e-4,
+                        atol=1e-5,
+                    )
 
 
 if __name__ == "__main__":

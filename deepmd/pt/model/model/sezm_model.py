@@ -511,16 +511,11 @@ from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach,
     trace_pad_dim,
 )
-from deepmd.pt.utils.nv_nlist import (
-    NvNeighborList,
-    is_nv_available,
+from deepmd.pt_expt.utils.auto_neighbor_list import (
+    AdaptiveNeighborList,
 )
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
-)
-from deepmd.pt_expt.utils.vesin_neighbor_list import (
-    VesinNeighborList,
-    is_vesin_torch_available,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -529,49 +524,6 @@ from deepmd.utils.version import (
 log = logging.getLogger(__name__)
 
 SeZMModel_ = make_model(SeZMAtomicModel)
-
-
-def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
-    """Select the O(N) neighbor builder for the given batch shape and device.
-
-    A single CPU frame uses ``vesin``: its lightweight cell list has no
-    per-frame batching to amortize and avoids the ``nvalchemiops`` (Warp)
-    launch overhead. Every other case -- any CUDA input or any multi-frame
-    batch -- uses ``nvalchemiops``, whose batched kernel amortizes the launch
-    cost across frames. Both builders keep every neighbor within ``rcut``, so
-    the resulting edge set never depends on ``sel``. ``vesin`` also serves as
-    the fallback when ``nvalchemiops`` is absent.
-
-    Parameters
-    ----------
-    nf : int
-        Number of frames in the batch.
-    device : torch.device
-        Device of the input coordinates.
-
-    Returns
-    -------
-    NeighborList
-        A builder instance whose ``build`` method produces the neighbor list.
-
-    Raises
-    ------
-    RuntimeError
-        If neither ``nvalchemiops`` nor ``vesin`` is importable.
-    """
-    if device.type == "cpu" and nf == 1 and is_vesin_torch_available():
-        return VesinNeighborList()
-    if is_nv_available():
-        return NvNeighborList()
-    if is_vesin_torch_available():
-        return VesinNeighborList()
-    raise RuntimeError(
-        "SeZM neighbor-list construction requires a neighbor-list backend, but "
-        "neither 'vesin' nor 'nvalchemiops' is importable. Install one of:\n"
-        "  pip install 'vesin[torch]'        # portable CPU/CUDA cell list\n"
-        "  pip install nvalchemi-toolkit-ops # batched CUDA kernels\n"
-        "'vesin' also ships with the PyTorch extra: pip install 'deepmd-kit[torch]'."
-    )
 
 
 # Apply the process-global PyTorch workarounds the compile pipeline relies on
@@ -719,6 +671,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self.redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
         self.use_compile = bool(use_compile)
         self.enable_tf32 = bool(enable_tf32)
+        self._inference_neighbor_list: NeighborList | None = None
         # LoRA injection happens in Trainer.__init__ after pre-trained state is loaded.
         self.lora_config: dict[str, Any] | None = None if lora is None else dict(lora)
         self._dens_compiled = False
@@ -2764,6 +2717,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         """
         return True
 
+    def set_inference_neighbor_list(self, neighbor_list: NeighborList | None) -> None:
+        """Select inference geometry construction while retaining native forward.
+
+        The strategy is runtime state, independent of model parameters and
+        serialization. Training retains its own batch-aware builder policy.
+        """
+        self._inference_neighbor_list = neighbor_list
+
+    def _get_neighbor_builder(self) -> NeighborList:
+        if not self.training and self._inference_neighbor_list is not None:
+            return self._inference_neighbor_list
+        return AdaptiveNeighborList(method="native")
+
     def build_neighbor_list(
         self,
         coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
@@ -2772,7 +2738,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     ) -> EdgeNeighborList:
         """Build the unified edge-vector schema for the ``forward`` entry."""
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
+        return self._get_neighbor_builder().build(
             coord.view(nf, nloc, 3),
             atype,
             box,
@@ -2799,7 +2765,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         contract order ``(extended_coord, extended_atype, nlist, mapping)``.
         """
         nf, nloc = atype.shape[:2]
-        return _select_neighbor_builder(nf, coord.device).build(
+        return self._get_neighbor_builder().build(
             coord.view(nf, nloc, 3),
             atype,
             box,

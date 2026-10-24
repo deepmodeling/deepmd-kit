@@ -27,12 +27,14 @@ from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
 
+from ...common.sezm_config import (
+    _tiny_sezm_model_params,
+)
 from .test_sezm_export import (
     _CPU,
     _SKIP_OFF_COMPILE_TORCH,
     _SKIP_OFF_COMPILE_TORCH_REASON,
     _clear_default_device,
-    _tiny_sezm_model_params,
 )
 
 BIAS = np.array([[-3.0], [0.5]])

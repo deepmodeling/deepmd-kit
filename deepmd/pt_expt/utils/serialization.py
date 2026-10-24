@@ -1334,7 +1334,10 @@ def _serialize_from_file_pte(model_file: str) -> dict:
         "model_def_script.json": "",
         "metadata.json": "",
     }
-    torch.export.load(model_file, extra_files=extra_files)
+    # Storage reconstruction requires CPU staging independently of the caller's
+    # default device; tensor placement is restored from the archive metadata.
+    with torch.device("cpu"):
+        torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
     metadata = (
@@ -1661,6 +1664,8 @@ def deserialize_to_file(
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
@@ -1704,6 +1709,10 @@ def deserialize_to_file(
         explicitly selects other levels.
         The selected schema is recorded as ``lower_input_kind`` in
         ``metadata.json``.
+    with_comm : bool, optional
+        Include a communication artifact in ``.pt2`` exports for models with
+        cross-rank message passing, by default True. Disable for
+        single-process inference.
     """
     lower_kind = _resolve_target_lower_kind(model_file, data, lower_kind)
     uses_dpa4_defaults = model_file.endswith(".pt2") and _uses_dpa4_kernel_defaults(
@@ -1731,6 +1740,7 @@ def deserialize_to_file(
                 model_json_override,
                 do_atomic_virial,
                 lower_kind,
+                with_comm=with_comm,
             )
         else:
             _deserialize_to_file_pte(
@@ -2668,6 +2678,8 @@ def _deserialize_to_file_pt2(
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
     lower_kind: str = "nlist",
+    *,
+    with_comm: bool = True,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -2678,11 +2690,12 @@ def _deserialize_to_file_pt2(
     For models whose descriptor reports
     ``has_message_passing_across_ranks() == True`` (DPA2, DPA3 with
     ``use_loc_mapping=False``, or hybrids wrapping such children),
-    compiles a SECOND ``with-comm`` artifact and packs it alongside the
-    regular one. The ``with-comm`` variant accepts comm-dict tensors as
-    additional positional inputs and drives MPI ghost-atom exchange via
-    ``deepmd_export::border_op``. The C++ ``DeepPotPTExpt`` loader picks
-    the artifact based on the LAMMPS rank count at runtime.
+    compiles a SECOND ``with-comm`` artifact when ``with_comm`` is True and
+    packs it alongside the regular one. The ``with-comm`` variant accepts
+    comm-dict tensors as additional positional inputs and drives MPI
+    ghost-atom exchange via ``deepmd_export::border_op``. The C++
+    ``DeepPotPTExpt`` loader picks the artifact based on the LAMMPS rank
+    count at runtime.
 
     Layout inside the .pt2 ZIP (PyTorch 2.11 strict layout):
         regular   →  artifact at ``model/`` (AOTInductor's own layout)
@@ -2711,6 +2724,9 @@ def _deserialize_to_file_pt2(
         lower_kind=lower_kind,
     )
     metadata["output_keys"] = output_keys
+    metadata["has_comm_artifact"] = with_comm and bool(
+        metadata.get("has_comm_artifact")
+    )
 
     # A charge-state update swaps constants in one compiled artifact. A model
     # that also needs the with-comm lower would own two independent constant
