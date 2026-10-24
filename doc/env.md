@@ -55,6 +55,24 @@ Control high (double) or low (float) precision of training.
 {{ tensorflow_icon }} Enable JIT. Note that this option may either improve or decrease the performance. Requires TensorFlow to support JIT.
 :::
 
+:::{envvar} DP_GRAPH_FITTING_GEMM_POLICY
+
+**Default**: `legacy`
+
+For fused CUDA graph fitting, `shape_stable` selects pedantic-FP32 cuBLASLt
+GEMMs with a configuration chosen at a fixed 256-node heuristic shape.
+The actual operation evaluates the complete node matrix: it does not split
+inference into frame subbatches or change precision. The default `legacy`
+retains the existing SGEMM policy. Set the policy before the first CUDA fitting
+call; it is immutable within a process. CPU fitting is unaffected.
+
+The shape-stable path caches launch metadata and 128 MiB of workspace per
+thread/device/stream. Unsupported shapes or workspace requirements fail
+explicitly rather than selecting a different reduction algorithm. Qualify
+energy and force parity for the desired model, shapes, GPU, and cuBLAS version;
+this setting is not a cross-hardware or cross-version reproducibility promise.
+:::
+
 :::{envvar} DP_INFER_BATCH_SIZE
 
 **Default**: `1024` on CPUs; automatically sized on GPUs
