@@ -31,6 +31,7 @@ from deepmd.dpmodel.train import (
 from deepmd.dpmodel.train.data_progress import (
     DATA_PROGRESS_CHECKPOINT_KEY,
     collect_training_data_progress,
+    preserve_training_data_progress,
 )
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
@@ -121,6 +122,19 @@ def _write_lmdb(path: Path, *, mixed: bool) -> None:
                 )
 
 
+def _write_hdf5(path: Path) -> None:
+    """Store the directory fixture in a single HDF5 system."""
+    directory = path.with_suffix("")
+    _write_directory(directory)
+    with h5py.File(path, "w") as handle:
+        handle.create_dataset("system/type.raw", data=[0, 1, 1])
+        handle.create_dataset("system/type_map.raw", data=[b"O", b"H"])
+        for array in directory.glob("set.*/*.npy"):
+            handle.create_dataset(
+                "system/" + array.relative_to(directory).as_posix(), data=np.load(array)
+            )
+
+
 def _config(path: str | Path, *, mode: str, multitask: bool = True) -> dict:
     descriptor = {
         "type": "se_e2_a",
@@ -183,7 +197,7 @@ def _config(path: str | Path, *, mode: str, multitask: bool = True) -> dict:
     return normalize(update_deepmd_input(config, warning=False), multi_task=multitask)
 
 
-def _record_training(trainer: Trainer) -> list:
+def _record_training(trainer: Trainer, *, data_rng_draws: int = 0) -> list:
     """Record real optimizer inputs, excluding diagnostic reads of the data."""
     records = []
     get_data = trainer.get_data
@@ -193,6 +207,8 @@ def _record_training(trainer: Trainer) -> list:
     def record_data(is_train: bool = True, task_key: str = "Default") -> tuple:
         inputs, labels = get_data(is_train=is_train, task_key=task_key)
         if is_train and in_train_step:
+            if data_rng_draws:
+                dp_random.random(data_rng_draws)
             records.append(
                 (
                     task_key,
@@ -338,20 +354,12 @@ def test_relocated_restart_can_reset_only_data_progress(
     if mode == "lmdb":
         path = tmp_path / "data.lmdb"
         _write_lmdb(path, mixed=False)
+    elif mode == "hdf5":
+        path = tmp_path / "data.h5"
+        _write_hdf5(path)
     else:
         path = tmp_path / "data"
         _write_directory(path)
-        if mode == "hdf5":
-            directory = path
-            path = tmp_path / "data.h5"
-            with h5py.File(path, "w") as handle:
-                handle.create_dataset("system/type.raw", data=[0, 1, 1])
-                handle.create_dataset("system/type_map.raw", data=[b"O", b"H"])
-                for array in directory.glob("set.*/*.npy"):
-                    handle.create_dataset(
-                        "system/" + array.relative_to(directory).as_posix(),
-                        data=np.load(array),
-                    )
     system = str(path) + ("#/system" if mode == "hdf5" else "")
     config_mode = "lmdb" if mode == "lmdb" else "directory"
     config = _config(system, mode=config_mode)
@@ -421,6 +429,52 @@ def test_relocated_restart_can_reset_only_data_progress(
             torch.testing.assert_close(
                 value, reset._unwrapped.state_dict()[key], rtol=1e-12, atol=1e-12
             )
+
+
+@pytest.mark.parametrize("mode", ["directory", "hdf5", "lmdb"])
+def test_configured_seed_is_format_independent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Fresh streams are seeded consistently; exact restarts reject seed changes."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DP_LMDB_NUM_WORKERS", "0")
+    path = (
+        tmp_path / {"directory": "data", "hdf5": "data.h5", "lmdb": "data.lmdb"}[mode]
+    )
+    if mode == "lmdb":
+        _write_lmdb(path, mixed=False)
+    elif mode == "hdf5":
+        _write_hdf5(path)
+    else:
+        _write_directory(path)
+    system = str(path) + ("#/system" if mode == "hdf5" else "")
+    config = _config(
+        system, mode="lmdb" if mode == "lmdb" else "directory", multitask=False
+    )
+    config["training"].update(seed=7, numb_steps=1, save_freq=1)
+    states = []
+    for external_seed in (1, 999):
+        dp_random.seed(external_seed)
+        trainer = get_trainer(deepcopy(config))
+        try:
+            states.append(collect_training_data_progress(trainer.training_data_by_task))
+        finally:
+            trainer._close_data_systems()
+    assert states[0] == states[1]
+
+    original = get_trainer(deepcopy(config))
+    original.run()
+    checkpoint = str(tmp_path / "model.ckpt-1.pt")
+    config["training"]["seed"] = 12
+    with pytest.raises(ValueError, match=r"training.seed changed"):
+        get_trainer(deepcopy(config), restart_model=checkpoint)
+    config["training"]["reset_data_progress"] = True
+    restarted = get_trainer(config, restart_model=checkpoint)
+    try:
+        assert restarted.start_step == 1
+        assert restarted._collect_data_progress()["configured_seed"] == 12
+    finally:
+        restarted._close_data_systems()
 
 
 @pytest.mark.parametrize("mode", ["directory", "lmdb"])
@@ -601,7 +655,13 @@ def test_every_rank_joins_periodic_final_and_bias_saves(
         progress = torch.load(checkpoint, weights_only=True)[
             DATA_PROGRESS_CHECKPOINT_KEY
         ]
-        assert progress == {"version": 1, "world_size": 2, "ranks": [gathered[-1]] * 2}
+        assert progress == {
+            "version": 1,
+            "world_size": 2,
+            "configured_seed": config["training"]["seed"],
+            "task_rng": trainer._task_rng.bit_generator.state,
+            "ranks": [gathered[-1]] * 2,
+        }
 
 
 @pytest.mark.parametrize("rank", [0, 1])
@@ -657,6 +717,8 @@ def test_full_validation_precollects_before_chief_only_save(
         assert state[DATA_PROGRESS_CHECKPOINT_KEY] == {
             "version": 1,
             "world_size": 2,
+            "configured_seed": config["training"]["seed"],
+            "task_rng": trainer._task_rng.bit_generator.state,
             "ranks": [before, before],
         }
         ema = torch.load(tmp_path / "best_ema.pt", weights_only=True)
@@ -687,6 +749,8 @@ def test_filtered_rank_progress_restores_its_own_cursor(tmp_path, monkeypatch) -
         )
         trainer = Trainer.__new__(Trainer)
         _set_mock_rank(trainer, rank)
+        trainer._configured_data_seed = 7
+        trainer._task_rng = np.random.default_rng(7)
         trainer.training_data_by_task = {"Default": data}
         trainer.min_pair_dist_by_task = {"Default": 2.0}
         return trainer, data
@@ -733,6 +797,8 @@ def test_changed_world_size_leaves_data_and_rng_untouched(
     trainer = Trainer.__new__(Trainer)
     trainer.rank = rank
     trainer.world_size = current_size
+    trainer._task_rng = np.random.default_rng(7)
+    task_rng_state = deepcopy(trainer._task_rng.bit_generator.state)
     source = Mock()
     source.state_dict.return_value = {"cursor": 11}
     trainer.training_data_by_task = {"Default": source}
@@ -748,6 +814,7 @@ def test_changed_world_size_leaves_data_and_rng_untouched(
     restore.assert_not_called()
     source.load_state_dict.assert_not_called()
     assert collect_training_data_progress(trainer.training_data_by_task) == before
+    assert trainer._task_rng.bit_generator.state == task_rng_state
     assert ("Checkpoint world size changed" in caplog.text) == (rank == 0)
 
 
@@ -756,6 +823,8 @@ def test_explicit_reset_leaves_every_task_and_rng_untouched(caplog, rank) -> Non
     """An explicit reset does not even invoke a task or shared RNG restore."""
     trainer = Trainer.__new__(Trainer)
     _set_mock_rank(trainer, rank)
+    trainer._task_rng = np.random.default_rng(7)
+    task_rng_state = deepcopy(trainer._task_rng.bit_generator.state)
     sources = {"first": Mock(), "second": Mock()}
     for index, source in enumerate(sources.values()):
         source.state_dict.return_value = {"cursor": index + 10}
@@ -779,6 +848,7 @@ def test_explicit_reset_leaves_every_task_and_rng_untouched(caplog, rank) -> Non
     for source in sources.values():
         source.load_state_dict.assert_not_called()
     assert collect_training_data_progress(sources) == before
+    assert trainer._task_rng.bit_generator.state == task_rng_state
     assert ("training.reset_data_progress is true" in caplog.text) == (rank == 0)
     assert "Checkpoint world size changed" not in caplog.text
 
@@ -828,15 +898,34 @@ def _ddp_restart_worker(rank: int, directory: str, rendezvous: str, mode: str) -
             save_ckpt=str(root / "model.ckpt"),
             disp_file=str(root / "lcurve.out"),
         )
+        if mode == "directory":
+            unseeded_config = deepcopy(config)
+            unseeded_config["training"]["seed"] = None
+            unseeded = get_trainer(unseeded_config)
+            choices = [
+                unseeded.select_task(unseeded.training_tasks).key for _ in range(8)
+            ]
+            ranks = [None, None]
+            dist.all_gather_object(ranks, choices)
+            assert ranks[0] == ranks[1]
+            unseeded._close_data_systems()
         dp_random.seed(19)
         trainer = get_trainer(deepcopy(config))
-        expected = _record_training(trainer)
+        with preserve_training_data_progress(trainer.training_data_by_task):
+            first = next(iter(trainer.training_data_by_task.values()))
+            frames = [np.asarray(first.get_batch()["coord"]).tolist() for _ in range(8)]
+        ranks = [None, None]
+        dist.all_gather_object(ranks, frames)
+        assert ranks[0] != ranks[1]
+        expected = _record_training(trainer, data_rng_draws=rank + 1)
+        dist.all_gather_object(ranks, [record[0] for record in expected])
+        assert ranks[0] == ranks[1]
         dist.barrier()
         dp_random.seed(9876)
         restarted = get_trainer(
             deepcopy(config), restart_model=str(root / "model.ckpt-10.pt")
         )
-        actual = _record_training(restarted)
+        actual = _record_training(restarted, data_rng_draws=rank + 1)
         _assert_records_equal(expected[10:], actual)
     finally:
         dist.destroy_process_group()

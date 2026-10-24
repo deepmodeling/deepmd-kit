@@ -1812,6 +1812,7 @@ class Trainer(AbstractTrainer):
 
         model_params = config["model"]
         training_params = config["training"]
+        self._configured_data_seed = training_params.get("seed")
         optimizer_params = config.get("optimizer", {})
         validating_params = config.get("validating", {}) or {}
 
@@ -1848,6 +1849,20 @@ class Trainer(AbstractTrainer):
         self.is_distributed = dist.is_available() and dist.is_initialized()
         self.rank = dist.get_rank() if self.is_distributed else 0
         self.world_size = dist.get_world_size() if self.is_distributed else 1
+        # Rank-local data draws must not change the shared task-selection sequence.
+        self._task_rng = np.random.default_rng(
+            None
+            if self._configured_data_seed is None
+            else self._configured_data_seed % (2**32)
+        )
+        if (
+            self.is_distributed
+            and self.multi_task
+            and self._configured_data_seed is None
+        ):
+            self._task_rng.bit_generator.state = self._broadcast_value_from_rank0(
+                self._task_rng.bit_generator.state if self.rank == 0 else None
+            )
         self.sharding = ShardingPolicy.from_training_params(
             training_params, is_distributed=self.is_distributed
         )
@@ -3057,6 +3072,7 @@ class Trainer(AbstractTrainer):
     def _broadcast_value_from_rank0(self, value: Any) -> Any:
         """Return rank 0's copy of ``value`` on every rank.
 
+        Unseeded task-selection RNG state must agree across ranks at startup.
         Epoch lengths round a quotient of sampling probabilities that is often
         an exact integer in real arithmetic, so a last-bit difference between
         ranks -- as reduction kernels dispatched for different CPU features
@@ -3089,7 +3105,13 @@ class Trainer(AbstractTrainer):
         if self.is_distributed:
             ranks = [None] * self.world_size
             dist.all_gather_object(ranks, local_progress)
-        return {"version": 1, "world_size": self.world_size, "ranks": ranks}
+        return {
+            "version": 1,
+            "world_size": self.world_size,
+            "configured_seed": self._configured_data_seed,
+            "task_rng": self._task_rng.bit_generator.state,
+            "ranks": ranks,
+        }
 
     def _restore_data_progress(
         self, progress: Mapping[str, Any] | None, *, reset: bool = False
@@ -3137,7 +3159,20 @@ class Trainer(AbstractTrainer):
                     self.world_size,
                 )
             return
+        if "configured_seed" not in progress or "task_rng" not in progress:
+            raise ValueError(
+                "Data-progress checkpoint lacks its seed or task RNG identity; "
+                "set training.reset_data_progress=true to restart data sampling."
+            )
+        if progress["configured_seed"] != self._configured_data_seed:
+            raise ValueError(
+                "Training data progress is incompatible: training.seed changed; "
+                "set training.reset_data_progress=true to restart data sampling."
+            )
+        task_rng = np.random.default_rng(0)
+        task_rng.bit_generator.state = progress["task_rng"]
         restore_training_data_progress(self.training_data_by_task, ranks[self.rank])
+        self._task_rng = task_rng
 
     def ensure_finite_gradients_for_checkpoint(self) -> None:
         """Check the accumulated gradient norm on all ranks before publication."""
@@ -3485,10 +3520,10 @@ class Trainer(AbstractTrainer):
                 dp_random.set_state(random_state)
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
-        """Select a task using DeePMD's seeded random helper."""
+        """Select a task independently of rank-local data draws."""
         if not tasks.is_multitask:
             return tasks[tasks.keys[0]]
-        model_index = dp_random.choice(
+        model_index = self._task_rng.choice(
             np.arange(len(tasks), dtype=np.int_),
             p=tasks.probabilities,
         )

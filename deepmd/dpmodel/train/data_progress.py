@@ -2,7 +2,7 @@
 """Small, backend-independent checkpoints of the next training batches.
 
 Data sources own their cursors and deterministic sampler state. This module
-adds task names and the shared selection RNG, not decoded data or permutations.
+adds task names and the shared data-source RNG, not decoded data or permutations.
 """
 
 from collections.abc import (
@@ -25,7 +25,7 @@ DATA_PROGRESS_VERSION = 1
 def collect_training_data_progress(
     training_data_by_task: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Collect supported data-source cursors and the shared selection RNG."""
+    """Collect supported data-source cursors and the shared data-source RNG."""
     return {
         "version": DATA_PROGRESS_VERSION,
         "tasks": {

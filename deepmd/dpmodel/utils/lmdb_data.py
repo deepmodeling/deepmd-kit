@@ -2004,14 +2004,7 @@ class LmdbBatchIterator:
         if not isinstance(config, dict):
             raise ValueError("LMDB data progress is missing its sampling configuration")
         self._check_restore_config(config, final=False)
-        # A diagnostic read can restore this cursor many times during a run.
-        # Discard its queued result, but keep the shared pool alive. Already
-        # running read-only tasks may finish; their results are never consumed.
-        if self._pending is not None:
-            for future in self._pending.futures:
-                future.cancel()
-        self._pending = None
-        self._deferred_indices = None
+        self._discard_prefetch()
         self._sampler.set_seed(state["seed"])
         self._sampler.set_epoch(state["epoch"])
         self._epoch = self._next_epoch = state["epoch"]
@@ -2077,11 +2070,8 @@ class LmdbBatchIterator:
         """Whether this iterator has released its resources."""
         return self._closed
 
-    def close(self) -> None:
-        """Finish or cancel prefetched work and release the decoder pool."""
-        if self._closed:
-            return
-        self._closed = True
+    def _discard_prefetch(self) -> None:
+        """Discard queued reads while preserving the shared pool's health state."""
         if self._pending is not None:
             running = [
                 future for future in self._pending.futures if not future.cancel()
@@ -2090,6 +2080,13 @@ class LmdbBatchIterator:
                 self._lose_the_pool(running)
             self._pending = None
         self._deferred_indices = None
+
+    def close(self) -> None:
+        """Finish or cancel prefetched work and release the decoder pool."""
+        if self._closed:
+            return
+        self._closed = True
+        self._discard_prefetch()
         if self._pool is not None:
             self._pool = None
             _release_lmdb_executor(self._num_workers)

@@ -20,6 +20,7 @@ from unittest.mock import (
     patch,
 )
 
+import numpy as np
 import pytest
 import torch
 import torch.distributed as dist
@@ -67,6 +68,8 @@ def _make_trainer(backend, directory, *, rank=0, stage=0, distributed=False):
     trainer.is_distributed = distributed
     if backend == "pt_expt":
         trainer.training_data_by_task = {}
+        trainer._configured_data_seed = None
+        trainer._task_rng = np.random.default_rng(0)
         trainer.world_size = dist.get_world_size() if distributed else 1
     trainer.sharding = ShardingPolicy(stage=stage)
     trainer.model = torch.nn.Linear(2, 1, device="cpu")

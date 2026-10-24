@@ -2998,6 +2998,26 @@ class TestDecoderPoolFailure(unittest.TestCase):
         self._assert_same_batch(batch, self._reader.decode_batch([0, 1, 2, 3]))
         self.assertEqual(pool.submissions, submissions)
 
+    def test_restore_detects_a_stalled_prefetch(self) -> None:
+        """Restoring a cursor must retire a decoder that cannot finish its result."""
+        iterator = LmdbBatchIterator(
+            self._reader, LmdbBatchSampler(self._reader, seed=7), num_workers=2
+        )
+        release = mock.patch.object(lmdb_data_module, "_release_lmdb_executor")
+        release.start()
+        self.addCleanup(release.stop)
+        self.addCleanup(iterator.close)
+        state = iterator.state_dict()
+        entry = lmdb_data_module._LmdbPoolEntry(executor=_StalledPool(), users=1)
+        iterator._pool = entry
+        running = Future()
+        self.assertTrue(running.set_running_or_notify_cancel())
+        iterator._pending = lmdb_data_module._PendingBatch([0, 1], [running])
+        iterator.load_state_dict(state)
+        self.assertFalse(entry.healthy)
+        self.assertIsNone(iterator._pending)
+        self.assertEqual(iterator.state_dict(), state)
+
     @unittest.skipUnless(
         os.name == "posix" and sys.implementation.name == "cpython",
         "requires CPython's POSIX process-pool pipe",

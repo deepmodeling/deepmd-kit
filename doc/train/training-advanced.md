@@ -164,6 +164,17 @@ repeated, and exact data-order continuation is not guaranteed in this case.
 Malformed progress envelopes remain errors; by default, so do incompatible data
 settings at the same world size.
 
+PyTorch Exportable initializes rank-local data sampling from `training.seed`
+and the rank before constructing data sources, including directory and HDF5
+sources. Task selection has an independent RNG shared across ranks, so local
+data filtering cannot change the task sequence. Without a configured seed,
+the chief initializes that task RNG and broadcasts its state once at startup.
+Both RNG streams resume from checkpoints. The configured seed is also part of
+the checkpoint's data-progress identity: changing it requires an explicit reset,
+independently of the input format. Earlier experimental progress records without
+seed/task-RNG identity likewise require a reset; checkpoints without data
+progress retain their legacy restart behavior.
+
 For PyTorch Exportable, set `training.reset_data_progress` to `true` when
 intentionally restarting with relocated data or changed data settings. This
 explicitly keeps newly initialized data cursors and task/system selection RNG
