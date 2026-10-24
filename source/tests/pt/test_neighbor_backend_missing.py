@@ -2,6 +2,7 @@
 """Native fallback retains every cutoff edge without optional search libraries."""
 
 import unittest
+import warnings
 from unittest import (
     mock,
 )
@@ -19,6 +20,19 @@ class TestNeighborBackendMissing(unittest.TestCase):
             patcher = mock.patch.object(auto_neighbor_list, name, return_value=False)
             patcher.start()
             self.addCleanup(patcher.stop)
+
+    def test_dense_fallback_reports_cost_without_repeating(self) -> None:
+        coord = torch.zeros((1, 1, 3), dtype=torch.float64, device="cpu")
+        atype = torch.zeros((1, 1), dtype=torch.int64, device="cpu")
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("default", RuntimeWarning)
+            for _ in range(3):
+                auto_neighbor_list.AdaptiveNeighborList(method="native").build(
+                    coord, atype, None, 2.0, [0], return_mode="edges"
+                )
+        self.assertEqual(len(recorded), 1)
+        self.assertIn("O(N^2)", str(recorded[0].message))
+        self.assertIn("nvalchemi-toolkit-ops", str(recorded[0].message))
 
     def test_native_edges_are_not_truncated_to_sel(self) -> None:
         """Batched real atoms keep all edges and phantom atoms keep none."""

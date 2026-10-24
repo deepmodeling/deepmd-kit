@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Batch-aware selection of persistent torch neighbor-list strategies."""
 
+import warnings
 from typing import (
     Any,
     Literal,
@@ -46,6 +47,14 @@ class _NativeNeighborList(DefaultNeighborList):
     ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
         if return_mode != "edges":
             return super().build(coord, atype, box, rcut, sel, return_mode, pair_excl)
+        warnings.warn(
+            "Neither vesin[torch] nor nvalchemi-toolkit-ops is available; "
+            "using dense O(N^2) neighbor search (including any periodic images), "
+            "which can exhaust memory for large systems. Install vesin[torch]>=0.6 "
+            "or nvalchemi-toolkit-ops to enable cell-list neighbor search.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         graph = build_neighbor_graph(coord, atype, box, rcut, pair_excl=pair_excl)
         return EdgeNeighborList(
             coord=coord.reshape(*atype.shape, 3).contiguous(),
@@ -60,8 +69,8 @@ class _NativeNeighborList(DefaultNeighborList):
 class AdaptiveNeighborList(NeighborList):
     """Select a cell-list backend from the device and batch shape.
 
-    ``auto`` favors persistent Vesin searches for single frames and CPU
-    inference, and Toolkit-Ops for CUDA batches. ``native`` retains the
+    ``auto`` favors persistent Vesin searches for single frames and Toolkit-Ops
+    for multi-frame batches on CPU and CUDA. ``native`` retains the
     unbuffered batched policy: Vesin for one CPU frame, Toolkit-Ops otherwise,
     with either backend serving as the fallback when the other is unavailable.
     Without either optional backend, native search preserves the requested
@@ -92,15 +101,12 @@ class AdaptiveNeighborList(NeighborList):
         single_vesin = atype.shape[0] == 1 and (
             self._method == "auto" or coord.device.type == "cpu"
         )
-        batched_nv = self._method == "native" or coord.device.type == "cuda"
         if single_vesin and vesin_available:
-            builder = self._vesin
-        elif batched_nv and is_nv_available():
-            builder = self._nv
-        elif vesin_available:
             builder = self._vesin
         elif is_nv_available():
             builder = self._nv
+        elif vesin_available:
+            builder = self._vesin
         else:
             builder = self._native
         return builder.build(
@@ -129,7 +135,7 @@ def make_neighbor_list(
         if (
             return_mode == "edges"
             or is_vesin_torch_available()
-            or (device.type == "cuda" and is_nv_available())
+            or (device.type in {"cpu", "cuda"} and is_nv_available())
         ):
             return AdaptiveNeighborList(skin=skin)
         return None
@@ -141,8 +147,8 @@ def make_neighbor_list(
             )
         return VesinNeighborList(skin=skin)
     if method == "nv":
-        if device.type != "cuda":
-            raise ValueError("NV neighbor search requires CUDA inference tensors")
+        if device.type not in {"cpu", "cuda"}:
+            raise ValueError("NV neighbor search requires CPU or CUDA tensors")
         if not is_nv_available():
             raise ImportError("NV neighbor search requires nvalchemi-toolkit-ops")
         return NvNeighborList()

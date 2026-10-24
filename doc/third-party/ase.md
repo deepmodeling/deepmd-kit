@@ -74,8 +74,10 @@ For PT-expt graph models, `neighbor_graph_method` accepts `auto`, `dense`, `ase`
 `cell`, `vesin`, and `nv`. On a GPU, `auto` prefers Vesin for the single frame
 evaluated by ASE; batched `DeepPot` inference prefers NV when available. CPU
 graph inference retains the native `cell` search. PT SeZM/DPA4 checkpoints and
-their edge-vector exports support `auto`, `vesin`, and `nv`. Models with the
-traditional extended-coordinate input use `nlist_backend` instead.
+their edge-vector exports support `auto`, `vesin`, and `nv`. Their `auto` policy
+prefers Vesin for a single frame and NV for multiple frames on both CPU and CUDA;
+explicit `nv` also supports both devices. Models with the traditional
+extended-coordinate input use `nlist_backend` with the same inference policy.
 
 The default `neighbor_skin=1.0`, in angstrom, enables candidate reuse for Vesin
 searches across all these input formats and requires Vesin and its torch
@@ -84,7 +86,9 @@ Older PyTorch targets and macOS Intel installations retain native neighbor
 construction without requiring these bindings.
 If neither optional search library is available, edge-vector models use the
 native dense carry-all graph search. This slower fallback preserves every
-cutoff neighbor, including periodic images, independently of `sel`.
+cutoff neighbor, including periodic images, independently of `sel`. A runtime
+warning reports its O(N²) cost and installation alternatives; large training or
+inference systems should use a cell-list backend to avoid excessive memory use.
 Candidates extend to the model cutoff plus the skin and are rebuilt when an
 atom moves more than half the skin, or when the cell or atom count changes.
 Each evaluation still updates geometry and selects neighbors at the model's

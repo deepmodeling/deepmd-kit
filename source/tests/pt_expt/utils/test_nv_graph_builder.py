@@ -118,7 +118,8 @@ def test_nv_excludes_virtual_atoms_like_dense():
 
 
 @pytest.mark.parametrize("csr_mode", ["none", "views", "canonical"])
-def test_nv_pair_exclusion_matches_dense(csr_mode: str) -> None:
+@pytest.mark.parametrize("exclude_pairs", [False, True])
+def test_nv_pair_exclusion_matches_dense(csr_mode: str, exclude_pairs: bool) -> None:
     dev = torch.device("cuda")
     coord = torch.tensor(
         [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0], [0.0, 1.1, 0.0], [1.2, 1.0, 0.0]]],
@@ -127,7 +128,7 @@ def test_nv_pair_exclusion_matches_dense(csr_mode: str) -> None:
     )
     atype = torch.tensor([[0, 1, 0, 1]], dtype=torch.int64, device=dev)
     box = (torch.eye(3, dtype=torch.float64, device=dev) * 3.0).reshape(1, 3, 3)
-    pair_excl = PairExcludeMask(2, [(0, 1), (1, 0)])
+    pair_excl = PairExcludeMask(2, [(0, 1), (1, 0)]) if exclude_pairs else None
     expected = build_neighbor_graph(
         coord,
         atype,

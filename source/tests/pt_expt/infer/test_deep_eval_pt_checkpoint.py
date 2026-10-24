@@ -433,9 +433,10 @@ class TestNeighborGraphMethodResolution(unittest.TestCase):
             ("cuda", 1, True, False, "nv"),
             ("cuda", 4, False, True, "vesin"),
             ("cpu", 1, True, True, "vesin"),
+            ("cpu", 4, True, True, "nv"),
             ("cuda", 1, False, False, None),
             ("cpu", 1, False, True, "vesin"),
-            ("cpu", 1, True, False, None),
+            ("cpu", 1, True, False, "nv"),
             ("cpu", 1, False, False, None),
         )
         for device, nf, nv_available, vesin_available, expected in cases:

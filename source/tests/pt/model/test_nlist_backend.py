@@ -5,8 +5,7 @@ The pt model is reconstructed eagerly in ``DeepEval`` and evaluated via
 ``forward_common_lower`` when an O(N) neighbor-list strategy is selected.  Each
 strategy (``vesin``, ``nv``) must give results identical to the native dense
 builder, and the ``nlist_backend`` choice must dispatch / validate correctly.
-Strategy tests are skipped when the backend (or, for ``nv``, a CUDA device) is
-unavailable.
+Strategy tests are skipped when the backend is unavailable.
 """
 
 import copy
@@ -52,8 +51,7 @@ _BACKEND_MARKS = {
         not is_vesin_torch_available(), reason="vesin.torch is not installed"
     ),
     "nv": pytest.mark.skipif(
-        not (is_nv_available() and torch.cuda.is_available()),
-        reason="nvalchemiops CUDA neighbor list unavailable",
+        not is_nv_available(), reason="nvalchemiops neighbor list unavailable"
     ),
 }
 _BUILDER_CLS = {"vesin": VesinNeighborList, "nv": NvNeighborList}
@@ -212,12 +210,38 @@ def test_auto_selects_backend_from_frame_count(
     ):
         dp.eval(coords, boxes, atype)
 
-    if DEVICE.type == "cuda" and nframes > 1 and is_nv_available():
+    if nframes > 1 and is_nv_available():
         nv_build.assert_called_once()
         vesin_build.assert_not_called()
     else:
         vesin_build.assert_called_once()
         nv_build.assert_not_called()
+
+
+@pytest.mark.parametrize("backend", STRATEGIES)
+@pytest.mark.parametrize("option", ["nlist_backend", "neighbor_graph_method"])
+def test_self_built_model_uses_inference_strategy(
+    tmp_path: Path, backend: str, option: str
+) -> None:
+    path = str(tmp_path / "sezm.pt")
+    _save_pt(_tiny_sezm_model_params(), path)
+    dp = DeepPot(path, auto_batch_size=False, **{option: backend})
+    model = dp.deep_eval.dp.model["Default"]
+    builder = model._inference_neighbor_list
+    assert isinstance(builder, _BUILDER_CLS[backend])
+    coords = np.array([[[0.0, 0.0, 0.0], [0.9, 0.0, 0.0], [0.0, 1.1, 0.0]]])
+    atype = np.array([0, 1, 0])
+    with mock.patch.object(builder, "build", wraps=builder.build) as build:
+        dp.eval(coords, None, atype)
+        build.assert_called_once()
+        assert model._get_neighbor_builder() is builder
+        model.train()
+        model.build_neighbor_list(
+            torch.as_tensor(coords, dtype=torch.float64, device=DEVICE),
+            torch.as_tensor(atype.reshape(1, -1), device=DEVICE),
+            None,
+        )
+        build.assert_called_once()
 
 
 def test_self_built_model_forces_native(pt_files, monkeypatch) -> None:
