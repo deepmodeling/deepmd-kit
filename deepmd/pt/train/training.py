@@ -101,6 +101,10 @@ from deepmd.pt.utils.lmdb_dataset import (
     LmdbBatchDataLoader,
     LmdbDataset,
 )
+from deepmd.pt.utils.spin_finetune import (
+    compute_native_spin_input_stats,
+    get_native_spin_finetune_state,
+)
 from deepmd.pt.utils.stat import (
     make_stat_input,
     pair_margin_frame_mask,
@@ -874,6 +878,24 @@ class Trainer:
                                 _pretrained_model_params["descriptor"],
                                 _model_key_from,
                             )
+                        if _finetune_rule_single.convert_to_native_spin:
+                            log.info(
+                                "Initialize native-spin branch '%s' from spin-free branch '%s'.",
+                                _model_key,
+                                _model_key_from,
+                            )
+                            converted = get_native_spin_finetune_state(
+                                self.wrapper.model[_model_key],
+                                pretrained_model_wrapper.model[_model_key_from],
+                                random_fitting=_new_fitting,
+                            )
+                            _new_state_dict.update(
+                                {
+                                    f"model.{_model_key}.{key}": value
+                                    for key, value in converted.items()
+                                }
+                            )
+                            return
                         target_keys = [
                             i
                             for i in _random_state_dict.keys()
@@ -950,11 +972,16 @@ class Trainer:
                         model = (
                             self.model[_model_key] if self.multi_task else self.model
                         )
-                        model = model_change_out_bias(
-                            model,
+                        sample_func = (
                             self.get_sample_func[_model_key]
                             if self.multi_task
-                            else self.get_sample_func,
+                            else self.get_sample_func
+                        )
+                        if _finetune_rule.convert_to_native_spin:
+                            compute_native_spin_input_stats(model, sample_func)
+                        model = model_change_out_bias(
+                            model,
+                            sample_func,
                             _bias_adjust_mode="change-by-statistic"
                             if not _finetune_rule.get_random_fitting()
                             else "set-by-statistic",
