@@ -1044,6 +1044,37 @@ class TestFullValidation(unittest.TestCase):
 
     @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_rejects_prior_nonfinite_gradient(
+        self, mocked_eval
+    ) -> None:
+        mocked_eval.return_value = {"mae_e_per_atom": 1.0}
+        for ema in (False, True):
+            with self.subTest(ema=ema):
+                config = deepcopy(self.config)
+                config["training"]["enable_ema"] = True
+                config["validating"]["full_validation"] = not ema
+                config["validating"]["ema_full_validation"] = ema
+                trainer = get_trainer(config)
+                validator = (
+                    trainer.ema_full_validator if ema else trainer.full_validator
+                )
+                previous_state = deepcopy(validator.state_store)
+                trainer.nonfinite_grad_guard.update(
+                    torch.tensor(float("nan"), device="cpu")
+                )
+                trainer.nonfinite_grad_guard.update(torch.tensor(1.0, device="cpu"))
+                with (
+                    patch("torch.save", wraps=torch.save) as serialize,
+                    self.assertRaisesRegex(RuntimeError, "Non-finite gradient norm"),
+                ):
+                    trainer.run()
+                serialize.assert_not_called()
+                self.assertEqual(validator.state_store, previous_state)
+                self.assertEqual(validator.topk_records, [])
+                self.assertEqual(list(Path(".").glob("*.pt")), [])
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt_expt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
             {"mae_e_per_atom": 1.0},

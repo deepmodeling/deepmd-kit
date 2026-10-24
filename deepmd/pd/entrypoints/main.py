@@ -548,7 +548,10 @@ def change_bias(
             nbatches,
         )
         updated_model = training.model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if not multi_task:

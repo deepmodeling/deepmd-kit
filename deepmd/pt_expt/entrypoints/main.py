@@ -800,7 +800,10 @@ def change_bias(
             0.0 if pair_filter is None else float(pair_filter.default),
         )
         model_to_change = model_change_out_bias(
-            model_to_change, sampled_data, _bias_adjust_mode=bias_adjust_mode
+            model_to_change,
+            sampled_data,
+            _bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias={},
         )
 
     if input_file.endswith(".pt"):

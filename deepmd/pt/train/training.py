@@ -1628,6 +1628,7 @@ class Trainer:
                     step_id=_step_id,
                     display_step=display_step_id,
                     lr=cur_lr,
+                    prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
                     save_checkpoint=(
                         self.save_model_merged
                         if self._lora_enabled
@@ -1639,6 +1640,7 @@ class Trainer:
                     step_id=_step_id,
                     display_step=display_step_id,
                     lr=cur_lr,
+                    prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
                     save_checkpoint=(
                         self.save_ema_model_merged
                         if self._lora_enabled
@@ -1652,27 +1654,9 @@ class Trainer:
                 and _step_id != self.start_step
             )
             if should_save_checkpoint:
-                # Abort before writing if any gradient norm since the previous
-                # checkpoint was non-finite.
-                self.nonfinite_grad_guard.raise_if_nonfinite(
-                    self.wrapper.named_parameters
+                self._save_training_checkpoint(
+                    step=_step_id, display_step=display_step_id, lr=cur_lr
                 )
-            if should_save_checkpoint and (
-                self.sharding.enabled or self.rank == 0 or dist.get_rank() == 0
-            ):
-                # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = self.ckpt_store.path_for(display_step_id)
-                self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
-                if self.rank == 0 or dist.get_rank() == 0:
-                    log.info(f"Saved model to {self.latest_model}")
-                    self.ckpt_store.publish(self.latest_model)
-                if self.model_ema is not None:
-                    self.latest_ema_model = self.ema_ckpt_store.path_for(
-                        display_step_id
-                    )
-                    self.save_ema_model(self.latest_ema_model, lr=cur_lr, step=_step_id)
-                    if self.rank == 0 or dist.get_rank() == 0:
-                        self.ema_ckpt_store.publish(self.latest_ema_model)
 
             # tensorboard
             if self.enable_tensorboard and (
@@ -1740,62 +1724,32 @@ class Trainer:
                 self._discarded_training_batches,
             )
 
-        if (
-            self.change_bias_after_training
-            and self.num_steps > self.start_step
-            and (self.rank == 0 or dist.get_rank() == 0)
-        ):
-            if not self.multi_task:
-                self.model = model_change_out_bias(
-                    self.model,
-                    self.get_sample_func,
-                    _bias_adjust_mode="change-by-statistic",
-                )
-            else:
-                for model_key in self.model_keys:
-                    self.model[model_key] = model_change_out_bias(
-                        self.model[model_key],
-                        self.get_sample_func[model_key],
+        if self.change_bias_after_training and self.num_steps > self.start_step:
+            if self.rank == 0 or dist.get_rank() == 0:
+                if not self.multi_task:
+                    self.model = model_change_out_bias(
+                        self.model,
+                        self.get_sample_func,
                         _bias_adjust_mode="change-by-statistic",
                     )
-            self.latest_model = self.ckpt_store.path_for(self.num_steps)
-            cur_lr = self.lr_schedule.value(self.num_steps - 1)
-            self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
-            log.info(f"Saved model to {self.latest_model}")
-            self.ckpt_store.publish(self.latest_model)
-            if self.model_ema is not None:
-                self.latest_ema_model = self.ema_ckpt_store.path_for(self.num_steps)
-                self.save_ema_model(
-                    self.latest_ema_model,
-                    lr=cur_lr,
-                    step=self.num_steps - 1,
-                )
-                self.ema_ckpt_store.publish(self.latest_ema_model)
+                else:
+                    for model_key in self.model_keys:
+                        self.model[model_key] = model_change_out_bias(
+                            self.model[model_key],
+                            self.get_sample_func[model_key],
+                            _bias_adjust_mode="change-by-statistic",
+                        )
+            self._save_training_checkpoint(
+                step=self.num_steps - 1,
+                display_step=self.num_steps,
+                lr=self.lr_schedule.value(self.num_steps - 1),
+            )
 
-        if self.num_steps == 0 and self.sharding.enabled:
-            # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
-            self.latest_model = self.ckpt_store.path_for(0)
-            self.save_model(self.latest_model, lr=0, step=0)
-            if self.model_ema is not None:
-                self.latest_ema_model = self.ema_ckpt_store.path_for(0)
-                self.save_ema_model(self.latest_ema_model, lr=0, step=0)
+        if self.num_steps == 0:
+            self._save_training_checkpoint(step=0, display_step=0, lr=0.0)
 
-        if (
-            self.rank == 0 or dist.get_rank() == 0
-        ):  # Handle the case if rank 0 aborted and re-assigned
-            if self.num_steps == 0:
-                if not self.sharding.enabled:
-                    # When num_steps is 0, the checkpoint is never saved in the loop
-                    self.latest_model = self.ckpt_store.path_for(0)
-                    self.save_model(self.latest_model, lr=0, step=0)
-                    if self.model_ema is not None:
-                        self.latest_ema_model = self.ema_ckpt_store.path_for(0)
-                        self.save_ema_model(self.latest_ema_model, lr=0, step=0)
-                log.info(f"Saved model to {self.latest_model}")
-                self.ckpt_store.publish(self.latest_model)
-                if self.model_ema is not None:
-                    self.ema_ckpt_store.publish(self.latest_ema_model)
-
+        if self.rank == 0 or dist.get_rank() == 0:
+            # Handle the case if rank 0 aborted and was reassigned.
             if self.timing_in_training:
                 average_message = self.step_timer.format_average()
                 if average_message is not None:
@@ -1841,6 +1795,32 @@ class Trainer:
                 close = getattr(loader, "close", None)
                 if close is not None:
                     close()
+
+    def _save_training_checkpoint(
+        self, *, step: int, display_step: int, lr: float
+    ) -> None:
+        """Publish live and optional EMA checkpoints after one all-rank check."""
+        self.ensure_finite_gradients_for_checkpoint()
+        # Preserve chief ownership if rank 0 was reassigned.
+        is_chief = self.rank == 0 or dist.get_rank() == 0
+        if not is_chief and not self.sharding.enabled:
+            return
+        self.latest_model = self.ckpt_store.path_for(display_step)
+        self.save_model(self.latest_model, lr=lr, step=step)
+        if is_chief:
+            log.info(f"Saved model to {self.latest_model}")
+            self.ckpt_store.publish(self.latest_model)
+        if self.model_ema is not None:
+            self.latest_ema_model = self.ema_ckpt_store.path_for(display_step)
+            self.save_ema_model(self.latest_ema_model, lr=lr, step=step)
+            if is_chief:
+                self.ema_ckpt_store.publish(self.latest_ema_model)
+
+    def ensure_finite_gradients_for_checkpoint(self) -> None:
+        """Check the accumulated gradient norm on all ranks before publication."""
+        self.nonfinite_grad_guard.raise_if_nonfinite(
+            self.wrapper.named_parameters, synchronize=self.is_distributed
+        )
 
     def _collect_checkpoint_states(
         self,
@@ -2498,6 +2478,7 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Callable[[], Any],
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> Any:
     from deepmd.pt.model.model.dp_model import (
         DPModelCommon,
@@ -2508,4 +2489,5 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
+        preset_out_bias=preset_out_bias,
     )

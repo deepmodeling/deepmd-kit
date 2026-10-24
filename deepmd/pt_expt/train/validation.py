@@ -14,6 +14,7 @@ from contextlib import (
 )
 from dataclasses import (
     dataclass,
+    replace,
 )
 from pathlib import (
     Path,
@@ -318,8 +319,14 @@ class FullValidator:
         display_step: int,
         lr: float,
         save_checkpoint: Any,
+        prepare_checkpoint: Callable[[], None] | None = None,
     ) -> FullValidationResult | None:
-        """Run full validation if the current step is due."""
+        """Run full validation if the current step is due.
+
+        ``prepare_checkpoint`` runs on every rank only for a selected checkpoint.
+        It must agree on distributed failures before returning or raising, so
+        no peer enters checkpoint collectives after another rejects the save.
+        """
         if not self.should_run(display_step):
             return None
 
@@ -330,10 +337,15 @@ class FullValidator:
         caught_exception: Exception | None = None
         error_message = None
         save_path = [None]
+        proposed_records = self.topk_records
         if self.rank == 0:
             try:
                 result = self._evaluate(display_step)
-                save_path[0] = result.saved_best_path
+                proposed_records, save_path[0] = self._propose_best_state(
+                    display_step=display_step,
+                    selected_metric_value=result.selected_metric_value,
+                )
+                result = replace(result, saved_best_path=save_path[0])
             except Exception as exc:
                 caught_exception = exc
                 error_message = (
@@ -345,6 +357,15 @@ class FullValidator:
 
         if self.is_distributed:
             dist.broadcast_object_list(save_path, src=0)
+
+        if save_path[0] is not None and prepare_checkpoint is not None:
+            # All ranks agree before mutating top-K metadata or entering a
+            # serializer that may gather sharded model/optimizer state.
+            prepare_checkpoint()
+
+        if self.rank == 0:
+            self.topk_records = proposed_records
+            self._sync_state_store()
 
         if save_path[0] is not None:
             try:
@@ -387,7 +408,7 @@ class FullValidator:
         return result if self.rank == 0 else None
 
     def _evaluate(self, display_step: int) -> FullValidationResult:
-        """Evaluate all validation systems and update best state."""
+        """Evaluate all validation systems without publishing checkpoint state."""
         # === Step 1. Switch to Evaluation Mode ===
         was_training = bool(getattr(self.model, "training", True))
         self.model.eval()
@@ -411,18 +432,13 @@ class FullValidator:
                 f"validation dataset: {self.metric_name.upper()}."
             )
 
-        # === Step 3. Update Best Tracking ===
         selected_metric_value = float(metrics[self.metric_key])
-        saved_best_path = self._update_best_state(
-            display_step=display_step,
-            selected_metric_value=selected_metric_value,
-        )
         return FullValidationResult(
             display_step=display_step,
             metrics=metrics,
             selected_metric_key=self.metric_key,
             selected_metric_value=selected_metric_value,
-            saved_best_path=saved_best_path,
+            saved_best_path=None,
         )
 
     def evaluate_all_systems(self) -> dict[str, float]:
@@ -700,13 +716,13 @@ class FullValidator:
             prediction["virial"] = batch_prediction["virial"]
         return prediction
 
-    def _update_best_state(
+    def _propose_best_state(
         self,
         *,
         display_step: int,
         selected_metric_value: float,
-    ) -> str | None:
-        """Update the top-K records and return the checkpoint path to save."""
+    ) -> tuple[list[BestCheckpointRecord], str | None]:
+        """Propose top-K records and a save path without changing published state."""
         candidate = BestCheckpointRecord(
             metric=selected_metric_value,
             step=display_step,
@@ -718,14 +734,17 @@ class FullValidator:
         updated_records.sort()
         updated_records = updated_records[: self.max_best_ckpt]
         if candidate not in updated_records:
-            return None
-
-        self.topk_records = updated_records
-        self._sync_state_store()
-        if not self.save_best:
-            return None
-        candidate_rank = self.topk_records.index(candidate) + 1
-        return str(self._best_checkpoint_path(display_step, candidate_rank))
+            return self.topk_records, None
+        save_path = (
+            str(
+                self._best_checkpoint_path(
+                    display_step, updated_records.index(candidate) + 1
+                )
+            )
+            if self.save_best
+            else None
+        )
+        return updated_records, save_path
 
     def _sync_state_store(self) -> None:
         """Synchronize top-K validation state into the configured state store."""

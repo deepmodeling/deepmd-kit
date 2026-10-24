@@ -211,9 +211,13 @@ the autograd route instead.
 
 `vacuum_ref` is available for DPA4/SeZM on the PyTorch backend and for the
 graph-native models (DPA1, DPA2, DPA4 and DPA4C) on the pt_expt backend, whose
-flat node axis carries the reference atoms. Fine-tuning and `dp change-bias`
-keep the reference; a `preset_out_bias` given to them fixes the bias again
-without statistics.
+flat node axis carries the reference atoms. Fine-tuning keeps the reference
+and applies its configured `preset_out_bias` without fitting assigned outputs.
+Standalone `dp change-bias` also keeps the reference, but fits residuals from
+the stored bias without reapplying checkpoint presets. Non-finite stored bias
+cells covered by a finite checkpoint preset are recovered before residual
+fitting; finite adjusted values are preserved. To set an energy bias explicitly
+without statistics, use `dp change-bias --bias-value ...`.
 
 ## Loss
 
