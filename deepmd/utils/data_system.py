@@ -479,6 +479,63 @@ class DeepmdDataSystem:
             b_data = self.get_batch_mixed()
         return b_data
 
+    def state_dict(self) -> dict[str, Any]:
+        """Return logical sampling progress for all systems.
+
+        The caller must save the shared ``dp_random`` state separately,
+        once for all training and validation data sources.
+        """
+        return {
+            "version": 1,
+            "batch_size": [int(size) for size in self.batch_size],
+            "sys_probs": np.asarray(self.sys_probs).tolist(),
+            "mixed_systems": self.mixed_systems,
+            "pick_idx": int(self.pick_idx),
+            "systems": [data.state_dict() for data in self.data_systems],
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore progress without materializing any frame data."""
+        if state.get("version") != 1:
+            raise ValueError("Unsupported DeepmdDataSystem progress version")
+        if state.get("batch_size") != [int(size) for size in self.batch_size]:
+            raise ValueError("DeepmdDataSystem progress has different batch sizes")
+        try:
+            saved_probs = np.array(state.get("sys_probs"), dtype=float, copy=True)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "DeepmdDataSystem progress has invalid probabilities"
+            ) from error
+        if (
+            saved_probs.shape != (self.nsystems,)
+            or not np.all(np.isfinite(saved_probs))
+            or np.any(saved_probs < 0)
+            or not np.allclose(saved_probs, self.sys_probs, rtol=1e-12, atol=0)
+        ):
+            raise ValueError("DeepmdDataSystem progress has different probabilities")
+        if state.get("mixed_systems") != self.mixed_systems:
+            raise ValueError("DeepmdDataSystem progress has a different batching mode")
+        states = state.get("systems", [])
+        if len(states) != self.nsystems:
+            raise ValueError("DeepmdDataSystem progress has different systems")
+        pick_idx = state.get("pick_idx")
+        if type(pick_idx) is not int or not 0 <= pick_idx < self.nsystems:
+            raise ValueError("Invalid DeepmdDataSystem progress pick_idx")
+        # Validate every system before changing any reader's progress.
+        for data, data_state in zip(self.data_systems, states, strict=True):
+            data._validate_state_dict(data_state)
+        for data, data_state in zip(self.data_systems, states, strict=True):
+            data.load_state_dict(data_state)
+        # Tolerate recomputation roundoff, but retain the checkpoint's exact
+        # selection thresholds so the restored RNG resumes the same stream.
+        # Preserve an exactly matching dtype too: NumPy uses it to choose
+        # the tolerance for checking whether probabilities sum to one.
+        if np.array_equal(saved_probs, self.sys_probs):
+            saved_probs = np.array(self.sys_probs, copy=True)
+        self.sys_probs = saved_probs
+        self.pick_idx = pick_idx
+        self.__dict__.pop("test_data", None)
+
     def get_batch_standard(self, sys_idx: int | None = None) -> dict:
         """Get a batch of data from the data systems in the standard way.
 
