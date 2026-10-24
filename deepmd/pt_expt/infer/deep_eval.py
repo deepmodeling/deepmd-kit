@@ -2457,10 +2457,12 @@ class DeepEval(DeepEvalBackend):
     def _model_pair_excl(self) -> "PairExcludeMask | None":
         """Model-level ``pair_exclude_types`` as a ``PairExcludeMask`` (or None).
 
-        Applied at graph BUILD time (decision #18), NOT inside the exported
-        ``.pt2`` lower. Reads the excluded pairs from the loaded dpmodel (if any)
-        or the ``pair_exclude_types`` field in ``metadata.json``, and returns a
-        FRESH numpy-backed mask.
+        Graph and nlist feeders apply these exclusions at build time: their
+        exported lowers consume pre-excluded inputs. PT ``edge_vec`` artifacts
+        instead retain descriptor-owned exclusion inside the compiled math.
+        Reads the excluded pairs from the loaded dpmodel (if any) or the
+        ``pair_exclude_types`` field in ``metadata.json``, and returns a fresh
+        NumPy-backed mask.
 
         A numpy ``type_mask`` converts cleanly onto whichever namespace/device the
         builder's ``atype`` uses (dense/ase pass numpy; cell/vesin/nv pass torch).

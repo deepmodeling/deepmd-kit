@@ -543,6 +543,7 @@ def test_automatic_freeze_single_artifact_matches_eager(
     options = {}
     if kind == "pt":
         config["descriptor"]["sel"] = [1, 0]
+        config["pair_exclude_types"] = [[0, 1]]
         options["nlist_backend"] = "native"
     checkpoint = _write_checkpoint(tmp_path / "model.pt", kind, config=config)
     original = checkpoint.read_bytes()
@@ -555,6 +556,7 @@ def test_automatic_freeze_single_artifact_matches_eager(
     atoms.calc = DP(checkpoint, **options)
     expected = (atoms.get_potential_energy(), atoms.get_forces(), atoms.get_stress())
     if kind == "pt":
+        np.testing.assert_array_equal(expected[1][0], 0.0)
         from deepmd.pt_expt.utils import (
             auto_neighbor_list,
         )
