@@ -853,6 +853,7 @@ class TestSeZMTritonValuePath(unittest.TestCase):
             lmax,
             n_focus,
             rank,
+            0,  # CPU tensors take the reference path; level 0 keeps it
         )
         (grad_fused,) = torch.autograd.grad(fused, basis_fused, grad_out)
 
@@ -2053,3 +2054,371 @@ class TestTileConfigLayering(_TileConfigRuntimeIsolation):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@_GPU_KERNELS
+class TestSeZMTritonRotMixBwdFused(unittest.TestCase):
+    """Cross-check the fused rotate+mix backward against the unfused pair.
+
+    The fused kernel replaces ``_rotate_mix_bwd_*`` + ``_segment_sum`` and
+    must not materialize ``gxe``.  ``grad_wigner``/``grad_kc`` use the same
+    per-edge math but are scheduled differently (shared-row broadcast vs
+    per-edge tile), so all three outputs are compared at fp32-rounding
+    tolerance; ``grad_x`` additionally changes its per-segment
+    accumulation order.
+    """
+
+    CASES: typing.ClassVar[list[tuple]] = [
+        # (lmax, channels, n_focus, rank)
+        (1, 32, 1, 0),
+        (2, 32, 1, 1),
+        (3, 64, 2, 1),  # production shape (C_wide = 128, lmax = 3)
+        (4, 64, 1, 1),
+        # non-power-of-two C_wide exercises the PADDED channel lanes
+        (2, 24, 2, 1),  # C_wide = 48
+        (1, 40, 1, 0),
+        # rank 2 exercises the rank-indexed cb/cb and flattened kc addressing
+        (2, 32, 1, 2),
+    ]
+
+    N_NODE = 512
+    N_EDGE = 20000
+
+    def _inputs(self, lmax, channels, n_focus, rank):
+        generator = torch.Generator(device="cuda").manual_seed(1234 + lmax)
+        dim = (lmax + 1) ** 2
+        c_wide = channels * n_focus
+        row = (3 * lmax + 1) * channels
+        x = torch.randn(self.N_NODE, dim, c_wide, device="cuda", generator=generator)
+        src = torch.randint(
+            0, self.N_NODE, (self.N_EDGE,), device="cuda", generator=generator
+        )
+        grad_u = (
+            torch.randn(n_focus, self.N_EDGE, row, device="cuda", generator=generator)
+            * 0.3
+        )
+        if rank == 0:
+            kc = (
+                torch.randn(
+                    self.N_EDGE, lmax + 1, c_wide, device="cuda", generator=generator
+                )
+                * 0.2
+            )
+            cb = torch.zeros(1, c_wide, device="cuda")
+        else:
+            # rank-R factorized kernel: kc is (E, KSZ * rank) flattened and
+            # cb is (rank, C_wide); the kernels index both by the leading
+            # rank, so undersized rank-1 buffers would read/write out of
+            # bounds (the reference reshape rejects the element count).
+            ksz = (lmax + 1) ** 2 + lmax**2
+            kc = (
+                torch.randn(self.N_EDGE, ksz * rank, device="cuda", generator=generator)
+                * 0.2
+            )
+            cb = torch.randn(rank, c_wide, device="cuda", generator=generator) * 0.1
+        # Structural block-diagonal Wigner-D values (zeros elsewhere), so
+        # the gw comparison covers exactly the stored entries.
+        wigner = torch.zeros(self.N_EDGE, dim, dim, device="cuda")
+        for l in range(lmax + 1):
+            base = l * l
+            block = torch.randn(
+                self.N_EDGE,
+                2 * l + 1,
+                2 * l + 1,
+                device="cuda",
+                generator=generator,
+            )
+            wigner[:, base : base + 2 * l + 1, base : base + 2 * l + 1] = block
+        return grad_u, x, src, wigner, kc, cb
+
+    def test_fused_matches_unfused_across_family(self):
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        for lmax, channels, n_focus, rank in self.CASES:
+            with self.subTest(case=(lmax, channels, n_focus, rank)):
+                grad_u, x, src, wigner, kc, cb = self._inputs(
+                    lmax, channels, n_focus, rank
+                )
+                order = torch.argsort(src)
+                boundaries = torch.arange(
+                    self.N_NODE + 1, device="cuda", dtype=src.dtype
+                )
+                row_ptr = torch.searchsorted(src.index_select(0, order), boundaries)
+
+                gxe, gw_ref, gkc_ref = vp._rotate_mix_bwd_op(
+                    grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
+                )
+                gx_ref = vp._segment_sum_op(gxe, order, row_ptr)
+
+                # The fused kernel supports rank <= 1 (the dispatch
+                # contract keeps rank >= 2 on the unfused pair), so rank 2
+                # checks the unfused kernels against the eager reference.
+                # The Wigner gradient is compared on the structural block
+                # diagonal: the kernel promises only those entries, while
+                # the dense reference also returns off-block ones.
+                if rank > 1:
+                    gxe_e, gw_e, gkc_e = vp._rotate_mix_backward_reference(
+                        grad_u, x, src, wigner, kc, cb, lmax, n_focus, rank
+                    )
+                    torch.testing.assert_close(gkc_ref, gkc_e, atol=1e-5, rtol=1e-5)
+                    mask = _block_mask(lmax, "cuda")
+                    torch.testing.assert_close(
+                        gw_ref * mask, gw_e * mask, atol=1e-5, rtol=1e-5
+                    )
+                    gx_e = torch.zeros(
+                        self.N_NODE,
+                        (lmax + 1) ** 2,
+                        channels * n_focus,
+                        device="cuda",
+                    ).index_add_(0, src, gxe_e)
+                    torch.testing.assert_close(gx_ref, gx_e, atol=1e-4, rtol=1e-4)
+                    continue
+
+                gx_fused, gw_fused, gkc_fused = vp._rotate_mix_bwd_fused_op(
+                    grad_u,
+                    x,
+                    src,
+                    wigner,
+                    kc,
+                    cb,
+                    order,
+                    row_ptr,
+                    lmax,
+                    n_focus,
+                    rank,
+                )
+
+                gw_scale = gw_ref.abs().max().item()
+                torch.testing.assert_close(
+                    gw_fused, gw_ref, atol=1e-6 * max(gw_scale, 1.0), rtol=1e-5
+                )
+                gkc_scale = gkc_ref.abs().max().item()
+                torch.testing.assert_close(
+                    gkc_fused, gkc_ref, atol=1e-6 * max(gkc_scale, 1.0), rtol=1e-5
+                )
+                scale = gx_ref.abs().max().item()
+                torch.testing.assert_close(
+                    gx_fused, gx_ref, atol=1e-5 * max(scale, 1.0), rtol=1e-5
+                )
+
+    def _record_fused_backward(self, run):
+        """Run ``run()`` while counting fused-backward launches; pass through."""
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        calls = []
+        original = vp._rotate_mix_bwd_fused_op
+
+        def recorder(*args, **kwargs):
+            calls.append(args)
+            return original(*args, **kwargs)
+
+        with mock.patch.object(vp, "_rotate_mix_bwd_fused_op", side_effect=recorder):
+            result = run()
+        torch.cuda.synchronize()
+        return len(calls), result
+
+    def _clear_and_restore_levels(self):
+        """Clear both Triton level variables; restore the prior values on exit.
+
+        The override is registered as a cleanup, so the configured
+        environment survives even when an assertion fails mid-test.
+        """
+        import os
+
+        saved = {
+            name: os.environ.get(name)
+            for name in ("DP_TRITON_INFER", "DP_TRITON_TRAIN")
+        }
+
+        def restore():
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        for name in saved:
+            os.environ.pop(name, None)
+        self.addCleanup(restore)
+
+    def test_autograd_branch_follows_forward_level(self):
+        """The autograd backward dispatches on the level the forward was given.
+
+        The level argument stands in for the per-block value captured at
+        construction; the ambient environment is cleared to zero throughout
+        so the check proves the argument (not the environment) governs.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        # Scope the override: the cleared levels are restored even when an
+        # assertion fails, so later tests keep the configured environment.
+        self._clear_and_restore_levels()
+        lmax, channels, n_focus, rank = 3, 32, 2, 1
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+
+        grads, launches = {}, {}
+        for level in (0, 1):
+            xg = x.clone().requires_grad_(True)
+            wg = wigner.clone().requires_grad_(True)
+            kg = kc.clone().requires_grad_(True)
+            out = vp._rotate_mix_op(
+                xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank, level
+            )
+            launches[level], grads[level] = self._record_fused_backward(
+                lambda: torch.autograd.grad(
+                    out, [xg, wg, kg], grad_u, retain_graph=True
+                )
+            )
+        # The counting stand-in proves the selection happened; gradient
+        # equality alone could pass with both levels on the unfused path.
+        self.assertEqual(launches[0], 0)
+        self.assertEqual(launches[1], 1)
+        # All three agree at fp32 rounding level: grad_x by accumulation
+        # order, gw/gkc by instruction scheduling of the same math.
+        scale = grads[0][0].abs().max().item()
+        torch.testing.assert_close(
+            grads[1][0], grads[0][0], atol=1e-5 * max(scale, 1.0), rtol=1e-5
+        )
+        for i in (1, 2):
+            s_i = grads[0][i].abs().max().item()
+            torch.testing.assert_close(
+                grads[1][i], grads[0][i], atol=1e-6 * max(s_i, 1.0), rtol=1e-5
+            )
+
+    def test_higher_order_backward_preserved_at_level_one(self):
+        """At level 1, ``create_graph=True`` keeps the supported path.
+
+        The fused operator registers only a fake (meta) implementation and
+        no next-derivative formula; the backward of the backward must
+        therefore route through the unfused backward + segment-sum pair
+        even with the level-1 selection active.  The counting stand-in
+        asserts the fused backward never launches during either order, and
+        the second-order results agree with a level-0 run.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, channels, n_focus, rank = 3, 32, 2, 1
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+
+        second, launches = {}, {}
+        for level in (0, 1):
+            xg = x.clone().requires_grad_(True)
+            wg = wigner.clone().requires_grad_(True)
+            kg = kc.clone().requires_grad_(True)
+            out = vp._rotate_mix_op(
+                xg, src, src_order, src_rowptr, wg, kg, cb, lmax, n_focus, rank, level
+            )
+            launches[level], (g1,) = self._record_fused_backward(
+                lambda: torch.autograd.grad(
+                    out, xg, grad_u, create_graph=True, retain_graph=True
+                )
+            )
+            second[level] = torch.autograd.grad(g1.sum(), [wg, kg])
+        self.assertEqual(launches[0], 0)
+        self.assertEqual(launches[1], 0)
+        for i in (0, 1):
+            s_i = second[0][i].abs().max().item()
+            torch.testing.assert_close(
+                second[1][i],
+                second[0][i],
+                atol=1e-6 * max(s_i, 1.0),
+                rtol=1e-5,
+            )
+
+    def test_rank_above_one_falls_back_at_level_one(self):
+        """``rank > 1`` never takes the fused path, level or not.
+
+        The rank guard stands even with the level-1 selection active; the
+        counting stand-in asserts the unfused chain, and the rank>1 chain
+        is not bitwise deterministic across runs, so agreement between the
+        two levels is checked at fp32-rounding tolerance.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, channels, n_focus, rank = 3, 32, 2, 2
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+
+        grads, launches = {}, {}
+        for level in (0, 1):
+            xg = x.clone().requires_grad_(True)
+            out = vp._rotate_mix_op(
+                xg,
+                src,
+                src_order,
+                src_rowptr,
+                wigner,
+                kc,
+                cb,
+                lmax,
+                n_focus,
+                rank,
+                level,
+            )
+            launches[level], (grads[level],) = self._record_fused_backward(
+                lambda: torch.autograd.grad(out, xg, grad_u, retain_graph=True)
+            )
+        self.assertEqual(launches[0], 0)
+        self.assertEqual(launches[1], 0)
+        s_i = grads[0].abs().max().item()
+        torch.testing.assert_close(
+            grads[1], grads[0], atol=1e-6 * max(s_i, 1.0), rtol=1e-5
+        )
+
+    def test_backward_retains_construction_level_across_env_restore(self):
+        """The wrapper's captured level governs the backward, not ambient env.
+
+        A module constructed with ``DP_TRITON_INFER=1`` keeps its Triton
+        forward after the environment is restored to the default; its
+        backward must retain the same selection instead of rereading the
+        (now zero) ambient level and silently falling back.
+        """
+        from types import (
+            SimpleNamespace,
+        )
+
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        # Scope the ambient-env restore once: the cleared levels come back
+        # even when a subTest assertion fails.
+        self._clear_and_restore_levels()
+        lmax, channels, n_focus, rank = 3, 32, 2, 0
+        grad_u, x, src, wigner, kc, cb = self._inputs(lmax, channels, n_focus, rank)
+        src_order = torch.argsort(src)
+        boundaries = torch.arange(self.N_NODE + 1, device=src.device, dtype=src.dtype)
+        src_rowptr = torch.searchsorted(src.index_select(0, src_order), boundaries)
+        edge_cache = SimpleNamespace(
+            src=src,
+            D_full=wigner,
+            csr_cache={"src": (src_order, src_rowptr)},
+        )
+        radial_feat = kc if rank == 0 else None
+
+        for captured, expected_launches in ((1, 1), (0, 0)):
+            with self.subTest(captured_infer_level=captured):
+                conv = SimpleNamespace(
+                    radial_hidden_proj=None,
+                    radial_degree_mixer=None,
+                    lmax=lmax,
+                    n_focus=n_focus,
+                    training=False,
+                    triton_infer_level=captured,
+                    triton_train_level=0,
+                )
+                wrapper = vp._TritonRotateMix(conv)
+                xg = x.clone().requires_grad_(True)
+                out, _rad = wrapper(xg, edge_cache, radial_feat)
+                launches, _grads = self._record_fused_backward(
+                    lambda: torch.autograd.grad(
+                        out, xg, grad_u.reshape(out.shape), retain_graph=True
+                    )
+                )
+                self.assertEqual(launches, expected_launches)
