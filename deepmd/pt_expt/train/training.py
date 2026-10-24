@@ -91,12 +91,10 @@ from deepmd.pt.utils.compile_compat import (
     apply_global_compile_patches,
     build_inductor_compile_options,
     check_compile_torch_version,
+    relax_views_to_reshapes,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
-from deepmd.pt.utils.compile_compat import (
-    relax_views_to_reshapes,
-)
 from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
