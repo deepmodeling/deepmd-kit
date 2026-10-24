@@ -926,6 +926,7 @@ def make_model(
             self,
             merged: Any,
             bias_adjust_mode: str = "change-by-statistic",
+            preset_out_bias: dict | None = None,
         ) -> None:
             """Change the output bias according to the input data and the pretrained model.
 
@@ -936,8 +937,17 @@ def make_model(
             bias_adjust_mode : str
                 The mode for changing output bias:
                 'change-by-statistic' or 'set-by-statistic'.
+            preset_out_bias : dict, optional
+                Per-call preset override. Omit to use the configured preset;
+                pass an empty dict to fit without fixing preset outputs.
+                Non-finite stored cells covered by the checkpoint preset are
+                recovered before residual fitting; finite values are retained.
             """
-            self.atomic_model.change_out_bias(merged, bias_adjust_mode=bias_adjust_mode)
+            self.atomic_model.change_out_bias(
+                merged,
+                bias_adjust_mode=bias_adjust_mode,
+                preset_out_bias=preset_out_bias,
+            )
 
         def _input_type_cast(
             self,

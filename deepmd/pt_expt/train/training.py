@@ -3055,13 +3055,19 @@ class Trainer(AbstractTrainer):
 
     @property
     def checkpoint_is_collective(self) -> bool:
-        """Whether assembling a checkpoint needs every rank."""
-        return self.sharding.enabled
+        """Whether checkpoint preflight needs every rank."""
+        return self.is_distributed
+
+    def ensure_finite_gradients_for_checkpoint(self) -> None:
+        """Check the accumulated gradient norm on all ranks before publication."""
+        self.nonfinite_grad_guard.raise_if_nonfinite(
+            self.wrapper.named_parameters, synchronize=self.is_distributed
+        )
 
     def save_checkpoint(self, step: int) -> None:
-        # Abort before writing if any gradient norm since the previous
-        # checkpoint was non-finite, so a diverged interval is not persisted.
-        self.nonfinite_grad_guard.raise_if_nonfinite(self.wrapper.named_parameters)
+        self.ensure_finite_gradients_for_checkpoint()
+        if self.rank != 0 and not self.sharding.enabled:
+            return
         ckpt_path = self.ckpt_store.path_for(step)
         self._save_checkpoint_to_path(ckpt_path, step=step)
         if self.rank == 0:
@@ -3309,8 +3315,7 @@ class Trainer(AbstractTrainer):
             super().run(self.training_tasks)
             if self.change_bias_after_training and self.num_steps > self.start_step:
                 self._change_bias_after_training()
-                if self.rank_context.is_chief:
-                    self.save_checkpoint(self.num_steps)
+                self.save_checkpoint(self.num_steps)
         finally:
             self._close_data_systems()
         if self.rank_context.is_chief:
@@ -3363,6 +3368,7 @@ class Trainer(AbstractTrainer):
                 display_step=display_step,
                 lr=learning_rate,
                 save_checkpoint=save_checkpoint,
+                prepare_checkpoint=self.ensure_finite_gradients_for_checkpoint,
             )
 
     def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
@@ -3571,6 +3577,7 @@ def model_change_out_bias(
     _model: Any,
     _sample_func: Any,
     _bias_adjust_mode: str = "change-by-statistic",
+    preset_out_bias: dict | None = None,
 ) -> Any:
     """Change the output bias of a model based on sampled data.
 
@@ -3582,6 +3589,9 @@ def model_change_out_bias(
         Callable that returns sampled data for bias computation.
     _bias_adjust_mode
         ``"change-by-statistic"`` or ``"set-by-statistic"``.
+    preset_out_bias
+        Optional preset override. An empty mapping ignores checkpoint presets;
+        omitting it preserves training and fine-tuning behavior.
 
     Returns
     -------
@@ -3596,6 +3606,7 @@ def model_change_out_bias(
         _sample_func,
         bias_adjust_mode=_bias_adjust_mode,
         recompute_input_stats=isinstance(_model, DPModelCommon),
+        preset_out_bias=preset_out_bias,
     )
 
 

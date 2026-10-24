@@ -43,6 +43,10 @@ from deepmd.pt_expt.utils.edge_schema import (
 from deepmd.utils.path import (
     DPPath,
 )
+from deepmd.utils.preset_out_bias import (
+    normalize_preset_out_bias,
+    remap_preset_out_bias,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -430,14 +434,35 @@ class SeZMSpinModel(SeZMModel):
         self,
         merged: Callable[[], list[dict[str, Any]]] | list[dict[str, Any]],
         bias_adjust_mode: str = "change-by-statistic",
+        preset_out_bias: dict | None = None,
     ) -> None:
-        """Change output bias using spin-expanded sampled data."""
+        """Change output bias using spin-expanded sampled data.
+
+        Parameters
+        ----------
+        merged : callable or list[dict]
+            Samples containing real-atom coordinates, types and spins.
+        bias_adjust_mode : str
+            'change-by-statistic' fits residual shifts; 'set-by-statistic'
+            fits absolute biases.
+        preset_out_bias : dict, optional
+            Preset on the public real-atom type map. It is normalized and
+            extended with unassigned virtual types before forwarding. Omit
+            to retain the model preset; an empty dict fits without fixing
+            preset outputs. Non-finite stored cells covered by a checkpoint
+            preset are recovered before residual fitting.
+        """
+        preset_out_bias = remap_preset_out_bias(
+            normalize_preset_out_bias(preset_out_bias, self.get_type_map()),
+            list(range(self.get_ntypes())) + [-1] * self.get_ntypes(),
+        )
         spin_sampled_func = self._get_spin_sampled_func(
             merged if callable(merged) else lambda: merged
         )
         super().change_out_bias(
             spin_sampled_func,
             bias_adjust_mode=bias_adjust_mode,
+            preset_out_bias=preset_out_bias,
         )
 
     def change_type_map(
