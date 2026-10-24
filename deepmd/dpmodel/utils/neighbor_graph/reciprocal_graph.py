@@ -71,8 +71,9 @@ class KGrid:
     positions by ``S = I + strain``, wave numbers by :math:`S^{-T}` and volumes
     by :math:`\det S`, so that the gradient with respect to the strain is the
     negative virial; the phases :math:`\mathbf{k} \cdot \mathbf{r}` do not
-    change under the strain. The graph lower makes :attr:`coord` and
-    :attr:`strain` autograd leaves at its inputs.
+    change under the strain. The strain is zero, and the evaluation takes it
+    to first order, which fixes the energy and that gradient. The graph lower
+    makes :attr:`coord` and :attr:`strain` autograd leaves at its inputs.
     """
 
     vec: Array
@@ -121,7 +122,7 @@ class MeshGrid:
     :math:`B`, so that the fractional coordinates are invariant and the
     gradient with respect to the strain is the negative virial. The volumes
     of the unstrained cells are computed eagerly, and the evaluation scales
-    them by :math:`\det S`.
+    them by :math:`\det S`, to first order in the strain.
     """
 
     box: Array
@@ -203,8 +204,10 @@ def _cells(box: Array) -> Array:
 
 
 def _volume(box: Array) -> Array:
+    """The cell volumes |a_1 . (a_2 x a_3)| with shape ``(nf,)``."""
     xp = array_api_compat.array_namespace(box)
-    return xp.abs(xp.linalg.det(box))
+    triple = box[:, 0, :] * xp.linalg.cross(box[:, 1, :], box[:, 2, :])
+    return xp.abs(xp.sum(triple, axis=-1))
 
 
 def _zero_strain(box: Array) -> Array:

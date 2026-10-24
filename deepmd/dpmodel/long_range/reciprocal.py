@@ -64,6 +64,38 @@ def _self_potential(
     )
 
 
+def _strained_rows(xp: Any, rows: Array, strain: Array) -> Array:
+    r"""Wave numbers of the strained cells, to first order in the strain.
+
+    The strain :math:`\varepsilon` of a frame maps its cell :math:`B` to
+    :math:`B S^\mathsf{T}`, :math:`S = I + \varepsilon`, and a wave number,
+    a row :math:`\mathbf{k}`, to :math:`\mathbf{k} S^{-1}`. The strain of a
+    topology is zero, and the energy is differentiated once with respect to
+    it, for the virial; the value and the first derivative at zero strain
+    are those of :math:`S^{-1} = I - \varepsilon`, which maps the rows here
+    and keeps linear algebra out of the energy and its derivatives.
+
+    Parameters
+    ----------
+    rows
+        Wave numbers or reciprocal lattice vectors with shape ``(nf, ..., 3)``.
+    strain
+        The strain of every frame with shape ``(nf, 3, 3)``.
+
+    Returns
+    -------
+    Array
+        The strained wave numbers, of the shape of ``rows``.
+    """
+    eps = xp.reshape(strain, (strain.shape[0],) + (1,) * (rows.ndim - 2) + (3, 3))
+    return rows - xp.sum(rows[..., :, None] * eps, axis=-2)
+
+
+def _strained_volume(volume: Array, strain: Array) -> Array:
+    r"""Volumes of the strained cells, :math:`V \det S = V (1 + \mathrm{tr}\,\varepsilon)` to first order."""
+    return volume * (1.0 + strain[:, 0, 0] + strain[:, 1, 1] + strain[:, 2, 2])
+
+
 def kspace_energy(
     charge: Array,
     k_grid: KGrid,
@@ -112,12 +144,10 @@ def kspace_energy(
     # Every product over the wave numbers of a frame broadcasts the per-frame
     # factor over the blocks, (nf, nb, kb, .), so that its sum runs over the
     # points of a block.
-    eye = xp.eye(3, dtype=dtype, device=device)
-    strain = xp.astype(k_grid.strain, dtype) + eye
+    strain = xp.astype(k_grid.strain, dtype)
     k_vec = xp.astype(k_grid.vec, dtype)
-    # The rows of k_vec S^-1 are the strained wave numbers.
-    strained_k = xp.matmul(k_vec, xp.linalg.inv(strain)[:, None, :, :])
-    volume = xp.astype(k_grid.volume, dtype) * xp.linalg.det(strain)
+    strained_k = _strained_rows(xp, k_vec, strain)
+    volume = _strained_volume(xp.astype(k_grid.volume, dtype), strain)
     # === Step 3. Structure factors, (nf, nb, kb, C) ===
     # The phase k' . r' = k . r does not change under the strain.
     phase = xp.matmul(k_vec, xp.matrix_transpose(coord)[:, None, :, :])
@@ -336,11 +366,12 @@ def mesh_energy(
     # === Step 3. Influence function on the half spectrum, (nf, n1, n2, h3) ===
     m3 = m_full[2][: n3 // 2 + 1]
     m_half = [m_full[0], m_full[1], m3]
-    eye = xp.eye(3, dtype=dtype, device=device)
-    strain = xp.astype(mesh.strain, dtype) + eye
-    a = xp.matmul(xp.matrix_transpose(xp.linalg.inv(strain)), box_inv)
-    metric = xp.matmul(xp.matrix_transpose(a), a)
-    volume = volume * xp.linalg.det(strain)
+    strain = xp.astype(mesh.strain, dtype)
+    # The rows of A^T = B^-T S^-1 are the reciprocal vectors of the strained
+    # cell, strained like wave numbers; W = A^T A.
+    a_t = _strained_rows(xp, xp.matrix_transpose(box_inv), strain)
+    metric = xp.sum(a_t[:, :, None, :] * a_t[:, None, :, :], axis=-1)
+    volume = _strained_volume(volume, strain)
     g1 = m_half[0][:, None, None]
     g2 = m_half[1][None, :, None]
     g3 = m_half[2][None, None, :]
