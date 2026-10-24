@@ -151,15 +151,15 @@ limit of the model is pinned. Two model options provide this together:
 
 `omat24` is one of the bundled tables of isolated-atom energies in eV:
 
-| Name     | Reference calculation | Elements                                  |
-| -------- | --------------------- | ----------------------------------------- |
-| `domain_cluster` | Domain_cluster | 9: Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, Au |
-| `openmd` | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
-| `mptraj` | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
-| `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
-| `omol25` | OMol25, neutral atoms | 83, H to Bi                               |
-| `omc25`  | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
-| `odac25` | ODAC25                | 94, H to Pu                               |
+| Name             | Reference calculation | Elements                                  |
+| ---------------- | --------------------- | ----------------------------------------- |
+| `domain_cluster` | Domain_cluster        | 9: Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, Au     |
+| `openmd`         | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
+| `mptraj`         | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omat24`         | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
+| `omol25`         | OMol25, neutral atoms | 83, H to Bi                               |
+| `omc25`          | OMC25                 | 94, H to Bk without Tb, Am and Cm         |
+| `odac25`         | ODAC25                | 94, H to Pu                               |
 
 The `mptraj` table uses the final VASP `free energy TOTEN`, in eV.
 
