@@ -773,6 +773,9 @@ class DeepEval(DeepEvalBackend):
         output so the caller's extraction is unchanged.
         """
         inner = self.dp.model["Default"]
+        # Older scripted models predate this optional keyword. Omitting an
+        # absent value preserves their schema without discarding supplied data.
+        charge_spin_kwargs = {} if charge_spin is None else {"charge_spin": charge_spin}
         if self._uses_edge_schema:
             edge_schema = self._nlist_builder.build(
                 coord,
@@ -791,7 +794,7 @@ class DeepEval(DeepEvalBackend):
                 edge_schema.edge_mask,
                 fparam=fparam,
                 aparam=aparam,
-                charge_spin=charge_spin,
+                **charge_spin_kwargs,
                 input_prec=coord.dtype,
             )
         else:
@@ -810,7 +813,7 @@ class DeepEval(DeepEvalBackend):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
-                charge_spin=charge_spin,
+                **charge_spin_kwargs,
             )
             predict = communicate_extended_output(
                 model_lower,
