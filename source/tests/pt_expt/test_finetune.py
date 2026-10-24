@@ -868,6 +868,79 @@ class TestFinetuneCLI(unittest.TestCase):
         """A RANDOM fitting of a bridged target takes the plain descriptor."""
         self._finetune_across_bridging(source_bridged=False, model_branch="RANDOM")
 
+    def test_finetune_short_range_into_long_range(self) -> None:
+        """A checkpoint without a long-range module fine-tunes into one with it.
+
+        The descriptor and the fitting net come from the checkpoint, while the
+        new periodic module starts from its initialization and takes the
+        input statistics of the fine-tuning data, here the bounds of its fixed
+        k grid, before the bias adjustment evaluates the complete model.
+        """
+        plain = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4c",
+                "rcut": 4.0,
+                "channels": 8,
+                "lmax": 2,
+                "n_radial": 4,
+                "seed": 1,
+            },
+            "fitting_net": {"neuron": [16, 16], "seed": 1},
+            "data_stat_nbatch": 1,
+        }
+        target = deepcopy(plain)
+        target["long_range"] = {
+            "type": "latent_charge",
+            "charge_net": {"neuron": [8], "seed": 1},
+            "kernel": {"type": "les", "alpha": 1.0},
+            "charge_constraint": {"source": "neutral"},
+            "periodic": True,
+            "k_grid_mode": "fixed",
+        }
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_ft_long_range_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, plain, numb_steps=1), warning=False
+                )
+            )
+            ckpt_path = self._train_pretrained(config, tmpdir)
+            ft_config = normalize(
+                update_deepmd_input(
+                    _make_config(self.data_dir, target, numb_steps=1), warning=False
+                )
+            )
+            ft_config["model"], finetune_links = get_finetune_rules(
+                ckpt_path, ft_config["model"]
+            )
+            trainer_ft = get_trainer(
+                ft_config,
+                finetune_model=ckpt_path,
+                finetune_links=finetune_links,
+            )
+            pretrained_state = torch.load(
+                ckpt_path, map_location=DEVICE, weights_only=True
+            )["model"]
+            ft_state = trainer_ft.wrapper.state_dict()
+            learned = [
+                key
+                for key in ft_state
+                if ".descriptor." in key
+                or (".fitting_net." in key and "bias_atom_e" not in key)
+            ]
+            self.assertTrue(learned)
+            for key in learned:
+                torch.testing.assert_close(ft_state[key], pretrained_state[key])
+            long_range = trainer_ft.wrapper.model["Default"].atomic_model.long_range
+            self.assertTrue(torch.all(long_range.k_grid_bounds > 0))
+            trainer_ft.run()
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_finetune_from_pte(self) -> None:
         """Train -> freeze to .pte -> finetune from .pte -> verify checkpoint."""
         from deepmd.pt_expt.entrypoints.main import (

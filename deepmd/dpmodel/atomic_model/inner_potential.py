@@ -607,12 +607,15 @@ class InnerPotentialAtomicModel(BaseAtomicModel):
         charge_spin: Any = None,
         spin: Any = None,
         comm_dict: dict | None = None,
+        topologies: dict[str, Any] | None = None,
+        node_mask: Any = None,
     ) -> dict:
         """Evaluate the analytical per-atom energy on the flat node axis.
 
-        ``fparam``/``aparam``/``charge_spin``/``spin``/``comm_dict`` are
-        accepted for pipeline-signature compatibility and ignored (the
-        analytical term conditions on geometry and types only).
+        ``fparam``/``aparam``/``charge_spin``/``spin``/``comm_dict``/
+        ``topologies``/``node_mask`` are accepted for pipeline-signature
+        compatibility and ignored (the analytical term conditions on
+        geometry and types only; the caller masks its outputs).
 
         Parameters
         ----------

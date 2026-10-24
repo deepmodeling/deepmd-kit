@@ -158,6 +158,20 @@ class DescrptDPA4C(DescrptDPA4CDP):
         self.use_amp_infer = use_amp_infer()
         self._apply_autocast_policy()
 
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        # Back-compat: checkpoints written by DeePMD-kit 3.2 hold the gather
+        # tables of the angular moments, which are formed by broadcasting;
+        # the stale entries are dropped so that the strict load succeeds.
+        for name in ("angular_channel_index", "angular_harmonic_index"):
+            state_dict.pop(prefix + name, None)
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
     def call_graph(
         self,
         graph: Any,

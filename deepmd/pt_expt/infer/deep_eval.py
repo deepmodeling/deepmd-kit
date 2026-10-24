@@ -22,6 +22,14 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
+    build_topologies,
+    check_complete_frames,
+    check_periodic_cells,
+    flatten_topologies,
+    unflatten_topologies,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -721,6 +729,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         use_graph_lower = model_uses_graph_lower(model)
+        topology_names = model.atomic_model.required_topologies()
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -775,6 +784,9 @@ class DeepEval(DeepEvalBackend):
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
+        if topology_names:
+            self.metadata["topologies"] = list(topology_names)
+            self.metadata["topology_params"] = model.atomic_model.topology_params()
         if use_graph_lower:
             from deepmd.pt_expt.model.graph_lower import (
                 graph_edge_dtype,
@@ -792,7 +804,8 @@ class DeepEval(DeepEvalBackend):
         # ``communicate_extended_output``, while the graph runner emits local
         # public keys consumed directly by ``_eval_model_graph``.
         #
-        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
+        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin,
+        #              *topology inputs)
         # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
         # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
         # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
@@ -862,6 +875,7 @@ class DeepEval(DeepEvalBackend):
                     fparam: torch.Tensor | None,
                     aparam: torch.Tensor | None,
                     charge_spin: torch.Tensor | None = None,
+                    *topology_vals: torch.Tensor,
                 ) -> dict[str, torch.Tensor]:
                     model_ret = model.forward_common_lower_graph(
                         atype,
@@ -879,6 +893,7 @@ class DeepEval(DeepEvalBackend):
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
+                        topologies=unflatten_topologies(topology_names, topology_vals),
                     )
                     return _translate_energy_keys(
                         model_ret,
@@ -2137,9 +2152,12 @@ class DeepEval(DeepEvalBackend):
     ) -> tuple[np.ndarray, ...]:
         """Evaluate generic graph or compact canonical inputs.
 
-        Exported artifacts accept a dynamic edge axis. Input preparation uses
-        the artifact's geometry dtype and layout; both forwards return local
-        public outputs without extended-atom communication.
+        Exported artifacts accept a dynamic edge axis, and the inputs of a
+        model with a long-range module, the fields of every topology that the
+        ``topologies`` metadata names, follow the graph inputs. Input
+        preparation uses the artifact's geometry dtype and layout; both
+        forwards return local public outputs without extended-atom
+        communication.
         """
         model_inputs, nframes, natoms = self._prepare_graph_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
@@ -2297,7 +2315,86 @@ class DeepEval(DeepEvalBackend):
                 aparam_t,
                 self._make_charge_spin_input(nframes, charge_spin),
             )
+        topology_names = self.metadata.get("topologies", ())
+        if topology_names:
+            box_input = cells.reshape(nframes, 9) if cells is not None else None
+            model_inputs = (
+                *model_inputs,
+                *self._long_range_inputs(
+                    topology_names,
+                    coords.reshape(nframes * natoms, 3),
+                    box_input,
+                    atype_t,
+                    graph.n_node,
+                    canonical,
+                    edge_dtype,
+                    DEVICE,
+                ),
+            )
         return model_inputs, nframes, natoms
+
+    def _long_range_inputs(
+        self,
+        topology_names: tuple[str, ...],
+        coord: np.ndarray,
+        box_input: np.ndarray | None,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        canonical: bool,
+        edge_dtype: torch.dtype,
+        device: "torch.device",
+    ) -> tuple[torch.Tensor | None, ...]:
+        """Inputs that the lower of a model with a long-range module reads after the graph.
+
+        The compact lower reads the positions and the cells of the frames, and
+        the zero communicator of frames held whole; a module that serves no
+        periodic system takes no cell, and the zero cell that marks a
+        non-periodic frame is never one a caller passes. The graph lower reads
+        the fields of the topologies, built with the ``topology_params`` of
+        the archive, or those of the live model of a checkpoint.
+        """
+        nframes = n_node.shape[0]
+        if canonical:
+            if PME_MESH not in topology_names:
+                check_complete_frames(box_input)
+            elif box_input is not None:
+                check_periodic_cells(box_input)
+            box_t = (
+                torch.zeros(nframes, 9, dtype=torch.float64, device="cpu")
+                if box_input is None
+                else torch.as_tensor(
+                    np.asarray(box_input, dtype=np.float64).reshape(nframes, 9)
+                )
+            )
+            return (
+                torch.as_tensor(coord, dtype=torch.float64, device=device),
+                torch.zeros(1, dtype=torch.int64, device="cpu"),
+                box_t,
+            )
+        # Padding slots of a mixed-type batch are no atoms and join no pair.
+        # The cell is torch like the coordinates: the topologies it
+        # namespaces feed the torch graph lower directly (a numpy cell would
+        # produce numpy leaves).
+        box_t = (
+            torch.as_tensor(
+                np.asarray(box_input).reshape(nframes, 3, 3),
+                dtype=edge_dtype,
+                device=device,
+            )
+            if box_input is not None
+            else None
+        )
+        topologies = build_topologies(
+            topology_names,
+            torch.as_tensor(coord, dtype=edge_dtype, device=device),
+            n_node,
+            box_t,
+            node_mask=atype >= 0,
+            atype=atype,
+            pair_excl=self._model_pair_excl(),
+            topology_params=self.metadata.get("topology_params"),
+        )
+        return flatten_topologies(topologies)
 
     def _build_eval_graph(
         self,

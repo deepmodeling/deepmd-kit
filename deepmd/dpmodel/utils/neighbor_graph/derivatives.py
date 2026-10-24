@@ -118,3 +118,71 @@ def edge_force_virial(
     node_frame = frame_id_from_n_node(n_node, n_total=n_out)  # (N,) frame per node
     virial = segment_sum(atom_virial, node_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial
+
+
+def pair_force_virial(
+    g_p: Array,
+    pair_vec: Array,
+    pair_index: Array,
+    pair_mask: Array,
+    n_node: Array,
+    node_capacity: int | None = None,
+) -> tuple[Array, Array, Array]:
+    """Assemble per-node force/atom-virial and PER-FRAME virial of a pair set.
+
+    A pair set lists every unordered pair once (see
+    :class:`~deepmd.dpmodel.utils.neighbor_graph.pair_graph.PairGraph`), so its
+    per-pair gradient ``g_p = dE/d(pair_vec)`` acts on both endpoints:
+    ``pair_vec = r_src - r_dst`` gives ``F_dst += g_p`` and ``F_src -= g_p``,
+    as for an edge. The pair virial ``w = -g_p (x) pair_vec`` is split evenly
+    between the two endpoints, which keeps the atomic virial independent of
+    the order in which a pair is listed; its per-frame sum is the sum of
+    ``w`` over the pairs of that frame.
+
+    Parameters
+    ----------
+    g_p
+        (P, 3) per-pair gradient ``dE/d(pair_vec)``.
+    pair_vec
+        (P, 3) per-pair displacement ``r_src - r_dst``.
+    pair_index
+        (2, P) ``[src, dst]`` node endpoints of each pair.
+    pair_mask
+        (P,) boolean real-pair mask; guard pairs (``False``) are zeroed
+        before any scatter.
+    n_node
+        (nf,) per-frame node counts.
+    node_capacity
+        Size of the node axis ``N``; ``None`` takes ``sum(n_node)``.
+
+    Returns
+    -------
+    force
+        (N, 3) per-node force.
+    atom_virial
+        (N, 3, 3) per-node virial, half of each pair virial per endpoint.
+    virial
+        (nf, 3, 3) per-frame virial.
+    """
+    xp = array_api_compat.array_namespace(g_p)
+    n_out = node_capacity if node_capacity is not None else int(xp.sum(n_node))
+    nf = n_node.shape[0]
+    if isinstance(n_out, int) and n_out == 0:
+        device = array_api_compat.device(g_p)
+        return (
+            xp.zeros((0, 3), dtype=g_p.dtype, device=device),
+            xp.zeros((0, 3, 3), dtype=g_p.dtype, device=device),
+            xp.zeros((nf, 3, 3), dtype=g_p.dtype, device=device),
+        )
+    g = g_p * xp.astype(pair_mask[:, None], g_p.dtype)
+    # As for edges, the modulo bounds the guard endpoints under export.
+    src = pair_index[0] % n_out
+    dst = pair_index[1] % n_out
+    force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
+    w_half = -0.5 * (g[:, :, None] * pair_vec[:, None, :])  # (P, 3, 3)
+    atom_virial = segment_sum(w_half, src, n_out) + segment_sum(w_half, dst, n_out)
+    # Both endpoints of a pair share a frame, so reducing the per-node virial
+    # over nodes equals reducing the pair virial over pairs.
+    node_frame = frame_id_from_n_node(n_node, n_total=n_out)
+    virial = segment_sum(atom_virial, node_frame, nf)
+    return force, atom_virial, virial

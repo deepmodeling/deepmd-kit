@@ -23,7 +23,8 @@ list(
   cpu/neighbor_search_cpu.cc
   dpa4c/ops.cc
   dpa4c/graph_compress_cpu.cc
-  ${DPA4C_CPU_ISA_SRC})
+  ${DPA4C_CPU_ISA_SRC}
+  long_range/ops.cc)
 # The architecture level is pinned per unit rather than added to it: the project
 # may be configured with ENABLE_NATIVE_OPTIMIZATION, and a trailing -march wins,
 # so this is what keeps the fallback units free of instructions the dispatcher
@@ -240,6 +241,10 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     ${DPA4C_GRAPH_COMPRESS_KERNEL_SRC}
     graph_fitting.cu
     edge_force_virial.cu
+    long_range/direct_sum.cu
+    long_range/domain_exchange.cc
+    long_range/latent_charge_sum.cu
+    long_range/mesh_sum.cu
     dpa1_graph_energy_force.cu
     dpa4/so2_conv.cu
     ${DPA4_SO2_CONV_KERNEL_SRC}
@@ -274,7 +279,7 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
     set_property(TARGET deepmd_op_pt PROPERTY CUDA_ARCHITECTURES
                                               ${DEEPMD_PT_CUDA_ARCHITECTURES})
   endif()
-  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublasLt)
+  target_link_libraries(deepmd_op_pt PRIVATE CUDA::cublasLt CUDA::cufft)
   # libtorch headers require at least C++17, and PyTorch 2.14+ requires C++20.
   # Preserve an explicitly higher CUDA standard requested by the user.
   set(DEEPMD_PT_CUDA_STANDARD 17)
@@ -314,6 +319,11 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(deepmd_op_pt PRIVATE "LINKER:--no-undefined")
   endif()
+  # The direct sum of the long range evaluates every pair with the special
+  # function unit; without denormal handling each of its three calls is a single
+  # instruction.
+  set_source_files_properties(long_range/direct_sum.cu
+                              PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()
 if(${OP_CXX_ABI_PT} EQUAL ${OP_CXX_ABI})
   target_link_libraries(deepmd_op_pt PRIVATE ${LIB_DEEPMD})

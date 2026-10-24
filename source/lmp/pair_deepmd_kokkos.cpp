@@ -2,6 +2,7 @@
 #ifdef LMP_KOKKOS
 #include "pair_deepmd_kokkos.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -35,7 +36,6 @@ PairDeepMDKokkos<DeviceType>::PairDeepMDKokkos(LAMMPS* lmp)
       edge_vec_fp32(false),
       canonical_graph(false),
       canonical_source_csr(false),
-      long_range(false),
       device_path_ok(false),
       reverse_virial(false),
       reverse_used_host(false) {
@@ -223,8 +223,15 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   canonical_graph = deep_pot.uses_canonical_graph_inference();
   canonical_source_csr = deep_pot.canonical_graph_requires_source_csr();
   // PairDeepMD::init_style() has confined a model with a long-range module to
-  // a complete non-periodic system.
-  long_range = deep_pot.has_long_range();
+  // a system periodic in every dimension or in none. The device edge path
+  // passes such a module no cell, so a periodic system reaches it through the
+  // compact canonical lower alone.
+  if (long_range && !canonical_graph && !domain->nonperiodic) {
+    error->all(FLERR,
+               "pair style deepmd/kk evaluates a periodic system with a "
+               "long-range module only through a compressed DPA4C model frozen "
+               "for a CUDA device; use pair_style deepmd for this model.");
+  }
   // Force exchange transfers three values per atom. Centroid per-atom virial
   // uses nine values even though the Kokkos full-list request runs newton off,
   // so comm_reverse_off reserves the classic host buffer for the wider mode.
@@ -407,10 +414,15 @@ template <class DeviceType>
 const double* PairDeepMDKokkos<DeviceType>::model_node_positions() {
   atomKK->sync(execution_space, X_MASK);
   auto x = atomKK->k_x.template view<DeviceType>();
+  // Relative to the origin of the box, as the plain pair style passes them.
   // Without virtual atoms the model nodes are the leading atoms, whose
-  // coordinates are already in the length unit of the model at a conversion
-  // factor of one.
-  if (!compact_graph.has_null_types && dist_unit_cvt_factor == 1.0) {
+  // coordinates are already those positions in the length unit of the model
+  // for a box at the origin and a conversion factor of one.
+  const double x0 = domain->boxlo[0];
+  const double y0 = domain->boxlo[1];
+  const double z0 = domain->boxlo[2];
+  if (!compact_graph.has_null_types && dist_unit_cvt_factor == 1.0 &&
+      x0 == 0.0 && y0 == 0.0 && z0 == 0.0) {
     return x.data();
   }
   const int nnode_model = compact_graph.nnode_model;
@@ -425,9 +437,9 @@ const double* PairDeepMDKokkos<DeviceType>::model_node_positions() {
       "deepmd/kk:coord", Kokkos::RangePolicy<DeviceType>(0, nnode_model),
       KOKKOS_LAMBDA(const int m) {
         const int i = model2loc(m);
-        coord_model(3 * m + 0) = x(i, 0) * inv_dist;
-        coord_model(3 * m + 1) = x(i, 1) * inv_dist;
-        coord_model(3 * m + 2) = x(i, 2) * inv_dist;
+        coord_model(3 * m + 0) = (x(i, 0) - x0) * inv_dist;
+        coord_model(3 * m + 1) = (x(i, 1) - y0) * inv_dist;
+        coord_model(3 * m + 2) = (x(i, 2) - z0) * inv_dist;
       });
   return coord_model.data();
 }
@@ -574,6 +586,17 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     // stream that the model shares.
     const double* coord_ptr =
         (!canonical_graph || long_range) ? model_node_positions() : nullptr;
+    // A long-range module reads the cell of a periodic system, row-major with
+    // the lattice vectors as rows, in the length unit of the model, and no
+    // cell for a non-periodic one.
+    const double* h = domain->h;
+    std::array<double, 9> cell = {h[0], 0.0,  0.0,  h[5], h[1],
+                                  0.0,  h[4], h[3], h[2]};
+    for (double& entry : cell) {
+      entry /= dist_unit_cvt_factor;
+    }
+    const double* cell_ptr =
+        long_range && !domain->nonperiodic ? cell.data() : nullptr;
     void* const model_stream =
         compact_canonical_stream(typename DeviceType::execution_space());
     if (!canonical_graph || model_stream == nullptr) {
@@ -589,8 +612,8 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
             compact_graph.d_destination_row_ptr.data(),
             source_csr ? compact_graph.d_source_row_ptr.data() : nullptr,
             source_csr ? compact_graph.d_source_order.data() : nullptr,
-            coord_ptr, world_ptr, nloc_m, nnode_m, compact_graph.storage_count,
-            model_stream);
+            coord_ptr, world_ptr, cell_ptr, nloc_m, nnode_m,
+            compact_graph.storage_count, model_stream);
       } else if (edge_vec_fp32) {
         deep_pot.compute_edges_gpu(d_atom_energy.data(), d_out_force.data(),
                                    d_atom_virial.data(), coord_ptr,

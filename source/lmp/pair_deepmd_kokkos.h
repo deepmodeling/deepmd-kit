@@ -83,8 +83,9 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // neighbor list, returning the edge count. Public because it launches
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
-  // Positions of the model nodes, in model-node order and in the length unit
-  // of the model; public for the same reason.
+  // Positions of the model nodes relative to the origin of the box, in
+  // model-node order and in the length unit of the model; public for the same
+  // reason.
   const double* model_node_positions();
 
  protected:
@@ -132,7 +133,6 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // The canonical artifact reads the source CSR on every call, not only for
   // the per-atom virial.
   bool canonical_source_csr;
-  bool long_range;         // the model reads the positions of its nodes
   bool device_path_ok;     // resolved once in init_style
   bool reverse_virial;     // reverse communication operates on centroid virial
   bool reverse_used_host;  // the host pack/unpack overrides ran

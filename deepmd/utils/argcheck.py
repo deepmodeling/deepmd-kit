@@ -3549,6 +3549,310 @@ def fitting_variant_type_args() -> Variant:
     )
 
 
+#  --- Long-range module configurations: --- #
+long_range_args_plugin = ArgsPlugin()
+interaction_kernel_args_plugin = ArgsPlugin()
+
+
+@interaction_kernel_args_plugin.register(
+    "les",
+    doc="The latent Ewald summation kernel erf(alpha r) / r, the interaction of "
+    "two Gaussian charge clouds: it reaches 1/r beyond a few 1/alpha and stays "
+    "finite at contact.",
+)
+def interaction_kernel_les() -> list[Argument]:
+    doc_alpha = "The inverse width alpha of the kernel, in Å^-1. Must be positive."
+    doc_trainable = "Whether alpha is trained."
+    return [
+        Argument("alpha", float, optional=True, default=1.0, doc=doc_alpha),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+    ]
+
+
+@interaction_kernel_args_plugin.register(
+    "sog",
+    doc="The sum-of-Gaussians kernel sum_k a_k exp(-r^2 / (2 sigma_k^2)).",
+)
+def interaction_kernel_sog() -> list[Argument]:
+    doc_amplitude = (
+        "The amplitudes a_k of the Gaussians, in Å^-1, of either sign: one value "
+        "shared by every Gaussian or one value per Gaussian. Required with "
+        "`width`; with the default widths it defaults to "
+        "sqrt(2 / pi) ln(`width_ratio`) / sigma_k, the weights of a discretized "
+        "1 / r, so that the default kernel follows 1 / r, less a nearly "
+        "constant offset, from a few `base_width` to a fraction of the widest "
+        "Gaussian. The offset exerts no force between fixed charges; through "
+        "charges that respond to the positions it does."
+    )
+    doc_width = (
+        "The widths sigma_k of the Gaussians, in Å, each positive. Defaults to "
+        "the geometric sequence `base_width` * `width_ratio`^k for "
+        "k = 0, ..., `n_gaussian` - 1."
+    )
+    doc_n_gaussian = "The number of Gaussians of the default widths."
+    doc_base_width = "The width of the first default Gaussian, in Å."
+    doc_width_ratio = "The ratio of consecutive default widths. Must exceed one."
+    doc_trainable = "Whether the amplitudes and widths are trained."
+    return [
+        Argument(
+            "amplitude",
+            [float, list[float], type(None)],
+            optional=True,
+            default=None,
+            doc=doc_amplitude,
+        ),
+        Argument(
+            "width",
+            [list[float], type(None)],
+            optional=True,
+            default=None,
+            doc=doc_width,
+        ),
+        Argument("n_gaussian", int, optional=True, default=12, doc=doc_n_gaussian),
+        Argument(
+            "base_width",
+            float,
+            optional=True,
+            default=2.180230445405648,
+            doc=doc_base_width,
+        ),
+        Argument(
+            "width_ratio",
+            float,
+            optional=True,
+            default=1.6297670882677647,
+            doc=doc_width_ratio,
+        ),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+    ]
+
+
+def latent_charge_net_args() -> list[Argument]:
+    doc_neuron = "The number of neurons in each hidden layer of the charge network."
+    doc_activation_function = f"The activation function in the charge network. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Defaults to the activation function of the energy fitting."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection. Defaults to the setting of the energy fitting.'
+    doc_precision = f"The precision of the charge network and kernel parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Defaults to the precision of the energy fitting."
+    doc_trainable = "Whether the parameters of the charge network are trained. A list sets every hidden layer and the output layer separately."
+    doc_seed = "Random seed for parameter initialization of the charge network. Defaults to a seed derived from the seed of the energy fitting."
+    return [
+        Argument("neuron", list[int], optional=True, default=[64, 64], doc=doc_neuron),
+        Argument(
+            "activation_function", str, optional=True, doc=doc_activation_function
+        ),
+        Argument("resnet_dt", bool, optional=True, doc=doc_resnet_dt),
+        Argument("precision", str, optional=True, doc=doc_precision),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
+def charge_constraint_args() -> list[Argument]:
+    doc_source = (
+        "The source of the total charge of a frame: `neutral` for zero, "
+        "`charge_spin` for the charge of the frame charge/spin condition, which "
+        "requires a descriptor with `add_chg_spin_ebd`, or `fparam` for the frame "
+        "parameter at `fparam_index`."
+    )
+    doc_fparam_index = "The column of the frame parameters holding the total charge, used when `source` is `fparam`."
+    doc_channel = "The latent charge channel that is constrained to the total charge; the other channels stay unconstrained."
+    return [
+        Argument(
+            "source",
+            str,
+            optional=True,
+            default="neutral",
+            doc=doc_source,
+            extra_check=lambda x: x in ("neutral", "charge_spin", "fparam"),
+            extra_check_errmsg="must be one of 'neutral', 'charge_spin' or 'fparam'",
+        ),
+        Argument("fparam_index", int, optional=True, default=0, doc=doc_fparam_index),
+        Argument("channel", int, optional=True, default=0, doc=doc_channel),
+    ]
+
+
+@long_range_args_plugin.register(
+    "latent_charge",
+    doc="Interaction of latent charges predicted from the descriptor. "
+    "For a non-periodic system the kernel is summed directly over every pair "
+    "of atoms; for a periodic system (``periodic: true``) it is summed over "
+    "the images of the cell in reciprocal space. Every channel interacts "
+    "through the same kernel; every atom carries half of the interaction of "
+    "its charges with all others.",
+)
+def long_range_latent_charge() -> list[Argument]:
+    doc_channels = "The number of latent charge channels predicted per atom."
+    doc_charge_net = (
+        "The network predicting the latent charges, in units of the elementary "
+        "charge, from the descriptor; it takes the frame and atomic parameters "
+        "of the energy fitting."
+    )
+    doc_kernel = "The pair interaction kernel of the latent charges, in Å^-1."
+    doc_charge_constraint = (
+        "Shift one latent charge channel uniformly over the atoms of every frame "
+        "so that it sums to the total charge of the frame. Unconstrained if not "
+        "set."
+    )
+    doc_periodic = (
+        "Evaluate the module on periodic systems as well: the kernel is summed "
+        "over the images of the cell in reciprocal space, with the "
+        "zero-wave-number mode dropped (the tin-foil convention, which places "
+        "a uniform neutralizing background under a channel with a net "
+        "charge), less the interaction of every charge with itself. "
+        "Non-periodic systems keep the direct sum."
+    )
+    doc_kspace_tolerance = (
+        "The relative weight of the slowest-decaying kernel mode at the "
+        "wave-number cutoff k_max of a periodic system."
+    )
+    doc_k_grid_mode = (
+        "How training evaluates the reciprocal sum of a periodic batch: "
+        "'pme', the default of a periodic module, by the smooth particle-mesh "
+        "Ewald method on a mesh sized by the cells of the batch at "
+        "`pme_spacing`, whose cost grows nearly linearly with the system; "
+        "'ragged' over the wave numbers "
+        "of every frame within k_max, enumerated per batch, so that the k axis "
+        "is a dynamic dimension; or 'fixed' over one integer grid shared by "
+        "the frames, sized by the largest cell of the data statistics or by "
+        "`k_grid_bounds`, with the points a frame does not reach masked, so "
+        "that the k axis has a static length (a frame whose cell needs points "
+        "beyond the grid is truncated to it, with a warning). A frozen model "
+        "evaluates every periodic frame on the mesh of its cell, whatever the "
+        "mode. 'fixed' and 'pme' require `periodic: true`."
+    )
+    doc_k_grid_bounds = (
+        "The per-axis integer bounds [n1, n2, n3] of the fixed k grid, in "
+        "place of the data statistics; only meaningful with "
+        "`k_grid_mode: fixed`."
+    )
+    doc_decouple_k_grid = (
+        "Decouple the wave-number cutoff of a periodic system from the kernel "
+        "parameters: it is derived once from the initial parameters and kept "
+        "for the life of the model, so that the k grid and the mesh stay put "
+        "while the kernel trains (the kernel values still follow the live "
+        "parameters). The frozen cutoff is serialized with the model. "
+        "Requires `periodic: true`."
+    )
+    doc_pme_spacing = (
+        "The largest spacing of the mesh of a periodic frame, in Angstrom; "
+        "the default is three quarters of the Nyquist spacing of the "
+        "wave-number cutoff, 0.75 pi / k_max. Requires `periodic: true`."
+    )
+    doc_pme_order = (
+        "The order of the B-splines that spread the charges to the mesh, 8 "
+        "by default. Requires `periodic: true`."
+    )
+    return [
+        Argument("channels", int, optional=True, default=1, doc=doc_channels),
+        Argument(
+            "charge_net",
+            dict,
+            latent_charge_net_args(),
+            optional=True,
+            doc=doc_charge_net,
+        ),
+        Argument(
+            "kernel",
+            dict,
+            [],
+            [
+                Variant(
+                    "type",
+                    interaction_kernel_args_plugin.get_all_argument(),
+                    optional=True,
+                    default_tag="les",
+                    doc="The type of the kernel.",
+                )
+            ],
+            optional=True,
+            default={"type": "les"},
+            doc=doc_kernel,
+        ),
+        Argument(
+            "charge_constraint",
+            dict,
+            charge_constraint_args(),
+            optional=True,
+            default=None,
+            doc=doc_charge_constraint,
+        ),
+        Argument("periodic", bool, optional=True, default=False, doc=doc_periodic),
+        Argument(
+            "kspace_tolerance",
+            float,
+            optional=True,
+            default=1e-8,
+            doc=doc_kspace_tolerance,
+        ),
+        Argument(
+            "k_grid_mode",
+            [str, None],
+            optional=True,
+            default=None,
+            doc=doc_k_grid_mode,
+            extra_check=lambda x: x in (None, "ragged", "fixed", "pme"),
+            extra_check_errmsg="must be 'ragged', 'fixed' or 'pme'",
+        ),
+        Argument(
+            "k_grid_bounds",
+            list[int],
+            optional=True,
+            default=None,
+            doc=doc_k_grid_bounds,
+        ),
+        Argument(
+            "decouple_k_grid",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_decouple_k_grid,
+        ),
+        Argument(
+            "pme_spacing",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=doc_pme_spacing,
+        ),
+        Argument(
+            "pme_order",
+            [int, None],
+            optional=True,
+            default=None,
+            doc=doc_pme_order,
+        ),
+    ]
+
+
+def long_range_args() -> Argument:
+    doc_long_range = (
+        "A long-range module added to the atomic energy of the energy fitting. "
+        "It reads the same descriptor and is evaluated on complete systems: "
+        "non-periodic ones directly, periodic ones in reciprocal space when "
+        "the module serves them. Currently validated with the DPA4C "
+        "descriptor."
+    )
+    return Argument(
+        "long_range",
+        dict,
+        [],
+        [
+            Variant(
+                "type",
+                long_range_args_plugin.get_all_argument(),
+                doc="The type of the long-range module.",
+            )
+        ],
+        optional=True,
+        doc=supported_backends("pt_expt") + doc_long_range,
+    )
+
+
 #  --- Modifier configurations: --- #
 modifier_args_plugin = ArgsPlugin()
 
@@ -3848,6 +4152,7 @@ def standard_model_args() -> Argument:
                 default={},
                 doc=supported_backends("pt", "jax", "pd", "pt_expt", "tf2") + doc_info,
             ),
+            long_range_args(),
             *_bridging_method_args(),
         ],
         doc=supported_backends("tf", "pt", "jax", "pd", "pt_expt", "tf2")

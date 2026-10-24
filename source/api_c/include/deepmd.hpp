@@ -1363,9 +1363,10 @@ class DeepPot : public DeepBaseModel {
    * ``d_virial`` may be null when the virial is not requested.
    * ``d_atom_virial`` may be null, and then so may the source CSR unless
    * canonical_graph_requires_source_csr() holds. ``d_coord`` holds the node
-   * positions and ``world`` the MPI communicator of a system on several
-   * ranks, which a model with a long-range module reads (has_long_range());
-   * both may be null for any other model. A non-null ``stream`` is the
+   * positions, ``world`` the MPI communicator of a system on several ranks
+   * and ``box`` the cell of a periodic system, which a model with a
+   * long-range module reads (has_long_range()); all three may be null for
+   * any other model. A non-null ``stream`` is the
    * caller's accelerator stream on the model device. The arguments have the
    * semantics of DP_DPA4ComputeCanonicalGraphGPU.
    */
@@ -1382,6 +1383,7 @@ class DeepPot : public DeepBaseModel {
                                    const int64_t* d_source_order,
                                    const double* d_coord,
                                    void* world,
+                                   const double* box,
                                    const int64_t nloc,
                                    const int64_t nall_nodes,
                                    const int64_t edge_storage,
@@ -1389,7 +1391,8 @@ class DeepPot : public DeepBaseModel {
     DP_DPA4ComputeCanonicalGraphGPU(
         dp, d_atom_energy, d_force, d_virial, d_atom_virial, d_atype, d_source,
         index_width, d_edge_vec, d_destination_row_ptr, d_source_row_ptr,
-        d_source_order, d_coord, world, nloc, nall_nodes, edge_storage, stream);
+        d_source_order, d_coord, world, box, nloc, nall_nodes, edge_storage,
+        stream);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   }
 
@@ -1405,8 +1408,7 @@ class DeepPot : public DeepBaseModel {
 
   /**
    * @brief Query whether the model carries a long-range module, which
-   * evaluates a complete non-periodic system only; see
-   * DP_DeepPotHasLongRange.
+   * evaluates complete systems; see DP_DeepPotHasLongRange.
    */
   bool has_long_range() const {
     const bool result = DP_DeepPotHasLongRange(dp);
