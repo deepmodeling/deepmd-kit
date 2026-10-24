@@ -537,6 +537,7 @@ def test_automatic_freeze_single_artifact_matches_eager(
     caplog: pytest.LogCaptureFixture,
     kind: str,
     inference_device: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(kind)
     options = {}
@@ -553,6 +554,15 @@ def test_automatic_freeze_single_artifact_matches_eager(
     )
     atoms.calc = DP(checkpoint, **options)
     expected = (atoms.get_potential_energy(), atoms.get_forces(), atoms.get_stress())
+    if kind == "pt":
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
+        )
+
+        monkeypatch.setattr(auto_neighbor_list, "is_nv_available", lambda: False)
+        monkeypatch.setattr(
+            auto_neighbor_list, "is_vesin_torch_available", lambda: False
+        )
     caplog.clear()
     with mock.patch(
         "torch._inductor.aoti_compile_and_package",

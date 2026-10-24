@@ -14,6 +14,10 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     build_neighbor_graph,
 )
 
+from ...common.dpmodel.test_neighbor_graph import (
+    assert_csr_consistent,
+)
+
 nv_builder = pytest.importorskip("deepmd.pt_expt.utils.nv_graph_builder")
 from deepmd.pt.utils.nv_nlist import (
     is_nv_available,
@@ -113,7 +117,8 @@ def test_nv_excludes_virtual_atoms_like_dense():
     assert np.all(at[ei[0]] >= 0) and np.all(at[ei[1]] >= 0)
 
 
-def test_nv_pair_exclusion_matches_dense():
+@pytest.mark.parametrize("csr_mode", ["none", "views", "canonical"])
+def test_nv_pair_exclusion_matches_dense(csr_mode: str) -> None:
     dev = torch.device("cuda")
     coord = torch.tensor(
         [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0], [0.0, 1.1, 0.0], [1.2, 1.0, 0.0]]],
@@ -136,5 +141,9 @@ def test_nv_pair_exclusion_matches_dense():
         box,
         2.0,
         pair_excl=pair_excl,
+        with_csr=csr_mode != "none",
+        canonicalize=csr_mode == "canonical",
     )
     assert _edge_multiset(actual) == _edge_multiset(expected)
+    if csr_mode != "none":
+        assert_csr_consistent(actual)

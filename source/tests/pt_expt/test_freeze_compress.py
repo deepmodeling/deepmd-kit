@@ -176,7 +176,7 @@ def test_freeze_compression_changes_snapshot_before_export(
     assert checkpoint.read_bytes() == original
 
 
-@pytest.mark.parametrize("case", ["precision", "exclusions", "charge_state"])
+@pytest.mark.parametrize("case", ["precision", "exclusions", "charge_state", "widths"])
 def test_ase_falls_back_but_explicit_compression_reports_ineligibility(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, case: str
 ) -> None:
@@ -188,6 +188,9 @@ def test_ase_falls_back_but_explicit_compression_reports_ineligibility(
     elif case == "exclusions":
         config["descriptor"]["exclude_types"] = [[0, 1]]
         error = "non-empty `exclude_types`"
+    elif case == "widths":
+        config["descriptor"]["radial_modes"] = 3
+        error = "radial_modes"
     else:
         config["descriptor"]["add_chg_spin_ebd"] = True
         config["descriptor"]["default_chg_spin"] = None

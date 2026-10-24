@@ -8,8 +8,14 @@ from typing import (
 
 import torch
 
+from deepmd.dpmodel.utils.default_neighbor_list import (
+    DefaultNeighborList,
+)
 from deepmd.dpmodel.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    build_neighbor_graph,
 )
 from deepmd.dpmodel.utils.neighbor_list import (
     EdgeNeighborList,
@@ -25,6 +31,32 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
 )
 
 
+class _NativeNeighborList(DefaultNeighborList):
+    """Build native extended inputs or uncapped edge-vector inputs."""
+
+    def build(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        rcut: float,
+        sel: list[int],
+        return_mode: str = "extended",
+        pair_excl: PairExcludeMask | None = None,
+    ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
+        if return_mode != "edges":
+            return super().build(coord, atype, box, rcut, sel, return_mode, pair_excl)
+        graph = build_neighbor_graph(coord, atype, box, rcut, pair_excl=pair_excl)
+        return EdgeNeighborList(
+            coord=coord.reshape(*atype.shape, 3).contiguous(),
+            atype=atype.contiguous(),
+            edge_index=graph.edge_index,
+            edge_vec=graph.edge_vec,
+            edge_scatter_index=graph.edge_index,
+            edge_mask=graph.edge_mask & (graph.edge_vec.square().sum(dim=-1) > 1e-10),
+        )
+
+
 class AdaptiveNeighborList(NeighborList):
     """Select a cell-list backend from the device and batch shape.
 
@@ -32,6 +64,8 @@ class AdaptiveNeighborList(NeighborList):
     inference, and Toolkit-Ops for CUDA batches. ``native`` retains the
     unbuffered batched policy: Vesin for one CPU frame, Toolkit-Ops otherwise,
     with either backend serving as the fallback when the other is unavailable.
+    Without either optional backend, native search preserves the requested
+    representation: edge inputs use an uncapped dense graph, not a capped nlist.
     The selection is independent of the requested neighbor representation.
     """
 
@@ -41,6 +75,7 @@ class AdaptiveNeighborList(NeighborList):
         self._method = method
         self._vesin = VesinNeighborList(skin=0.0 if method == "native" else skin)
         self._nv = NvNeighborList()
+        self._native = _NativeNeighborList()
 
     def build(
         self,
@@ -67,14 +102,7 @@ class AdaptiveNeighborList(NeighborList):
         elif is_nv_available():
             builder = self._nv
         else:
-            raise RuntimeError(
-                "Neighbor-list construction requires a neighbor-list backend. "
-                "Install one of:\n"
-                "  pip install 'vesin[torch]'\n"
-                "  pip install nvalchemi-toolkit-ops\n"
-                "Vesin also ships with the PyTorch extra: "
-                "pip install 'deepmd-kit[torch]'."
-            )
+            builder = self._native
         return builder.build(
             coord, atype, box, rcut, sel, return_mode=return_mode, pair_excl=pair_excl
         )

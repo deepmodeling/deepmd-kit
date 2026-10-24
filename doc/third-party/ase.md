@@ -82,6 +82,9 @@ searches across all these input formats and requires Vesin and its torch
 bindings at version 0.6 or later (PyTorch 2.3 or later).
 Older PyTorch targets and macOS Intel installations retain native neighbor
 construction without requiring these bindings.
+If neither optional search library is available, edge-vector models use the
+native dense carry-all graph search. This slower fallback preserves every
+cutoff neighbor, including periodic images, independently of `sel`.
 Candidates extend to the model cutoff plus the skin and are rebuilt when an
 atom moves more than half the skin, or when the cell or atom count changes.
 Each evaluation still updates geometry and selects neighbors at the model's

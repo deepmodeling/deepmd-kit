@@ -22,6 +22,10 @@ from deepmd.pt_expt.utils.canonical_graph import (
     validate_canonical_graph_shapes,
 )
 
+from ...common.dpmodel.test_neighbor_graph import (
+    assert_csr_consistent,
+)
+
 vesin_builder = pytest.importorskip("deepmd.pt_expt.utils.vesin_graph_builder")
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     is_vesin_torch_available,
@@ -151,7 +155,8 @@ def test_vesin_pair_excl_none_identity(periodic):
 
 
 @pytest.mark.parametrize("periodic", [False, True])  # non-PBC and PBC
-def test_vesin_pair_excl_oracle_set_equality(periodic):
+@pytest.mark.parametrize("csr_mode", ["none", "views", "canonical"])
+def test_vesin_pair_excl_oracle_set_equality(periodic: bool, csr_mode: str) -> None:
     """Vesin builder(pair_excl=X) == dense ref + apply_pair_exclusion(X)."""
     coord, atype, box = _system(periodic)
     coord = coord.reshape(1, 4, 3)
@@ -164,9 +169,17 @@ def test_vesin_pair_excl_oracle_set_equality(periodic):
     ng_ref = apply_pair_exclusion(ng_dense, atype_flat, pe)
     # vesin builder with fused post-process
     ng_vesin = vesin_builder.build_neighbor_graph_vesin(
-        coord, atype, box_3d, rcut, pair_excl=pe
+        coord,
+        atype,
+        box_3d,
+        rcut,
+        pair_excl=pe,
+        with_csr=csr_mode != "none",
+        canonicalize=csr_mode == "canonical",
     )
     assert _valid_edge_set(ng_ref) == _valid_edge_set(ng_vesin)
+    if csr_mode != "none":
+        assert_csr_consistent(ng_vesin)
     # exclusion actually removed edges
     ng_plain = vesin_builder.build_neighbor_graph_vesin(coord, atype, box_3d, rcut)
     assert int(np.asarray(ng_vesin.edge_mask).sum()) < int(
