@@ -106,6 +106,7 @@ from deepmd.pt.utils.finetune import (
     _move_learned_key,
 )
 from deepmd.pt.utils.spin_finetune import (
+    compute_native_spin_input_stats,
     get_native_spin_finetune_state,
 )
 from deepmd.pt_expt.loss import (
@@ -2315,7 +2316,12 @@ class Trainer(AbstractTrainer):
                     def update_finetune_bias(
                         _model_key: str = model_key,
                         _bias_mode: str = bias_mode,
+                        _convert_to_native_spin: bool = finetune_rule.convert_to_native_spin,
                     ) -> None:
+                        if _convert_to_native_spin:
+                            compute_native_spin_input_stats(
+                                self.models[_model_key], self._sample_funcs[_model_key]
+                            )
                         self.models[_model_key] = model_change_out_bias(
                             self.models[_model_key],
                             self._sample_funcs[_model_key],

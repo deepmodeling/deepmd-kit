@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Spin-free checkpoint transfer for the PyTorch and pt_expt native-spin models."""
 
+from collections.abc import (
+    Callable,
+)
 from functools import (
     singledispatch,
 )
@@ -38,7 +41,8 @@ def get_native_spin_finetune_state(
 
     Type maps must already agree. The learned parts are matched independently
     of analytical bridging. Output biases and scales belong to the target's
-    subsequent statistics pass; spin-only state keeps its constructor values.
+    subsequent statistics pass; spin-only parameters keep their constructor
+    values, while target data calibrates spin-only input statistics afterward.
     Descriptor-specific transfer rules preserve the geometric function while
     leaving a nonzero gradient into the initially closed spin routes.
 
@@ -106,6 +110,29 @@ def get_native_spin_finetune_state(
             _check_shape(key, value.shape, state[target_key].shape)
             state[target_key] = value.detach().clone()
     return state
+
+
+def compute_native_spin_input_stats(
+    model: torch.nn.Module, sampled_func: Callable[[], list[dict]]
+) -> None:
+    """Calibrate newly introduced spin state after spin-free weight transfer.
+
+    Geometric input statistics remain those of the pretrained descriptor.
+    Only DPA4C requires a data-dependent reference for its spin invariants.
+
+    Parameters
+    ----------
+    model
+        Native-spin target after a successful spin-free state transfer.
+    sampled_func
+        Sampled training systems containing atom types and magnetic moments.
+    """
+    path = _learned_part_path(model)
+    descriptor = model.get_submodule(path.removesuffix(".")).descriptor
+    if isinstance(descriptor, DescrptDPA4C):
+        descriptor.spin.set_spin_reference(
+            descriptor._measure_spin_reference(sampled_func())
+        )
 
 
 @singledispatch

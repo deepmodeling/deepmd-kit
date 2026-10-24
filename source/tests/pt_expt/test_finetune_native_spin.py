@@ -5,8 +5,14 @@ import json
 from copy import (
     deepcopy,
 )
+from importlib import (
+    import_module,
+)
 from pathlib import (
     Path,
+)
+from typing import (
+    Any,
 )
 
 import numpy as np
@@ -20,6 +26,7 @@ from deepmd.pt.utils.finetune import (
     _learned_part_path,
 )
 from deepmd.pt.utils.spin_finetune import (
+    compute_native_spin_input_stats,
     get_native_spin_finetune_state,
 )
 from deepmd.pt_expt.entrypoints.main import (
@@ -185,6 +192,75 @@ def test_spin_free_transfer_rejects_unrelated_shape_change(
         get_native_spin_finetune_state(target, source)
 
 
+@pytest.mark.parametrize(
+    "invalid, message",
+    [
+        ("source_without_learned_part", "one learned atomic model"),
+        ("target_without_learned_part", "one learned atomic model"),
+        ("type_map", "aligned type maps"),
+        ("descriptor_family", "same descriptor family"),
+        ("native_source", "spin-free source descriptor"),
+        ("spin_free_target", "native-spin target descriptor"),
+    ],
+)
+def test_spin_free_transfer_rejects_incompatible_models(
+    invalid: str, message: str
+) -> None:
+    source = _build("pt_expt", _config("dpa4", invalid == "native_source"))
+    target_config = _config(
+        "dpa4c" if invalid == "descriptor_family" else "dpa4",
+        invalid != "spin_free_target",
+    )
+    if invalid == "type_map":
+        target_config["type_map"] = ["C", "Fe"]
+    target = _build("pt_expt", target_config)
+    if invalid.endswith("without_learned_part"):
+        analytical = torch.nn.Module()
+        analytical.add_module("atomic_model", torch.nn.Module())
+        if invalid.startswith("source"):
+            source = analytical
+        else:
+            target = analytical
+    with pytest.raises(ValueError, match=message):
+        get_native_spin_finetune_state(target, source)
+
+
+@pytest.mark.parametrize("magnitude", [0.0, 2.0])
+def test_native_spin_statistics_preserve_pretrained_geometry(magnitude: float) -> None:
+    source = _pretrained("pt_expt", _config("dpa4c", False))
+    target = _build("pt_expt", _config("dpa4c", True))
+    target.load_state_dict(get_native_spin_finetune_state(target, source))
+    inputs = {
+        "coord": torch.tensor(
+            [[[0.0, 0.0, 0.0], [1.3, 0.0, 0.0]]], dtype=torch.float64, device=DEVICE
+        ),
+        "atype": torch.zeros((1, 2), dtype=torch.int64, device=DEVICE),
+        "spin": torch.tensor(
+            [[[0.0, 0.0, magnitude], [0.0, 0.0, magnitude]]],
+            dtype=torch.float64,
+            device=DEVICE,
+        ),
+    }
+    descriptor = _learned(target).descriptor
+    initial = {key: value.clone() for key, value in descriptor.state_dict().items()}
+    # Equivalent environments need no recalibration of pretrained geometry.
+    compute_native_spin_input_stats(target, lambda: [inputs])
+    torch.testing.assert_close(
+        descriptor.spin.spin_reference,
+        torch.tensor([magnitude or 1.0, 1.0, 1.0], dtype=torch.float64, device=DEVICE),
+        rtol=0,
+        atol=0,
+    )
+    for key, value in descriptor.state_dict().items():
+        if key != "spin.spin_reference":
+            torch.testing.assert_close(value, initial[key], rtol=0, atol=0)
+    actual = target(**inputs)
+    expected = source(coord=inputs["coord"], atype=inputs["atype"])
+    for key in ("energy", "force", "virial"):
+        torch.testing.assert_close(actual[key], expected[key], rtol=1e-11, atol=1e-11)
+    assert torch.count_nonzero(actual["force_mag"]) == 0
+
+
 @pytest.mark.parametrize("resnet_dt", [False, True])
 @pytest.mark.parametrize("residual_side", ["source", "target"])
 @pytest.mark.parametrize("width_multiple", [1, 2])
@@ -346,6 +422,44 @@ def test_spin_free_native_finetune_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _run_spin_free_native_finetune_cli(
+        backend,
+        descriptor,
+        fitting_type,
+        bridged,
+        multitask,
+        "transfer",
+        tmp_path,
+        monkeypatch,
+    )
+
+
+@pytest.mark.parametrize("backend, descriptor", [("pt", "dpa4"), ("pt_expt", "dpa4c")])
+@pytest.mark.parametrize("mode", ["random", "pretrain_script"])
+@pytest.mark.parametrize("multitask", [False, True])
+def test_spin_free_native_finetune_cli_options(
+    backend: str,
+    descriptor: str,
+    mode: str,
+    multitask: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _run_spin_free_native_finetune_cli(
+        backend, descriptor, "dpa4_ener", False, multitask, mode, tmp_path, monkeypatch
+    )
+
+
+def _run_spin_free_native_finetune_cli(
+    backend: str,
+    descriptor: str,
+    fitting_type: str,
+    bridged: bool,
+    multitask: bool,
+    mode: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source_config = _config(descriptor, False)
     source_config["fitting_net"]["type"] = fitting_type
     source = _pretrained(backend, source_config)
@@ -389,9 +503,23 @@ def test_spin_free_native_finetune_cli(
 
     target_config = _config(descriptor, True, bridged)
     target_config["fitting_net"]["type"] = fitting_type
+    options = []
+    if mode == "random":
+        initial_fitting = dict(
+            _learned(_build(backend, target_config)).fitting_net.named_parameters()
+        )
+        if multitask:
+            target_config["finetune_head"] = "RANDOM"
+        else:
+            options = ["--model-branch", "RANDOM"]
+    elif mode == "pretrain_script":
+        target_config["descriptor"]["channels"] *= 2
+        options = ["--use-pretrain-script"]
     if bridged:
         target_config["preset_out_bias"] = {"energy": {"Fe": 1.25, "C": -0.75}}
-    config = _make_config(str(system.parent), target_config, numb_steps=2)
+    # A zero-step run exposes RANDOM initialization before optimization.
+    steps = 0 if mode == "random" else 2
+    config = _make_config(str(system.parent), target_config, numb_steps=steps)
     config["loss"] = {
         "type": "ener_spin",
         "start_pref_e": 1.0,
@@ -415,6 +543,17 @@ def test_spin_free_native_finetune_cli(
     input_path.write_text(json.dumps(config))
     monkeypatch.chdir(tmp_path)
     entrypoint = pt_main if backend == "pt" else main
+    trainers = []
+    if mode == "random":
+        entrypoints = import_module(f"deepmd.{backend}.entrypoints.main")
+        get_trainer = entrypoints.get_trainer
+
+        def capture_trainer(*args: Any, **kwargs: Any) -> Any:
+            trainer = get_trainer(*args, **kwargs)
+            trainers.append(trainer)
+            return trainer
+
+        monkeypatch.setattr(entrypoints, "get_trainer", capture_trainer)
     entrypoint(
         [
             "train",
@@ -422,8 +561,17 @@ def test_spin_free_native_finetune_cli(
             "--finetune",
             str(checkpoint),
             "--skip-neighbor-stat",
+            *options,
         ]
     )
+    if mode == "random":
+        assert len(trainers) == 1
+        model = trainers[0].model
+        trained = model["magnetic"] if multitask else model
+        for key, value in _learned(trained).fitting_net.named_parameters():
+            torch.testing.assert_close(value, initial_fitting[key], rtol=0, atol=0)
+        assert torch.count_nonzero(trained(**inputs, spin=spin)["force_mag"]) == 0
+        return
     saved = torch.load(
         tmp_path / "model.ckpt.pt", map_location=DEVICE, weights_only=True
     )
@@ -431,9 +579,13 @@ def test_spin_free_native_finetune_cli(
     model_params = params["model_dict"]["magnetic"] if multitask else params
     assert model_params["spin"]["scheme"] == "native"
     assert model_params["spin"]["use_spin"] == [True, False]
+    assert (
+        model_params["descriptor"]["channels"]
+        == source_config["descriptor"]["channels"]
+    )
     # PT checkpoints record the zero-based step; pt_expt records the step count.
     assert saved["model"]["_extra_state"]["train_infos"]["step"] == (
-        1 if backend == "pt" else 2
+        max(steps - 1, 0) if backend == "pt" else steps
     )
     assert "source_only" not in saved["optimizer"]
     assert "source_only" not in saved["ema"]
@@ -442,6 +594,10 @@ def test_spin_free_native_finetune_cli(
         {"magnetic": trained} if multitask else trained, model_params=params
     )
     loaded.load_state_dict(saved["model"])
+    if descriptor == "dpa4c":
+        reference = _learned(trained).descriptor.spin.spin_reference
+        expected_reference = spin[:, [0, 2]].square().sum(dim=-1).mean().sqrt()
+        torch.testing.assert_close(reference[0], expected_reference, rtol=1e-12, atol=0)
     bias = trained.get_out_bias().reshape(-1)
     if bridged:
         torch.testing.assert_close(
