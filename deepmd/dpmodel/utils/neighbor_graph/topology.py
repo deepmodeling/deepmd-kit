@@ -75,6 +75,7 @@ def _build_reciprocal(
     name: str,
     box: Array,
     coord: Array,
+    n_node: Array,
     params: dict[str, Any],
 ) -> KGrid | MeshGrid:
     """Build a reciprocal-space topology of periodic frames from its parameters."""
@@ -87,8 +88,8 @@ def _build_reciprocal(
     if name == PME_MESH:
         return build_mesh_grid(box, params["spacing"], coord)
     if "bounds" in params:
-        return build_fixed_k_grid(box, params["bounds"], params["k_max"], coord)
-    return build_k_grid(box, params["k_max"], coord)
+        return build_fixed_k_grid(box, params["bounds"], params["k_max"], coord, n_node)
+    return build_k_grid(box, params["k_max"], coord, n_node)
 
 
 def build_topologies(
@@ -179,7 +180,7 @@ def build_topologies(
         name: (
             empty_pair_graph(coord)
             if name == ALL_PAIRS
-            else _build_reciprocal(name, box, coord, params.get(name, {}))
+            else _build_reciprocal(name, box, coord, n_node, params.get(name, {}))
         )
         for name in names
     }

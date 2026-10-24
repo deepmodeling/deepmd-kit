@@ -3709,17 +3709,18 @@ def long_range_latent_charge() -> list[Argument]:
     )
     doc_k_grid_mode = (
         "How training evaluates the reciprocal sum of a periodic batch: "
-        "'ragged' over the wave numbers of every frame within k_max, "
-        "enumerated per batch, so that the k axis is a dynamic dimension; "
-        "'fixed' over one integer grid shared by the frames, sized by the "
-        "largest cell of the data statistics or by `k_grid_bounds`, with the "
-        "points a frame does not reach masked, so that the k axis has a static "
-        "length (a frame whose cell needs points beyond the grid is truncated "
-        "to it, with a warning); 'pme' by the smooth particle-mesh Ewald "
-        "method on a mesh sized by the cells of the batch at `pme_spacing`, "
-        "whose cost grows nearly linearly with the system. A frozen model "
+        "'pme', the default of a periodic module, by the smooth particle-mesh "
+        "Ewald method on a mesh sized by the cells of the batch at "
+        "`pme_spacing`, whose cost grows nearly linearly with the system; "
+        "'ragged' over the wave numbers "
+        "of every frame within k_max, enumerated per batch, so that the k axis "
+        "is a dynamic dimension; or 'fixed' over one integer grid shared by "
+        "the frames, sized by the largest cell of the data statistics or by "
+        "`k_grid_bounds`, with the points a frame does not reach masked, so "
+        "that the k axis has a static length (a frame whose cell needs points "
+        "beyond the grid is truncated to it, with a warning). A frozen model "
         "evaluates every periodic frame on the mesh of its cell, whatever the "
-        "mode. Requires `periodic: true` for 'fixed' and 'pme'."
+        "mode. 'fixed' and 'pme' require `periodic: true`."
     )
     doc_k_grid_bounds = (
         "The per-axis integer bounds [n1, n2, n3] of the fixed k grid, in "
@@ -3783,11 +3784,11 @@ def long_range_latent_charge() -> list[Argument]:
         ),
         Argument(
             "k_grid_mode",
-            str,
+            [str, None],
             optional=True,
-            default="ragged",
+            default=None,
             doc=doc_k_grid_mode,
-            extra_check=lambda x: x in ("ragged", "fixed", "pme"),
+            extra_check=lambda x: x in (None, "ragged", "fixed", "pme"),
             extra_check_errmsg="must be 'ragged', 'fixed' or 'pme'",
         ),
         Argument(

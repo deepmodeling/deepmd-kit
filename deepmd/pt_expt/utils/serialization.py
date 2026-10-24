@@ -705,11 +705,14 @@ def build_synthetic_topologies(
     """Build trace-time samples of the topologies a model declares.
 
     Single source of the trace-time topology inputs, shared by graph export
-    and compiled training. Tracing reads only their shapes. Every topology
-    lists ``n_entry`` entries on its own axis, the pairs or the wave numbers,
-    a length the caller keeps distinct from the other dynamic axes; a mesh
-    takes the three smallest even dimensions of at least four that no other
-    axis and no entry of ``forbidden`` has.
+    and compiled training. Tracing reads only their shapes. The pair
+    topology lists ``n_entry`` pairs, a length the caller keeps distinct from
+    the other dynamic axes; a mesh takes the three smallest even dimensions,
+    and a k grid the three smallest lengths for its slots, its blocks and the
+    points of a block, of at least four that no other axis and no entry of
+    ``forbidden`` has. Every length thus differs from the two rows of a pair
+    index and the three components of a vector, and from every other dynamic
+    axis, which a compiled graph would otherwise identify with it.
 
     Parameters
     ----------
@@ -718,7 +721,7 @@ def build_synthetic_topologies(
     n_node_total : int
         Length of the node axis.
     n_entry : int
-        Length of the entry axis of every sample.
+        Length of the pair axis.
     dtype : torch.dtype
         Precision of the geometry.
     device : torch.device
@@ -726,7 +729,8 @@ def build_synthetic_topologies(
     nframes : int
         Length of the frame axis.
     forbidden : set[int]
-        Sizes of the static dimensions of the model, which a mesh avoids.
+        Sizes of the static dimensions of the model, which the mesh and k-grid
+        axes avoid.
 
     Returns
     -------
@@ -748,6 +752,8 @@ def build_synthetic_topologies(
     for size in range(4, 4 + 2 * len(taken) + 6, 2):
         if size not in taken and len(mesh_dims) < 3:
             mesh_dims.append(size)
+    free = sorted(set(range(4, len(taken) + 10)) - taken - set(mesh_dims))
+    n_slot, n_block, n_point = free[:3]
     coord = torch.ones(n_node_total, 3, dtype=dtype, device=device)
     # Contiguous like the inputs at run time: a compiled graph reads the
     # strides of its samples.
@@ -755,11 +761,13 @@ def build_synthetic_topologies(
     topologies = {}
     for name in model.atomic_model.required_topologies():
         if name == K_GRID:
+            slot = torch.arange(nframes * n_slot, dtype=torch.int64, device=device)
+            blocks = (nframes, n_block, n_point)
             topologies[name] = KGrid(
-                frame=torch.zeros(n_entry, dtype=torch.int64, device=device),
                 # Nonzero wave numbers: the kernel transform carries 1/k^2.
-                vec=torch.ones(n_entry, 3, dtype=dtype, device=device),
-                mask=torch.ones(n_entry, dtype=torch.bool, device=device),
+                vec=torch.ones(*blocks, 3, dtype=dtype, device=device),
+                mask=torch.ones(*blocks, dtype=torch.bool, device=device),
+                slot=(slot % n_node_total).reshape(nframes, n_slot),
                 volume=torch.ones(nframes, dtype=dtype, device=device),
                 coord=coord,
                 strain=torch.zeros(nframes, 3, 3, dtype=dtype, device=device),
@@ -964,8 +972,8 @@ def _topology_dynamic_shapes(
     Every field follows the ``AXES`` its dataclass declares. The frame and
     node axes are those of the other inputs in ``shared``; the entry axis of
     every topology is a dimension of its own, of at least the two guard
-    entries; a mesh axis is twice a dimension, since the mesh dimensions are
-    even.
+    entries, and so are the slot axis and the point axis of a k grid; a mesh
+    axis is twice a dimension, since the mesh dimensions are even.
 
     Parameters
     ----------
@@ -988,6 +996,8 @@ def _topology_dynamic_shapes(
         cls = TOPOLOGY_TYPES[name]
         dims = dict(shared)
         dims["entry"] = torch.export.Dim(f"{name}_entries", min=2)
+        dims["slot"] = torch.export.Dim(f"{name}_slots", min=2)
+        dims["k_point"] = torch.export.Dim(f"{name}_block_points", min=2)
         for axis in ("mesh_1", "mesh_2", "mesh_3"):
             dims[axis] = 2 * torch.export.Dim(f"{name}_{axis}_half", min=1)
         specs += [
@@ -2356,8 +2366,8 @@ def _trace_and_export_impl(
                 device=torch.device("cpu"),
                 want_spin=is_native_spin,
             )
-            # The pair axis of every topology is dynamic; its sample length
-            # is kept distinct from the other axes and from the CSR offsets.
+            # The pair axis is dynamic; its sample length is kept distinct
+            # from the other axes and from the CSR offsets.
             topologies = build_synthetic_topologies(
                 model,
                 n_sample,

@@ -147,15 +147,8 @@ keeps the cutoff of the initial kernel.
 {ref}`k_grid_mode <model[standard]/long_range[latent_charge]/k_grid_mode>`
 selects how training evaluates the sum:
 
-- `ragged`: over the wave numbers of every frame within $k_{max}$, listed for
-  every batch; their number grows with the volume of the cell.
-- `fixed`: over one integer grid shared by the frames of a batch, sized by the
-  largest cell of the data statistics or by
-  {ref}`k_grid_bounds <model[standard]/long_range[latent_charge]/k_grid_bounds>`;
-  a frame whose cell needs a wave number beyond the grid is truncated to it,
-  with a warning.
-- `pme`: by the smooth particle-mesh Ewald method. The charges are spread
-  with B-splines of order
+- `pme`, the default: by the smooth particle-mesh Ewald method. The charges
+  are spread with B-splines of order
   {ref}`pme_order <model[standard]/long_range[latent_charge]/pme_order>` to a
   mesh that resolves every cell of the batch at
   {ref}`pme_spacing <model[standard]/long_range[latent_charge]/pme_spacing>`,
@@ -163,6 +156,13 @@ selects how training evaluates the sum:
   number of atoms. With the default order 8 and spacing $0.75\pi/k_{max}$, the
   energy and the forces stay within a few parts in a million of the sum over
   the wave numbers.
+- `ragged`: over the wave numbers of every frame within $k_{max}$, listed for
+  every batch; their number grows with the volume of the cell.
+- `fixed`: over one integer grid shared by the frames of a batch, sized by the
+  largest cell of the data statistics or by
+  {ref}`k_grid_bounds <model[standard]/long_range[latent_charge]/k_grid_bounds>`;
+  a frame whose cell needs a wave number beyond the grid is truncated to it,
+  with a warning.
 
 A frozen model evaluates every periodic frame on the mesh of its cell,
 whatever its training mode, so a model trained in another mode can differ

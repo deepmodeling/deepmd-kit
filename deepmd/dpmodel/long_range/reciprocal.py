@@ -43,7 +43,6 @@ from deepmd.dpmodel.array_api import (
 from deepmd.dpmodel.utils.neighbor_graph import (
     KGrid,
     MeshGrid,
-    segment_sum,
 )
 
 from .kernel import (
@@ -68,7 +67,6 @@ def _self_potential(
 def kspace_energy(
     charge: Array,
     k_grid: KGrid,
-    frame_id: Array,
     kernel: BaseInteractionKernel,
 ) -> Array:
     r"""Energy of the periodic frames over explicit wave numbers, per atom.
@@ -78,16 +76,17 @@ def kspace_energy(
     :math:`\phi_i = \frac{k_e}{V} \sum_{\mathbf{k}} \hat K(\mathbf{k})
     [\cos(\mathbf{k} \cdot \mathbf{r}_i) \mathrm{Re}\,\hat\rho +
     \sin(\mathbf{k} \cdot \mathbf{r}_i) \mathrm{Im}\,\hat\rho] - k_e K(0) q_i`.
-    The geometry is strained by :attr:`KGrid.strain` (see :class:`KGrid`).
+    Every frame pairs the wave numbers of its row of :attr:`KGrid.vec` with
+    the nodes of its row of :attr:`KGrid.slot`, in products batched over the
+    frames and the blocks of their wave numbers. The geometry is strained by
+    :attr:`KGrid.strain` (see :class:`KGrid`).
 
     Parameters
     ----------
     charge
         Node charges with shape ``(N, C)``, zero on the nodes that carry none.
     k_grid
-        The wave numbers of the periodic frames.
-    frame_id
-        The frame of every node with shape ``(N,)``.
+        The wave numbers and the nodes of the periodic frames.
     kernel
         The pair kernel.
 
@@ -98,38 +97,55 @@ def kspace_energy(
         without wave numbers.
     """
     xp = array_api_compat.array_namespace(charge)
+    device = array_api_compat.device(charge)
     dtype = charge.dtype
-    nf = k_grid.volume.shape[0]
-    coord = xp.astype(k_grid.coord, dtype)
-    k_vec = xp.astype(k_grid.vec, dtype)
-    volume = xp.astype(k_grid.volume, dtype)
-    # === Step 1. Strained geometry: r' = S r, k' = S^-T k, V' = V det S ===
-    eye = xp.eye(3, dtype=dtype, device=array_api_compat.device(charge))
+    n_node, n_channel = charge.shape
+    nf, n_slot = k_grid.slot.shape
+    # === Step 1. The nodes of every frame, (nf, ns, 3) and (nf, ns, C) ===
+    real = k_grid.slot >= 0
+    index = xp.reshape(xp.where(real, k_grid.slot, xp.zeros_like(k_grid.slot)), (-1,))
+    coord = xp.take(xp.astype(k_grid.coord, dtype), index, axis=0)
+    coord = xp.reshape(coord, (nf, n_slot, 3))
+    charge_slot = xp.reshape(xp.take(charge, index, axis=0), (nf, n_slot, n_channel))
+    charge_slot = charge_slot * xp.astype(real, dtype)[:, :, None]
+    # === Step 2. Strained wave numbers and volumes: k' = S^-T k, V' = V det S ===
+    # Every product over the wave numbers of a frame broadcasts the per-frame
+    # factor over the blocks, (nf, nb, kb, .), so that its sum runs over the
+    # points of a block.
+    eye = xp.eye(3, dtype=dtype, device=device)
     strain = xp.astype(k_grid.strain, dtype) + eye
-    coord = xp.matmul(xp.take(strain, frame_id, axis=0), coord[:, :, None])[:, :, 0]
-    strain_inv_t = xp.matrix_transpose(xp.linalg.inv(strain))
-    k_vec = xp.matmul(xp.take(strain_inv_t, k_grid.frame, axis=0), k_vec[:, :, None])
-    k_vec = k_vec[:, :, 0]
-    volume = volume * xp.linalg.det(strain)
-    # === Step 2. Structure factors, (nk, C) ===
-    phase = xp.matmul(k_vec, xp.matrix_transpose(coord))
-    same_frame = xp.astype(frame_id[None, :] == k_grid.frame[:, None], dtype)
-    cos_phase = xp.cos(phase) * same_frame
-    sin_phase = xp.sin(phase) * same_frame
-    rho_real = xp.matmul(cos_phase, charge)
-    rho_imag = xp.matmul(sin_phase, charge)
-    # === Step 3. Potential at the nodes, (N, C) ===
-    weight = COULOMB_CONSTANT * kernel.kspace(xp.sum(k_vec * k_vec, axis=-1))
-    weight = weight / xp.take(volume, k_grid.frame, axis=0)
-    weight = xp.where(k_grid.mask, weight, xp.zeros_like(weight))[:, None]
-    potential = xp.matmul(xp.matrix_transpose(cos_phase), weight * rho_real)
-    potential = potential + xp.matmul(xp.matrix_transpose(sin_phase), weight * rho_imag)
+    k_vec = xp.astype(k_grid.vec, dtype)
+    # The rows of k_vec S^-1 are the strained wave numbers.
+    strained_k = xp.matmul(k_vec, xp.linalg.inv(strain)[:, None, :, :])
+    volume = xp.astype(k_grid.volume, dtype) * xp.linalg.det(strain)
+    # === Step 3. Structure factors, (nf, nb, kb, C) ===
+    # The phase k' . r' = k . r does not change under the strain.
+    phase = xp.matmul(k_vec, xp.matrix_transpose(coord)[:, None, :, :])
+    cos_phase = xp.cos(phase)
+    sin_phase = xp.sin(phase)
+    rho_real = xp.matmul(cos_phase, charge_slot[:, None, :, :])
+    rho_imag = xp.matmul(sin_phase, charge_slot[:, None, :, :])
+    # === Step 4. Potential at the nodes of every frame, (nf, ns, C) ===
+    weight = COULOMB_CONSTANT * kernel.kspace(xp.sum(strained_k * strained_k, axis=-1))
+    weight = weight / volume[:, None, None]
+    weight = xp.where(k_grid.mask, weight, xp.zeros_like(weight))[..., None]
+    block_potential = xp.matmul(xp.matrix_transpose(cos_phase), weight * rho_real)
+    block_potential = block_potential + xp.matmul(
+        xp.matrix_transpose(sin_phase), weight * rho_imag
+    )
+    potential = xp.sum(block_potential, axis=1)
     # The self term belongs to the lattice sum of a frame with wave numbers;
     # a non-periodic batch evaluated by a periodic module carries none.
-    has_points = segment_sum(xp.astype(k_grid.mask, dtype), k_grid.frame, nf) > 0
-    periodic_node = xp.take(has_points, frame_id, axis=0)
-    potential = potential - _self_potential(kernel, charge, periodic_node)
-    return 0.5 * xp.sum(charge * potential, axis=-1)
+    has_points = xp.astype(xp.any(k_grid.mask, axis=(1, 2)), dtype)[:, None, None]
+    potential = (
+        potential
+        - COULOMB_CONSTANT * kernel.contact_value(charge) * charge_slot * has_points
+    )
+    slot_energy = 0.5 * xp.sum(charge_slot * potential, axis=-1)
+    # === Step 5. Energy on the node axis ===
+    # A padding slot carries no charge and adds a zero to the first node.
+    energy = xp.zeros((n_node,), dtype=dtype, device=device)
+    return xp_add_at(energy, index, xp.reshape(slot_energy, (-1,)))
 
 
 def bspline_integer_weights(order: int) -> np.ndarray:

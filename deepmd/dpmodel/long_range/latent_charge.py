@@ -134,16 +134,17 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         wave-number cutoff :math:`k_{max}` of a periodic batch.
     k_grid_mode
         How training evaluates the reciprocal sum of a periodic batch:
+        ``"pme"``, the default, by the smooth particle-mesh Ewald method on a
+        mesh of spacing ``pme_spacing`` sized by the cells of the batch;
         ``"ragged"`` over the wave numbers of every frame within
         :math:`k_{max}`, enumerated eagerly, so that the k axis is a dynamic
-        dimension; ``"fixed"`` over one integer grid shared by the frames,
+        dimension; or ``"fixed"`` over one integer grid shared by the frames,
         sized by the largest cell of the data statistics or by
-        ``k_grid_bounds``, with the points a frame does not reach masked; or
-        ``"pme"`` by the smooth particle-mesh Ewald method on a mesh of
-        spacing ``pme_spacing`` sized by the cells of the batch. A frame
-        whose cell needs indices beyond the fixed grid is truncated to it,
-        with a warning. A frozen model evaluates every periodic frame on the
-        mesh, whatever the mode.
+        ``k_grid_bounds``, with the points a frame does not reach masked. A
+        frame whose cell needs indices beyond the fixed grid is truncated to
+        it, with a warning. A frozen model evaluates every periodic frame on
+        the mesh, whatever the mode. A module that serves no periodic system
+        evaluates no reciprocal sum and takes no mode.
     k_grid_bounds
         The per-axis integer bounds :math:`n_d^{max}` of the fixed grid, in
         place of the data statistics; only meaningful with
@@ -171,7 +172,7 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         charge_constraint: dict | None = None,
         periodic: bool = False,
         kspace_tolerance: float = 1e-8,
-        k_grid_mode: str = "ragged",
+        k_grid_mode: str | None = None,
         k_grid_bounds: list[int] | None = None,
         decouple_k_grid: bool = False,
         pme_spacing: float | None = None,
@@ -199,6 +200,8 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         # The frame charge/spin condition a compressed model is specialized
         # to; see :meth:`fold_charge_state`.
         self.charge_state = None
+        if k_grid_mode is None:
+            k_grid_mode = "pme" if self.periodic else "ragged"
         self.k_grid_mode = str(k_grid_mode)
         if self.k_grid_mode not in ("ragged", "fixed", "pme"):
             raise ValueError(
@@ -344,7 +347,7 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             config.get("charge_constraint"),
             periodic=config.get("periodic", False),
             kspace_tolerance=config.get("kspace_tolerance", 1e-8),
-            k_grid_mode=config.get("k_grid_mode", "ragged"),
+            k_grid_mode=config.get("k_grid_mode"),
             k_grid_bounds=config.get("k_grid_bounds"),
             decouple_k_grid=config.get("decouple_k_grid", False),
             pme_spacing=config.get("pme_spacing"),
@@ -504,9 +507,7 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
                     self.pme_order,
                 )
             else:
-                reciprocal = kspace_energy(
-                    charge_64, topologies[K_GRID], frame_id, self.kernel
-                )
+                reciprocal = kspace_energy(charge_64, topologies[K_GRID], self.kernel)
             energy = energy + xp.astype(reciprocal, energy.dtype)
         return xp.reshape(energy, (n, 1))
 
@@ -686,7 +687,6 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
         if self.periodic:
             data["periodic"] = True
             data["kspace_tolerance"] = self.kspace_tolerance
-        if self.k_grid_mode != "ragged":
             data["k_grid_mode"] = self.k_grid_mode
         if self.k_grid_mode == "fixed" and self._k_grid_sized():
             data["k_grid_bounds"] = to_numpy_array(self.k_grid_bounds).tolist()
@@ -711,6 +711,8 @@ class LatentChargeLongRange(NativeOP, BaseLongRange):
             data["charge_constraint"],
             periodic=data.get("periodic", False),
             kspace_tolerance=data.get("kspace_tolerance", 1e-8),
+            # A periodic record without a mode is one of the explicit wave
+            # numbers.
             k_grid_mode=data.get("k_grid_mode", "ragged"),
             k_grid_bounds=data.get("k_grid_bounds"),
             decouple_k_grid=data.get("decouple_k_grid", False),

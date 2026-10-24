@@ -69,6 +69,7 @@ from .pairs import (
     center_edge_pairs,
 )
 from .reciprocal_graph import (
+    K_BLOCK,
     K_GRID,
     PME_MESH,
     KGrid,
@@ -98,6 +99,7 @@ from .topology import (
 
 __all__ = [
     "ALL_PAIRS",
+    "K_BLOCK",
     "K_GRID",
     "PME_MESH",
     "TOPOLOGY_TYPES",

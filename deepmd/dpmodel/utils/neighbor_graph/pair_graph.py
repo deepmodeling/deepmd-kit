@@ -182,13 +182,23 @@ def build_pair_graph(
     return PairGraph(index=index, vec=vec, mask=mask)
 
 
+# Guard pairs of the pair topology of a batch without non-periodic frames.
+_GUARD_PAIRS = 4
+
+
 def empty_pair_graph(like: Array) -> PairGraph:
-    """The pair topology of a batch without non-periodic frames: guard pairs only."""
+    """The pair topology of a batch without non-periodic frames: guard pairs only.
+
+    The guard pairs number :data:`_GUARD_PAIRS`, unlike the two rows of the
+    index and the three components of the vectors: a compiled graph that met
+    a pair axis of the length of one of those would identify the two, and
+    split at the reductions over the pairs.
+    """
     xp = array_api_compat.array_namespace(like)
     device = array_api_compat.device(like)
     index = xp.zeros((2, 0), dtype=xp.int64, device=device)
     vec = xp.zeros((0, 3), dtype=like.dtype, device=device)
-    index, vec, mask = pad_and_guard_edges(index, vec, None)
+    index, vec, mask = pad_and_guard_edges(index, vec, None, min_edges=_GUARD_PAIRS)
     return PairGraph(index=index, vec=vec, mask=mask)
 
 

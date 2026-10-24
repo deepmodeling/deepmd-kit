@@ -62,7 +62,8 @@ inline std::vector<torch::Tensor> buildAllPairsTopology(
  * @brief Build the all-pairs topology of a periodic frame, which holds no
  * pair: the reciprocal-space topology describes the interactions.
  *
- * Twin of Python ``empty_pair_graph``: two masked guard pairs.
+ * Counterpart of Python ``empty_pair_graph`` for the exported lower: two
+ * masked guard pairs, the lower bound of its pair axis.
  */
 inline std::vector<torch::Tensor> buildGuardPairTopology(
     const torch::Device& device, const torch::ScalarType vec_dtype) {

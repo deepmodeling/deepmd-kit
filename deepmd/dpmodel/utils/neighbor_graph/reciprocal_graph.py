@@ -54,27 +54,33 @@ PME_MESH = "pme_mesh"
 
 @dataclass
 class KGrid:
-    r"""Reciprocal lattice points of the periodic frames of a batch.
+    r"""Reciprocal lattice points of the periodic frames of a batch, frame by frame.
 
-    The wave numbers :math:`\mathbf{k} = 2\pi B^{-1}\mathbf{n}` of every frame,
-    for integer :math:`\mathbf{n}`, are built eagerly outside any compiled
-    region and concatenated over the frames. The k axis ends in masked guard
-    points, which keep its length a dynamic dimension of its own however few
-    points a batch holds.
+    Row ``f`` of :attr:`vec` holds the wave numbers :math:`\mathbf{k} = 2\pi
+    B_f^{-1}\mathbf{n}` of frame ``f``, for integer :math:`\mathbf{n}`, built
+    eagerly outside any compiled region, in blocks of :data:`K_BLOCK` points
+    padded with masked guard points to the blocks of the longest row; row
+    ``f`` of :attr:`slot` holds the nodes of frame ``f``, padded with ``-1``.
+    A frame thus pairs its own wave numbers with its own nodes alone, at a
+    cost of the frame count times the padded wave-number count and the
+    padded node count, and every sum over the wave numbers of a frame runs
+    over the points of a block first. The block, point and slot axes are dynamic dimensions of
+    their own, of at least two entries.
 
     The energy is evaluated on the strained geometry of :attr:`strain`:
     positions by ``S = I + strain``, wave numbers by :math:`S^{-T}` and volumes
     by :math:`\det S`, so that the gradient with respect to the strain is the
-    negative virial. The graph lower makes :attr:`coord` and :attr:`strain`
-    autograd leaves at its inputs.
+    negative virial; the phases :math:`\mathbf{k} \cdot \mathbf{r}` do not
+    change under the strain. The graph lower makes :attr:`coord` and
+    :attr:`strain` autograd leaves at its inputs.
     """
 
-    frame: Array
-    """(nk,) int64  the frame of every wave number."""
     vec: Array
-    """(nk, 3) float  the wave numbers, in Å⁻¹."""
+    """(nf, nb, kb, 3) float  the wave numbers of every frame in blocks, in Å⁻¹."""
     mask: Array
-    """(nk,) bool  real (1) vs guard (0) points."""
+    """(nf, nb, kb) bool  real (1) vs guard (0) points."""
+    slot: Array
+    """(nf, ns) int64  the nodes of every frame, ``-1`` past its last node."""
     volume: Array
     """(nf,) float  the cell volumes, in Å³."""
     coord: Array
@@ -87,14 +93,14 @@ class KGrid:
     LEAVES: ClassVar[tuple[str, ...]] = ("coord", "strain")
     """Fields an autograd backend makes leaves of the energy."""
     AXES: ClassVar[dict[str, dict[int, str]]] = {
-        "frame": {0: "entry"},
-        "vec": {0: "entry"},
-        "mask": {0: "entry"},
+        "vec": {0: "frame", 1: "entry", 2: "k_point"},
+        "mask": {0: "frame", 1: "entry", 2: "k_point"},
+        "slot": {0: "frame", 1: "slot"},
         "volume": {0: "frame"},
         "coord": {0: "node"},
         "strain": {0: "frame"},
     }
-    """Dynamic axes of every field: the k axis, the frame axis, the node axis."""
+    """Dynamic axes of every field: the frame, block, point, slot and node axes."""
 
 
 @dataclass
@@ -269,22 +275,60 @@ def enumerate_k_grid_bounds(bounds: Array | list[int]) -> np.ndarray:
     return n_grid[np.any(n_grid != 0, axis=-1)]
 
 
+K_BLOCK = 128
+"""Wave numbers per block of a row of a :class:`KGrid`."""
+# A guard point carries a nonzero wave number, whose kernel transform stays
+# finite, and no weight.
+_GUARD_K = (1e-6, 0.0, 0.0)
+# The fewest entries of the block and slot axes, which keeps each a dynamic
+# dimension of its own however few points or nodes a batch holds.
+_MIN_ENTRIES = 2
+
+
+def _k_blocks(rows: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
+    """Lay the wave numbers of every frame out in blocks, padded with guard points.
+
+    Returns the wave numbers with shape ``(nf, nb, K_BLOCK, 3)`` and their
+    mask with shape ``(nf, nb, K_BLOCK)``.
+    """
+    longest = max([row.shape[0] for row in rows], default=0)
+    blocks = max(-(-longest // K_BLOCK), _MIN_ENTRIES)
+    vec = np.tile(np.asarray(_GUARD_K), (len(rows), blocks * K_BLOCK, 1))
+    mask = np.zeros((len(rows), blocks * K_BLOCK), dtype=bool)
+    for f, row in enumerate(rows):
+        vec[f, : row.shape[0]] = row
+        mask[f, : row.shape[0]] = True
+    return (
+        vec.reshape(len(rows), blocks, K_BLOCK, 3),
+        mask.reshape(len(rows), blocks, K_BLOCK),
+    )
+
+
+def _frame_slots(n_node: Array) -> np.ndarray:
+    """The nodes of every frame, one row each, padded with ``-1`` to the longest frame."""
+    counts = np.asarray(to_numpy_array(n_node), dtype=np.int64).reshape(-1)
+    width = max(int(counts.max(initial=0)), _MIN_ENTRIES)
+    first = np.cumsum(counts) - counts
+    column = np.arange(width, dtype=np.int64)[None, :]
+    return np.where(column < counts[:, None], first[:, None] + column, -1)
+
+
 def _k_grid(
-    box: Array, frame: np.ndarray, vec: np.ndarray, mask: np.ndarray, coord: Array
+    box: Array, vec: np.ndarray, mask: np.ndarray, slot: np.ndarray, coord: Array
 ) -> KGrid:
     xp = array_api_compat.array_namespace(box)
     device = array_api_compat.device(box)
     return KGrid(
-        frame=xp.asarray(frame, device=device),
         vec=xp.astype(xp.asarray(vec, device=device), box.dtype),
         mask=xp.asarray(mask, device=device),
+        slot=xp.asarray(slot, device=device),
         volume=xp.astype(_volume(box), box.dtype),
         coord=coord,
         strain=_zero_strain(box),
     )
 
 
-def build_k_grid(box: Array, k_max: float, coord: Array) -> KGrid:
+def build_k_grid(box: Array, k_max: float, coord: Array, n_node: Array) -> KGrid:
     r"""Enumerate the reciprocal lattice points of the periodic frames.
 
     With the lattice vectors as the rows of the cell :math:`B`, the wave
@@ -292,8 +336,9 @@ def build_k_grid(box: Array, k_max: float, coord: Array) -> KGrid:
     integer :math:`\mathbf{n}` with :math:`0 < |\mathbf{k}| \le k_{max}`, so
     that :math:`\mathbf{a}_d \cdot \mathbf{k} = 2\pi n_d`. Their count is data
     dependent, so the enumeration runs eagerly. The points of every frame
-    follow the lexicographic order of their integer indices, and the batch
-    ends in two masked guard points.
+    follow the lexicographic order of their integer indices, and the rows of
+    the frames end in masked guard points up to the blocks of the longest
+    row.
 
     Parameters
     ----------
@@ -304,40 +349,38 @@ def build_k_grid(box: Array, k_max: float, coord: Array) -> KGrid:
         The wave-number cutoff, in Å⁻¹.
     coord
         Node positions with shape ``(N, 3)``.
+    n_node
+        Per-frame node counts with shape ``(nf,)``; the frames occupy
+        contiguous spans of the node axis.
 
     Returns
     -------
     KGrid
-        The reciprocal lattice points of every frame, concatenated.
+        The reciprocal lattice points of every frame, one row each.
     """
     box = _cells(box)
     cells = np.asarray(to_numpy_array(box), dtype=np.float64)
     bounds = k_grid_bounds_of_cells(cells, k_max)
-    vec_list = []
-    frame_list = []
+    rows = []
     for f, cell in enumerate(cells):
         n_grid = enumerate_k_grid_bounds(bounds[f]).astype(np.float64)
         k = n_grid @ (2.0 * math.pi * np.linalg.inv(cell)).T
-        k = k[np.sum(k * k, axis=-1) <= k_max * k_max]
-        vec_list.append(k)
-        frame_list.append(np.full(k.shape[0], f, dtype=np.int64))
-    # Two guard points with a nonzero wave number, whose kernel transform
-    # stays finite.
-    vec_list.append(np.array([[1e-6, 0.0, 0.0], [1e-6, 0.0, 0.0]]))
-    frame_list.append(np.zeros(2, dtype=np.int64))
-    vec = np.concatenate(vec_list, axis=0)
-    mask = np.arange(vec.shape[0], dtype=np.int64) < vec.shape[0] - 2
-    return _k_grid(box, np.concatenate(frame_list), vec, mask, coord)
+        rows.append(k[np.sum(k * k, axis=-1) <= k_max * k_max])
+    vec, mask = _k_blocks(rows)
+    return _k_grid(box, vec, mask, _frame_slots(n_node), coord)
 
 
-def build_fixed_k_grid(box: Array, bounds: Array, k_max: float, coord: Array) -> KGrid:
+def build_fixed_k_grid(
+    box: Array, bounds: Array, k_max: float, coord: Array, n_node: Array
+) -> KGrid:
     r"""Evaluate a fixed integer k grid on the cells of the periodic frames.
 
     Every frame shares the integer indices within ``bounds`` (see
-    :func:`enumerate_k_grid_bounds`), so the k axis has the static length
-    ``nf * nk`` without guard points. The wave numbers of a frame are
-    :math:`\mathbf{k} = 2\pi B^{-1}\mathbf{n}`, and the points beyond the
-    cutoff :math:`|\mathbf{k}| \le k_{max}` are masked out.
+    :func:`enumerate_k_grid_bounds`), so the blocks of a row have the static
+    count of the grid. The wave numbers of a frame are :math:`\mathbf{k} =
+    2\pi B^{-1}\mathbf{n}`, and the points beyond the cutoff
+    :math:`|\mathbf{k}| \le k_{max}` and the guard points that complete the
+    last block are masked out.
 
     A frame whose cell needs indices beyond the grid, a larger cell than the
     grid was sized for or a kernel whose cutoff has grown since, is evaluated
@@ -357,18 +400,19 @@ def build_fixed_k_grid(box: Array, bounds: Array, k_max: float, coord: Array) ->
         The wave-number cutoff, in Å⁻¹.
     coord
         Node positions with shape ``(N, 3)``.
+    n_node
+        Per-frame node counts with shape ``(nf,)``; the frames occupy
+        contiguous spans of the node axis.
 
     Returns
     -------
     KGrid
-        The wave numbers of every frame, frame-major over the shared grid.
+        The wave numbers of every frame over the shared grid, one row each.
     """
     box = _cells(box)
     cells = np.asarray(to_numpy_array(box), dtype=np.float64)
     n_grid = enumerate_k_grid_bounds(bounds)
     bounds = np.asarray(to_numpy_array(bounds), dtype=np.int64).reshape(3)
-    nf = cells.shape[0]
-    nk = n_grid.shape[0]
     required = k_grid_bounds_of_cells(cells, k_max)
     beyond = np.any(required > bounds[None, :], axis=1)
     if np.any(beyond):
@@ -381,23 +425,19 @@ def build_fixed_k_grid(box: Array, bounds: Array, k_max: float, coord: Array) ->
         )
     rec = 2.0 * math.pi * np.linalg.inv(cells)
     k = np.einsum("jm,fdm->fjd", n_grid.astype(np.float64), rec)
-    k_sq = np.sum(k * k, axis=-1)
-    mask = (k_sq > 0.0) & (k_sq <= k_max * k_max)
-    frame = np.repeat(np.arange(nf, dtype=np.int64), nk)
-    return _k_grid(box, frame, k.reshape(nf * nk, 3), mask.reshape(-1), coord)
+    vec, real = _k_blocks(list(k))
+    mask = real & (np.sum(vec * vec, axis=-1) <= k_max * k_max)
+    return _k_grid(box, vec, mask, _frame_slots(n_node), coord)
 
 
 def empty_k_grid(nf: int, coord: Array) -> KGrid:
-    """The k grid of a batch without periodic frames: two guard points."""
+    """The k grid of a batch without periodic frames: guard points and no nodes."""
     xp = array_api_compat.array_namespace(coord)
     device = array_api_compat.device(coord)
     eye = xp.tile(xp.eye(3, dtype=coord.dtype, device=device)[None, ...], (nf, 1, 1))
+    vec, mask = _k_blocks([np.zeros((0, 3), dtype=np.float64)] * nf)
     return _k_grid(
-        eye,
-        np.zeros(2, dtype=np.int64),
-        np.array([[1e-6, 0.0, 0.0], [1e-6, 0.0, 0.0]]),
-        np.zeros(2, dtype=bool),
-        coord,
+        eye, vec, mask, np.full((nf, _MIN_ENTRIES), -1, dtype=np.int64), coord
     )
 
 

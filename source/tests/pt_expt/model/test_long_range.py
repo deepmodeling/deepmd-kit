@@ -765,6 +765,7 @@ def test_periodic_checkpoint_inference_matches_direct_forward(
         model = _periodic_model(kernel)
         config = _config(kernel)
         config["long_range"]["periodic"] = True
+        config["long_range"]["k_grid_mode"] = "ragged"
     checkpoint = tmp_path / f"periodic_{kernel}_{grid_mode}.pt"
     wrapper = ModelWrapper(model, model_params=config)
     torch.save({"model": wrapper.state_dict()}, checkpoint)
@@ -1137,8 +1138,10 @@ def test_pair_graph_skips_padding() -> None:
 
 
 def _periodic_model(kernel: str, **kwargs: object) -> torch.nn.Module:
+    """A periodic model over the explicit wave numbers of every frame."""
     config = _config(kernel, **kwargs)
     config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = "ragged"
     return get_model(config).to(env.DEVICE).eval()
 
 
@@ -1280,6 +1283,32 @@ def test_periodic_force_virial_hessian_match_finite_differences(kernel: str) -> 
         hessian_fd[:, kk] = -(f_plus - f_minus).reshape(-1) / (2 * h)
     np.testing.assert_allclose(hessian, hessian_fd, atol=1e-4)
     np.testing.assert_allclose(hessian, hessian.T, atol=1e-10)
+
+
+@pytest.mark.parametrize("grid_mode", ["ragged", "pme"])
+def test_trace_samples_give_every_axis_its_own_length(grid_mode: str) -> None:
+    """No two dynamic axes of the trace-time topologies share a length, nor take 2 or 3."""
+    from deepmd.pt_expt.utils.serialization import (
+        build_synthetic_topologies,
+    )
+
+    model = (
+        _periodic_model("les") if grid_mode == "ragged" else _periodic_pme_model("les")
+    )
+    nframes, n_node, n_pair = 5, 7, 11
+    topologies = build_synthetic_topologies(
+        model, n_node, n_pair, dtype=torch.float64, device=env.DEVICE, nframes=nframes
+    )
+    lengths = {("", "frame"): nframes, ("", "node"): n_node}
+    for name, topology in topologies.items():
+        for field, axes in type(topology).AXES.items():
+            for axis, label in axes.items():
+                key = ("", label) if label in ("frame", "node") else (name, label)
+                size = getattr(topology, field).shape[axis]
+                assert lengths.setdefault(key, size) == size, (name, field, label)
+    sizes = list(lengths.values())
+    assert len(set(sizes)) == len(sizes), lengths
+    assert not {2, 3} & set(sizes), lengths
 
 
 @pytest.mark.parametrize("kernel", ["les", "sog"])
@@ -1760,6 +1789,7 @@ def test_periodic_decoupled_grid_ignores_kernel_drift(kernel: str) -> None:
     """
     config = _config(kernel)
     config["long_range"]["periodic"] = True
+    config["long_range"]["k_grid_mode"] = "ragged"
     config["long_range"]["decouple_k_grid"] = True
     model = get_model(config).to(env.DEVICE).eval()
     coord, atype, box = _periodic_case()
