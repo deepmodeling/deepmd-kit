@@ -170,6 +170,11 @@ void PairDeepMDKokkos<DeviceType>::unpack_reverse_comm_kokkos(
 
 template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::init_style() {
+  if (atom->sp_flag) {
+    error->all(FLERR,
+               "Pair style 'deepmd' does not support spin atoms, please use "
+               "pair style 'deepspin' instead.");
+  }
   // Base setup and the full neighbor-list request.
   PairDeepMD::init_style();
 
