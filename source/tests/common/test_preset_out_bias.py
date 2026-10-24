@@ -109,6 +109,23 @@ class TestNormalizePresetOutBias(unittest.TestCase):
 
 
 class TestBundledTables(unittest.TestCase):
+    def test_domain_cluster(self) -> None:
+        table = load_preset_out_bias_table("domain_cluster")
+        self.assertEqual(
+            set(table), {"Al", "Si", "Ni", "Cu", "Ru", "Pd", "Ag", "Pt", "Au"}
+        )
+        out = normalize_preset_out_bias(
+            {"energy": "domain_cluster"}, ["Au", "Al", "Cu", "H"]
+        )
+        self.assertEqual(
+            out["energy"],
+            [[-901.9377033597224], [-52.96613964130058], [-1306.1758472225818], None],
+        )
+        resolved = resolve_preset_out_bias_tables(
+            {"preset_out_bias": {"energy": "domain_cluster"}}
+        )
+        self.assertEqual(resolved["preset_out_bias"], {"energy": table})
+
     def test_openmd(self) -> None:
         table = load_preset_out_bias_table("openmd")
         self.assertEqual(len(table), 83)

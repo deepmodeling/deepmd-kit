@@ -153,6 +153,7 @@ limit of the model is pinned. Two model options provide this together:
 
 | Name     | Reference calculation | Elements                                  |
 | -------- | --------------------- | ----------------------------------------- |
+| `domain_cluster` | Domain_cluster | 9: Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, Au |
 | `openmd` | OpenMD, ABACUS PBE PW | 83, H to Bi                               |
 | `mptraj` | MPtraj                | 89, H to Pu without Po, At, Rn, Fr and Ra |
 | `omat24` | OMat24                | 89, H to Pu without Po, At, Rn, Fr and Ra |
@@ -178,6 +179,12 @@ spin-polarized free-atom ground-state energies. The La value
 (-950.8377156904378 eV) is the accepted final-step energy after 120 SCF
 iterations; its final density residual was 1.2043e-7 against a target of
 1e-8. The other 82 elements met that SCF threshold.
+
+The `domain_cluster` table contains the supplied Domain_cluster atomic energy
+reference biases in eV for Al, Si, Ni, Cu, Ru, Pd, Ag, Pt, and Au. Select it
+with `"preset_out_bias": {"energy": "domain_cluster"}`. Elements outside these
+nine entries are unassigned; every element present in the training data must
+have a reference value.
 
 Each table is on the energy scale of its own reference calculation
 (the OMat24 table gives H = -1.117 eV, the OMol25 table H = -13.446 eV), so a
