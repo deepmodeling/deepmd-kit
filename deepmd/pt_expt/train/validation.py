@@ -57,6 +57,9 @@ from deepmd.utils.argcheck import (
     normalize_full_validation_metric,
     resolve_full_validation_start_step,
 )
+from deepmd.utils.data_group import (
+    iter_data_sources,
+)
 from deepmd.utils.eval_metrics import (
     ENERGY_FULL_VALIDATION_PROFILE,
     SPIN_FULL_VALIDATION_PROFILE,
@@ -295,11 +298,11 @@ class FullValidator:
             self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self._initialize_best_checkpoints(restart_training=restart_training)
 
-        # Lazily-populated full test snapshot for LMDB validation. Frames are
+        # Lazily-populated full test snapshots for LMDB validation. Frames are
         # evaluated in atom-count and label-availability groups so each stack
         # has consistent shapes and scalar find_* flags. Reuse the decoded
-        # snapshot on subsequent validation calls.
-        self._lmdb_test_data: LmdbTestData | None = None
+        # snapshots on subsequent validation calls, independently for each source.
+        self._lmdb_snapshots: dict[int, LmdbTestData] = {}
 
     def should_run(self, display_step: int) -> bool:
         """Check whether the current step should trigger full validation."""
@@ -473,28 +476,27 @@ class FullValidator:
         - A loader set owns ``systems``, each wrapping a ``DeepmdData`` in
           ``data_system``.
         """
-        validation_data = self.validation_data
-        if hasattr(validation_data, "_reader"):
-            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
-            for nloc in sorted(lmdb_test_data.nloc_groups):
-                for indices in lmdb_test_data.availability_groups(
-                    lmdb_test_data.nloc_groups[nloc]
-                ):
-                    yield LmdbTestDataNlocView(lmdb_test_data, nloc, indices)
-            return
-
-        if hasattr(validation_data, "data_systems"):
-            yield from validation_data.data_systems
-            return
-
-        for dataset in validation_data.systems:
-            data_system = getattr(dataset, "data_system", None)
-            if data_system is None:
-                raise TypeError(
-                    "Full validation expects each dataset in validation_data.systems "
-                    f"to expose a `data_system`, got {type(dataset)!r}."
+        for source in iter_data_sources(self.validation_data):
+            if hasattr(source, "_reader"):
+                snapshot = self._get_lmdb_test_data_snapshot(source)
+                yield from (
+                    LmdbTestDataNlocView(snapshot, nloc, indices)
+                    for nloc in sorted(snapshot.nloc_groups)
+                    for indices in snapshot.availability_groups(
+                        snapshot.nloc_groups[nloc]
+                    )
                 )
-            yield data_system
+            elif hasattr(source, "data_systems"):
+                yield from source.data_systems
+            else:
+                for dataset in source.systems:
+                    data_system = getattr(dataset, "data_system", None)
+                    if data_system is None:
+                        raise TypeError(
+                            "Full validation expects each dataset in validation_data.systems "
+                            f"to expose a `data_system`, got {type(dataset)!r}."
+                        )
+                    yield data_system
 
     def _get_lmdb_test_data_snapshot(self, lmdb_dataset: Any) -> LmdbTestData:
         """Build (once) and return the cached LMDB test snapshot.
@@ -504,8 +506,9 @@ class FullValidator:
         the full-validation snapshot sees exactly the same fields and
         dtypes as training batches.
         """
-        if self._lmdb_test_data is not None:
-            return self._lmdb_test_data
+        key = id(lmdb_dataset)
+        if key in self._lmdb_snapshots:
+            return self._lmdb_snapshots[key]
 
         reader = getattr(lmdb_dataset, "_reader", None)
         lmdb_path = getattr(lmdb_dataset, "lmdb_path", None)
@@ -528,14 +531,15 @@ class FullValidator:
                 f"{type(lmdb_dataset)!r}."
             )
 
-        self._lmdb_test_data = LmdbTestData(
+        snapshot = LmdbTestData(
             lmdb_path,
             type_map=list(type_map),
             shuffle_test=False,
         )
         if data_requirements:
-            self._lmdb_test_data.add_data_requirement(data_requirements)
-        return self._lmdb_test_data
+            snapshot.add_data_requirement(data_requirements)
+        self._lmdb_snapshots[key] = snapshot
+        return snapshot
 
     def _evaluate_system(
         self, data_system: DeepmdData
