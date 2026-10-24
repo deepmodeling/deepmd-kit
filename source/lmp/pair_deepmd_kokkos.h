@@ -82,6 +82,11 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
 
+  // Positions of the model nodes relative to the origin of the box, in the
+  // length unit of the model, which a long-range module reads; public for
+  // the same reason.
+  const double* model_node_positions();
+
  protected:
   // Model node set and, for a compact canonical artifact, the graph itself.
   CompactCanonicalGraphKokkos<DeviceType> compact_graph;
@@ -90,6 +95,8 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   bool multi_rank;   // domain-decomposed run -> extended (local+ghost) node set
   Kokkos::View<double*, DeviceType>
       d_coord_model;  // (3 * nnode_model), NULL case
+  Kokkos::View<double*, DeviceType>
+      d_node_position;  // (3 * nnode_model), long-range model positions
 
   // Compact edge schema: edge_index is [2 * nedge] (src rows then dst rows),
   // edge_vec is [3 * nedge]; offsets is the per-atom exclusive edge prefix.

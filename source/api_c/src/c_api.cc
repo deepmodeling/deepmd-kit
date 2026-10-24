@@ -1864,6 +1864,38 @@ bool DP_DeepPotUsesCanonicalGraphInference(DP_DeepPot* dp) {
   }
 }
 
+void DP_DeepPotComputeCanonicalGraphGPU2(DP_DeepPot* dp,
+                                         double* d_atom_energy,
+                                         double* d_force,
+                                         double* d_atom_virial,
+                                         const int64_t* d_atype,
+                                         const double* d_coord,
+                                         void* world,
+                                         const double* box,
+                                         const uint32_t* d_source,
+                                         const float* d_edge_vec,
+                                         const int64_t* d_destination_row_ptr,
+                                         const int64_t* d_source_row_ptr,
+                                         const uint32_t* d_source_order,
+                                         const int nloc,
+                                         const int nall_nodes,
+                                         const int64_t edge_storage) {
+  DP_REQUIRES_OK(dp, dp->dp.compute_canonical_graph_gpu(
+                         d_atom_energy, d_force, d_atom_virial, d_atype,
+                         d_coord, world, box, d_source, d_edge_vec,
+                         d_destination_row_ptr, d_source_row_ptr,
+                         d_source_order, nloc, nall_nodes, edge_storage));
+}
+
+bool DP_DeepPotHasLongRange(DP_DeepPot* dp) {
+  try {
+    return dp->dp.has_long_range();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
+}
+
 // multiple frames
 void DP_DeepPotCompute2(DP_DeepPot* dp,
                         const int nframes,
@@ -2846,6 +2878,15 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
 
 int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp) {
   return dp->dp.dim_chg_spin();
+}
+
+bool DP_DeepPotModelDeviHasLongRange(DP_DeepPotModelDevi* dp) {
+  try {
+    return dp->dp.has_long_range();
+  } catch (deepmd::deepmd_exception& ex) {
+    dp->exception = std::string(ex.what());
+    return false;
+  }
 }
 
 void DP_DeepPotModelDeviSetChargeSpin(DP_DeepPotModelDevi* dp,

@@ -22,6 +22,14 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    PME_MESH,
+    build_topologies,
+    check_complete_frames,
+    check_periodic_cells,
+    flatten_topologies,
+    unflatten_topologies,
+)
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
     extend_coord_with_ghosts,
@@ -664,6 +672,7 @@ class DeepEval(DeepEvalBackend):
         )
 
         use_graph_lower = model_uses_graph_lower(model)
+        topology_names = model.atomic_model.required_topologies()
         self._dpmodel = model
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
@@ -718,6 +727,9 @@ class DeepEval(DeepEvalBackend):
             "is_spin": self._is_spin,
             "lower_input_kind": "graph" if use_graph_lower else "nlist",
         }
+        if topology_names:
+            self.metadata["topologies"] = list(topology_names)
+            self.metadata["topology_params"] = model.atomic_model.topology_params()
         if use_graph_lower:
             from deepmd.pt_expt.model.graph_lower import (
                 graph_edge_dtype,
@@ -735,7 +747,8 @@ class DeepEval(DeepEvalBackend):
         # ``communicate_extended_output``, while the graph runner emits local
         # public keys consumed directly by ``_eval_model_graph``.
         #
-        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin)
+        # Graph:      (..., source_row_ptr, fparam, aparam, charge_spin,
+        #              *topology inputs)
         # Graph spin: (..., source_row_ptr, spin, fparam, aparam, charge_spin)
         # Nlist:      (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
         # Nlist spin: (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
@@ -805,6 +818,7 @@ class DeepEval(DeepEvalBackend):
                     fparam: torch.Tensor | None,
                     aparam: torch.Tensor | None,
                     charge_spin: torch.Tensor | None = None,
+                    *topology_vals: torch.Tensor,
                 ) -> dict[str, torch.Tensor]:
                     model_ret = model.forward_common_lower_graph(
                         atype,
@@ -822,6 +836,7 @@ class DeepEval(DeepEvalBackend):
                         fparam=fparam,
                         aparam=aparam,
                         charge_spin=charge_spin,
+                        topologies=unflatten_topologies(topology_names, topology_vals),
                     )
                     return _translate_energy_keys(
                         model_ret,
@@ -2387,9 +2402,11 @@ class DeepEval(DeepEvalBackend):
         positional schema
         ``(atype, n_node, n_local, edge_index, edge_vec, edge_mask,
         destination_order, destination_row_ptr, source_order, source_row_ptr,
-        fparam, aparam, charge_spin)`` to the graph forward. Exported AOTI
-        artifacts use a dynamic edge axis, so no ``edge_capacity`` padding is
-        needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
+        fparam, aparam, charge_spin)`` to the graph forward, followed by the
+        fields of every topology the ``topologies`` metadata names, built with
+        its ``topology_params``. Exported AOTI artifacts use dynamic edge,
+        pair and mesh axes, so no
+        ``edge_capacity`` padding is needed. The ``graph_edge_dtype`` metadata selects float32 geometry for
         compressed DPA1 and float64 for generic graph descriptors. The forward
         returns local public keys directly, so results are reshaped without
         ``communicate_extended_output``.
@@ -2503,6 +2520,31 @@ class DeepEval(DeepEvalBackend):
                 compact.source_row_ptr,
                 compact.source_order,
             )
+            topology_names = self.metadata.get("topologies", ())
+            if topology_names:
+                # The compact lower of a model with a long-range module reads
+                # the positions and the cells of the frames, and the zero
+                # communicator of frames held whole; a module that serves no
+                # periodic system takes no cell, and the zero cell that marks
+                # a non-periodic frame is never one a caller passes.
+                if PME_MESH not in topology_names:
+                    check_complete_frames(box_input)
+                elif box_input is not None:
+                    check_periodic_cells(box_input)
+                box_t = (
+                    torch.zeros(nframes, 9, dtype=torch.float64, device="cpu")
+                    if box_input is None
+                    else torch.as_tensor(
+                        np.asarray(box_input, dtype=np.float64).reshape(nframes, 9)
+                    )
+                )
+                model_inputs += (
+                    torch.as_tensor(
+                        coord_input.reshape(-1, 3), dtype=torch.float64, device=DEVICE
+                    ),
+                    torch.zeros(1, dtype=torch.int64, device="cpu"),
+                    box_t,
+                )
         else:
             fparam_t, aparam_t = self._prepare_optional_lower_inputs(
                 fparam, aparam, nframes, natoms, DEVICE
@@ -2528,6 +2570,37 @@ class DeepEval(DeepEvalBackend):
                 aparam_t,
                 charge_spin_t,
             )
+            topology_names = self.metadata.get("topologies", ())
+            if topology_names:
+                # Padding slots of a mixed-type batch are no atoms and join
+                # no pair. The cell is torch like the coordinates: the
+                # topologies it namespaces feed the torch graph lower
+                # directly (a numpy cell would produce numpy leaves).
+                coord_flat_t = torch.as_tensor(
+                    coord_input.reshape(-1, 3), dtype=edge_dtype, device=DEVICE
+                )
+                box_t = (
+                    torch.as_tensor(
+                        np.asarray(box_input).reshape(n_node_t.shape[0], 3, 3),
+                        dtype=edge_dtype,
+                        device=DEVICE,
+                    )
+                    if box_input is not None
+                    else None
+                )
+                # The parameters are those of the archive, or those of the
+                # live model of a checkpoint.
+                topologies = build_topologies(
+                    topology_names,
+                    coord_flat_t,
+                    n_node_t,
+                    box_t,
+                    node_mask=atype_t >= 0,
+                    atype=atype_t,
+                    pair_excl=self._model_pair_excl(),
+                    topology_params=self.metadata.get("topology_params"),
+                )
+                model_inputs += flatten_topologies(topologies)
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:

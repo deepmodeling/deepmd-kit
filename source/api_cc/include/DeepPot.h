@@ -426,6 +426,9 @@ class DeepPotBackend : public DeepBaseModelBackend {
       double* d_force,
       double* d_atom_virial,
       const std::int64_t* d_atype,
+      const double* d_coord,
+      void* world,
+      const double* box,
       const std::uint32_t* d_source,
       const float* d_edge_vec,
       const std::int64_t* d_destination_row_ptr,
@@ -437,6 +440,7 @@ class DeepPotBackend : public DeepBaseModelBackend {
   virtual bool supports_device_edge_inference() const;
   virtual bool uses_fp32_edge_vectors() const;
   virtual bool uses_canonical_graph_inference() const;
+  virtual bool has_long_range() const;
 };
 
 /**
@@ -894,10 +898,65 @@ class DeepPot : public DeepBaseModel {
    */
   bool uses_canonical_graph_inference() const;
 
+  /**
+   * @brief Whether the model carries a long-range module.
+   *
+   * Such a model sums its long-range interaction over every pair of atoms of
+   * a complete non-periodic system, or over the images of the cell of a
+   * periodic one when its module serves periodic systems; it evaluates a
+   * system held whole by one rank or, through the compact canonical lower,
+   * decomposed over the ranks of an MPI communicator. The device entries
+   * take the positions of its atoms and the cell, which is NULL for a
+   * non-periodic system.
+   */
+  bool has_long_range() const;
+
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,
                                    double* d_atom_virial,
                                    const std::int64_t* d_atype,
+                                   const std::uint32_t* d_source,
+                                   const float* d_edge_vec,
+                                   const std::int64_t* d_destination_row_ptr,
+                                   const std::int64_t* d_source_row_ptr,
+                                   const std::uint32_t* d_source_order,
+                                   const int nloc,
+                                   const int nall_nodes,
+                                   const std::int64_t edge_storage);
+
+  /**
+   * @brief Evaluate a compact canonical graph together with the positions of
+   * its nodes.
+   *
+   * Every pointer except ``world`` resides on the model device; ``world``
+   * points to the caller's ``MPI_Comm`` in host memory. A model with a
+   * long-range module reads the positions and the communicator; any other
+   * model ignores them.
+   *
+   * @param[in] d_coord Node positions in model-node order, shape
+   * ``(nall_nodes, 3)``, in the length unit of the model. A model with a
+   * long-range module requires them.
+   * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of a
+   * system decomposed over several ranks, of which the owned nodes
+   * ``[0, nloc)`` are the share of this rank, or NULL on a single rank,
+   * whose node set then holds the complete system (``nall_nodes == nloc``
+   * without a cell). With a long-range module and several ranks, every rank
+   * calls this function on every evaluation, also when it holds no node.
+   * @param[in] box The cell of a periodic system in host memory, nine values
+   * in the length unit of the model, row-major with the lattice vectors as
+   * rows, or NULL for a non-periodic system. A model with a long-range module
+   * that serves periodic systems reads it; the halo nodes of a single rank
+   * are then images of the owned nodes.
+   *
+   * The other parameters are those of the overload without positions.
+   */
+  void compute_canonical_graph_gpu(double* d_atom_energy,
+                                   double* d_force,
+                                   double* d_atom_virial,
+                                   const std::int64_t* d_atype,
+                                   const double* d_coord,
+                                   void* world,
+                                   const double* box,
                                    const std::uint32_t* d_source,
                                    const float* d_edge_vec,
                                    const std::int64_t* d_destination_row_ptr,
@@ -957,6 +1016,17 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    **/
   int dim_chg_spin() const {
     return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
+  /**
+   * @brief Whether any of the models carries a long-range module, which
+   * confines all of them to complete systems (see DeepPot::has_long_range).
+   **/
+  bool has_long_range() const {
+    return std::any_of(dps.begin(), dps.end(),
+                       [](const std::shared_ptr<DeepPot>& model) {
+                         return model->has_long_range();
+                       });
   };
 
   /**
@@ -1134,5 +1204,14 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
 
  protected:
   std::vector<std::shared_ptr<deepmd::DeepPot>> dps;
+
+ private:
+  /**
+   * @brief Check that every model accepts the cell handed to the ensemble.
+   * Without one, the neighbor-list entries serve a model with a long-range
+   * module beside models that take the cell of the region.
+   **/
+  template <typename VALUETYPE>
+  void check_ensemble_box(const std::vector<VALUETYPE>& dbox) const;
 };
 }  // namespace deepmd

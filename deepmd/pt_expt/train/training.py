@@ -72,6 +72,10 @@ from deepmd.dpmodel.utils.dist_check import (
 from deepmd.dpmodel.utils.learning_rate import (
     make_learning_rate_schedule,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    flatten_topologies,
+    unflatten_topologies,
+)
 from deepmd.dpmodel.utils.training_utils import (
     compute_total_numb_batch,
 )
@@ -111,6 +115,9 @@ from deepmd.pt_expt.loss import (
 )
 from deepmd.pt_expt.model import (
     get_model,
+)
+from deepmd.pt_expt.model.edge_transform_output import (
+    releaf_topologies,
 )
 from deepmd.pt_expt.model.graph_lower import (
     model_uses_graph_lower,
@@ -297,6 +304,10 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     atomic model and fitting. Shared weights do not make those branches
     interchangeable: tasks without a preset bias disable the reference,
     while a folded reference no longer appends isolated atoms to the graph.
+
+    A long-range module is part of the traced computation and of its input
+    schema, so its identity (that of its first parameter) closes the key;
+    tasks share a graph only when they share the module as well.
     """
     descriptor_id: int = 0
     try:
@@ -322,7 +333,17 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
             break
     except AttributeError:
         pass
-    return (int(model.has_spin()), descriptor_id, fitting_id, *vacuum_state)
+    long_range_id = 0
+    long_range = getattr(getattr(model, "atomic_model", None), "long_range", None)
+    if long_range is not None:
+        long_range_id = next((id(p) for p in long_range.parameters()), id(long_range))
+    return (
+        int(model.has_spin()),
+        descriptor_id,
+        fitting_id,
+        *vacuum_state,
+        long_range_id,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +786,12 @@ def _trace_and_compile_graph(
     autograd leaf. Their compiled lower returns ``force_mag`` and ``mask_mag``
     through the same model-owned translation used by eager execution.
 
+    A model declaring topologies (``atomic_model.required_topologies()``)
+    receives the fields of each, laid out by :func:`flatten_topologies`, as
+    further inputs ahead of the task buffers; their dynamic axes, the pairs,
+    the wave numbers or the axes of the mesh, are symbols distinct from the
+    other three.
+
     Parameters
     ----------
     model
@@ -842,6 +869,7 @@ def _trace_and_compile_graph(
     # its graph builders omit the CSR metadata carried by deployment inputs.
     from deepmd.pt_expt.utils.serialization import (
         build_synthetic_graph_inputs,
+        build_synthetic_topologies,
         check_graph_trace_torch_version,
         count_synthetic_graph_edges,
     )
@@ -899,6 +927,22 @@ def _trace_and_compile_graph(
     # tensors, while forward_common_lower_graph takes it after them.
     s_spin = s_conditioning.pop(0) if spin is not None else None
     s_fparam, s_aparam, s_charge_spin = s_conditioning
+    # The dynamic axes of the topologies take sample lengths distinct from the
+    # other three and from the CSR offsets.
+    s_topologies = build_synthetic_topologies(
+        model,
+        trace_N,
+        _next_safe_prime(
+            e_max + 2, _forbidden | {trace_nf, trace_N, trace_N + 1, e_max}
+        ),
+        dtype=GLOBAL_PT_FLOAT_PRECISION,
+        device=_trace_device,
+        nframes=trace_nf,
+        forbidden=_forbidden | {e_max},
+    )
+    topology_names = tuple(s_topologies)
+    s_topology_vals = flatten_topologies(s_topologies)
+    n_topology_vals = len(s_topology_vals)
 
     def fn(
         atype: torch.Tensor,
@@ -915,8 +959,10 @@ def _trace_and_compile_graph(
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
         spin: torch.Tensor | None,
-        *task_buf_vals: torch.Tensor,
+        *extra_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
+        topologies = unflatten_topologies(topology_names, extra_vals[:n_topology_vals])
+        task_buf_vals = extra_vals[n_topology_vals:]
         # Patch task-specific buffers with the proxy tensors so make_fx records
         # them as FX placeholders (mirrors the dense ``_trace_and_compile``).
         originals: dict[str, torch.Tensor | None] = {}
@@ -950,6 +996,7 @@ def _trace_and_compile_graph(
                 aparam=aparam,
                 charge_spin=charge_spin,
                 spin=spin,
+                topologies=topologies,
             )
             if spin is None:
                 return _translate_energy_keys(
@@ -996,6 +1043,7 @@ def _trace_and_compile_graph(
         s_aparam,
         s_charge_spin,
         s_spin,
+        *s_topology_vals,
         *task_buf_vals_trace,
     )
 
@@ -1640,6 +1688,15 @@ class _CompiledModel(torch.nn.Module):
                 aparam = aparam[node_index]
             if spin is not None:
                 spin = spin[node_index]
+        # The topologies the atomic model declares are built here as well,
+        # outside the compiled region, on the node axis of the graph.
+        topologies = _model.atomic_model.build_topologies(
+            coord_3d if ragged else coord_3d.reshape(n_padded, 3)[node_index],
+            ng.n_node,
+            box_flat,
+            atype=atype_flat,
+            pair_excl=pair_excl,
+        )
 
         # Lazy compile of the GRAPH lower (cached per structure key and mode).
         compiled_lower = self._compiled_lower_by_mode.get(self.training)
@@ -1667,6 +1724,9 @@ class _CompiledModel(torch.nn.Module):
         edge_vec = ng.edge_vec.detach().requires_grad_(True)
         if spin is not None:
             spin = spin.detach().requires_grad_(True)
+        # The topologies enter as their fields, the geometry of every one a
+        # further leaf.
+        topology_vals = flatten_topologies(releaf_topologies(topologies))
 
         if self._task_buf_order:
             try:
@@ -1708,6 +1768,7 @@ class _CompiledModel(torch.nn.Module):
                 aparam,
                 charge_spin,
                 spin,
+                *topology_vals,
                 *task_buf_vals,
             )
         self._report_pending_compile()
@@ -2257,6 +2318,9 @@ class Trainer(AbstractTrainer):
                     for model_key in self.model_keys
                 }
                 new_state = {}
+                # The atomic models, by module path, whose long-range module
+                # takes its initialization rather than pretrained weights.
+                fresh_long_range: dict[str, str] = {}
                 for key in target_state:
                     if key == "_extra_state":
                         new_state[key] = target_state[key]
@@ -2283,16 +2347,38 @@ class Trainer(AbstractTrainer):
                             finetune_rule.get_random_fitting()
                             and ".descriptor." not in key
                         )
-                        if use_random:
+                        if use_random or pretrained_key not in pretrained_state:
                             new_state[key] = target_state[key]
-                        elif pretrained_key in pretrained_state:
-                            new_state[key] = pretrained_state[pretrained_key]
+                            if ".long_range." in key:
+                                owner = key[: key.index(".long_range.")]
+                                fresh_long_range[owner] = model_key
                         else:
-                            new_state[key] = target_state[key]
+                            new_state[key] = pretrained_state[pretrained_key]
                         break
                     if not matched:
                         new_state[key] = target_state[key]
                 self._unwrapped.load_state_dict(new_state)
+
+                # A long-range module added to the pretrained model takes the
+                # input statistics of the fine-tuning data, as in training from
+                # scratch, before the bias adjustment evaluates the model.
+                for owner, model_key in fresh_long_range.items():
+                    atomic_model = self._unwrapped.get_submodule(owner)
+
+                    def long_range_stat(
+                        _atomic_model: torch.nn.Module = atomic_model,
+                        _model_key: str = model_key,
+                    ) -> None:
+                        _atomic_model.compute_long_range_input_stat(
+                            self._sample_funcs[_model_key]
+                        )
+
+                    self._run_stat_on_chief(
+                        long_range_stat,
+                        operation=f"long-range statistics for task {model_key!r}",
+                    )
+                    if self.is_distributed:
+                        self._broadcast_model_stat(atomic_model.long_range)
 
                 # Per-branch bias adjustment (rank 0 only, then broadcast)
                 for model_key in self.model_keys:
@@ -3566,8 +3652,8 @@ def _learned_part_path(model: torch.nn.Module) -> str | None:
 
 
 def _move_learned_key(key: str, path: str, source_path: str) -> str:
-    """Rewrite a descriptor or fitting-net key from one learned-part path to another."""
-    for part in ("descriptor.", "fitting_net."):
+    """Rewrite a key of the learned part from one learned-part path to another."""
+    for part in ("descriptor.", "fitting_net.", "long_range."):
         if f".{path}{part}" in key:
             return key.replace(f".{path}{part}", f".{source_path}{part}", 1)
     return key

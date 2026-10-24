@@ -13,6 +13,7 @@ Model
    dpa3
    dpa4
    dpa4c
+   long-range
    unimol
    train-hybrid
    sel

@@ -2,6 +2,7 @@
 #ifdef LMP_KOKKOS
 #include "pair_deepmd_kokkos.h"
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -212,6 +213,14 @@ void PairDeepMDKokkos<DeviceType>::init_style() {
   request->enable_full();
   edge_vec_fp32 = deep_pot.uses_fp32_edge_vectors();
   canonical_graph = deep_pot.uses_canonical_graph_inference();
+  // The device edge path passes a long-range module no cell, so a periodic
+  // system reaches such a module through the compact canonical lower alone.
+  if (long_range && !canonical_graph && !domain->nonperiodic) {
+    error->all(FLERR,
+               "pair style deepmd/kk evaluates a periodic system with a "
+               "long-range module only through a compressed DPA4C model frozen "
+               "for a CUDA device; use pair_style deepmd for this model.");
+  }
   // Force exchange transfers three values per atom. Centroid per-atom virial
   // uses nine values even though the Kokkos full-list request runs newton off,
   // so comm_reverse_off reserves the classic host buffer for the wider mode.
@@ -409,6 +418,36 @@ int PairDeepMDKokkos<DeviceType>::build_edges_device() {
 }
 
 template <class DeviceType>
+const double* PairDeepMDKokkos<DeviceType>::model_node_positions() {
+  atomKK->sync(execution_space, X_MASK);
+  auto x = atomKK->k_x.template view<DeviceType>();
+  const int nnode_model = compact_graph.nnode_model;
+  if ((int)d_node_position.extent(0) < 3 * nnode_model) {
+    d_node_position = Kokkos::View<double*, DeviceType>(
+        "deepmd/kk:node_position", 3 * nnode_model);
+  }
+  auto node_position = d_node_position;
+  auto model2loc = compact_graph.d_model2loc;
+  const bool has_null_types = compact_graph.has_null_types;
+  const double inv_dist = 1.0 / dist_unit_cvt_factor;
+  // Relative to the origin of the box, as the plain pair style passes them.
+  const double x0 = domain->boxlo[0];
+  const double y0 = domain->boxlo[1];
+  const double z0 = domain->boxlo[2];
+  Kokkos::parallel_for(
+      "deepmd/kk:node_position",
+      Kokkos::RangePolicy<DeviceType>(0, nnode_model),
+      KOKKOS_LAMBDA(const int m) {
+        // Without virtual atoms the model nodes are the leading atoms.
+        const int i = has_null_types ? model2loc(m) : m;
+        node_position(3 * m + 0) = (x(i, 0) - x0) * inv_dist;
+        node_position(3 * m + 1) = (x(i, 1) - y0) * inv_dist;
+        node_position(3 * m + 2) = (x(i, 2) - z0) * inv_dist;
+      });
+  return node_position.data();
+}
+
+template <class DeviceType>
 void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
   if (!device_path_ok) {
     error->all(FLERR,
@@ -520,7 +559,10 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     comm_ptr = &comm_list;
   }
 
-  if ((canonical_graph && nnode_m > 0) ||
+  // A long-range module across ranks exchanges the charges of every rank, so
+  // that every rank evaluates the model, also without nodes.
+  const bool long_range_across_ranks = long_range && multi_rank;
+  if ((canonical_graph && (nnode_m > 0 || long_range_across_ranks)) ||
       (!canonical_graph && (nloc_m > 0 || comm_ptr != nullptr))) {
     // Fully device-resident inference: raw device pointers in and out. The
     // edge buffers are produced on the Kokkos stream and consumed by the model
@@ -528,17 +570,33 @@ void PairDeepMDKokkos<DeviceType>::compute(int eflag, int vflag) {
     // the two runtimes are bracketed by explicit synchronization: fence the
     // Kokkos work before the model reads the edges, and synchronize the device
     // after so the scatter sees the finished model outputs.
-    Kokkos::fence();
     // Coordinates are model-node order: the compacted buffer when virtual atoms
     // are present, else the local coordinates directly (the graph lower ignores
-    // them; edge-input models consume them).
+    // them; edge-input models consume them). A long-range module reads the
+    // positions of its nodes in the length unit of the model.
     const double* coord_ptr =
-        compact_graph.has_null_types ? d_coord_model.data() : x.data();
+        long_range
+            ? model_node_positions()
+            : (compact_graph.has_null_types ? d_coord_model.data() : x.data());
+    // A long-range module reads the cell of a periodic system, row-major with
+    // the lattice vectors as rows, in the length unit of the model, and no
+    // cell for a non-periodic one.
+    const double* h = domain->h;
+    std::array<double, 9> cell = {h[0], 0.0,  0.0,  h[5], h[1],
+                                  0.0,  h[4], h[3], h[2]};
+    for (double& entry : cell) {
+      entry /= dist_unit_cvt_factor;
+    }
+    const double* cell_ptr =
+        long_range && !domain->nonperiodic ? cell.data() : nullptr;
+    Kokkos::fence();
     try {
       if (canonical_graph) {
         deep_pot.compute_canonical_graph_gpu(
             d_atom_energy.data(), d_out_force.data(), d_atom_virial.data(),
-            compact_graph.d_model_type.data(), compact_graph.d_source.data(),
+            compact_graph.d_model_type.data(), long_range ? coord_ptr : nullptr,
+            long_range_across_ranks ? static_cast<void*>(&world) : nullptr,
+            cell_ptr, compact_graph.d_source.data(),
             compact_graph.d_edge_vec.data(),
             compact_graph.d_destination_row_ptr.data(),
             compact_graph.d_source_row_ptr.data(),
