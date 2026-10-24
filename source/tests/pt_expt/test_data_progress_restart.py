@@ -570,12 +570,18 @@ def test_every_rank_joins_periodic_final_and_bias_saves(
     _set_mock_rank(trainer, rank)
     trainer._change_bias_after_training = Mock()
     gathered = []
+    collectives = []
 
     def gather(ranks, local):
-        gathered.append(deepcopy(local))
+        if isinstance(local, bool):
+            collectives.append("preflight")
+        else:
+            collectives.append("progress")
+            gathered.append(deepcopy(local))
         ranks[:] = [deepcopy(local), deepcopy(local)]
 
     monkeypatch.setattr(dist, "all_gather_object", gather)
+    monkeypatch.setattr(dist, "get_world_size", lambda: 2)
     steps = []
     save = trainer.save_checkpoint
 
@@ -587,6 +593,7 @@ def test_every_rank_joins_periodic_final_and_bias_saves(
     trainer.run()
     assert steps == [2, 3, 3]
     assert len(gathered) == 3  # No per-batch or EMA-snapshot gather.
+    assert collectives == ["preflight", "progress"] * 3
     trainer._change_bias_after_training.assert_called_once()
     checkpoint = tmp_path / "model.ckpt-3.pt"
     assert checkpoint.exists() == (rank == 0)
