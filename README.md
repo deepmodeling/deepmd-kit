@@ -286,14 +286,6 @@ that matches the version used and the method-specific papers listed in
 DeePMD-kit is licensed under the
 [GNU Lesser General Public License v3.0 or later](./LICENSE).
 
-### Bundled workflow guides
-
-Use `dp skills list` to discover the public workflow guides shipped with this
-version, then `dp skills read deepmd-train` to read one. An optional relative path
-reads a guide's reference text (use a path linked by the guide). These commands read local documentation without loading a model backend
-or executing the examples. The canonical guides remain in `skills/`; no separate
-skill installation is required.
-
 [agent-install]: https://docs.deepmodeling.com/projects/deepmd/en/latest/install/install-with-agent.html
 [agent-skills]: https://docs.deepmodeling.com/projects/deepmd/en/latest/agent-skills.html
 [ase]: https://docs.deepmodeling.com/projects/deepmd/en/latest/third-party/ase.html
