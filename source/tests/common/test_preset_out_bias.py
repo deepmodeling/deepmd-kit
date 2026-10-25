@@ -145,6 +145,43 @@ class TestNormalizePresetOutBias(unittest.TestCase):
 
 
 class TestBundledTables(unittest.TestCase):
+    def test_domain_cluster(self) -> None:
+        table = load_preset_out_bias_table("domain_cluster")
+        self.assertEqual(
+            set(table), {"Al", "Si", "Ni", "Cu", "Ru", "Pd", "Ag", "Pt", "Au"}
+        )
+        out = normalize_preset_out_bias(
+            {"energy": "domain_cluster"}, ["Au", "Al", "Cu", "H"]
+        )
+        self.assertEqual(
+            out["energy"],
+            [[-901.9377033597224], [-52.96613964130058], [-1306.1758472225818], None],
+        )
+        resolved = resolve_preset_out_bias_tables(
+            {"preset_out_bias": {"energy": "domain_cluster"}}
+        )
+        self.assertEqual(resolved["preset_out_bias"], {"energy": table})
+
+    def test_openmd(self) -> None:
+        table = load_preset_out_bias_table("openmd")
+        self.assertEqual(len(table), 83)
+        out = normalize_preset_out_bias(
+            {"energy": "openmd"}, ["O", "H", "La", "Bi", "Pu"]
+        )
+        self.assertEqual(
+            out["energy"],
+            [
+                [-443.0343602483389],
+                [-12.560490553805243],
+                [-950.8377156904378],
+                [-6345.199411321936],
+                None,
+            ],
+        )
+        config = {"type_map": ["H"], "preset_out_bias": {"energy": "openmd"}}
+        resolved = resolve_preset_out_bias_tables(config)
+        self.assertEqual(resolved["preset_out_bias"], {"energy": table})
+
     def test_name_before_path(self) -> None:
         tables = bundled_preset_out_bias_tables()
         self.assertEqual(load_preset_out_bias_table("omat24"), tables["omat24"])
