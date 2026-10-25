@@ -79,11 +79,14 @@ def _wigner_d_assemble_impl(
 
 
 _wigner_d_assemble_op: Any = None
-if hasattr(torch.library, "custom_op"):
+try:
     # torch.library.custom_op / register_fake / register_autograd arrived in
-    # torch 2.4 while the declared minimum is 2.1: on a 2.1-2.3 install the
-    # operator stays unregistered (None) and both the eager and the traced
-    # route below keep the autograd-through-scatter implementation.
+    # torch 2.4, and the schema inference for ``list[torch.Tensor]``
+    # parameters only supports this signature on later releases still
+    # (torch 2.4-2.6 reject it outright; 2.1-2.3 lack the API).  The
+    # declared minimum is 2.1, so any registration failure keeps the
+    # autograd-through-scatter implementation for both the eager and the
+    # traced route below instead of failing the import.
     _wigner_d_assemble_op = torch.library.custom_op(
         "sezm_nn::wigner_d_assemble", mutates_args=()
     )(_wigner_d_assemble_impl)
@@ -97,6 +100,8 @@ if hasattr(torch.library, "custom_op"):
     ) -> torch.Tensor:
         ref = blocks[0]
         return ref.new_zeros((ref.shape[0], dim_full, dim_full))
+except Exception:  # pragma: no cover - depends on the installed torch
+    _wigner_d_assemble_op = None
 
 
 def _wigner_d_assemble_setup(ctx: Any, inputs: Any, output: Any) -> None:
@@ -127,9 +132,12 @@ def _wigner_d_assemble_backward(
 
 
 if _wigner_d_assemble_op is not None:
-    _wigner_d_assemble_op.register_autograd(
-        _wigner_d_assemble_backward, setup_context=_wigner_d_assemble_setup
-    )
+    try:
+        _wigner_d_assemble_op.register_autograd(
+            _wigner_d_assemble_backward, setup_context=_wigner_d_assemble_setup
+        )
+    except Exception:  # pragma: no cover - depends on the installed torch
+        _wigner_d_assemble_op = None
 
 
 class CaseCoefficients(nn.Module):

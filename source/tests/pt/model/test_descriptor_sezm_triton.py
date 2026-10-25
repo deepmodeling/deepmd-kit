@@ -2087,7 +2087,7 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             dense.shape, device=dense.device, dtype=dense.dtype, generator=generator
         )
         w2 = torch.randn(
-            dense.shape, device="cuda", dtype=dense.dtype, generator=generator
+            dense.shape, device=dense.device, dtype=dense.dtype, generator=generator
         )
         # cotangent contributions through both D and its transpose
         return (dense * w1).sum() + (dense.transpose(-1, -2) * w2).sum()
@@ -2225,14 +2225,18 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
         )
         self.assertIn("sezm_nn.wigner_d_assemble", graph.code)
 
-    def test_import_and_tracing_fall_back_without_custom_op(self):
-        """A torch 2.1-2.3 install must import the module and stay eager.
+    def test_import_and_tracing_fall_back_when_registration_fails(self):
+        """Unsupported torches must import the module and stay eager.
 
-        Emulated in a subprocess: the module reloads with
-        ``torch.library.custom_op`` hidden for exactly the duration of its
-        top-level re-execution (torch's own lazily importing users of the
-        API stay intact), after which the operator is unregistered, the
-        eager forward/backward works, and make_fx tracing keeps the eager
+        Two emulations run in subprocesses, one per incompatible class:
+        ``hide`` deletes ``torch.library.custom_op`` for the module's
+        re-execution (torch 2.1-2.3, where the API is absent), and
+        ``reject`` replaces it with a stub raising the schema-inference
+        error (torch 2.4-2.6, where the API exists but rejects a
+        ``list[torch.Tensor]`` parameter). In both, torch's own lazily
+        importing users of the API stay intact (the change is scoped to
+        the reload window), the operator stays unregistered, the eager
+        forward/backward works, and make_fx tracing keeps the eager
         implementation instead of the operator node.
         """
         import pathlib
@@ -2248,7 +2252,8 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             import pathlib
             import sys
 
-            tree = pathlib.Path(sys.argv[1])
+            mode = sys.argv[1]
+            tree = pathlib.Path(sys.argv[2])
             sys.meta_path = [
                 f
                 for f in sys.meta_path
@@ -2264,11 +2269,25 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
 
             import deepmd.pt.model.descriptor.sezm_nn.wignerd as wd
 
-            assert wd._wigner_d_assemble_op is not None, "control: op registers"
-            saved_custom_op = torch.library.custom_op
-            del torch.library.custom_op
+            api_present = hasattr(torch.library, "custom_op")
+            if api_present:
+                assert wd._wigner_d_assemble_op is not None, "control: registers"
+
+            saved_custom_op = getattr(torch.library, "custom_op", None)
+            if mode == "hide":
+                del torch.library.custom_op
+            elif mode == "reject":
+                def _rejected(*args, **kwargs):
+                    raise TypeError(
+                        "cannot infer schema for blocks: list[torch.Tensor]"
+                    )
+
+                torch.library.custom_op = _rejected
+            else:
+                raise AssertionError(f"unknown mode {mode}")
             wd = importlib.reload(wd)
-            torch.library.custom_op = saved_custom_op
+            if saved_custom_op is not None:
+                torch.library.custom_op = saved_custom_op
             assert wd._wigner_d_assemble_op is None, "fallback: op stays out"
 
             calc = wd.WignerDCalculator(lmax=1, dtype=torch.float64).cpu()
@@ -2288,22 +2307,25 @@ class TestSeZMWignerDAssembleOp(unittest.TestCase):
             )(quat)
             assert (
                 "sezm_nn.wigner_d_assemble" not in graph.code
-            ), "without the API the traced route keeps the eager path"
+            ), "without a registration the traced route keeps the eager path"
             print("fallback-ok")
             """
         )
-        result = subprocess.run(
-            [sys.executable, "-c", child, str(tree)],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        self.assertEqual(
-            result.returncode,
-            0,
-            f"fallback child failed:\n{result.stdout}\n{result.stderr}",
-        )
-        self.assertIn("fallback-ok", result.stdout)
+        for mode in ("hide", "reject"):
+            with self.subTest(emulation=mode):
+                result = subprocess.run(
+                    [sys.executable, "-c", child, mode, str(tree)],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                self.assertEqual(
+                    result.returncode,
+                    0,
+                    f"fallback child ({mode}) failed:"
+                    f"\n{result.stdout}\n{result.stderr}",
+                )
+                self.assertIn("fallback-ok", result.stdout)
 
     @_GPU_KERNELS
     def test_traced_matches_eager_and_layout_policy(self):
