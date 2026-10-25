@@ -2243,6 +2243,37 @@ class TestSeZMStackBwdFused(unittest.TestCase):
         self.assertEqual(fused_launches, self.N_LAYERS - 1)
         self.assertTrue(torch.equal(ref[0], fused[0]))
 
+    def test_fused_launch_never_aliases_its_input(self):
+        """The fused kernel reads whole rows while writing column tiles.
+
+        Each program reads the full ``g`` row (scalar chain plus every gate
+        row group) and writes only its own column tile, so an in-place
+        launch (``g_next is g_cur``, e.g. after a buffer-sharing
+        optimization on the relay path) would race across programs.  A
+        recorder captures the input/output pair of every fused launch and
+        asserts they are distinct tensors throughout the traversal.
+        """
+        from deepmd.pt_expt.kernels.triton.sezm import so2_value_path as vp
+
+        lmax, focus_dim = 3, 32
+        generator = torch.Generator(device="cuda").manual_seed(31)
+        inputs = self._bwd_inputs(lmax, focus_dim, generator)
+        self._register_fused((focus_dim, lmax), self.FUSED_CFG)
+        pairs = []
+        original = vp._launch_stack_bwd_fused
+
+        def recorder(*args, **kwargs):
+            pairs.append((args[0], args[6]))  # (g_cur, g_next)
+            return original(*args, **kwargs)
+
+        with mock.patch.object(vp, "_launch_stack_bwd_fused", side_effect=recorder):
+            with torch.no_grad():
+                self._run_traversal(inputs, lmax, focus_dim, True)
+        torch.cuda.synchronize()
+        self.assertEqual(len(pairs), self.N_LAYERS - 1)
+        for g_in, g_out in pairs:
+            self.assertIsNot(g_out, g_in)
+
     def test_caller_option_guards_fall_back_with_winning_entry(self):
         """The caller-option guards keep the relay with an entry present.
 

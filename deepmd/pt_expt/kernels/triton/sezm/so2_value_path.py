@@ -3590,6 +3590,18 @@ def _stack_backward_traversal(
         else None
     )
     fused = stack_bwd_fused_cfg is not None
+    # The fused per-layer kernel reads the whole ``g`` row from every program
+    # (the scalar chain plus every gate row group) while writing only its own
+    # column tile, so unlike the relay GEMM it cannot run in place: its output
+    # buffer must never alias ``g_cur``.  The shared spare buffer may alias
+    # ``g_cur`` on the buffer-shared relay path (whose GEMM reads its matrix
+    # input from the separate ``gz`` scratch and touches only its own output
+    # tile), so the fused branch keeps its own ping-pong buffer instead.
+    g_fused_spare: torch.Tensor | None = (
+        torch.empty((n_focus, n_edge, row), device=device, dtype=dtype)
+        if fused and n_gated > 0
+        else None
+    )
     sig = (
         torch.empty((n_focus, n_edge, gate_width), device=device, dtype=torch.float32)
         if not fused
@@ -3632,8 +3644,16 @@ def _stack_backward_traversal(
             # Single-pass per-layer backward: the gate sigmoids and the
             # pre-activation gradient stay in registers, so neither the
             # sigmoid surface nor the gz scratch buffer exists.
-            assert g_spare is not None
-            g_next = g_spare
+            assert g_fused_spare is not None
+            # Anti-alias belt: the launch reads whole rows of g_cur while
+            # writing its own column tile of g_next, so a future
+            # buffer-sharing refactor must not silently reintroduce an
+            # in-place launch here (a cross-program race).
+            if g_fused_spare is g_cur:
+                g_fused_spare = torch.empty(
+                    (n_focus, n_edge, row), device=device, dtype=dtype
+                )
+            g_next = g_fused_spare
             _launch_stack_bwd_fused(
                 g_cur,
                 z_all,
@@ -3650,7 +3670,7 @@ def _stack_backward_traversal(
                 n_focus,
                 stack_bwd_fused_cfg,
             )
-            g_spare = g_cur
+            g_fused_spare = g_cur
             g_cur = g_next
             continue
         if keep:
