@@ -1,3 +1,5 @@
+> **2026-10-26 status update:** the old-base matrix is now complete (117 processes,102 complete,15 OOM); earlier pending-Pro statements below describe the historical publication snapshot. The new135-process master2ba617bc comparison is in [ecs-validation-20261025](ecs-validation-20261025/README.md). Neither matrix establishes general production acceptance.
+
 # ECS multi-model and N4096 follow-up (2026-10-19)
 
 This is a measurement update for the default-off Draft PR, not a claim of multi-model production acceptance. The production implementation is unchanged from PR head `9e2e4c5de1b90cf2d6bc8b2706bc103a06778dae`; BASE is pinned to `668b60cc2a9559f79abb9c33acd959833376344f`, not subsequent upstream master.

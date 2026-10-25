@@ -1,0 +1,165 @@
+{
+  "focused_cuda_tests": {
+    "passed": 60,
+    "warnings": 14,
+    "seconds": 50.86,
+    "scope": "previous current-master-port run; not a new full-suite publication rerun"
+  },
+  "published_worker_smoke": {
+    "result": {
+      "status": "completed",
+      "mode": "ECS",
+      "n_atoms": 96,
+      "started": 1792945283.0112195,
+      "threshold": {
+        "atol": 1e-05,
+        "rtol": 0.0001,
+        "relative_denominator_floor": 1e-08
+      },
+      "system": "diamond",
+      "input_sha256": "5e068d754beefaed916a046c13a9418750b4a865863dc82b1f472995007e9fc9",
+      "parameter_count": 1124910,
+      "first_peak": {
+        "allocated": 557481472,
+        "reserved": 589299712
+      },
+      "steady_peak": {
+        "allocated": 557481472,
+        "reserved": 589299712
+      },
+      "full_window_peak": {
+        "allocated": 557481472,
+        "reserved": 589299712
+      },
+      "steady_wall_ms": {
+        "median": 17.27216294966638,
+        "p90": 17.32844109646976,
+        "min": 17.182583920657635,
+        "max": 17.366331070661545,
+        "samples": [
+          17.29396404698491,
+          17.198944929987192,
+          17.366331070661545,
+          17.233089078217745,
+          17.182583920657635,
+          17.198764253407717,
+          17.32423109933734,
+          17.309763934463263,
+          17.28607900440693,
+          17.258246894925833
+        ]
+      },
+      "steady_event_ms": {
+        "median": 17.22985553741455,
+        "p90": 17.28654384613037,
+        "samples": [
+          17.244991302490234,
+          17.148576736450195,
+          17.325279235839844,
+          17.191455841064453,
+          17.14124870300293,
+          17.156543731689453,
+          17.28223991394043,
+          17.26825523376465,
+          17.243295669555664,
+          17.216415405273438
+        ]
+      },
+      "finite": true,
+      "evaluations": 9,
+      "runtime_cohort_calls": [],
+      "precision_runtime": {
+        "matmul_precision": "highest",
+        "matmul_tf32": false,
+        "cudnn_tf32": false,
+        "outer_autocast": false
+      },
+      "wall_ms_including_first": [
+        72504.98112803325,
+        20.27683611959219,
+        17.53692189231515,
+        17.710010055452585,
+        17.31169829145074,
+        17.306859139353037,
+        17.4970468506217,
+        17.745596822351217,
+        18.019483890384436
+      ],
+      "event_ms_including_first": [
+        72504.7734375,
+        20.244768142700195,
+        17.50480079650879,
+        17.67430305480957,
+        17.2807674407959,
+        17.27676773071289,
+        17.466079711914062,
+        17.715871810913086,
+        17.988319396972656
+      ],
+      "wrappers": [
+        "/home/kmpl/mkl/project/deepmd-kit/labs/dpa4_analysis/ecs_submission_20261025/cache/Neo_ECS/inductor/t3/ct3jv332q663pb7fau5sahydsikcnpltdy2wnxiqaxujbrwe2xrh.py"
+      ],
+      "routes": [
+        {
+          "sha256": "65e175bca1f23233ff9f33a17000de61cb7f6359e00f23d5d6a5a18cde6d2ca7",
+          "opaque_cohort_calls": 0,
+          "single_cohort_named_calls": 32,
+          "stack_kernel_definitions": 16,
+          "single_cohort_marker": true
+        }
+      ],
+      "complete_peak": {
+        "allocated": 557481472,
+        "reserved": 589299712
+      },
+      "elapsed_s": 76.54529666900635
+    },
+    "manifest": {
+      "args": {
+        "root": "/home/kmpl/mkl/project/deepmd-kit/labs/dpa4_analysis/ecs_submission_20261025/candidate",
+        "model": "/home/kmpl/mkl/project/DPA4-Neo-OMat24-v20260627.pt",
+        "out": "/home/kmpl/mkl/project/deepmd-kit/labs/dpa4_analysis/ecs_submission_20261025/public_smoke_gpu1/Neo_n96_ECS_p0",
+        "cache": "/home/kmpl/mkl/project/deepmd-kit/labs/dpa4_analysis/ecs_submission_20261025/cache/Neo_ECS",
+        "gpu": "1",
+        "mode": "ECS",
+        "nrep": "2",
+        "seed": "0",
+        "repeat_cell": "[2, 2, 3]",
+        "system": "diamond",
+        "samples": "10",
+        "warmup": "3"
+      },
+      "model_sha256": "8d8b2b02b9575cb9e0af420cc1e8b1d9ffcbc04752c2203d29f48ccd0cd5f07d",
+      "torch": "2.11.0+cu128",
+      "triton": "3.6.0",
+      "cuda": "12.8",
+      "baseline_revision": "2ba617bc3db67adee2b8ba00c71e9fa1c2d2bb8c",
+      "source_hashes": {
+        "deepmd/pt_expt/kernels/triton/sezm/so2_value_path.py": "0fb6ae06e62af5dfafe8b7c9cfdce975714a9ffb577dc4f3581ed13706735462",
+        "deepmd/pt_expt/kernels/triton/sezm/so2_edge_cohort.py": "08c67a81883ff70f19ce9dad8809037585e0c5b0949ecceab747bb4179c44474"
+      },
+      "flags": {
+        "DP_COMPILE_INFER": "1",
+        "DP_COMPILE": "0",
+        "DP_TRITON_INFER": "2",
+        "DP_CUDA_INFER": "0",
+        "DP_TF32_INFER": "0",
+        "DP_AMP_INFER": "0",
+        "DP_SO2_EDGE_COHORT_INFER": "1",
+        "DP_INTRA_OP_PARALLELISM_THREADS": "1",
+        "DP_INTER_OP_PARALLELISM_THREADS": "1",
+        "PYTORCH_ALLOC_CONF": "expandable_segments:True",
+        "TORCHINDUCTOR_COMPILE_THREADS": "1",
+        "TORCHINDUCTOR_CACHE_DIR": "/home/kmpl/mkl/project/deepmd-kit/labs/dpa4_analysis/ecs_submission_20261025/cache/Neo_ECS/inductor",
+        "TRITON_CACHE_DIR": "/home/kmpl/mkl/project/deepmd-kit/labs/dpa4_analysis/ecs_submission_20261025/cache/Neo_ECS/triton"
+      }
+    },
+    "scope": "GPU1, Neo96,3warmup/10samples, not pooled into135-run results; finite execution is not a new cross-reference precision pass"
+  },
+  "gpu0_probe": {
+    "status": "blocked_busy",
+    "pids": "2030231"
+  },
+  "lint": "candidate full-repository Ruff check/format/diff-check passed; published Python whitelist Ruff/format passed. Generated compiler-cache files are not source lint targets.",
+  "artifact_patch": "git apply --check passed against clean2ba617bc"
+}
