@@ -86,3 +86,50 @@ class TestSkills(unittest.TestCase):
             "from deepmd.main import main; main(['skills', 'list'])"
         )
         subprocess.run([sys.executable, "-c", code], check=True, capture_output=True)
+
+    def test_missing_resources_are_cli_errors(self) -> None:
+        for command in [["skills", "list"], ["skills", "read", "deepmd-train"]]:
+            args = parse_args(command)
+            for error in [ValueError("missing guides"), OSError("guides inaccessible")]:
+                output, errors = io.StringIO(), io.StringIO()
+                with (
+                    self.subTest(command=command, error=error),
+                    patch("deepmd.skills.skill_root", side_effect=error),
+                    contextlib.redirect_stdout(output),
+                    contextlib.redirect_stderr(errors),
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    run(args)
+                self.assertEqual(raised.exception.code, 2)
+                self.assertEqual(output.getvalue(), "")
+                self.assertIn(f"dp skills: {error}", errors.getvalue())
+                self.assertNotIn("Traceback", errors.getvalue())
+
+    def test_resource_locations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "deepmd"
+            package.mkdir()
+            with patch("deepmd.skills.__file__", str(package / "skills.py")):
+                with self.assertRaisesRegex(ValueError, "reinstall"):
+                    skill_root()
+                (root / "pyproject.toml").touch()
+                with self.assertRaisesRegex(ValueError, "reinstall"):
+                    skill_root()
+                (root / "skills").mkdir()
+                self.assertEqual(skill_root(), (root / "skills").resolve())
+                bundled = package / "_skills"
+                bundled.mkdir()
+                self.assertEqual(skill_root(), bundled.resolve())
+
+    def test_resource_locations_through_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            actual, alias = root / "actual", root / "alias"
+            actual.mkdir()
+            try:
+                alias.symlink_to(actual, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f"Directory symlinks are unavailable: {exc}")
+            with patch("tempfile.tempdir", str(alias)):
+                self.test_resource_locations()
