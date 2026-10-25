@@ -222,6 +222,45 @@ class TestDPTestSeARglob(unittest.TestCase):
         os.unlink(tmp_model_path)
         self.assertTrue(os.path.exists(self.detail_file + ".e.out"))
 
+    def test_training_groups_use_input_relative_patterns(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        model = torch.jit.script(trainer.model)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_path = root / "model.pth"
+            torch.jit.save(model, str(model_path))
+            data_root = Path(__file__).parent / "water" / "data"
+            relative_root = os.path.relpath(data_root, root)
+            config = deepcopy(self.config)
+            config["training"]["training_data"] = [
+                {
+                    "systems": relative_root,
+                    "rglob_patterns": ["single"],
+                    "batch_size": "filter:1",
+                    "prob": 0.0,
+                },
+                {
+                    "systems": [relative_root],
+                    "rglob_patterns": ["data_0"],
+                    "prob": 1.0,
+                },
+            ]
+            input_path = root / "input.json"
+            input_path.write_text(json.dumps(config))
+            detail = str(root / "details")
+            dp_test(
+                model=str(model_path),
+                system=None,
+                datafile=None,
+                train_json=str(input_path),
+                numb_test=1,
+                rand_seed=None,
+                shuffle_test=False,
+                detail_file=detail,
+                atomic=False,
+            )
+            self.assertEqual(np.loadtxt(detail + ".e.out", ndmin=2).shape[0], 2)
+
     def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("model") and f.endswith(".pt"):

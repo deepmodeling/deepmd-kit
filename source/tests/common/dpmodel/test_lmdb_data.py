@@ -46,8 +46,8 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
     LmdbTestDataNlocView,
     _chop_mixed_nloc,
-    _expand_indices_by_blocks,
     _merge_lmdb_chunks,
+    _resample_indices_by_blocks,
     collate_lmdb_frames,
     collect_lmdb_sampling_groups,
     compute_block_targets,
@@ -55,6 +55,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     decode_lmdb_frame,
     is_lmdb,
     make_neighbor_stat_data,
+    system_block_lookup,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.data import (
@@ -2105,7 +2106,7 @@ class TestTypeMapRemapping(unittest.TestCase):
 
 class TestAutoProb(unittest.TestCase):
     """Test auto_prob support: frame_system_ids, compute_block_targets,
-    _expand_indices_by_blocks, and LmdbBatchSampler with block_targets.
+    _resample_indices_by_blocks, and LmdbBatchSampler with block_targets.
     """
 
     @classmethod
@@ -2137,6 +2138,48 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(reader.nsystems, 1)
         self.assertIsNone(reader.frame_system_ids)
         tmpdir.cleanup()
+
+    def test_uniform_targets_balance_retained_systems(self) -> None:
+        self.assertEqual(
+            compute_block_targets("prob_uniform", 3, [1, 0, 9]),
+            [([0], 5), ([2], 5)],
+        )
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [9, 9]), [])
+        self.assertEqual(compute_block_targets("prob_uniform", 2, [0, 0]), [])
+
+    def test_uniform_target_count_is_bounded(self) -> None:
+        """Uniform quotas stay within one rounding unit per retained system."""
+        counts = [100000] + [1] * 999
+        targets = compute_block_targets("prob_uniform", len(counts), counts)
+        self.assertEqual({target for _, target in targets}, {101})
+        total = sum(target for _, target in targets)
+        self.assertEqual(total, 101000)
+        self.assertGreaterEqual(total, sum(counts))
+        self.assertLess(total, sum(counts) + len(counts))
+
+    def test_uniform_sampler_balances_a_bounded_pass(self) -> None:
+        """A uniform pass can undersample large systems without losing them."""
+        reader = LmdbDataReader(self._lmdb_path, ["O", "H"], batch_size=7)
+        self.addCleanup(reader.close)
+        targets = compute_block_targets(
+            "prob_uniform", reader.nsystems, reader.system_nframes
+        )
+        sampler = LmdbBatchSampler(reader, seed=42, block_targets=targets)
+        seen: set[int] = set()
+        for epoch in range(16):
+            sampler.set_epoch(epoch)
+            expected_batches = len(sampler)
+            batches = list(sampler)
+            self.assertEqual(len(batches), expected_batches)
+            indices = np.concatenate(batches)
+            self.assertEqual(len(indices), 600)
+            np.testing.assert_array_equal(
+                np.bincount(reader.frame_system_ids[indices]), [200, 200, 200]
+            )
+            seen.update(indices.tolist())
+            sampler.set_epoch(epoch)
+            self.assertEqual(list(sampler), batches)
+        self.assertEqual(seen, set(range(len(reader))))
 
     def test_compute_block_targets_equal_weight(self):
         result = compute_block_targets(
@@ -2190,8 +2233,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 25), ([1], 25)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         sys0 = [i for i in expanded if frame_system_ids[i] == 0]
         sys1 = [i for i in expanded if frame_system_ids[i] == 1]
@@ -2202,8 +2249,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 5), ([1], 5)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         self.assertEqual(sorted(expanded), list(range(10)))
 
@@ -2215,8 +2266,12 @@ class TestAutoProb(unittest.TestCase):
         frame_system_ids = [0] * 10
         block_targets = [([0], 23)]
         rng = np.random.default_rng(42)
-        expanded = _expand_indices_by_blocks(
-            list(range(10)), frame_system_ids, block_targets, rng
+        expanded = _resample_indices_by_blocks(
+            list(range(10)),
+            frame_system_ids,
+            system_block_lookup(block_targets),
+            [target for _, target in block_targets],
+            rng,
         )
         self.assertEqual(len(expanded), 23)
         counts = Counter(expanded)
@@ -2229,8 +2284,12 @@ class TestAutoProb(unittest.TestCase):
         results = []
         for seed in range(5):
             rng = np.random.default_rng(seed)
-            expanded = _expand_indices_by_blocks(
-                list(range(10)), frame_system_ids, block_targets, rng
+            expanded = _resample_indices_by_blocks(
+                list(range(10)),
+                frame_system_ids,
+                system_block_lookup(block_targets),
+                [target for _, target in block_targets],
+                rng,
             )
             results.append(sorted(expanded[10:]))
         unique = {tuple(r) for r in results}
@@ -2283,6 +2342,16 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(len(sampler), len(batches))
         self.assertEqual(sum(map(len, batches)), 3)
         self.assertEqual(sorted(counts), [1, 2])
+
+        sampler = LmdbBatchSampler(
+            TwoSignatureReader(), shuffle=False, seed=42, block_targets=[([0], 1)]
+        )
+        seen: set[int] = set()
+        for _ in range(16):
+            batches = list(sampler)
+            self.assertEqual(sum(map(len, batches)), 1)
+            seen.update(index for batch in batches for index in batch)
+        self.assertEqual(seen, {0, 1})
 
     def test_sampler_tolerates_blocks_that_omit_a_system(self):
         """A system no auto_prob block names is passed through, not rejected.
