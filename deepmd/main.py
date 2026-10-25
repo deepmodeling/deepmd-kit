@@ -17,13 +17,18 @@ from typing import (
     Any,
 )
 
-from deepmd.skills import add_parser, workflow_help, run as run_skills
-
 from deepmd.backend.backend import (
     Backend,
 )
 from deepmd.pretrained.registry import (
     available_model_names,
+)
+from deepmd.skills import (
+    add_parser,
+)
+from deepmd.skills import run as run_skills
+from deepmd.skills import (
+    workflow_help,
 )
 
 try:

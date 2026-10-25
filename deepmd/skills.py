@@ -3,7 +3,9 @@
 
 import argparse
 import sys
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 
 def skill_root() -> Path:

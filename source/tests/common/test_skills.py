@@ -8,11 +8,22 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    patch,
+)
 
-from deepmd.main import main_parser, parse_args
-from deepmd.skills import read_skill, run, skill_root
+from deepmd.main import (
+    main_parser,
+    parse_args,
+)
+from deepmd.skills import (
+    read_skill,
+    run,
+    skill_root,
+)
 
 
 class TestSkills(unittest.TestCase):

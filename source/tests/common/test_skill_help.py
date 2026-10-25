@@ -4,10 +4,16 @@
 import contextlib
 import io
 import unittest
-from unittest.mock import patch
+from unittest.mock import (
+    patch,
+)
 
-from deepmd.main import main_parser
-from deepmd.skills import workflow_help
+from deepmd.main import (
+    main_parser,
+)
+from deepmd.skills import (
+    workflow_help,
+)
 
 
 class TestSkillHelp(unittest.TestCase):
