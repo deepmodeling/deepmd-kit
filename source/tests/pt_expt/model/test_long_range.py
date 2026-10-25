@@ -961,6 +961,13 @@ def test_compressed_frozen_model_matches_uncompressed(
     dp = DeepPot(str(frozen), auto_batch_size=False)
     expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
     assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
+    if expected_lower == "dpa4c_canonical":
+        # The fused long-range operator serves the charge network of one
+        # channel and reads the source CSR for the per-atom virial alone; the
+        # composition of operators that serves three channels reads it always.
+        assert dp.deep_eval.metadata["canonical_requires_source_csr"] == (
+            CHANNELS[kernel] > 1
+        )
     rng = np.random.default_rng(3)
     coord = rng.uniform(0.0, 7.0, (1, 40, 3)) + 100.0
     atype = rng.integers(0, 2, (1, 40))
@@ -1515,6 +1522,10 @@ def test_periodic_compressed_frozen_model_matches_uncompressed(
     dp = DeepPot(str(frozen), auto_batch_size=False)
     expected_lower = "dpa4c_canonical" if env.DEVICE.type == "cuda" else "graph"
     assert dp.deep_eval.metadata["lower_input_kind"] == expected_lower
+    if expected_lower == "dpa4c_canonical":
+        assert dp.deep_eval.metadata["canonical_requires_source_csr"] == (
+            CHANNELS[kernel] > 1
+        )
     names = ("energy", "force", "virial", "atom_energy", "atom_virial")
     rng = np.random.default_rng(3)
     box = np.array([[[12.0, 0.0, 0.0], [0.8, 11.0, 0.0], [-0.5, 0.6, 13.0]]])
@@ -1544,6 +1555,212 @@ def test_periodic_compressed_frozen_model_matches_uncompressed(
     # meets it in the neighbor search, the compact lower at its input.
     with pytest.raises((ValueError, RuntimeError), match=r"no volume|singular"):
         dp.eval(periodic, np.zeros((1, 9)), atype)
+
+
+def _canonical_inputs(
+    model: torch.nn.Module,
+    coord: np.ndarray,
+    atype: np.ndarray,
+    box: np.ndarray | None,
+) -> tuple:
+    """The compact canonical graph of the frames, as one rank builds it, and the node inputs of the module."""
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+        build_neighbor_graph,
+    )
+    from deepmd.pt_expt.utils.canonical_graph import (
+        canonical_graph_from_neighbor_graph,
+    )
+
+    nf = atype.shape[0]
+    cells = None if box is None else box.reshape(nf, 9)
+    graph = build_neighbor_graph(
+        coord, atype, cells, model.get_rcut(), canonicalize=True
+    )
+    n_node = torch.as_tensor(graph.n_node, dtype=torch.int64, device=env.DEVICE)
+    graph = NeighborGraph(
+        n_node=n_node,
+        n_local=n_node,
+        edge_index=torch.as_tensor(graph.edge_index, device=env.DEVICE),
+        edge_vec=torch.as_tensor(
+            graph.edge_vec, dtype=torch.float32, device=env.DEVICE
+        ),
+        edge_mask=torch.as_tensor(graph.edge_mask, device=env.DEVICE),
+        destination_order=torch.as_tensor(graph.destination_order, device=env.DEVICE),
+        destination_row_ptr=torch.as_tensor(
+            graph.destination_row_ptr, dtype=torch.int64, device=env.DEVICE
+        ),
+        source_order=torch.as_tensor(graph.source_order, device=env.DEVICE),
+        source_row_ptr=torch.as_tensor(
+            graph.source_row_ptr, dtype=torch.int64, device=env.DEVICE
+        ),
+        destination_sorted=bool(graph.destination_sorted),
+    )
+    compact = canonical_graph_from_neighbor_graph(graph)
+    return (
+        _tensor(atype.reshape(-1), torch.int64),
+        compact,
+        _tensor(coord.reshape(-1, 3)),
+        None if cells is None else torch.as_tensor(cells, dtype=torch.float64),
+    )
+
+
+# The layouts of the fused parity test: the width of the energy fitting, which
+# selects the per-layer kernels at 32 and the fused network at 96, the hidden
+# layers of the charge network, and the frames of the batch.
+FUSED_LAYOUTS = {
+    "per_layer": {"width": 32, "charge": [16, 16], "frames": 2},
+    "fused": {"width": 96, "charge": [16, 16, 16], "frames": 1},
+}
+
+
+@pytest.mark.skipif(
+    env.DEVICE.type != "cuda", reason="the compact canonical lower is CUDA only"
+)
+@pytest.mark.parametrize("tile", [0, 16])
+@pytest.mark.parametrize("layout", ["per_layer", "fused"])
+@pytest.mark.parametrize("periodic", [False, True])
+@pytest.mark.parametrize(("kernel", "source"), [("les", "neutral"), ("sog", None)])
+def test_fused_operator_matches_composition(
+    monkeypatch,
+    kernel: str,
+    source: str | None,
+    periodic: bool,
+    layout: str,
+    tile: int,
+) -> None:
+    """The fused long-range operator evaluates a compressed model like the composition.
+
+    With a charge network of one channel, the compact canonical lower
+    evaluates the descriptor, both networks, the long range and the force
+    assembly in one operator; the composition of operators, which serves the
+    other charge networks, is the reference. The energy fitting takes the
+    per-layer kernels or the fused network, over the whole node axis or in
+    runs of 16 nodes with a shorter last one, with and without the per-atom
+    virial, on two frames, the second with fewer real atoms, or on one.
+    """
+    from deepmd.pt_expt.kernels.dpa4c import (
+        canonical_long_range,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    shape = FUSED_LAYOUTS[layout]
+    monkeypatch.setenv("DP_NODE_TILE", str(tile))
+    config = _config(kernel, constraint=None if source is None else {"source": source})
+    config["descriptor"].update(n_radial=8, precision="float32")
+    config["fitting_net"].update(
+        neuron=[shape["width"]] * 2, activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    config["long_range"].update(
+        channels=1,
+        charge_net={"neuron": shape["charge"], "seed": 23},
+        periodic=periodic,
+    )
+    if kernel == "sog":
+        config["long_range"]["kernel"] = {"type": "sog", "n_gaussian": 4}
+    model = get_model(config).to(env.DEVICE).eval()
+    generator = torch.Generator().manual_seed(5)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            noise = torch.randn(parameter.shape, generator=generator)
+            parameter.add_(0.05 * noise.to(parameter))
+    if periodic:
+        model.atomic_model.long_range.use_mesh_evaluation()
+    model.atomic_model.enable_compression(0.5)
+    assert canonical_long_range.fused_long_range_eligible(model.atomic_model.long_range)
+    frames = shape["frames"]
+    rng = np.random.default_rng(3)
+    box = np.array([[[12.0, 0.0, 0.0], [0.8, 11.0, 0.0], [-0.5, 0.6, 13.0]]] * frames)
+    coord = (
+        rng.uniform(0.0, 1.0, (frames, 30, 3)) @ box[0]
+        if periodic
+        else (rng.uniform(0.0, 7.0, (frames, 30, 3)) + 100.0)
+    )
+    atype = rng.integers(0, 2, (frames, 30))
+    atype[-1, 24:] = -1
+    atype_t, graph, coord_t, box_t = _canonical_inputs(
+        model, coord, atype, box if periodic else None
+    )
+    # The rules of the fitting routes take the network of the layout on every
+    # run of the energy fitting; a device on which they send the runs of the
+    # fused layout to the per-layer kernels has no fused network to compare.
+    weights = fitting_operator_arguments(model.atomic_model.fitting_net).weights
+    nodes = atype_t.shape[0]
+    runs = {nodes} if tile == 0 else {tile, nodes % tile or tile}
+    routes = [int(torch.ops.deepmd.graph_fitting_route_rule(weights, n)) for n in runs]
+    if layout == "fused" and -1 in routes:
+        pytest.skip("the fitting rules take the per-layer kernels on this device")
+    assert all((route == -1) == (layout == "per_layer") for route in routes), routes
+
+    def evaluate(do_atomic_virial: bool) -> dict[str, torch.Tensor]:
+        return model.forward_lower_canonical_graph(
+            atype_t,
+            graph.n_node,
+            graph.n_local,
+            graph.source,
+            graph.edge_vec,
+            graph.destination_row_ptr,
+            graph.source_row_ptr,
+            graph.source_order,
+            do_atomic_virial=do_atomic_virial,
+            coord=coord_t,
+            box=box_t,
+        )
+
+    for do_atomic_virial in (True, False):
+        fused = evaluate(do_atomic_virial)
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                canonical_long_range, "fused_long_range_eligible", lambda _: False
+            )
+            composed = evaluate(do_atomic_virial)
+        assert set(fused) == set(composed)
+        for key, value in composed.items():
+            # Both evaluate in float32 and sum in other orders, so they agree
+            # to a few roundings of the largest entry of each output; the
+            # long range dominates these outputs.
+            expected = value.detach().to(torch.float64)
+            error = (fused[key].detach().to(torch.float64) - expected).abs().max()
+            scale = expected.abs().max()
+            assert error <= 1e-5 * scale + 1e-6, (key, error.item(), scale.item())
+
+
+def test_library_without_the_fused_operator_keeps_the_composition(monkeypatch) -> None:
+    """A library without the fused long-range operator evaluates the composition.
+
+    The fused operator is optional beside the short-range suite: without it,
+    a module that it would serve takes the composition of operators, and the
+    archive records that its compact lower reads the source CSR.
+    """
+    from deepmd.pt_expt.kernels.dpa4c import (
+        canonical,
+        canonical_long_range,
+    )
+    from deepmd.pt_expt.utils.serialization import (
+        _canonical_requires_source_csr,
+    )
+
+    config = _config("les")
+    config["descriptor"]["precision"] = "float32"
+    config["fitting_net"].update(
+        neuron=[32, 32], activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    model = get_model(config)
+    monkeypatch.setattr(
+        canonical,
+        "operator_available",
+        lambda name: name != "dpa4c_canonical_compress_long_range_energy_force",
+    )
+    assert canonical.op_available()
+    assert not canonical.long_range_op_available()
+    assert not canonical_long_range.fused_long_range_eligible(
+        model.atomic_model.long_range
+    )
+    assert _canonical_requires_source_csr(model, "dpa4c_canonical")
 
 
 # ---------------------------------------------------------------------------

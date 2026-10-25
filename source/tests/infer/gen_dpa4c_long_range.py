@@ -160,6 +160,9 @@ def _check_metadata(pt2_path: str, lower: str, periodic: bool = False) -> None:
         # carries the rebuild of every constant that holds it.
         assert md["dim_chg_spin"] == 0
         assert len(md["charge_state_constants"]) == 5
+        # The fused long-range operator serves the charge network of one
+        # channel and reads the source CSR for the per-atom virial alone.
+        assert md["canonical_requires_source_csr"] is False
 
 
 def _write_ref(pt2_path: str, ref_path: str, periodic: bool = False) -> None:

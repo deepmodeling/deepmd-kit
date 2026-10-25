@@ -144,6 +144,9 @@ NAMES = ("atom_energy", "charge_gradient", "force", "atom_virial", "virial")
         ([37, 1, 0, 300], 1, 5, -1),
         ([2048], 3, 0, -1),
         ([5, 129], 8, 3, 2),
+        # A frame of 47 owner blocks of 24 chunks, which takes the wide tiles
+        # of the pair kernel on devices of up to 3384 resident block slots.
+        ([6000], 2, 4, 1),
     ],
 )
 def test_matches_float64_pair_sum(
@@ -189,10 +192,21 @@ def _assert_close(
         assert error <= tolerance * scale, (name, error, scale)
 
 
-@pytest.mark.parametrize("kernel_name", ["les", "sog"])
-def test_invariants(kernel_name: str) -> None:
+@pytest.mark.parametrize(
+    ("kernel_name", "n_node"),
+    [
+        ("les", [64, 200]),
+        ("sog", [64, 200]),
+        # A first frame that ends inside a block of the pair kernel, whose
+        # chunks then reach past the partners of that frame. The erf kernel
+        # decides its far field over the lanes of a warp, which such a block
+        # shares between the frames, so that it is checked on frames of whole
+        # warps.
+        ("sog", [150, 200]),
+    ],
+)
+def test_invariants(kernel_name: str, n_node: list[int]) -> None:
     """Frames are independent, forces cancel, and the virial is the pair virial."""
-    n_node = [64, 200]
     system = _system(n_node, 2, 0, 11, 0.0)
     coord, charge, node_mask, n_node_t, total_charge = system
     together = latent_charge_sum(
@@ -206,7 +220,7 @@ def test_invariants(kernel_name: str) -> None:
         COULOMB_CONSTANT,
     )
     _, _, force, atom_virial, virial = together
-    # Each frame alone gives the same result.
+    # The first frame alone gives the same result.
     first = n_node[0]
     alone = latent_charge_sum(
         coord[:first],
@@ -436,6 +450,96 @@ def test_mesh_frames_are_independent() -> None:
     )
     for both, single in zip(together, alone, strict=True):
         torch.testing.assert_close(both[: single.shape[0]], single, rtol=0, atol=0)
+
+
+def _mesh_sizes(box: torch.Tensor, spacing: float) -> list[tuple[int, int, int]]:
+    """The mesh size of every frame of ``box``."""
+    return [mesh_dims_of_cells(cell.reshape(1, 9).numpy(), spacing) for cell in box]
+
+
+def test_captured_meshes_read_the_cells_at_replay() -> None:
+    """A CUDA graph of periodic frames evaluates the cells of its box at every replay.
+
+    The graph reads the cells where they lie in pinned memory, so that a
+    replay after a strain that keeps the sizes of the meshes agrees bit for
+    bit with an eager evaluation of the strained cells; cells in pageable
+    memory cannot be captured.
+    """
+    system = _system([64, 200], 2, 0, 11, 0.0)
+    kernel = KERNELS["sog"]().to("cuda")
+
+    def evaluate(box: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return latent_charge_sum(
+            *system, kernel, 1, COULOMB_CONSTANT, box=box, spacing=0.5
+        )
+
+    cells = _cells(2, 9.0)
+    strained = cells * 1.005
+    assert _mesh_sizes(strained, 0.5) == _mesh_sizes(cells, 0.5)
+    expected = {"first": evaluate(cells), "strained": evaluate(strained)}
+    with pytest.raises(RuntimeError, match="pinned"):
+        with torch.cuda.graph(torch.cuda.CUDAGraph()):
+            evaluate(cells)
+    box = cells.pin_memory()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        captured = evaluate(box)
+    for name, cell in (("strained", strained), ("first", cells)):
+        box.copy_(cell)
+        graph.replay()
+        torch.cuda.synchronize()
+        for value, reference in zip(captured, expected[name], strict=True):
+            torch.testing.assert_close(
+                value, reference, rtol=0, atol=0, msg=lambda m, n=name: f"{n}: {m}"
+            )
+
+
+def test_captured_meshes_outlive_other_shapes() -> None:
+    """A CUDA graph of periodic frames replays after 17 other mesh shapes, bit for bit.
+
+    The operator keeps the transforms of 16 mesh shapes and releases the least
+    recently used past them, except those of a live graph, which runs them at
+    every replay.
+    """
+    system = _system([64, 200], 2, 0, 11, 0.0)
+    kernel = KERNELS["sog"]().to("cuda")
+
+    def evaluate(box: torch.Tensor) -> tuple[torch.Tensor, ...]:
+        return latent_charge_sum(
+            *system, kernel, 1, COULOMB_CONSTANT, box=box, spacing=0.5
+        )
+
+    box = _cells(2, 9.0).pin_memory()
+    expected = evaluate(box)
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        captured = evaluate(box)
+    others: set[tuple[int, int, int]] = set()
+    length = 9.0
+    while len(others) < 17:
+        length += 0.5
+        cells = _cells(2, length)
+        evaluate(cells)
+        others |= set(_mesh_sizes(cells, 0.5)) - set(_mesh_sizes(box, 0.5))
+    graph.replay()
+    for value, reference in zip(captured, expected, strict=True):
+        torch.testing.assert_close(value, reference, rtol=0, atol=0)
+
+
+def test_a_capture_needs_an_eager_call_for_its_meshes() -> None:
+    """A CUDA graph captures only meshes that an eager call has evaluated."""
+    system = _system([12], 1, 0, 9, 0.0)
+    kernel = KERNELS["les"]().to("cuda")
+    # A cell whose mesh of 16 x 16 x 240 points no other test evaluates.
+    box = torch.tensor(
+        [[4.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 60.0]], dtype=torch.float64
+    ).pin_memory()
+    graph = torch.cuda.CUDAGraph()
+    with pytest.raises(RuntimeError, match="none has evaluated the mesh of 16 x 16"):
+        with torch.cuda.graph(graph):
+            latent_charge_sum(
+                *system, kernel, 0, COULOMB_CONSTANT, box=box, spacing=0.25
+            )
 
 
 def test_mixed_frames_are_rejected() -> None:

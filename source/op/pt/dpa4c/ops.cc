@@ -34,6 +34,17 @@
 // CSR; a two-entry placeholder in place of `source_row_ptr` and
 // `source_order` declines it, which leaves it zero.
 //
+// The fused long-range operator evaluates a model whose atomic energy adds a
+// latent-charge long-range module with a charge network of one channel. It
+// takes the arguments of the fused operator up to `tile`, the network that
+// predicts the charges from the descriptor (`charge_ws` to `charge_act`, in
+// the layout of the energy fitting, with the per-type bias `charge_bias`),
+// the inputs of deepmd::latent_charge_sum (`coord` to `spacing`, see
+// source/op/pt/long_range/ops.cc), whose charged nodes are the owned real
+// nodes, and the fitting routes. It returns the outputs of the fused operator
+// but the magnetic force: the descriptor carries no spin condition and the
+// model no pair potential.
+//
 // Every schema carries, next to the radial table, the low-rank table and the
 // expansion that a single-type scan reads instead of the scalar-only channels
 // (empty together when the descriptor admits none; see `low_rank_basis`).
@@ -126,4 +137,25 @@ TORCH_LIBRARY_FRAGMENT(deepmd, library) {
       "int tile, Tensor pair_table, int[]? fitting_routes=None) "
       "-> (Tensor energy, Tensor atom_energy, Tensor force, Tensor virial, "
       "Tensor atom_virial, Tensor force_mag, Tensor mask)");
+  library.def(
+      "dpa4c_canonical_compress_long_range_energy_force(Tensor edge_vec, "
+      "Tensor source, Tensor destination_row_ptr, Tensor source_row_ptr, "
+      "Tensor source_order, Tensor n_node, Tensor n_local, Tensor atype, "
+      "Tensor table, Tensor basis_table, Tensor basis_matrix, "
+      "Tensor pair_film, Tensor pair_mixing, Tensor type_embedding, "
+      "Tensor readout_matrices, Tensor coupling_meta, Tensor coupling_entry, "
+      "Tensor coupling_value, Tensor output_mean, Tensor output_inv_std, "
+      "Tensor spin, Tensor spin_pair, Tensor spin_type, Tensor contact_radius, "
+      "int lmax, float table_stride, float table_max, float rcut, float eps, "
+      "float degree_floor, float f_inner, float f_outer, "
+      "Tensor[] ws, Tensor[] bs, int[] resnets, "
+      "Tensor w_head, Tensor b_head, Tensor bias_atom_e, int act, int tile, "
+      "Tensor[] charge_ws, Tensor[] charge_bs, int[] charge_resnets, "
+      "Tensor charge_w_head, Tensor charge_b_head, Tensor charge_bias, "
+      "int charge_act, Tensor coord, Tensor total_charge, Tensor? box, "
+      "Tensor coefficient, Tensor communicator, int kernel, int channel, "
+      "float prefactor, int order, float spacing, "
+      "int[]? fitting_routes=None) "
+      "-> (Tensor energy, Tensor atom_energy, Tensor force, Tensor virial, "
+      "Tensor atom_virial, Tensor mask)");
 }

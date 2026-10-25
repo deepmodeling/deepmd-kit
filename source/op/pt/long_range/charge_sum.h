@@ -64,5 +64,22 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
                           int owner_count,
                           const torch::Tensor* communicator);
 
+// deepmd::latent_charge_sum (schema and formulas in ops.cc): validates the
+// inputs and evaluates the frames by the direct or the mesh sum, across the
+// domains of ``communicator`` when it holds several ranks.
+ChargeSumOutputs latent_charge_sum(torch::Tensor coord,
+                                   torch::Tensor charge,
+                                   torch::Tensor node_mask,
+                                   torch::Tensor n_node_per_frame,
+                                   torch::Tensor total_charge,
+                                   c10::optional<torch::Tensor> box,
+                                   torch::Tensor coefficient,
+                                   torch::Tensor communicator,
+                                   int64_t kernel,
+                                   int64_t channel,
+                                   double prefactor,
+                                   int64_t order,
+                                   double spacing);
+
 }  // namespace long_range
 }  // namespace deepmd

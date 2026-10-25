@@ -236,10 +236,15 @@ memory grows linearly with the number of atoms and its cost with their
 square, and evaluates a periodic system on the mesh of its cell. The operator
 serves the `les` kernel and the `sog` kernel of up to 32 Gaussians, with up to
 8 charge channels, B-splines of order up to 12, a charge network without
-frame or atomic parameters, and no `pair_exclude_types`. Any other model,
-like an uncompressed one, receives the pairs or the mesh of each frame from
-the interface, so the memory of a non-periodic evaluation grows with the
-square of the number of atoms.
+frame or atomic parameters, and no `pair_exclude_types`. A model the
+operator does not serve, like an uncompressed one, receives the pairs or the
+mesh of each frame from the interface, so the memory of a non-periodic
+evaluation grows with the square of the number of atoms. The operator
+evaluates the long-range term together with the descriptor and both networks,
+which is faster, when the module has one charge channel and a charge network
+in `float32` with `tanh` or `silu` hidden layers whose widths are multiples of
+four and without `resnet_dt`; the defaults give such a module in a compressed
+model.
 
 The following are not supported for a model with a long-range module:
 multi-rank (domain-decomposed) inference of a model that the dedicated

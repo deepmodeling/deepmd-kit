@@ -57,6 +57,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -85,11 +86,20 @@ constexpr float kFixedScaleFloat = 1099511627776.f;  // 2^40
 
 constexpr double kPi = 3.14159265358979323846;
 
-// The cell of one frame and its mesh.
+// The cell of one frame and its mesh. The host sizes the mesh, which fixes
+// the buffers and the launches of a call, and the device derives the
+// geometry from the cell and the prefactor of the call, so that a CUDA graph
+// capturing a call evaluates the cell of every replay on the meshes of the
+// capture.
 struct FrameMesh {
   // B^-1, row-major: s_d = sum_j r_j inverse[3 j + d].
   double inverse[9];
-  double volume;
+  // 2 pi B^-1 in float32, row-major like inverse: the wave vector of the mode
+  // m is k_a = sum_d reciprocal[3 a + d] m_d.
+  float reciprocal[9];
+  // The factor prefactor / V of the influence function in float32, V the
+  // volume of the cell.
+  float influence_scale;
   // -n_d (B^-1)_jd, row-major in (j, d): the force at fixed charges from the
   // derivatives of the energy with respect to the scaled coordinates u_d.
   float gradient_to_force[9];
@@ -116,7 +126,10 @@ int64_t even_fft_size(int64_t n) {
   }
 }
 
-FrameMesh frame_mesh(const double* cell, double spacing) {
+// The mesh of the cell ``cell`` at a spacing of at most ``spacing``, sized
+// along every lattice vector; store_frame_mesh adds the geometry of the cell
+// on the device.
+FrameMesh frame_mesh_size(const double* cell, double spacing) {
   FrameMesh mesh{};
   const double a = cell[0], b = cell[1], c = cell[2];
   const double d = cell[3], e = cell[4], f = cell[5];
@@ -130,19 +143,16 @@ FrameMesh frame_mesh(const double* cell, double spacing) {
                          std::sqrt(g * g + h * h + i * i);
   TORCH_CHECK(std::abs(det) > 1e-6 * lengths,
               "latent_charge_sum: a periodic cell is singular");
-  const double adjugate[9] = {e * i - f * h, c * h - b * i, b * f - c * e,
-                              f * g - d * i, a * i - c * g, c * d - a * f,
-                              d * h - e * g, b * g - a * h, a * e - b * d};
-  for (int k = 0; k < 9; ++k) {
-    mesh.inverse[k] = adjugate[k] / det;
-  }
-  mesh.volume = std::abs(det);
-  // The squared lengths of the lattice vectors are formed term by term, as
-  // the Python front end forms them, so that both round the mesh size
-  // identically.
+  // The squared length of a lattice vector sums the squares of its
+  // components, each rounded on its own as the Python front end and the C++
+  // interface form them: the explicit fma of a square with zero is that
+  // rounded square, which the compiler does not fuse into the sum, so that
+  // all three size the mesh identically.
   for (int axis = 0; axis < 3; ++axis) {
     const double* v = cell + 3 * axis;
-    const double length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+    const double length =
+        std::sqrt(std::fma(v[0], v[0], 0.0) + std::fma(v[1], v[1], 0.0) +
+                  std::fma(v[2], v[2], 0.0));
     const double points = std::ceil(length / spacing);
     TORCH_CHECK(points < 1 << 20,
                 "latent_charge_sum: the mesh of a cell exceeds 2^20 points "
@@ -153,12 +163,6 @@ FrameMesh frame_mesh(const double* cell, double spacing) {
   TORCH_CHECK(int64_t{mesh.n[0]} * mesh.n[1] * mesh.n[2] <
                   std::numeric_limits<int>::max(),
               "latent_charge_sum: the mesh of a cell exceeds 2^31 points");
-  for (int j = 0; j < 3; ++j) {
-    for (int d = 0; d < 3; ++d) {
-      mesh.gradient_to_force[3 * j + d] =
-          static_cast<float>(-mesh.n[d] * mesh.inverse[3 * j + d]);
-    }
-  }
   return mesh;
 }
 
@@ -396,6 +400,41 @@ __global__ void __launch_bounds__(kStencilWarps* kWarp)
   }
 }
 
+// Stores the mesh of one frame, sized on the host and carried by value, with
+// the geometry of its cell ``cell``. Thread k = 3 j + d of kGeometryThreads
+// forms the entry (B^-1)_jd = C_dj / det B of the inverse of the cell B, C
+// its cofactors, and the wave-vector and force factors of that entry; the
+// first thread also forms the factor prefactor / V of the influence
+// function.
+constexpr int kGeometryThreads = 9;
+
+__global__ void store_frame_mesh(FrameMesh mesh,
+                                 const double* __restrict__ cell,
+                                 double prefactor,
+                                 FrameMesh* __restrict__ out) {
+  const int k = threadIdx.x;
+  const int j = k / 3;
+  const int d = k % 3;
+  const double det = cell[0] * (cell[4] * cell[8] - cell[5] * cell[7]) -
+                     cell[1] * (cell[3] * cell[8] - cell[5] * cell[6]) +
+                     cell[2] * (cell[3] * cell[7] - cell[4] * cell[6]);
+  const double* row1 = cell + 3 * ((d + 1) % 3);
+  const double* row2 = cell + 3 * ((d + 2) % 3);
+  const double inverse = (row1[(j + 1) % 3] * row2[(j + 2) % 3] -
+                          row1[(j + 2) % 3] * row2[(j + 1) % 3]) /
+                         det;
+  out->inverse[k] = inverse;
+  out->reciprocal[k] = static_cast<float>(2.0 * kPi * inverse);
+  out->gradient_to_force[k] = static_cast<float>(-mesh.n[d] * inverse);
+  if (k == 0) {
+    out->influence_scale = static_cast<float>(prefactor / fabs(det));
+    for (int axis = 0; axis < 3; ++axis) {
+      out->n[axis] = mesh.n[axis];
+    }
+    out->offset = mesh.offset;
+  }
+}
+
 // Converts the fixed-point mesh to the float32 mesh that the transforms read.
 __global__ void fixed_to_float(int64_t count,
                                const unsigned long long* __restrict__ fixed,
@@ -414,7 +453,9 @@ struct IntegerWeights {
 };
 
 // The inverse squared assignment factor |D_d(m)|^-2 along every axis of the
-// half spectrum of one frame: n1 entries, then n2, then n3 / 2 + 1.
+// half spectrum of a mesh: n1 entries, then n2, then n3 / 2 + 1. It depends
+// only on the shape of the mesh and the order of the B-splines, so the plans
+// of a shape hold it (create_mesh_plans).
 __global__ void assignment_factor(FrameMesh mesh,
                                   int order,
                                   IntegerWeights integer_weight,
@@ -512,30 +553,30 @@ __device__ __forceinline__ void kernel_transform(int kernel,
 constexpr int kModeSums = 7;
 
 __global__ void __launch_bounds__(kThreads)
-    apply_influence(FrameMesh mesh,
+    apply_influence(const FrameMesh* __restrict__ frame,
                     int channels,
                     int kernel,
                     const double* __restrict__ coefficient,
                     int gaussians,
-                    double prefactor,
                     const float* __restrict__ factor,
                     float2* __restrict__ spectrum,
                     double* __restrict__ block_sum) {
   __shared__ KernelTerms terms;
   load_kernel_terms(kernel, coefficient, gaussians, terms);
   __syncthreads();
+  const FrameMesh& mesh = *frame;
   const int n1 = mesh.n[0];
   const int n2 = mesh.n[1];
   const int n3 = mesh.n[2];
   const int half = n3 / 2 + 1;
   const int modes = n1 * n2 * half;
-  // k_a = 2 pi sum_d (B^-1)_ad m_d
+  // k_a = sum_d reciprocal[3 a + d] m_d = 2 pi sum_d (B^-1)_ad m_d
   float reciprocal[9];
 #pragma unroll
   for (int k = 0; k < 9; ++k) {
-    reciprocal[k] = static_cast<float>(2.0 * kPi * mesh.inverse[k]);
+    reciprocal[k] = mesh.reciprocal[k];
   }
-  const float scale = static_cast<float>(prefactor / mesh.volume);
+  const float scale = mesh.influence_scale;
   // Every warp takes rows (i1, i2) of the half spectrum, its lanes the modes
   // of a row, which lie contiguously.
   const int lane = threadIdx.x % kWarp;
@@ -944,29 +985,70 @@ IntegerWeights integer_bspline_weights(int order) {
   return weight;
 }
 
+// The launch of a kernel of float64 work, one item per thread. The float64
+// pipe of a multiprocessor serves every warp on it, so few items spread over
+// as many multiprocessors as there are warps of them, in blocks of a few
+// warps, and many items fill blocks of kThreads.
+struct Float64Launch {
+  int blocks;
+  int threads;
+};
+
+Float64Launch float64_launch(int64_t work) {
+  const int64_t multiprocessors =
+      at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
+  const int64_t warps = (work + kWarp - 1) / kWarp;
+  const int64_t warps_per_block = std::clamp<int64_t>(
+      (warps + multiprocessors - 1) / multiprocessors, 1, kThreads / kWarp);
+  const int threads = static_cast<int>(warps_per_block * kWarp);
+  return {static_cast<int>(std::max<int64_t>(
+              1, std::min<int64_t>((work + threads - 1) / threads, 65535))),
+          threads};
+}
+
+// Blocks of the influence function of a mesh: a few per multiprocessor fill
+// the device, and no more blocks than the rows of the half spectrum fill, a
+// row to a warp, so that the block sums stay few. The count depends on the
+// mesh and the device alone, so that the modes of a frame are summed in the
+// same order whatever the other frames of its call.
+int influence_blocks(const FrameMesh& mesh) {
+  constexpr int64_t kWarps = kThreads / kWarp;
+  const int64_t rows = int64_t{mesh.n[0]} * mesh.n[1];
+  return static_cast<int>(std::clamp<int64_t>(
+      (rows + kWarps - 1) / kWarps, 1,
+      4 * at::cuda::getCurrentDeviceProperties()->multiProcessorCount));
+}
+
 void check_cufft(cufftResult result, const char* operation) {
   TORCH_CHECK(result == CUFFT_SUCCESS, "latent_charge_sum: cuFFT ", operation,
               " failed with error ", static_cast<int>(result));
 }
 
 // The real-to-complex and complex-to-real transforms of the meshes of one
-// shape, batched over the channels. The plans allocate no work area: every
-// transform runs on a work area of the workspace of its call, set with the
-// stream under ``mutex`` just before the transform is enqueued, so that
-// concurrent calls never share one.
+// shape, batched over the channels, and the inverse squared assignment
+// factors of the shape at one B-spline order, which depend on nothing else
+// and are formed once. The plans allocate no work area: every transform runs
+// on a work area of the workspace of its call, set with the stream under
+// ``mutex`` just before the transform is enqueued, so that concurrent calls
+// never share one. A CUDA graph that captures a transform runs it on these
+// plans at every replay, so it holds them while it lives: ``graphs`` counts
+// the graphs that hold them.
 struct MeshPlans {
   cufftHandle forward = 0;
   cufftHandle inverse = 0;
   size_t work_bytes = 0;
+  // float32, n1 + n2 + n3 / 2 + 1 entries on the device (assignment_factor).
+  torch::Tensor factor;
   c10::DeviceIndex device = 0;
   std::mutex mutex;
+  std::atomic<int> graphs{0};
 
   MeshPlans() = default;
   MeshPlans(const MeshPlans&) = delete;
   MeshPlans& operator=(const MeshPlans&) = delete;
-  // A plan leaves the cache only past kPlanCacheSize shapes; its transforms
-  // may still be in flight, so the device finishes them first. The
-  // destructor reports no error.
+  // Plans leave the cache only past kPlanCacheSize shapes and once no graph
+  // holds them; the transforms of eager calls may still be in flight, so the
+  // device finishes them first. The destructor reports no error.
   ~MeshPlans() {
     int current = 0;
     cudaGetDevice(&current);
@@ -983,29 +1065,13 @@ struct MeshPlans {
 };
 
 // The plans of the meshes of ``mesh`` with ``channels`` channels on the
-// current device, kept across calls; beyond kPlanCacheSize shapes, the least
-// recently used are released. The cache itself lives until the process ends
-// and is never destroyed, since its plans would otherwise be released after
-// the CUDA runtime shuts down.
-constexpr size_t kPlanCacheSize = 16;
-
-std::shared_ptr<MeshPlans> mesh_plans(const FrameMesh& mesh, int channels) {
-  using Key = std::array<int, 5>;
-  using Cache = std::list<std::pair<Key, std::shared_ptr<MeshPlans>>>;
-  static std::mutex cache_mutex;
-  static Cache& cache = *new Cache();
-  const Key key = {c10::cuda::current_device(), mesh.n[0], mesh.n[1], mesh.n[2],
-                   channels};
-  // A plan that leaves the cache is released after the lock, since its
-  // release waits for the device.
-  std::shared_ptr<MeshPlans> evicted;
-  const std::lock_guard<std::mutex> lock(cache_mutex);
-  for (auto entry = cache.begin(); entry != cache.end(); ++entry) {
-    if (entry->first == key) {
-      cache.splice(cache.begin(), cache, entry);
-      return entry->second;
-    }
-  }
+// current device, with the assignment factors of B-splines of order
+// ``order``, formed on ``stream``, which the creation waits for so that calls
+// on every stream read them.
+std::shared_ptr<MeshPlans> create_mesh_plans(const FrameMesh& mesh,
+                                             int channels,
+                                             int order,
+                                             cudaStream_t stream) {
   auto plans = std::make_shared<MeshPlans>();
   plans->device = c10::cuda::current_device();
   long long shape[3] = {mesh.n[0], mesh.n[1], mesh.n[2]};
@@ -1026,10 +1092,119 @@ std::shared_ptr<MeshPlans> mesh_plans(const FrameMesh& mesh, int channels) {
                           1, points, CUFFT_C2R, channels, &inverse_bytes),
       "plan creation");
   plans->work_bytes = std::max(forward_bytes, inverse_bytes);
-  cache.emplace_front(key, plans);
-  if (cache.size() > kPlanCacheSize) {
-    evicted = std::move(cache.back().second);
-    cache.pop_back();
+  const int64_t factor_count =
+      int64_t{mesh.n[0]} + mesh.n[1] + mesh.n[2] / 2 + 1;
+  plans->factor =
+      torch::empty({factor_count}, torch::TensorOptions()
+                                       .dtype(torch::kFloat32)
+                                       .device(torch::kCUDA, plans->device));
+  const Float64Launch launch = float64_launch(factor_count);
+  assignment_factor<<<launch.blocks, launch.threads, 0, stream>>>(
+      mesh, order, integer_bspline_weights(order),
+      plans->factor.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  C10_CUDA_CHECK(cudaStreamSynchronize(stream));
+  return plans;
+}
+
+// Ends the hold of a graph on the plans it captured. CUDA runs it on a thread
+// of its own, from which no CUDA call may be made, so the hold is a count
+// that the cache reads rather than an owner that would release the plans.
+void CUDART_CB release_graph_hold(void* plans) {
+  static_cast<MeshPlans*>(plans)->graphs.fetch_sub(1);
+}
+
+// Makes ``graph``, which a capture is recording, hold ``plans`` until it and
+// every graph instantiated from it are destroyed.
+void hold_in_graph(MeshPlans& plans, cudaGraph_t graph) {
+  cudaUserObject_t hold = nullptr;
+  C10_CUDA_CHECK(cudaUserObjectCreate(&hold, &plans, release_graph_hold, 1,
+                                      cudaUserObjectNoDestructorSync));
+  plans.graphs.fetch_add(1);
+  const cudaError_t moved =
+      cudaGraphRetainUserObject(graph, hold, 1, cudaGraphUserObjectMove);
+  if (moved != cudaSuccess) {
+    // The reference stays with this call, whose release ends the hold.
+    cudaUserObjectRelease(hold, 1);
+  }
+  C10_CUDA_CHECK(moved);
+}
+
+// Whether a CUDA graph captures the stream of a call, and that graph.
+struct StreamCapture {
+  cudaStreamCaptureStatus status = cudaStreamCaptureStatusNone;
+  cudaGraph_t graph = nullptr;
+};
+
+StreamCapture stream_capture(cudaStream_t stream) {
+  StreamCapture capture;
+#if CUDART_VERSION >= 12000
+  C10_CUDA_CHECK(cudaStreamGetCaptureInfo(stream, &capture.status, nullptr,
+                                          &capture.graph));
+#else
+  C10_CUDA_CHECK(cudaStreamGetCaptureInfo_v2(stream, &capture.status, nullptr,
+                                             &capture.graph));
+#endif
+  return capture;
+}
+
+// The plans of the meshes of ``mesh`` with ``channels`` channels and
+// B-splines of order ``order`` on the current device, kept across calls. A
+// call under ``capture`` makes the graph of the capture hold them and needs
+// them created before, by an eager call, since their creation waits for the
+// stream. The other calls release the least recently used plans that no
+// graph holds past kPlanCacheSize shapes, which a call under capture may not
+// do, since a release waits for the device. The cache itself lives until the
+// process ends and is never destroyed, since its plans would otherwise be
+// released after the CUDA runtime shuts down.
+constexpr size_t kPlanCacheSize = 16;
+
+std::shared_ptr<MeshPlans> mesh_plans(const FrameMesh& mesh,
+                                      int channels,
+                                      int order,
+                                      const StreamCapture& capture,
+                                      cudaStream_t stream) {
+  using Key = std::array<int, 6>;
+  using Cache = std::list<std::pair<Key, std::shared_ptr<MeshPlans>>>;
+  static std::mutex cache_mutex;
+  static Cache& cache = *new Cache();
+  const Key key = {c10::cuda::current_device(),
+                   mesh.n[0],
+                   mesh.n[1],
+                   mesh.n[2],
+                   channels,
+                   order};
+  // Plans that leave the cache are released after the lock, since their
+  // release waits for the device.
+  std::vector<std::shared_ptr<MeshPlans>> evicted;
+  const std::lock_guard<std::mutex> lock(cache_mutex);
+  const auto found =
+      std::find_if(cache.begin(), cache.end(),
+                   [&](const auto& entry) { return entry.first == key; });
+  if (found != cache.end()) {
+    cache.splice(cache.begin(), cache, found);
+  } else {
+    TORCH_CHECK(capture.status == cudaStreamCaptureStatusNone,
+                "latent_charge_sum: a CUDA graph captures only meshes that an "
+                "eager call has evaluated, and none has evaluated the mesh of ",
+                mesh.n[0], " x ", mesh.n[1], " x ", mesh.n[2],
+                " points, channel count ", channels, " and B-spline order ",
+                order);
+    cache.emplace_front(key, create_mesh_plans(mesh, channels, order, stream));
+  }
+  std::shared_ptr<MeshPlans> plans = cache.front().second;
+  if (capture.status == cudaStreamCaptureStatusActive) {
+    hold_in_graph(*plans, capture.graph);
+  } else if (capture.status == cudaStreamCaptureStatusNone) {
+    // From the least recently used back to, but short of, the front entry,
+    // which holds the plans of this call.
+    auto entry = cache.end();
+    while (cache.size() > kPlanCacheSize && --entry != cache.begin()) {
+      if (entry->second->graphs.load() == 0) {
+        evicted.push_back(std::move(entry->second));
+        entry = cache.erase(entry);
+      }
+    }
   }
   return plans;
 }
@@ -1135,6 +1310,14 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
               "latent_charge_sum: owners other than every node lie in one "
               "frame");
   const auto stream = at::cuda::getCurrentCUDAStream();
+  // The device reads pinned cells in place, and a copy of pageable ones; a
+  // CUDA graph that captures the call reads the cells again at every replay,
+  // which only pinned memory allows.
+  const StreamCapture capture = stream_capture(stream);
+  const bool pinned = box.is_pinned();
+  TORCH_CHECK(capture.status == cudaStreamCaptureStatusNone || pinned,
+              "latent_charge_sum: a CUDA graph that captures periodic frames "
+              "reads their cells at every replay, from box in pinned memory");
 
   // === Step 1. The meshes of the frames, sized on the host ===
   std::vector<FrameMesh> frames(frame_count);
@@ -1142,33 +1325,20 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   const double* cells = box.data_ptr<double>();
   int64_t mesh_total = 0;
   int64_t spectrum_size = 0;
-  int64_t factor_size = 0;
+  int mode_blocks = 1;
   size_t work_bytes = 0;
   for (int f = 0; f < frame_count; ++f) {
-    frames[f] = frame_mesh(cells + 9 * f, spacing);
+    frames[f] = frame_mesh_size(cells + 9 * f, spacing);
     frames[f].offset = mesh_total;
     mesh_total += channels * mesh_points(frames[f]);
     const int half = frames[f].n[2] / 2 + 1;
     spectrum_size = std::max(spectrum_size, int64_t{channels} * frames[f].n[0] *
                                                 frames[f].n[1] * half);
-    factor_size =
-        std::max(factor_size, int64_t{frames[f].n[0]} + frames[f].n[1] + half);
-    plans[f] = mesh_plans(frames[f], channels);
+    mode_blocks = std::max(mode_blocks, influence_blocks(frames[f]));
+    plans[f] = mesh_plans(frames[f], channels, static_cast<int>(order), capture,
+                          stream);
     work_bytes = std::max(work_bytes, plans[f]->work_bytes);
   }
-  const auto byte_options = torch::TensorOptions().dtype(torch::kUInt8);
-  auto host_frames =
-      torch::empty({static_cast<int64_t>(sizeof(FrameMesh)) * frame_count},
-                   byte_options.pinned_memory(true));
-  std::memcpy(host_frames.data_ptr(), frames.data(),
-              sizeof(FrameMesh) * frame_count);
-  const IntegerWeights integer_weight =
-      integer_bspline_weights(static_cast<int>(order));
-  // A few blocks per multiprocessor fill the device; every thread of the
-  // influence function then walks several modes, which keeps the block sums
-  // few.
-  const int mode_blocks =
-      4 * at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
 
   // === Step 2. The buffers of the call ===
   const int64_t average_nodes = (node_count + frame_count - 1) / frame_count;
@@ -1186,6 +1356,8 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   Workspace workspace;
   const int64_t frames_at =
       workspace.reserve<uint8_t>(sizeof(FrameMesh) * frame_count);
+  const int64_t cells_at =
+      workspace.reserve<double>(pinned ? 0 : int64_t{frame_count} * 9);
   const int64_t frame_ptr_at = workspace.reserve<int64_t>(frame_count + 1);
   const int64_t slice_charge_at =
       workspace.reserve<double>(int64_t{frame_count} * slice_count * 2);
@@ -1201,7 +1373,6 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   const int64_t mesh_at = workspace.reserve<float>(mesh_total);
   const int64_t spectrum_at = workspace.reserve<float2>(spectrum_size);
   const int64_t work_at = workspace.reserve<uint8_t>(work_bytes);
-  const int64_t factor_at = workspace.reserve<float>(factor_size);
   const int64_t block_sum_at =
       workspace.reserve<double>(int64_t{mode_blocks} * kModeSums);
   const int64_t frame_virial_at =
@@ -1223,17 +1394,35 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   float* potential_mesh = charge_mesh;
   auto* spectrum = workspace.at<float2>(spectrum_at);
   void* work = workspace.at<uint8_t>(work_at);
-  auto* factor = workspace.at<float>(factor_at);
   auto* block_sum = workspace.at<double>(block_sum_at);
   auto* frame_virial = workspace.at<double>(frame_virial_at);
   auto* potential = workspace.at<float>(potential_at);
   auto* owner_slice = workspace.at<double>(owner_slice_at);
   auto* owner_local = workspace.at<double>(owner_local_at);
-  // The copy from the pinned staging buffer records its completion, before
-  // which the allocator does not hand the buffer out again.
-  torch::from_blob(frames_ptr, {host_frames.numel()},
-                   byte_options.device(coord.device()))
-      .copy_(host_frames, /*non_blocking=*/true);
+  const double* device_cells = nullptr;
+  if (pinned) {
+    void* mapped = nullptr;
+    C10_CUDA_CHECK(
+        cudaHostGetDevicePointer(&mapped, const_cast<double*>(cells), 0));
+    device_cells = static_cast<const double*>(mapped);
+  } else {
+    // Pageable cells are staged in pinned memory, from which the copy runs
+    // without waiting for the stream; the host allocator keeps the staging
+    // memory until the copy has completed.
+    auto staged =
+        torch::empty({frame_count, 9}, box.options().pinned_memory(true));
+    std::memcpy(staged.data_ptr<double>(), cells,
+                sizeof(double) * 9 * frame_count);
+    auto* copy = workspace.at<double>(cells_at);
+    torch::from_blob(copy, {frame_count, 9}, coord.options())
+        .copy_(staged, /*non_blocking=*/true);
+    device_cells = copy;
+  }
+  for (int f = 0; f < frame_count; ++f) {
+    store_frame_mesh<<<1, kGeometryThreads, 0, stream>>>(
+        frames[f], device_cells + 9 * f, prefactor, frames_ptr + f);
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+  }
   C10_CUDA_CHECK(
       cudaMemsetAsync(fixed_mesh, 0, sizeof(int64_t) * mesh_total, stream));
 
@@ -1254,11 +1443,13 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   dispatch_order(order, [&](auto order_constant) {
     constexpr int kOrder = decltype(order_constant)::value;
     auto* node_stencil = workspace.at<AxisStencil<kOrder>>(stencils_at);
-    node_stencils<kOrder><<<blocks_for(3 * node_count), kThreads, 0, stream>>>(
-        coord.data_ptr<double>(), charge.data_ptr<float>(),
-        node_mask.data_ptr<bool>(), frame_ptr, frames_ptr, frame_stat,
-        frame_count, node_count, channels, static_cast<int>(channel),
-        node_stencil, node_charge);
+    const Float64Launch stencil_launch = float64_launch(3 * node_count);
+    node_stencils<kOrder>
+        <<<stencil_launch.blocks, stencil_launch.threads, 0, stream>>>(
+            coord.data_ptr<double>(), charge.data_ptr<float>(),
+            node_mask.data_ptr<bool>(), frame_ptr, frames_ptr, frame_stat,
+            frame_count, node_count, channels, static_cast<int>(channel),
+            node_stencil, node_charge);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     // === Step 4. The charge meshes ===
     spread_charges<kOrder>
@@ -1283,17 +1474,13 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
                                reinterpret_cast<cufftComplex*>(spectrum)),
                   "transform");
     }
-    const int half = grid.n[2] / 2 + 1;
-    const int factor_count = grid.n[0] + grid.n[1] + half;
-    assignment_factor<<<blocks_for(factor_count), kThreads, 0, stream>>>(
-        grid, static_cast<int>(order), integer_weight, factor);
+    const int blocks = influence_blocks(grid);
+    apply_influence<<<blocks, kThreads, 0, stream>>>(
+        frames_ptr + f, channels, static_cast<int>(kernel),
+        coefficient.data_ptr<double>(), gaussians,
+        plan.factor.data_ptr<float>(), spectrum, block_sum);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
-    apply_influence<<<mode_blocks, kThreads, 0, stream>>>(
-        grid, channels, static_cast<int>(kernel),
-        coefficient.data_ptr<double>(), gaussians, prefactor, factor, spectrum,
-        block_sum);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
-    mode_virial<<<1, kThreads, 0, stream>>>(block_sum, mode_blocks,
+    mode_virial<<<1, kThreads, 0, stream>>>(block_sum, blocks,
                                             frame_virial + 9 * f);
     C10_CUDA_KERNEL_LAUNCH_CHECK();
     {
@@ -1358,8 +1545,9 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   auto charge_gradient = torch::empty({owner_count, channels}, float_options);
   auto atom_virial = torch::empty({owner_count, 9}, float_options);
   auto virial = torch::empty({frame_count, 9}, float_options);
-  finish_owners<<<blocks_for(std::max<int64_t>(owner_count, 9 * frame_count)),
-                  kThreads, 0, stream>>>(
+  const Float64Launch owner_launch =
+      float64_launch(std::max<int64_t>(owner_count, 9 * frame_count));
+  finish_owners<<<owner_launch.blocks, owner_launch.threads, 0, stream>>>(
       potential, force.data_ptr<float>(), owner_coord, owner_charge, owner_mask,
       owner_frame_ptr, frame_virial, owner_local, owner_total, frame_stat,
       frame_count, owner_count, channels, static_cast<int>(channel),

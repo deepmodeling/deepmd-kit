@@ -3,12 +3,22 @@
 
 #include <torch/torch.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <string>
 #include <vector>
 
 #include "commonPT.h"
+
+#ifdef DEEPMD_TORCH_HAS_CUDA
+#include <c10/cuda/CUDAException.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
+#include <cuda_runtime_api.h>
+#endif
 
 namespace deepmd {
 namespace ptexpt {
@@ -94,16 +104,52 @@ inline std::int64_t evenFftSize(std::int64_t n) {
 }
 
 /**
+ * @brief The size of the mesh of a periodic frame along its lattice vectors.
+ *
+ * Twin of Python ``mesh_dims_of_cells`` and of the long-range operator for a
+ * single frame: along every lattice vector ``a_d`` the mesh holds the
+ * smallest even number of points without a prime factor above 7 of at least
+ * ``ceil(|a_d| / spacing)``. The squared length sums the squares of the
+ * components, each rounded on its own as Python forms it; the explicit fma of
+ * a square with zero is that rounded square, which the compiler does not
+ * fuse into the sum, so that the three size the mesh identically whatever
+ * the floating-point contraction of the build.
+ *
+ * @param box The row-major cell, the rows its lattice vectors, nine values in
+ * the length unit of the model.
+ * @param spacing The largest mesh spacing, in the length unit of the model.
+ * @throw deepmd::deepmd_exception If the mesh exceeds 2^20 points along a
+ * lattice vector, the limit of the operator.
+ */
+inline std::array<std::int64_t, 3> meshDims(const std::vector<double>& box,
+                                            const double spacing) {
+  std::array<std::int64_t, 3> dims = {};
+  for (int d = 0; d < 3; ++d) {
+    const double* v = box.data() + 3 * d;
+    const double length =
+        std::sqrt(std::fma(v[0], v[0], 0.0) + std::fma(v[1], v[1], 0.0) +
+                  std::fma(v[2], v[2], 0.0));
+    const double points = std::ceil(length / spacing);
+    if (!(points < double(1 << 20))) {
+      throw deepmd::deepmd_exception(
+          "the mesh of the cell exceeds 2^20 points along a lattice vector; "
+          "a lattice vector of " +
+          std::to_string(length) + " at a mesh spacing of " +
+          std::to_string(spacing) + " needs " + std::to_string(points) + ".");
+    }
+    dims[d] = evenFftSize(static_cast<std::int64_t>(points));
+  }
+  return dims;
+}
+
+/**
  * @brief Build the mesh topology a periodic long-range module of the graph
  * lower reads.
  *
  * Twin of Python ``build_mesh_grid`` in
  * ``deepmd/dpmodel/utils/neighbor_graph/reciprocal_graph.py`` for a single
- * frame: along every lattice vector ``a_d`` the mesh holds the smallest even
- * number of points without a prime factor above 7 of at least
- * ``ceil(|a_d| / spacing)``, with the length formed term by term as Python
- * forms it, so that both size the mesh identically. Without a cell, the frame
- * is non-periodic: the cell is the identity, the mesh minimal and the frame
+ * frame, on the mesh of ``meshDims``. Without a cell, the frame is
+ * non-periodic: the cell is the identity, the mesh minimal and the frame
  * masked.
  *
  * @param coord Node positions, shape ``(N, 3)``, on the model device.
@@ -128,12 +174,7 @@ inline std::vector<torch::Tensor> buildMeshTopology(
     for (int k = 0; k < 9; ++k) {
       cell[k] = box[k];
     }
-    for (int d = 0; d < 3; ++d) {
-      const double* v = cell.data() + 3 * d;
-      const double length = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-      dims[d] =
-          evenFftSize(static_cast<std::int64_t>(std::ceil(length / spacing)));
-    }
+    dims = meshDims(box, spacing);
   }
   const double volume =
       std::abs(cell[0] * (cell[4] * cell[8] - cell[5] * cell[7]) -
@@ -155,6 +196,101 @@ inline std::vector<torch::Tensor> buildMeshTopology(
   }
   return fields;
 }
+
+/**
+ * @brief The cell input of the device-resident evaluations of a model with a
+ * long-range module, in pinned host memory.
+ *
+ * The compact lower reads the cell on the device while the stream runs its
+ * evaluation, so that a CUDA graph capturing the evaluation reads the cell
+ * of every replay from the same memory. One event orders those reads: an
+ * evaluation on another stream than the previous one first waits on the
+ * device for the previous one, so that the event of the last evaluation
+ * follows every earlier read, and a cell other than the one held waits for
+ * that event before the memory is written.
+ */
+class PinnedCell {
+ public:
+  PinnedCell() = default;
+  PinnedCell(const PinnedCell&) = delete;
+  PinnedCell& operator=(const PinnedCell&) = delete;
+  // The destructor reports no error.
+  ~PinnedCell() {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    if (read_ != nullptr) {
+      int current = 0;
+      cudaGetDevice(&current);
+      cudaSetDevice(device_);
+      cudaEventDestroy(read_);
+      cudaSetDevice(current);
+    }
+#endif
+  }
+
+  /**
+   * @brief Hold ``box`` for the next evaluation, which is enqueued on the
+   * current stream of ``device``.
+   *
+   * @param box The row-major cell, nine values, or empty for a non-periodic
+   * frame, whose cell is zero.
+   * @param device Index of the CUDA device of the evaluation.
+   * @return The cell input, a pinned float64 CPU tensor of shape ``(1, 9)``.
+   */
+  const torch::Tensor& hold(const std::vector<double>& box, const int device) {
+    if (!cell_.defined()) {
+      cell_ = torch::zeros(
+          {1, 9},
+          torch::TensorOptions().dtype(torch::kFloat64).pinned_memory(true));
+    }
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    device_ = static_cast<c10::DeviceIndex>(device);
+    stream_ = c10::cuda::getCurrentCUDAStream(device_).stream();
+    if (read_ != nullptr && stream_ != read_stream_) {
+      C10_CUDA_CHECK(cudaStreamWaitEvent(stream_, read_, 0));
+    }
+#else
+    (void)device;
+#endif
+    std::array<double, 9> values = {};
+    std::copy(box.begin(), box.end(), values.begin());
+    double* const cell = cell_.data_ptr<double>();
+    if (std::memcmp(cell, values.data(), sizeof(values)) != 0) {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+      if (read_ != nullptr) {
+        C10_CUDA_CHECK(cudaEventSynchronize(read_));
+      }
+#endif
+      std::memcpy(cell, values.data(), sizeof(values));
+    }
+    return cell_;
+  }
+
+  /**
+   * @brief Mark the evaluation of the cell last held, once enqueued, as the
+   * last that reads the cell.
+   */
+  void record() {
+#ifdef DEEPMD_TORCH_HAS_CUDA
+    const c10::cuda::CUDAGuard device_guard(device_);
+    if (read_ == nullptr) {
+      C10_CUDA_CHECK(cudaEventCreateWithFlags(&read_, cudaEventDisableTiming));
+    }
+    C10_CUDA_CHECK(cudaEventRecord(read_, stream_));
+    read_stream_ = stream_;
+#endif
+  }
+
+ private:
+  torch::Tensor cell_;
+#ifdef DEEPMD_TORCH_HAS_CUDA
+  c10::DeviceIndex device_ = 0;
+  // The stream of the evaluation of the cell last held.
+  cudaStream_t stream_ = nullptr;
+  // The last evaluation that reads the cell, and its stream.
+  cudaEvent_t read_ = nullptr;
+  cudaStream_t read_stream_ = nullptr;
+#endif
+};
 
 }  // namespace ptexpt
 }  // namespace deepmd

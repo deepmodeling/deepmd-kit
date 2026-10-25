@@ -137,6 +137,11 @@ bool periodic_frames(const c10::optional<torch::Tensor>& box) {
   return periodic > 0;
 }
 
+}  // namespace
+
+namespace deepmd {
+namespace long_range {
+
 ChargeSumOutputs latent_charge_sum(torch::Tensor coord,
                                    torch::Tensor charge,
                                    torch::Tensor node_mask,
@@ -228,8 +233,10 @@ ChargeSumOutputs latent_charge_sum(torch::Tensor coord,
                                  n_node_per_frame, total_charge, communicator);
 }
 
-}  // namespace
+}  // namespace long_range
+}  // namespace deepmd
 
 TORCH_LIBRARY_FRAGMENT(deepmd, library) {
-  library.impl("latent_charge_sum", torch::kCUDA, &latent_charge_sum);
+  library.impl("latent_charge_sum", torch::kCUDA,
+               &deepmd::long_range::latent_charge_sum);
 }

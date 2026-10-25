@@ -76,6 +76,31 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
             and not self.uses_charge_spin()
         )
 
+    def operator_constraint(
+        self, n_frames: int, like: torch.Tensor
+    ) -> tuple[torch.Tensor, int]:
+        """The total charge of every frame and the constrained channel of the operator.
+
+        Parameters
+        ----------
+        n_frames
+            The number of frames.
+        like
+            A tensor giving the device of the total charges.
+
+        Returns
+        -------
+        tuple[torch.Tensor, int]
+            The total charges with shape ``(n_frames,)``, float64 and
+            contiguous, and the constrained channel, or -1 without a
+            constraint, in which case the total charges are zero.
+        """
+        total_charge = like.new_zeros(n_frames, dtype=torch.float64)
+        if self.charge_constraint is None:
+            return total_charge, -1
+        total_charge = self._total_charge(n_frames, total_charge, None, None)
+        return total_charge.contiguous(), int(self.charge_constraint["channel"])
+
     def energy_force_from_coord(
         self,
         descriptor: torch.Tensor,
@@ -144,17 +169,13 @@ class LatentChargeLongRange(LatentChargeLongRangeDP):
         leaf = descriptor.detach().requires_grad_(True)
         with torch.enable_grad():
             charge = self.charge_net.call_graph(leaf, atype)["latent_charge"]
-        total_charge = coord.new_zeros(n_node.shape[0], dtype=torch.float64)
-        channel = -1
-        if self.charge_constraint is not None:
-            channel = self.charge_constraint["channel"]
-            total_charge = self._total_charge(n_node.shape[0], total_charge, None, None)
+        total_charge, channel = self.operator_constraint(n_node.shape[0], coord)
         atom_energy, charge_gradient, force, atom_virial, virial = latent_charge_sum(
             coord.to(torch.float64).contiguous(),
             charge.detach().to(torch.float32).contiguous(),
             node_mask.contiguous(),
             n_node,
-            total_charge.contiguous(),
+            total_charge,
             self.kernel,
             channel,
             COULOMB_CONSTANT,

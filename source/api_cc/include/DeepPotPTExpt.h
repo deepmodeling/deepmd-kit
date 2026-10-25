@@ -14,17 +14,21 @@
 
 #include <torch/torch.h>
 
+#include <array>
+#include <cstdint>
 #include <mutex>
+#include <optional>
 
 #include "DeepPot.h"
 #include "graph_assembly.h"
 
 // Forward-declare to keep these out of the public header. Defined in
-// commonPTExpt.h.
+// commonPTExpt.h, and PinnedCell in longRangePTExpt.h.
 namespace deepmd::ptexpt {
 class TempFile;
 class ChargeStateFold;
 class GraphReplay;
+class PinnedCell;
 }  // namespace deepmd::ptexpt
 
 namespace torch::inductor {
@@ -513,9 +517,18 @@ class DeepPotPTExpt : public DeepPotBackend {
   at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // The cell input of the device-resident evaluations of a model with a
+  // long-range module, in pinned memory that a replay reads again.
+  std::unique_ptr<deepmd::ptexpt::PinnedCell> long_range_cell_;
+  // The mesh size of the cell of the last device-resident evaluation of a
+  // model with a long-range module, zero for a non-periodic frame, and the
+  // evaluations since it last changed, counted up to the number of calls for
+  // which a changed mesh is evaluated eagerly before it is captured again.
+  std::optional<std::array<std::int64_t, 3> > long_range_mesh_;
+  std::int64_t long_range_mesh_calls_ = 0;
   // CUDA-graph replay of repeated device-resident canonical evaluations,
-  // declared after the loader so that the graph is released before the
-  // constants it reads.
+  // declared after the loader and the cell so that the graph is released
+  // before the constants and the cell it reads.
   std::unique_ptr<deepmd::ptexpt::GraphReplay> canonical_replay_;
   // Serializes the runs of the model, which runs on a single-threaded runner,
   // the device-resident entry points, whose replay of canonical evaluations
@@ -688,9 +701,10 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] world The MPI communicator (a pointer to an ``MPI_Comm``) of the
    * ranks a decomposed system spans, or NULL for a system that one rank holds
    * whole; a model with a long-range module receives it after the positions.
-   * @param[in] box The row-major cell of a periodic frame, nine values, or
-   * empty for a non-periodic one; a model with a long-range module receives
-   * it after the communicator.
+   * @param[in] cell The cell, a float64 CPU tensor of shape ``(1, 9)``: the
+   * row-major cell of a periodic frame, or zero for a non-periodic one; a
+   * model with a long-range module receives it after the communicator, and
+   * every other model ignores it.
    */
   std::vector<torch::Tensor> run_model_canonical_graph(
       const torch::Tensor& atype,
@@ -703,7 +717,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& source_order,
       const torch::Tensor& coord,
       const void* world,
-      const std::vector<double>& box);
+      const torch::Tensor& cell);
 
   /**
    * @brief Evaluate the long-range module on a rank that holds no node.

@@ -430,7 +430,12 @@ def latent_charge_sum(
         CPU, the rows of every row-major 3x3 cell being its lattice vectors,
         or ``None`` for non-periodic frames; a zero row marks a non-periodic
         frame. A periodic frame is evaluated on a mesh of spacing at most
-        ``spacing``, with B-splines of order ``order``.
+        ``spacing``, with B-splines of order ``order``. The device reads cells
+        in pinned memory in place while the stream runs the call, so the
+        caller keeps them alive and unchanged until then. A CUDA graph that
+        captures the call needs them pinned and reads them at every replay,
+        and it needs an eager call to have evaluated meshes of the same sizes
+        with the same channel count and ``order``.
     order
         The order of the B-splines of the mesh, at most :data:`MAX_ORDER`.
     spacing

@@ -967,25 +967,31 @@ class DeepPot : public DeepBaseModel {
    * @param[in] nloc Number of owned local nodes.
    * @param[in] nall_nodes Total local-plus-halo node count.
    * @param[in] edge_storage Number of edge storage slots.
-   * @param[in] stream Accelerator stream (``cudaStream_t``) of the model
-   * device on which the inputs were produced and the outputs will be
-   * consumed; a non-null stream requires a CUDA build. The evaluation is
-   * enqueued on it without a synchronization of the stream. A graph without
-   * halo nodes is captured into a CUDA graph on the second consecutive call
-   * with the same buffers and extents and replayed while they stay the same,
-   * except where a model with a long-range module receives a communicator or
-   * a cell. The host waits for the device when a call captures or releases a
-   * graph, which happens on that second call and on a call whose buffers or
-   * extents change. set_charge_spin waits for the work in flight on the model
-   * device before it replaces the constants and for the replacement before it
-   * returns, and the caller completes the work on its stream before it
-   * destroys the model. A null stream runs on the current stream of the
-   * calling thread for the model device and waits for that stream before
-   * returning. Models in different threads of one process evaluate
-   * concurrently, and their captures, releases of graphs and charge-state
-   * updates, which wait for the whole device, take turns; CUDA work outside
-   * DeePMD-kit that waits for the whole device while a capture is under way
-   * invalidates it, and the model then evaluates without replay.
+   * @param[in] stream Accelerator stream (``cudaStream_t``) of the model device
+   * on which the inputs were produced and the outputs will be consumed; a
+   * non-null stream requires a CUDA build. The evaluation is enqueued on it
+   * without a synchronization of the stream. A graph without halo nodes is
+   * captured into a CUDA graph on the second consecutive call with the same
+   * buffers and extents and replayed while they stay the same, except where a
+   * model with a long-range module receives a communicator. A model whose
+   * module serves periodic systems copies the cell into memory of its own,
+   * which a replay reads, and the mesh size of the cell counts as an extent: a
+   * call with another cell than the previous call first waits for the earlier
+   * evaluations, consecutive evaluations on different streams run in call
+   * order, and after the mesh size changes, the model evaluates without replay
+   * for 64 calls, after which the capture follows as for new extents. The host
+   * waits for the device when a call captures or releases a graph, which
+   * happens on that second call and on a call whose buffers or extents change.
+   * set_charge_spin waits for the work in flight on the model device before it
+   * replaces the constants and for the replacement before it returns, and the
+   * caller completes the work on its stream before it destroys the model. A
+   * null stream runs on the current stream of the calling thread for the model
+   * device and waits for that stream before returning. Models in different
+   * threads of one process evaluate concurrently, and their captures, releases
+   * of graphs and charge-state updates, which wait for the whole device, take
+   * turns; CUDA work outside DeePMD-kit that waits for the whole device while a
+   * capture is under way invalidates it, and the model then evaluates without
+   * replay.
    */
   void compute_canonical_graph_gpu(double* d_atom_energy,
                                    double* d_force,

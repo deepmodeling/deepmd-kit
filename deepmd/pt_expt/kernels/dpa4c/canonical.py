@@ -96,6 +96,13 @@ def op_available() -> bool:
     )
 
 
+def long_range_op_available() -> bool:
+    """Return whether the backend device carries the fused long-range operator."""
+    return op_available() and operator_available(
+        "dpa4c_canonical_compress_long_range_energy_force"
+    )
+
+
 #: Position of the per-node magnetic moment among the compression arguments,
 #: which open with the radial table (see ``compressed_operator_arguments``),
 #: and among the inputs that follow ``edge_vec`` in the compact descriptor
@@ -242,6 +249,32 @@ def _energy_force_fake(
         edge_vec.new_empty(nodes, 3, dtype=torch.float64)
         if has_spin
         else edge_vec.new_empty((0,), dtype=torch.float32),
+        edge_vec.new_empty(nodes, dtype=torch.int32),
+    )
+
+
+def _long_range_energy_force_fake(
+    edge_vec: torch.Tensor,
+    source: torch.Tensor,
+    destination_row_ptr: torch.Tensor,
+    source_row_ptr: torch.Tensor,
+    source_order: torch.Tensor,
+    n_node: torch.Tensor,
+    n_local: torch.Tensor,
+    atype: torch.Tensor,
+    *args: Any,
+) -> tuple[torch.Tensor, ...]:
+    del source, destination_row_ptr, source_row_ptr, source_order, n_local, args
+    nodes = atype.shape[0]
+    frames = n_node.shape[0]
+    # Each output is allocated separately, because the schema declares six
+    # unannotated results and no two of them may share storage.
+    return (
+        edge_vec.new_empty(frames, 1, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 1, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 3, dtype=torch.float64),
+        edge_vec.new_empty(frames, 3, 3, dtype=torch.float64),
+        edge_vec.new_empty(nodes, 3, 3, dtype=torch.float32),
         edge_vec.new_empty(nodes, dtype=torch.int32),
     )
 
@@ -537,6 +570,10 @@ def ensure_registered() -> None:
     torch.library.register_fake("deepmd::dpa4c_canonical_compress_energy_force")(
         _energy_force_fake
     )
+    if long_range_op_available():
+        torch.library.register_fake(
+            "deepmd::dpa4c_canonical_compress_long_range_energy_force"
+        )(_long_range_energy_force_fake)
     torch.library.register_fake("deepmd::dpa4c_canonical_compress_backward_inplace")(
         _backward_inplace_fake
     )

@@ -25,7 +25,12 @@
 // A thread sums one tile in float32 and adds the tile sums with compensated
 // float32 arithmetic. The partner axis is split into contiguous chunks, so
 // that a launch fills the device several times over; every chunk writes its
-// sums, and a second pass adds the chunks in a fixed order in float64.
+// sums, and a second pass adds the chunks in a fixed order in float64. A
+// system too small to fill the device with tiles of kWideTile nodes takes
+// tiles of one warp, so that its pairs spread over more multiprocessors. Its
+// chunks hold kNarrowChunkTiles tiles each, counted from the first partner of
+// each block, rather than equal parts of the partner range: the chunks of a
+// block then do not depend on the partners past the frames of its nodes.
 //
 // The charge constraint and the per-frame virial reduce over the nodes of
 // every frame, in slices whose float64 sums are added in a fixed order, so
@@ -54,15 +59,29 @@
 
 namespace {
 
-// Nodes per block, which is also the length of a tile of partners.
+// Threads per block of the per-node kernels.
 constexpr int kThreads = 128;
+// Nodes of a tile of the pair kernel: a block owns one tile of nodes and
+// walks the partners of its chunk in tiles of the same length. Every thread
+// sums the pairs of a tile in float32 and adds the tile sum to its
+// compensated sums.
+constexpr int kWideTile = 128;
+constexpr int kNarrowTile = 32;
 // Partners evaluated together, which share every coefficient load.
 constexpr int kBatch = 4;
 constexpr int kMaxGaussians = 32;
 // Fills of the resident block slots of the device that one launch aims for.
 constexpr int kWaves = 8;
-// Shortest chunk of the partner axis, in tiles.
-constexpr int kMinChunkTiles = 2;
+// Tiles per chunk of wide tiles where a frame that spans every partner takes
+// the most chunks it may: pair_launch rounds the chunk count up from its tile
+// count over this.
+constexpr int kWideChunkTiles = 2;
+// Tiles of a chunk of narrow tiles: two, so that a chunk that holds a tile
+// entirely past the partners of a frame holds at most one tile with partners
+// of that frame. The compensated sum of one tile carries no error, so that
+// the zero sums of the tiles past the frame leave it unchanged, as the frame
+// on its own would.
+constexpr int kNarrowChunkTiles = 2;
 
 enum KernelKind : int { kLes = 0, kSog = 1 };
 
@@ -315,7 +334,7 @@ struct OwnNode {
 
 // Adds the unscaled potential, force direction and virial that the partners
 // of one staged tile give the node to ``sum``.
-template <int kKernel, int kChannels, int kExclusion>
+template <int kKernel, int kChannels, int kExclusion, int kTile>
 __device__ __forceinline__ void accumulate_tile(
     const float4* __restrict__ tile_head,
     const float4* __restrict__ tile_tail,
@@ -326,7 +345,7 @@ __device__ __forceinline__ void accumulate_tile(
     const OwnNode<kChannels>& own,
     float (&sum)[sum_width<kChannels>()]) {
 #pragma unroll 4
-  for (int base = 0; base < kThreads; base += kBatch) {
+  for (int base = 0; base < kTile; base += kBatch) {
     float dx[kBatch];
     float dy[kBatch];
     float dz[kBatch];
@@ -403,9 +422,12 @@ __device__ __forceinline__ void accumulate_tile(
 // Sums, for every owner node of one block and every partner of one chunk, the
 // unscaled potential, force direction and virial of the node, and writes them
 // to ``partial[chunk][component][node - owner_begin]``. The owners are the
-// nodes [owner_begin, owner_begin + owner_count).
-template <int kKernel, int kChannels>
-__global__ void __launch_bounds__(kThreads)
+// nodes [owner_begin, owner_begin + owner_count). A chunk is the part
+// blockIdx.y of gridDim.y equal parts of the partner range of the block or,
+// with ``chunk_tiles`` > 0, its chunk_tiles tiles from tile blockIdx.y *
+// chunk_tiles of the range.
+template <int kKernel, int kChannels, int kTile>
+__global__ void __launch_bounds__(kTile)
     direct_sum_kernel(const float4* __restrict__ head,
                       const float4* __restrict__ tail,
                       const float* __restrict__ charge,
@@ -415,22 +437,23 @@ __global__ void __launch_bounds__(kThreads)
                       int owner_count,
                       const double* __restrict__ coefficient,
                       int gaussian_count,
+                      int chunk_tiles,
                       float* __restrict__ partial) {
   constexpr int kWidth = sum_width<kChannels>();
-  __shared__ float4 tile_head[kThreads];
-  __shared__ float4 tile_tail[kThreads];
-  __shared__ float tile_charge[kThreads * kChannels];
+  __shared__ float4 tile_head[kTile];
+  __shared__ float4 tile_tail[kTile];
+  __shared__ float tile_charge[kTile * kChannels];
   __shared__ float4 gaussians[kMaxGaussians];
   __shared__ int range[2];
   __shared__ bool single_frame;
 
   const int owner_end = owner_begin + owner_count;
-  const int first = owner_begin + blockIdx.x * kThreads;
+  const int first = owner_begin + blockIdx.x * kTile;
   const int node = first + threadIdx.x;
   const int own_frame = node < owner_end ? frame[node] : -1;
 
   if constexpr (kKernel == kSog) {
-    for (int k = threadIdx.x; k < gaussian_count; k += kThreads) {
+    for (int k = threadIdx.x; k < gaussian_count; k += kTile) {
       const float amplitude = static_cast<float>(coefficient[k]);
       const float rate = static_cast<float>(coefficient[gaussian_count + k]);
       gaussians[k] = make_float4(amplitude, -rate,
@@ -441,7 +464,7 @@ __global__ void __launch_bounds__(kThreads)
   // to: a contiguous range, since frames are contiguous on the node axis and
   // padding nodes trail them.
   if (threadIdx.x == 0) {
-    int last = min(first + kThreads, owner_end) - 1;
+    int last = min(first + kTile, owner_end) - 1;
     while (last > first && frame[last] < 0) {
       --last;
     }
@@ -452,19 +475,20 @@ __global__ void __launch_bounds__(kThreads)
     // A block whose nodes all lie in one frame finds every partner of its
     // range in that frame, which spares the frame test of every pair.
     single_frame = low_frame >= 0 && low_frame == high_frame &&
-                   min(first + kThreads, owner_end) - 1 == last;
+                   min(first + kTile, owner_end) - 1 == last;
   }
   __syncthreads();
 
   // The chunk of the partner range this block sums, in whole tiles.
-  const int64_t tile_count = (range[1] - range[0] + kThreads - 1) / kThreads;
-  const int begin =
-      range[0] +
-      static_cast<int>(tile_count * blockIdx.y / gridDim.y) * kThreads;
-  const int end = min(
-      range[1],
-      range[0] + static_cast<int>(tile_count * (blockIdx.y + 1) / gridDim.y) *
-                     kThreads);
+  const int64_t tile_count = (range[1] - range[0] + kTile - 1) / kTile;
+  int64_t first_tile = tile_count * blockIdx.y / gridDim.y;
+  int64_t end_tile = tile_count * (blockIdx.y + 1) / gridDim.y;
+  if (chunk_tiles > 0) {
+    first_tile = min(tile_count, int64_t{blockIdx.y} * chunk_tiles);
+    end_tile = min(tile_count, first_tile + chunk_tiles);
+  }
+  const int begin = range[0] + static_cast<int>(first_tile) * kTile;
+  const int end = min(range[1], range[0] + static_cast<int>(end_tile) * kTile);
 
   OwnNode<kChannels> own;
   own.index = node;
@@ -484,7 +508,7 @@ __global__ void __launch_bounds__(kThreads)
   }
 
   CompensatedSum total[kWidth];
-  for (int start = begin; start < end; start += kThreads) {
+  for (int start = begin; start < end; start += kTile) {
     const int partner = start + threadIdx.x;
     const bool staged = partner < end;
     // A slot past the chunk carries a zero charge and contributes nothing.
@@ -508,15 +532,15 @@ __global__ void __launch_bounds__(kThreads)
     // nodes hold a node itself, so the tests are confined to them and to the
     // blocks that span frames; the choice is uniform over the block.
     if (!single_frame) {
-      accumulate_tile<kKernel, kChannels, kExcludeOutsideFrame>(
+      accumulate_tile<kKernel, kChannels, kExcludeOutsideFrame, kTile>(
           tile_head, tile_tail, tile_charge, gaussians, gaussian_count, start,
           own, sum);
-    } else if (start < first + kThreads && first < start + kThreads) {
-      accumulate_tile<kKernel, kChannels, kExcludeSelf>(
+    } else if (start < first + kTile && first < start + kTile) {
+      accumulate_tile<kKernel, kChannels, kExcludeSelf, kTile>(
           tile_head, tile_tail, tile_charge, gaussians, gaussian_count, start,
           own, sum);
     } else {
-      accumulate_tile<kKernel, kChannels, kNoExclusion>(
+      accumulate_tile<kKernel, kChannels, kNoExclusion, kTile>(
           tile_head, tile_tail, tile_charge, gaussians, gaussian_count, start,
           own, sum);
     }
@@ -676,26 +700,6 @@ __global__ void project_charges(const float* __restrict__ potential,
   atom_energy[node] = 0.5 * energy;
 }
 
-// Chunks of the partner axis for the given counts of owners and partners. The
-// blocks of one launch all carry the same work, so the launch fills the
-// resident block slots of the device several times over, which bounds the
-// idle share of the last wave; no chunk is shorter than kMinChunkTiles tiles
-// of a frame that spans every partner.
-int chunk_count_for(int owner_count,
-                    int partner_count,
-                    int resident_blocks_per_multiprocessor) {
-  const int multiprocessors =
-      at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
-  const int owner_blocks = (owner_count + kThreads - 1) / kThreads;
-  const int partner_tiles = (partner_count + kThreads - 1) / kThreads;
-  const int64_t wanted_blocks = static_cast<int64_t>(kWaves) *
-                                resident_blocks_per_multiprocessor *
-                                multiprocessors;
-  const int wanted =
-      static_cast<int>((wanted_blocks + owner_blocks - 1) / owner_blocks);
-  return std::max(1, std::min(wanted, partner_tiles / kMinChunkTiles));
-}
-
 // The staged partners, one row per node, and the sums of the owners.
 struct DirectSumBuffers {
   const float4* head;
@@ -711,6 +715,52 @@ struct DirectSumBuffers {
   float* atom_virial;
 };
 
+// The launch of the pair kernel: whether it takes narrow tiles, and its
+// chunks of the partner axis, ``chunk_count`` of them and, for narrow tiles,
+// ``chunk_tiles`` tiles each (direct_sum_kernel).
+struct PairLaunch {
+  bool narrow;
+  int chunk_count;
+  int chunk_tiles;
+};
+
+// The launch for the given counts of owners and partners. The blocks of one
+// launch of wide tiles all carry the same work, so the launch fills the
+// resident block slots of the device several times over, which bounds the
+// idle share of the last wave. A frame that spans every partner has at most
+// one chunk per kWideChunkTiles of its tiles, rounded up, so that in a launch
+// with slots to spare no chunk holds more than kWideChunkTiles tiles: the
+// longest block sets the duration of such a launch. A system whose wide
+// blocks would fill less than a third of the resident block slots leaves too
+// few warps on the multiprocessors to hide the latency of the pair loop, and
+// takes narrow tiles in chunks of kNarrowChunkTiles, as many as a frame that
+// spans every partner holds.
+PairLaunch pair_launch(int owner_count,
+                       int partner_count,
+                       int resident_blocks_per_multiprocessor) {
+  const int multiprocessors =
+      at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
+  const int owner_blocks = (owner_count + kWideTile - 1) / kWideTile;
+  const int partner_tiles = (partner_count + kWideTile - 1) / kWideTile;
+  const int64_t wanted_blocks = static_cast<int64_t>(kWaves) *
+                                resident_blocks_per_multiprocessor *
+                                multiprocessors;
+  const int wanted =
+      static_cast<int>((wanted_blocks + owner_blocks - 1) / owner_blocks);
+  const int chunk_limit =
+      (partner_tiles + kWideChunkTiles - 1) / kWideChunkTiles;
+  const int chunk_count = std::max(1, std::min(wanted, chunk_limit));
+  if (3 * int64_t{owner_blocks} * chunk_count >=
+      int64_t{resident_blocks_per_multiprocessor} * multiprocessors) {
+    return {false, chunk_count, 0};
+  }
+  const int narrow_tiles = (partner_count + kNarrowTile - 1) / kNarrowTile;
+  return {
+      true,
+      std::max(1, (narrow_tiles + kNarrowChunkTiles - 1) / kNarrowChunkTiles),
+      kNarrowChunkTiles};
+}
+
 template <int kKernel, int kChannels>
 int resident_blocks_per_multiprocessor() {
   // The occupancy is a property of the compiled kernel and of the device; a
@@ -718,10 +768,39 @@ int resident_blocks_per_multiprocessor() {
   static const int blocks = [] {
     int value = 0;
     C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &value, direct_sum_kernel<kKernel, kChannels>, kThreads, 0));
+        &value, direct_sum_kernel<kKernel, kChannels, kWideTile>, kWideTile,
+        0));
     return std::max(1, value);
   }();
   return blocks;
+}
+
+template <int kKernel, int kChannels, int kTile>
+void launch_tiles(const DirectSumBuffers& buffers,
+                  int owner_begin,
+                  int owner_count,
+                  const PairLaunch& pair,
+                  double prefactor,
+                  cudaStream_t stream) {
+  constexpr int kWidth = sum_width<kChannels>();
+  auto partial = torch::empty(
+      {static_cast<int64_t>(pair.chunk_count) * owner_count * kWidth},
+      torch::TensorOptions()
+          .dtype(torch::kFloat32)
+          .device(torch::kCUDA, c10::cuda::current_device()));
+  const dim3 grid((owner_count + kTile - 1) / kTile, pair.chunk_count);
+  direct_sum_kernel<kKernel, kChannels, kTile><<<grid, kTile, 0, stream>>>(
+      buffers.head, buffers.tail, buffers.charge, buffers.frame,
+      buffers.frame_ptr, owner_begin, owner_count, buffers.coefficient,
+      buffers.gaussian_count, pair.chunk_tiles, partial.data_ptr<float>());
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  const int64_t reduce_threads = static_cast<int64_t>(kWidth) * owner_count;
+  reduce_chunks<kChannels>
+      <<<static_cast<unsigned>((reduce_threads + 255) / 256), 256, 0, stream>>>(
+          partial.data_ptr<float>(), owner_count, pair.chunk_count, prefactor,
+          kKernel == kLes ? buffers.coefficient : nullptr, buffers.potential,
+          buffers.force, buffers.atom_virial);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
 template <int kKernel, int kChannels>
@@ -730,28 +809,16 @@ void launch(const DirectSumBuffers& buffers,
             int owner_count,
             double prefactor,
             cudaStream_t stream) {
-  constexpr int kWidth = sum_width<kChannels>();
-  const int chunk_count =
-      chunk_count_for(owner_count, buffers.node_count,
-                      resident_blocks_per_multiprocessor<kKernel, kChannels>());
-  auto partial =
-      torch::empty({static_cast<int64_t>(chunk_count) * owner_count * kWidth},
-                   torch::TensorOptions()
-                       .dtype(torch::kFloat32)
-                       .device(torch::kCUDA, c10::cuda::current_device()));
-  const dim3 grid((owner_count + kThreads - 1) / kThreads, chunk_count);
-  direct_sum_kernel<kKernel, kChannels><<<grid, kThreads, 0, stream>>>(
-      buffers.head, buffers.tail, buffers.charge, buffers.frame,
-      buffers.frame_ptr, owner_begin, owner_count, buffers.coefficient,
-      buffers.gaussian_count, partial.data_ptr<float>());
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
-  const int64_t reduce_threads = static_cast<int64_t>(kWidth) * owner_count;
-  reduce_chunks<kChannels>
-      <<<static_cast<unsigned>((reduce_threads + 255) / 256), 256, 0, stream>>>(
-          partial.data_ptr<float>(), owner_count, chunk_count, prefactor,
-          kKernel == kLes ? buffers.coefficient : nullptr, buffers.potential,
-          buffers.force, buffers.atom_virial);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  const PairLaunch pair =
+      pair_launch(owner_count, buffers.node_count,
+                  resident_blocks_per_multiprocessor<kKernel, kChannels>());
+  if (pair.narrow) {
+    launch_tiles<kKernel, kChannels, kNarrowTile>(
+        buffers, owner_begin, owner_count, pair, prefactor, stream);
+  } else {
+    launch_tiles<kKernel, kChannels, kWideTile>(
+        buffers, owner_begin, owner_count, pair, prefactor, stream);
+  }
 }
 
 template <int kKernel>

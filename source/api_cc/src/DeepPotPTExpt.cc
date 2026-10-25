@@ -131,6 +131,15 @@ at::Tensor communicator_tensor(const void* world) {
       torch::TensorOptions().dtype(torch::kInt64));
 }
 
+// A capture waits for the device, empties the cache of the allocator and
+// allocates the memory of its graph anew, which takes far longer than an
+// evaluation of a small system. After the mesh of its cell changes size, a
+// model with a long-range module is therefore evaluated eagerly until the
+// size has held for this many calls, so that a cell that fluctuates across a
+// boundary of the mesh size under a barostat is not captured at every
+// crossing.
+constexpr std::int64_t kStableMeshCalls = 64;
+
 // The cell input of the compact lower of a long-range model: a float64 CPU
 // tensor of shape (1, 9), the rows of the row-major cell its lattice vectors,
 // zero for a non-periodic frame.
@@ -284,7 +293,13 @@ void DeepPotPTExpt::init(const std::string& model,
     lower_input_is_graph_ = lower_input_kind == "graph";
     lower_input_is_canonical_ = lower_input_kind == "dpa1_canonical" ||
                                 lower_input_kind == "dpa4c_canonical";
-    canonical_requires_source_csr_ = lower_input_kind == "dpa1_canonical";
+    // Whether the force assembly of the compact lower reads the source CSR on
+    // every call, as the archive records it; an archive without the record
+    // reads it for compressed DPA1 and for a long-range module (below).
+    canonical_requires_source_csr_ =
+        metadata.obj_val.count("canonical_requires_source_csr")
+            ? metadata["canonical_requires_source_csr"].as_bool()
+            : lower_input_kind == "dpa1_canonical";
   } else {
     lower_input_is_edge_ = false;
     lower_input_is_graph_ = false;
@@ -315,8 +330,9 @@ void DeepPotPTExpt::init(const std::string& model,
           "a model with a long-range module requires the graph or the "
           "compact canonical lower.");
     }
-    // Its compact lower assembles the force through the source CSR.
-    canonical_requires_source_csr_ = lower_input_is_canonical_;
+    if (!metadata.obj_val.count("canonical_requires_source_csr")) {
+      canonical_requires_source_csr_ = lower_input_is_canonical_;
+    }
   }
   if (lower_input_is_edge_) {
     std::cerr << "WARNING: This .pt2 uses the deprecated edge_vec lower "
@@ -649,7 +665,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_canonical_graph(
     const torch::Tensor& source_order,
     const torch::Tensor& coord,
     const void* world,
-    const std::vector<double>& box) {
+    const torch::Tensor& cell) {
   std::vector<torch::Tensor> inputs = {
       atype,          n_node,
       n_local,        canonicalIndexBytes(source),
@@ -658,7 +674,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_canonical_graph(
   if (long_range_) {
     inputs.push_back(coord);
     inputs.push_back(communicator_tensor(world));
-    inputs.push_back(cell_tensor(box));
+    inputs.push_back(cell);
   }
   const std::lock_guard<std::recursive_mutex> evaluation(evaluation_mutex_);
   return loader->run(inputs);
@@ -710,7 +726,8 @@ void DeepPotPTExpt::join_long_range_exchange(const void* world,
       torch::zeros({2}, i64.dtype(torch::kInt32)),
       torch::zeros({2, 3}, i64.dtype(torch::kFloat32)), torch::zeros({2}, i64),
       torch::zeros({2}, i64), torch::arange(2, i64),
-      torch::zeros({1, 3}, i64.dtype(torch::kFloat64)), world, box);
+      torch::zeros({1, 3}, i64.dtype(torch::kFloat64)), world,
+      cell_tensor(box));
 }
 
 std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
@@ -1483,7 +1500,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
             compact.atype, compact.n_node, compact.n_local, compact.source,
             compact.edge_vec, compact.destination_row_ptr,
             compact.source_row_ptr, compact.source_order, node_coord, world,
-            long_range_box);
+            long_range_ ? cell_tensor(long_range_box) : torch::Tensor());
       } else {
         flat_outputs = run_model_graph(
             node_atype, n_node_tensor, n_local_tensor, graph_pack.edge_index,
@@ -1871,7 +1888,8 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       flat_outputs = run_model_canonical_graph(
           compact.atype, compact.n_node, compact.n_local, compact.source,
           compact.edge_vec, compact.destination_row_ptr, compact.source_row_ptr,
-          compact.source_order, node_coord, /*world=*/nullptr, long_range_box);
+          compact.source_order, node_coord, /*world=*/nullptr,
+          long_range_ ? cell_tensor(long_range_box) : torch::Tensor());
     } else {
       flat_outputs = run_model_graph(
           graph_tensors.atype, graph_tensors.n_node, graph_tensors.n_local,
@@ -2871,6 +2889,15 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
         has_source_csr ? d_source_row_ptr : source_row_placeholder_.data_ptr();
     const void* const source_order_data =
         has_source_csr ? d_source_order : source_order_placeholder_.data_ptr();
+    // A model with a long-range module takes the cell in pinned memory, which
+    // the evaluation of a periodic system reads on the device.
+    const bool long_range = has_long_range();
+    if (long_range && !long_range_cell_) {
+      long_range_cell_ = std::make_unique<ptexpt::PinnedCell>();
+    }
+    const torch::Tensor cell =
+        long_range ? long_range_cell_->hold(long_range_box, gpu_id)
+                   : torch::Tensor();
 
     // The tensors over the caller's buffers are built inside the evaluation,
     // which a replay skips: wrapping a device buffer queries the driver for
@@ -2911,7 +2938,7 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
       extract_outputs(output, run_model_canonical_graph(
                                   atype, n_node, n_local, source, edge_vec,
                                   destination_row_ptr, source_row_ptr,
-                                  source_order, coord, world, long_range_box));
+                                  source_order, coord, world, cell));
       auto atom_energy = output["atom_energy"]
                              .reshape({nall_nodes})
                              .slice(0, 0, nloc)
@@ -2944,27 +2971,61 @@ void DeepPotPTExpt::compute_canonical_graph_gpu_impl(
     // neighbor rebuild, so a graph with halo nodes is evaluated eagerly. A
     // model with a long-range module reads the node positions, whose address
     // is then part of the key, and is evaluated eagerly over several ranks,
-    // where it may communicate between its kernels, and in a cell, which the
-    // evaluation reads on the host.
-    const bool long_range = has_long_range();
-    if (nloc != nall_nodes ||
-        (long_range && (world != nullptr || box != nullptr))) {
+    // where it may communicate between its kernels. A replay reads the cell
+    // of its call, while the mesh size of the cell fixes the buffers and the
+    // launches of the evaluation, so the size joins the key.
+    bool replay = nloc == nall_nodes && !(long_range && world != nullptr);
+    std::array<std::int64_t, 3> mesh = {};
+    if (long_range) {
+      if (!long_range_box.empty()) {
+        mesh = ptexpt::meshDims(long_range_box, mesh_spacing_);
+      }
+      if (long_range_mesh_ != mesh) {
+        // The first mesh of the instance is replayed once its key repeats. The
+        // graph of another mesh is released at once, so that its memory is
+        // free during the eager calls that follow.
+        long_range_mesh_calls_ =
+            long_range_mesh_.has_value() ? 0 : kStableMeshCalls;
+        long_range_mesh_ = mesh;
+        if (canonical_replay_) {
+          canonical_replay_->invalidate();
+        }
+      }
+      if (long_range_mesh_calls_ < kStableMeshCalls) {
+        ++long_range_mesh_calls_;
+        replay = false;
+      }
+    }
+    if (!replay) {
       evaluate();
     } else {
       if (!canonical_replay_) {
         canonical_replay_ = std::make_unique<ptexpt::GraphReplay>();
       }
-      canonical_replay_->run(
-          {ptexpt::address_key(d_atom_energy), ptexpt::address_key(d_force),
-           ptexpt::address_key(d_virial), ptexpt::address_key(d_atom_virial),
-           ptexpt::address_key(d_atype), ptexpt::address_key(d_source),
-           ptexpt::address_key(d_edge_vec),
-           ptexpt::address_key(d_destination_row_ptr),
-           ptexpt::address_key(source_row_data),
-           ptexpt::address_key(source_order_data),
-           ptexpt::address_key(long_range ? d_coord : nullptr), nloc,
-           nall_nodes, edge_storage, index_width},
-          gpu_id, evaluate);
+      ptexpt::GraphReplay::Key key = {
+          ptexpt::address_key(d_atom_energy),
+          ptexpt::address_key(d_force),
+          ptexpt::address_key(d_virial),
+          ptexpt::address_key(d_atom_virial),
+          ptexpt::address_key(d_atype),
+          ptexpt::address_key(d_source),
+          ptexpt::address_key(d_edge_vec),
+          ptexpt::address_key(d_destination_row_ptr),
+          ptexpt::address_key(source_row_data),
+          ptexpt::address_key(source_order_data),
+          ptexpt::address_key(long_range ? d_coord : nullptr),
+          nloc,
+          nall_nodes,
+          edge_storage,
+          index_width};
+      if (long_range) {
+        key.push_back(ptexpt::address_key(cell.data_ptr()));
+        key.insert(key.end(), mesh.begin(), mesh.end());
+      }
+      canonical_replay_->run(key, gpu_id, evaluate);
+    }
+    if (long_range_periodic_) {
+      long_range_cell_->record();
     }
     if (stream == nullptr) {
       synchronize_current_accelerator_stream(gpu_id);

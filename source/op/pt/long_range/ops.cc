@@ -60,8 +60,18 @@
 // (F, 9). The mesh of a periodic frame holds along every lattice vector a_d
 // the smallest even number of points without a prime factor above 7 of at
 // least ceil(|a_d| / spacing), and spreads the charges with B-splines of
-// order `order`. The force and the virial hold the charges fixed; the response
-// of the charges is the caller's, through the charge gradient.
+// order `order`. The operator sizes the meshes from `box` on the host; the
+// device reads pinned cells in place, while the stream runs the call, and a
+// copy of pageable ones. A CUDA graph that captures a call reads the cells
+// again at every replay, so it needs `box` in pinned memory and evaluates the
+// cells there at replay, provided their meshes keep the sizes of the capture.
+// It captures only meshes whose size, with the channel count and the order,
+// an eager call has evaluated: an eager call forms the cuFFT plans and the
+// assignment factors of a mesh size, which the operator keeps for the sizes
+// used last and for as long as a graph holds them. The caller keeps pinned
+// cells alive and unchanged until the stream has passed a call that reads
+// them. The force and the virial hold the charges fixed; the response of the
+// charges is the caller's, through the charge gradient.
 //
 // `communicator` is an int64 CPU tensor of one element holding the address of
 // the caller's MPI_Comm handle, or zero. A handle of several ranks decomposes

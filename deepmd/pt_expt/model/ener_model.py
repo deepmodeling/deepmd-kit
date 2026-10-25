@@ -174,8 +174,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             Destination CSR offsets with shape ``(N + 1,)``, int64.
         source_row_ptr
             Source CSR offsets with shape ``(N + 1,)``, int64. A DPA4C model
-            also accepts a two-entry placeholder, which declines the
-            per-atom virial; that output is then zero.
+            evaluated by a fused operator, which every DPA4C model without a
+            long-range module is, also accepts a two-entry placeholder, which
+            declines the per-atom virial; that output is then zero.
         source_order
             Source-grouped edge positions with shape ``(S,)``, int64, or a
             two-entry placeholder alongside a placeholder ``source_row_ptr``.
@@ -239,9 +240,24 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         descriptor = learned.descriptor
         fitting = learned.fitting_net
         atom_bias = fused_atom_bias(self.atomic_model, learned)
+
+        def fused_graph() -> CanonicalGraph:
+            # A program without the per-atom virial declines it with the
+            # two-entry placeholders of the source CSR, so that a fused
+            # operator stores no edge cotangent whatever its caller passes.
+            if do_atomic_virial:
+                return graph
+            return dataclasses.replace(
+                graph,
+                source_row_ptr=source_row_ptr.new_zeros(2),
+                source_order=source_order.new_zeros(2),
+            )
+
         if learned.has_long_range():
             from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+                dpa4c_canonical_compress_long_range_energy_force,
                 dpa4c_canonical_long_range_energy_force,
+                fused_long_range_eligible,
             )
 
             if coord is None:
@@ -249,39 +265,47 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     "a model with a long-range module reads the node positions"
                 )
             check_owned_frames(n_node, n_local, communicator, box)
-            atype, output_mask = self.atomic_model._prepare_graph_nodes(
-                n_node,
-                n_local,
-                atype,
-                edge_vec,
-            )
             force_mag = None
-            mask = output_mask.to(torch.int32)
-            energy, atom_energy, force, virial, atom_virial = (
-                dpa4c_canonical_long_range_energy_force(
-                    descriptor,
-                    fitting,
-                    learned.long_range,
-                    graph,
+            if fused_long_range_eligible(learned.long_range):
+                # The fused operator derives the ownership mask from the frame
+                # counts itself, as the operator without a long-range module.
+                energy, atom_energy, force, virial, atom_virial, mask = (
+                    dpa4c_canonical_compress_long_range_energy_force(
+                        descriptor,
+                        fitting,
+                        learned.long_range,
+                        fused_graph(),
+                        atype,
+                        coord,
+                        communicator,
+                        box,
+                        atom_bias,
+                    )
+                )
+            else:
+                atype, output_mask = self.atomic_model._prepare_graph_nodes(
+                    n_node,
+                    n_local,
                     atype,
-                    coord,
-                    communicator,
-                    box,
-                    output_mask,
-                    atom_bias,
-                    do_atomic_virial,
+                    edge_vec,
                 )
-            )
+                mask = output_mask.to(torch.int32)
+                energy, atom_energy, force, virial, atom_virial = (
+                    dpa4c_canonical_long_range_energy_force(
+                        descriptor,
+                        fitting,
+                        learned.long_range,
+                        graph,
+                        atype,
+                        coord,
+                        communicator,
+                        box,
+                        output_mask,
+                        atom_bias,
+                        do_atomic_virial,
+                    )
+                )
         elif use_dpa4c:
-            # A program without the per-atom virial declines it with the
-            # two-entry placeholders of the source CSR, so that the fused
-            # operator stores no edge cotangent whatever its caller passes.
-            if not do_atomic_virial:
-                graph = dataclasses.replace(
-                    graph,
-                    source_row_ptr=source_row_ptr.new_zeros(2),
-                    source_order=source_order.new_zeros(2),
-                )
             # The fused operator derives the ownership mask from the frame
             # counts itself, so nothing runs on the node axis around it. The
             # fitting-route table measured for the network on the backend
@@ -290,7 +314,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 dpa4c_canonical_compress_energy_force(
                     descriptor,
                     fitting,
-                    graph,
+                    fused_graph(),
                     atype,
                     atom_bias,
                     spin,

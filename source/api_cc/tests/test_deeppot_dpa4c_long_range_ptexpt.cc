@@ -27,6 +27,12 @@
 #include <string>
 
 #include "commonPT.h"
+#ifdef DEEPMD_TORCH_HAS_CUDA
+#include <ATen/cuda/Sleep.h>
+#include <c10/cuda/CUDACachingAllocator.h>
+#include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
+#endif
 #endif
 
 namespace {
@@ -379,21 +385,27 @@ TYPED_TEST(TestInferDeepPotDpa4cLongRangePeriodicPtExpt,
                deepmd::deepmd_exception);
 }
 
-#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT && defined(DEEPMD_TORCH_HAS_CUDA)
 // The device-resident entry point of the compressed archives, which reads the
-// positions of the nodes and the cell of a periodic system besides the
-// compact canonical graph. A non-periodic system that one rank holds whole is
-// evaluated eagerly, captured into a CUDA graph and replayed; a periodic one
-// is evaluated eagerly, on the local atoms with the ghost atoms folded onto
-// their owners, as one rank builds the graph, or with a node for every ghost
-// atom, an image of its owner. Every evaluation writes into outputs reset to
-// NaN, so an unwritten output fails the comparison.
+// positions of the nodes and the cell of a periodic system besides the compact
+// canonical graph. A graph without halo nodes is evaluated eagerly, captured
+// into a CUDA graph and replayed: that of a non-periodic system that one rank
+// holds whole, and that of a periodic system on the local atoms with the ghost
+// atoms folded onto their owners, as one rank builds it, whose replay evaluates
+// the cell of its call while the mesh of the cell keeps its size. A periodic
+// graph with a node for every ghost atom, an image of its owner, is evaluated
+// eagerly. Every evaluation writes into outputs reset to NaN, so an unwritten
+// output fails the comparison, and a replay allocates no device memory, which
+// tells it from an eager evaluation or a capture.
 class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
  protected:
   // A replay whose capture fails evaluates eagerly instead, with the same
   // results; only this warning tells the two apart.
   static constexpr const char* kCaptureWarning =
       "could not capture the evaluation";
+  // Clock cycles for which at::cuda::sleep holds a stream back: tens of
+  // milliseconds, far longer than enqueueing an evaluation takes.
+  static constexpr std::int64_t kHoldCycles = std::int64_t{1} << 27;
 
   std::vector<double> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                0.25,  3.32, 1.68, 3.36,  3.00, 1.81,
@@ -419,12 +431,22 @@ class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
   };
 
   // The outputs of an evaluation on the host, the forces folded onto the
-  // owners of the nodes.
+  // owners of the nodes, and the number of blocks that the caching allocator
+  // handed out on the device during the evaluation.
   struct Results {
     std::vector<double> atom_energy;
     std::vector<double> force;
     std::vector<double> virial;
+    std::int64_t allocations = 0;
   };
+
+  static std::int64_t device_allocations() {
+    const auto stats = c10::cuda::CUDACachingAllocator::getDeviceStats(0);
+    return stats
+        .allocation[static_cast<std::size_t>(
+            c10::CachingAllocator::StatType::AGGREGATE)]
+        .allocated;
+  }
 
   void load(const char* model_path, const char* ref_path) {
     if (!torch::cuda::is_available()) {
@@ -440,7 +462,9 @@ class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
     dp.init(model_path);
     ASSERT_TRUE(dp.uses_canonical_graph_inference());
     ASSERT_TRUE(dp.has_long_range());
-    ASSERT_TRUE(dp.canonical_graph_requires_source_csr());
+    // The fused long-range operator serves the charge network of one channel
+    // and reads the source CSR for the per-atom virial alone.
+    ASSERT_FALSE(dp.canonical_graph_requires_source_csr());
     ref.load(ref_path);
     testing::internal::CaptureStderr();
     capturing_stderr = true;
@@ -500,9 +524,36 @@ class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
     return graph;
   }
 
-  // Evaluates ``graph`` through compute_canonical_graph_gpu on the current
-  // stream, in the cell ``cell`` (null for a non-periodic system).
-  Results evaluate(Graph& graph, const int nloc, const double* cell) {
+  // ``graph`` with outputs of its own.
+  static Graph with_own_outputs(const Graph& graph) {
+    Graph copy = graph;
+    copy.atom_energy = torch::empty_like(graph.atom_energy);
+    copy.force = torch::empty_like(graph.force);
+    copy.virial = torch::empty_like(graph.virial);
+    copy.atom_virial = torch::empty_like(graph.atom_virial);
+    return copy;
+  }
+
+  // The cell scaled by ``factor``.
+  std::vector<double> scaled_box(const double factor) const {
+    std::vector<double> cell = box;
+    for (double& entry : cell) {
+      entry *= factor;
+    }
+    return cell;
+  }
+
+  // Enqueues on the current stream an evaluation of ``graph`` through
+  // compute_canonical_graph_gpu, in the cell ``cell`` (null for a
+  // non-periodic system), into outputs reset to NaN; ``stream`` is that
+  // stream, or null, with which the call waits for it before returning.
+  // Without ``source_csr`` the call passes neither the source CSR nor the
+  // per-atom virial.
+  void enqueue(Graph& graph,
+               const int nloc,
+               const double* cell,
+               void* stream,
+               const bool source_csr = true) {
     const double nan = std::numeric_limits<double>::quiet_NaN();
     graph.atom_energy.fill_(nan);
     graph.force.fill_(nan);
@@ -511,30 +562,55 @@ class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
     const deepmd::CanonicalGraphTensorPack& compact = graph.tensors;
     dp.compute_canonical_graph_gpu(
         graph.atom_energy.data_ptr<double>(), graph.force.data_ptr<double>(),
-        graph.virial.data_ptr<double>(), graph.atom_virial.data_ptr<double>(),
+        graph.virial.data_ptr<double>(),
+        source_csr ? graph.atom_virial.data_ptr<double>() : nullptr,
         compact.atype.data_ptr<std::int64_t>(), compact.source.data_ptr(),
         deepmd::canonical_index_width(graph.nodes),
         compact.edge_vec.data_ptr<float>(),
         compact.destination_row_ptr.data_ptr<std::int64_t>(),
-        compact.source_row_ptr.data_ptr<std::int64_t>(),
-        compact.source_order.data_ptr<std::int64_t>(),
+        source_csr ? compact.source_row_ptr.data_ptr<std::int64_t>() : nullptr,
+        source_csr ? compact.source_order.data_ptr<std::int64_t>() : nullptr,
         graph.coord.data_ptr<double>(), /*world=*/nullptr, cell, nloc,
-        graph.nodes, compact.source.size(0));
+        graph.nodes, compact.source.size(0), stream);
+  }
+
+  // The atomic energies, forces and virial of an evaluation of ``graph`` on
+  // the host, the forces folded onto the owners of the nodes.
+  static Results collect(const Graph& graph,
+                         const int nloc,
+                         const torch::Tensor& atom_energy,
+                         const torch::Tensor& force,
+                         const torch::Tensor& virial) {
     const auto host_vector = [](const torch::Tensor& tensor) {
       const torch::Tensor values = tensor.cpu().contiguous();
       return std::vector<double>(values.data_ptr<double>(),
                                  values.data_ptr<double>() + values.numel());
     };
     Results results;
-    results.atom_energy = host_vector(graph.atom_energy);
-    results.virial = host_vector(graph.virial);
-    const std::vector<double> force = host_vector(graph.force);
+    results.atom_energy = host_vector(atom_energy);
+    results.virial = host_vector(virial);
+    const std::vector<double> node_force = host_vector(force);
     results.force.assign(3 * std::size_t(nloc), 0.0);
     for (int node = 0; node < graph.nodes; ++node) {
       for (int dd = 0; dd < 3; ++dd) {
-        results.force[3 * graph.owner[node] + dd] += force[3 * node + dd];
+        results.force[3 * graph.owner[node] + dd] += node_force[3 * node + dd];
       }
     }
+    return results;
+  }
+
+  // Evaluates ``graph`` on the current stream, in the cell ``cell`` (null for
+  // a non-periodic system), with or without the source CSR.
+  Results evaluate(Graph& graph,
+                   const int nloc,
+                   const double* cell,
+                   const bool source_csr = true) {
+    const std::int64_t allocations = device_allocations();
+    enqueue(graph, nloc, cell, /*stream=*/nullptr, source_csr);
+    const std::int64_t allocated = device_allocations() - allocations;
+    Results results =
+        collect(graph, nloc, graph.atom_energy, graph.force, graph.virial);
+    results.allocations = allocated;
     return results;
   }
 
@@ -547,6 +623,42 @@ class TestInferDeepPotDpa4cLongRangeDevicePtExpt : public ::testing::Test {
       energy += value;
     }
     expected.check(energy, results.force, results.virial, 1e-4);
+  }
+
+  // Evaluates the folded graph of the system, periodic in its cell or not,
+  // with the source CSR and then without it, which declines the per-atom
+  // virial alone: the energies, forces and virial agree bit for bit, and the
+  // evaluations without it are captured and replayed.
+  void expect_the_source_csr_optional(const bool periodic) {
+    const int nloc = static_cast<int>(atype.size());
+    std::vector<std::vector<int>> nlist;
+    std::vector<double> coord_ext = coord;
+    std::vector<int> atype_ext = atype;
+    std::vector<int> mapping(nloc);
+    for (int ii = 0; ii < nloc; ++ii) {
+      mapping[ii] = ii;
+    }
+    if (periodic) {
+      _build_nlist<double>(nlist, coord_ext, atype_ext, mapping, coord, atype,
+                           box, static_cast<float>(dp.cutoff()));
+    } else {
+      nlist = nopbc_nlist(coord, dp.cutoff());
+    }
+    Graph graph =
+        build_graph(nlist, coord_ext, atype_ext, mapping, nloc, /*fold=*/true);
+    const double* cell = periodic ? box.data() : nullptr;
+    const Results with_csr = evaluate(graph, nloc, cell);
+    expect_reference(with_csr, periodic ? "periodic" : "default");
+    for (int call = 0; call < 3; ++call) {
+      const Results without = evaluate(graph, nloc, cell, /*source_csr=*/false);
+      const std::string what =
+          "call " + std::to_string(call) + " without the source CSR";
+      EXPECT_EQ(without.atom_energy, with_csr.atom_energy) << what;
+      EXPECT_EQ(without.force, with_csr.force) << what;
+      EXPECT_EQ(without.virial, with_csr.virial) << what;
+      EXPECT_EQ(without.allocations == 0, call == 2)
+          << what << ": " << without.allocations << " device allocations";
+    }
   }
 };
 
@@ -563,14 +675,18 @@ TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt, cluster_is_replayed) {
   Graph graph = build_graph(nopbc_nlist(coord, dp.cutoff()), coord, atype,
                             mapping, nloc, /*fold=*/true);
   ASSERT_EQ(graph.nodes, nloc);
-  // Eager, captured and replayed.
+  // Eager, captured, and replayed from the third call on.
   const Results eager = evaluate(graph, nloc, nullptr);
   expect_reference(eager, "default");
-  for (int call = 1; call < 3; ++call) {
-    const Results replayed = evaluate(graph, nloc, nullptr);
-    EXPECT_EQ(replayed.atom_energy, eager.atom_energy) << "call " << call;
-    EXPECT_EQ(replayed.force, eager.force) << "call " << call;
-    EXPECT_EQ(replayed.virial, eager.virial) << "call " << call;
+  EXPECT_GT(eager.allocations, 0);
+  for (int call = 1; call < 4; ++call) {
+    const Results again = evaluate(graph, nloc, nullptr);
+    EXPECT_EQ(again.atom_energy, eager.atom_energy) << "call " << call;
+    EXPECT_EQ(again.force, eager.force) << "call " << call;
+    EXPECT_EQ(again.virial, eager.virial) << "call " << call;
+    EXPECT_EQ(again.allocations == 0, call > 1)
+        << "call " << call << ": " << again.allocations
+        << " device allocations";
   }
   // The positions are part of the key of the replay: the same values at
   // another address are evaluated anew.
@@ -578,6 +694,7 @@ TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt, cluster_is_replayed) {
   const Results moved = evaluate(graph, nloc, nullptr);
   EXPECT_EQ(moved.atom_energy, eager.atom_energy);
   EXPECT_EQ(moved.force, eager.force);
+  EXPECT_GT(moved.allocations, 0);
 }
 
 TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt, periodic_cell) {
@@ -592,12 +709,152 @@ TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt, periodic_cell) {
   _build_nlist<double>(nlist, coord_ext, atype_ext, mapping, coord, atype, box,
                        static_cast<float>(dp.cutoff()));
   const int nloc = static_cast<int>(atype.size());
-  for (const bool fold : {true, false}) {
-    Graph graph = build_graph(nlist, coord_ext, atype_ext, mapping, nloc, fold);
-    ASSERT_EQ(graph.nodes, fold ? nloc : static_cast<int>(atype_ext.size()));
-    for (int call = 0; call < 2; ++call) {
-      expect_reference(evaluate(graph, nloc, box.data()), "periodic");
-    }
+  // At the mesh spacing of the model, the mesh of the cell has 40 points
+  // along every lattice vector, as it has for the cell strained by 1%, while
+  // the cell stretched by 10% has a mesh of 42, 42 and 48 points.
+  const std::vector<double> strained = scaled_box(1.01);
+  const std::vector<double> stretched = scaled_box(1.1);
+  const auto expect_equal = [](const Results& actual, const Results& expected,
+                               const bool replayed, const std::string& what) {
+    EXPECT_EQ(actual.atom_energy, expected.atom_energy) << what;
+    EXPECT_EQ(actual.force, expected.force) << what;
+    EXPECT_EQ(actual.virial, expected.virial) << what;
+    EXPECT_EQ(actual.allocations == 0, replayed)
+        << what << ": " << actual.allocations << " device allocations";
+  };
+
+  // The folded graph: the strained cell is evaluated eagerly, and the first
+  // cell, under the same key, is captured and replayed. The strained cell is
+  // then replayed at once, since its mesh keeps the size of the capture.
+  Graph graph = build_graph(nlist, coord_ext, atype_ext, mapping, nloc, true);
+  ASSERT_EQ(graph.nodes, nloc);
+  const Results strained_eager = evaluate(graph, nloc, strained.data());
+  EXPECT_GT(strained_eager.allocations, 0);
+  const Results first = evaluate(graph, nloc, box.data());
+  expect_reference(first, "periodic");
+  EXPECT_GT(first.allocations, 0);
+  EXPECT_NE(first.atom_energy, strained_eager.atom_energy);
+  expect_equal(evaluate(graph, nloc, box.data()), first, true, "replay");
+  expect_equal(evaluate(graph, nloc, strained.data()), strained_eager, true,
+               "replay in the strained cell");
+  expect_equal(evaluate(graph, nloc, box.data()), first, true,
+               "replay back in the first cell");
+
+  // A mesh of another size is evaluated eagerly until it has held for 64
+  // calls, then once more under its new key, captured at the 66th call and
+  // replayed from the 67th on.
+  const Results stretched_eager = evaluate(graph, nloc, stretched.data());
+  EXPECT_GT(stretched_eager.allocations, 0);
+  EXPECT_NE(stretched_eager.atom_energy, first.atom_energy);
+  for (int call = 2; call <= 67; ++call) {
+    expect_equal(evaluate(graph, nloc, stretched.data()), stretched_eager,
+                 call == 67,
+                 "call " + std::to_string(call) + " in the stretched cell");
   }
+
+  // The unfolded graph has halo nodes and is evaluated eagerly.
+  Graph unfolded =
+      build_graph(nlist, coord_ext, atype_ext, mapping, nloc, false);
+  ASSERT_EQ(unfolded.nodes, static_cast<int>(atype_ext.size()));
+  const Results unfolded_first = evaluate(unfolded, nloc, box.data());
+  expect_reference(unfolded_first, "periodic");
+  for (int call = 1; call < 3; ++call) {
+    expect_equal(evaluate(unfolded, nloc, box.data()), unfolded_first, false,
+                 "call " + std::to_string(call) + " of the unfolded graph");
+  }
+}
+
+TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt,
+       a_new_cell_waits_for_the_evaluations) {
+  ASSERT_NO_FATAL_FAILURE(
+      load(kPeriodicCompressedModelPath, kPeriodicCompressedRefPath));
+  if (IsSkipped()) {
+    return;
+  }
+  std::vector<std::vector<int>> nlist;
+  std::vector<double> coord_ext;
+  std::vector<int> atype_ext, mapping;
+  _build_nlist<double>(nlist, coord_ext, atype_ext, mapping, coord, atype, box,
+                       static_cast<float>(dp.cutoff()));
+  const int nloc = static_cast<int>(atype.size());
+  // The strained cell keeps the mesh of the cell.
+  const std::vector<double> strained = scaled_box(1.01);
+  // Three graphs over the same inputs with outputs of their own: every call
+  // changes the key of the replay, so that every evaluation runs eagerly and
+  // no capture or release of a graph waits for the device.
+  Graph held_graph =
+      build_graph(nlist, coord_ext, atype_ext, mapping, nloc, /*fold=*/true);
+  Graph same_graph = with_own_outputs(held_graph);
+  Graph strained_graph = with_own_outputs(held_graph);
+  const c10::cuda::CUDAStream held =
+      c10::cuda::getStreamFromPool(/*isHighPriority=*/false, /*device=*/0);
+  const c10::cuda::CUDAStream other =
+      c10::cuda::getStreamFromPool(/*isHighPriority=*/false, /*device=*/0);
+  ASSERT_NE(held.stream(), other.stream());
+  // The cell on a held stream, the same cell on another stream, then the
+  // strained cell on that stream, each evaluation followed by copies of its
+  // outputs on its stream.
+  const auto run = [&](const bool hold) {
+    std::vector<torch::Tensor> copies;
+    const auto run_on = [&](Graph& graph, const std::vector<double>& cell,
+                            const c10::cuda::CUDAStream& stream) {
+      const c10::cuda::CUDAStreamGuard guard(stream);
+      enqueue(graph, nloc, cell.data(), stream.stream());
+      for (const torch::Tensor& output :
+           {graph.atom_energy, graph.force, graph.virial}) {
+        copies.push_back(output.clone());
+      }
+    };
+    if (hold) {
+      const c10::cuda::CUDAStreamGuard guard(held);
+      at::cuda::sleep(kHoldCycles);
+    }
+    run_on(held_graph, box, held);
+    run_on(same_graph, box, other);
+    run_on(strained_graph, strained, other);
+    torch::cuda::synchronize();
+    return copies;
+  };
+  // The first round runs the one-time work of the program. In the second,
+  // the held stream runs its evaluation after the strained cell has been
+  // handed over, and that call writes the cell only once the evaluations
+  // before it, the held one included, have read it.
+  run(/*hold=*/false);
+  const std::vector<torch::Tensor> copies = run(/*hold=*/true);
+  const Results first = evaluate(held_graph, nloc, box.data());
+  expect_reference(first, "periodic");
+  const Results first_strained = evaluate(held_graph, nloc, strained.data());
+  const auto expect_equal = [&](const Graph& graph, const std::size_t at,
+                                const Results& expected,
+                                const std::string& what) {
+    const Results actual =
+        collect(graph, nloc, copies[at], copies[at + 1], copies[at + 2]);
+    EXPECT_EQ(actual.atom_energy, expected.atom_energy) << what;
+    EXPECT_EQ(actual.force, expected.force) << what;
+    EXPECT_EQ(actual.virial, expected.virial) << what;
+  };
+  expect_equal(held_graph, 0, first, "the cell on the held stream");
+  expect_equal(same_graph, 3, first, "the cell on the other stream");
+  expect_equal(strained_graph, 6, first_strained,
+               "the strained cell on the other stream");
+}
+
+TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt,
+       the_source_csr_is_optional_in_a_cluster) {
+  ASSERT_NO_FATAL_FAILURE(load(kCompressedModelPath, kCompressedRefPath));
+  if (IsSkipped()) {
+    return;
+  }
+  expect_the_source_csr_optional(/*periodic=*/false);
+}
+
+TEST_F(TestInferDeepPotDpa4cLongRangeDevicePtExpt,
+       the_source_csr_is_optional_in_a_cell) {
+  ASSERT_NO_FATAL_FAILURE(
+      load(kPeriodicCompressedModelPath, kPeriodicCompressedRefPath));
+  if (IsSkipped()) {
+    return;
+  }
+  expect_the_source_csr_optional(/*periodic=*/true);
 }
 #endif

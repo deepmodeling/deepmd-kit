@@ -149,6 +149,32 @@ def _graph_reads_source_csr(exported: Any) -> bool:
     return not found
 
 
+def _canonical_requires_source_csr(model: Any, lower_kind: str) -> bool:
+    """Return whether a compact canonical lower reads the source CSR on every call.
+
+    The force assembly of compressed DPA1 walks the source CSR, and so does
+    the composition of operators that evaluates a long-range module whose
+    charge network the fused long-range operator does not reproduce. The
+    fused DPA4C operators assemble the forces in fixed point and read the
+    source CSR only for the per-atom virial, so a caller that declines it may
+    pass two-entry placeholders in its place.
+    """
+    if lower_kind == "dpa1_canonical":
+        return True
+    decomposition = model.atomic_model.fused_decomposition()
+    learned = None if decomposition is None else decomposition[0]
+    if learned is None:
+        # The compact lower serves no such model, which the export reports.
+        return True
+    if not learned.has_long_range():
+        return False
+    from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+        fused_long_range_eligible,
+    )
+
+    return not fused_long_range_eligible(learned.long_range)
+
+
 def _numpy_to_json_serializable(model_obj: dict) -> dict:
     """Convert numpy arrays in a model dict to JSON-serializable lists."""
     return traverse_model_dict(
@@ -1446,6 +1472,9 @@ def _collect_metadata(
     if lower_kind in ("dpa1_canonical", "dpa4c_canonical"):
         meta["canonical_index_dtype"] = "auto"
         meta["canonical_index_storage"] = "byte_words"
+        meta["canonical_requires_source_csr"] = _canonical_requires_source_csr(
+            model, lower_kind
+        )
 
     # Model-level pair-type exclusion (``pair_exclude_types``): a list of
     # ``[ti, tj]`` type pairs whose interaction is dropped.  Exclusion is a
