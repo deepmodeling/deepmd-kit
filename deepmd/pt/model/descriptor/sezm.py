@@ -162,6 +162,18 @@ def block_supports_packed_wigner(so2_conv: Any, training: bool) -> bool:
     # message is rotated back through the dense inverse matrix.
     if getattr(so2_conv, "_flash_atten_fn", None) is None:
         return False
+    # Gradient consumer: the rotate-mix backward contracts the channel-basis
+    # cotangent through the dense-only helper whenever the basis still
+    # requires grad.  ``.eval()`` alone does not freeze parameters, so an
+    # eval-mode backward against trainable parameters (e.g. validation
+    # losses) must also keep the dense layout.
+    mixer = getattr(so2_conv, "radial_degree_mixer", None)
+    if (
+        mixer is not None
+        and getattr(mixer, "rank", 0) > 0
+        and getattr(getattr(mixer, "channel_basis", None), "requires_grad", False)
+    ):
+        return False
     # Dispatch resolves against the per-block levels captured at
     # construction (``active_triton_level``), not the ambient environment;
     # eligibility must derive from the same captured numbers.

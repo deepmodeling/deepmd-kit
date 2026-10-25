@@ -2127,6 +2127,42 @@ class TestSeZMPackedWignerConsumerGate(unittest.TestCase):
         # The plain SO2 reference path (no Triton binding at all) reads the
         # dense surface.
         self.assertFalse(block_supports_packed_wigner(self._conv(), False))
+        # An eval-mode backward against trainable channel-basis parameters
+        # keeps the dense layout: the basis-grad helper is dense-only, and
+        # ``.eval()`` does not freeze parameters.
+        from types import (
+            SimpleNamespace,
+        )
+
+        self.assertFalse(
+            block_supports_packed_wigner(
+                self._conv(
+                    _triton_value_path=object(),
+                    _flash_atten_fn=object(),
+                    radial_degree_mixer=SimpleNamespace(
+                        rank=2,
+                        channel_basis=SimpleNamespace(requires_grad=True),
+                    ),
+                ),
+                False,
+            )
+        )
+        # Freezing the basis removes the gradient consumer; the band then
+        # serves the ordinary inference (force) backward.
+        self.assertTrue(
+            block_supports_packed_wigner(
+                self._conv(
+                    _triton_value_path=object(),
+                    _flash_atten_fn=object(),
+                    radial_degree_mixer=SimpleNamespace(
+                        rank=2,
+                        channel_basis=SimpleNamespace(requires_grad=False),
+                    ),
+                ),
+                False,
+            )
+        )
+
         # A fully packed-capable selection passes in eval.
         self.assertTrue(
             block_supports_packed_wigner(
