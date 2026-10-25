@@ -3745,7 +3745,7 @@ _ROUTE_RUNS = {"latency": 0.5, "throughput": 3.5}
 
 
 @_GPU
-@pytest.mark.parametrize("width", [96, 192, 256, 384])  # fused hidden width
+@pytest.mark.parametrize("width", [64, 96, 192, 256, 384])  # fused hidden width
 @pytest.mark.parametrize("run", sorted(_ROUTE_RUNS))  # run size regime
 def test_every_fitting_route_returns_the_bits_of_the_rules(
     width: int, run: str

@@ -108,6 +108,15 @@ from .spin_model import (
 )
 
 
+def _reject_long_range(model_params: dict) -> None:
+    """Reject a long-range module, which only the pt_expt backend serves."""
+    if model_params.get("long_range") is not None:
+        raise NotImplementedError(
+            "long-range modules (`long_range`) are supported by the pt_expt "
+            "backend only"
+        )
+
+
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     if "type_embedding" in model_params:
         raise ValueError(
@@ -208,11 +217,7 @@ def get_linear_model(model_params: dict) -> BaseModel:
                 "sub-model: add an `inner_potential` sub-model to the "
                 "composition instead."
             )
-        if sub.get("long_range") is not None:
-            raise NotImplementedError(
-                "long-range modules (`long_range`) are supported by the pt_expt "
-                "backend only"
-            )
+        _reject_long_range(sub)
     if any(
         sub.get("type") == "inner_potential" for sub in model_params.get("models", [])
     ):
@@ -378,6 +383,7 @@ def _get_bridged_linear_model(model_params: dict) -> BaseModel:
 
 
 def get_zbl_model(model_params: dict) -> DPZBLModel:
+    _reject_long_range(model_params)
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])
     descriptor, fitting, _ = _get_standard_model_components(model_params, ntypes)
@@ -419,11 +425,7 @@ def get_standard_model(model_params: dict) -> BaseModel:
             "expands the flag), or spell the composition explicitly with "
             '`type: "linear_ener"` and an `inner_potential` sub-model.'
         )
-    if model_params.get("long_range") is not None:
-        raise NotImplementedError(
-            "long-range modules (`long_range`) are supported by the pt_expt "
-            "backend only"
-        )
+    _reject_long_range(model_params)
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     ntypes = len(model_params["type_map"])

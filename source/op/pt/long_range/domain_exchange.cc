@@ -57,9 +57,9 @@ bool reads_device_memory() {
 
 }  // namespace
 
-Domain domain_of(const torch::Tensor& communicator) {
+int domain_count(const torch::Tensor& communicator) {
   if (address_of(communicator) == 0) {
-    return {0, 1};
+    return 1;
   }
 #ifdef USE_MPI
   int initialized = 0;
@@ -67,11 +67,9 @@ Domain domain_of(const torch::Tensor& communicator) {
   TORCH_CHECK(initialized != 0,
               "latent_charge_sum: a communicator was given, but MPI is "
               "not initialized");
-  const MPI_Comm comm = communicator_of(communicator);
-  Domain domain{0, 1};
-  MPI_Comm_rank(comm, &domain.rank);
-  MPI_Comm_size(comm, &domain.size);
-  return domain;
+  int size = 1;
+  MPI_Comm_size(communicator_of(communicator), &size);
+  return size;
 #else
   TORCH_CHECK(false,
               "latent_charge_sum: an evaluation across MPI ranks "

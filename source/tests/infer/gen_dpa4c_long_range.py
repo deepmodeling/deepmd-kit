@@ -157,7 +157,9 @@ def _check_metadata(pt2_path: str, lower: str, periodic: bool = False) -> None:
         assert md["dim_chg_spin"] == 2
     else:
         # The compressed descriptor folds the charge state; the archive
-        # carries the rebuild of every constant that holds it.
+        # carries the rebuild of every constant that holds it: the four
+        # charge-state artifacts of the descriptor and the total charge of
+        # the constraint.
         assert md["dim_chg_spin"] == 0
         assert len(md["charge_state_constants"]) == 5
         # The fused long-range operator serves the charge network of one

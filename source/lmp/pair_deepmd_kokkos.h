@@ -83,9 +83,9 @@ class PairDeepMDKokkos : public PairDeepMD, public KokkosBase {
   // neighbor list, returning the edge count. Public because it launches
   // extended device lambdas, which CUDA forbids inside non-public members.
   int build_edges_device();
-  // Positions of the model nodes relative to the origin of the box, in
-  // model-node order and in the length unit of the model; public for the same
-  // reason.
+  // Positions of the model nodes in model-node order and in the length unit
+  // of the model, relative to the origin of the box for a model with a
+  // long-range module; public for the same reason.
   const double* model_node_positions();
 
  protected:

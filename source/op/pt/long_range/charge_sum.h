@@ -22,6 +22,14 @@
 namespace deepmd {
 namespace long_range {
 
+// The channel count and the Gaussian count that the kernels are instantiated
+// for; the Gaussians of a kernel are staged in shared memory.
+constexpr int kMaxChannels = 8;
+constexpr int kMaxGaussians = 32;
+
+// The interaction kernel: erf(alpha r) / r (LES) or a sum of Gaussians (SOG).
+enum KernelKind : int { kLes = 0, kSog = 1 };
+
 // The atomic energy (owners, 1) float64, the charge gradient (owners, C), the
 // force (owners, 3), the atomic virial (owners, 9) and the virial of the
 // owners of every frame (F, 9), float32.
@@ -31,8 +39,8 @@ using ChargeSumOutputs = std::tuple<torch::Tensor,
                                     torch::Tensor,
                                     torch::Tensor>;
 
-// The direct sum. ``coefficient`` holds the float64 coefficients of the
-// kernel on the device.
+// The direct sum, of at least one node and one frame. ``coefficient`` holds
+// the float64 coefficients of the kernel on the device.
 ChargeSumOutputs direct_sum(const torch::Tensor& coord,
                             const torch::Tensor& charge,
                             const torch::Tensor& node_mask,
@@ -46,7 +54,8 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
                             int owner_count,
                             const torch::Tensor* communicator);
 
-// The mesh sum. ``box`` holds the cell of every frame, float64 on the host;
+// The mesh sum, of at least one node and one frame. ``box`` holds the cell of
+// every frame, float64 on the host;
 // ``coefficient`` the float64 coefficients of the kernel on the device.
 ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
                           const torch::Tensor& charge,

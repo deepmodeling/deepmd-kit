@@ -115,6 +115,32 @@ constexpr int kFrameThreads = 256;
 constexpr int kSliceNodes = 2048;
 constexpr int kMaxSlices = 256;
 
+// The slices of every frame of a pass over ``nodes`` nodes of ``frame_count``
+// frames, from their average count per frame.
+inline int frame_slices(int64_t nodes, int64_t frame_count) {
+  const int64_t average = (nodes + frame_count - 1) / frame_count;
+  return static_cast<int>(std::min<int64_t>(
+      kMaxSlices,
+      std::max<int64_t>(1, (average + kSliceNodes - 1) / kSliceNodes)));
+}
+
+// The offsets of the frames of the owners on the axis of the owners: those of
+// the frames, ``frame_ptr``, when every node is an owner, else those of the
+// one frame that the owners share, {0, owner_count}, which ``storage``
+// receives on the device of ``options``.
+inline const int64_t* owner_frame_offsets(bool every_node,
+                                          const int64_t* frame_ptr,
+                                          int owner_count,
+                                          const torch::TensorOptions& options,
+                                          torch::Tensor& storage) {
+  if (every_node) {
+    return frame_ptr;
+  }
+  storage = torch::full({2}, int64_t{owner_count}, options);
+  storage.select(0, 0).zero_();
+  return storage.data_ptr<int64_t>();
+}
+
 struct NodeRange {
   int64_t begin;
   int64_t end;

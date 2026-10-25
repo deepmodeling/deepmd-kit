@@ -992,6 +992,18 @@ void PairDeepMD::init_style() {
                "a system periodic in every dimension or in none; use p in "
                "every dimension, or f, s or m in every dimension.");
   }
+  // A non-periodic system reaches an ensemble that holds a long-range module
+  // without a cell, which only models with such a module accept. The steps
+  // without a model deviation evaluate the first model alone; the model
+  // deviation checks every model at the steps that evaluate them all.
+  if (numb_models > 1 && long_range && periodic_dimensions == 0 &&
+      !deep_pot.has_long_range()) {
+    error->all(FLERR,
+               "pair style deepmd: an ensemble that holds a model with a "
+               "long-range module evaluates a non-periodic system only when "
+               "every model carries one; use models with long-range modules "
+               "throughout, or a periodic system.");
+  }
 }
 
 /* ----------------------------------------------------------------------

@@ -73,7 +73,9 @@ inline std::vector<torch::Tensor> buildAllPairsTopology(
  * pair: the reciprocal-space topology describes the interactions.
  *
  * Counterpart of Python ``empty_pair_graph`` for the exported lower: two
- * masked guard pairs, the lower bound of its pair axis.
+ * masked guard pairs, the lower bound of its pair axis. Python pads four,
+ * which keeps the pair axis of a traced sample apart from the axes of length
+ * two and three; the exported lower accepts any length from two on.
  */
 inline std::vector<torch::Tensor> buildGuardPairTopology(
     const torch::Device& device, const torch::ScalarType vec_dtype) {

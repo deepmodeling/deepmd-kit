@@ -2,6 +2,14 @@
 """Long-range latent-charge modules on the DPA4C graph lower (pt_expt)."""
 
 import copy
+import json
+import os
+import pathlib
+import subprocess
+import sys
+from typing import (
+    Any,
+)
 
 import numpy as np
 import pytest
@@ -1605,12 +1613,13 @@ def _canonical_inputs(
     )
 
 
-# The layouts of the fused parity test: the width of the energy fitting, which
-# selects the per-layer kernels at 32 and the fused network at 96, the hidden
-# layers of the charge network, and the frames of the batch.
+# The layouts of the fused parity test: the width of the energy fitting and the
+# hidden layers of the charge network, which select the per-layer kernels at
+# widths of 32 and 16 and the fused network at widths of 96 and 64, and the
+# frames of the batch.
 FUSED_LAYOUTS = {
-    "per_layer": {"width": 32, "charge": [16, 16], "frames": 2},
-    "fused": {"width": 96, "charge": [16, 16, 16], "frames": 1},
+    "per_layer": {"width": 32, "charge": [16, 16, 16], "frames": 2},
+    "fused": {"width": 96, "charge": [64, 64], "frames": 1},
 }
 
 
@@ -1634,10 +1643,11 @@ def test_fused_operator_matches_composition(
     With a charge network of one channel, the compact canonical lower
     evaluates the descriptor, both networks, the long range and the force
     assembly in one operator; the composition of operators, which serves the
-    other charge networks, is the reference. The energy fitting takes the
-    per-layer kernels or the fused network, over the whole node axis or in
-    runs of 16 nodes with a shorter last one, with and without the per-atom
-    virial, on two frames, the second with fewer real atoms, or on one.
+    other charge networks, is the reference. The energy fitting and the
+    charge network take the per-layer kernels or the fused network, over the
+    whole node axis or in runs of 16 nodes with a shorter last one, with and
+    without the per-atom virial, on two frames, the second with fewer real
+    atoms, or on one.
     """
     from deepmd.pt_expt.kernels.dpa4c import (
         canonical_long_range,
@@ -1685,12 +1695,21 @@ def test_fused_operator_matches_composition(
         model, coord, atype, box if periodic else None
     )
     # The rules of the fitting routes take the network of the layout on every
-    # run of the energy fitting; a device on which they send the runs of the
-    # fused layout to the per-layer kernels has no fused network to compare.
-    weights = fitting_operator_arguments(model.atomic_model.fitting_net).weights
+    # run of the energy fitting and of the charge network; a device on which
+    # they send the runs of the fused layout to the per-layer kernels has no
+    # fused network to compare.
     nodes = atype_t.shape[0]
     runs = {nodes} if tile == 0 else {tile, nodes % tile or tile}
-    routes = [int(torch.ops.deepmd.graph_fitting_route_rule(weights, n)) for n in runs]
+    networks = (
+        model.atomic_model.fitting_net,
+        model.atomic_model.long_range.charge_net,
+    )
+    weights = [fitting_operator_arguments(network).weights for network in networks]
+    routes = [
+        int(torch.ops.deepmd.graph_fitting_route_rule(ws, n))
+        for ws in weights
+        for n in runs
+    ]
     if layout == "fused" and -1 in routes:
         pytest.skip("the fitting rules take the per-layer kernels on this device")
     assert all((route == -1) == (layout == "per_layer") for route in routes), routes
@@ -1726,6 +1745,354 @@ def test_fused_operator_matches_composition(
             error = (fused[key].detach().to(torch.float64) - expected).abs().max()
             scale = expected.abs().max()
             assert error <= 1e-5 * scale + 1e-6, (key, error.item(), scale.item())
+
+
+#: Bit widths of the template parameters of a fused fitting shape in its route
+#: key (FusedShape::key of graph_fitting.cu), from the lowest bit up.
+_SHAPE_KEY_FIELDS = (9, 6, 6, 6, 6, 6, 6, 6, 7, 4)
+
+
+def _fused_shape_name(key: int) -> str:
+    """Return the template arguments of the fused shape of a route key, as a trace names them."""
+    values = []
+    for bits in _SHAPE_KEY_FIELDS:
+        values.append(key & ((1 << bits) - 1))
+        key >>= bits
+    return "FusedShape<" + ", ".join(str(v) for v in values) + ">"
+
+
+def _network_routes(regime: str) -> dict:
+    """Evaluate the fused long-range operator under every route of either network.
+
+    Builds a compressed model with an energy fitting of width 96 and a charge
+    network of width 64 on a cluster of a run of fewer 32-node panels than
+    multiprocessors (``latency``) or of more (``throughput``), and evaluates
+    the operator under empty tables, the rules, under a table naming each
+    route of one network at a time, under the table that the route tuner holds
+    for the charge network, as the energy model looks it up, here a route
+    besides its rule, and, split into a full run and a shorter tail, under
+    tables that send one of them to the per-layer kernels of the charge
+    network and the other to a fused shape, and both to fused shapes. The
+    fitting kernels of an evaluation come from a kernel trace.
+
+    Returns
+    -------
+    dict
+        ``rules``, the fitting kernels of the rules; ``routes``, for every
+        untiled table, whether all six outputs equal those of the rules bit
+        for bit and its fitting kernels; ``mixed``, the same for every mixed
+        table against the rules tiled alike, with its launches of the
+        per-layer forward kernels; and ``fused_layers``, those launches with
+        both runs of the charge network on fused shapes, or ``None`` where
+        either run has no fused shape.
+    """
+    from torch.profiler import (
+        ProfilerActivity,
+        profile,
+    )
+
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.kernels.dpa4c.canonical_long_range import (
+        dpa4c_canonical_compress_long_range_energy_force,
+    )
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+        ROUTE_TABLE_MAGIC,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+    from deepmd.pt_expt.model.make_model import (
+        fused_atom_bias,
+    )
+
+    config = _config("les", constraint={"source": "neutral"})
+    config["descriptor"].update(n_radial=8, precision="float32")
+    config["fitting_net"].update(
+        neuron=[96] * 2, activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    config["long_range"].update(channels=1, charge_net={"neuron": [64, 64], "seed": 23})
+    model = get_model(config).to(env.DEVICE).eval()
+    generator = torch.Generator().manual_seed(5)
+    with torch.no_grad():
+        for parameter in model.parameters():
+            noise = torch.randn(parameter.shape, generator=generator)
+            parameter.add_(0.05 * noise.to(parameter))
+    model.atomic_model.enable_compression(0.5)
+    device = env.DEVICE.index or 0
+    multiprocessors = torch.cuda.get_device_properties(env.DEVICE).multi_processor_count
+    nodes = 30 if regime == "latency" else int(32 * multiprocessors * 1.5)
+    rng = np.random.default_rng(3)
+    # A cluster of about one atom per 20 cubic angstroms.
+    side = (20.0 * nodes) ** (1.0 / 3.0)
+    coord = rng.uniform(0.0, side, (1, nodes, 3)) + 100.0
+    atype = rng.integers(0, 2, (1, nodes))
+    atype_t, graph, coord_t, _ = _canonical_inputs(model, coord, atype, None)
+    learned, _ = model.atomic_model.fused_decomposition()
+    atom_bias = fused_atom_bias(model.atomic_model, learned)
+    fingerprint = [
+        int(v) for v in torch.ops.deepmd.graph_fitting_route_fingerprint(device)
+    ]
+
+    def evaluate(routes: list[int], charge_routes: list[int]) -> tuple:
+        return dpa4c_canonical_compress_long_range_energy_force(
+            learned.descriptor,
+            learned.fitting_net,
+            learned.long_range,
+            graph,
+            atype_t,
+            coord_t,
+            None,
+            None,
+            atom_bias,
+            fitting_routes=routes,
+            charge_fitting_routes=charge_routes,
+        )
+
+    def choices(width: int, size: int = nodes) -> list[int]:
+        fused = torch.ops.deepmd.graph_fitting_route_choices(device, width, size)
+        return [PER_LAYER, *(int(key) for key in fused)]
+
+    def kernel_names(call: Any) -> list[str]:
+        with profile(activities=[ProfilerActivity.CUDA]) as trace:
+            call()
+            torch.cuda.synchronize()
+        names = [
+            event.name
+            for event in trace.events()
+            if event.device_type == torch.autograd.DeviceType.CUDA
+        ]
+        assert names, "the profiler recorded no CUDA kernel"
+        return names
+
+    def kernels(call: Any) -> list[str]:
+        names = kernel_names(call)
+        return sorted(
+            {name for name in names if "fused_network_kernel" in name}
+            | {"per-layer" for name in names if "layer_forward_kernel" in name}
+        )
+
+    def layer_launches(call: Any) -> int:
+        return sum("layer_forward_kernel" in name for name in kernel_names(call))
+
+    results = {}
+    with torch.no_grad():
+        rules = evaluate([], [])
+        tables = [
+            ("energy", c, [ROUTE_TABLE_MAGIC, *fingerprint, 1, c], [])
+            for c in choices(96)
+        ]
+        tables += [
+            ("charge", c, [], [ROUTE_TABLE_MAGIC, *fingerprint, 1, c])
+            for c in choices(64)
+        ]
+        charge_net = learned.long_range.charge_net
+        rule = int(
+            torch.ops.deepmd.graph_fitting_route_rule(
+                fitting_operator_arguments(charge_net).weights, nodes
+            )
+        )
+        measured = next(c for c in choices(64) if c != rule)
+        key = (
+            fitting_routes._fingerprint(env.DEVICE),
+            fitting_routes.network_key(charge_net),
+        )
+        table = (ROUTE_TABLE_MAGIC, *fingerprint, 1, measured)
+        fitting_routes._ROUTE_TABLES[key] = table
+        tables.append(
+            ("charge-measured", measured, [], fitting_routes.fitting_routes(charge_net))
+        )
+        for network, choice, routes, charge_routes in tables:
+            routed = evaluate(routes, charge_routes)
+            equal = all(
+                torch.equal(expected, actual)
+                for expected, actual in zip(rules, routed, strict=True)
+            )
+            launched = kernels(lambda: evaluate(routes, charge_routes))
+            results[f"{network} {choice}"] = {"equal": equal, "kernels": launched}
+        rules_kernels = kernels(lambda: evaluate([], []))
+        # One full run and a shorter tail, of which one takes the per-layer
+        # kernels of the charge network and the other a fused shape, against
+        # both on fused shapes.
+        tile = nodes // 2 + 1
+        tail = nodes - tile
+        os.environ["DP_NODE_TILE"] = str(tile)
+        tiled_rules = evaluate([], [])
+        fused_tail, fused_full = choices(64, tail)[1:2], choices(64, tile)[1:2]
+        mixed = {}
+        fused_layers = None
+
+        def two_runs(tail_route: int, full_route: int) -> list[int]:
+            return [ROUTE_TABLE_MAGIC, *fingerprint, 2, tail, tail_route, full_route]
+
+        if fused_tail and fused_full:
+            # The per-layer kernels of the energy fitting alone.
+            table = two_runs(*fused_tail, *fused_full)
+            fused_layers = layer_launches(lambda: evaluate([], table))
+            pairs = [(PER_LAYER, *fused_full), (*fused_tail, PER_LAYER)]
+            for tail_route, full_route in pairs:
+                table = two_runs(tail_route, full_route)
+                routed = evaluate([], table)
+                equal = all(
+                    torch.equal(expected, actual)
+                    for expected, actual in zip(tiled_rules, routed, strict=True)
+                )
+                mixed[f"{tail_route} {full_route}"] = {
+                    "equal": equal,
+                    "kernels": kernels(lambda: evaluate([], table)),
+                    "layers": layer_launches(lambda: evaluate([], table)),
+                }
+        del os.environ["DP_NODE_TILE"]
+    return {
+        "rules": rules_kernels,
+        "routes": results,
+        "mixed": mixed,
+        "fused_layers": fused_layers,
+    }
+
+
+@pytest.mark.skipif(
+    env.DEVICE.type != "cuda", reason="the compact canonical lower is CUDA only"
+)
+@pytest.mark.parametrize("regime", ["latency", "throughput"])  # run size regime
+def test_every_network_route_returns_the_bits_of_the_rules(regime: str) -> None:
+    """Every route of either network gives the outputs of the rules bit for bit.
+
+    The fused long-range operator evaluates the energy fitting and the charge
+    network of a module by a fitting-route table each. A table that names the
+    per-layer kernels or a fused shape for one network routes that network
+    there and leaves the other at its rules, which the fitting kernels of a
+    trace show, and every route evaluates the same contractions in the same
+    order, so all six outputs equal those of the rules, which empty tables
+    take. The table that the route tuner holds for the charge network, as the
+    energy model looks it up, routes it as well, and a tiled call whose full
+    run and tail take the per-layer kernels and a fused shape of the charge
+    network, in either order, keeps the bits of the rules. The trace runs in a
+    process of its own, untiled but for that call, since CUPTI can stop
+    delivering kernel records late in a long process. A run of fewer 32-node
+    panels than multiprocessors and one of more cover the latency and the
+    throughput shapes.
+    """
+    from deepmd.pt_expt.kernels.fitting_routes import (
+        PER_LAYER,
+    )
+
+    root = pathlib.Path(__file__).parents[__name__.count(".")]
+    code = (
+        "import importlib, json, sys\n"
+        f"sys.path[:0] = {[str(root), *sys.path]!r}\n"
+        f"module = importlib.import_module({__name__!r})\n"
+        f"print('result:', json.dumps(module._network_routes({regime!r})))\n"
+    )
+    process = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "DP_NODE_TILE": "0"},
+    )
+    assert process.returncode == 0, process.stdout + "\n" + process.stderr
+    (report,) = [
+        line for line in process.stdout.splitlines() if line.startswith("result:")
+    ]
+    report = json.loads(report.removeprefix("result:"))
+    rules, results = report["rules"], report["routes"]
+    fused = [label for label in results if int(label.split()[1]) != PER_LAYER]
+    assert any(label.startswith("charge") for label in fused), (
+        "no fused shape of the charge network runs on this device"
+    )
+
+    def shapes(kernels: list[str], width: int) -> list[str]:
+        return [k for k in kernels if f"FusedShape<{width}," in k]
+
+    for label, result in results.items():
+        network, choice = label.split()[0], int(label.split()[1])
+        assert result["equal"], label
+        width, other = (96, 64) if network == "energy" else (64, 96)
+        own = shapes(result["kernels"], width)
+        if choice == PER_LAYER:
+            assert not own and "per-layer" in result["kernels"], (label, result)
+        else:
+            shape = _fused_shape_name(choice)
+            assert own and all(shape in k for k in own), (label, result)
+        assert shapes(result["kernels"], other) == shapes(rules, other), (
+            label,
+            result,
+            rules,
+        )
+    assert report["mixed"], "no fused shape of the charge network serves both runs"
+    for label, result in report["mixed"].items():
+        assert result["equal"], label
+        assert shapes(result["kernels"], 64), (label, result)
+        # The run of the per-layer kernels of the charge network adds layer
+        # launches to those of the energy fitting.
+        assert result["layers"] > report["fused_layers"], (label, result, report)
+
+
+@pytest.mark.skipif(
+    env.DEVICE.type != "cuda", reason="the compact canonical lower is CUDA only"
+)
+@pytest.mark.parametrize("charge_width", [64, 96])  # charge network width
+def test_the_route_tuner_measures_the_charge_network(
+    monkeypatch, charge_width: int
+) -> None:
+    """The route tuner measures the charge network of a fused module apart.
+
+    The tuner records a table for the energy fitting and one for the charge
+    network, each under its own network key, which the energy model passes to
+    the fused long-range operator; a charge network of the shape of the
+    energy fitting shares its key and its table, measured once. The
+    measurement itself is replaced by a stand-in that records which network
+    it times.
+    """
+    from deepmd.pt_expt.kernels import (
+        fitting_routes,
+    )
+    from deepmd.pt_expt.kernels.graph_fitting import (
+        fitting_operator_arguments,
+    )
+
+    config = _config("les", constraint={"source": "neutral"})
+    config["descriptor"].update(n_radial=8, precision="float32")
+    config["fitting_net"].update(
+        neuron=[96] * 2, activation_function="silu", resnet_dt=False
+    )
+    config["fitting_net"]["precision"] = "float32"
+    config["long_range"].update(
+        channels=1,
+        charge_net={"neuron": [charge_width] * 2, "seed": 23},
+    )
+    config["long_range"]["charge_net"].update(
+        activation_function="silu", resnet_dt=False
+    )
+    model = get_model(config).to(env.DEVICE).eval()
+    model.atomic_model.enable_compression(0.5)
+    learned, _ = model.atomic_model.fused_decomposition()
+    energy_key = fitting_routes.network_key(learned.fitting_net)
+    charge_key = fitting_routes.network_key(learned.long_range.charge_net)
+    assert energy_key is not None and charge_key is not None
+    assert (energy_key == charge_key) == (charge_width == 96)
+
+    measured = []
+
+    def measure(bench, ws, largest):
+        measured.append(int(ws[0].shape[1]))
+        return [], [fitting_routes.RULES]
+
+    tables: dict = {}
+    monkeypatch.setattr(fitting_routes, "_ROUTE_TABLES", tables)
+    monkeypatch.setattr(fitting_routes, "_measure", measure)
+    device = torch.device("cuda", env.DEVICE.index or 0)
+    fitting_routes.tune_fitting_routes(model, 0, device)
+    fingerprint = fitting_routes._fingerprint(device)
+    assert set(tables) == {(fingerprint, energy_key), (fingerprint, charge_key)}
+    assert sorted(measured) == sorted({96, charge_width})
+    for network in (learned.fitting_net, learned.long_range.charge_net):
+        widths = [int(w.shape[1]) for w in fitting_operator_arguments(network).weights]
+        assert widths[0] in measured
 
 
 def test_library_without_the_fused_operator_keeps_the_composition(monkeypatch) -> None:

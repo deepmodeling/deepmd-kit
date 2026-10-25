@@ -166,7 +166,7 @@ else:
 	# script also writes the compressed archive, whose compact canonical lower
 	# reads the node positions.
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4c_long_range.py &
-	PID16=$!
+	PID17=$!
 	wait $PID11
 	wait $PID12
 	wait $PID13
@@ -176,7 +176,7 @@ else:
 		wait $PID15
 		wait $PID16
 	fi
-	wait $PID16
+	wait $PID17
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir

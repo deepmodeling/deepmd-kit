@@ -48,6 +48,7 @@ def dpa4c_canonical_compress_long_range_energy_force(
     box: torch.Tensor | None,
     atom_bias: torch.Tensor,
     fitting_routes: list[int] | None = None,
+    charge_fitting_routes: list[int] | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -97,7 +98,11 @@ def dpa4c_canonical_compress_long_range_energy_force(
         Combined atomic energy bias with shape ``(ntypes,)`` in eV.
     fitting_routes
         Fitting-route table of the energy fitting, as for the fused operator
-        without a long-range module, or ``None`` for the measured table.
+        without a long-range module.
+    charge_fitting_routes
+        Fitting-route table of the charge network. ``None`` or an empty table
+        leaves the routes of its network to the rules of the operator, for
+        either table.
 
     Returns
     -------
@@ -124,7 +129,6 @@ def dpa4c_canonical_compress_long_range_energy_force(
     from deepmd.pt_expt.kernels.dpa4c.graph_compress import (
         compressed_operator_arguments,
     )
-    from deepmd.pt_expt.kernels.fitting_routes import fitting_routes as measured_routes
     from deepmd.pt_expt.kernels.graph_fitting import (
         ensure_registered as ensure_fitting_registered,
     )
@@ -145,7 +149,6 @@ def dpa4c_canonical_compress_long_range_energy_force(
     kernel, coefficient = kernel_operator_arguments(long_range.kernel)
     if communicator is None:
         communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
-    routes = measured_routes(fitting) if fitting_routes is None else fitting_routes
     return torch.ops.deepmd.dpa4c_canonical_compress_long_range_energy_force(
         graph.edge_vec,
         graph.source,
@@ -188,7 +191,8 @@ def dpa4c_canonical_compress_long_range_energy_force(
         # No table is passed as None rather than as an empty list: the
         # AOTInductor proxy executor of torch 2.13 and earlier hands a
         # serialized empty int list to the operator as None.
-        list(routes) if routes else None,
+        list(fitting_routes) if fitting_routes else None,
+        list(charge_fitting_routes) if charge_fitting_routes else None,
     )
 
 
@@ -223,8 +227,10 @@ def dpa4c_canonical_long_range_energy_force(
     long_range
         Long-range module whose ``operator_eligible()`` holds.
     graph
-        Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` and
-        whose ``destination_row_ptr`` has shape ``(N + 1,)`` in ``int64``.
+        Canonical graph whose ``source`` has shape ``(E,)`` in ``uint32`` or
+        ``int64``, or shape ``(E, W)`` in ``uint8`` for the exported bytes of
+        those words, and whose ``destination_row_ptr`` has shape ``(N + 1,)``
+        in ``int64``. Its source CSR is complete.
     atype
         Flat node atom types with shape ``(N,)``.
     coord

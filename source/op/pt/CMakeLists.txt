@@ -319,9 +319,9 @@ if(USE_CUDA_TOOLKIT AND DEEPMD_TORCH_HAS_CUDA)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(deepmd_op_pt PRIVATE "LINKER:--no-undefined")
   endif()
-  # The direct sum of the long range evaluates every pair with the special
-  # function unit; without denormal handling each of its three calls is a single
-  # instruction.
+  # The pair loop of the long-range direct sum calls exp2f and rsqrtf, which
+  # fast math, without denormal handling, compiles to a single special-function
+  # instruction each.
   set_source_files_properties(long_range/direct_sum.cu
                               PROPERTIES COMPILE_OPTIONS "--use_fast_math")
 endif()

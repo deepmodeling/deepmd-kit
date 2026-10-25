@@ -414,13 +414,15 @@ template <class DeviceType>
 const double* PairDeepMDKokkos<DeviceType>::model_node_positions() {
   atomKK->sync(execution_space, X_MASK);
   auto x = atomKK->k_x.template view<DeviceType>();
-  // Relative to the origin of the box, as the plain pair style passes them.
-  // Without virtual atoms the model nodes are the leading atoms, whose
-  // coordinates are already those positions in the length unit of the model
-  // for a box at the origin and a conversion factor of one.
-  const double x0 = domain->boxlo[0];
-  const double y0 = domain->boxlo[1];
-  const double z0 = domain->boxlo[2];
+  // A long-range module reads the positions relative to the origin of the
+  // box, as the plain pair style passes them, since its per-atom virial in a
+  // periodic cell depends on the origin; other models read them only through
+  // quantities that do not. Without virtual atoms the model nodes are the
+  // leading atoms, whose coordinates are already those positions in the
+  // length unit of the model at a conversion factor of one.
+  const double x0 = long_range ? domain->boxlo[0] : 0.0;
+  const double y0 = long_range ? domain->boxlo[1] : 0.0;
+  const double z0 = long_range ? domain->boxlo[2] : 0.0;
   if (!compact_graph.has_null_types && dist_unit_cvt_factor == 1.0 &&
       x0 == 0.0 && y0 == 0.0 && z0 == 0.0) {
     return x.data();

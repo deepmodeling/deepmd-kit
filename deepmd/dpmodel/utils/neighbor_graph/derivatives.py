@@ -7,7 +7,9 @@ backend later; this pure-array-API assembly is shared by all backends.
 Conventions (see the unified edge-nlist design discussion, wanghan-iapcm/deepmd-kit#4):
   edge_vec_e = r_src - r_dst ;  F_k = sum_{dst=k} g - sum_{src=k} g
   per-edge virial w_e = -g_e (x) edge_vec_e
-  atom virial attributed FULL-TO-src (canonical TF==pt-legacy convention)
+  atom virial attributed FULL-TO-src (canonical TF==pt-legacy convention);
+  a pair set (pair_force_virial) splits its pair virial evenly between the
+  two endpoints instead
   per-frame virial = sum over the edges of that frame of w_e  (DeePMD virials
   are per frame; a multi-frame NeighborGraph must NOT collapse frames)
 Padding/guard edges (edge_mask == 0) are zeroed before any scatter.

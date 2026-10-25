@@ -18,9 +18,9 @@
 // the difference of the tails, keeps the float32 precision of the
 // displacement itself wherever the frame lies, while every pair evaluates in
 // float32; the far field of the erf kernel forms it from the heads alone (see
-// evaluate_kernel). For the erf kernel the positions are scaled by alpha, so
-// that the pair loop evaluates erf(x) / x and its slope without a
-// coefficient, and the reduction restores the units.
+// far_batch). For the erf kernel the positions are scaled by alpha, so that
+// the pair loop evaluates erf(x) / x and its slope without a coefficient, and
+// the reduction restores the units.
 //
 // A thread sums one tile in float32 and adds the tile sums with compensated
 // float32 arithmetic. The partner axis is split into contiguous chunks, so
@@ -52,6 +52,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <tuple>
 
 #include "charge_sum.h"
@@ -69,7 +71,6 @@ constexpr int kWideTile = 128;
 constexpr int kNarrowTile = 32;
 // Partners evaluated together, which share every coefficient load.
 constexpr int kBatch = 4;
-constexpr int kMaxGaussians = 32;
 // Fills of the resident block slots of the device that one launch aims for.
 constexpr int kWaves = 8;
 // Tiles per chunk of wide tiles where a frame that spans every partner takes
@@ -83,7 +84,10 @@ constexpr int kWideChunkTiles = 2;
 // on its own would.
 constexpr int kNarrowChunkTiles = 2;
 
-enum KernelKind : int { kLes = 0, kSog = 1 };
+using deepmd::long_range::kLes;
+using deepmd::long_range::kMaxChannels;
+using deepmd::long_range::kMaxGaussians;
+using deepmd::long_range::kSog;
 
 // Sums of one node: the potential of every channel, the force direction and
 // the six independent components of the virial.
@@ -188,10 +192,12 @@ __global__ void prepare_nodes(const double* __restrict__ coord,
 // do, and forms the displacements of the batch from the heads alone. The
 // omitted tails move a displacement by at most 2^-24 (|x_i| + |x_j|), with x
 // the alpha-scaled offset of a node from the first node of its frame: the
-// rounding of float32 positions over the extent of the frame, against a
-// distance of at least sqrt(kFarSquared). For a cluster of 100,000 carbon
-// atoms at alpha = 0.5 per angstrom, with offsets of up to 26 units, the
-// potential and the force keep the error of the exact displacements.
+// rounding of float32 positions over the extent of the frame. Against a
+// distance of at least sqrt(kFarSquared) = 4.5, the relative error of the
+// displacement stays below 2^-24 (|x_i| + |x_j|) / 4.5. For a cluster of
+// 100,000 carbon atoms at alpha = 0.5 per angstrom, with offsets of up to 26
+// units, the potential and the force keep the error of the exact
+// displacements.
 //
 // The sum of Gaussians evaluates sum_k a_k 2^(-c_k r^2) and its slope
 // sum_k s_k 2^(-c_k r^2), s_k = -2 ln(2) c_k a_k, from the staged
@@ -761,18 +767,23 @@ PairLaunch pair_launch(int owner_count,
       kNarrowChunkTiles};
 }
 
+// The blocks of wide tiles that a multiprocessor of the current device keeps
+// resident. The occupancy is a property of the compiled kernel and of the
+// device, so each device of the process is queried once.
 template <int kKernel, int kChannels>
 int resident_blocks_per_multiprocessor() {
-  // The occupancy is a property of the compiled kernel and of the device; a
-  // process drives one device architecture.
-  static const int blocks = [] {
-    int value = 0;
-    C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &value, direct_sum_kernel<kKernel, kChannels, kWideTile>, kWideTile,
-        0));
-    return std::max(1, value);
-  }();
-  return blocks;
+  static std::mutex mutex;
+  static std::map<int, int> blocks;
+  const int device = c10::cuda::current_device();
+  const std::lock_guard<std::mutex> lock(mutex);
+  const auto known = blocks.find(device);
+  if (known != blocks.end()) {
+    return known->second;
+  }
+  int value = 0;
+  C10_CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+      &value, direct_sum_kernel<kKernel, kChannels, kWideTile>, kWideTile, 0));
+  return blocks.emplace(device, std::max(1, value)).first->second;
 }
 
 template <int kKernel, int kChannels, int kTile>
@@ -821,6 +832,9 @@ void launch(const DirectSumBuffers& buffers,
   }
 }
 
+static_assert(kMaxChannels == 8,
+              "dispatch_channels instantiates the channel counts 1 to 8");
+
 template <int kKernel>
 void dispatch_channels(int channels,
                        const DirectSumBuffers& buffers,
@@ -867,8 +881,8 @@ namespace long_range {
 // Evaluates the owner nodes [owner_begin, owner_begin + owner_count) against
 // the nodes of their frames. Returns the outputs of the owners, row r for
 // owner owner_begin + r, and the per-frame virial of the owners. Owners other
-// than every node lie in a single frame. A non-null ``communicator`` spans
-// the domains whose owners share that frame, over which the potential of the
+// than every node lie in a single frame. A non-null ``communicator`` spans the
+// domains whose owners share that frame, over which the potential of the
 // constraint is summed.
 ChargeSumOutputs direct_sum(const torch::Tensor& coord,
                             const torch::Tensor& charge,
@@ -889,17 +903,7 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
   const int64_t channels = charge.size(1);
   const auto float_options = charge.options();
   const auto double_options = coord.options();
-  if (node_count == 0 || frame_count == 0) {
-    return {torch::zeros({owner_count, 1}, double_options),
-            torch::zeros({owner_count, channels}, float_options),
-            torch::zeros({owner_count, 3}, float_options),
-            torch::zeros({owner_count, 9}, float_options),
-            torch::zeros({frame_count, 9}, float_options)};
-  }
   const bool every_node = owner_begin == 0 && owner_count == node_count;
-  TORCH_CHECK(every_node || frame_count == 1,
-              "latent_charge_sum: owners other than every node lie in "
-              "one frame");
   const bool constrained = channel >= 0;
   const int constrained_channel = static_cast<int>(channel);
   // The kernels write every entry of the outputs.
@@ -910,14 +914,8 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
   auto virial = torch::empty({frame_count, 9}, float_options);
 
   const auto counts = n_node_per_frame.to(torch::kInt64).contiguous();
-  const auto slices_for = [frame_count](int64_t nodes) {
-    const int64_t average_nodes = (nodes + frame_count - 1) / frame_count;
-    return static_cast<int>(std::min<int64_t>(
-        kMaxSlices,
-        std::max<int64_t>(1, (average_nodes + kSliceNodes - 1) / kSliceNodes)));
-  };
-  const int slice_count = slices_for(node_count);
-  const int owner_slice_count = slices_for(owner_count);
+  const int slice_count = frame_slices(node_count, frame_count);
+  const int owner_slice_count = frame_slices(owner_count, frame_count);
   const int components = constrained ? 10 : 9;
   Workspace workspace;
   const int64_t frame_ptr_at = workspace.reserve<int64_t>(frame_count + 1);
@@ -992,17 +990,10 @@ ChargeSumOutputs direct_sum(const torch::Tensor& coord,
                               owner_count, prefactor, stream.stream());
     }
   }
-  // The frames of the owners, on the axis of the owners: the frames
-  // themselves when every node is an owner, else the one frame the owners
-  // share, written on the device.
-  torch::Tensor owner_frame_tensor;
-  const int64_t* owner_frame_ptr = frame_ptr;
-  if (!every_node) {
-    owner_frame_tensor =
-        torch::full({2}, int64_t{owner_count}, counts.options());
-    owner_frame_tensor.select(0, 0).zero_();
-    owner_frame_ptr = owner_frame_tensor.data_ptr<int64_t>();
-  }
+  torch::Tensor owner_frame_storage;
+  const int64_t* owner_frame_ptr =
+      owner_frame_offsets(every_node, frame_ptr, owner_count, counts.options(),
+                          owner_frame_storage);
   const bool* owner_mask = node_mask.data_ptr<bool>() + owner_begin;
   const dim3 owner_slice_grid(frame_count, owner_slice_count);
   if (constrained) {

@@ -1496,6 +1496,273 @@ void mark_broken_frames(const torch::Tensor& energy,
   }
 }
 
+// A fitting network of the fused energy-force operators -- the energy fitting
+// or the charge network of a long-range module: its layer plan, weights,
+// head, per-type bias and activation.
+struct FittingNetwork {
+  const FittingLayerPlan& plan;
+  const std::vector<torch::Tensor>& ws;
+  const std::vector<torch::Tensor>& bs;
+  const std::vector<int64_t>& resnets;
+  const torch::Tensor& w_head;
+  const torch::Tensor& b_head;
+  const torch::Tensor& bias_atom_e;
+  int64_t act;
+};
+
+// The fitting routes of the runs of ``run`` nodes into which a fused operator
+// splits its node axis, and the buffers they need. The full runs and the tail
+// run each take the route of their own size; an absent table, like an empty
+// one, leaves both to the rules. A route of the fused network needs the
+// transposed weights, and its kernel writes the pre-activations of a run and
+// the sheet through which the CTAs of a cluster exchange their columns into
+// the pre-activation buffer; the per-layer kernels need the activation
+// ping-pong, sized for the largest run that takes them, and the
+// pre-activations of a run between their forward and their backward. With
+// ``deferred``, every run of the per-layer kernels keeps its pre-activations
+// at its own place on the node axis, so that its backward may follow the
+// forward of other runs and other work of the operator; the buffer then holds
+// every node, as the descriptor of the long-range operator does.
+class FittingRuns {
+ public:
+  FittingRuns(cudaStream_t stream,
+              const FittingNetwork& fitting,
+              long run,
+              long node_count,
+              std::optional<std::vector<int64_t>> table,
+              const torch::TensorOptions& f32,
+              bool deferred = false)
+      : fitting_(fitting), run_(run) {
+    const std::vector<int64_t> routes =
+        std::move(table).value_or(std::vector<int64_t>{});
+    const long tail = node_count % run;
+    const long full_count = node_count / run;
+    full_route_ = fitting_route(fitting.plan, fitting.ws, run, routes);
+    tail_route_ = tail > 0
+                      ? fitting_route(fitting.plan, fitting.ws, tail, routes)
+                      : full_route_;
+    const long per_layer_nodes =
+        std::max(full_count > 0 && full_route_ == kFittingPerLayer ? run : 0L,
+                 tail > 0 && tail_route_ == kFittingPerLayer ? tail : 0L);
+    if ((full_count > 0 && full_route_ != kFittingPerLayer) ||
+        (tail > 0 && tail_route_ != kFittingPerLayer)) {
+      transposed_ =
+          torch::empty({fitting_fused_transposed_floats(fitting.ws)}, f32);
+      fitting_fused_transpose(stream, fitting.plan, fitting.ws,
+                              transposed_.data_ptr<float>());
+    }
+    if (per_layer_nodes > 0) {
+      const int slots = fitting.plan.n_layer > 1 ? 2 : 1;
+      scratch_ =
+          torch::empty({slots, per_layer_nodes, fitting.plan.width_max}, f32);
+      slot_[0] = scratch_[0].data_ptr<float>();
+      slot_[1] = slots > 1 ? scratch_[1].data_ptr<float>() : slot_[0];
+    }
+    // The kept pre-activations of the run from node ``begin`` start at
+    // ``begin * saved_width``, a 16-byte boundary, since every hidden width is
+    // a multiple of four (check_weights of graph_fitting.cu).
+    kept_ = deferred && per_layer_nodes > 0;
+    saved_ = torch::empty(
+        {(kept_ ? node_count : run) * fitting.plan.saved_width()}, f32);
+  }
+
+  // The outputs ``output`` of the ``count`` nodes of the run from node
+  // ``begin``, whose descriptor rows are ``x``, and the cotangent ``d_x`` of
+  // those rows from the output cotangent ``seed``; ``d_x`` may take the place
+  // of ``x``.
+  void output_and_cotangent(cudaStream_t stream,
+                            long begin,
+                            long count,
+                            const float* x,
+                            float* d_x,
+                            long width,
+                            const long* node_type,
+                            const double* seed,
+                            double* output) const {
+    forward(stream, begin, count, x, d_x, width, node_type, seed, output);
+    backward(stream, begin, count, seed, d_x);
+  }
+
+  // The outputs of a run as in output_and_cotangent, and on a route of the
+  // fused network its cotangent as well, which that network forms in the same
+  // pass; a run of the per-layer kernels saves its pre-activations for
+  // backward().
+  void forward(cudaStream_t stream,
+               long begin,
+               long count,
+               const float* x,
+               float* d_x,
+               long width,
+               const long* node_type,
+               const double* seed,
+               double* output) const {
+    const FittingNetwork& fitting = fitting_;
+    const int64_t route = route_of(count);
+    if (route != kFittingPerLayer) {
+      fitting_energy_gradient_range(
+          stream, fitting.plan, x, width, node_type, fitting.ws, fitting.bs,
+          fitting.resnets, fitting.w_head, fitting.b_head, fitting.bias_atom_e,
+          fitting.act, transposed_.data_ptr<float>(), seed, count, saved(begin),
+          output, d_x, route);
+      return;
+    }
+    fitting_forward_range(stream, fitting.plan, x, width, node_type, fitting.ws,
+                          fitting.bs, fitting.resnets, fitting.w_head,
+                          fitting.b_head, fitting.bias_atom_e, fitting.act,
+                          count, saved(begin), slot_, output);
+  }
+
+  // The cotangent ``d_x`` of a run of the per-layer kernels from ``seed``,
+  // after its forward(); nothing for a run of the fused network, whose
+  // forward() has formed it. Without ``deferred`` it follows the forward of
+  // its own run.
+  void backward(cudaStream_t stream,
+                long begin,
+                long count,
+                const double* seed,
+                float* d_x) const {
+    if (route_of(count) != kFittingPerLayer) {
+      return;
+    }
+    const FittingNetwork& fitting = fitting_;
+    fitting_backward_range(stream, fitting.plan, seed, saved(begin), fitting.ws,
+                           fitting.bs, fitting.resnets, fitting.w_head,
+                           fitting.act, count, slot_[0],
+                           fitting.plan.n_layer > 1 ? slot_[1] : nullptr, d_x);
+  }
+
+ private:
+  int64_t route_of(long count) const {
+    return count == run_ ? full_route_ : tail_route_;
+  }
+
+  float* saved(long begin) const {
+    return saved_.data_ptr<float>() +
+           (kept_ ? begin * fitting_.plan.saved_width() : 0);
+  }
+
+  const FittingNetwork& fitting_;
+  long run_;
+  int64_t full_route_ = 0;
+  int64_t tail_route_ = 0;
+  bool kept_ = false;
+  torch::Tensor transposed_;
+  torch::Tensor scratch_;
+  torch::Tensor saved_;
+  float* slot_[2] = {nullptr, nullptr};
+};
+
+// The state of a fused energy-force evaluation that its epilogue reads.
+struct EpilogueInputs {
+  const torch::Tensor& n_node;
+  const torch::Tensor& frame_row_ptr;
+  const torch::Tensor& force_fixed;
+  const torch::Tensor& raw_energy;
+  const torch::Tensor& seed;
+  torch::Tensor& node_virial;
+  EvaluationWords* evaluation_words;
+};
+
+// The magnetic terms of a native-spin model: the fixed-point totals and the
+// on-site gradient that form the magnetic force.
+struct SpinTerms {
+  const torch::Tensor& fixed;
+  const torch::Tensor& gradient;
+  torch::Tensor& force_mag;
+};
+
+// The inputs of the per-atom virial, which the source CSR attributes to the
+// source nodes of the edges.
+struct SourceVirialTerms {
+  const torch::Tensor& edge_gradient;
+  const torch::Tensor& edge_vec;
+  const torch::Tensor& row_ptr;
+  const torch::Tensor& order;
+};
+
+// The terms of a long-range module: node energies (N, 1) float64, forces at
+// fixed charges (N, 3) and per-node virials (N, 9) float32.
+struct LongRangeTerms {
+  const torch::Tensor& energy;
+  const torch::Tensor& force;
+  const torch::Tensor& atom_virial;
+};
+
+// The node results and the frame totals of a fused energy-force evaluation
+// (energy_force_epilogue_kernel for a single frame, energy_force_nodes_kernel
+// and segment reductions for several), and the per-atom virial
+// ``atom_virial_output``, which is zero without ``source_virial``. ``spin`` is
+// null for a model without spin and ``long_range`` for a model without a
+// long-range module.
+void finish_energy_force(cudaStream_t stream,
+                         long node_count,
+                         int blocks,
+                         const EpilogueInputs& step,
+                         const SpinTerms* spin,
+                         const SourceVirialTerms* source_virial,
+                         const LongRangeTerms* long_range,
+                         torch::Tensor& energy,
+                         torch::Tensor& atom_energy,
+                         torch::Tensor& force,
+                         torch::Tensor& virial,
+                         torch::Tensor& atom_virial_output) {
+  const auto* force_words = reinterpret_cast<const unsigned long long*>(
+      step.force_fixed.data_ptr<int64_t>());
+  const auto* spin_words = spin != nullptr
+                               ? reinterpret_cast<const unsigned long long*>(
+                                     spin->fixed.data_ptr<int64_t>())
+                               : nullptr;
+  const float* spin_gradient =
+      spin != nullptr ? spin->gradient.data_ptr<float>() : nullptr;
+  double* force_mag =
+      spin != nullptr ? spin->force_mag.data_ptr<double>() : nullptr;
+  const double* extra_energy =
+      long_range != nullptr ? long_range->energy.data_ptr<double>() : nullptr;
+  const float* extra_force =
+      long_range != nullptr ? long_range->force.data_ptr<float>() : nullptr;
+  float* atom_virial_zero =
+      source_virial != nullptr ? nullptr : atom_virial_output.data_ptr<float>();
+  if (step.n_node.size(0) == 1) {
+    auto partial = torch::empty({blocks, kEpilogueTotals},
+                                energy.options().dtype(torch::kFloat64));
+    energy_force_epilogue_kernel<<<blocks, kEpilogueThreads * kEpilogueTotals,
+                                   0, stream>>>(
+        node_count, step.n_node.data_ptr<long>(), force_words, spin_words,
+        spin_gradient, step.raw_energy.data_ptr<double>(),
+        step.seed.data_ptr<double>(), step.node_virial.data_ptr<float>(),
+        extra_energy, extra_force,
+        long_range != nullptr ? long_range->atom_virial.data_ptr<float>()
+                              : nullptr,
+        force.data_ptr<double>(), force_mag, atom_energy.data_ptr<double>(),
+        atom_virial_zero, partial.data_ptr<double>(), step.evaluation_words,
+        energy.data_ptr<double>(), virial.data_ptr<double>());
+    DPA4C_CHECK_LAUNCH("dpa4c energy-force epilogue");
+  } else {
+    energy_force_nodes_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
+        node_count, force_words, spin_words, spin_gradient,
+        step.raw_energy.data_ptr<double>(), step.seed.data_ptr<double>(),
+        extra_energy, extra_force, force.data_ptr<double>(), force_mag,
+        atom_energy.data_ptr<double>(), atom_virial_zero);
+    DPA4C_CHECK_LAUNCH("dpa4c energy-force nodes");
+    energy.copy_(frame_scalar_sum(atom_energy, step.n_node));
+    if (long_range != nullptr) {
+      step.node_virial.add_(long_range->atom_virial);
+    }
+    virial.copy_(frame_virial_sum(step.node_virial, step.n_node));
+    mark_broken_frames(energy, virial, step.frame_row_ptr, node_count, force,
+                       spin != nullptr ? &spin->force_mag : nullptr);
+  }
+  if (source_virial != nullptr) {
+    atom_virial_output.copy_(canonical_source_virial(
+        source_virial->edge_gradient, source_virial->edge_vec,
+        source_virial->row_ptr, source_virial->order, node_count));
+    if (long_range != nullptr) {
+      atom_virial_output.add_(
+          long_range->atom_virial.reshape({node_count, 3, 3}));
+    }
+  }
+}
+
 }  // namespace
 
 // Energy, force and virial of one compressed inference step, evaluated over
@@ -1671,36 +1938,10 @@ dpa4c_canonical_compress_energy_force(
                        : node_count;
   auto descriptor = torch::empty({run, widths.output_width}, f32);
   auto state = torch::empty({run, widths.moment_width + 2}, f32);
-  auto saved = torch::empty({run * plan.saved_width()}, f32);
-  // The full runs and the tail run each take the fitting route of their own
-  // size; an absent table, like an empty one, leaves both to the rules. A
-  // route of the fused network needs only the transposed weights besides the
-  // saved pre-activations; the per-layer kernels need the activation
-  // ping-pong, sized for the largest run that takes them.
-  const std::vector<int64_t> routes =
-      std::move(fitting_routes).value_or(std::vector<int64_t>{});
-  const long tail = node_count % run;
-  const int64_t full_route = fitting_route(plan, ws, run, routes);
-  const int64_t tail_route =
-      tail > 0 ? fitting_route(plan, ws, tail, routes) : full_route;
-  const long full_count = node_count / run;
-  const long per_layer_nodes =
-      std::max(full_count > 0 && full_route == kFittingPerLayer ? run : 0L,
-               tail > 0 && tail_route == kFittingPerLayer ? tail : 0L);
-  torch::Tensor transposed;
-  torch::Tensor scratch;
-  float* slot[2] = {nullptr, nullptr};
-  if ((full_count > 0 && full_route != kFittingPerLayer) ||
-      (tail > 0 && tail_route != kFittingPerLayer)) {
-    transposed = torch::empty({fitting_fused_transposed_floats(ws)}, f32);
-    fitting_fused_transpose(stream, plan, ws, transposed.data_ptr<float>());
-  }
-  if (per_layer_nodes > 0) {
-    const int slots = plan.n_layer > 1 ? 2 : 1;
-    scratch = torch::empty({slots, per_layer_nodes, plan.width_max}, f32);
-    slot[0] = scratch[0].data_ptr<float>();
-    slot[1] = slots > 1 ? scratch[1].data_ptr<float>() : slot[0];
-  }
+  const FittingNetwork fitting{plan,   ws,     bs,          resnets,
+                               w_head, b_head, bias_atom_e, act};
+  const FittingRuns runs(stream, fitting, run, node_count,
+                         std::move(fitting_routes), f32);
 
   auto empty_index = torch::empty({0}, source.options());
   auto empty_mask = torch::empty({0}, edge_vec.options().dtype(torch::kBool));
@@ -1750,26 +1991,11 @@ dpa4c_canonical_compress_energy_force(
     dispatch(channels, false, arguments, stream);
 
     // The cotangent replaces the descriptor, which the run no longer needs.
-    const int64_t route = count == run ? full_route : tail_route;
-    if (route != kFittingPerLayer) {
-      fitting_energy_gradient_range(
-          stream, plan, descriptor.data_ptr<float>(), widths.output_width,
-          node_type.data_ptr<long>() + begin, ws, bs, resnets, w_head, b_head,
-          bias_atom_e, act, transposed.data_ptr<float>(),
-          seed.data_ptr<double>() + begin, count, saved.data_ptr<float>(),
-          raw_energy.data_ptr<double>() + begin, descriptor.data_ptr<float>(),
-          route);
-    } else {
-      fitting_forward_range(
-          stream, plan, descriptor.data_ptr<float>(), widths.output_width,
-          node_type.data_ptr<long>() + begin, ws, bs, resnets, w_head, b_head,
-          bias_atom_e, act, count, saved.data_ptr<float>(), slot,
-          raw_energy.data_ptr<double>() + begin);
-      fitting_backward_range(
-          stream, plan, seed.data_ptr<double>() + begin,
-          saved.data_ptr<float>(), ws, bs, resnets, w_head, act, count, slot[0],
-          plan.n_layer > 1 ? slot[1] : nullptr, descriptor.data_ptr<float>());
-    }
+    runs.output_and_cotangent(
+        stream, begin, count, descriptor.data_ptr<float>(),
+        descriptor.data_ptr<float>(), widths.output_width,
+        node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
+        raw_energy.data_ptr<double>() + begin);
 
     arguments.descriptor_gradient = descriptor.data_ptr<float>();
     arguments.state = state.data_ptr<float>();
@@ -1798,47 +2024,15 @@ dpa4c_canonical_compress_energy_force(
     dispatch(channels, true, arguments, stream);
   }
 
-  const auto* force_words = reinterpret_cast<const unsigned long long*>(
-      force_fixed.data_ptr<int64_t>());
-  const auto* spin_words = has_spin
-                               ? reinterpret_cast<const unsigned long long*>(
-                                     spin_fixed.data_ptr<int64_t>())
-                               : nullptr;
-  float* atom_virial_zero =
-      atom_virial ? nullptr : atom_virial_output.data_ptr<float>();
-  if (frame_count == 1) {
-    auto partial = torch::empty({blocks, kEpilogueTotals}, f64);
-    energy_force_epilogue_kernel<<<blocks, kEpilogueThreads * kEpilogueTotals,
-                                   0, stream>>>(
-        node_count, n_node.data_ptr<long>(), force_words, spin_words,
-        has_spin ? spin_gradient.data_ptr<float>() : nullptr,
-        raw_energy.data_ptr<double>(), seed.data_ptr<double>(),
-        node_virial.data_ptr<float>(), nullptr, nullptr, nullptr,
-        force.data_ptr<double>(),
-        has_spin ? force_mag.data_ptr<double>() : nullptr,
-        atom_energy.data_ptr<double>(), atom_virial_zero,
-        partial.data_ptr<double>(), evaluation_words, energy.data_ptr<double>(),
-        virial.data_ptr<double>());
-    DPA4C_CHECK_LAUNCH("dpa4c energy-force epilogue");
-  } else {
-    energy_force_nodes_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
-        node_count, force_words, spin_words,
-        has_spin ? spin_gradient.data_ptr<float>() : nullptr,
-        raw_energy.data_ptr<double>(), seed.data_ptr<double>(), nullptr,
-        nullptr, force.data_ptr<double>(),
-        has_spin ? force_mag.data_ptr<double>() : nullptr,
-        atom_energy.data_ptr<double>(), atom_virial_zero);
-    DPA4C_CHECK_LAUNCH("dpa4c energy-force nodes");
-    energy.copy_(frame_scalar_sum(atom_energy, n_node));
-    virial.copy_(frame_virial_sum(node_virial, n_node));
-    mark_broken_frames(energy, virial, frame_row_ptr, node_count, force,
-                       has_spin ? &force_mag : nullptr);
-  }
-  if (atom_virial) {
-    atom_virial_output.copy_(
-        canonical_source_virial(edge_gradient, edge_vec_float, source_row_ptr,
-                                source_order, node_count));
-  }
+  const EpilogueInputs step{n_node, frame_row_ptr, force_fixed,     raw_energy,
+                            seed,   node_virial,   evaluation_words};
+  const SpinTerms spin_terms{spin_fixed, spin_gradient, force_mag};
+  const SourceVirialTerms source_terms{edge_gradient, edge_vec_float,
+                                       source_row_ptr, source_order};
+  finish_energy_force(stream, node_count, blocks, step,
+                      has_spin ? &spin_terms : nullptr,
+                      atom_virial ? &source_terms : nullptr, nullptr, energy,
+                      atom_energy, force, virial, atom_virial_output);
   return {energy,    atom_energy, force, virial, atom_virial_output,
           force_mag, mask};
 }
@@ -1849,19 +2043,26 @@ dpa4c_canonical_compress_energy_force(
 // The module reads charges that its network predicts from the descriptor of
 // every node, and the energy of the charges depends on all of them, so the
 // descriptor backward cannot start before every charge is known. The
-// operator evaluates the descriptor of every node with its moment state, the
-// charges from the descriptor, and the long range of the charges at fixed
-// charges with its derivative with respect to them
-// (deepmd::latent_charge_sum); then the energy fitting with its cotangent and
-// the cotangent of the charge network, seeded with that derivative, which it
-// adds; and one descriptor backward from the sum of the two cotangents. The
-// two networks evaluate the node axis in runs of ``tile`` nodes, as in
-// dpa4c_canonical_compress_energy_force, which bounds the memory of their
-// activations by the run, the pre-activations of the charge network, which
-// its backward reads, by the node axis. The edge backward adds every force
-// onto the fixed-point totals as in dpa4c_canonical_compress_energy_force,
-// and the epilogue adds the energies, the forces at fixed charges and the
-// per-node virials of the long range.
+// operator evaluates the descriptor of every node with its moment state, and
+// the charges from the descriptor; then the long range of the charges at
+// fixed charges with its derivative with respect to them
+// (deepmd::latent_charge_sum); then the energy fitting with its cotangent, to
+// which the Jacobian row of every charge with respect to the descriptor of
+// its node, the cotangent of a unit seed, scaled by that derivative adds the
+// cotangent of the charge network; and one descriptor backward from the sum.
+// As in dpa4c_canonical_compress_energy_force, the two networks evaluate the
+// node axis in runs of ``tile`` nodes, and each takes the fused network or
+// the per-layer kernels by a fitting-route table of its own
+// (``fitting_routes`` and ``charge_fitting_routes``). A run of the fused
+// charge network forms its Jacobian rows in the pass of its charges, and a
+// run of the per-layer kernels after the energy fitting, from the
+// pre-activations that it keeps for every node; on a V100 at 512 atoms that
+// order shortens the LAMMPS step by 3.3% against forming them before the
+// long range. The Jacobian rows take the width of the descriptor for every
+// node. The edge backward adds every force onto the
+// fixed-point totals as in dpa4c_canonical_compress_energy_force, and the
+// epilogue adds the energies, the forces at fixed charges and the per-node
+// virials of the long range.
 //
 // The charge network has one channel and the layout of an eligible energy
 // fitting; its per-type bias is ``charge_bias``. ``coord``, ``total_charge``,
@@ -1935,7 +2136,8 @@ dpa4c_canonical_compress_long_range_energy_force(
     double prefactor,
     int64_t order,
     double spacing,
-    std::optional<std::vector<int64_t>> fitting_routes) {
+    std::optional<std::vector<int64_t>> fitting_routes,
+    std::optional<std::vector<int64_t>> charge_fitting_routes) {
   constexpr const char* kOp =
       "dpa4c_canonical_compress_long_range_energy_force";
   const bool atom_virial = check_energy_force_inputs(
@@ -2065,34 +2267,35 @@ dpa4c_canonical_compress_long_range_energy_force(
       present_types(arguments, &evaluation_words->node_types);
   dispatch(channels, false, arguments, stream);
 
-  // === Step 2. Charges of the nodes, run by run ===
-  // The charge network reads the descriptor before the energy fitting
-  // overwrites it with its cotangent. The pre-activations of every run stay,
-  // run after run in the layout of their run, for the backward of the run.
+  // === Step 2. Charges of the nodes and their descriptor Jacobian ===
+  // The charge of a node is a function of the descriptor of that node alone,
+  // so the cotangent of its descriptor through the charge network is the
+  // derivative of the energy with respect to the charge times the Jacobian
+  // row of the charge, the input cotangent of a unit seed. A run of the fused
+  // network forms the charges and those rows in one pass, before the long
+  // range forms the derivative and the energy fitting overwrites the
+  // descriptor; a run of the per-layer kernels forms its charges here and
+  // its rows from their saved pre-activations after the energy fitting.
   const long run = tile > 0
                        ? std::max<long>(1, std::min<long>(tile, node_count))
                        : node_count;
   const long width = widths.output_width;
-  const long charge_saved_width = charge_plan.saved_width();
-  auto charge_saved = torch::empty({node_count * charge_saved_width}, f32);
-  const int charge_slots = charge_plan.n_layer > 1 ? 2 : 1;
-  auto charge_scratch =
-      torch::empty({charge_slots, run, charge_plan.width_max}, f32);
-  float* const charge_slot[2] = {charge_scratch[0].data_ptr<float>(),
-                                 charge_slots > 1
-                                     ? charge_scratch[1].data_ptr<float>()
-                                     : charge_scratch[0].data_ptr<float>()};
-  auto raw_charge = torch::empty({node_count}, f64);
   const auto charge_bias_double = charge_bias.to(torch::kFloat64).contiguous();
+  const FittingNetwork charge_fitting{
+      charge_plan,   charge_ws,     charge_bs,          charge_resnets,
+      charge_w_head, charge_b_head, charge_bias_double, charge_act};
+  const FittingRuns charge_runs(stream, charge_fitting, run, node_count,
+                                std::move(charge_fitting_routes), f32, true);
+  const auto unit_seed = torch::ones({run}, f64);
+  auto raw_charge = torch::empty({node_count}, f64);
+  auto charge_jacobian = torch::empty({node_count, width}, f32);
   for (long begin = 0; begin < node_count; begin += run) {
     const long count = std::min(run, node_count - begin);
-    fitting_forward_range(
-        stream, charge_plan, descriptor.data_ptr<float>() + begin * width,
-        width, node_type.data_ptr<long>() + begin, charge_ws, charge_bs,
-        charge_resnets, charge_w_head, charge_b_head, charge_bias_double,
-        charge_act, count,
-        charge_saved.data_ptr<float>() + begin * charge_saved_width,
-        charge_slot, raw_charge.data_ptr<double>() + begin);
+    charge_runs.forward(
+        stream, begin, count, descriptor.data_ptr<float>() + begin * width,
+        charge_jacobian.data_ptr<float>() + begin * width, width,
+        node_type.data_ptr<long>() + begin, unit_seed.data_ptr<double>(),
+        raw_charge.data_ptr<double>() + begin);
   }
 
   // === Step 3. Long range of the charges ===
@@ -2107,70 +2310,29 @@ dpa4c_canonical_compress_long_range_energy_force(
   const torch::Tensor& long_range_force = std::get<2>(long_range);
   const torch::Tensor& long_range_atom_virial = std::get<3>(long_range);
 
-  // === Step 4. Cotangents of the two networks, run by run ===
-  // The full runs and the tail run each take the fitting route of their own
-  // size, as in dpa4c_canonical_compress_energy_force.
-  const std::vector<int64_t> routes =
-      std::move(fitting_routes).value_or(std::vector<int64_t>{});
-  const long tail = node_count % run;
-  const long full_count = node_count / run;
-  const int64_t full_route = fitting_route(plan, ws, run, routes);
-  const int64_t tail_route =
-      tail > 0 ? fitting_route(plan, ws, tail, routes) : full_route;
-  const long per_layer_nodes =
-      std::max(full_count > 0 && full_route == kFittingPerLayer ? run : 0L,
-               tail > 0 && tail_route == kFittingPerLayer ? tail : 0L);
-  auto saved = torch::empty({run * plan.saved_width()}, f32);
-  torch::Tensor transposed;
-  torch::Tensor scratch;
-  float* slot[2] = {nullptr, nullptr};
-  if ((full_count > 0 && full_route != kFittingPerLayer) ||
-      (tail > 0 && tail_route != kFittingPerLayer)) {
-    transposed = torch::empty({fitting_fused_transposed_floats(ws)}, f32);
-    fitting_fused_transpose(stream, plan, ws, transposed.data_ptr<float>());
-  }
-  if (per_layer_nodes > 0) {
-    const int slots = plan.n_layer > 1 ? 2 : 1;
-    scratch = torch::empty({slots, per_layer_nodes, plan.width_max}, f32);
-    slot[0] = scratch[0].data_ptr<float>();
-    slot[1] = slots > 1 ? scratch[1].data_ptr<float>() : slot[0];
-  }
-  const auto charge_seed =
-      charge_gradient.select(1, 0).to(torch::kFloat64).contiguous();
-  auto charge_cotangent = torch::empty({run, width}, f32);
+  // === Step 4. Cotangent of the descriptor ===
+  // The cotangent of the energy fitting replaces the descriptor run by run;
+  // the runs of the per-layer kernels of the charge network then form their
+  // Jacobian rows, and the rows, scaled by the derivative of the energy with
+  // respect to the charges, add the cotangent of the charge network.
+  const FittingNetwork fitting{plan,   ws,     bs,          resnets,
+                               w_head, b_head, bias_atom_e, act};
+  const FittingRuns runs(stream, fitting, run, node_count,
+                         std::move(fitting_routes), f32);
   for (long begin = 0; begin < node_count; begin += run) {
     const long count = std::min(run, node_count - begin);
-    // The cotangent of the energy fitting replaces the descriptor of the run,
-    // which the charge network has read.
     float* const run_descriptor = descriptor.data_ptr<float>() + begin * width;
-    const int64_t route = count == run ? full_route : tail_route;
-    if (route != kFittingPerLayer) {
-      fitting_energy_gradient_range(
-          stream, plan, run_descriptor, width,
-          node_type.data_ptr<long>() + begin, ws, bs, resnets, w_head, b_head,
-          bias_atom_e, act, transposed.data_ptr<float>(),
-          seed.data_ptr<double>() + begin, count, saved.data_ptr<float>(),
-          raw_energy.data_ptr<double>() + begin, run_descriptor, route);
-    } else {
-      fitting_forward_range(stream, plan, run_descriptor, width,
-                            node_type.data_ptr<long>() + begin, ws, bs, resnets,
-                            w_head, b_head, bias_atom_e, act, count,
-                            saved.data_ptr<float>(), slot,
-                            raw_energy.data_ptr<double>() + begin);
-      fitting_backward_range(
-          stream, plan, seed.data_ptr<double>() + begin,
-          saved.data_ptr<float>(), ws, bs, resnets, w_head, act, count, slot[0],
-          plan.n_layer > 1 ? slot[1] : nullptr, run_descriptor);
-    }
-    fitting_backward_range(
-        stream, charge_plan, charge_seed.data_ptr<double>() + begin,
-        charge_saved.data_ptr<float>() + begin * charge_saved_width, charge_ws,
-        charge_bs, charge_resnets, charge_w_head, charge_act, count,
-        charge_slot[0], charge_plan.n_layer > 1 ? charge_slot[1] : nullptr,
-        charge_cotangent.data_ptr<float>());
-    descriptor.slice(0, begin, begin + count)
-        .add_(charge_cotangent.slice(0, 0, count));
+    runs.output_and_cotangent(
+        stream, begin, count, run_descriptor, run_descriptor, width,
+        node_type.data_ptr<long>() + begin, seed.data_ptr<double>() + begin,
+        raw_energy.data_ptr<double>() + begin);
   }
+  for (long begin = 0; begin < node_count; begin += run) {
+    const long count = std::min(run, node_count - begin);
+    charge_runs.backward(stream, begin, count, unit_seed.data_ptr<double>(),
+                         charge_jacobian.data_ptr<float>() + begin * width);
+  }
+  descriptor.addcmul_(charge_jacobian, charge_gradient);
 
   // === Step 5. Descriptor backward and force assembly ===
   arguments.descriptor_gradient = descriptor.data_ptr<float>();
@@ -2185,43 +2347,15 @@ dpa4c_canonical_compress_long_range_energy_force(
   dispatch(channels, true, arguments, stream);
 
   // === Step 6. Node results and frame totals ===
-  const auto* force_words = reinterpret_cast<const unsigned long long*>(
-      force_fixed.data_ptr<int64_t>());
-  float* atom_virial_zero =
-      atom_virial ? nullptr : atom_virial_output.data_ptr<float>();
-  if (frame_count == 1) {
-    auto partial = torch::empty({blocks, kEpilogueTotals}, f64);
-    energy_force_epilogue_kernel<<<blocks, kEpilogueThreads * kEpilogueTotals,
-                                   0, stream>>>(
-        node_count, n_node.data_ptr<long>(), force_words, nullptr, nullptr,
-        raw_energy.data_ptr<double>(), seed.data_ptr<double>(),
-        node_virial.data_ptr<float>(), long_range_energy.data_ptr<double>(),
-        long_range_force.data_ptr<float>(),
-        long_range_atom_virial.data_ptr<float>(), force.data_ptr<double>(),
-        nullptr, atom_energy.data_ptr<double>(), atom_virial_zero,
-        partial.data_ptr<double>(), evaluation_words, energy.data_ptr<double>(),
-        virial.data_ptr<double>());
-    DPA4C_CHECK_LAUNCH("dpa4c long-range energy-force epilogue");
-  } else {
-    energy_force_nodes_kernel<<<blocks, kEpilogueThreads, 0, stream>>>(
-        node_count, force_words, nullptr, nullptr,
-        raw_energy.data_ptr<double>(), seed.data_ptr<double>(),
-        long_range_energy.data_ptr<double>(),
-        long_range_force.data_ptr<float>(), force.data_ptr<double>(), nullptr,
-        atom_energy.data_ptr<double>(), atom_virial_zero);
-    DPA4C_CHECK_LAUNCH("dpa4c long-range energy-force nodes");
-    energy.copy_(frame_scalar_sum(atom_energy, n_node));
-    node_virial.add_(long_range_atom_virial);
-    virial.copy_(frame_virial_sum(node_virial, n_node));
-    mark_broken_frames(energy, virial, frame_row_ptr, node_count, force,
-                       nullptr);
-  }
-  if (atom_virial) {
-    atom_virial_output.copy_(
-        canonical_source_virial(edge_gradient, edge_vec_float, source_row_ptr,
-                                source_order, node_count));
-    atom_virial_output.add_(long_range_atom_virial.reshape({node_count, 3, 3}));
-  }
+  const EpilogueInputs step{n_node, frame_row_ptr, force_fixed,     raw_energy,
+                            seed,   node_virial,   evaluation_words};
+  const SourceVirialTerms source_terms{edge_gradient, edge_vec_float,
+                                       source_row_ptr, source_order};
+  const LongRangeTerms long_range_terms{long_range_energy, long_range_force,
+                                        long_range_atom_virial};
+  finish_energy_force(stream, node_count, blocks, step, nullptr,
+                      atom_virial ? &source_terms : nullptr, &long_range_terms,
+                      energy, atom_energy, force, virial, atom_virial_output);
   return {energy, atom_energy, force, virial, atom_virial_output, mask};
 }
 

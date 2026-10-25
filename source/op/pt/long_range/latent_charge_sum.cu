@@ -24,15 +24,15 @@
 namespace {
 
 using deepmd::long_range::ChargeSumOutputs;
-
-constexpr int kMaxChannels = 8;
-constexpr int kMaxGaussians = 32;
-
-enum KernelKind : int { kLes = 0, kSog = 1 };
+using deepmd::long_range::kLes;
+using deepmd::long_range::kMaxChannels;
+using deepmd::long_range::kMaxGaussians;
+using deepmd::long_range::kSog;
 
 // The evaluation of the frames, by the direct or the mesh sum, of the owner
-// nodes [owner_begin, owner_begin + owner_count). ``box`` is defined for
-// periodic frames only.
+// nodes [owner_begin, owner_begin + owner_count), which are every node or lie
+// in a single frame. ``box`` is defined for periodic frames only. Without
+// nodes or frames the outputs are zero.
 struct Evaluation {
   const torch::Tensor& box;
   const torch::Tensor& coefficient;
@@ -51,6 +51,18 @@ struct Evaluation {
                               int owner_begin,
                               int owner_count,
                               const torch::Tensor* communicator) const {
+    const int64_t frame_count = n_node_per_frame.size(0);
+    if (coord.size(0) == 0 || frame_count == 0) {
+      return {torch::zeros({owner_count, 1}, coord.options()),
+              torch::zeros({owner_count, charge.size(1)}, charge.options()),
+              torch::zeros({owner_count, 3}, charge.options()),
+              torch::zeros({owner_count, 9}, charge.options()),
+              torch::zeros({frame_count, 9}, charge.options())};
+    }
+    TORCH_CHECK(
+        (owner_begin == 0 && owner_count == coord.size(0)) || frame_count == 1,
+        "latent_charge_sum: owners other than every node lie in one "
+        "frame");
     if (periodic) {
       return deepmd::long_range::mesh_sum(
           coord, charge, node_mask, n_node_per_frame, total_charge, box,
@@ -225,7 +237,7 @@ ChargeSumOutputs latent_charge_sum(torch::Tensor coord,
   coefficient = coefficient.contiguous();
   const Evaluation evaluation{cells,     coefficient, kernel,  channel,
                               prefactor, order,       spacing, periodic};
-  if (deepmd::long_range::domain_of(communicator).size == 1) {
+  if (deepmd::long_range::domain_count(communicator) == 1) {
     return evaluation(coord, charge, node_mask, n_node_per_frame, total_charge,
                       0, static_cast<int>(coord.size(0)), nullptr);
   }

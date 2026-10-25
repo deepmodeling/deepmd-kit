@@ -53,7 +53,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <cuda_runtime.h>
 #include <cufft.h>
-#include <torch/torch.h>
+#include <torch/types.h>
 
 #include <algorithm>
 #include <array>
@@ -75,10 +75,11 @@
 namespace {
 
 constexpr int kThreads = 256;
-constexpr int kMaxGaussians = 32;
 constexpr int kMaxOrder = 12;
 
-enum KernelKind : int { kLes = 0, kSog = 1 };
+using deepmd::long_range::kLes;
+using deepmd::long_range::kMaxGaussians;
+using deepmd::long_range::kSog;
 
 // Resolution of the fixed-point charge mesh: 2^-40 e, far below the float32
 // precision of the raw charges, for a sum of at most 2^23 e at a point.
@@ -1298,17 +1299,7 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
       kernel == kSog ? static_cast<int>(coefficient.numel() / 2) : 0;
   const auto double_options = coord.options();
   const auto float_options = charge.options();
-  if (node_count == 0 || frame_count == 0) {
-    return {torch::zeros({owner_count, 1}, double_options),
-            torch::zeros({owner_count, channels}, float_options),
-            torch::zeros({owner_count, 3}, float_options),
-            torch::zeros({owner_count, 9}, float_options),
-            torch::zeros({frame_count, 9}, float_options)};
-  }
   const bool every_node = owner_begin == 0 && owner_count == node_count;
-  TORCH_CHECK(every_node || frame_count == 1,
-              "latent_charge_sum: owners other than every node lie in one "
-              "frame");
   const auto stream = at::cuda::getCurrentCUDAStream();
   // The device reads pinned cells in place, and a copy of pageable ones; a
   // CUDA graph that captures the call reads the cells again at every replay,
@@ -1341,15 +1332,8 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
   }
 
   // === Step 2. The buffers of the call ===
-  const int64_t average_nodes = (node_count + frame_count - 1) / frame_count;
-  const auto slices_for = [](int64_t nodes) {
-    return static_cast<int>(std::min<int64_t>(
-        kMaxSlices,
-        std::max<int64_t>(1, (nodes + kSliceNodes - 1) / kSliceNodes)));
-  };
-  const int slice_count = slices_for(average_nodes);
-  const int owner_slice_count = slices_for(
-      (int64_t{owner_count} + frame_count - 1) / std::max(frame_count, 1));
+  const int slice_count = frame_slices(node_count, frame_count);
+  const int owner_slice_count = frame_slices(owner_count, frame_count);
   const int64_t stencil_bytes = dispatch_order_value(order, [](auto constant) {
     return static_cast<int64_t>(sizeof(AxisStencil<decltype(constant)::value>));
   });
@@ -1508,16 +1492,10 @@ ChargeSumOutputs mesh_sum(const torch::Tensor& coord,
     });
     C10_CUDA_KERNEL_LAUNCH_CHECK();
   }
-  // The frames of the owners, on the axis of the owners: the frames
-  // themselves when every node is an owner, else the one frame they share.
-  torch::Tensor owner_frame_tensor;
-  const int64_t* owner_frame_ptr = frame_ptr;
-  if (!every_node) {
-    owner_frame_tensor =
-        torch::full({2}, int64_t{owner_count}, counts.options());
-    owner_frame_tensor.select(0, 0).zero_();
-    owner_frame_ptr = owner_frame_tensor.data_ptr<int64_t>();
-  }
+  torch::Tensor owner_frame_storage;
+  const int64_t* owner_frame_ptr =
+      owner_frame_offsets(every_node, frame_ptr, owner_count, counts.options(),
+                          owner_frame_storage);
   const bool* owner_mask = node_mask.data_ptr<bool>() + owner_begin;
   const double* owner_coord = coord.data_ptr<double>() + 3 * owner_begin;
   const float* owner_charge = node_charge + int64_t{owner_begin} * channels;

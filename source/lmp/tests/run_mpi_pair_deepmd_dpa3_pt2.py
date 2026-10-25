@@ -56,7 +56,7 @@ parser.add_argument(
     type=str,
     default="p p p",
     help="LAMMPS boundary style. Default 'p p p'; a model with a long-range "
-    "module evaluates complete non-periodic systems and passes 'f f f'.",
+    "module takes 'f f f', or 'p p p' when its module serves periodic systems.",
 )
 parser.add_argument(
     "--pair-coeff",
@@ -134,9 +134,24 @@ parser.add_argument(
     "to exercise sendlist composition changes from real-atom motion "
     "rather than only from NULL motion.",
 )
+parser.add_argument(
+    "--kokkos",
+    action="store_true",
+    help="Run pair_style deepmd/kk on the Kokkos CUDA device of each rank, "
+    "with a full neighbor list, newton off and host communication, as the "
+    "device path of LAMMPS + Kokkos runs it without a CUDA-aware MPI. Rank r "
+    "takes device r modulo the visible devices, as DeepPotPTExpt does.",
+)
 args = parser.parse_args()
 
-lammps = PyLammps()
+cmdargs = None
+if args.kokkos:
+    import torch
+
+    devices = min(comm.Get_size(), torch.cuda.device_count())
+    cmdargs = ["-k", "on", "g", str(devices), "-sf", "kk", "-pk", "kokkos"]
+    cmdargs += ["neigh", "full", "newton", "off", "comm", "host", "gpu/aware", "off"]
+lammps = PyLammps(cmdargs=cmdargs)
 # Force the requested domain decomposition. The default "2 1 1"
 # combined with the simulation box guarantees nswap > 0 on the C++
 # side, so DeepPotPTExpt routes to the with-comm AOTI artifact. Pass
@@ -194,7 +209,9 @@ if args.null_vx is not None:
     else:
         lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
 
-pair_style_line = f"deepmd {args.PB_FILE}"
+# The Kokkos style is named explicitly, so that a plugin without it fails
+# instead of falling back to the host style.
+pair_style_line = f"{'deepmd/kk' if args.kokkos else 'deepmd'} {args.PB_FILE}"
 if args.pair_extra:
     pair_style_line += f" {args.pair_extra}"
 lammps.pair_style(pair_style_line)

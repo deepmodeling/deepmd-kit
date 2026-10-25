@@ -1253,8 +1253,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
  private:
   /**
    * @brief Check that every model accepts the cell handed to the ensemble.
-   * Without one, the neighbor-list entries serve a model with a long-range
-   * module beside models that take the cell of the region.
+   * An empty cell, which a non-periodic system hands a model with a
+   * long-range module, is accepted only when every model carries one: the
+   * neighbor-list entries of other models, such as those of the TensorFlow
+   * backend, read the cell of the region.
    **/
   template <typename VALUETYPE>
   void check_ensemble_box(const std::vector<VALUETYPE>& dbox) const;

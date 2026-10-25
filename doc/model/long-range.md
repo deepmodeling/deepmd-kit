@@ -87,13 +87,13 @@ positive throughout training.
   charge clouds. It approaches $1/r$ beyond a few $1/\alpha$ and stays finite,
   $2\alpha/\sqrt{\pi}$, at contact. The inverse width $\alpha$ is set by
   {ref}`alpha <model[standard]/long_range[latent_charge]/kernel[les]/alpha>`.
-- `sog`: $K(r) = \sum_k a_k \exp(-r^2/2\sigma_k^2)$, a sum of Gaussians whose
-  amplitudes $a_k$ may take either sign. The widths are given by
+- `sog`: $K(r) = \sum_m a_m \exp(-r^2/2\sigma_m^2)$, a sum of Gaussians whose
+  amplitudes $a_m$ may take either sign. The widths are given by
   {ref}`width <model[standard]/long_range[latent_charge]/kernel[sog]/width>`
   or default to a geometric sequence, and the amplitudes by
   {ref}`amplitude <model[standard]/long_range[latent_charge]/kernel[sog]/amplitude>`,
   which explicit widths require. The default amplitudes,
-  $a_k = \sqrt{2/\pi}\,\ln b/\sigma_k$ for the ratio $b$ of consecutive
+  $a_m = \sqrt{2/\pi}\,\ln b/\sigma_m$ for the ratio $b$ of consecutive
   widths, discretize $1/r$: with the default widths the kernel stays finite,
   $0.46$ Å⁻¹, at contact, and its radial force between fixed charges stays
   within 0.4% of that of $1/r$ from 6.5 Å to 150 Å. It differs from $1/r$
@@ -117,7 +117,7 @@ a frame given a cell is evaluated over the images of the cell. The sum
 converges in reciprocal space, where the Fourier transform of the kernel,
 
 - `les`: $\hat K(\mathbf{k}) = (4\pi/k^2)\, e^{-k^2/4\alpha^2}$, or
-- `sog`: $\hat K(\mathbf{k}) = \sum_k a_k (2\pi)^{3/2} \sigma_k^3\, e^{-\sigma_k^2 k^2/2}$,
+- `sog`: $\hat K(\mathbf{k}) = \sum_m a_m (2\pi)^{3/2} \sigma_m^3\, e^{-\sigma_m^2 k^2/2}$,
   which with the default amplitudes approaches the Coulomb transform
   $4\pi/k^2$,
 

@@ -286,6 +286,7 @@ void DeepPotPTExpt::init(const std::string& model,
       nnei += v.as_int();
     }
   }
+  long_range_ = metadata.obj_val.count("topologies") > 0;
   if (metadata.obj_val.count("lower_input_kind")) {
     const std::string lower_input_kind =
         metadata["lower_input_kind"].as_string();
@@ -295,11 +296,12 @@ void DeepPotPTExpt::init(const std::string& model,
                                 lower_input_kind == "dpa4c_canonical";
     // Whether the force assembly of the compact lower reads the source CSR on
     // every call, as the archive records it; an archive without the record
-    // reads it for compressed DPA1 and for a long-range module (below).
+    // reads it for compressed DPA1 and for a long-range module.
     canonical_requires_source_csr_ =
         metadata.obj_val.count("canonical_requires_source_csr")
             ? metadata["canonical_requires_source_csr"].as_bool()
-            : lower_input_kind == "dpa1_canonical";
+            : lower_input_kind == "dpa1_canonical" ||
+                  (lower_input_is_canonical_ && long_range_);
   } else {
     lower_input_is_edge_ = false;
     lower_input_is_graph_ = false;
@@ -309,7 +311,6 @@ void DeepPotPTExpt::init(const std::string& model,
   // A model with a long-range module reads the all-pairs topology of the
   // frame after its other inputs, and, when the module serves periodic
   // systems, the mesh of the cell, sized by the spacing of the metadata.
-  long_range_ = metadata.obj_val.count("topologies") > 0;
   long_range_periodic_ = false;
   if (long_range_) {
     for (const auto& name : metadata["topologies"].as_array()) {
@@ -329,9 +330,6 @@ void DeepPotPTExpt::init(const std::string& model,
       throw deepmd::deepmd_exception(
           "a model with a long-range module requires the graph or the "
           "compact canonical lower.");
-    }
-    if (!metadata.obj_val.count("canonical_requires_source_csr")) {
-      canonical_requires_source_csr_ = lower_input_is_canonical_;
     }
   }
   if (lower_input_is_edge_) {

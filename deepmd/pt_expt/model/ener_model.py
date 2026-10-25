@@ -268,7 +268,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             force_mag = None
             if fused_long_range_eligible(learned.long_range):
                 # The fused operator derives the ownership mask from the frame
-                # counts itself, as the operator without a long-range module.
+                # counts itself, and the fitting-route tables measured for the
+                # energy fitting and the charge network become literals of the
+                # traced program, as for the operator without a long-range
+                # module.
                 energy, atom_energy, force, virial, atom_virial, mask = (
                     dpa4c_canonical_compress_long_range_energy_force(
                         descriptor,
@@ -280,6 +283,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                         communicator,
                         box,
                         atom_bias,
+                        fitting_routes(fitting),
+                        fitting_routes(learned.long_range.charge_net),
                     )
                 )
             else:

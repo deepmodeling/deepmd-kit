@@ -19,14 +19,8 @@
 namespace deepmd {
 namespace long_range {
 
-struct Domain {
-  int rank;
-  int size;
-};
-
-// The rank of this process and the number of ranks of ``communicator``; one
-// rank for a zero address.
-Domain domain_of(const torch::Tensor& communicator);
+// The number of ranks of ``communicator``; one for a zero address.
+int domain_count(const torch::Tensor& communicator);
 
 // Concatenates, in rank order, the rows of every rank. ``rows`` is a
 // contiguous float64 matrix of shape (M_r, W) on the CUDA device, with the

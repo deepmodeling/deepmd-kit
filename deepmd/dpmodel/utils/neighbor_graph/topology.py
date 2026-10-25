@@ -146,7 +146,8 @@ def build_topologies(
         If cells are given for a declaration of the pairs alone, or a pair
         exclusion for a periodic batch, whose reciprocal-space sum is global.
     ValueError
-        If a name is unknown, or a build parameter is missing.
+        If a name is unknown, a build parameter is missing, or a cell spans
+        no lattice.
     """
     names = tuple(names)
     unknown = [name for name in names if name not in TOPOLOGY_TYPES]
