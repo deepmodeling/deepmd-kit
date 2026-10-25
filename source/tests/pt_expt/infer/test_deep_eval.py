@@ -2362,15 +2362,29 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
         return is_vesin_torch_available()
 
     def test_default_is_auto(self) -> None:
-        from deepmd.pt.utils.nv_nlist import (
-            is_nv_available,
+        from deepmd.pt_expt.utils import (
+            auto_neighbor_list,
         )
 
-        dp = DeepPot(self.tmpfile.name)
-        self.assertEqual(
-            dp.deep_eval._nlist_builder is not None,
-            self._vesin_available() or (DEVICE.type == "cuda" and is_nv_available()),
-        )
+        for vesin_available, nv_available, expected in (
+            (False, False, False),
+            (True, False, True),
+            (False, True, True),
+            (True, True, True),
+        ):
+            with (
+                self.subTest(vesin=vesin_available, nv=nv_available),
+                mock.patch.object(
+                    auto_neighbor_list,
+                    "is_vesin_torch_available",
+                    return_value=vesin_available,
+                ),
+                mock.patch.object(
+                    auto_neighbor_list, "is_nv_available", return_value=nv_available
+                ),
+            ):
+                dp = DeepPot(self.tmpfile.name)
+                self.assertEqual(dp.deep_eval._nlist_builder is not None, expected)
 
     def test_native_disables_vesin(self) -> None:
         dp = DeepPot(self.tmpfile.name, nlist_backend="native")
