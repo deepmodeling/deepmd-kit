@@ -44,6 +44,9 @@ from deepmd.pt_expt.utils.env import (
 from deepmd.utils.argcheck import (
     normalize,
 )
+from deepmd.utils.bridging import (
+    expand_bridging_method,
+)
 from deepmd.utils.compat import (
     update_deepmd_input,
 )
@@ -69,6 +72,14 @@ def _config(descriptor: str, native: bool, bridged: bool = False) -> dict:
     if bridged:
         config["bridging_method"] = "zbl"
     config["data_stat_nbatch"] = 1
+    return config
+
+
+def _canonical_config(config: dict) -> dict:
+    config = expand_bridging_method(config)
+    config["models"].reverse()
+    for child in config["models"]:
+        child.pop("type_map", None)
     return config
 
 
@@ -290,12 +301,27 @@ def test_fresh_dpa4c_spin_statistics_keep_closed_gate_scale() -> None:
     )
 
 
-@pytest.mark.parametrize("fitting_type", ["dpa4_ener", "sezm_ener"])
-@pytest.mark.parametrize("neuron", ["omitted", None, [0], [0, 8], [8, 0]])
+@pytest.mark.parametrize(
+    "fitting_type, neuron, source_form, target_form",
+    [
+        (fitting_type, neuron, "plain", "plain")
+        for fitting_type in ("dpa4_ener", "sezm_ener")
+        for neuron in ("omitted", None, [0], [0, 8], [8, 0])
+    ]
+    + [
+        ("dpa4_ener", "omitted", "concise", "canonical"),
+        ("sezm_ener", None, "concise", "canonical"),
+        ("sezm_ener", [0], "canonical", "concise"),
+        ("dpa4_ener", [0, 8], "canonical", "canonical"),
+    ],
+)
 def test_dpa4c_auto_width_inherits_source_architecture(
-    fitting_type: str, neuron: str | list[int] | None
+    fitting_type: str,
+    neuron: str | list[int] | None,
+    source_form: str,
+    target_form: str,
 ) -> None:
-    source_config = _config("dpa4c", False)
+    source_config = _config("dpa4c", False, bridged=source_form != "plain")
     source_config["fitting_net"]["type"] = fitting_type
     if neuron == "omitted":
         source_config["fitting_net"].pop("neuron")
@@ -303,13 +329,22 @@ def test_dpa4c_auto_width_inherits_source_architecture(
         source_config["fitting_net"]["neuron"] = neuron
     target_config = deepcopy(source_config)
     target_config["spin"] = {"scheme": "native", "use_spin": [True, False]}
+    if source_form == "canonical":
+        source_config = _canonical_config(source_config)
+    if target_form == "canonical":
+        target_config = _canonical_config(target_config)
+    original_source = deepcopy(source_config)
     original = deepcopy(target_config)
     source = _pretrained("pt_expt", source_config)
     config, _ = FinetuneRuleBuilder(
         source_config, target_config, change_model_params=False
     ).build()
-    assert config["fitting_net"]["neuron"] == _learned(source).fitting_net.neuron
+    learned_config = config["models"][-1] if target_form == "canonical" else config
+    assert (
+        learned_config["fitting_net"]["neuron"] == _learned(source).fitting_net.neuron
+    )
     assert target_config == original
+    assert source_config == original_source
     target = _build("pt_expt", config)
     target.load_state_dict(get_native_spin_finetune_state(target, source))
     inputs = _inputs()
@@ -563,6 +598,23 @@ def test_dpa4c_auto_width_finetune_cli(
     )
 
 
+def test_dpa4c_canonical_auto_width_finetune_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run_spin_free_native_finetune_cli(
+        "pt_expt",
+        "dpa4c",
+        "dpa4_ener",
+        True,
+        False,
+        "transfer",
+        tmp_path,
+        monkeypatch,
+        auto_width=True,
+        canonical=True,
+    )
+
+
 def _run_spin_free_native_finetune_cli(
     backend: str,
     descriptor: str,
@@ -574,6 +626,7 @@ def _run_spin_free_native_finetune_cli(
     monkeypatch: pytest.MonkeyPatch,
     *,
     auto_width: bool = False,
+    canonical: bool = False,
 ) -> None:
     source_config = _config(descriptor, False)
     source_config["fitting_net"]["type"] = fitting_type
@@ -636,6 +689,8 @@ def _run_spin_free_native_finetune_cli(
         options = ["--use-pretrain-script"]
     if bridged:
         target_config["preset_out_bias"] = {"energy": {"Fe": 1.25, "C": -0.75}}
+    if canonical:
+        target_config = _canonical_config(target_config)
     # A zero-step run exposes RANDOM initialization before optimization.
     steps = 0 if mode == "random" else 2
     config = _make_config(str(system.parent), target_config, numb_steps=steps)
@@ -696,14 +751,16 @@ def _run_spin_free_native_finetune_cli(
     )
     params = saved["model"]["_extra_state"]["model_params"]
     model_params = params["model_dict"]["magnetic"] if multitask else params
+    learned_params = model_params["models"][-1] if canonical else model_params
     if auto_width:
         assert (
-            model_params["fitting_net"]["neuron"] == _learned(source).fitting_net.neuron
+            learned_params["fitting_net"]["neuron"]
+            == _learned(source).fitting_net.neuron
         )
     assert model_params["spin"]["scheme"] == "native"
     assert model_params["spin"]["use_spin"] == [True, False]
     assert (
-        model_params["descriptor"]["channels"]
+        learned_params["descriptor"]["channels"]
         == source_config["descriptor"]["channels"]
     )
     # PT checkpoints record the zero-based step; pt_expt records the step count.

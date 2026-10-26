@@ -250,6 +250,15 @@ def _validate_native_spin_finetune(
     return False
 
 
+def _learned_model_config(
+    model: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Find the unique descriptor-bearing part of a plain or composed model."""
+    candidates = model["models"] if model.get("type") == "linear_ener" else (model,)
+    learned = [candidate for candidate in candidates if "descriptor" in candidate]
+    return learned[0] if len(learned) == 1 else None
+
+
 def _inherit_native_spin_fitting_widths(
     target: dict[str, Any], pretrained: Mapping[str, Any]
 ) -> None:
@@ -259,15 +268,19 @@ def _inherit_native_spin_fitting_widths(
         fitting_args_plugin,
     )
 
+    target_learned = _learned_model_config(target)
+    source_learned = _learned_model_config(pretrained)
+    if target_learned is None or source_learned is None:
+        return
     descriptor_schema = descrpt_args_plugin.get_argument("dpa4c")
     fitting_schema = fitting_args_plugin.get_argument("dpa4_ener")
     descriptor_types = {descriptor_schema.name, *descriptor_schema.alias}
     glu_types = {fitting_schema.name, *fitting_schema.alias}
-    fitting = target.get("fitting_net", {})
-    source_fitting = pretrained.get("fitting_net", {})
+    fitting = target_learned.get("fitting_net", {})
+    source_fitting = source_learned.get("fitting_net", {})
     if (
-        target.get("descriptor", {}).get("type") not in descriptor_types
-        or pretrained.get("descriptor", {}).get("type") not in descriptor_types
+        target_learned["descriptor"].get("type") not in descriptor_types
+        or source_learned["descriptor"].get("type") not in descriptor_types
         or fitting.get("type") not in glu_types
         or source_fitting.get("type") not in glu_types
     ):
@@ -292,11 +305,12 @@ def _inherit_native_spin_fitting_widths(
             _resolve_auto_neuron,
         )
 
-        descriptor_params = descriptor_schema.normalize_value(pretrained["descriptor"])
-        descriptor_params.pop("type")
-        descriptor_params.update(
-            ntypes=len(pretrained["type_map"]), type_map=list(pretrained["type_map"])
+        descriptor_params = descriptor_schema.normalize_value(
+            source_learned["descriptor"]
         )
+        descriptor_params.pop("type")
+        type_map = source_learned.get("type_map", pretrained["type_map"])
+        descriptor_params.update(ntypes=len(type_map), type_map=list(type_map))
         descriptor = DescrptDPA4C(**descriptor_params)
         source_widths = _resolve_auto_neuron(
             source_widths,
